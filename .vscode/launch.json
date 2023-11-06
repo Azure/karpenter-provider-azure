@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "scaffold debug 56268",
+            "type": "go",
+            "request": "attach",
+            "debugAdapter": "dlv-dap",
+            "mode": "remote",
+            "host": "127.0.0.1",
+            "cwd": "${workspaceFolder}",
+            // observed variation in mapping ("dlv sources" in DEBUG CONSOLE), reason unknown for now;
+            // sometimes the below is needed, and somtimes not
+            // "substitutePath": [
+            //    {"from": "${workspaceFolder}", "to": "github.com/Azure/karpenter/"}
+            //    {"from": "/go/pkg/mod/", "to": ""}  // source mapping for external modules, if needed
+            //],
+            "port": 56268,
+            "trace": "verbose"
+        },
+    ]
+}

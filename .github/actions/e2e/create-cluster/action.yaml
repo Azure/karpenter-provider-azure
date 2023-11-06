@@ -1,0 +1,53 @@
+name: CreateCluster
+description: 'Installs Go Downloads and installs Karpenter Dependencies'
+inputs:
+#   k8s_version:
+#     description: 'Version of Kubernetes to use for the launched cluster'
+#     required: false
+#     default: "1.27"
+  client-id:
+    description: 
+    required: true
+  tenant-id:
+    description: 
+    required: true
+  subscription-id:
+    description: 
+    required: true
+  # region:
+  #   description: "Region to create aks cluster"
+  #   required: true
+  resource_group:
+    description: "Name of the resource group to create the cluster within"
+    required: true
+  cluster_name:
+    description: 'Name of the cluster to be created'
+    required: true
+  acr_name:
+    description: "Name of the acr holding the karpenter image"
+    required: true
+runs:
+  using: "composite"
+  steps:
+  - uses: actions/checkout@v3
+  - name: az login
+    uses: azure/login@v1
+    with:
+      client-id: ${{ inputs.client-id }}
+      tenant-id: ${{ inputs.tenant-id }}
+      subscription-id: ${{ inputs.subscription-id }}
+  - name: az set sub
+    shell: bash
+    run: az account set --subscription ${{ inputs.subscription-id }}
+  - name: create cluster
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-mkaks-cilium
+  - name: az login 2
+    uses: azure/login@v1
+    with:
+      client-id: ${{ inputs.client-id }}
+      tenant-id: ${{ inputs.tenant-id }}
+      subscription-id: ${{ inputs.subscription-id }}
+  - name: update azure perms
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-perm

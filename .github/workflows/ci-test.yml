@@ -1,0 +1,24 @@
+name: CI-TEST
+on:
+  push:
+    branches: [azure/poc]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  ci-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        k8sVersion: ["1.25.x", "1.26.x", "1.27.x"]
+    env:
+      K8S_VERSION: ${{ matrix.k8sVersion }}
+    steps:
+    - uses: actions/checkout@v3
+    - uses: ./.github/actions/install-deps
+      with:
+        k8sVersion: ${{ matrix.k8sVersion }}    
+    - run: K8S_VERSION=${{ matrix.k8sVersion }} make ci-test
+#    - uses: shogo82148/actions-goveralls@v1
+#      if: env.K8S_VERSION == '1.25.x'
+#      with:
+#        path-to-profile: coverage.out

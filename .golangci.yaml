@@ -1,0 +1,74 @@
+# See https://github.com/golangci/golangci-lint/blob/master/.golangci.example.yml
+run:
+  tests: true
+  allow-parallel-runners: true
+  timeout: 15m
+  skip-dirs:
+    - tools
+    - hack
+    - charts
+    - designs
+
+linters:
+  enable:
+    - asciicheck
+    - bidichk
+    - errorlint
+    - errcheck
+    - exportloopref
+    - gosec
+    - revive
+    - stylecheck
+    - tparallel
+    - unconvert
+    - unparam
+    - gocyclo
+    - whitespace
+    - govet
+    - goimports
+    - goheader
+    - misspell
+    - nilerr
+  disable:
+    - prealloc
+
+linters-settings:
+  dupl:
+    threshold: 100
+  gocyclo:
+    min-complexity: 11
+  govet:
+    check-shadowing: true
+  revive:
+    rules:
+    - name: dot-imports
+      disabled: true
+  stylecheck:
+    dot-import-whitelist:
+      - "github.com/onsi/ginkgo/v2"
+      - "github.com/onsi/gomega"
+  misspell:
+    locale: US
+    ignore-words: [karpenter]
+  goimports:
+    local-prefixes: github.com/azure/karpenter
+  goheader:
+   template: |-
+     Copyright (c) Microsoft Corporation.
+     Licensed under the MIT License.
+
+issues:
+  fix: true
+  exclude: ['declaration of "(err|ctx)" shadows declaration at']
+  exclude-rules:
+  - linters:
+    - goheader
+    path: 'zz_(.+)\.go'
+  - linters:
+    - goheader
+    source: "^//go:build"
+
+service:
+  golangci-lint-version: 1.50.x # use the fixed version to not introduce new linters unexpectedly
+  prepare:
+    - echo "here I can run custom commands, but no preparation needed for this repo"

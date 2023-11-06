@@ -1,0 +1,31 @@
+{
+    "go.testTimeout": "120s",
+    "gopls": {
+        "build.directoryFilters": [
+            "-hack"
+        ]
+    },
+    "githubPullRequests": {
+        "remotes": [
+            "origin"
+        ],
+        "queries": [
+            {
+                "label": "Waiting For My Review",
+                "query": "is:open review-requested:${user}"
+            },
+            {
+                "label": "Assigned To Me",
+                "query": "is:open assignee:${user}"
+            },
+            {
+                "label": "Created By Me",
+                "query": "is:open author:${user}"
+            },
+            {
+                "label": "All Open (-dependabot)",
+                "query": "is:open -label:dependencies"
+            }
+        ]
+    }
+}
