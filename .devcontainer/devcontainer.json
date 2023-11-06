@@ -1,0 +1,66 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/devcontainers/images/tree/main/src/go
+{
+	"name": "Go-karpenter",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"args": {
+			"VARIANT": "1.21-bullseye",
+		}
+	},
+	"runArgs": [ "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined" ],
+
+	// Configure tool-specific properties.
+	"customizations": {
+		// Configure properties specific to VS Code.
+		"vscode": {
+			// Set *default* container specific settings.json values on container create.
+			"settings": { 
+				"go.toolsManagement.checkForUpdates": "local",
+				"go.useLanguageServer": true,
+				"go.gopath": "/go"
+			},
+			
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"golang.Go",
+				"ms-kubernetes-tools.vscode-kubernetes-tools",
+				"ms-kubernetes-tools.vscode-aks-tools",
+				"timonwong.shellcheck",
+				"mutantdino.resourcemonitor",
+				"Gruntfuggly.todo-tree",
+				"ms-azuretools.vscode-bicep",
+				"GitHub.vscode-pull-request-github",
+				"jinliming2.vscode-go-template"
+			]
+		}
+	},
+
+	"containerEnv": {
+		"KUBEBUILDER_ASSETS": "/home/vscode/.kubebuilder/bin",
+	},
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": {
+		"disable metrics": "skaffold config set --global collect-metrics false",
+		"make toolchain": "make toolchain"
+	},
+
+	// Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+	"remoteUser": "vscode",
+	
+	"features": {
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+            "version": "latest"
+        },		
+        "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+            "version": "latest"
+        },
+        "ghcr.io/devcontainers/features/azure-cli:1": {
+            "version": "latest"
+        }
+	}
+}

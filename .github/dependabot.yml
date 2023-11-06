@@ -1,0 +1,27 @@
+# See https://docs.github.com/en/github/administering-a-repository/configuration-options-for-dependency-updates#package-ecosystem
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    # Interdependent
+    ignore:
+      - dependency-name: "k8s.io/api"
+      - dependency-name: "k8s.io/apimachinery"
+      - dependency-name: "k8s.io/client-go"
+      - dependency-name: "sigs.k8s.io/controller-runtime"
+  - package-ecosystem: "gomod"
+    directory: "/test"
+    schedule:
+      interval: "monthly"
+    # Interdependent
+    ignore:
+      - dependency-name: "k8s.io/api"
+      - dependency-name: "k8s.io/apimachinery"
+      - dependency-name: "k8s.io/client-go"
+      - dependency-name: "sigs.k8s.io/controller-runtime"
+  - package-ecosystem: "github-actions"
+    directory: "/.github"
+    schedule:
+      interval: "monthly"

@@ -1,0 +1,678 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+package instance
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
+
+	"k8s.io/apimachinery/pkg/util/sets"
+	"knative.dev/pkg/logging"
+
+	"github.com/Azure/azure-kusto-go/kusto/kql"
+	"github.com/Azure/karpenter/pkg/cache"
+	"github.com/Azure/karpenter/pkg/providers/instancetype"
+	"github.com/Azure/karpenter/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter/pkg/utils"
+
+	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
+	"github.com/aws/karpenter-core/pkg/scheduling"
+
+	"github.com/Azure/karpenter/pkg/apis/settings"
+	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
+	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+
+	//nolint SA1019 - deprecated package
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
+
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+)
+
+var (
+	NodePoolTagKey = strings.ReplaceAll(corev1beta1.NodePoolLabelKey, "/", "_")
+	listQuery      string
+
+	CapacityTypeToPriority = map[string]string{
+		corev1beta1.CapacityTypeSpot:     string(compute.Spot),
+		corev1beta1.CapacityTypeOnDemand: string(compute.Regular),
+	}
+	PriorityToCapacityType = map[string]string{
+		string(compute.Spot):    corev1beta1.CapacityTypeSpot,
+		string(compute.Regular): corev1beta1.CapacityTypeOnDemand,
+	}
+
+	SubscriptionQuotaReached = "SubscriptionQuotaReached"
+	ZonalAllocationFailure   = "ZonalAllocationFailure"
+
+	DurationForNewQuotaRequest = 1 * time.Hour
+)
+
+type Resource = map[string]interface{}
+
+type Provider struct {
+	location               string
+	azClient               *AZClient
+	instanceTypeProvider   *instancetype.Provider
+	launchTemplateProvider *launchtemplate.Provider
+	loadBalancerProvider   *loadbalancer.Provider
+	resourceGroup          string
+	subnetID               string
+	subscriptionID         string
+	unavailableOfferings   *cache.UnavailableOfferings
+}
+
+func NewProvider(
+	_ context.Context, // TODO: Why is this here?
+	azClient *AZClient,
+	instanceTypeProvider *instancetype.Provider,
+	launchTemplateProvider *launchtemplate.Provider,
+	loadBalancerProvider *loadbalancer.Provider,
+	offeringsCache *cache.UnavailableOfferings,
+	location string,
+	resourceGroup string,
+	subnetID string,
+	subscriptionID string,
+) *Provider {
+	listQuery = GetListQueryBuilder(resourceGroup).String()
+	return &Provider{
+		azClient:               azClient,
+		instanceTypeProvider:   instanceTypeProvider,
+		launchTemplateProvider: launchTemplateProvider,
+		loadBalancerProvider:   loadBalancerProvider,
+		location:               location,
+		resourceGroup:          resourceGroup,
+		subnetID:               subnetID,
+		subscriptionID:         subscriptionID,
+		unavailableOfferings:   offeringsCache,
+	}
+}
+
+// Create an instance given the constraints.
+// instanceTypes should be sorted by priority for spot capacity type.
+func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, error) {
+	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...))
+	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+	if err != nil {
+		return nil, err
+	}
+	zone, err := GetZoneID(vm)
+	if err != nil {
+		logging.FromContext(ctx).Error(err)
+	}
+	logging.FromContext(ctx).With(
+		"launched-instance", *vm.ID,
+		"hostname", *vm.Name,
+		"type", string(*vm.Properties.HardwareProfile.VMSize),
+		"zone", zone,
+		"capacity-type", p.getPriorityForInstanceType(nodeClaim, instanceType)).Infof("launched new instance")
+
+	return vm, nil
+}
+
+func (p *Provider) Link(ctx context.Context, vmName, provisionerName string) error {
+	vm, err := p.Get(ctx, vmName)
+	if err != nil {
+		return fmt.Errorf("linking tags, %w", err)
+	}
+	updates := armcompute.VirtualMachineUpdate{
+		Tags: lo.Assign(vm.Tags, map[string]*string{
+			NodePoolTagKey: lo.ToPtr(provisionerName),
+		}),
+	}
+	if err = UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, updates); err != nil {
+		return fmt.Errorf("linking tags, %w", err)
+	}
+	return nil
+}
+
+func (p *Provider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
+	return UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, update)
+}
+
+func (p *Provider) Get(ctx context.Context, vmName string) (*armcompute.VirtualMachine, error) {
+	var vm armcompute.VirtualMachinesClientGetResponse
+	var err error
+
+	if vm, err = p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
+		if sdkerrors.IsNotFoundErr(err) {
+			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
+		}
+		return nil, fmt.Errorf("failed to get VM instance, %w", err)
+	}
+
+	return &vm.VirtualMachine, nil
+}
+
+func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
+	req := NewQueryRequest(&(p.subscriptionID), listQuery)
+	client := p.azClient.azureResourceGraphClient
+	data, err := GetResourceData(ctx, client, *req)
+	if err != nil {
+		return nil, fmt.Errorf("querying azure resource graph, %w", err)
+	}
+	var vmList []*armcompute.VirtualMachine
+	for i := range data {
+		vm, err := createVMFromQueryResponseData(data[i])
+		if err != nil {
+			return nil, fmt.Errorf("creating VM object from query response data, %w", err)
+		}
+		vmList = append(vmList, vm)
+	}
+	return vmList, nil
+}
+
+func (p *Provider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) error {
+	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
+	if err != nil {
+		return fmt.Errorf("getting vm name, %w", err)
+	}
+
+	logging.FromContext(ctx).Debugf("Deleting virtual machine %s", vmName)
+	return deleteVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
+}
+
+// createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
+func (p *Provider) createAKSIdentifyingExtension(
+	ctx context.Context,
+	vmName, _ string,
+) error {
+	var err error
+	vmExt := p.getAKSIdentifyingExtension()
+	vmExtName := *vmExt.Name
+	logging.FromContext(ctx).Debugf("Creating virtual machine AKS identifying extension for %s", vmName)
+	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("Creating VM AKS identifying extension for VM %q failed, %w", vmName, err)
+		vmErr := deleteVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
+		if vmErr != nil {
+			logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", vmName, vmErr)
+		}
+		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
+	}
+	logging.FromContext(ctx).Debugf("Created  virtual machine AKS identifying extension for %s, with an id of %s", vmName, *v.ID)
+	return nil
+}
+
+func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
+	var ipv4BackendPools []*armnetwork.BackendAddressPool
+	for _, poolID := range backendPools.IPv4PoolIDs {
+		poolID := poolID
+		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
+			ID: &poolID,
+		})
+	}
+
+	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
+
+	enableAcceleratedNetworking := false
+	if err := instanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
+		enableAcceleratedNetworking = true
+	}
+
+	return armnetwork.Interface{
+		Location: to.Ptr(p.location),
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+				{
+					Name: &vmName,
+					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+						Primary:                   to.Ptr(true),
+						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
+						Subnet: &armnetwork.Subnet{
+							ID: &p.subnetID,
+						},
+						LoadBalancerBackendAddressPools: ipv4BackendPools,
+					},
+				},
+			},
+			EnableAcceleratedNetworking: to.Ptr(enableAcceleratedNetworking),
+			EnableIPForwarding:          to.Ptr(true),
+		},
+	}
+}
+
+func GenerateVMName(nodeClaimName string) string {
+	return fmt.Sprintf("aks-%s", nodeClaimName)
+}
+
+func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, launchTemplateConfig *launchtemplate.Template, instanceType *corecloudprovider.InstanceType) (string, error) {
+	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	nic := p.newNetworkInterfaceForVM(nicName, backendPools, instanceType)
+	p.applyTemplateToNic(&nic, launchTemplateConfig)
+	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
+	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)
+	if err != nil {
+		if nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName); nicErr != nil {
+			logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", nicName, nicErr)
+		}
+		return "", err
+	}
+	logging.FromContext(ctx).Debugf("Successfully created network interface: %v", *res.ID)
+	return *res.ID, nil
+}
+
+// newVMObject is a helper func that creates a new armcompute.VirtualMachine
+// from key input.
+func newVMObject(
+	vmName,
+	nicReference,
+	zone,
+	capacityType string,
+	location string,
+	sshPublicKey string,
+	nodeIdentities []string,
+	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClaim *corev1beta1.NodeClaim,
+	launchTemplate *launchtemplate.Template,
+	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
+	// Build the image reference from template
+	imageReference := armcompute.ImageReference{}
+	if v1alpha2.IsComputeGalleryImageID(launchTemplate.ImageID) {
+		imageReference.ID = &launchTemplate.ImageID
+	} else {
+		imageReference.CommunityGalleryImageID = &launchTemplate.ImageID
+	}
+	vm := armcompute.VirtualMachine{
+		Location: to.Ptr(location),
+		Identity: ConvertToVirtualMachineIdentity(nodeIdentities),
+		Properties: &armcompute.VirtualMachineProperties{
+			HardwareProfile: &armcompute.HardwareProfile{
+				VMSize: to.Ptr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
+			},
+
+			StorageProfile: &armcompute.StorageProfile{
+				OSDisk: &armcompute.OSDisk{
+					Name:         to.Ptr(vmName),
+					DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
+					CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
+					DeleteOption: to.Ptr(armcompute.DiskDeleteOptionTypesDelete),
+				},
+				ImageReference: &imageReference,
+			},
+
+			NetworkProfile: &armcompute.NetworkProfile{
+				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+					{
+						ID: &nicReference,
+						Properties: &armcompute.NetworkInterfaceReferenceProperties{
+							Primary:      to.Ptr(true),
+							DeleteOption: to.Ptr(armcompute.DeleteOptionsDelete),
+						},
+					},
+				},
+			},
+
+			OSProfile: &armcompute.OSProfile{
+				AdminUsername: to.Ptr("azureuser"),
+				ComputerName:  &vmName,
+				LinuxConfiguration: &armcompute.LinuxConfiguration{
+					DisablePasswordAuthentication: to.Ptr(true),
+					SSH: &armcompute.SSHConfiguration{
+						PublicKeys: []*armcompute.SSHPublicKey{
+							{
+								KeyData: to.Ptr(sshPublicKey),
+								Path:    to.Ptr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
+							},
+						},
+					},
+				},
+				CustomData: to.Ptr(launchTemplate.UserData),
+			},
+			Priority: to.Ptr(armcompute.VirtualMachinePriorityTypes(
+				CapacityTypeToPriority[capacityType]),
+			),
+		},
+		Zones: []*string{&zone},
+		Tags:  launchTemplate.Tags,
+	}
+	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
+	setVMPropertiesBillingProfile(vm.Properties, capacityType)
+	setVMTagsProvisionerName(vm.Tags, nodeClaim)
+
+	return vm
+}
+
+// setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
+func setVMPropertiesStorageProfile(vmProperties *armcompute.VirtualMachineProperties, instanceType *corecloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) {
+	// use ephemeral disk if it is large enough
+	if *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType) {
+		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
+			Option: to.Ptr(armcompute.DiffDiskOptionsLocal),
+			// placement (cache/resource) is left to CRP
+		}
+		vmProperties.StorageProfile.OSDisk.Caching = to.Ptr(armcompute.CachingTypesReadOnly)
+	}
+}
+
+// setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
+func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string) {
+	if capacityType == v1alpha5.CapacityTypeSpot {
+		vmProperties.EvictionPolicy = to.Ptr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
+		vmProperties.BillingProfile = &armcompute.BillingProfile{
+			MaxPrice: to.Ptr(float64(-1)),
+		}
+	}
+}
+
+// setVMTagsProvisionerName sets "karpenter.sh/provisioner-name" tag
+func setVMTagsProvisionerName(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
+	if val, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]; ok {
+		tags[NodePoolTagKey] = &val
+	}
+}
+
+func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName, _ string) (*armcompute.VirtualMachine, error) {
+	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed: %v", vmName, err)
+		vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
+		if vmErr != nil {
+			logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", vmName, vmErr)
+		}
+		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
+	}
+	logging.FromContext(ctx).Debugf("Created virtual machine %s", *result.ID)
+	return result, nil
+}
+
+func (p *Provider) launchInstance(
+	ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, *corecloudprovider.InstanceType, error) {
+	instanceType, capacityType, zone := p.pickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
+	if instanceType == nil {
+		return nil, nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
+	}
+	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting launch template: %w", err)
+	}
+
+	vmName := GenerateVMName(nodeClaim.Name)
+
+	// create network interface
+	nicName := vmName
+	nicReference, err := p.createNetworkInterface(ctx, vmName, launchTemplate, instanceType)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sshPublicKey := settings.FromContext(ctx).SSHPublicKey
+	nodeIdentityIDs := settings.FromContext(ctx).NodeIdentities
+	vm := newVMObject(vmName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
+
+	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", vmName, instanceType.Name)
+	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
+	resp, err := p.createVirtualMachine(ctx, vm, vmName, nicName)
+	if err != nil {
+		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+		return nil, nil, azErr
+	}
+
+	err = p.createAKSIdentifyingExtension(ctx, vmName, nicName)
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, instanceType, nil
+}
+
+func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+	if sdkerrors.SubscriptionQuotaHasBeenReached(err) {
+		// Subscription quota reached, mark the instance type as unavailable in all zones available to the offering
+		// THis will also update the TTL for an existing offering in the cache that is already unavailable
+		for _, offering := range instanceType.Offerings {
+			if offering.CapacityType != capacityType {
+				continue
+			}
+
+			// If we have a quota limit of 0 vcpus, we mark the offerings unavailable for an hour.
+			// CPU limits of 0 are usually due to a subscription having no allocated quota for that instance type at all on the subscription.
+			if cpuLimitIsZero(err) {
+				p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReached, instanceType.Name, offering.Zone, capacityType, DurationForNewQuotaRequest)
+			} else {
+				p.unavailableOfferings.MarkUnavailable(ctx, SubscriptionQuotaReached, instanceType.Name, offering.Zone, capacityType)
+			}
+		}
+	} else if sdkerrors.ZonalAllocationFailureOccurred(err) {
+		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailure, instanceType.Name, zone, corev1beta1.CapacityTypeOnDemand)
+		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailure, instanceType.Name, zone, corev1beta1.CapacityTypeSpot)
+	}
+	return err
+}
+
+func getEphemeralMaxSizeGB(instanceType *corecloudprovider.InstanceType) int32 {
+	reqs := instanceType.Requirements.Get(v1alpha2.LabelSKUStorageEphemeralOSMaxSize).Values()
+	if len(reqs) == 0 || len(reqs) > 1 {
+		return 0
+	}
+	maxSize, err := strconv.ParseFloat(reqs[0], 32)
+	if err != nil {
+		return 0
+	}
+	// decimal places are truncated, so we round down
+	return int32(maxSize)
+}
+
+func cpuLimitIsZero(err error) bool {
+	return strings.Contains(err.Error(), "Current Limit: 0")
+}
+
+func (p *Provider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
+	// set tags
+	nic.Tags = template.Tags
+}
+
+func (p *Provider) getLaunchTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim,
+	instanceType *corecloudprovider.InstanceType, capacityType string) (*launchtemplate.Template, error) {
+	additionalLabels := lo.Assign(GetAllSingleValuedRequirementLabels(instanceType), map[string]string{corev1beta1.CapacityTypeLabelKey: capacityType})
+
+	launchTemplate, err := p.launchTemplateProvider.GetTemplate(ctx, nodeClass, nodeClaim, instanceType, additionalLabels)
+	if err != nil {
+		return nil, fmt.Errorf("getting launch templates, %w", err)
+	}
+
+	return launchTemplate, nil
+}
+
+// GetAllSingleValuedRequirementLabels converts instanceType.Requirements to labels
+// Like   instanceType.Requirements.Labels() it uses single-valued requirements
+// Unlike instanceType.Requirements.Labels() it does not filter out restricted Node labels
+func GetAllSingleValuedRequirementLabels(instanceType *corecloudprovider.InstanceType) map[string]string {
+	labels := map[string]string{}
+	if instanceType == nil {
+		return labels
+	}
+	for key, req := range instanceType.Requirements {
+		if req.Len() == 1 {
+			labels[key] = req.Values()[0]
+		}
+	}
+	return labels
+}
+
+// pick the "best" SKU, priority and zone, from InstanceType options (and their offerings) in the request
+func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *corev1beta1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*corecloudprovider.InstanceType, string, string) {
+	if len(instanceTypes) == 0 {
+		return nil, "", ""
+	}
+	// InstanceType/VM SKU - just pick the first one for now. They are presorted by cheapest offering price (taking node requirements into account)
+	instanceType := instanceTypes[0]
+	logging.FromContext(ctx).Infof("Selected instance type %s", instanceType.Name)
+	// Priority - Provisioner defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
+	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
+	// Zone - ideally random/spread from zones that support given Priority
+	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool { return o.CapacityType == priority })
+	zonesWithPriority := lo.Map(priorityOfferings, func(o corecloudprovider.Offering, _ int) string { return o.Zone })
+	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
+		// Zones in Offerings have <region>-<number> format; the zone returned from here will be used for VM instantiation,
+		// which expects just the zone number, without region
+		zone = string(zone[len(zone)-1])
+		return instanceType, priority, zone
+	}
+	return nil, "", ""
+}
+
+// getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.
+// The Azure Cloud Provider defaults to Regular, so spot must be explicitly included in capacity type requirements.
+//
+// This returns from a single pre-selected InstanceType, rather than all InstanceType options in nodeRequest,
+// because Azure Cloud Provider does client-side selection of particular InstanceType from options
+func (p *Provider) getPriorityForInstanceType(nodeClaim *corev1beta1.NodeClaim, instanceType *corecloudprovider.InstanceType) string {
+	requirements := scheduling.NewNodeSelectorRequirements(nodeClaim.
+		Spec.Requirements...)
+
+	if requirements.Get(corev1beta1.CapacityTypeLabelKey).Has(corev1beta1.CapacityTypeSpot) {
+		for _, offering := range instanceType.Offerings.Available() {
+			if requirements.Get(v1.LabelTopologyZone).Has(offering.Zone) && offering.CapacityType == corev1beta1.CapacityTypeSpot {
+				return corev1beta1.CapacityTypeSpot
+			}
+		}
+	}
+	return corev1beta1.CapacityTypeOnDemand
+}
+
+func orderInstanceTypesByPrice(instanceTypes []*corecloudprovider.InstanceType, requirements scheduling.Requirements) []*corecloudprovider.InstanceType {
+	// Order instance types so that we get the cheapest instance types of the available offerings
+	sort.Slice(instanceTypes, func(i, j int) bool {
+		iPrice := math.MaxFloat64
+		jPrice := math.MaxFloat64
+		if len(instanceTypes[i].Offerings.Available().Requirements(requirements)) > 0 {
+			iPrice = instanceTypes[i].Offerings.Available().Requirements(requirements).Cheapest().Price
+		}
+		if len(instanceTypes[j].Offerings.Available().Requirements(requirements)) > 0 {
+			jPrice = instanceTypes[j].Offerings.Available().Requirements(requirements).Cheapest().Price
+		}
+		if iPrice == jPrice {
+			return instanceTypes[i].Name < instanceTypes[j].Name
+		}
+		return iPrice < jPrice
+	})
+	return instanceTypes
+}
+
+func GetCapacityType(instance *armcompute.VirtualMachine) string {
+	if instance != nil && instance.Properties != nil && instance.Properties.Priority != nil {
+		return PriorityToCapacityType[string(*instance.Properties.Priority)]
+	}
+	return ""
+}
+
+func GetHyperVGeneration(instance *armcompute.VirtualMachine) string {
+	if instance != nil && instance.Properties != nil && instance.Properties.InstanceView != nil && instance.Properties.InstanceView.HyperVGeneration != nil {
+		return string(*instance.Properties.InstanceView.HyperVGeneration)
+	}
+	return ""
+}
+
+func (p *Provider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtension {
+	const (
+		vmExtensionType                  = "Microsoft.Compute/virtualMachines/extensions"
+		aksIdentifyingExtensionName      = "computeAksLinuxBilling"
+		aksIdentifyingExtensionPublisher = "Microsoft.AKS"
+		aksIdentifyingExtensionTypeLinux = "Compute.AKS.Linux.Billing"
+	)
+
+	vmExtension := &armcompute.VirtualMachineExtension{
+		Location: to.Ptr(p.location),
+		Name:     to.Ptr(aksIdentifyingExtensionName),
+		Properties: &armcompute.VirtualMachineExtensionProperties{
+			Publisher:               to.Ptr(aksIdentifyingExtensionPublisher),
+			TypeHandlerVersion:      to.Ptr("1.0"),
+			AutoUpgradeMinorVersion: to.Ptr(true),
+			Settings:                &map[string]interface{}{},
+			Type:                    to.Ptr(aksIdentifyingExtensionTypeLinux),
+		},
+		Type: to.Ptr(vmExtensionType),
+	}
+
+	return vmExtension
+}
+
+func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
+	if vm == nil {
+		return "", fmt.Errorf("cannot pass in a nil virtual machine")
+	}
+	if vm.Name == nil {
+		return "", fmt.Errorf("virtual machine is missing name")
+	}
+	if vm.Zones == nil {
+		return "", fmt.Errorf("virtual machine %v zones are nil", *vm.Name)
+	}
+	if len(vm.Zones) == 1 {
+		return *(vm.Zones)[0], nil
+	}
+	if len(vm.Zones) > 1 {
+		return "", fmt.Errorf("virtual machine %v has multiple zones", *vm.Name)
+	}
+	return "", fmt.Errorf("virtual machine %v does not have any zones specified", *vm.Name)
+}
+
+func GetListQueryBuilder(rg string) *kql.Builder {
+	return kql.New(`Resources`).
+		AddLiteral(` | where type == "microsoft.compute/virtualmachines"`).
+		AddLiteral(` | where resourceGroup == `).AddString(strings.ToLower(rg)). // ARG VMs appear to have lowercase RG
+		AddLiteral(` | where tags has_cs `).AddString(NodePoolTagKey)
+}
+
+func createVMFromQueryResponseData(data map[string]interface{}) (*armcompute.VirtualMachine, error) {
+	jsonString, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	vm := armcompute.VirtualMachine{}
+	err = json.Unmarshal(jsonString, &vm)
+	if err != nil {
+		return nil, err
+	}
+	if vm.ID == nil {
+		return nil, fmt.Errorf("virtual machine is missing id")
+	}
+	if vm.Name == nil {
+		return nil, fmt.Errorf("virtual machine is missing name")
+	}
+	if vm.Tags == nil {
+		return nil, fmt.Errorf("virtual machine is missing tags")
+	}
+	// We see inconsistent casing being returned by ARG for the last segment
+	// of the vm.ID string. This forces it to be lowercase.
+	parts := strings.Split(lo.FromPtr(vm.ID), "/")
+	parts[len(parts)-1] = strings.ToLower(parts[len(parts)-1])
+	vm.ID = lo.ToPtr(strings.Join(parts, "/"))
+	return &vm, nil
+}
+
+func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.VirtualMachineIdentity {
+	var identity *armcompute.VirtualMachineIdentity
+	if len(nodeIdentities) > 0 {
+		identityMap := make(map[string]*armcompute.UserAssignedIdentitiesValue)
+		for _, identityID := range nodeIdentities {
+			identityMap[identityID] = &armcompute.UserAssignedIdentitiesValue{}
+		}
+
+		if len(identityMap) > 0 {
+			identity = &armcompute.VirtualMachineIdentity{
+				Type:                   lo.ToPtr(armcompute.ResourceIdentityTypeUserAssigned),
+				UserAssignedIdentities: identityMap,
+			}
+		}
+	}
+
+	return identity
+}

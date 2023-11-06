@@ -1,0 +1,77 @@
+apiVersion: skaffold/v3
+kind: Config
+build:
+  artifacts:
+    - image: controller
+      ko:
+        main: github.com/Azure/karpenter/cmd/controller
+        dependencies:
+          paths:
+            - '**/*.go'
+            - '**/*.gtpl'
+        #flags: ['-tags', 'ccp']
+manifests:
+  helm:
+    releases:
+      - name: karpenter
+        chartPath: charts/karpenter
+        skipBuildDependencies: true
+        namespace: karpenter
+        createNamespace: true
+        setValueTemplates:
+          controller.image.repository: "{{.IMAGE_REPO_controller}}"
+          controller.image.tag: "{{.IMAGE_TAG_controller}}"
+          controller.image.digest: "{{.IMAGE_DIGEST_controller}}"
+        overrides:
+          # these go into the global config map
+          settings:
+            featureGates:
+              drift: true
+            azure:
+              clusterName: karpenter
+              clusterEndpoint: https://karpenter-tallaxes-azure-k-26fe00-j3imiwu5.hcp.westus2.staging.azmk8s.io:443
+              kubeletClientTLSBootstrapToken: "<updateme>" # TODO: get this from the cluster
+              # TODO: autogenerate
+              sshPublicKey: "<updateme>"
+              networkPlugin: "azure" # TODO: get this from the cluster
+              networkPolicy: ""
+          replicas: 1 # for better debugging experience
+          controller:
+            # The maximum amount of time with no new ending pods that if exceeded ends the current batching window. If pods arrive
+            # faster than this time, the batching window will be extended up to the maxDuration. If they arrive slower, the pods
+            # will be batched separately.
+            batchIdleDuration: 1s # 60s is a good value for large runs (500+ nodes)
+            # The maximum length of a batch window. The longer this is, the more pods we can consider for provisioning at one
+            # time which usually results in fewer but larger nodes.
+            batchMaxDuration: 10s # 60s is a good value for large runs (500+ nodes)
+            env:
+              - name: ARM_SUBSCRIPTION_ID
+                value: ""
+              - name: LOCATION
+                value: westus2
+              - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
+                value: "true"
+              - name: ARM_USER_ASSIGNED_IDENTITY_ID
+                value: ""
+              - name: AZURE_NODE_RESOURCE_GROUP
+                value: ""
+              - name: AZURE_SUBNET_ID # the id of subnet to create network interfaces on
+                value: ""
+              - name: LEADER_ELECT # disable leader election for better debugging experience
+                value: "false"
+              - name: AZURE_VNET_NAME
+                value: ""
+              - name: AZURE_SUBNET_NAME
+                value: ""
+                # disable HTTP/2 to reduce ARM throttling on large-scale tests;
+                # with this in place write (and read) QPS can be increased too
+                #- name: GODEBUG
+                #  value: http2client=0
+            resources:
+              requests:
+                cpu: 200m
+              limits:
+                cpu: 500m
+            logLevel: debug
+deploy:
+  helm: {}

@@ -1,0 +1,122 @@
+name: E2E
+on:
+  workflow_call:
+    inputs:
+    #   region:
+    #     type: string
+    #     default: "us-east-2"
+      suite:
+        type: string
+        required: true
+      hash:
+        type: string
+        required: true
+    #   k8s_version:
+    #     type: string
+    #     default: "1.27"
+    secrets:
+      E2E_CLIENT_ID:
+        required: true
+      E2E_TENANT_ID:
+        required: true
+      E2E_SUBSCRIPTION_ID:
+        required: true
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: read  # This is required for actions/checkout
+jobs:
+  run-suite:
+    name: suite-${{ inputs.suite }}
+    runs-on: ubuntu-latest
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/install-deps
+      - name: az login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      - name: az set sub
+        shell: bash
+        run: az account set --subscription ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      - name: install skaffold
+        run: |
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/v2.3.1/skaffold-linux-amd64
+          install skaffold /usr/local/bin/
+      - name: generate rg name
+        run: |
+          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-rg-${{ inputs.hash }} | awk '{print tolower($0)}')
+          echo "Using resource group name \"$RG_NAME\""
+          echo RG_NAME=$RG_NAME >> $GITHUB_ENV
+      - name: generate acr name
+        run: |
+          ACR_NAME=$(echo ${{ inputs.suite }}acr${{ inputs.hash }} | awk '{print tolower($0)}')
+          echo "Using acr name \"$ACR_NAME\""
+          echo ACR_NAME=$ACR_NAME >> $GITHUB_ENV
+      - name: create acr '${{ env.ACR_NAME }}'
+        uses: ./.github/actions/e2e/create-acr
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          resource_group: ${{ env.RG_NAME }}
+          acr_name: ${{ env.ACR_NAME }}
+      - name: add jitter on cluster creation
+        run: |
+          # Creating jitter so that we can stagger cluster creation to avoid throttling
+          sleep $(( $RANDOM % 60 + 1 ))
+      - name: generate cluster name
+        run: |
+          CLUSTER_NAME=$(echo ${{ inputs.suite }}-mc-${{ inputs.hash }} | awk '{print tolower($0)}')
+          echo "Using cluster name \"$CLUSTER_NAME\""
+          echo CLUSTER_NAME=$CLUSTER_NAME >> $GITHUB_ENV
+      - name: create aks cluster '${{ env.CLUSTER_NAME }}'
+        uses: ./.github/actions/e2e/create-cluster
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          # region: westus2
+          resource_group: ${{ env.RG_NAME }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          acr_name: ${{ env.ACR_NAME }}
+      - name: build and publish karpenter
+        shell: bash
+        run: AZURE_ACR_NAME=${{ env.ACR_NAME }} make az-build
+      - name: install karpenter
+        uses: ./.github/actions/e2e/install-karpenter
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          resource_group: ${{ env.RG_NAME }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          acr_name: ${{ env.ACR_NAME }}
+      - name: run the ${{ inputs.suite }} test suite
+        if: inputs.suite != 'Nonbehavioral'
+        run: |
+          AZURE_CLUSTER_NAME=${{ env.CLUSTER_NAME }} AZURE_RESOURCE_GROUP=${{ env.RG_NAME }} make az-creds
+          CLUSTER_NAME=${{ env.CLUSTER_NAME }} TEST_SUITE="${{ inputs.suite }}" GIT_REF="$(git rev-parse HEAD)" make e2etests
+      - name: dump logs on failure
+        uses: ./.github/actions/e2e/dump-logs
+        if: failure() || cancelled()
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          resource_group: ${{ env.RG_NAME }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+      - name: cleanup resources
+        uses: ./.github/actions/e2e/cleanup
+        if: always()
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          # region: westus2
+          resource_group: ${{ env.RG_NAME }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          acr_name: ${{ env.ACR_NAME }}

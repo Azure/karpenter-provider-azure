@@ -1,0 +1,71 @@
+# This Github action builds and publishes image to Azure Container Registry (ACR),
+# from where it is automatically propagated to Microsoft Container Registry (MCR).
+
+name: Build and publish to MCR
+on:
+  workflow_dispatch:
+    inputs:
+      releaseTag:
+        description: 'Release tag to publish, defaults to the latest one'
+        type: string
+
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: read  # This is required for actions/checkout
+
+env:
+  REGISTRY_REPO: unlisted/aks/karpenter
+
+jobs:
+  prepare-variables:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.vars.outputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 'Set output variables'
+        id: vars
+        run: |
+          RELEASE_TAG=${{ inputs.releaseTag }}
+          if [ -z "$RELEASE_TAG" ]; then
+            RELEASE_TAG=`git describe --tags $(git rev-list --tags --max-count=1)`
+            echo "The user input release tag is empty, will use the latest tag $RELEASE_TAG."
+          fi
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+
+  publish-images:
+    runs-on: ubuntu-latest
+    needs: prepare-variables
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.prepare-variables.outputs.release_tag }}
+        
+    - uses: ./.github/actions/install-deps
+
+    # reference: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-azure
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  
+    - name: Build and publish image
+      env:
+        KO_DOCKER_REPO: ${{ secrets.AZURE_REGISTRY }}/${{ env.REGISTRY_REPO }}
+      run: |
+        az acr login -n ${{ secrets.AZURE_REGISTRY }}
+        cat >.ko.yaml <<EOF
+        builds:
+        - id: controller
+          main: ./cmd/controller
+          flags: ['-tags','ccp']
+        EOF
+        ko build github.com/Azure/karpenter/cmd/controller \
+          --platform linux/amd64,linux/arm64 \
+          --base-import-paths \
+          --sbom none \
+          --tags ${{ needs.prepare-variables.outputs.release_tag }}-aks

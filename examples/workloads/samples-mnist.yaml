@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: samples-tf-mnist-demo
+  name: samples-tf-mnist-demo
+spec:
+  template:
+    metadata:
+      labels:
+        app: samples-tf-mnist-demo
+    spec:
+      containers:
+      - name: samples-tf-mnist-demo
+        image: mcr.microsoft.com/azuredocs/samples-tf-mnist-demo:gpu
+        args: ["--max_steps", "500"]
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+      restartPolicy: OnFailure
+      tolerations:
+      - key: "sku"
+        operator: "Equal"
+        value: "gpu"
+        effect: "NoSchedule"
