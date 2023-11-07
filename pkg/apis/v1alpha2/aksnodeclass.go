@@ -33,6 +33,7 @@ type AKSNodeClassSpec struct {
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
+	// +kubebuilder:validation:Pattern=`(?i)/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/resourceGroups/[\w-]+/providers/Microsoft\.Compute/galleries/[\w-]+/images/[\w-]+/versions/[\d.]+|(?i)/CommunityGalleries/[\w-]+/images/[\w-]+/versions/[\d.]+`
 	ImageID *string `json:"-"`
 	// ImageFamily is the image family that instances use.
 	// +kubebuilder:default=Ubuntu2204
