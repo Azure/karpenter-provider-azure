@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,10 +57,8 @@ import (
 )
 
 var (
-	NodePoolTagKey                  = strings.ReplaceAll(corev1beta1.NodePoolLabelKey, "/", "_")
-	listQuery                       string
-	SubscriptionShape               = regexp.MustCompile(`[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}`)
-	ComputeGalleryImageVersionRegex = regexp.MustCompile(`(?i)/subscriptions/` + SubscriptionShape.String() + `/resourceGroups/[\w-]+/providers/Microsoft\.Compute/galleries/[\w-]+/images/[\w-]+/versions/[\d.]+`)
+	NodePoolTagKey = strings.ReplaceAll(corev1beta1.NodePoolLabelKey, "/", "_")
+	listQuery      string
 
 	CapacityTypeToPriority = map[string]string{
 		corev1beta1.CapacityTypeSpot:     string(compute.Spot),
@@ -688,8 +685,4 @@ func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.Virtua
 	}
 
 	return identity
-}
-
-func IsComputeGalleryImageID(imageID string) bool {
-	return ComputeGalleryImageVersionRegex.MatchString(imageID)
 }
