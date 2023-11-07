@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [Nonbehavioral, Utilization, GPU, Drift, Integration]
+        suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim]
     uses: ./.github/workflows/e2e.yaml
     with:
       suite: ${{ matrix.suite }}
