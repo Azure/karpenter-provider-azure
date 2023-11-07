@@ -1,0 +1,13 @@
+name: ApprovalComment
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  approval-comment:
+    if: startsWith(github.event.review.body, '/e2e')
+    runs-on: ubuntu-latest
+    steps:
+      - name: run e2e
+        run: |
+          echo "run e2e"
