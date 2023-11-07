@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,8 +58,10 @@ import (
 )
 
 var (
-	NodePoolTagKey = strings.ReplaceAll(corev1beta1.NodePoolLabelKey, "/", "_")
-	listQuery      string
+	NodePoolTagKey                  = strings.ReplaceAll(corev1beta1.NodePoolLabelKey, "/", "_")
+	listQuery                       string
+	SubscriptionShape               = regexp.MustCompile(`[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}`)
+	ComputeGalleryImageVersionRegex = regexp.MustCompile(`(?i)/subscriptions/` + SubscriptionShape.String() + `/resourceGroups/[\w-]+/providers/Microsoft\.Compute/galleries/[\w-]+/images/[\w-]+/versions/[\d.]+`)
 
 	CapacityTypeToPriority = map[string]string{
 		corev1beta1.CapacityTypeSpot:     string(compute.Spot),
@@ -298,11 +301,8 @@ func newVMObject(
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
 	// Build the image reference from template
-	imageReference := armcompute.ImageReference{}
-	if v1alpha2.IsComputeGalleryImageID(launchTemplate.ImageID) {
-		imageReference.ID = &launchTemplate.ImageID
-	} else {
-		imageReference.CommunityGalleryImageID = &launchTemplate.ImageID
+	imageReference := armcompute.ImageReference{
+		CommunityGalleryImageID: &launchTemplate.ImageID,
 	}
 	vm := armcompute.VirtualMachine{
 		Location: to.Ptr(location),
@@ -688,4 +688,8 @@ func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.Virtua
 	}
 
 	return identity
+}
+
+func IsComputeGalleryImageID(imageID string) bool {
+	return ComputeGalleryImageVersionRegex.MatchString(imageID)
 }
