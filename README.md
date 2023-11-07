@@ -1,4 +1,4 @@
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)]
+[![GitHub License](https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg)](https://github.com/Azure/karpenter/blob/main/LICENSE.txt)
 [![CI](https://github.com/Azure/karpenter/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Azure/karpenter/actions/workflows/ci.yml)
 ![GitHub stars](https://img.shields.io/github/stars/Azure/karpenter)
 ![GitHub forks](https://img.shields.io/github/forks/Azure/karpenter)
@@ -75,6 +75,10 @@ which is under an Apache 2.0 license. Those files have been modified to reflect 
 Many thanks to @ellistarn, @jonathan-innis, @tzneal, @bwagner5, @njtran, and many other developers active in the Karpenter community for laying the foundations of a Karpenter provider ecosystem!
 
 ---
+
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
+or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
 Come discuss Karpenter in the [#karpenter](https://kubernetes.slack.com/archives/C02SFFZSA2K) channel in the [Kubernetes slack](https://slack.k8s.io/)!
 
