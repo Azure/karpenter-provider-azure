@@ -1,0 +1,47 @@
+# This example NodePool will provision general purpose instances
+---
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: system-surge
+  annotations:
+    kubernetes.io/description: "Surge capacity pool for system pod pressure"
+spec:
+  disruption:
+    expireAfter: Never
+  template:
+    metadata:
+      labels: 
+        kubernetes.azure.com/mode: "system"
+    spec:
+      taints: 
+        - key: "CriticalAddonsOnly"
+          value: "true"
+          effect: "NoSchedule"
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: karpenter.azure.com/sku-hyperv-generation
+          operator: In
+          values: ["2"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.azure.com/sku-family
+          operator: In
+          values: [D]
+      nodeClassRef:
+        name: system-surge
+---
+apiVersion: karpenter.azure.com/v1alpha2
+kind: AKSNodeClass
+metadata:
+  name: system-surge
+  annotations:
+    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu2204 nodes"
+spec:
+  imageFamily: Ubuntu2204

@@ -1,0 +1,22 @@
+# Go toolchain
+coverage.out
+coverage.html
+*.test
+*.cpuprofile
+*.heapprofile
+go.work
+go.work.sum
+
+# Environment
+.idea
+# .vscode - do check in to share settings
+.DS_Store
+
+# Go Benchmarking
+*.cpuprofile
+*.heapprofile
+
+# Temp perf logs
+/logs
+# Project Specific
+*.csv

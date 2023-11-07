@@ -1,0 +1,34 @@
+name: CreateACR
+description: 'Creates ACR'
+inputs:
+  client-id:
+    description: 
+    required: true
+  tenant-id:
+    description: 
+    required: true
+  subscription-id:
+    description: 
+    required: true
+  resource_group:
+    description: "Name of the resource group to create the cluster within"
+    required: true
+  acr_name:
+    description: "Name of the acr holding the karpenter image"
+    required: true
+runs:
+  using: "composite"
+  steps:
+  - uses: actions/checkout@v3
+  - name: az login
+    uses: azure/login@v1
+    with:
+      client-id: ${{ inputs.client-id }}
+      tenant-id: ${{ inputs.tenant-id }}
+      subscription-id: ${{ inputs.subscription-id }}
+  - name: az set sub
+    shell: bash
+    run: az account set --subscription ${{ inputs.subscription-id }}
+  - name: create ACR
+    shell: bash
+    run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-mkacr
