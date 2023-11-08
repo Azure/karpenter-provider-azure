@@ -6,6 +6,8 @@ on:
   workflow_run:
     workflows: [ApprovalComment]
     types: [completed]
+  pull_request_review: # TODO(charliedmcb): come back to this and factor out the E2E trigger like AWS and clean it up
+    types: [submitted]
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: read  # This is required for actions/checkout
