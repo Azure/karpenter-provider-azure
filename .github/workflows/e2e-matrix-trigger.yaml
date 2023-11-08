@@ -10,8 +10,13 @@ permissions:
   id-token: write # This is required for requesting the JWT
   contents: read  # This is required for actions/checkout
 jobs:
+  resolve:
+    uses: ./.github/workflows/resolve-args.yaml
   e2e-matrix:
+    needs: [resolve]
     uses: ./.github/workflows/e2e-matrix.yaml
+    with:
+      git_ref: ${{ needs.resolve.outputs.GIT_REF }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
