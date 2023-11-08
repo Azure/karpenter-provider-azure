@@ -34,6 +34,10 @@ func DefaultArmOpts() *arm.ClientOptions {
 
 func DefaultRetryOpts() policy.RetryOptions {
 	return policy.RetryOptions{
+		// MaxRetries specifies the maximum number of attempts a failed operation will be retried
+		// before producing an error.
+		// The default value is three.  A value less than zero means one try and no retries.
+		// See Reference here: https://github.com/Azure/azure-sdk-for-go/blob/v61.4.0/sdk/azcore/policy/policy.go#L73
 		MaxRetries: -1,
 	}
 }
