@@ -13,7 +13,7 @@ permissions:
   contents: read  # This is required for actions/checkout
 jobs:
   e2e-matrix:
-    if: github.event_name != 'pull_request_review' || startsWith(github.event.review.body ,'/test')
+    if: (github.event_name != 'pull_request_review' && github.event_name != 'workflow_run') || (github.event_name == 'pull_request_review' && startsWith(github.event.review.body ,'/test')) || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     uses: ./.github/workflows/e2e-matrix.yaml
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
