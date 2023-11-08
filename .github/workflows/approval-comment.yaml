@@ -5,7 +5,7 @@ on:
 
 jobs:
   approval-comment:
-    if: startsWith(github.event.review.body, '/e2e')
+    if: startsWith(github.event.review.body, '/test')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
