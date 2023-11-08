@@ -3,8 +3,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  pull_request_review: # TODO(charliedmcb): come back to this and factor out the E2E trigger like AWS and clean it up
-    types: [submitted]
   workflow_run:
     workflows: [ApprovalComment]
     types: [completed]
@@ -13,7 +11,6 @@ permissions:
   contents: read  # This is required for actions/checkout
 jobs:
   e2e-matrix:
-    if: github.event_name != 'pull_request_review' || startsWith(github.event.review.body ,'/test')
     uses: ./.github/workflows/e2e-matrix.yaml
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
