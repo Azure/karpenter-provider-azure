@@ -12,6 +12,7 @@ permissions:
   statuses: write # ./.github/actions/commit-status/*
 jobs:
   resolve:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/resolve-args.yaml
   e2e-matrix:
     needs: [resolve]
