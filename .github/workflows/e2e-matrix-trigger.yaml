@@ -14,7 +14,7 @@ permissions:
   statuses: write # ./.github/actions/commit-status/*
 jobs:
   resolve:
-    if: (github.event_name != 'workflow_run' && github.event_name != 'pull_request_review') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'pull_request_review' && startsWith(github.event.review.body, '/test-new-e2e'))
+    if: (github.event_name != 'workflow_run' && github.event_name != 'pull_request_review') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'pull_request_review' && startsWith(github.event.review.body, '/new-e2e-test'))
     uses: ./.github/workflows/resolve-args.yaml
   e2e-matrix:
     needs: [resolve]
