@@ -1,7 +1,9 @@
 name: E2EMatrix
 on:
   workflow_call:
-  #   inputs:
+    inputs:
+      git_ref:
+        type: string
   #     region:
   #       type: string
   #       default: "us-east-2"
@@ -34,6 +36,7 @@ jobs:
         suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim]
     uses: ./.github/workflows/e2e.yaml
     with:
+      git_ref: ${{ inputs.git_ref }}
       suite: ${{ matrix.suite }}
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
   #     region: ${{ inputs.region }}
