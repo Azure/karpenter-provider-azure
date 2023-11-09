@@ -1,4 +1,4 @@
-name: TriggerNewE2ESuites
+name: TriggerUpdatedE2EMatrix
 on:
     pull_request_review:
         types: [submitted]
@@ -7,8 +7,8 @@ permissions:
   contents: read  # This is required for actions/checkout
   statuses: write # ./.github/actions/commit-status/*
 jobs:
-  trigger-e2e-matrix:
-    if: startsWith(github.event.review.body, '/new-e2e')
+  trigger-updated-e2e-matrix:
+    if: startsWith(github.event.review.body, '/updated-e2e')
     uses: ./.github/workflows/e2e-matrix-trigger.yaml
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
