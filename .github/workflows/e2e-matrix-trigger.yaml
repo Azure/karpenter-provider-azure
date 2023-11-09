@@ -6,15 +6,21 @@ on:
   workflow_run:
     workflows: [ApprovalComment]
     types: [completed]
-  pull_request_review:
-    types: [submitted]
+  workflow_call:
+    secrets:
+      E2E_CLIENT_ID:
+        required: true
+      E2E_TENANT_ID:
+        required: true
+      E2E_SUBSCRIPTION_ID:
+        required: true
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: read  # This is required for actions/checkout
   statuses: write # ./.github/actions/commit-status/*
 jobs:
   resolve:
-    if: (github.event_name != 'workflow_run' && github.event_name != 'pull_request_review') || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || (github.event_name == 'pull_request_review' && startsWith(github.event.review.body, '/new-e2e-test'))
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/resolve-args.yaml
   e2e-matrix:
     needs: [resolve]

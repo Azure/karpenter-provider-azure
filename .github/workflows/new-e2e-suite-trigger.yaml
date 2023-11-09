@@ -1,0 +1,16 @@
+name: E2EMatrixTrigger
+on:
+    pull_request_review:
+        types: [submitted]
+permissions:
+  id-token: write # This is required for requesting the JWT
+  contents: read  # This is required for actions/checkout
+  statuses: write # ./.github/actions/commit-status/*
+jobs:
+  trigger-e2e-matrix:
+    if: startsWith(github.event.review.body, '/new-e2e-suite')
+    uses: ./.github/workflows/e2e-matrix-trigger.yaml
+    secrets:
+      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
+      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
+      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
