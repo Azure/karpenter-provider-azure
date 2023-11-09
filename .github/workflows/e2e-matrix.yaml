@@ -17,6 +17,10 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        type: string
 jobs:
   initialize-generative-params:
     runs-on: ubuntu-latest
