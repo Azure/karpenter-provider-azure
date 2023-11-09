@@ -5,6 +5,8 @@ on:
     #   region:
     #     type: string
     #     default: "us-east-2"
+      git_ref:
+        type: string
       suite:
         type: string
         required: true
@@ -24,6 +26,7 @@ on:
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: read  # This is required for actions/checkout
+  statuses: write # ./.github/actions/commit-status/*
 jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
@@ -32,6 +35,11 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - uses: actions/checkout@v3
+      - if: always() && github.event_name == 'workflow_run'
+        uses: ./.github/actions/commit-status/start
+        with:
+          name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
+          git_ref: ${{ inputs.git_ref }}
       - uses: ./.github/actions/install-deps
       - name: az login
         uses: azure/login@v1
@@ -120,3 +128,8 @@ jobs:
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
+      - if: always() && github.event_name == 'workflow_run'
+        uses: ./.github/actions/commit-status/end
+        with:
+          name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
+          git_ref: ${{ inputs.git_ref }}
