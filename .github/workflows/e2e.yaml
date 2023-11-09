@@ -1,5 +1,16 @@
 name: E2E
 on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        type: string
+      suite:
+        type: string
+        required: true
+      hash:
+        type: string
+        description: "suffix to use on the Azure resources"
+        required: true
   workflow_call:
     inputs:
     #   region:
