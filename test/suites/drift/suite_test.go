@@ -63,6 +63,7 @@ var _ = Describe("Drift", func() {
 	BeforeEach(func() {
 		env.ExpectSettingsOverridden(v1.EnvVar{Name: "FEATURE_GATES", Value: "Drift=true"})
 
+		panic("test should fail")
 		nodePool.Spec.Template.Spec.Requirements = []v1.NodeSelectorRequirement{{
 			Key:      v1.LabelInstanceTypeStable,
 			Operator: v1.NodeSelectorOpIn,
