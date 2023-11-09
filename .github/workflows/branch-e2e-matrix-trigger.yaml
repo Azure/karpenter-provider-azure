@@ -1,4 +1,4 @@
-name: TriggerBranchE2EMatrix
+name: BranchE2EMatrixTrigger
 on:
   pull_request_review:
     types: [submitted]
@@ -11,7 +11,7 @@ jobs:
     if: startsWith(github.event.review.body, '/branch-e2e')
     uses: ./.github/workflows/e2e-matrix.yaml
     with:
-      git_ref: ""
+      git_ref: ${{ github.event.review.commit_id }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
