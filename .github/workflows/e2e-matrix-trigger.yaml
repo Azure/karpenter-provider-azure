@@ -6,14 +6,6 @@ on:
   workflow_run:
     workflows: [ApprovalComment]
     types: [completed]
-  workflow_call:
-    secrets:
-      E2E_CLIENT_ID:
-        required: true
-      E2E_TENANT_ID:
-        required: true
-      E2E_SUBSCRIPTION_ID:
-        required: true
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: read  # This is required for actions/checkout
