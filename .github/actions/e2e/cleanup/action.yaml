@@ -22,10 +22,15 @@ inputs:
   acr_name:
     description: "Name of the acr holding the karpenter image"
     required: true
+  git_ref:
+    description: "The git commit, tag, or branch to check out"
+    required: false
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.git_ref }}
     - name: az login
       uses: azure/login@v1
       with:
