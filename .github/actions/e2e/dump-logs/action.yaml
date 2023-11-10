@@ -25,32 +25,32 @@ runs:
   - uses: actions/checkout@v4
     with:
       ref: ${{ inputs.git_ref }}
-    - name: az login
-      uses: azure/login@v1
-      with:
-        client-id: ${{ inputs.client-id }}
-        tenant-id: ${{ inputs.tenant-id }}
-        subscription-id: ${{ inputs.subscription-id }}
-    - name: az set sub
-      shell: bash
-      run: az account set --subscription ${{ inputs.subscription-id }}
-    - name: controller-logs
-      shell: bash
-      run: |
-        echo "step: controller-logs"
-        AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
-        POD_NAME=$(kubectl get pods -n karpenter --no-headers -o custom-columns=":metadata.name" | tail -n 1)
-        echo "logs from pod ${POD_NAME}"
-        kubectl logs "${POD_NAME}" -n karpenter -c controller
-    - name: describe-karpenter-pods
-      shell: bash
-      run: |
-        echo "step: describe-karpenter-pods"
-        AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
-        kubectl describe pods -n karpenter
-    - name: describe-nodes
-      shell: bash
-      run: |
-        echo "step: describe-nodes"
-        AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
-        kubectl describe nodes
+  - name: az login
+    uses: azure/login@v1
+    with:
+      client-id: ${{ inputs.client-id }}
+      tenant-id: ${{ inputs.tenant-id }}
+      subscription-id: ${{ inputs.subscription-id }}
+  - name: az set sub
+    shell: bash
+    run: az account set --subscription ${{ inputs.subscription-id }}
+  - name: controller-logs
+    shell: bash
+    run: |
+      echo "step: controller-logs"
+      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
+      POD_NAME=$(kubectl get pods -n karpenter --no-headers -o custom-columns=":metadata.name" | tail -n 1)
+      echo "logs from pod ${POD_NAME}"
+      kubectl logs "${POD_NAME}" -n karpenter -c controller
+  - name: describe-karpenter-pods
+    shell: bash
+    run: |
+      echo "step: describe-karpenter-pods"
+      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
+      kubectl describe pods -n karpenter
+  - name: describe-nodes
+    shell: bash
+    run: |
+      echo "step: describe-nodes"
+      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
+      kubectl describe nodes
