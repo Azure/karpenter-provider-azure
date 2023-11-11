@@ -28,7 +28,7 @@ exec 2>&1
 logk="logs/az-perftest-${START}-${replicas}-karpenter.log"
 
 # prep
-kubectl apply -f examples/v1beta1/general-purpose-small-nodes.yaml 
+kubectl apply -f hack/azure/general-purpose-small-nodes.yaml 
 kubectl apply -f examples/workloads/inflate.yaml
 
 # scale up
@@ -52,7 +52,7 @@ sleep 30
 kubectl scale --replicas=0 deployment/inflate
 date
 kubectl delete --wait=false nodes -l karpenter.sh/nodepool
-time kubectl wait --for=delete   nodes -l karpenter.sh/nodepool
+time kubectl wait --for=delete nodes -l karpenter.sh/nodepool --timeout=2h
 ENDDOWN=$(date ${FMT})
 date
 
