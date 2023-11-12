@@ -35,7 +35,12 @@ import (
 
 // This test requires the Azure Disk CSI driver to be installed
 var _ = Describe("Dynamic PVC", func() {
-	It("should run a pod with a dynamic persistent volume", func() {
+	// DISABLED by charliedmcb.
+	// TODO: need to clean up this test suite, and any bugs to reduce flakiness
+	// https://github.com/Azure/karpenter/actions/runs/6831075465/job/18580013137
+	// https://github.com/Azure/karpenter/actions/runs/6831074784/job/18580011978
+	// https://github.com/Azure/karpenter/actions/runs/6831070561/job/18580003437
+	XIt("should run a pod with a dynamic persistent volume", func() {
 		// Ensure that the Azure Disk driver is installed, or we can't run the test.
 		var ds appsv1.DaemonSet
 		if err := env.Client.Get(env.Context, client.ObjectKey{
