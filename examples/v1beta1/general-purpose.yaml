@@ -18,9 +18,6 @@ spec:
         - key: kubernetes.io/os
           operator: In
           values: ["linux"]
-        - key: karpenter.azure.com/sku-hyperv-generation
-          operator: In
-          values: ["2"]
         - key: karpenter.sh/capacity-type
           operator: In
           values: ["on-demand"]
