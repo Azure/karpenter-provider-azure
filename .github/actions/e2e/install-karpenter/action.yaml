@@ -46,11 +46,6 @@ runs:
   - name: deploy karpenter to cluster
     shell: bash
     run: AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run
-  - name: wait for pods to settle
-    shell: bash
-    run: |
-      ${GITHUB_WORKSPACE}/.github/actions/e2e/install-karpenter/waitforgatekeeper.sh
-      sleep 10
   - name: taint nodes as karpenter-system
     shell: bash
     run: |
