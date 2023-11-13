@@ -19,6 +19,7 @@ package v1alpha2
 import (
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/scheduling"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 func init() {
@@ -61,8 +62,13 @@ var (
 	RestrictedLabelDomains = []string{
 		Group,
 	}
+
+	RestrictedLabels = sets.New(
+		LabelSKUHyperVGeneration,
+	)
+
 	AllowUndefinedLabels = func(options scheduling.CompatabilityOptions) scheduling.CompatabilityOptions {
-		options.AllowUndefined = corev1beta1.WellKnownLabels
+		options.AllowUndefined = corev1beta1.WellKnownLabels.Union(RestrictedLabels)
 		return options
 	}
 
@@ -86,7 +92,6 @@ var (
 	LabelSKUConfidential = Group + "/sku-confidential"  // c
 	LabelSKUIsolatedSize = Group + "/sku-isolated-size" // i
 
-	LabelSKUHyperVGeneration      = Group + "/sku-hyperv-generation"      // sku.HyperVGenerations
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
@@ -100,6 +105,9 @@ var (
 	LabelSKUGPUName         = Group + "/sku-gpu-name"         // ie GPU Accelerator type we parse from vmSize
 	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // ie NVIDIA, AMD, etc
 	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // ie 16, 32, etc
+
+	// Internal/restricted labels
+	LabelSKUHyperVGeneration = Group + "/sku-hyperv-generation" // sku.HyperVGenerations
 
 	// AKS labels
 	AKSLabelDomain = "kubernetes.azure.com"
