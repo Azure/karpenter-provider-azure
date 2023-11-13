@@ -18,6 +18,7 @@ package v1alpha2
 
 import (
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	"github.com/aws/karpenter-core/pkg/scheduling"
 )
 
 func init() {
@@ -34,7 +35,6 @@ func init() {
 		LabelSKUConfidential,
 		LabelSKUIsolatedSize,
 
-		LabelSKUHyperVGeneration,
 		LabelSKUAcceleratedNetworking,
 
 		LabelSKUStoragePremiumCapable,
@@ -60,6 +60,10 @@ var (
 	}
 	RestrictedLabelDomains = []string{
 		Group,
+	}
+	AllowUndefinedLabels = func(options scheduling.CompatabilityOptions) scheduling.CompatabilityOptions {
+		options.AllowUndefined = corev1beta1.WellKnownLabels
+		return options
 	}
 
 	// alternative zone label for Machine (the standard one is protected for AKS nodes)

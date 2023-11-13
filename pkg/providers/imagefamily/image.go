@@ -26,7 +26,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/scheduling"
 	"github.com/aws/karpenter-core/pkg/utils/pretty"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
@@ -72,7 +71,7 @@ func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, in
 
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
-		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, scheduling.AllowUndefinedWellKnownLabelsV1Beta1); err == nil {
+		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedLabels); err == nil {
 			communityImageName, publicGalleryURL := defaultImage.CommunityImage, defaultImage.PublicGalleryURL
 			return p.GetImageID(communityImageName, publicGalleryURL, nodeClass.Spec.GetImageVersion())
 		}
