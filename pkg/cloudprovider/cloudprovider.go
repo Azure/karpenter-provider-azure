@@ -327,7 +327,6 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	}
 
 	labels[corev1beta1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
-	labels[v1alpha2.LabelSKUHyperVGeneration] = instance.GetHyperVGeneration(vm)
 
 	// TODO: v1beta1 new kes/labels
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
