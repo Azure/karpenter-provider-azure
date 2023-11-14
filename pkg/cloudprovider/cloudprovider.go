@@ -272,7 +272,7 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *cor
 
 	reqs := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
-		return reqs.Compatible(i.Requirements, scheduling.AllowUndefinedWellKnownLabelsV1Beta1) == nil &&
+		return reqs.Compatible(i.Requirements, v1alpha2.AllowUndefinedLabels) == nil &&
 			len(i.Offerings.Requirements(reqs).Available()) > 0 &&
 			resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
 	}), nil
@@ -334,7 +334,6 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	}
 
 	labels[corev1beta1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
-	labels[v1alpha2.LabelSKUHyperVGeneration] = instance.GetHyperVGeneration(vm)
 
 	// TODO: v1beta1 new kes/labels
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {

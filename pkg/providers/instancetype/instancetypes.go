@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,9 +89,6 @@ func (p *Provider) List(
 			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *sku.Size, err)
 			continue
 		}
-		if !p.isSupportedSize(vmsize) {
-			continue
-		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
 			logging.FromContext(ctx).Errorf("parsing SKU architecture %s, %v", *sku.Size, err)
@@ -152,7 +150,13 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 	skus := cache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines))
 	logging.FromContext(ctx).Debugf("Discovered %d SKUs", len(skus))
 	for i := range skus {
-		if p.isSupported(&skus[i]) {
+		vmsize, err := skus[i].GetVMSize()
+		if err != nil {
+			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *skus[i].Size, err)
+			continue
+		}
+
+		if p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -163,36 +167,48 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *Provider) isSupported(sku *skewer.SKU) bool {
-	name := lo.FromPtr(sku.Name)
-
-	// less than 2 cpus
-	if cpu, err := sku.VCPU(); err == nil && cpu < 2 {
-		return false
-	}
-
-	// less then 3.5 GiB of memory
-	if memGiB, err := sku.Memory(); err == nil && memGiB < 3.5 {
-		return false
-	}
-
-	// filter out instances AKS does not support
-	if RestrictedVMSizes.Has(sku.GetName()) {
-		return false
-	}
-
-	// filter out GPU SKUs AKS does not support
-	if gpu, err := sku.GPU(); err == nil && gpu > 0 && !(utils.IsNvidiaEnabledSKU(name) || utils.IsMarinerEnabledGPUSKU(name)) {
-		return false
-	}
-
-	return true
+func (p *Provider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
+	return p.hasMinimumCPU(sku) &&
+		p.hasMinimumMemory(sku) &&
+		!p.isUnsupportedByAKS(sku) &&
+		!p.isUnsupportedGPU(sku) &&
+		!p.hasConstrainedCPUs(vmsize) &&
+		!p.isConfidential(sku)
 }
 
-// isSupportedSize indicates VM size is supported by AKS, based on additional SKU properties
-func (p *Provider) isSupportedSize(size *skewer.VMSizeType) bool {
-	// any SKU with constrained CPUs
-	return size.CpusConstrained == nil
+// at least 2 cpus
+func (p *Provider) hasMinimumCPU(sku *skewer.SKU) bool {
+	cpu, err := sku.VCPU()
+	return err == nil && cpu >= 2
+}
+
+// at least 3.5 GiB of memory
+func (p *Provider) hasMinimumMemory(sku *skewer.SKU) bool {
+	memGiB, err := sku.Memory()
+	return err == nil && memGiB >= 3.5
+}
+
+// instances AKS does not support
+func (p *Provider) isUnsupportedByAKS(sku *skewer.SKU) bool {
+	return RestrictedVMSizes.Has(sku.GetName())
+}
+
+// GPU SKUs AKS does not support
+func (p *Provider) isUnsupportedGPU(sku *skewer.SKU) bool {
+	name := lo.FromPtr(sku.Name)
+	gpu, err := sku.GPU()
+	return err == nil && gpu > 0 && !(utils.IsNvidiaEnabledSKU(name) || utils.IsMarinerEnabledGPUSKU(name))
+}
+
+// SKU with constrained CPUs
+func (p *Provider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
+	return vmsize.CpusConstrained != nil
+}
+
+// confidential VMs (DC, EC) are not yet supported by this Karpenter provider
+func (p *Provider) isConfidential(sku *skewer.SKU) bool {
+	size := sku.GetSize()
+	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
 }
 
 // MaxEphemeralOSDiskSizeGB returns the maximum ephemeral OS disk size for a given SKU.
