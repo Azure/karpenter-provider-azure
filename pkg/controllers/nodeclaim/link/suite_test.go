@@ -32,8 +32,6 @@ import (
 	. "knative.dev/pkg/logging/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/events"
 	coreoptions "github.com/aws/karpenter-core/pkg/operator/options"
@@ -59,8 +57,6 @@ var env *coretest.Environment
 var azureEnv *test.Environment
 var cloudProvider *cloudprovider.CloudProvider
 var linkController *link.Controller
-
-const nodeClaimLinkedAnnotationKey = v1alpha5.MachineLinkedAnnotationKey // still using the one from v1alpha5
 
 func TestAPIs(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -160,7 +156,7 @@ var _ = Describe("NodeClaimLink", func() {
 		Expect(nodeClaim.Spec.StartupTaints).To(Equal(nodePool.Spec.Template.Spec.StartupTaints))
 
 		// Expect NodeClaim has linking annotation to get NodeClaim details
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(nodeClaimLinkedAnnotationKey, providerID))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.NodeClaimLinkedAnnotationKey, providerID))
 		vm = ExpectVMExists(*vm.Name)
 		ExpectProvisionerNameTagExists(vm)
 	})
@@ -211,7 +207,7 @@ var _ = Describe("NodeClaimLink", func() {
 		))
 
 		// Expect NodeClaim has linking annotation to get NodeClaim details
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(nodeClaimLinkedAnnotationKey, providerID))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.NodeClaimLinkedAnnotationKey, providerID))
 		ExpectVMExists(*vm.Name)
 	})
 	It("should link an instance with expected kubelet from provisioner kubelet configuration", func() {
@@ -232,7 +228,7 @@ var _ = Describe("NodeClaimLink", func() {
 		Expect(lo.FromPtr(nodeClaim.Spec.Kubelet.MaxPods)).To(BeNumerically("==", 10))
 
 		// Expect NodeClaim has linking annotation to get NodeClaim details
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(nodeClaimLinkedAnnotationKey, providerID))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.NodeClaimLinkedAnnotationKey, providerID))
 		vm = ExpectVMExists(*vm.Name)
 		ExpectProvisionerNameTagExists(vm)
 	})
@@ -271,7 +267,7 @@ var _ = Describe("NodeClaimLink", func() {
 		Expect(nodeClaims.Items).To(HaveLen(100))
 
 		nodeClaimInstanceIDs := sets.New(lo.Map(nodeClaims.Items, func(m corev1beta1.NodeClaim, _ int) string {
-			return lo.Must(utils.GetVMName(m.Annotations[nodeClaimLinkedAnnotationKey]))
+			return lo.Must(utils.GetVMName(m.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey]))
 		})...)
 
 		Expect(nodeClaimInstanceIDs).To(HaveLen(len(vmNames)))
@@ -292,7 +288,7 @@ var _ = Describe("NodeClaimLink", func() {
 		nodeClaim := nodeClaims.Items[0]
 
 		// Expect NodeClaim has linking annotation to get NodeClaim details
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(nodeClaimLinkedAnnotationKey, providerID))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.NodeClaimLinkedAnnotationKey, providerID))
 		vm = ExpectVMExists(*vm.Name)
 		ExpectProvisionerNameTagExists(vm)
 	})
@@ -319,7 +315,7 @@ var _ = Describe("NodeClaimLink", func() {
 		Expect(env.Client.List(ctx, nodeClaims)).To(Succeed())
 		Expect(nodeClaims.Items).To(HaveLen(1))
 		nodeClaim := nodeClaims.Items[0]
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(nodeClaimLinkedAnnotationKey, providerID))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.NodeClaimLinkedAnnotationKey, providerID))
 	})
 	It("should not link an instance without a provisioner tag", func() {
 		v := ExpectVMExists(*vm.Name)
@@ -378,7 +374,7 @@ var _ = Describe("NodeClaimLink", func() {
 		nodeClaim := nodeClaims.Items[0]
 
 		// Expect NodeClaim has linking annotation to get NodeClaim details
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(nodeClaimLinkedAnnotationKey, providerID))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.NodeClaimLinkedAnnotationKey, providerID))
 		vm = ExpectVMExists(*vm.Name)
 		ExpectProvisionerNameTagExists(vm)
 		Expect(*v.Tags["testKey"]).To(Equal("testVal"))

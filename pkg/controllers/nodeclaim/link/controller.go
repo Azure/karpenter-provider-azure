@@ -35,8 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 
 	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
@@ -46,7 +46,6 @@ import (
 )
 
 const creationReasonLabel = "linking"
-const NodeClaimLinkedAnnotationKey = v1alpha5.MachineLinkedAnnotationKey // still using the one from v1alpha5
 
 type Controller struct {
 	kubeClient    client.Client
@@ -120,7 +119,7 @@ func (c *Controller) link(ctx context.Context, retrieved *corev1beta1.NodeClaim,
 		// This annotation communicates to the nodeclaim controller that this is a nodeclaim linking scenario, not
 		// a case where we want to provision a new VM
 		nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
-			NodeClaimLinkedAnnotationKey: retrieved.Status.ProviderID,
+			v1alpha2.NodeClaimLinkedAnnotationKey: retrieved.Status.ProviderID,
 		})
 		if err := c.kubeClient.Create(ctx, nodeClaim); err != nil {
 			return err
@@ -142,7 +141,7 @@ func (c *Controller) shouldCreateLinkedNodeClaim(retrieved *corev1beta1.NodeClai
 	}
 	// We have a nodeclaim registered for this, so no need to hydrate it
 	if _, ok := lo.Find(existingNodeClaims, func(m corev1beta1.NodeClaim) bool {
-		return m.Annotations[NodeClaimLinkedAnnotationKey] == retrieved.Status.ProviderID ||
+		return m.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey] == retrieved.Status.ProviderID ||
 			m.Status.ProviderID == retrieved.Status.ProviderID
 	}); ok {
 		return false
