@@ -587,13 +587,6 @@ func GetCapacityType(instance *armcompute.VirtualMachine) string {
 	return ""
 }
 
-func GetHyperVGeneration(instance *armcompute.VirtualMachine) string {
-	if instance != nil && instance.Properties != nil && instance.Properties.InstanceView != nil && instance.Properties.InstanceView.HyperVGeneration != nil {
-		return string(*instance.Properties.InstanceView.HyperVGeneration)
-	}
-	return ""
-}
-
 func (p *Provider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType                  = "Microsoft.Compute/virtualMachines/extensions"
