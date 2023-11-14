@@ -19,12 +19,15 @@ package instance_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clock "k8s.io/utils/clock/testing"
+
 	"k8s.io/client-go/tools/record"
 
 	"github.com/Azure/karpenter/pkg/apis"
@@ -32,8 +35,11 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/Azure/karpenter/pkg/fake"
+	"github.com/Azure/karpenter/pkg/providers/instance"
 	"github.com/Azure/karpenter/pkg/test"
 	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
+	"github.com/aws/karpenter-core/pkg/controllers/provisioning"
+	"github.com/aws/karpenter-core/pkg/controllers/state"
 	"github.com/aws/karpenter-core/pkg/events"
 
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
@@ -52,6 +58,13 @@ var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv *test.Environment
 var cloudProvider *cloudprovider.CloudProvider
+var fakeClock *clock.FakeClock
+var cluster *state.Cluster
+
+var nodeClass *v1alpha2.AKSNodeClass
+var nodePool *corev1beta1.NodePool
+var nodeClaim *corev1beta1.NodeClaim
+var coreProvisioner *provisioning.Provisioner
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -61,14 +74,20 @@ func TestAzure(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
+	// TODO v1beta1 options
 	// ctx = options.ToContext(ctx, test.Options())
 	ctx = settings.ToContext(ctx, test.Settings())
-
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
 
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
+	fakeClock = &clock.FakeClock{}
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+
+	cluster.Reset()
+	azureEnv.Reset()
 })
 
 var _ = AfterSuite(func() {
@@ -76,39 +95,38 @@ var _ = AfterSuite(func() {
 	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
 })
 
-var _ = Describe("InstanceProvider", func() {
-
-	var nodeClass *v1alpha2.AKSNodeClass
-	var nodePool *corev1beta1.NodePool
-	var nodeClaim *corev1beta1.NodeClaim
-
-	BeforeEach(func() {
-		nodeClass = test.AKSNodeClass()
-		nodePool = coretest.NodePool(corev1beta1.NodePool{
-			Spec: corev1beta1.NodePoolSpec{
-				Template: corev1beta1.NodeClaimTemplate{
-					Spec: corev1beta1.NodeClaimSpec{
-						NodeClassRef: &corev1beta1.NodeClassReference{
-							Name: nodeClass.Name,
-						},
+var _ = BeforeEach(func() {
+	nodeClass = test.AKSNodeClass()
+	nodePool = coretest.NodePool(corev1beta1.NodePool{
+		Spec: corev1beta1.NodePoolSpec{
+			Template: corev1beta1.NodeClaimTemplate{
+				Spec: corev1beta1.NodeClaimSpec{
+					NodeClassRef: &corev1beta1.NodeClassReference{
+						Name: nodeClass.Name,
 					},
 				},
 			},
-		})
-		nodeClaim = coretest.NodeClaim(corev1beta1.NodeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					corev1beta1.NodePoolLabelKey: nodePool.Name,
-				},
-			},
-			Spec: corev1beta1.NodeClaimSpec{
-				NodeClassRef: &corev1beta1.NodeClassReference{
-					Name: nodeClass.Name,
-				},
-			},
-		})
+		},
 	})
+	nodeClaim = coretest.NodeClaim(corev1beta1.NodeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: map[string]string{
+				corev1beta1.NodePoolLabelKey: nodePool.Name,
+			},
+		},
+		Spec: corev1beta1.NodeClaimSpec{
+			NodeClassRef: &corev1beta1.NodeClassReference{
+				Name: nodeClass.Name,
+			},
+		},
+	})
+})
 
+var _ = AfterEach(func() {
+	ExpectCleanedUp(ctx, env.Client)
+})
+
+var _ = Describe("InstanceProvider", func() {
 	It("should return an ICE error when all attempted instance types return an ICE error", func() {
 		ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 		zones := []string{"1", "2", "3"}
@@ -126,5 +144,21 @@ var _ = Describe("InstanceProvider", func() {
 		instance, err := azureEnv.InstanceProvider.Create(ctx, nodeClass, nodeClaim, instanceTypes)
 		Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 		Expect(instance).To(BeNil())
+	})
+
+	It("should create VM with valid ARM tags", func() {
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
+		vm, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+		Expect(err).To(BeNil())
+		tags := vm.Tags
+		Expect(lo.FromPtr(tags[instance.NodePoolTagKey])).To(Equal(nodePool.Name))
+		Expect(lo.PickBy(tags, func(key string, value *string) bool {
+			return strings.Contains(key, "/") // ARM tags can't contain '/'
+		})).To(HaveLen(0))
 	})
 })
