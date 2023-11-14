@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 )
 
-// generated at 2023-11-04T06:56:34Z
+// generated at 2023-11-10T01:03:33Z
 
 // ResourceSkus is a list of all available skus from azure
 var ResourceSkus = []compute.ResourceSku{
@@ -382,6 +382,49 @@ var ResourceSkus = []compute.ResourceSku{
 			"1",
 			"3",
 			"2",
+		},
+		},
+		},
+	},
+	{
+		Name:         lo.ToPtr("Standard_DC8s_v3"),
+		Tier:         lo.ToPtr("Standard"),
+		Kind:         lo.ToPtr(""),
+		Size:         lo.ToPtr("DC8s_v3"),
+		Family:       lo.ToPtr("standardDCSv3Family"),
+		ResourceType: lo.ToPtr("virtualMachines"),
+		APIVersions:  &[]string{},
+		Costs:        &[]compute.ResourceSkuCosts{},
+		Restrictions: &[]compute.ResourceSkuRestrictions{},
+		Capabilities: &[]compute.ResourceSkuCapabilities{
+			{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("0")},
+			{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+			{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("8")},
+			{Name: lo.ToPtr("MemoryPreservingMaintenanceSupported"), Value: lo.ToPtr("True")},
+			{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V2")},
+			{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("64")},
+			{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("32")},
+			{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+			{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+			{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+			{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+			{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("8")},
+			{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("1")},
+			{Name: lo.ToPtr("CombinedTempDiskAndCachedIOPS"), Value: lo.ToPtr("77000")},
+			{Name: lo.ToPtr("CombinedTempDiskAndCachedReadBytesPerSecond"), Value: lo.ToPtr("77000000000")},
+			{Name: lo.ToPtr("CombinedTempDiskAndCachedWriteBytesPerSecond"), Value: lo.ToPtr("77000000000")},
+			{Name: lo.ToPtr("UncachedDiskIOPS"), Value: lo.ToPtr("25600")},
+			{Name: lo.ToPtr("UncachedDiskBytesPerSecond"), Value: lo.ToPtr("384000000")},
+			{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("False")},
+			{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+			{Name: lo.ToPtr("CapacityReservationSupported"), Value: lo.ToPtr("False")},
+			{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+			{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+			{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
+		},
+		Locations: &[]string{"eastus"},
+		LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			"1",
 		},
 		},
 		},
