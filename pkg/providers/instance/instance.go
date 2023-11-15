@@ -37,7 +37,6 @@ import (
 	"github.com/Azure/karpenter/pkg/providers/instancetype"
 	"github.com/Azure/karpenter/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
-	"github.com/Azure/karpenter/pkg/utils"
 
 	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/aws/karpenter-core/pkg/scheduling"
@@ -189,12 +188,7 @@ func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, erro
 	return vmList, nil
 }
 
-func (p *Provider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) error {
-	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
-	if err != nil {
-		return fmt.Errorf("getting vm name, %w", err)
-	}
-
+func (p *Provider) Delete(ctx context.Context, vmName string) error {
 	logging.FromContext(ctx).Debugf("Deleting virtual machine %s", vmName)
 	return deleteVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
 }

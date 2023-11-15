@@ -188,7 +188,14 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *corev1be
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) error {
-	return c.instanceProvider.Delete(ctx, nodeClaim)
+	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("nodeclaim", nodeClaim.Name))
+
+	providerID := lo.Ternary(nodeClaim.Status.ProviderID != "", nodeClaim.Status.ProviderID, nodeClaim.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey])
+	vmName, err := utils.GetVMName(providerID)
+	if err != nil {
+		return fmt.Errorf("getting VM name, %w", err)
+	}
+	return c.instanceProvider.Delete(ctx, vmName)
 }
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
