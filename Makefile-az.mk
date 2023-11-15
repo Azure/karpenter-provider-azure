@@ -263,12 +263,6 @@ az-klogs: ## Karpenter logs
 az-kevents: ## Karpenter events
 	kubectl get events -A --field-selector source=karpenter
 
-az-provision-gpus:
-	kubectl apply -f examples/workloads/device-plugin.yaml
-	kubectl apply -f examples/provisioner/gpu-provisioner.yaml
-	kubectl apply -f examples/workloads/samples-mnist.yaml
-
-
 az-node-viewer: ## Watch nodes using eks-node-viewer
 	eks-node-viewer --disable-pricing --node-selector "karpenter.sh/nodepool" # --resources cpu,memory
 
