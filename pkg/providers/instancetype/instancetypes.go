@@ -160,7 +160,7 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 			continue
 		}
 
-		if p.isSupported(&skus[i], vmsize) {
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
