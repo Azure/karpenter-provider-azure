@@ -5,9 +5,20 @@ on:
 
 jobs:
   approval-comment:
-    if: startsWith(github.event.review.body, '/e2e')
+    if: startsWith(github.event.review.body, '/test')
     runs-on: ubuntu-latest
     steps:
-      - name: run e2e
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Save info about the review comment as an artifact for other workflows that run on workflow_run to download them
+        env:
+          REVIEW_BODY: ${{ github.event.review.body }}
         run: |
-          echo "run e2e"
+          mkdir -p /tmp/artifacts
+          { echo ${{ github.event.pull_request.number }}; echo ${{ github.event.review.commit_id }}; } >> /tmp/artifacts/metadata.txt
+          cat /tmp/artifacts/metadata.txt
+      - uses: actions/upload-artifact@v3
+        with:
+          name: artifacts
+          path: /tmp/artifacts
