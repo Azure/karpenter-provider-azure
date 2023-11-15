@@ -117,9 +117,13 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
-	return sets.New(lo.Map(lo.Keys(sku.AvailabilityZones(region)), func(zone string, _ int) string {
-		return fmt.Sprintf("%s-%s", region, zone)
-	})...)
+	if hasZonalSupport(region) {
+		return sets.New(lo.Map(lo.Keys(sku.AvailabilityZones(region)), func(zone string, _ int) string {
+			return fmt.Sprintf("%s-%s", region, zone)
+		})...)
+	}
+
+	return sets.New("") // empty string means non-zonal offering
 }
 
 func (p *Provider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) []cloudprovider.Offering {
@@ -232,4 +236,48 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 	}
 	// convert bytes to GB
 	return maxDiskBytes / float64(units.Gigabyte)
+}
+
+var (
+	zonalRegions = map[string]bool{
+		// Americas
+		"brazilsouth":    true,
+		"canadacentral":  true,
+		"centralus":      true,
+		"eastus":         true,
+		"eastus2":        true,
+		"southcentralus": true,
+		"usgovvirginia":  true,
+		"westus2":        true,
+		"westus3":        true,
+		// Europe
+		"francecentral":      true,
+		"italynorth":         true,
+		"germanywestcentral": true,
+		"norwayeast":         true,
+		"northeurope":        true,
+		"uksouth":            true,
+		"westeurope":         true,
+		"swedencentral":      true,
+		"switzerlandnorth":   true,
+		"polandcentral":      true,
+		// Middle East
+		"qatarcentral":  true,
+		"uaenorth":      true,
+		"israelcentral": true,
+		// Africa
+		"southafricanorth": true,
+		// Asia Pacific
+		"australiaeast": true,
+		"centralindia":  true,
+		"japaneast":     true,
+		"koreacentral":  true,
+		"southeastasia": true,
+		"eastasia":      true,
+		"chinanorth3":   true,
+	}
+)
+
+func hasZonalSupport(region string) bool {
+	return zonalRegions[region]
 }
