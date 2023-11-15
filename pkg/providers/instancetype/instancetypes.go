@@ -239,45 +239,47 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 }
 
 var (
-	zonalRegions = map[string]bool{
+	// https://learn.microsoft.com/en-us/azure/reliability/availability-zones-service-support#azure-regions-with-availability-zone-support
+	// (could also be obtained programmatically)
+	zonalRegions = sets.New(
 		// Americas
-		"brazilsouth":    true,
-		"canadacentral":  true,
-		"centralus":      true,
-		"eastus":         true,
-		"eastus2":        true,
-		"southcentralus": true,
-		"usgovvirginia":  true,
-		"westus2":        true,
-		"westus3":        true,
+		"brazilsouth",
+		"canadacentral",
+		"centralus",
+		"eastus",
+		"eastus2",
+		"southcentralus",
+		"usgovvirginia",
+		"westus2",
+		"westus3",
 		// Europe
-		"francecentral":      true,
-		"italynorth":         true,
-		"germanywestcentral": true,
-		"norwayeast":         true,
-		"northeurope":        true,
-		"uksouth":            true,
-		"westeurope":         true,
-		"swedencentral":      true,
-		"switzerlandnorth":   true,
-		"polandcentral":      true,
+		"francecentral",
+		"italynorth",
+		"germanywestcentral",
+		"norwayeast",
+		"northeurope",
+		"uksouth",
+		"westeurope",
+		"swedencentral",
+		"switzerlandnorth",
+		"polandcentral",
 		// Middle East
-		"qatarcentral":  true,
-		"uaenorth":      true,
-		"israelcentral": true,
+		"qatarcentral",
+		"uaenorth",
+		"israelcentral",
 		// Africa
-		"southafricanorth": true,
+		"southafricanorth",
 		// Asia Pacific
-		"australiaeast": true,
-		"centralindia":  true,
-		"japaneast":     true,
-		"koreacentral":  true,
-		"southeastasia": true,
-		"eastasia":      true,
-		"chinanorth3":   true,
-	}
+		"australiaeast",
+		"centralindia",
+		"japaneast",
+		"koreacentral",
+		"southeastasia",
+		"eastasia",
+		"chinanorth3",
+	)
 )
 
 func hasZonalSupport(region string) bool {
-	return zonalRegions[region]
+	return zonalRegions.Has(region)
 }
