@@ -253,7 +253,6 @@ var (
 		"--enforce-node-allocatable":          "pods",
 		"--event-qps":                         "0",
 		"--eviction-hard":                     "memory.available<750Mi,nodefs.available<10%,nodefs.inodesFree<5%",
-		"--feature-gates":                     "CSIMigrationAzureFile=true,DelegateFSGroupToCSIDriver=true,RotateKubeletServerCertificate=true",
 		"--image-gc-high-threshold":           "85",
 		"--image-gc-low-threshold":            "80",
 		"--keep-terminated-pod-volumes":       "false",

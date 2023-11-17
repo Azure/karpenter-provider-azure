@@ -131,14 +131,30 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("Filtering in InstanceType Provider List", func() {
-		It("should filter out skus that are explicitly marked as restricted", func() {
-			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
-			Expect(err).NotTo(HaveOccurred())
-			for _, instanceType := range instanceTypes {
-				// We should not see any instance types in the restricted list
-				Expect(instancetype.RestrictedVMSizes.Has(instanceType.Name)).To(BeFalse())
-			}
+		var instanceTypes corecloudprovider.InstanceTypes
+		var err error
+		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+		BeforeEach(func() {
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
 		})
+
+		It("should not include SKUs marked as restricted", func() {
+			isRestricted := func(instanceType *corecloudprovider.InstanceType) bool {
+				return instancetype.RestrictedVMSizes.Has(instanceType.Name)
+			}
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(isRestricted, Equal(true))))
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(isRestricted, Equal(true))))
+		})
+		It("should not include SKUs with constrained CPUs, but include unconstrained ones", func() {
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_M8-2ms"))))
+			Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+		})
+		It("should not include confidential SKUs", func() {
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_DC8s_v3"))))
+		})
+
 	})
 
 	Context("Ephemeral Disk", func() {
@@ -563,12 +579,6 @@ var _ = Describe("InstanceType Provider", func() {
 			gpuQuanityNonGPU, ok := normalNode.Capacity["nvidia.com/gpu"]
 			Expect(ok).To(BeTrue(), "Expected nvidia.com/gpu to be present in capacity, and be zero")
 			Expect(gpuQuanityNonGPU.Value()).To(Equal(int64(0)))
-		})
-
-		It("should not include SKUs with constrained CPUs, but include unconstrained ones", func() {
-			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
-			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_M8-2ms"))))
-			Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
 		})
 	})
 
