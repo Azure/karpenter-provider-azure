@@ -68,10 +68,14 @@ var (
 		string(compute.Regular): corev1beta1.CapacityTypeOnDemand,
 	}
 
-	SubscriptionQuotaReached = "SubscriptionQuotaReached"
-	ZonalAllocationFailure   = "ZonalAllocationFailure"
+	SubscriptionQuotaReachedReason = "SubscriptionQuotaReached"
+	ZonalAllocationFailureReason   = "ZonalAllocationFailure"
+	SKUNotAvailableReason          = "SKUNotAvailable"
 
-	DurationForNewQuotaRequest = 1 * time.Hour
+	SKUNotAvailableErrorCode = "SkuNotAvailable"
+
+	SubscriptionQuotaReachedTTL = 1 * time.Hour
+	SKUNotAvailableTTL          = 23 * time.Hour
 )
 
 type Resource = map[string]interface{}
@@ -440,10 +444,16 @@ func (p *Provider) launchInstance(
 	return resp, instanceType, nil
 }
 
+// isSKUNotAvailable - to be moved to azure-ask-for-go-extensions
+func isSKUNotAvailable(err error) bool {
+	azErr := sdkerrors.IsResponseError(err)
+	return azErr != nil && azErr.ErrorCode == "SkuNotAvailable"
+}
+
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	if sdkerrors.SubscriptionQuotaHasBeenReached(err) {
 		// Subscription quota reached, mark the instance type as unavailable in all zones available to the offering
-		// THis will also update the TTL for an existing offering in the cache that is already unavailable
+		// This will also update the TTL for an existing offering in the cache that is already unavailable
 		for _, offering := range instanceType.Offerings {
 			if offering.CapacityType != capacityType {
 				continue
@@ -452,14 +462,20 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 			// If we have a quota limit of 0 vcpus, we mark the offerings unavailable for an hour.
 			// CPU limits of 0 are usually due to a subscription having no allocated quota for that instance type at all on the subscription.
 			if cpuLimitIsZero(err) {
-				p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReached, instanceType.Name, offering.Zone, capacityType, DurationForNewQuotaRequest)
+				p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReachedReason, instanceType.Name, offering.Zone, capacityType, SubscriptionQuotaReachedTTL)
 			} else {
-				p.unavailableOfferings.MarkUnavailable(ctx, SubscriptionQuotaReached, instanceType.Name, offering.Zone, capacityType)
+				p.unavailableOfferings.MarkUnavailable(ctx, SubscriptionQuotaReachedReason, instanceType.Name, offering.Zone, capacityType)
 			}
 		}
 	} else if sdkerrors.ZonalAllocationFailureOccurred(err) {
-		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailure, instanceType.Name, zone, corev1beta1.CapacityTypeOnDemand)
-		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailure, instanceType.Name, zone, corev1beta1.CapacityTypeSpot)
+		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, corev1beta1.CapacityTypeOnDemand)
+		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, corev1beta1.CapacityTypeSpot)
+	} else if isSKUNotAvailable(err) {
+		// SKU not available (usually as a result of restriction),
+		// mark the instance type as unavailable for all offerings
+		for _, offering := range instanceType.Offerings {
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SKUNotAvailableReason, instanceType.Name, offering.Zone, capacityType, SKUNotAvailableTTL)
+		}
 	}
 	return err
 }
