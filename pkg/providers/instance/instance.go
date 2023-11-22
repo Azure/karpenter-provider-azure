@@ -75,7 +75,8 @@ var (
 	SKUNotAvailableErrorCode = "SkuNotAvailable"
 
 	SubscriptionQuotaReachedTTL = 1 * time.Hour
-	SKUNotAvailableTTL          = 23 * time.Hour
+	SKUNotAvailableSpotTTL      = 1 * time.Hour
+	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
 )
 
 type Resource = map[string]interface{}
@@ -471,10 +472,21 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, corev1beta1.CapacityTypeOnDemand)
 		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, corev1beta1.CapacityTypeSpot)
 	} else if isSKUNotAvailable(err) {
-		// SKU not available (usually as a result of restriction),
-		// mark the instance type as unavailable for all offerings
+		// https://aka.ms/azureskunotavailable: either not available for a location or zone, or out of capacity for Spot.
+		// We only expect to observe the Spot case, not location or zone restrictions, because:
+		// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
+		// - zonal restrictions are filtered out internally by sku.AvailabilityZones, and don't get offerings
+		skuNotAvailableTTL := SKUNotAvailableSpotTTL
+		if capacityType == corev1beta1.CapacityTypeOnDemand { // should not happen, defensive check
+			logging.FromContext(ctx).Errorf("Unexpected SkuNotAvailable error for capacity type %s", capacityType)
+			skuNotAvailableTTL = SKUNotAvailableOnDemandTTL // still mark all offerings as unavailable, but with a longer TTL
+		}
+		// mark the instance type as unavailable for all offerings/zones for the capacity type
 		for _, offering := range instanceType.Offerings {
-			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SKUNotAvailableReason, instanceType.Name, offering.Zone, capacityType, SKUNotAvailableTTL)
+			if offering.CapacityType != capacityType {
+				continue
+			}
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SKUNotAvailableReason, instanceType.Name, offering.Zone, capacityType, skuNotAvailableTTL)
 		}
 	}
 	return err
