@@ -444,7 +444,7 @@ func (p *Provider) launchInstance(
 	return resp, instanceType, nil
 }
 
-// isSKUNotAvailable - to be moved to azure-ask-for-go-extensions
+// isSKUNotAvailable - to be moved to azure-sdk-for-go-extensions
 func isSKUNotAvailable(err error) bool {
 	azErr := sdkerrors.IsResponseError(err)
 	return azErr != nil && azErr.ErrorCode == "SkuNotAvailable"
