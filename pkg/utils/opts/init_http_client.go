@@ -17,11 +17,13 @@ limitations under the License.
 package opts
 
 import (
+	"net/http"
+
 	"github.com/Azure/azure-sdk-for-go-extensions/pkg/middleware"
 )
 
 var defaultHTTPClient *http.Client
 
 func init() {
-	defaultHTTPClient =  middleware.DefaultHTTPClient()
+	defaultHTTPClient = middleware.DefaultHTTPClient()
 }
