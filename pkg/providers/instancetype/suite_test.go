@@ -850,6 +850,25 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("Zone aware provisioning", func() {
+		It("should launch in the NodePool-requested zone", func() {
+			zone, vmZone := "eastus-3", "3"
+			nodePool.Spec.Template.Spec.Requirements = []v1.NodeSelectorRequirement{
+				{Key: corev1beta1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{corev1beta1.CapacityTypeSpot, corev1beta1.CapacityTypeOnDemand}},
+				{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}},
+			}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, zone))
+
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+			Expect(vm.Zones).To(ConsistOf(&vmZone))
+		})
+	})
+
 })
 
 var _ = Describe("Tax Calculator", func() {
