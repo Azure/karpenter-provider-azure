@@ -4,9 +4,10 @@ on:
     inputs:
       git_ref:
         type: string
-  #     region:
-  #       type: string
-  #       default: "us-east-2"
+      location:
+        type: string
+        description: "the azure location to run the e2e test in"
+        default: "westus2"
   #     k8s_version:
   #       type: string
   #       default: "1.27"
@@ -39,7 +40,7 @@ jobs:
       git_ref: ${{ inputs.git_ref }}
       suite: ${{ matrix.suite }}
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
-  #     region: ${{ inputs.region }}
+      location: ${{ inputs.location }}
   #     k8s_version: ${{ inputs.k8s_version }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}

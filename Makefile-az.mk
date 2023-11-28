@@ -25,7 +25,7 @@ az-mkacr: az-mkrg ## Create test ACR
 	az acr login  --name $(AZURE_ACR_NAME)
 
 az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySet for compatibility with standalone VMs)
-	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
@@ -94,10 +94,10 @@ az-rmvmss-vms: ## Delete all VMs in VMSS Flex (use with care!)
 az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 	# Note (charliedmcb): need to be objectId for E2E workflow as the pipeline identity doesn't have permissions to "query Graph API"
 	$(eval AZURE_OBJECT_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq  -r ".identityProfile.kubeletidentity.objectId"))
-	az role assignment create --assignee $(AZURE_OBJECT_ID) --resource-group $(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
-	az role assignment create --assignee $(AZURE_OBJECT_ID) --resource-group $(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
-	az role assignment create --assignee $(AZURE_OBJECT_ID) --resource-group $(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
-	az role assignment create --assignee $(AZURE_OBJECT_ID) --resource-group $(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
+	az role assignment create --assignee $(AZURE_OBJECT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
+	az role assignment create --assignee $(AZURE_OBJECT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
+	az role assignment create --assignee $(AZURE_OBJECT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
+	az role assignment create --assignee $(AZURE_OBJECT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
 	@echo Consider "make az-patch-skaffold"!
 
 az-perm-acr:
