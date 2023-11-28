@@ -14,16 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package opts
+package expectations
 
 import (
-	"net/http"
+	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go-extensions/pkg/middleware"
+	"github.com/Azure/karpenter/pkg/fake"
+	"github.com/Azure/karpenter/pkg/test"
+	. "github.com/onsi/gomega"
 )
 
-var defaultHTTPClient *http.Client
-
-func init() {
-	defaultHTTPClient = middleware.DefaultHTTPClient()
+func ExpectUnavailable(env *test.Environment, instanceType string, zone string, capacityType string) {
+	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, fmt.Sprintf("%s-%s", fake.Region, zone), capacityType)).To(BeTrue())
 }
