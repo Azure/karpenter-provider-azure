@@ -136,22 +136,6 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	return vm, nil
 }
 
-func (p *Provider) Link(ctx context.Context, vmName, provisionerName string) error {
-	vm, err := p.Get(ctx, vmName)
-	if err != nil {
-		return fmt.Errorf("linking tags, %w", err)
-	}
-	updates := armcompute.VirtualMachineUpdate{
-		Tags: lo.Assign(vm.Tags, map[string]*string{
-			NodePoolTagKey: lo.ToPtr(provisionerName),
-		}),
-	}
-	if err = UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, updates); err != nil {
-		return fmt.Errorf("linking tags, %w", err)
-	}
-	return nil
-}
-
 func (p *Provider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
 	return UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, update)
 }
