@@ -448,7 +448,7 @@ func (p *Provider) launchInstance(
 // isSKUNotAvailable - to be moved to azure-sdk-for-go-extensions
 func isSKUNotAvailable(err error) bool {
 	azErr := sdkerrors.IsResponseError(err)
-	return azErr != nil && azErr.ErrorCode == "SkuNotAvailable"
+	return azErr != nil && azErr.ErrorCode == SKUNotAvailableErrorCode
 }
 
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
