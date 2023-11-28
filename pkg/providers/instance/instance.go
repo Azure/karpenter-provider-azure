@@ -503,7 +503,7 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 	if sdkerrors.RegionalQuotaHasBeenReached(err) {
 		logging.FromContext(ctx).Error(err)
 		//nolint:stylecheck // Ignore ST1005: error strings should not be capitalized. This error message will pop up in the machine CRD and is intended to be read directly by the customer
-		return corecloudprovider.NewInsufficientCapacityError(errors.New("The regional capacity limit for your subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"))
+		return corecloudprovider.NewInsufficientCapacityError(errors.New("regional quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"))
 	}
 	return err
 }
