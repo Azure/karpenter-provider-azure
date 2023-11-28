@@ -524,8 +524,11 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	logging.FromContext(ctx).Infof("Selected instance type %s", instanceType.Name)
 	// Priority - Provisioner defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
-	// Zone - ideally random/spread from zones that support given Priority
-	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool { return o.CapacityType == priority })
+	// Zone - ideally random/spread from requested zones that support given Priority
+	requestedZones := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
+	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool {
+		return o.CapacityType == priority && requestedZones.Has(o.Zone)
+	})
 	zonesWithPriority := lo.Map(priorityOfferings, func(o corecloudprovider.Offering, _ int) string { return o.Zone })
 	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
 		// Zones in Offerings have <region>-<number> format; the zone returned from here will be used for VM instantiation,
