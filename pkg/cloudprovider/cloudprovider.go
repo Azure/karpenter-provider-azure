@@ -103,7 +103,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *corev1beta1.NodeC
 	}
 	instance, err := c.instanceProvider.Create(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating instance, %w", err)
 	}
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(*instance.Properties.HardwareProfile.VMSize)
