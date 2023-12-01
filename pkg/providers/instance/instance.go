@@ -500,7 +500,8 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 	}
 	if sdkerrors.RegionalQuotaHasBeenReached(err) {
 		logging.FromContext(ctx).Error(err)
-		return corecloudprovider.NewInsufficientCapacityError(errors.New("regional quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"))
+		// InsufficientCapacityError is appropriate here because trying any other instance type will not help
+		return corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests", capacityType))
 	}
 	return err
 }
