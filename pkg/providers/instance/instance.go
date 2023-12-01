@@ -460,7 +460,7 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 		for _, offering := range instanceType.Offerings {
 			if offering.CapacityType != capacityType {
 				continue
-			} 
+			}
 			// If we have a quota limit of 0 vcpus, we mark the offerings unavailable for an hour.
 			// CPU limits of 0 are usually due to a subscription having no allocated quota for that instance type at all on the subscription.
 			if cpuLimitIsZero(err) {
