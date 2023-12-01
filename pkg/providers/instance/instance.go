@@ -353,7 +353,7 @@ func newVMObject(
 				CapacityTypeToPriority[capacityType]),
 			),
 		},
-		Zones: []*string{&zone},
+		Zones: lo.Ternary(len(zone) > 0, []*string{&zone}, []*string{}),
 		Tags:  launchTemplate.Tags,
 	}
 	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
@@ -560,9 +560,11 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	})
 	zonesWithPriority := lo.Map(priorityOfferings, func(o corecloudprovider.Offering, _ int) string { return o.Zone })
 	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
-		// Zones in Offerings have <region>-<number> format; the zone returned from here will be used for VM instantiation,
-		// which expects just the zone number, without region
-		zone = string(zone[len(zone)-1])
+		if len(zone) > 0 {
+			// Zones in zonal Offerings have <region>-<number> format; the zone returned from here will be used for VM instantiation,
+			// which expects just the zone number, without region
+			zone = string(zone[len(zone)-1])
+		}
 		return instanceType, priority, zone
 	}
 	return nil, "", ""
@@ -637,6 +639,7 @@ func (p *Provider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtens
 	return vmExtension
 }
 
+// GetZoneID returns the zone ID for the given virtual machine, or an empty string if there is no zone specified
 func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
 	if vm == nil {
 		return "", fmt.Errorf("cannot pass in a nil virtual machine")
@@ -645,7 +648,7 @@ func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
 		return "", fmt.Errorf("virtual machine is missing name")
 	}
 	if vm.Zones == nil {
-		return "", fmt.Errorf("virtual machine %v zones are nil", *vm.Name)
+		return "", nil
 	}
 	if len(vm.Zones) == 1 {
 		return *(vm.Zones)[0], nil
@@ -653,7 +656,7 @@ func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
 	if len(vm.Zones) > 1 {
 		return "", fmt.Errorf("virtual machine %v has multiple zones", *vm.Name)
 	}
-	return "", fmt.Errorf("virtual machine %v does not have any zones specified", *vm.Name)
+	return "", nil
 }
 
 func GetListQueryBuilder(rg string) *kql.Builder {
