@@ -454,7 +454,7 @@ func isSKUNotAvailable(err error) bool {
 
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	if sdkerrors.SKUFamilyQuotaHasBeenReached(err) {
-		// Subscription quota has reached for this vm sku, mark the instance type as unavailable in all zones available to the offering
+		// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
 		// This will also update the TTL for an existing offering in the cache that is already unavailable
 
 		logging.FromContext(ctx).Error(err)
