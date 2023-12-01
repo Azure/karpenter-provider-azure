@@ -470,7 +470,7 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 			}
 		}
 		return fmt.Errorf("subscription level quota for %s has been reached (may try provision an alternative instance type)", instanceType.Name)
-	} 
+	}
 	if isSKUNotAvailable(err) {
 		// https://aka.ms/azureskunotavailable: either not available for a location or zone, or out of capacity for Spot.
 		// We only expect to observe the Spot case, not location or zone restrictions, because:
@@ -500,7 +500,6 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 	}
 	if sdkerrors.RegionalQuotaHasBeenReached(err) {
 		logging.FromContext(ctx).Error(err)
-		//nolint:stylecheck // Ignore ST1005: error strings should not be capitalized. This error message will pop up in the machine CRD and is intended to be read directly by the customer
 		return corecloudprovider.NewInsufficientCapacityError(errors.New("regional quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"))
 	}
 	return err
