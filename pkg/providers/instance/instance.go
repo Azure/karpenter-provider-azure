@@ -19,7 +19,6 @@ package instance
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -490,7 +489,9 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 			}
 			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SKUNotAvailableReason, instanceType.Name, offering.Zone, capacityType, skuNotAvailableTTL)
 		}
-		return err
+
+		logging.FromContext(ctx).Error(err)
+		return fmt.Errorf("the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable", instanceType.Name, zone, capacityType)
 	}
 	if sdkerrors.ZonalAllocationFailureOccurred(err) {
 		logging.FromContext(ctx).With("zone", zone).Error(err)
