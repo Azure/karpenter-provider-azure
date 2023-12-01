@@ -469,7 +469,7 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 				p.unavailableOfferings.MarkUnavailable(ctx, SubscriptionQuotaReachedReason, instanceType.Name, offering.Zone, capacityType)
 			}
 		}
-		return fmt.Errorf("subscription level quota for %s has been reached (may try provision an alternative instance type)", instanceType.Name)
+		return fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
 	}
 	if isSKUNotAvailable(err) {
 		// https://aka.ms/azureskunotavailable: either not available for a location or zone, or out of capacity for Spot.
