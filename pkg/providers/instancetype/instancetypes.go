@@ -117,9 +117,13 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
-	return sets.New(lo.Map(lo.Keys(sku.AvailabilityZones(region)), func(zone string, _ int) string {
-		return fmt.Sprintf("%s-%s", region, zone)
-	})...)
+	if hasZonalSupport(region) {
+		return sets.New(lo.Map(lo.Keys(sku.AvailabilityZones(region)), func(zone string, _ int) string {
+			return fmt.Sprintf("%s-%s", region, zone)
+		})...)
+	}
+
+	return sets.New("") // empty string means non-zonal offering
 }
 
 func (p *Provider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) []cloudprovider.Offering {
@@ -156,7 +160,7 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 			continue
 		}
 
-		if p.isSupported(&skus[i], vmsize) {
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -232,4 +236,50 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 	}
 	// convert bytes to GB
 	return maxDiskBytes / float64(units.Gigabyte)
+}
+
+var (
+	// https://learn.microsoft.com/en-us/azure/reliability/availability-zones-service-support#azure-regions-with-availability-zone-support
+	// (could also be obtained programmatically)
+	zonalRegions = sets.New(
+		// Americas
+		"brazilsouth",
+		"canadacentral",
+		"centralus",
+		"eastus",
+		"eastus2",
+		"southcentralus",
+		"usgovvirginia",
+		"westus2",
+		"westus3",
+		// Europe
+		"francecentral",
+		"italynorth",
+		"germanywestcentral",
+		"norwayeast",
+		"northeurope",
+		"uksouth",
+		"westeurope",
+		"swedencentral",
+		"switzerlandnorth",
+		"polandcentral",
+		// Middle East
+		"qatarcentral",
+		"uaenorth",
+		"israelcentral",
+		// Africa
+		"southafricanorth",
+		// Asia Pacific
+		"australiaeast",
+		"centralindia",
+		"japaneast",
+		"koreacentral",
+		"southeastasia",
+		"eastasia",
+		"chinanorth3",
+	)
+)
+
+func hasZonalSupport(region string) bool {
+	return zonalRegions.Has(region)
 }
