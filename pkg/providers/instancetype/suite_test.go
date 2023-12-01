@@ -48,15 +48,18 @@ import (
 	coretest "github.com/aws/karpenter-core/pkg/test"
 	. "github.com/aws/karpenter-core/pkg/test/expectations"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter/pkg/apis"
 	"github.com/Azure/karpenter/pkg/apis/settings"
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/Azure/karpenter/pkg/fake"
+	"github.com/Azure/karpenter/pkg/providers/instance"
 	"github.com/Azure/karpenter/pkg/providers/instancetype"
 	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter/pkg/test"
+	. "github.com/Azure/karpenter/pkg/test/expectations"
 	"github.com/Azure/karpenter/pkg/utils"
 )
 
@@ -374,8 +377,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Key:      v1.LabelInstanceTypeStable,
 				Operator: v1.NodeSelectorOpIn,
 				Values:   []string{"Standard_D2_v2"},
-			},
-			)
+			})
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			// Try this 100 times to make sure we don't get a node in eastus-1,
@@ -488,6 +490,34 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
 			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
+		})
+
+		Context("on SkuNotUnavailable, should cache SKU as unavailable in all zones", func() {
+			AssertUnavailable := func(sku string, capacityType string) {
+				// fake a SKU not available error
+				azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+					&azcore.ResponseError{ErrorCode: instance.SKUNotAvailableErrorCode},
+				)
+				coretest.ReplaceRequirements(nodePool,
+					v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku}},
+					v1.NodeSelectorRequirement{Key: corev1beta1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{capacityType}},
+				)
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				for _, zone := range []string{"1", "2", "3"} {
+					ExpectUnavailable(azureEnv, sku, zone, capacityType)
+				}
+			}
+
+			It("should mark SKU as unavailable in all zones for Spot", func() {
+				AssertUnavailable("Standard_D2_v2", corev1beta1.CapacityTypeSpot)
+			})
+
+			It("should mark SKU as unavailable in all zones for OnDemand", func() {
+				AssertUnavailable("Standard_D2_v2", corev1beta1.CapacityTypeOnDemand)
+			})
 		})
 	})
 	Context("Provider List", func() {
@@ -847,6 +877,25 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(lo.FromPtr(backendPools[0].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
 			Expect(lo.FromPtr(backendPools[1].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
 			Expect(lo.FromPtr(backendPools[2].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+		})
+	})
+
+	Context("Zone aware provisioning", func() {
+		It("should launch in the NodePool-requested zone", func() {
+			zone, vmZone := "eastus-3", "3"
+			nodePool.Spec.Template.Spec.Requirements = []v1.NodeSelectorRequirement{
+				{Key: corev1beta1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{corev1beta1.CapacityTypeSpot, corev1beta1.CapacityTypeOnDemand}},
+				{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}},
+			}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, zone))
+
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+			Expect(vm.Zones).To(ConsistOf(&vmZone))
 		})
 	})
 
