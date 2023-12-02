@@ -39,8 +39,8 @@ github.com/Azure/azure-kusto-go v0.14.0 h1:5XVmjh5kVgsm2scpsWisJ6Q1ZgWHJcIOPCZC1
 github.com/Azure/azure-kusto-go v0.14.0/go.mod h1:wSmXIsQwBVPHDNsSQsX98nuc12VyvxoNHQa2q9t1Ce0=
 github.com/Azure/azure-sdk-for-go v68.0.0+incompatible h1:fcYLmCpyNYRnvJbPerq7U0hS+6+I79yEDJBqVNcqUzU=
 github.com/Azure/azure-sdk-for-go v68.0.0+incompatible/go.mod h1:9XXNKU+eRnpl9moKnB4QOLf1HestfXbmab5FXxiDBjc=
-github.com/Azure/azure-sdk-for-go-extensions v0.1.3 h1:hDHVEvhqVufFPmD5b+xRjtGXSQTMEia7S/xntltnG44=
-github.com/Azure/azure-sdk-for-go-extensions v0.1.3/go.mod h1:dJfn8QUzuvyO4hGZ8pkROwd7/VQzDG8ER2SRk+V0afY=
+github.com/Azure/azure-sdk-for-go-extensions v0.1.4 h1:XNT7IWmj4u3AfSag3t2mFupHT59J58pknX+daqprjm8=
+github.com/Azure/azure-sdk-for-go-extensions v0.1.4/go.mod h1:dJfn8QUzuvyO4hGZ8pkROwd7/VQzDG8ER2SRk+V0afY=
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.0 h1:fb8kj/Dh4CSwgsOzHeZY4Xh68cFVbzXx+ONXGMY//4w=
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.0/go.mod h1:uReU2sSxZExRPBAg3qKzmAucSi51+SP1OhohieR821Q=
 github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.3.1 h1:LNHhpdK7hzUcx/k1LIcuh5k7k1LGIWLQfCjaneSj7Fc=
