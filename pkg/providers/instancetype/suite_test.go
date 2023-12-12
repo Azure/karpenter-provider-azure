@@ -66,19 +66,16 @@ import (
 var ctx context.Context
 var stop context.CancelFunc
 var env *coretest.Environment
-var azureEnv *test.Environment
+var azureEnv, azureEnvNonZonal *test.Environment
 var fakeClock *clock.FakeClock
-var coreProvisioner *provisioning.Provisioner
-var cluster *state.Cluster
-var cloudProvider *cloudprovider.CloudProvider
+var coreProvisioner, coreProvisionerNonZonal *provisioning.Provisioner
+var cluster, clusterNonZonal *state.Cluster
+var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Provider/Azure")
-}
 
-var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	// ctx = options.ToContext(ctx, test.Options())
 	ctx = settings.ToContext(ctx, test.Settings())
@@ -87,11 +84,21 @@ var _ = BeforeSuite(func() {
 
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
+	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 
 	fakeClock = &clock.FakeClock{}
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal)
+
+	RunSpecs(t, "Provider/Azure")
+}
+
+var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
@@ -126,7 +133,9 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		cluster.Reset()
+		clusterNonZonal.Reset()
 		azureEnv.Reset()
+		azureEnvNonZonal.Reset()
 	})
 
 	AfterEach(func() {
@@ -397,14 +406,12 @@ var _ = Describe("InstanceType Provider", func() {
 
 		})
 
-		It("Should not return unavailable offerings", func() {
-			zones := []string{"1", "2", "3"}
-			for _, zone := range zones {
-
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), corev1beta1.CapacityTypeSpot)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), corev1beta1.CapacityTypeOnDemand)
+		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
+			for _, zone := range azEnv.Zones() {
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeOnDemand)
 			}
-			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
+			instanceTypes, err := azEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			seeUnavailable := false
@@ -420,7 +427,10 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 			// we should see the unavailable offering in the list
 			Expect(seeUnavailable).To(BeTrue())
-		})
+		},
+			Entry("zonal", azureEnv),
+			Entry("non-zonal", azureEnvNonZonal),
+		)
 
 		It("should launch instances in a different zone than preferred", func() {
 			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), v1alpha5.CapacityTypeOnDemand)
@@ -472,25 +482,28 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 			Expect(nodeNames.Len()).To(Equal(2))
 		})
-		It("should launch instances on later reconciliation attempt with Insufficient Capacity Error Cache expiry", func() {
-			zones := []string{"1", "2", "3"}
-			for _, zone := range zones {
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), v1alpha5.CapacityTypeSpot)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), v1alpha5.CapacityTypeOnDemand)
-			}
+		DescribeTable("should launch instances on later reconciliation attempt with Insufficient Capacity Error Cache expiry",
+			func(azureEnv *test.Environment, cluster *state.Cluster, cloudProvider *cloudprovider.CloudProvider, coreProvisioner *provisioning.Provisioner) {
+				for _, zone := range azureEnv.Zones() {
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeSpot)
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeOnDemand)
+				}
 
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			pod := coretest.UnschedulablePod(coretest.PodOptions{
-				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
-			})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectNotScheduled(ctx, env.Client, pod)
-			// capacity shortage is over - expire the items from the cache and try again
-			azureEnv.UnavailableOfferingsCache.Flush()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
-		})
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
+				})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				// capacity shortage is over - expire the items from the cache and try again
+				azureEnv.UnavailableOfferingsCache.Flush()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
+			},
+			Entry("zonal", azureEnv, cluster, cloudProvider, coreProvisioner),
+			Entry("non-zonal", azureEnvNonZonal, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal),
+		)
 
 		Context("on SkuNotUnavailable, should cache SKU as unavailable in all zones", func() {
 			AssertUnavailable := func(sku string, capacityType string) {
@@ -896,6 +909,16 @@ var _ = Describe("InstanceType Provider", func() {
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm).NotTo(BeNil())
 			Expect(vm.Zones).To(ConsistOf(&vmZone))
+		})
+		It("should support provisioning in non-zonal regions", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Zones).To(BeEmpty())
 		})
 	})
 
