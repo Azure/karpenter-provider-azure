@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package pricing
 
 import (
@@ -162,43 +161,43 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := p.UpdateOnDemandPricing(ctx); err != nil {
-			logging.FromContext(ctx).Errorf("error updating on-demand pricing for region %s, %s, using existing pricing data from %s", p.region, err, err.lastUpdateTime.Format(time.RFC3339))
+		if err := p.UpdatePricing(ctx); err != nil {
+			logging.FromContext(ctx).Errorf("error updating pricing for region %s, %s, using existing pricing data for on-demand from %s, and spot from %s", p.region, err, p.onDemandUpdateTime.Format(time.RFC3339), p.spotUpdateTime.Format(time.RFC3339))
 		}
 	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := p.UpdateSpotPricing(ctx); err != nil {
-			logging.FromContext(ctx).Errorf("error updating spot pricing for region %s, %s, using existing pricing data from %s", p.region, err, err.lastUpdateTime.Format(time.RFC3339))
-		}
-	}()
-
 	wg.Wait()
 }
 
-func (p *Provider) UpdateOnDemandPricing(ctx context.Context) *Err {
+func (p *Provider) UpdatePricing(ctx context.Context) error {
 	// standard on-demand instances
 	var wg sync.WaitGroup
-	var onDemandPrices = map[string]float64{}
-	var onDemandErr error
+	onDemandPrices, spotPrices := map[string]float64{}, map[string]float64{}
+	var err error
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		onDemandErr = p.fetchPricing(ctx, onDemandPage(onDemandPrices))
+		err = p.fetchPricing(ctx, handlePage(onDemandPrices, spotPrices))
 	}()
 
 	wg.Wait()
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	err := onDemandErr
 	if err != nil {
-		return &Err{error: err, lastUpdateTime: p.onDemandUpdateTime}
+		return err
 	}
 
+	if pricingErr := p.updateOnDemandPricing(ctx, onDemandPrices); err != nil {
+		logging.FromContext(ctx).Errorf("error updating on-demand pricing for region %s, %s, using existing pricing data from %s", p.region, pricingErr, pricingErr.lastUpdateTime.Format(time.RFC3339))
+	}
+
+	if pricingErr := p.updateSpotPricing(ctx, spotPrices); err != nil {
+		logging.FromContext(ctx).Errorf("error updating spot pricing for region %s, %s, using existing pricing data from %s", p.region, pricingErr, pricingErr.lastUpdateTime.Format(time.RFC3339))
+	}
+	return nil
+}
+
+func (p *Provider) updateOnDemandPricing(ctx context.Context, onDemandPrices map[string]float64) *Err {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	if len(onDemandPrices) == 0 {
 		return &Err{error: errors.New("no on-demand pricing found"), lastUpdateTime: p.onDemandUpdateTime}
 	}
@@ -241,7 +240,7 @@ func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *cl
 	return p.pricing.GetProductsPricePages(ctx, filters, pageHandler)
 }
 
-func onDemandPage(prices map[string]float64) func(page *client.ProductsPricePage) {
+func handlePage(onDemandPrices map[string]float64, spotPrices map[string]float64) func(page *client.ProductsPricePage) {
 	return func(page *client.ProductsPricePage) {
 		for _, pItem := range page.Items {
 			if strings.HasSuffix(pItem.ProductName, " Windows") {
@@ -251,35 +250,18 @@ func onDemandPage(prices map[string]float64) func(page *client.ProductsPricePage
 				// https://learn.microsoft.com/en-us/azure/batch/batch-spot-vms#differences-between-spot-and-low-priority-vms
 				continue
 			}
-			if strings.HasSuffix(pItem.SkuName, " Spot") {
-				continue
+			if isSpotSku(pItem.SkuName) {
+				spotPrices[pItem.ArmSkuName] = pItem.RetailPrice
+			} else {
+				onDemandPrices[pItem.ArmSkuName] = pItem.RetailPrice
 			}
-			prices[pItem.ArmSkuName] = pItem.RetailPrice
 		}
 	}
 }
 
-func (p *Provider) UpdateSpotPricing(ctx context.Context) *Err {
-	// standard on-demand instances
-	var wg sync.WaitGroup
-	var spotPrices = map[string]float64{}
-	var spotErr error
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		spotErr = p.fetchPricing(ctx, spotPage(spotPrices))
-	}()
-
-	wg.Wait()
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	err := spotErr
-	if err != nil {
-		return &Err{error: err, lastUpdateTime: p.spotUpdateTime}
-	}
-
+func (p *Provider) updateSpotPricing(ctx context.Context, spotPrices map[string]float64) *Err {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	if len(spotPrices) == 0 {
 		return &Err{error: errors.New("no spot pricing found"), lastUpdateTime: p.spotUpdateTime}
 	}
@@ -292,22 +274,8 @@ func (p *Provider) UpdateSpotPricing(ctx context.Context) *Err {
 	return nil
 }
 
-func spotPage(prices map[string]float64) func(page *client.ProductsPricePage) {
-	return func(page *client.ProductsPricePage) {
-		for _, pItem := range page.Items {
-			if strings.HasSuffix(pItem.ProductName, " Windows") {
-				continue
-			}
-			if strings.HasSuffix(pItem.MeterName, " Low Priority") {
-				// https://learn.microsoft.com/en-us/azure/batch/batch-spot-vms#differences-between-spot-and-low-priority-vms
-				continue
-			}
-			if !strings.HasSuffix(pItem.SkuName, " Spot") {
-				continue
-			}
-			prices[pItem.ArmSkuName] = pItem.RetailPrice
-		}
-	}
+func isSpotSku(skuName string) bool {
+	return strings.HasSuffix(skuName, " Spot")
 }
 
 func (p *Provider) LivenessProbe(_ *http.Request) error {
@@ -330,4 +298,6 @@ func (p *Provider) Reset() {
 	defer p.mu.Unlock()
 	p.onDemandPrices = staticPricing
 	p.onDemandUpdateTime = initialPriceUpdate
+	p.spotPrices = staticPricing
+	p.spotUpdateTime = initialPriceUpdate
 }
