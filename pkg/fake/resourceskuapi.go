@@ -26,6 +26,9 @@ import (
 
 // TODO: consider using fakes from skewer itself
 
+// ResourceSkus is a map of location to resource skus
+var ResourceSkus = make(map[string][]compute.ResourceSku)
+
 type MockSkuClientSingleton struct {
 	SKUClient *ResourceSKUsAPI
 }
@@ -42,6 +45,7 @@ func (sc *MockSkuClientSingleton) Reset() {
 var _ skewer.ResourceClient = &ResourceSKUsAPI{}
 
 type ResourceSKUsAPI struct {
+	Location string
 	// skewer.ResourceClient
 }
 
@@ -51,11 +55,12 @@ func (s *ResourceSKUsAPI) Reset() {
 }
 
 func (s *ResourceSKUsAPI) ListComplete(_ context.Context, _, _ string) (compute.ResourceSkusResultIterator, error) {
+	resourceSkus := ResourceSkus[s.Location]
 	return compute.NewResourceSkusResultIterator(
 		compute.NewResourceSkusResultPage(
 			// cur
 			compute.ResourceSkusResult{
-				Value: &ResourceSkus,
+				Value: &resourceSkus,
 			},
 			// fn
 			func(ctx context.Context, result compute.ResourceSkusResult) (compute.ResourceSkusResult, error) {
