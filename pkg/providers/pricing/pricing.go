@@ -55,7 +55,8 @@ type Provider struct {
 
 type Err struct {
 	error
-	lastUpdateTime time.Time
+	lastOnDemandUpdateTime time.Time
+	lastSpotUpdateTime     time.Time
 }
 
 // NewPricingAPI returns a pricing API
@@ -161,9 +162,7 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	prices := map[client.Item]bool{}
 	err := p.fetchPricing(ctx, processPage(prices))
 	if err != nil {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-		logging.FromContext(ctx).Errorf("error featching updated pricing for region %s, %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err, p.onDemandUpdateTime.Format(time.RFC3339), p.spotUpdateTime.Format(time.RFC3339))
+		logging.FromContext(ctx).Errorf("error featching updated pricing for region %s, %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err, err.lastOnDemandUpdateTime.Format(time.RFC3339), err.lastSpotUpdateTime.Format(time.RFC3339))
 		return
 	}
 
@@ -174,7 +173,7 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		if err := p.UpdateOnDemandPricing(ctx, onDemandPrices); err != nil {
-			logging.FromContext(ctx).Errorf("error updating on-demand pricing for region %s, %s, using existing pricing data from %s", p.region, err, err.lastUpdateTime.Format(time.RFC3339))
+			logging.FromContext(ctx).Errorf("error updating on-demand pricing for region %s, %s, using existing pricing data from %s", p.region, err, err.lastOnDemandUpdateTime.Format(time.RFC3339))
 		}
 	}()
 
@@ -182,7 +181,7 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		if err := p.UpdateSpotPricing(ctx, spotPrices); err != nil {
-			logging.FromContext(ctx).Errorf("error updating spot pricing for region %s, %s, using existing pricing data from %s", p.region, err, err.lastUpdateTime.Format(time.RFC3339))
+			logging.FromContext(ctx).Errorf("error updating spot pricing for region %s, %s, using existing pricing data from %s", p.region, err, err.lastSpotUpdateTime.Format(time.RFC3339))
 		}
 	}()
 
@@ -193,7 +192,7 @@ func (p *Provider) UpdateOnDemandPricing(ctx context.Context, onDemandPrices map
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(onDemandPrices) == 0 {
-		return &Err{error: errors.New("no on-demand pricing found"), lastUpdateTime: p.onDemandUpdateTime}
+		return &Err{error: errors.New("no on-demand pricing found"), lastOnDemandUpdateTime: p.onDemandUpdateTime}
 	}
 
 	p.onDemandPrices = lo.Assign(onDemandPrices)
@@ -204,7 +203,9 @@ func (p *Provider) UpdateOnDemandPricing(ctx context.Context, onDemandPrices map
 	return nil
 }
 
-func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *client.ProductsPricePage)) error {
+func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *client.ProductsPricePage)) *Err {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	filters := []*client.Filter{
 		{
 			Field:    "priceType",
@@ -231,7 +232,11 @@ func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *cl
 			Operator: client.Equals,
 			Value:    p.region,
 		}}
-	return p.pricing.GetProductsPricePages(ctx, filters, pageHandler)
+	err := p.pricing.GetProductsPricePages(ctx, filters, pageHandler)
+	if err != nil {
+		return &Err{error: err, lastOnDemandUpdateTime: p.onDemandUpdateTime, lastSpotUpdateTime: p.spotUpdateTime}
+	}
+	return nil
 }
 
 func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePage) {
@@ -253,7 +258,7 @@ func (p *Provider) UpdateSpotPricing(ctx context.Context, spotPrices map[string]
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(spotPrices) == 0 {
-		return &Err{error: errors.New("no spot pricing found"), lastUpdateTime: p.spotUpdateTime}
+		return &Err{error: errors.New("no spot pricing found"), lastSpotUpdateTime: p.spotUpdateTime}
 	}
 
 	p.spotPrices = lo.Assign(spotPrices)
