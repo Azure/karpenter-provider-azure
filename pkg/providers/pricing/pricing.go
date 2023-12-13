@@ -161,6 +161,8 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	prices := map[client.Item]bool{}
 	err := p.fetchPricing(ctx, processPage(prices))
 	if err != nil {
+		p.mu.Lock()
+		defer p.mu.Unlock()
 		logging.FromContext(ctx).Errorf("error featching updated pricing for region %s, %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err, p.onDemandUpdateTime.Format(time.RFC3339), p.spotUpdateTime.Format(time.RFC3339))
 		return
 	}
