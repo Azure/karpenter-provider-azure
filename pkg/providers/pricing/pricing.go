@@ -264,7 +264,7 @@ func (p *Provider) UpdateSpotPricing(ctx context.Context, spotPrices map[string]
 
 func categorizePrices(prices map[client.Item]bool) (map[string]float64, map[string]float64) {
 	var onDemandPrices, spotPrices = map[string]float64{}, map[string]float64{}
-	for price := range prices {{
+	for price := range prices {
 		if strings.HasSuffix(price.SkuName, " Spot") {
 			spotPrices[price.ArmSkuName] = price.RetailPrice
 		} else {
