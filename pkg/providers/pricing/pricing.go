@@ -158,7 +158,7 @@ func (p *Provider) SpotPrice(instanceType string) (float64, bool) {
 }
 
 func (p *Provider) updatePricing(ctx context.Context) {
-	prices := []client.Item{}
+	prices := map[client.Item]bool{}
 	err := p.fetchPricing(ctx, processPage(prices))
 	if err != nil {
 		logging.FromContext(ctx).Errorf("error featching updated pricing for region %s, %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err, p.onDemandUpdateTime.Format(time.RFC3339), p.spotUpdateTime.Format(time.RFC3339))
@@ -232,7 +232,7 @@ func (p *Provider) fetchPricing(ctx context.Context, pageHandler func(output *cl
 	return p.pricing.GetProductsPricePages(ctx, filters, pageHandler)
 }
 
-func processPage(prices []client.Item) func(page *client.ProductsPricePage) {
+func processPage(prices map[client.Item]bool) func(page *client.ProductsPricePage) {
 	return func(page *client.ProductsPricePage) {
 		for _, pItem := range page.Items {
 			if strings.HasSuffix(pItem.ProductName, " Windows") {
@@ -242,7 +242,7 @@ func processPage(prices []client.Item) func(page *client.ProductsPricePage) {
 				// https://learn.microsoft.com/en-us/azure/batch/batch-spot-vms#differences-between-spot-and-low-priority-vms
 				continue
 			}
-			prices = append(prices, pItem)
+			prices[pItem] = true
 		}
 	}
 }
@@ -262,9 +262,9 @@ func (p *Provider) UpdateSpotPricing(ctx context.Context, spotPrices map[string]
 	return nil
 }
 
-func categorizePrices(prices []client.Item) (map[string]float64, map[string]float64) {
+func categorizePrices(prices map[client.Item]bool) (map[string]float64, map[string]float64) {
 	var onDemandPrices, spotPrices = map[string]float64{}, map[string]float64{}
-	for _, price := range prices {
+	for price := range prices {{
 		if strings.HasSuffix(price.SkuName, " Spot") {
 			spotPrices[price.ArmSkuName] = price.RetailPrice
 		} else {
