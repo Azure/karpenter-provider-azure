@@ -360,5 +360,8 @@ func GenerateNodeClaimName(vmName string) string {
 
 // makeZone returns the zone value in format of <region>-<zone-id>.
 func makeZone(location string, zoneID string) string {
+	if zoneID == "" {
+		return ""
+	}
 	return fmt.Sprintf("%s-%s", strings.ToLower(location), zoneID)
 }

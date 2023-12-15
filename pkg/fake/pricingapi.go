@@ -25,6 +25,7 @@ import (
 )
 
 const Region = "eastus"
+const RegionNonZonal = "westcentralus"
 
 type PricingAPI struct {
 	client.PricingAPI
