@@ -42,14 +42,12 @@ func (env *Environment) BeforeEach() {
 }
 
 func (env *Environment) Cleanup() {
-	fmt.Println("##[group]Cleanup")
-	defer fmt.Println("##[endgroup]")
 	env.Environment.Cleanup()
 	env.Environment.CleanupObjects(CleanableObjects...)
 }
 
 func (env *Environment) AfterEach() {
-	fmt.Println("##[group]AfterEach")
+	fmt.Println("##[group]AfterEach (CONTROLLER LOGS)")
 	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
 	// Ensure we reset settings after collecting the controller logs
