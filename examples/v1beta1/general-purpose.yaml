@@ -24,6 +24,8 @@ spec:
         - key: karpenter.azure.com/sku-family
           operator: In
           values: [D]
+      kubelet:
+        maxPods: 250
       nodeClassRef:
         name: default
 ---
