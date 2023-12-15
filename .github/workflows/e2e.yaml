@@ -83,7 +83,7 @@ jobs:
           sleep $(( $RANDOM % 60 + 1 ))
       - name: generate cluster name
         run: |
-          CLUSTER_NAME=$(echo mc | awk '{print tolower($0)}')
+          CLUSTER_NAME=mc
           echo "Using cluster name \"$CLUSTER_NAME\""
           echo CLUSTER_NAME=$CLUSTER_NAME >> $GITHUB_ENV
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
