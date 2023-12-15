@@ -70,7 +70,7 @@ func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment
 }
 
 func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Environment {
-	return NewRegionalEnvironment(ctx, env, "westcentralus", true)
+	return NewRegionalEnvironment(ctx, env, fake.RegionNonZonal, true)
 }
 
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
