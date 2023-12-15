@@ -19,54 +19,38 @@ pricing() {
 }
 
 skugen() {
-   SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
-  export SUBSCRIPTION_ID
-  if [ -z "${SUBSCRIPTION_ID}" ]; then
-    echo "No subscription is set. Please login and set a subscription."
-    return 1
+  location=${1:-eastus}
+
+  # minimal defensive check to ensure the subscription is not too restrictive
+  if [[ -z $(az vm list-skus --subscription "$SUBSCRIPTION_ID" --location "$location" --size Standard_D2_v5 --query "[?length(restrictions)==\`0\`]" -o tsv) ]];
+  then
+    echo "Please use a different subscription or region: Standard_D2_v5 has restrictions in the region $location for the subscription $SUBSCRIPTION_ID"
+    exit 1
   fi
-  
-  RG_NAME="skugen-sp"
-  RG_LOCATION="eastus"
- 
-  az group create --name "${RG_NAME}" --location "${RG_LOCATION}" > /dev/null 2>&1
 
-  SP_NAME="skugen-$(date +%s)"
-  
-  # Note to use skugen you need valid azure credentials, and references to token credentials 
-  # you can create a token credential by running the following command: 
-  # az ad sp create-for-rbac --name "skugen" --role contributor --scopes /subscriptions/<subscription-id>/resourceGroups/<resource-group> 
-  # and then export the following environment variables that use the returned Service Principal JSON: 
-  # export TENANT_ID=<tenant>
-  # export AAD_CLIENT_ID=<appId>
-  # export AAD_CLIENT_SECRET=<password>
-  # This script automatically creates these variables and deletes the service principal after running, 
-  # but just note these variables are required to interact with the skugen API.
-
-  # Fix for SC2086
-  SP_JSON=$(az ad sp create-for-rbac --name "${SP_NAME}" --role contributor --scopes /subscriptions/"${SUBSCRIPTION_ID}"/resourceGroups/"${RG_NAME}")
-
-  # Fixes for SC2155 and SC2086 combined
-  TENANT_ID=$(echo "$SP_JSON" | jq -r '.tenant')
-  export TENANT_ID
-
-  AAD_CLIENT_ID=$(echo "$SP_JSON" | jq -r '.appId')
-  export AAD_CLIENT_ID
-
-  AAD_CLIENT_SECRET=$(echo "$SP_JSON" | jq -r '.password')
-  export AAD_CLIENT_SECRET
-
-  GENERATED_FILE=$(pwd)/"pkg/fake/zz_generated.sku.go"
-  echo GENERATED_FILE: "${GENERATED_FILE}"
+  GENERATED_FILE=$(pwd)/"pkg/fake/zz_generated.sku.$location.go"
+  NO_UPDATE=" pkg/fake/zz_generated.sku.$location.go | 2 +- 1 file changed, 1 insertion(+), 1 deletion(-)"
   SUBJECT="SKUGEN"
-  NO_UPDATE=$' pkg/fake/zz_generated.sku.go | 2 +- 1 file changed, 1 insertion(+), 1 deletion(-)' 
 
-  go run hack/code/instancetype_testdata_gen.go -- "${GENERATED_FILE}" "eastus" "Standard_B1s,Standard_A0,Standard_D2_v2,Standard_D2_v3,Standard_DS2_v2,Standard_D2s_v3,Standard_D2_v5,Standard_F16s_v2,Standard_NC24ads_A100_v4,Standard_M8-2ms,Standard_D4s_v3,Standard_D64s_v3,Standard_DC8s_v3"
+  go run hack/code/instancetype_testdata_gen.go -- "${GENERATED_FILE}" "$location" "Standard_B1s,Standard_A0,Standard_D2_v2,Standard_D2_v3,Standard_DS2_v2,Standard_D2s_v3,Standard_D2_v5,Standard_F16s_v2,Standard_NC24ads_A100_v4,Standard_M8-2ms,Standard_D4s_v3,Standard_D64s_v3,Standard_DC8s_v3"
+  go fmt "${GENERATED_FILE}"
 
   GIT_DIFF=$(git diff --stat "${GENERATED_FILE}")
   checkForUpdates "${GIT_DIFF}" "${NO_UPDATE}" "${SUBJECT} beside timestamps since last update" "${GENERATED_FILE}"
+}
 
-  az ad sp delete --id "${AAD_CLIENT_ID}"
+
+skugen-all() {
+  SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
+  export SUBSCRIPTION_ID
+  if [ -z "${SUBSCRIPTION_ID}" ]; then
+    echo "No subscription is set. Please login and set a subscription."
+    exit 1
+  fi
+
+  # run skugen for selected regions
+  skugen eastus
+  skugen westcentralus # non-zonal region
 }
 
 
@@ -111,4 +95,4 @@ fi
 
 # Run all the codegen scripts
 pricing
-skugen
+skugen-all
