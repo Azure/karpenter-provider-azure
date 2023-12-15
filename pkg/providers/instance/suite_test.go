@@ -18,7 +18,6 @@ package instance_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,7 +30,6 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/settings"
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
-	"github.com/Azure/karpenter/pkg/fake"
 	"github.com/Azure/karpenter/pkg/test"
 	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
 	"github.com/aws/karpenter-core/pkg/events"
@@ -51,15 +49,14 @@ var ctx context.Context
 var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv *test.Environment
+var azureEnvNonZonal *test.Environment
 var cloudProvider *cloudprovider.CloudProvider
+var cloudProviderNonZonal *cloudprovider.CloudProvider
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Provider/Azure")
-}
 
-var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	// ctx = options.ToContext(ctx, test.Options())
 	ctx = settings.ToContext(ctx, test.Settings())
@@ -68,8 +65,12 @@ var _ = BeforeSuite(func() {
 
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
+	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-})
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+
+	RunSpecs(t, "Provider/Azure")
+}
 
 var _ = AfterSuite(func() {
 	stop()
@@ -107,24 +108,34 @@ var _ = Describe("InstanceProvider", func() {
 				},
 			},
 		})
+
+		azureEnv.Reset()
+		azureEnvNonZonal.Reset()
 	})
 
-	It("should return an ICE error when all attempted instance types return an ICE error", func() {
-		ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
-		zones := []string{"1", "2", "3"}
-		for _, zone := range zones {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), v1alpha5.CapacityTypeSpot)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), v1alpha5.CapacityTypeOnDemand)
-		}
-		instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
-		Expect(err).ToNot(HaveOccurred())
+	var ZonalAndNonZonalRegions = []TableEntry{
+		Entry("zonal", azureEnv, cloudProvider),
+		Entry("non-zonal", azureEnvNonZonal, cloudProviderNonZonal),
+	}
 
-		// Filter down to a single instance type
-		instanceTypes = lo.Filter(instanceTypes, func(i *corecloudprovider.InstanceType, _ int) bool { return i.Name == "Standard_D2_v2" })
+	DescribeTable("should return an ICE error when all attempted instance types return an ICE error",
+		func(azEnv *test.Environment, cp *cloudprovider.CloudProvider) {
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			for _, zone := range azEnv.Zones() {
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeOnDemand)
+			}
+			instanceTypes, err := cp.GetInstanceTypes(ctx, nodePool)
+			Expect(err).ToNot(HaveOccurred())
 
-		// Since all the offerings are unavailable, this should return back an ICE error
-		instance, err := azureEnv.InstanceProvider.Create(ctx, nodeClass, nodeClaim, instanceTypes)
-		Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
-		Expect(instance).To(BeNil())
-	})
+			// Filter down to a single instance type
+			instanceTypes = lo.Filter(instanceTypes, func(i *corecloudprovider.InstanceType, _ int) bool { return i.Name == "Standard_D2_v2" })
+
+			// Since all the offerings are unavailable, this should return back an ICE error
+			instance, err := azEnv.InstanceProvider.Create(ctx, nodeClass, nodeClaim, instanceTypes)
+			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
+			Expect(instance).To(BeNil())
+		},
+		ZonalAndNonZonalRegions,
+	)
 })

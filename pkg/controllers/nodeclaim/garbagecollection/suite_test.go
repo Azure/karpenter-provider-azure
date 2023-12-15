@@ -118,8 +118,9 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 	BeforeEach(func() {
 		id := utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, "vm-a")
 		vm = armcompute.VirtualMachine{
-			ID:   lo.ToPtr(id),
-			Name: lo.ToPtr("vm-a"),
+			ID:       lo.ToPtr(id),
+			Name:     lo.ToPtr("vm-a"),
+			Location: lo.ToPtr(fake.Region),
 			Tags: map[string]*string{
 				instance.NodePoolTagKey: lo.ToPtr("default"),
 			},
@@ -183,8 +184,9 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(
 				vmID,
 				armcompute.VirtualMachine{
-					ID:   lo.ToPtr(utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
-					Name: lo.ToPtr(vmName),
+					ID:       lo.ToPtr(utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+					Name:     lo.ToPtr(vmName),
+					Location: lo.ToPtr(fake.Region),
 					Properties: &armcompute.VirtualMachineProperties{
 						TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 					},
@@ -222,8 +224,9 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(
 				vmID,
 				armcompute.VirtualMachine{
-					ID:   lo.ToPtr(utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
-					Name: lo.ToPtr(vmName),
+					ID:       lo.ToPtr(utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+					Name:     lo.ToPtr(vmName),
+					Location: lo.ToPtr(fake.Region),
 					Properties: &armcompute.VirtualMachineProperties{
 						TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 					},
