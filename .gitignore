@@ -20,3 +20,6 @@ go.work.sum
 /logs
 # Project Specific
 *.csv
+
+# Local Netlify folder
+.netlify

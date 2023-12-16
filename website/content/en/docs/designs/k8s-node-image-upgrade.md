@@ -1,4 +1,8 @@
-# Overview
+---
+title: "K8s node image upgrade"
+linkTitle: "K8s node image upgrade"
+weight: 40
+---
 
 ## Motivation
 

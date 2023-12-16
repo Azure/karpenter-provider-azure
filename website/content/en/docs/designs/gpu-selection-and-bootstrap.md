@@ -1,7 +1,11 @@
-# Overview
-This document outlines all of the functional requirements for the preview AKS API for karpenter GPU Support. 
 
-## GPU Provisioning Requirements for Preview
+---
+title: "GPU Provisioning Requirements for Preview"
+linkTitle: "GPU Provisioning Requirements for Preview"
+weight: 80
+description: 
+  This document outlines all of the functional requirements for the preview AKS API for karpenter GPU Support. 
+---
 
 ### 1. Bootstrapping GPU Nodes
 

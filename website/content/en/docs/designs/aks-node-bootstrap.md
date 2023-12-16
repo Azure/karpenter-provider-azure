@@ -1,9 +1,20 @@
 
-# AKS Node Bootstrapping
+---
+title: "AKS Node Bootstrapping"
+linkTitle: "AKS Node Bootstrapping"
+weight: 10
+---
+
+Azure/AKS provider for Karpenter needs to be able to create standalone VMs that join AKS clusters. This requires both configuring Azure resources (e.g. network interface, VM, etc.) and bootstrapping the VM so that it connects to the cluster. The set of input parameters required for bootstrap is currently quite large, though there is an ongoing effort to reduce it. There are multiple sources for these parameters - from user input, to data from the cluster, to internal defaults.
+
+The goal of this document is to describe the relevant configuration data flows and their implementation. It starts with AKS VM bootstrapping needs, works its way up to Karpenter configuration mechanisms and sources, touches on AKS cluster configuration compatibility and drift, and then describes how everything is wired together. <!-- Finally, it describes aspects of selected data flows (such as labels, or kubelet configuration).--> It stays very close to the source code, using it as the primary reference. The document is primarily focused on node bootstrapping, but it also touches on the configuration of Azure resources.
+
+Some of the mechanisms described below are specific to AKS. However, the overall configuration flow and wiring should be flexible enough to accommodate other flavors of Kubernetes on Azure in the future.
+
+> Note: The document uses "Karpenter" for brevity, though in some places "Azure/AKS Cloud Provider for Karpenter" might be more accurate. The distinction is not critical, especially since karpenter-core is used as library, and the build of Azure/AKS Cloud Provider for Karpenter represents Azure/AKS version of Karpenter.
 
 ## Table of Contents
 
-- [Overview](#overview)
 - [Node bootstrapping](#node-bootstrapping)
   - [Node Bootstrapping Variables](#node-bootstrapping-variables)
 - [Karpenter configuration sources](#karpenter-configuration-sources)
@@ -21,19 +32,9 @@
   - [Image family](#image-family)
   - [Bootstrapper interface](#bootstrapper-interface)
 
-## Overview
-
-Azure/AKS provider for Karpenter needs to be able to create standalone VMs that join AKS clusters. This requires both configuring Azure resources (e.g. network interface, VM, etc.) and bootstrapping the VM so that it connects to the cluster. The set of input parameters required for bootstrap is currently quite large, though there is an ongoing effort to reduce it. There are multiple sources for these parameters - from user input, to data from the cluster, to internal defaults.
-
-The goal of this document is to describe the relevant configuration data flows and their implementation. It starts with AKS VM bootstrapping needs, works its way up to Karpenter configuration mechanisms and sources, touches on AKS cluster configuration compatibility and drift, and then describes how everything is wired together. <!-- Finally, it describes aspects of selected data flows (such as labels, or kubelet configuration).--> It stays very close to the source code, using it as the primary reference. The document is primarily focused on node bootstrapping, but it also touches on the configuration of Azure resources.
-
-Some of the mechanisms described below are specific to AKS. However, the overall configuration flow and wiring should be flexible enough to accommodate other flavors of Kubernetes on Azure in the future.
-
-> Note: The document uses "Karpenter" for brevity, though in some places "Azure/AKS Cloud Provider for Karpenter" might be more accurate. The distinction is not critical, especially since karpenter-core is used as library, and the build of Azure/AKS Cloud Provider for Karpenter represents Azure/AKS version of Karpenter.
-
 ## Node bootstrapping
 
-The most common current way of bootstrapping an AKS node it by providing a highly structured [NodeBootstrappingConfiguration](https://github.com/Azure/AgentBaker/blob/3a5c5f2f2c3acd7ebcb82d73352ad6119e1522d6/pkg/agent/datamodel/types.go#L1480) to AgentBaker library to generate [Custom Script Extension](https://learn.microsoft.com/en-us/azure/virtual-machines/extensions/custom-script-linux) (CSE) and Azure [Custom Data](https://learn.microsoft.com/en-us/azure/virtual-machines/custom-data) for the VM. 
+The most common current way of bootstrapping an AKS node it by providing a highly structured [NodeBootstrappingConfiguration](https://github.com/Azure/AgentBaker/blob/3a5c5f2f2c3acd7ebcb82d73352ad6119e1522d6/pkg/agent/datamodel/types.go#L1480) to AgentBaker library to generate [Custom Script Extension](https://learn.microsoft.com/en-us/azure/virtual-machines/extensions/custom-script-linux) (CSE) and Azure [Custom Data](https://learn.microsoft.com/en-us/azure/virtual-machines/custom-data) for the VM.
 
 A newer, emerging, approach - possible with the latest AKS VM images - is to populate Custom Data with a more streamlined set of parameters, in a well-defined format, without using CSE (one less call, and faster) and without having to use AgentBaker library. This both simplifies the bootstrapping contract, and speeds up the VM bootstrap process. Note that the set of fields and the bootstrapping contract are evolving together with corresponding support in AKS node images.
 

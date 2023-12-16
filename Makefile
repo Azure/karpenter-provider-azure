@@ -8,7 +8,7 @@ SYSTEM_NAMESPACE ?= karpenter
 
 # Common Directories
 # TODO: revisit testing tools (temporarily excluded here, for make verify)
-MOD_DIRS = $(shell find . -name go.mod -type f ! -path "./test/*" | xargs dirname)
+MOD_DIRS = $(shell find . -path "./website" -prune -o -name go.mod -type f -print | xargs dirname)
 KARPENTER_CORE_DIR = $(shell go list -m -f '{{ .Dir }}' github.com/aws/karpenter-core)
 
 # TEST_SUITE enables you to select a specific test suite directory to run "make e2etests" or "make test" against
@@ -95,6 +95,9 @@ codegen: ## Auto generate files based on Azure API responses
 
 toolchain: ## Install developer toolchain
 	./hack/toolchain.sh
+
+website: ## Serve the docs website locally
+	cd website && npm install && hugo mod tidy && hugo server
 
 tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod tidy $(newline))
