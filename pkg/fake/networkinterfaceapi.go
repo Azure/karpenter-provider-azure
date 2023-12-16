@@ -34,8 +34,13 @@ type NetworkInterfaceCreateOrUpdateInput struct {
 	Options           *armnetwork.InterfacesClientBeginCreateOrUpdateOptions
 }
 
+type NetworkInterfaceDeleteInput struct {
+	ResourceGroupName, InterfaceName string
+}
+
 type NetworkInterfacesBehavior struct {
 	NetworkInterfacesCreateOrUpdateBehavior MockedLRO[NetworkInterfaceCreateOrUpdateInput, armnetwork.InterfacesClientCreateOrUpdateResponse]
+	NetworkInterfacesDeleteBehavior         MockedLRO[NetworkInterfaceDeleteInput, armnetwork.InterfacesClientDeleteResponse]
 	NetworkInterfaces                       sync.Map
 }
 
@@ -87,9 +92,15 @@ func (c *NetworkInterfacesAPI) Get(_ context.Context, resourceGroupName string, 
 }
 
 func (c *NetworkInterfacesAPI) BeginDelete(_ context.Context, resourceGroupName string, interfaceName string, _ *armnetwork.InterfacesClientBeginDeleteOptions) (*runtime.Poller[armnetwork.InterfacesClientDeleteResponse], error) {
-	id := mkNetworkInterfaceID(resourceGroupName, interfaceName)
-	c.NetworkInterfaces.Delete(id)
-	return nil, nil
+	input := &NetworkInterfaceDeleteInput{
+		ResourceGroupName: resourceGroupName,
+		InterfaceName:     interfaceName,
+	}
+	return c.NetworkInterfacesDeleteBehavior.Invoke(input, func(input *NetworkInterfaceDeleteInput) (*armnetwork.InterfacesClientDeleteResponse, error) {
+		id := mkNetworkInterfaceID(resourceGroupName, interfaceName)
+		c.NetworkInterfaces.Delete(id)
+		return &armnetwork.InterfacesClientDeleteResponse{}, nil
+	})
 }
 
 func mkNetworkInterfaceID(resourceGroupName, interfaceName string) string {
