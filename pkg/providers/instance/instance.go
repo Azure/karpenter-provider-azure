@@ -402,7 +402,7 @@ func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.Virtu
 		}
 		nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, vmName)
 		if nicErr != nil {
-			logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", vmName, nicErr) 
+			logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", vmName, nicErr)
 		}
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
 	}
