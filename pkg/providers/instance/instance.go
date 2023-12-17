@@ -572,15 +572,14 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 
 func (p *Provider) cleanUpResourcesFromFailedLaunch(ctx context.Context, resourceName string) {
 	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
-		if nicErr != nil {
-			logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
-		}
-		vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
-		if vmErr != nil {
-			logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
-		}
+	if nicErr != nil {
+		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
+	}
+	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
+	if vmErr != nil {
+		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
+	}
 }
-
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.
 // The Azure Cloud Provider defaults to Regular, so spot must be explicitly included in capacity type requirements.
