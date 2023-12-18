@@ -65,7 +65,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 		},
 		{
 			CommunityImage:   AzureLinuxGen2ArmCommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
