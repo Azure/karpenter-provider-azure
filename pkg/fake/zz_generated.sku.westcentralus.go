@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 )
 
-// generated at 2023-12-12T02:03:06Z
+// generated at 2023-12-18T14:35:42Z
 
 func init() {
 	// ResourceSkus is a list of selected VM SKUs for a given region
@@ -38,7 +38,19 @@ func init() {
 			ResourceType: lo.ToPtr("virtualMachines"),
 			APIVersions:  &[]string{},
 			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
+			Restrictions: &[]compute.ResourceSkuRestrictions{
+				{
+					Type:   compute.ResourceSkuRestrictionsType("Location"),
+					Values: &[]string{"westcentralus"},
+					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
+						Locations: &[]string{
+							"westcentralus",
+						},
+						Zones: &[]string{},
+					},
+					ReasonCode: "NotAvailableForSubscription",
+				},
+			},
 			Capabilities: &[]compute.ResourceSkuCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("20480")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
@@ -61,8 +73,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_B1s"),
@@ -101,8 +115,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2s_v3"),
@@ -142,8 +158,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2_v2"),
@@ -180,8 +198,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2_v3"),
@@ -218,8 +238,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2_v5"),
@@ -257,8 +279,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D4s_v3"),
@@ -298,8 +322,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D64s_v3"),
@@ -339,8 +365,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_DS2_v2"),
@@ -380,8 +408,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 		{
 			Name:         lo.ToPtr("Standard_F16s_v2"),
@@ -421,8 +451,10 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations: &[]string{"westcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{},
+			},
+			},
 		},
 	}
 }
