@@ -19,18 +19,31 @@ package opts
 import (
 	"net/http"
 	"time"
+	"errors"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/karpenter/pkg/auth"
 )
+
+var MaxRetries = 20
 
 func DefaultArmOpts() *arm.ClientOptions {
 	opts := &arm.ClientOptions{}
 	opts.Telemetry = DefaultTelemetryOpts()
 	opts.Retry = DefaultRetryOpts()
 	opts.Transport = defaultHTTPClient
+	return opts		
+}
+
+func DefaultNICClientOpts() *arm.ClientOptions {
+	opts := DefaultArmOpts()
+	perCallNICRetryPolicy := &NICRetryPolicy{}
+	opts.PerCallPolicies = append(opts.PerCallPolicies, perCallNICRetryPolicy) 
 	return opts
+
+
 }
 
 func DefaultRetryOpts() policy.RetryOptions {
@@ -62,3 +75,28 @@ func DefaultTelemetryOpts() policy.TelemetryOptions {
 		ApplicationID: auth.GetUserAgentExtension(),
 	}
 }
+
+
+type NICRetryPolicy struct {}
+
+func (p *NICRetryPolicy) Do(req *policy.Request) (*http.Response, error) {
+        var retryCount int
+        for {
+            resp, err := req.Next() 
+            if err != nil {
+                var respErr *azcore.ResponseError
+                if errors.As(err, &respErr) && respErr.ErrorCode == "NicReservedForAnotherVm" {
+                    if retryCount >= MaxRetries {
+                        return nil, errors.New("maximum retries reached for NIC deletion")
+                    }
+					// NicReservedForAnotherVm always returns 
+                    time.Sleep(180 * time.Second) 
+                    retryCount++
+                    continue 
+                }
+            }
+            return resp, err 
+		}
+}
+
+
