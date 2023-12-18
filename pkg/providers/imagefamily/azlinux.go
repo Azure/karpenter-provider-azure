@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	AzureLinuxImageFamily           = "AKSAzureLinux"
+	AzureLinuxImageFamily           = "AzureLinux"
 	AzureLinuxGen2CommunityImage    = "V2gen2"
 	AzureLinuxGen1CommunityImage    = "V2"
 	AzureLinuxGen2ArmCommunityImage = "V2gen2arm64"
@@ -49,7 +49,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 	return []DefaultImageOutput{
 		{
 			CommunityImage:   AzureLinuxGen2CommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
@@ -57,7 +57,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 		},
 		{
 			CommunityImage:   AzureLinuxGen1CommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
