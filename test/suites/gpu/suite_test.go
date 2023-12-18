@@ -139,9 +139,6 @@ var _ = Describe("GPU", func() {
 
 })
 
-
-
-
 func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -204,5 +201,3 @@ func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {
 		},
 	}
 }
-
-

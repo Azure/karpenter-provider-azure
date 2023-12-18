@@ -49,41 +49,38 @@ var _ = AfterEach(func() { env.AfterEach() })
 var _ = Describe("arm64", func() {
 	It("should provision one arm64 node and one Pod (Ubuntu2204)", func() {
 		nodeClass := env.DefaultAKSNodeClass()
-		nodePool := env.DefaultNodePool(nodeClass) 
+		nodePool := env.DefaultNodePool(nodeClass)
 		test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
 			Key:      v1.LabelArchStable,
 			Operator: v1.NodeSelectorOpIn,
-			Values: []string{corev1beta1.ArchitectureArm64},
+			Values:   []string{corev1beta1.ArchitectureArm64},
 		})
 		deployment := test.Deployment(test.DeploymentOptions{
 			Replicas:   1,
-			PodOptions: test.PodOptions{ResourceRequirements: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1.1")}}, Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6"}}) 
+			PodOptions: test.PodOptions{ResourceRequirements: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1.1")}}, Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6"}})
 
 		env.ExpectCreated(nodePool, nodeClass, deployment)
 		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
-		
+
 	})
 
 	It("should provision one arm64 node and one Pod (AzureLinux)", func() {
 		nodeClass := env.DefaultAKSNodeClass()
 		nodeClass.Spec.ImageFamily = to.Ptr("AKSAzureLinux")
-		nodePool := env.DefaultNodePool(nodeClass) 
+		nodePool := env.DefaultNodePool(nodeClass)
 		test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
 			Key:      v1.LabelArchStable,
 			Operator: v1.NodeSelectorOpIn,
-			Values: []string{corev1beta1.ArchitectureArm64},
+			Values:   []string{corev1beta1.ArchitectureArm64},
 		})
 		deployment := test.Deployment(test.DeploymentOptions{
 			Replicas:   1,
-			PodOptions: test.PodOptions{ResourceRequirements: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1.1")}}, Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6"}}) 
+			PodOptions: test.PodOptions{ResourceRequirements: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1.1")}}, Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6"}})
 
 		env.ExpectCreated(nodePool, nodeClass, deployment)
 		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
-		env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas)) 
-	
+		env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
+
 	})
 
 })
-
-
-
