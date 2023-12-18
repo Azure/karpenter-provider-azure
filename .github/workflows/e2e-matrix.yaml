@@ -1,10 +1,13 @@
 name: E2EMatrix
 on:
   workflow_call:
-  #   inputs:
-  #     region:
-  #       type: string
-  #       default: "us-east-2"
+    inputs:
+      git_ref:
+        type: string
+      location:
+        type: string
+        description: "the azure location to run the e2e test in"
+        default: "westus2"
   #     k8s_version:
   #       type: string
   #       default: "1.27"
@@ -31,12 +34,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [Nonbehavioral, Utilization, GPU, Drift, Integration]
+        suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim]
     uses: ./.github/workflows/e2e.yaml
     with:
+      git_ref: ${{ inputs.git_ref }}
       suite: ${{ matrix.suite }}
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
-  #     region: ${{ inputs.region }}
+      location: ${{ inputs.location }}
   #     k8s_version: ${{ inputs.k8s_version }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}

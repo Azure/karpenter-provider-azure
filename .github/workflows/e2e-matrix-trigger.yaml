@@ -1,17 +1,30 @@
 name: E2EMatrixTrigger
 on:
   workflow_dispatch:
+    inputs:
+      location:
+        type: string
+        description: "the azure location to run the e2e test in"
+        default: "westus2"
   push:
     branches: [main]
-  pull_request_review: # TODO(charliedmcb): come back to this and factor out the E2E trigger like AWS and clean it up
-    types: [submitted]
+  workflow_run:
+    workflows: [ApprovalComment]
+    types: [completed]
 permissions:
   id-token: write # This is required for requesting the JWT
   contents: read  # This is required for actions/checkout
+  statuses: write # ./.github/actions/commit-status/*
 jobs:
+  resolve:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    uses: ./.github/workflows/resolve-args.yaml
   e2e-matrix:
-    if: github.event_name != 'pull_request_review' || startsWith(github.event.review.body ,'/test')
+    needs: [resolve]
     uses: ./.github/workflows/e2e-matrix.yaml
+    with:
+      git_ref: ${{ needs.resolve.outputs.GIT_REF }}
+      location: ${{ inputs.location || 'westus2' }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}

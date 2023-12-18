@@ -74,11 +74,6 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 			Values:   []string{corev1beta1.ArchitectureAmd64},
 		},
 		{
-			Key:      v1alpha2.LabelSKUHyperVGeneration,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{v1alpha2.HyperVGenerationV2},
-		},
-		{
 			Key:      v1alpha2.LabelSKUFamily,
 			Operator: v1.NodeSelectorOpIn,
 			Values:   []string{"D"},

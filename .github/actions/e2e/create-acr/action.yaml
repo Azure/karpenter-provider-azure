@@ -16,10 +16,19 @@ inputs:
   acr_name:
     description: "Name of the acr holding the karpenter image"
     required: true
+  git_ref:
+    description: "The git commit, tag, or branch to check out"
+    required: false
+  location:
+    type: string
+    description: "the azure location to run the e2e test in"
+    default: "westus2"
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@v3
+  - uses: actions/checkout@v4
+    with:
+      ref: ${{ inputs.git_ref }}
   - name: az login
     uses: azure/login@v1
     with:
@@ -31,4 +40,4 @@ runs:
     run: az account set --subscription ${{ inputs.subscription-id }}
   - name: create ACR
     shell: bash
-    run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-mkacr
+    run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkacr

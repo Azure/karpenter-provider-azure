@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/samber/lo"
 	"go.uber.org/multierr"
@@ -32,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 
 	link "github.com/Azure/karpenter/pkg/controllers/nodeclaim/link"
@@ -80,13 +80,13 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 		return reconcile.Result{}, err
 	}
 	resolvedNodeClaims := lo.Filter(nodeClaims.Items, func(m corev1beta1.NodeClaim, _ int) bool {
-		return m.Status.ProviderID != "" || m.Annotations[v1alpha5.MachineLinkedAnnotationKey] != ""
+		return m.Status.ProviderID != "" || m.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey] != ""
 	})
 	resolvedProviderIDs := sets.New[string](lo.Map(resolvedNodeClaims, func(m corev1beta1.NodeClaim, _ int) string {
 		if m.Status.ProviderID != "" {
 			return m.Status.ProviderID
 		}
-		return m.Annotations[v1alpha5.MachineLinkedAnnotationKey]
+		return m.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey]
 	})...)
 	errs := make([]error, len(retrieved))
 	workqueue.ParallelizeUntil(ctx, 100, len(managedRetrieved), func(i int) {

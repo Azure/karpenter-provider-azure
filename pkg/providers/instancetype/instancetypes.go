@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,9 +89,6 @@ func (p *Provider) List(
 			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *sku.Size, err)
 			continue
 		}
-		if !p.isSupportedSize(vmsize) {
-			continue
-		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
 			logging.FromContext(ctx).Errorf("parsing SKU architecture %s, %v", *sku.Size, err)
@@ -119,9 +117,13 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
-	return sets.New(lo.Map(lo.Keys(sku.AvailabilityZones(region)), func(zone string, _ int) string {
-		return fmt.Sprintf("%s-%s", region, zone)
-	})...)
+	if hasZonalSupport(region) {
+		return sets.New(lo.Map(lo.Keys(sku.AvailabilityZones(region)), func(zone string, _ int) string {
+			return fmt.Sprintf("%s-%s", region, zone)
+		})...)
+	}
+
+	return sets.New("") // empty string means non-zonal offering
 }
 
 func (p *Provider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) []cloudprovider.Offering {
@@ -152,7 +154,13 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 	skus := cache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines))
 	logging.FromContext(ctx).Debugf("Discovered %d SKUs", len(skus))
 	for i := range skus {
-		if p.isSupported(&skus[i]) {
+		vmsize, err := skus[i].GetVMSize()
+		if err != nil {
+			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *skus[i].Size, err)
+			continue
+		}
+
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -163,36 +171,48 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *Provider) isSupported(sku *skewer.SKU) bool {
-	name := lo.FromPtr(sku.Name)
-
-	// less than 2 cpus
-	if cpu, err := sku.VCPU(); err == nil && cpu < 2 {
-		return false
-	}
-
-	// less then 3.5 GiB of memory
-	if memGiB, err := sku.Memory(); err == nil && memGiB < 3.5 {
-		return false
-	}
-
-	// filter out instances AKS does not support
-	if RestrictedVMSizes.Has(sku.GetName()) {
-		return false
-	}
-
-	// filter out GPU SKUs AKS does not support
-	if gpu, err := sku.GPU(); err == nil && gpu > 0 && !(utils.IsNvidiaEnabledSKU(name) || utils.IsMarinerEnabledGPUSKU(name)) {
-		return false
-	}
-
-	return true
+func (p *Provider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
+	return p.hasMinimumCPU(sku) &&
+		p.hasMinimumMemory(sku) &&
+		!p.isUnsupportedByAKS(sku) &&
+		!p.isUnsupportedGPU(sku) &&
+		!p.hasConstrainedCPUs(vmsize) &&
+		!p.isConfidential(sku)
 }
 
-// isSupportedSize indicates VM size is supported by AKS, based on additional SKU properties
-func (p *Provider) isSupportedSize(size *skewer.VMSizeType) bool {
-	// any SKU with constrained CPUs
-	return size.CpusConstrained == nil
+// at least 2 cpus
+func (p *Provider) hasMinimumCPU(sku *skewer.SKU) bool {
+	cpu, err := sku.VCPU()
+	return err == nil && cpu >= 2
+}
+
+// at least 3.5 GiB of memory
+func (p *Provider) hasMinimumMemory(sku *skewer.SKU) bool {
+	memGiB, err := sku.Memory()
+	return err == nil && memGiB >= 3.5
+}
+
+// instances AKS does not support
+func (p *Provider) isUnsupportedByAKS(sku *skewer.SKU) bool {
+	return RestrictedVMSizes.Has(sku.GetName())
+}
+
+// GPU SKUs AKS does not support
+func (p *Provider) isUnsupportedGPU(sku *skewer.SKU) bool {
+	name := lo.FromPtr(sku.Name)
+	gpu, err := sku.GPU()
+	return err == nil && gpu > 0 && !(utils.IsNvidiaEnabledSKU(name) || utils.IsMarinerEnabledGPUSKU(name))
+}
+
+// SKU with constrained CPUs
+func (p *Provider) hasConstrainedCPUs(vmsize *skewer.VMSizeType) bool {
+	return vmsize.CpusConstrained != nil
+}
+
+// confidential VMs (DC, EC) are not yet supported by this Karpenter provider
+func (p *Provider) isConfidential(sku *skewer.SKU) bool {
+	size := sku.GetSize()
+	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
 }
 
 // MaxEphemeralOSDiskSizeGB returns the maximum ephemeral OS disk size for a given SKU.
@@ -216,4 +236,50 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 	}
 	// convert bytes to GB
 	return maxDiskBytes / float64(units.Gigabyte)
+}
+
+var (
+	// https://learn.microsoft.com/en-us/azure/reliability/availability-zones-service-support#azure-regions-with-availability-zone-support
+	// (could also be obtained programmatically)
+	zonalRegions = sets.New(
+		// Americas
+		"brazilsouth",
+		"canadacentral",
+		"centralus",
+		"eastus",
+		"eastus2",
+		"southcentralus",
+		"usgovvirginia",
+		"westus2",
+		"westus3",
+		// Europe
+		"francecentral",
+		"italynorth",
+		"germanywestcentral",
+		"norwayeast",
+		"northeurope",
+		"uksouth",
+		"westeurope",
+		"swedencentral",
+		"switzerlandnorth",
+		"polandcentral",
+		// Middle East
+		"qatarcentral",
+		"uaenorth",
+		"israelcentral",
+		// Africa
+		"southafricanorth",
+		// Asia Pacific
+		"australiaeast",
+		"centralindia",
+		"japaneast",
+		"koreacentral",
+		"southeastasia",
+		"eastasia",
+		"chinanorth3",
+	)
+)
+
+func hasZonalSupport(region string) bool {
+	return zonalRegions.Has(region)
 }

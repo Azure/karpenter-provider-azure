@@ -63,11 +63,11 @@ var _ = Describe("Drift", func() {
 	BeforeEach(func() {
 		env.ExpectSettingsOverridden(v1.EnvVar{Name: "FEATURE_GATES", Value: "Drift=true"})
 
-		nodePool.Spec.Template.Spec.Requirements = []v1.NodeSelectorRequirement{{
+		test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
 			Key:      v1.LabelInstanceTypeStable,
 			Operator: v1.NodeSelectorOpIn,
 			Values:   []string{"Standard_DS2_v2"},
-		}}
+		})
 
 		// Add a do-not-disrupt pod so that we can check node metadata before we disrupt
 		pod = test.Pod(test.PodOptions{

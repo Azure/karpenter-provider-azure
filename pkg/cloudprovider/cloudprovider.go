@@ -188,7 +188,14 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *corev1be
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) error {
-	return c.instanceProvider.Delete(ctx, nodeClaim)
+	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("nodeclaim", nodeClaim.Name))
+
+	providerID := lo.Ternary(nodeClaim.Status.ProviderID != "", nodeClaim.Status.ProviderID, nodeClaim.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey])
+	vmName, err := utils.GetVMName(providerID)
+	if err != nil {
+		return fmt.Errorf("getting VM name, %w", err)
+	}
+	return c.instanceProvider.Delete(ctx, vmName)
 }
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
@@ -265,7 +272,7 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *cor
 
 	reqs := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
-		return reqs.Compatible(i.Requirements, scheduling.AllowUndefinedWellKnownLabelsV1Beta1) == nil &&
+		return reqs.Compatible(i.Requirements, v1alpha2.AllowUndefinedLabels) == nil &&
 			len(i.Offerings.Requirements(reqs).Available()) > 0 &&
 			resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
 	}), nil
@@ -327,7 +334,6 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	}
 
 	labels[corev1beta1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
-	labels[v1alpha2.LabelSKUHyperVGeneration] = instance.GetHyperVGeneration(vm)
 
 	// TODO: v1beta1 new kes/labels
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
@@ -354,5 +360,8 @@ func GenerateNodeClaimName(vmName string) string {
 
 // makeZone returns the zone value in format of <region>-<zone-id>.
 func makeZone(location string, zoneID string) string {
+	if zoneID == "" {
+		return ""
+	}
 	return fmt.Sprintf("%s-%s", strings.ToLower(location), zoneID)
 }
