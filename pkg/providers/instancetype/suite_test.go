@@ -257,7 +257,10 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		It("should not include AKSUbuntu GPU SKUs in list results", func() {
-			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("standard_NC6s"))))
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC24ads_A100_v4"))))
+		})
+		It("should include AKSUbuntu GPU SKUs in list results", func() {
+			Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
 		})
 	})
 
