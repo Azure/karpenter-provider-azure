@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 )
 
-// generated at 2023-12-18T14:35:42Z
+// generated at 2023-12-18T15:29:11Z
 
 func init() {
 	// ResourceSkus is a list of selected VM SKUs for a given region

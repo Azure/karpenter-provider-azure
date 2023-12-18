@@ -36,6 +36,8 @@ func TestSKUExistenceEastus(t *testing.T) {
 		"Standard_F16s_v2",
 		"Standard_M8-2ms",
 		"Standard_NC24ads_A100_v4",
+		"Standard_NC6s_v3",
+		"Standard_NC16as_T4_v3",
 	}
 
 	generatedSKUs := ResourceSkus["eastus"]

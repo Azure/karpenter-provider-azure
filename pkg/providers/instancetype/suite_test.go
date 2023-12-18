@@ -243,6 +243,23 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 	})
+	Context("Filtering GPU SKUs ProviderList(AzureLinux)", func() {
+		var instanceTypes corecloudprovider.InstanceTypes
+		var err error
+		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+		BeforeEach(func() {
+			nodeClassAZLinux := test.AKSNodeClass()
+			nodeClassAZLinux.Spec.ImageFamily = lo.ToPtr("AzureLinux")
+			ExpectApplied(ctx, env.Client, nodeClassAZLinux)
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClassAZLinux)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should not include AKSUbuntu GPU SKUs in list results", func() {
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("standard_NC6s"))))
+		})
+	})
 
 	Context("Ephemeral Disk", func() {
 		It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
