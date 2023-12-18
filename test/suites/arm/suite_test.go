@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package gpu_test
+package arm_test
 
 import (
 	"testing"
@@ -34,19 +34,19 @@ import (
 
 var env *azure.Environment
 
-func TestArm64(t *testing.T) {
+func TestArm(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func() {
 		env = azure.NewEnvironment(t)
 	})
-	RunSpecs(t, "arm64")
+	RunSpecs(t, "Arm")
 }
 
 var _ = BeforeEach(func() { env.BeforeEach() })
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
-var _ = Describe("arm64", func() {
+var _ = Describe("Arm", func() {
 	It("should provision one arm64 node and one Pod (Ubuntu2204)", func() {
 		nodeClass := env.DefaultAKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
@@ -66,7 +66,7 @@ var _ = Describe("arm64", func() {
 
 	It("should provision one arm64 node and one Pod (AzureLinux)", func() {
 		nodeClass := env.DefaultAKSNodeClass()
-		nodeClass.Spec.ImageFamily = to.Ptr("AKSAzureLinux")
+		nodeClass.Spec.ImageFamily = to.Ptr("AzureLinux")
 		nodePool := env.DefaultNodePool(nodeClass)
 		test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
 			Key:      v1.LabelArchStable,
