@@ -225,7 +225,7 @@ az-perftest1000: ## Test scaling out/in (1000 VMs)
 az-resg: ## List resources in MC rg
 	az resource list -o table -g $(AZURE_RESOURCE_GROUP_MC)
 
-RESK=az resource list --tag=karpenter.sh_nodepool --query "[?resourceGroup=='$(AZURE_RESOURCE_GROUP_MC)']"
+RESK=az resource list --tag=karpenter.azure.com_cluster --query "[?resourceGroup=='$(AZURE_RESOURCE_GROUP_MC)']"
 az-res: ## List resources created by Karpenter
 	$(RESK) -o table
 
@@ -267,7 +267,7 @@ az-node-viewer: ## Watch nodes using eks-node-viewer
 	eks-node-viewer --disable-pricing --node-selector "karpenter.sh/nodepool" # --resources cpu,memory
 
 az-argvmlist: ## List current VMs owned by Karpenter
-	az graph query -q "Resources | where type =~ 'microsoft.compute/virtualmachines' | where resourceGroup == tolower('$(AZURE_RESOURCE_GROUP_MC)') | where tags has_cs 'karpenter.sh_nodepool'" \
+	az graph query -q "Resources | where type =~ 'microsoft.compute/virtualmachines' | where resourceGroup == tolower('$(AZURE_RESOURCE_GROUP_MC)') | where tags has_cs 'karpenter.azure.com_cluster" \
 	--subscriptions $(AZURE_SUBSCRIPTION_ID) \
 	| jq '.data[] | .id'
 
