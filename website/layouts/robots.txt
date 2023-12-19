@@ -3,4 +3,3 @@ User-agent: *
 Allow: /docs/
 Allow: /index.html
 
-SITEMAP: https://karpenter.sh/sitemap.xml

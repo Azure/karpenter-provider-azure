@@ -3,7 +3,7 @@ title: "Contributing"
 linkTitle: "Contributing"
 weight: 40
 description: >
-  Learn about how to contribute to Karpenter
+  Learn about how to contribute to the Azure Provider for Karpenter
 ---
 
 Please see [the development guide](development-guide) to contribute code to this repository.  
