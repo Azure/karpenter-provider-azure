@@ -6,7 +6,7 @@ description: >
   Set up a Karpenter Azure provider development environment
 ---
 
-A [GitHub Codespaces]((https://github.com/features/codespaces)) development flow is described below, which you can use to test karpenter functionality on your own cluster, and to aid rapid development of this project.
+A [GitHub Codespaces]((https://github.com/features/codespaces)) development flow is described below, which you can use to test Karpenter functionality on your own cluster, and to aid rapid development of this project.
 
 1. **Install VSCode**:
 
@@ -30,7 +30,7 @@ A [GitHub Codespaces]((https://github.com/features/codespaces)) development flow
     
 ## Developer notes
 
-- During step 1 you will observe `Running postCreateCommand...` which takes ~10+ minutes. You don't have to wait for it to finish to proceed to step 2.
+- During step 1 you will observe `Running postCreateCommand...` which takes > 10 minutes. You don't have to wait for it to finish to proceed to step 2.
 - The following errors can be ignored during step 2:
 
 ```shell
