@@ -23,10 +23,20 @@ import (
 // TODO: Get these from agentbaker
 const (
 	Nvidia470CudaDriverVersion = "cuda-470.82.01"
-	Nvidia510CudaDriverVersion = "cuda-510.47.03"
 	Nvidia525CudaDriverVersion = "cuda-525.85.12"
-	Nvidia510GridDriverVersion = "grid-510.73.08"
+	Nvidia535GridDriverVersion = "grid-535.54.03"
+
+	AKSGPUGridSHA = "sha-20ffa2"
+	AKSGPUCudaSHA = "sha-e8873b"
 )
+
+
+func GetAKSGPUImageSHA(size string) string {
+	if useGridDrivers(size) {
+		return AKSGPUGridSHA
+	}
+	return AKSGPUCudaSHA
+}
 
 var (
 	/* If a new GPU sku becomes available, add a key to this map, but only if you have a confirmation
@@ -132,7 +142,7 @@ func IsMarinerEnabledGPUSKU(vmSize string) bool {
 // NVv3 is untested on AKS, NVv4 is AMD so n/a, and NVv2 no longer seems to exist (?).
 func GetGPUDriverVersion(size string) string {
 	if useGridDrivers(size) {
-		return Nvidia510GridDriverVersion
+		return Nvidia535GridDriverVersion
 	}
 	if isStandardNCv1(size) {
 		return Nvidia470CudaDriverVersion

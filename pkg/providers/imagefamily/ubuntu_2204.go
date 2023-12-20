@@ -92,6 +92,7 @@ func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 			// to shared options struct the user data can reference
 			GPUNode:          utils.IsNvidiaEnabledSKU(instanceType.Name),
 			GPUDriverVersion: utils.GetGPUDriverVersion(instanceType.Name),
+			GPUImageSHA: utils.GetAKSGPUImageSHA(instanceType.Name),
 		},
 		Arch:                           arch,
 		TenantID:                       u.Options.TenantID,
