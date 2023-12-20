@@ -29,8 +29,10 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/Azure/karpenter/pkg/controllers/nodeclaim/garbagecollection"
+	"github.com/Azure/karpenter/pkg/fake"
 	"github.com/Azure/karpenter/pkg/providers/instance"
 	"github.com/Azure/karpenter/pkg/utils"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
