@@ -202,7 +202,7 @@ type NodeBootstrapVariables struct {
 	KubeletConfigFileEnabled          bool     // s   can be static	[should kubelet config be actually used/preferred instead of flags?]
 	KubeletConfigFileContent          string   // s   mix of user/static/RP-generated.
 	SwapFileSizeMB                    int      // t   user input
-	GPUImageSHA string // s static sha rarely updated
+	GPUImageSHA                       string   // s static sha rarely updated
 	GPUDriverVersion                  string   // k   determine by OS + GPU hardware requirements; can be determined automatically, but hard. suggest using GPU operator.
 	GPUInstanceProfile                string   // t   user-specified
 	CustomSearchDomainName            string   // c   user-specified [presumably cluster-level]
@@ -452,7 +452,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
 	nbv.VirtualNetwork = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
 	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
-	
+
 	if a.GPUNode {
 		nbv.GPUNode = true
 		nbv.ConfigGPUDriverIfNeeded = true

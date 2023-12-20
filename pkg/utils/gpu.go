@@ -30,7 +30,6 @@ const (
 	AKSGPUCudaSHA = "sha-e8873b"
 )
 
-
 func GetAKSGPUImageSHA(size string) string {
 	if useGridDrivers(size) {
 		return AKSGPUGridSHA

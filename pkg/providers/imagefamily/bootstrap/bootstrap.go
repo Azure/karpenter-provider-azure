@@ -31,7 +31,7 @@ type Options struct {
 	CABundle         *string
 	GPUNode          bool
 	GPUDriverVersion string
-	GPUImageSHA string
+	GPUImageSHA      string
 }
 
 // Bootstrapper can be implemented to generate a bootstrap script
