@@ -11,12 +11,13 @@ Karpenter should populate the following fields in the bootstrapping contract for
 - **1a.** GPUNode
 - **1b.** GPUDriverVersion
 - **1c.** ConfigGPUDriverIfNeeded
+- **1d.** GPUImageSHA
 
 **Note:** The following are explicitly ignored for the preview:
 
-- **1d.** SGXNode
-- **1e.** MIGNode
-- **1f.** EnableGPUDevicePluginIfNeeded
+- **1e.** SGXNode
+- **1f.** MIGNode
+- **1g.** EnableGPUDevicePluginIfNeeded
 
 ### 2. User-Level Control
 
@@ -108,10 +109,10 @@ Here are some relevant labels:
 
 | Label                                 | Description                               |
 |---------------------------------------|-------------------------------------------|
-| `karpenter.k8s.azure/sku-family`       | Family of the SKU (e.g., standardAv2Family)|
-| `karpenter.k8s.azure/sku-subfamily`    | Subfamily of the SKU                      |
-| `karpenter.k8s.azure/sku-cpu`          | Number of virtual CPUs                    |
-| `karpenter.k8s.azure/sku-accelerator`  | Type of accelerator (e.g., Nvidia)        |
+| `karpenter.azure.com/sku-family`       | Family of the SKU (e.g., standardAv2Family)|
+| `karpenter.azure.com/sku-subfamily`    | Subfamily of the SKU                      |
+| `karpenter.azure.com/sku-cpu`          | Number of virtual CPUs                    |
+| `karpenter.azure.com/sku-accelerator`  | Type of accelerator (e.g., Nvidia)        |
 
 **Note:** GPU SKUs usually support only a single hypervisor generation. Explicit image selection is moot in most cases, though there are some exceptions.
 
@@ -130,9 +131,9 @@ Here are some relevant labels:
 
 | Selector Label                            | Values  | Description                                        | Where to get the value                  |
 |-------------------------------------------|---------|----------------------------------------------------|----------------------------------------|
-| `karpenter.k8s.azure/instance-gpu-name`    | `t4`    | Name of the GPU on the instance, if available      | vmSizeAcceleratorType                  |
-| `karpenter.k8s.azure/instance-gpu-manufacturer` | `nvidia` | GPU Manufacturer | Can be inferred, all Nvidia for preview    |
-| `karpenter.k8s.azure/instance-gpu-count`   | `1`     | Number of GPUs on the instance                     | sku.capabilities["GPU"]                |
+| `karpenter.azure.com/instance-gpu-name`    | `t4`    | Name of the GPU on the instance, if available      | vmSizeAcceleratorType                  |
+| `karpenter.azure.com/instance-gpu-manufacturer` | `nvidia` | GPU Manufacturer | Can be inferred, all Nvidia for preview    |
+| `karpenter.azure.com/instance-gpu-count`   | `1`     | Number of GPUs on the instance                     | sku.capabilities["GPU"]                |
 
 ## Supported GPU SKUs and Expected Drivers
 
