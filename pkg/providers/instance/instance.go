@@ -353,7 +353,7 @@ func newVMObject(
 				CapacityTypeToPriority[capacityType]),
 			),
 		},
-		Zones: []*string{&zone},
+		Zones: lo.Ternary(len(zone) > 0, []*string{&zone}, []*string{}),
 		Tags:  launchTemplate.Tags,
 	}
 	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
@@ -452,14 +452,15 @@ func isSKUNotAvailable(err error) bool {
 }
 
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
-	if sdkerrors.SubscriptionQuotaHasBeenReached(err) {
-		// Subscription quota reached, mark the instance type as unavailable in all zones available to the offering
+	if sdkerrors.SKUFamilyQuotaHasBeenReached(err) {
+		// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
 		// This will also update the TTL for an existing offering in the cache that is already unavailable
+
+		logging.FromContext(ctx).Error(err)
 		for _, offering := range instanceType.Offerings {
 			if offering.CapacityType != capacityType {
 				continue
 			}
-
 			// If we have a quota limit of 0 vcpus, we mark the offerings unavailable for an hour.
 			// CPU limits of 0 are usually due to a subscription having no allocated quota for that instance type at all on the subscription.
 			if cpuLimitIsZero(err) {
@@ -468,10 +469,9 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 				p.unavailableOfferings.MarkUnavailable(ctx, SubscriptionQuotaReachedReason, instanceType.Name, offering.Zone, capacityType)
 			}
 		}
-	} else if sdkerrors.ZonalAllocationFailureOccurred(err) {
-		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, corev1beta1.CapacityTypeOnDemand)
-		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, corev1beta1.CapacityTypeSpot)
-	} else if isSKUNotAvailable(err) {
+		return fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
+	}
+	if isSKUNotAvailable(err) {
 		// https://aka.ms/azureskunotavailable: either not available for a location or zone, or out of capacity for Spot.
 		// We only expect to observe the Spot case, not location or zone restrictions, because:
 		// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
@@ -489,6 +489,21 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 			}
 			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SKUNotAvailableReason, instanceType.Name, offering.Zone, capacityType, skuNotAvailableTTL)
 		}
+
+		logging.FromContext(ctx).Error(err)
+		return fmt.Errorf("the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable", instanceType.Name, zone, capacityType)
+	}
+	if sdkerrors.ZonalAllocationFailureOccurred(err) {
+		logging.FromContext(ctx).With("zone", zone).Error(err)
+		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, corev1beta1.CapacityTypeOnDemand)
+		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, corev1beta1.CapacityTypeSpot)
+
+		return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
+	}
+	if sdkerrors.RegionalQuotaHasBeenReached(err) {
+		logging.FromContext(ctx).Error(err)
+		// InsufficientCapacityError is appropriate here because trying any other instance type will not help
+		return corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests", capacityType))
 	}
 	return err
 }
@@ -553,13 +568,18 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	logging.FromContext(ctx).Infof("Selected instance type %s", instanceType.Name)
 	// Priority - Provisioner defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
-	// Zone - ideally random/spread from zones that support given Priority
-	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool { return o.CapacityType == priority })
+	// Zone - ideally random/spread from requested zones that support given Priority
+	requestedZones := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
+	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool {
+		return o.CapacityType == priority && requestedZones.Has(o.Zone)
+	})
 	zonesWithPriority := lo.Map(priorityOfferings, func(o corecloudprovider.Offering, _ int) string { return o.Zone })
 	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
-		// Zones in Offerings have <region>-<number> format; the zone returned from here will be used for VM instantiation,
-		// which expects just the zone number, without region
-		zone = string(zone[len(zone)-1])
+		if len(zone) > 0 {
+			// Zones in zonal Offerings have <region>-<number> format; the zone returned from here will be used for VM instantiation,
+			// which expects just the zone number, without region
+			zone = string(zone[len(zone)-1])
+		}
 		return instanceType, priority, zone
 	}
 	return nil, "", ""
@@ -634,6 +654,7 @@ func (p *Provider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtens
 	return vmExtension
 }
 
+// GetZoneID returns the zone ID for the given virtual machine, or an empty string if there is no zone specified
 func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
 	if vm == nil {
 		return "", fmt.Errorf("cannot pass in a nil virtual machine")
@@ -642,7 +663,7 @@ func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
 		return "", fmt.Errorf("virtual machine is missing name")
 	}
 	if vm.Zones == nil {
-		return "", fmt.Errorf("virtual machine %v zones are nil", *vm.Name)
+		return "", nil
 	}
 	if len(vm.Zones) == 1 {
 		return *(vm.Zones)[0], nil
@@ -650,7 +671,7 @@ func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
 	if len(vm.Zones) > 1 {
 		return "", fmt.Errorf("virtual machine %v has multiple zones", *vm.Name)
 	}
-	return "", fmt.Errorf("virtual machine %v does not have any zones specified", *vm.Name)
+	return "", nil
 }
 
 func GetListQueryBuilder(rg string) *kql.Builder {

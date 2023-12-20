@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,23 +33,21 @@ import (
 
 func main() {
 	fmt.Println("starting generation of sku data...")
-	tenantID := os.Getenv("TENANT_ID")
 	sub := os.Getenv("SUBSCRIPTION_ID")
-	aadClientID := os.Getenv("AAD_CLIENT_ID")
-	aadClientSecret := os.Getenv("AAD_CLIENT_SECRET")
 	path, region, selectedSkus := os.Args[2], os.Args[3], os.Args[4]
 	skus := strings.Split(selectedSkus, ",")
 	targetSkus := map[string]struct{}{}
 	for _, sku := range skus {
 		targetSkus[sku] = struct{}{}
 	}
-	if tenantID == "" || sub == "" || aadClientID == "" || aadClientSecret == "" || path == "" {
-		fmt.Println("missing env vars")
+	if sub == "" {
+		fmt.Println("SUBSCRIPTION_ID env var is required")
 		os.Exit(1)
 	}
-	cred, err := azidentity.NewClientSecretCredential(tenantID, aadClientID, aadClientSecret, nil)
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		fmt.Printf("failed to create credential: %v", err)
+		os.Exit(1)
 	}
 
 	ctx := context.Background()
@@ -95,8 +94,9 @@ func writeSkuData(ResourceSkus []*armcompute.ResourceSKU, location, path string)
 	fmt.Fprintln(src, ")")
 	now := time.Now().UTC().Format(time.RFC3339)
 	fmt.Fprintf(src, "// generated at %s\n\n\n", now)
-	fmt.Fprintln(src, "// ResourceSkus is a list of all available skus from azure")
-	fmt.Fprintln(src, "var ResourceSkus = []compute.ResourceSku{")
+	fmt.Fprintln(src, "func init() {")
+	fmt.Fprintln(src, "// ResourceSkus is a list of selected VM SKUs for a given region")
+	fmt.Fprintf(src, "ResourceSkus[%q] = []compute.ResourceSku{\n", location)
 	for _, sku := range ResourceSkus {
 		fmt.Fprintln(src, "	{")
 		fmt.Fprintf(src, "		Name:         lo.ToPtr(%q),\n", lo.FromPtrOr(sku.Name, ""))
@@ -125,10 +125,24 @@ func writeSkuData(ResourceSkus []*armcompute.ResourceSKU, location, path string)
 		fmt.Fprintln(src, "		Restrictions: &[]compute.ResourceSkuRestrictions{")
 		for _, restriction := range sku.Restrictions {
 			fmt.Fprintln(src, "			{")
-			fmt.Printf("				Type: lo.ToPtr(%s),", lo.FromPtrOr(restriction.Type, ""))
+			fmt.Fprintf(src, "				Type: compute.ResourceSkuRestrictionsType(%q),\n", lo.FromPtrOr(restriction.Type, ""))
 			for _, value := range restriction.Values {
 				fmt.Fprintf(src, "				Values: &[]string{%q},", lo.FromPtrOr(value, ""))
 			}
+			fmt.Fprintln(src)
+			fmt.Fprintln(src, "				RestrictionInfo: &compute.ResourceSkuRestrictionInfo{")
+			fmt.Fprintln(src, "					Locations: &[]string{")
+			for _, location := range restriction.RestrictionInfo.Locations {
+				fmt.Fprintf(src, "						%q,\n", lo.FromPtr(location))
+			}
+			fmt.Fprintln(src, "					},")
+			fmt.Fprintln(src, "					Zones: &[]string{")
+			for _, zone := range restriction.RestrictionInfo.Zones {
+				fmt.Fprintf(src, "						%q,\n", lo.FromPtr(zone))
+			}
+			fmt.Fprintln(src, "					},")
+			fmt.Fprintln(src, "				},")
+			fmt.Fprintf(src, "				ReasonCode: %q,\n", lo.FromPtrOr(restriction.ReasonCode, ""))
 			fmt.Fprintln(src, "			},")
 		}
 		fmt.Fprintln(src, "		},")
@@ -142,6 +156,9 @@ func writeSkuData(ResourceSkus []*armcompute.ResourceSKU, location, path string)
 		for _, locationInfo := range sku.LocationInfo {
 			fmt.Fprintf(src, "			{Location: lo.ToPtr(%q),", location)
 			fmt.Fprintln(src, "			Zones: &[]string{")
+			sort.Slice(locationInfo.Zones, func(i, j int) bool {
+				return *locationInfo.Zones[i] < *locationInfo.Zones[j]
+			})
 			for _, zone := range locationInfo.Zones {
 				fmt.Fprintf(src, "				%q,\n", lo.FromPtr(zone))
 			}
@@ -154,7 +171,7 @@ func writeSkuData(ResourceSkus []*armcompute.ResourceSKU, location, path string)
 	}
 
 	fmt.Fprintln(src, "}")
-	fmt.Println(src.String())
+	fmt.Fprintln(src, "}")
 	fmt.Println("writing file to", path)
 	if err := os.WriteFile(path, src.Bytes(), 0600); err != nil {
 		fmt.Printf("failed to write file: %v", err)

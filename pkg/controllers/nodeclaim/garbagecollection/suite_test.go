@@ -29,6 +29,7 @@ import (
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/Azure/karpenter/pkg/controllers/nodeclaim/garbagecollection"
 	link "github.com/Azure/karpenter/pkg/controllers/nodeclaim/link"
+	"github.com/Azure/karpenter/pkg/fake"
 	"github.com/Azure/karpenter/pkg/providers/instance"
 	"github.com/Azure/karpenter/pkg/utils"
 	. "github.com/onsi/ginkgo/v2"
@@ -168,8 +169,9 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 					azureEnv.VirtualMachinesAPI.Instances.Store(
 						*vm.ID,
 						armcompute.VirtualMachine{
-							ID:   vm.ID,
-							Name: vm.Name,
+							ID:       vm.ID,
+							Name:     vm.Name,
+							Location: lo.ToPtr(fake.Region),
 							Properties: &armcompute.VirtualMachineProperties{
 								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 							},
@@ -213,8 +215,9 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 					azureEnv.VirtualMachinesAPI.Instances.Store(
 						*vm.ID,
 						armcompute.VirtualMachine{
-							ID:   vm.ID,
-							Name: vm.Name,
+							ID:       vm.ID,
+							Name:     vm.Name,
+							Location: lo.ToPtr(fake.Region),
 							Properties: &armcompute.VirtualMachineProperties{
 								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 							},
@@ -290,8 +293,9 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 		BeforeEach(func() {
 			id := utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, "vm-a")
 			vm = &armcompute.VirtualMachine{
-				ID:   lo.ToPtr(id),
-				Name: lo.ToPtr("vm-a"),
+				ID:       lo.ToPtr(id),
+				Name:     lo.ToPtr("vm-a"),
+				Location: lo.ToPtr(fake.Region),
 				Tags: map[string]*string{
 					instance.NodePoolTagKey: lo.ToPtr("default"),
 				},
@@ -333,8 +337,9 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 		BeforeEach(func() {
 			id := utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, "vm-a")
 			vm = &armcompute.VirtualMachine{
-				ID:   lo.ToPtr(id),
-				Name: lo.ToPtr("vm-a"),
+				ID:       lo.ToPtr(id),
+				Name:     lo.ToPtr("vm-a"),
+				Location: lo.ToPtr(fake.Region),
 				Tags: map[string]*string{
 					instance.NodePoolTagKey: lo.ToPtr("default"),
 				},
