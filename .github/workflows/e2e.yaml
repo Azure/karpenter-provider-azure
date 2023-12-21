@@ -59,7 +59,7 @@ jobs:
           install skaffold /usr/local/bin/
       - name: generate rg name
         run: |
-          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-rg-${{ inputs.hash }} | awk '{print tolower($0)}')
+          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.hash }} | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
           echo RG_NAME=$RG_NAME >> $GITHUB_ENV
       - name: generate acr name
@@ -83,7 +83,7 @@ jobs:
           sleep $(( $RANDOM % 60 + 1 ))
       - name: generate cluster name
         run: |
-          CLUSTER_NAME=$(echo ${{ inputs.suite }}-mc-${{ inputs.hash }} | awk '{print tolower($0)}')
+          CLUSTER_NAME=mc
           echo "Using cluster name \"$CLUSTER_NAME\""
           echo CLUSTER_NAME=$CLUSTER_NAME >> $GITHUB_ENV
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
