@@ -109,8 +109,7 @@ Here are some relevant labels:
 
 | Label                                 | Description                               |
 |---------------------------------------|-------------------------------------------|
-| `karpenter.azure.com/sku-family`       | Family of the SKU (e.g., standardAv2Family)|
-| `karpenter.azure.com/sku-subfamily`    | Subfamily of the SKU                      |
+| `karpenter.azure.com/sku-family`       | Family of the SKU (N) for GPU          |
 | `karpenter.azure.com/sku-cpu`          | Number of virtual CPUs                    |
 | `karpenter.azure.com/sku-accelerator`  | Type of accelerator (e.g., Nvidia)        |
 
@@ -148,13 +147,13 @@ This table will outline for each SKU, the supported OS and the driver we commit 
 | standard_nc12           | Ubuntu       | Nvidia470CudaDriver   |
 | standard_nc24           | Ubuntu       | Nvidia470CudaDriver   |
 | standard_nc24r          | Ubuntu       | Nvidia470CudaDriver   |
-| standard_nv6            | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv12           | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv12s_v3       | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv24           | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv24s_v3       | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv24r          | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv48s_v3       | Ubuntu       | Nvidia510GridDriver   |
+| standard_nv6            | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv12           | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv12s_v3       | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv24           | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv24s_v3       | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv24r          | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv48s_v3       | Ubuntu       | Nvidia535GridDriver   |
 | standard_nd6s           | Ubuntu       | Nvidia525CudaDriver   |
 | standard_nd12s          | Ubuntu       | Nvidia525CudaDriver   |
 | standard_nd24s          | Ubuntu       | Nvidia525CudaDriver   |
@@ -183,15 +182,15 @@ This table will outline for each SKU, the supported OS and the driver we commit 
 | standard_nc48ads_a100_v4| Ubuntu       | Nvidia525CudaDriver   |
 | standard_nc96ads_a100_v4| Ubuntu       | Nvidia525CudaDriver   |
 | standard_ncads_a100_v4  | Ubuntu       | Nvidia525CudaDriver   |
-| standard_nc8ads_a10_v4  | Ubuntu       | Nvidia510GridDriver   |
-| standard_nc16ads_a10_v4 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nc32ads_a10_v4 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv6ads_a10_v5  | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv12ads_a10_v5 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv18ads_a10_v5 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv36ads_a10_v5 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv36adms_a10_v5| Ubuntu       | Nvidia510GridDriver   |
-| standard_nv72ads_a10_v5 | Ubuntu       | Nvidia510GridDriver   |
+| standard_nc8ads_a10_v4  | Ubuntu       | Nvidia535GridDriver   |
+| standard_nc16ads_a10_v4 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nc32ads_a10_v4 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv6ads_a10_v5  | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv12ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv18ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv36ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv36adms_a10_v5| Ubuntu       | Nvidia535GridDriver   |
+| standard_nv72ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
 | standard_nd96ams_v4     | Ubuntu       | Nvidia525CudaDriver   |
 | standard_nd96ams_a100_v4| Ubuntu       | Nvidia525CudaDriver   |
 
