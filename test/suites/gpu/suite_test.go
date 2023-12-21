@@ -61,6 +61,11 @@ var _ = Describe("GPU", func() {
 			Key:      v1alpha2.LabelSKUFamily,
 			Operator: v1.NodeSelectorOpExists,
 		})
+		test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
+			Key: v1.LabelInstanceTypeStable, 
+			Operator: v1.NodeSelectorOpExists, 
+			Values: []string{"Standard_NC4as_T4_v3"},
+		})
 		// exclude some of the more expensive GPU SKUs
 		nodePool.Spec.Limits = corev1beta1.Limits{
 			v1.ResourceCPU:                    resource.MustParse("25"),
