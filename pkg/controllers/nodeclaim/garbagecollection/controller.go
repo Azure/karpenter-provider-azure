@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/samber/lo"
 	"go.uber.org/multierr"
@@ -35,7 +34,6 @@ import (
 
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 
-	link "github.com/Azure/karpenter/pkg/controllers/nodeclaim/link"
 	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/aws/karpenter-core/pkg/operator/controller"
 )
@@ -44,15 +42,13 @@ type Controller struct {
 	kubeClient      client.Client
 	cloudProvider   *cloudprovider.CloudProvider
 	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeueing near the start of the controller
-	linkController  *link.Controller
 }
 
-func NewController(kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider, linkController *link.Controller) *Controller {
+func NewController(kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider) *Controller {
 	return &Controller{
 		kubeClient:      kubeClient,
 		cloudProvider:   cloudProvider,
 		successfulCount: 0,
-		linkController:  linkController,
 	}
 }
 
@@ -80,20 +76,12 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 		return reconcile.Result{}, err
 	}
 	resolvedNodeClaims := lo.Filter(nodeClaims.Items, func(m corev1beta1.NodeClaim, _ int) bool {
-		return m.Status.ProviderID != "" || m.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey] != ""
+		return m.Status.ProviderID != ""
 	})
-	resolvedProviderIDs := sets.New[string](lo.Map(resolvedNodeClaims, func(m corev1beta1.NodeClaim, _ int) string {
-		if m.Status.ProviderID != "" {
-			return m.Status.ProviderID
-		}
-		return m.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey]
-	})...)
+	resolvedProviderIDs := sets.New[string](lo.Map(resolvedNodeClaims, func(m corev1beta1.NodeClaim, _ int) string { return m.Status.ProviderID })...)
 	errs := make([]error, len(retrieved))
 	workqueue.ParallelizeUntil(ctx, 100, len(managedRetrieved), func(i int) {
-		_, recentlyLinked := c.linkController.Cache.Get(managedRetrieved[i].Status.ProviderID)
-
-		if !recentlyLinked &&
-			!resolvedProviderIDs.Has(managedRetrieved[i].Status.ProviderID) &&
+		if !resolvedProviderIDs.Has(managedRetrieved[i].Status.ProviderID) &&
 			time.Since(managedRetrieved[i].CreationTimestamp.Time) > time.Minute*5 {
 			errs[i] = c.garbageCollect(ctx, managedRetrieved[i], nodeList)
 		}
