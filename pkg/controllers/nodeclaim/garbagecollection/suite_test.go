@@ -28,12 +28,13 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/Azure/karpenter/pkg/controllers/nodeclaim/garbagecollection"
+	link "github.com/Azure/karpenter/pkg/controllers/nodeclaim/link"
 	"github.com/Azure/karpenter/pkg/fake"
 	"github.com/Azure/karpenter/pkg/providers/instance"
 	"github.com/Azure/karpenter/pkg/utils"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
@@ -64,6 +65,7 @@ var nodeClass *v1alpha2.AKSNodeClass
 var cluster *state.Cluster
 var cloudProvider *cloudprovider.CloudProvider
 var garbageCollectionController controller.Controller
+var linkedNodeClaimCache *cache.Cache
 var coreProvisioner *provisioning.Provisioner
 
 func TestAPIs(t *testing.T) {
@@ -82,7 +84,11 @@ var _ = BeforeSuite(func() {
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	garbageCollectionController = garbagecollection.NewController(env.Client, cloudProvider)
+	linkedNodeClaimCache = cache.New(time.Minute*10, time.Second*10)
+	linkController := &link.Controller{
+		Cache: linkedNodeClaimCache,
+	}
+	garbageCollectionController = garbagecollection.NewController(env.Client, cloudProvider, linkController)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
@@ -113,6 +119,7 @@ var _ = BeforeEach(func() {
 
 var _ = AfterEach(func() {
 	ExpectCleanedUp(ctx, env.Client)
+	linkedNodeClaimCache.Flush()
 })
 
 var _ = Describe("NodeClaimGarbageCollection", func() {
@@ -324,6 +331,58 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
 
 			ExpectNotFound(ctx, env.Client, node)
+		})
+	})
+	var _ = Context("Linking", func() {
+		BeforeEach(func() {
+			id := utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, "vm-a")
+			vm = &armcompute.VirtualMachine{
+				ID:       lo.ToPtr(id),
+				Name:     lo.ToPtr("vm-a"),
+				Location: lo.ToPtr(fake.Region),
+				Tags: map[string]*string{
+					instance.NodePoolTagKey: lo.ToPtr("default"),
+				},
+			}
+			providerID = utils.ResourceIDToProviderID(ctx, id)
+		})
+		/*	TODO v1beta1 is this gone with v1beta1? rachel
+			It("should not delete an instance if it is linked", func() {
+				// Launch time was 1m ago
+				vm.Properties = &armcompute.VirtualMachineProperties{
+					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute)),
+				}
+				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), vm)
+
+				// Create a nodeClaim that is actively linking
+				nodeClaim := coretest.NodeClaim(corev1beta1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							corev1beta1.NodeClaimLinkedAnnotationKey: providerID,
+						},
+					},
+				})
+				nodeClaim.Status.ProviderID = ""
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+				_, err := cloudProvider.Get(ctx, providerID)
+				Expect(err).NotTo(HaveOccurred())
+			})
+		*/
+		It("should not delete an instance if it is recently linked but the nodeClaim doesn't exist", func() {
+			// Launch time was 1m ago
+			vm.Properties = &armcompute.VirtualMachineProperties{
+				TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute)),
+			}
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+
+			// Add a provider id to the recently linked cache
+			linkedNodeClaimCache.SetDefault(providerID, nil)
+
+			ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+			_, err := cloudProvider.Get(ctx, providerID)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
