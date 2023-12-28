@@ -92,10 +92,6 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 			Value:  "true",
 			Effect: v1.TaintEffectNoExecute,
 		},
-		{
-			Key:    "node.kubernetes.io/network-unavailable",
-			Effect: v1.TaintEffectNoSchedule,
-		},
 	}
 	return nodePool
 }
