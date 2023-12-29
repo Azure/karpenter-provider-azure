@@ -126,7 +126,9 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...))
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		p.cleanAzureResources(ctx, GenerateResourceName(nodeClaim.Name))
+		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil { 
+			logging.FromContext(ctx).Errorf("failed to cleanup resources for node claim %s, %w", nodeClaim.Name, cleanupErr) 
+		}
 		return nil, err
 	}
 	zone, err := GetZoneID(vm)
@@ -180,8 +182,8 @@ func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, erro
 }
 
 func (p *Provider) Delete(ctx context.Context, resourceName string) error {
-	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", )
-	return p.cleanAzureResources(ctx, resourceName)
+	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources")
+	return p.cleanupAzureResources(ctx, resourceName)
 }
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
@@ -555,7 +557,7 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	return nil, "", ""
 }
 
-func (p *Provider) cleanAzureResources(ctx context.Context, resourceName string)(err error){
+func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName string) (err error) {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
@@ -564,7 +566,7 @@ func (p *Provider) cleanAzureResources(ctx context.Context, resourceName string)
 	if nicErr != nil {
 		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
 	}
-	
+
 	return errors.Join(vmErr, nicErr)
 }
 

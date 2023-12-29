@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/go-autorest/autorest/to"
@@ -84,7 +86,7 @@ func (c *NetworkInterfacesAPI) Get(_ context.Context, resourceGroupName string, 
 	id := mkNetworkInterfaceID(resourceGroupName, interfaceName)
 	iface, ok := c.NetworkInterfaces.Load(id)
 	if !ok {
-		return armnetwork.InterfacesClientGetResponse{}, fmt.Errorf("not found")
+		return armnetwork.InterfacesClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
 	}
 	return armnetwork.InterfacesClientGetResponse{
 		Interface: iface.(armnetwork.Interface),

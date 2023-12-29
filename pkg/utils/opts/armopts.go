@@ -17,9 +17,9 @@ limitations under the License.
 package opts
 
 import (
+	"errors"
 	"net/http"
 	"time"
-	"errors"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -34,15 +34,14 @@ func DefaultArmOpts() *arm.ClientOptions {
 	opts.Telemetry = DefaultTelemetryOpts()
 	opts.Retry = DefaultRetryOpts()
 	opts.Transport = defaultHTTPClient
-	return opts		
+	return opts
 }
 
 func DefaultNICClientOpts() *arm.ClientOptions {
 	opts := DefaultArmOpts()
 	perCallNICRetryPolicy := &NICRetryPolicy{}
-	opts.PerCallPolicies = append(opts.PerCallPolicies, perCallNICRetryPolicy) 
+	opts.PerCallPolicies = append(opts.PerCallPolicies, perCallNICRetryPolicy)
 	return opts
-
 
 }
 
@@ -76,27 +75,24 @@ func DefaultTelemetryOpts() policy.TelemetryOptions {
 	}
 }
 
-
-type NICRetryPolicy struct {}
+type NICRetryPolicy struct{}
 
 func (p *NICRetryPolicy) Do(req *policy.Request) (*http.Response, error) {
-        var retryCount int
-        for {
-            resp, err := req.Next() 
-            if err != nil {
-                var respErr *azcore.ResponseError
-                if errors.As(err, &respErr) && respErr.ErrorCode == "NicReservedForAnotherVm" {
-                    if retryCount >= MaxRetries {
-                        return nil, errors.New("maximum retries reached for NIC deletion")
-                    }
-					// NicReservedForAnotherVm always returns 
-                    time.Sleep(180 * time.Second) 
-                    retryCount++
-                    continue 
-                }
-            }
-            return resp, err 
+	var retryCount int
+	for {
+		resp, err := req.Next()
+		if err != nil {
+			var respErr *azcore.ResponseError
+			if errors.As(err, &respErr) && respErr.ErrorCode == "NicReservedForAnotherVm" {
+				if retryCount >= MaxRetries {
+					return nil, errors.New("maximum retries reached for NIC deletion")
+				}
+				// NicReservedForAnotherVm always returns
+				time.Sleep(180 * time.Second)
+				retryCount++
+				continue
+			}
 		}
+		return resp, err
+	}
 }
-
-

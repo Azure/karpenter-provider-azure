@@ -1095,4 +1095,3 @@ var _ = Describe("Tax Calculator", func() {
 func createSDKErrorBody(code, message string) io.ReadCloser {
 	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }
-
