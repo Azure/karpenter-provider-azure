@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -125,7 +126,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...))
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		p.cleanUpResourcesFromFailedLaunch(ctx, GenerateResourceName(nodeClaim.Name))
+		p.cleanAzureResources(ctx, GenerateResourceName(nodeClaim.Name))
 		return nil, err
 	}
 	zone, err := GetZoneID(vm)
@@ -194,9 +195,9 @@ func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, erro
 	return vmList, nil
 }
 
-func (p *Provider) Delete(ctx context.Context, vmName string) error {
-	logging.FromContext(ctx).Debugf("Deleting virtual machine %s", vmName)
-	return deleteVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
+func (p *Provider) Delete(ctx context.Context, resourceName string) error {
+	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", )
+	return p.cleanAzureResources(ctx, resourceName)
 }
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
@@ -570,15 +571,17 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	return nil, "", ""
 }
 
-func (p *Provider) cleanUpResourcesFromFailedLaunch(ctx context.Context, resourceName string) {
-	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
-	if nicErr != nil {
-		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
-	}
+func (p *Provider) cleanAzureResources(ctx context.Context, resourceName string)(err error){
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
 	}
+	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
+	if nicErr != nil {
+		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
+	}
+	
+	return errors.Join(vmErr, nicErr)
 }
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.
