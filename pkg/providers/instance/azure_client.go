@@ -137,8 +137,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		return nil, err
 	}
 
-	nicOpts := armopts.DefaultNICClientOpts()
-	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, nicOpts)
+	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
