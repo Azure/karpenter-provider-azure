@@ -147,16 +147,15 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("vm creation error responses", func() {
-
 		It("should delete the network interface on failure to create the vm", func() {
-			genericAzureErrMsg := "some generic error message"
-			genericSadErrorCode := "GenericSadCase"
+			ErrMsg := "test error"
+			ErrCode := fmt.Sprint(http.StatusNotFound)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
 				&azcore.ResponseError{
-					ErrorCode: genericSadErrorCode,
+					ErrorCode: ErrCode,	
 					RawResponse: &http.Response{
-						Body: createSDKErrorBody(genericSadErrorCode, genericAzureErrMsg),
+						Body: createSDKErrorBody(ErrCode, ErrMsg),
 					},
 				},
 			)
