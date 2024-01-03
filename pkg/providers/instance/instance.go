@@ -72,8 +72,6 @@ var (
 	ZonalAllocationFailureReason   = "ZonalAllocationFailure"
 	SKUNotAvailableReason          = "SKUNotAvailable"
 
-	SKUNotAvailableErrorCode = "SkuNotAvailable"
-
 	SubscriptionQuotaReachedTTL = 1 * time.Hour
 	SKUNotAvailableSpotTTL      = 1 * time.Hour
 	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
@@ -429,12 +427,6 @@ func (p *Provider) launchInstance(
 	return resp, instanceType, nil
 }
 
-// isSKUNotAvailable - to be moved to azure-sdk-for-go-extensions
-func isSKUNotAvailable(err error) bool {
-	azErr := sdkerrors.IsResponseError(err)
-	return azErr != nil && azErr.ErrorCode == SKUNotAvailableErrorCode
-}
-
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	if sdkerrors.SKUFamilyQuotaHasBeenReached(err) {
 		// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
@@ -455,7 +447,7 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 		}
 		return fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
 	}
-	if isSKUNotAvailable(err) {
+	if sdkerrors.IsSKUNotAvailable(err) {
 		// https://aka.ms/azureskunotavailable: either not available for a location or zone, or out of capacity for Spot.
 		// We only expect to observe the Spot case, not location or zone restrictions, because:
 		// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
