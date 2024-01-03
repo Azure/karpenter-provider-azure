@@ -15,12 +15,13 @@ Karpenter should populate the following fields in the bootstrapping contract for
 - **1a.** GPUNode
 - **1b.** GPUDriverVersion
 - **1c.** ConfigGPUDriverIfNeeded
+- **1d.** GPUImageSHA
 
 **Note:** The following are explicitly ignored for the preview:
 
-- **1d.** SGXNode
-- **1e.** MIGNode
-- **1f.** EnableGPUDevicePluginIfNeeded
+- **1e.** SGXNode
+- **1f.** MIGNode
+- **1g.** EnableGPUDevicePluginIfNeeded
 
 ### 2. User-Level Control
 
@@ -112,10 +113,9 @@ Here are some relevant labels:
 
 | Label                                 | Description                               |
 |---------------------------------------|-------------------------------------------|
-| `karpenter.k8s.azure/sku-family`       | Family of the SKU (e.g., standardAv2Family)|
-| `karpenter.k8s.azure/sku-subfamily`    | Subfamily of the SKU                      |
-| `karpenter.k8s.azure/sku-cpu`          | Number of virtual CPUs                    |
-| `karpenter.k8s.azure/sku-accelerator`  | Type of accelerator (e.g., Nvidia)        |
+| `karpenter.azure.com/sku-family`       | Family of the SKU (N) for GPU          |
+| `karpenter.azure.com/sku-cpu`          | Number of virtual CPUs                    |
+| `karpenter.azure.com/sku-accelerator`  | Type of accelerator (e.g., Nvidia)        |
 
 **Note:** GPU SKUs usually support only a single hypervisor generation. Explicit image selection is moot in most cases, though there are some exceptions.
 
@@ -134,9 +134,9 @@ Here are some relevant labels:
 
 | Selector Label                            | Values  | Description                                        | Where to get the value                  |
 |-------------------------------------------|---------|----------------------------------------------------|----------------------------------------|
-| `karpenter.k8s.azure/instance-gpu-name`    | `t4`    | Name of the GPU on the instance, if available      | vmSizeAcceleratorType                  |
-| `karpenter.k8s.azure/instance-gpu-manufacturer` | `nvidia` | GPU Manufacturer | Can be inferred, all Nvidia for preview    |
-| `karpenter.k8s.azure/instance-gpu-count`   | `1`     | Number of GPUs on the instance                     | sku.capabilities["GPU"]                |
+| `karpenter.azure.com/instance-gpu-name`    | `t4`    | Name of the GPU on the instance, if available      | vmSizeAcceleratorType                  |
+| `karpenter.azure.com/instance-gpu-manufacturer` | `nvidia` | GPU Manufacturer | Can be inferred, all Nvidia for preview    |
+| `karpenter.azure.com/instance-gpu-count`   | `1`     | Number of GPUs on the instance                     | sku.capabilities["GPU"]                |
 
 ## Supported GPU SKUs and Expected Drivers
 
@@ -151,13 +151,13 @@ This table will outline for each SKU, the supported OS and the driver we commit 
 | standard_nc12           | Ubuntu       | Nvidia470CudaDriver   |
 | standard_nc24           | Ubuntu       | Nvidia470CudaDriver   |
 | standard_nc24r          | Ubuntu       | Nvidia470CudaDriver   |
-| standard_nv6            | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv12           | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv12s_v3       | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv24           | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv24s_v3       | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv24r          | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv48s_v3       | Ubuntu       | Nvidia510GridDriver   |
+| standard_nv6            | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv12           | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv12s_v3       | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv24           | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv24s_v3       | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv24r          | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv48s_v3       | Ubuntu       | Nvidia535GridDriver   |
 | standard_nd6s           | Ubuntu       | Nvidia525CudaDriver   |
 | standard_nd12s          | Ubuntu       | Nvidia525CudaDriver   |
 | standard_nd24s          | Ubuntu       | Nvidia525CudaDriver   |
@@ -186,15 +186,15 @@ This table will outline for each SKU, the supported OS and the driver we commit 
 | standard_nc48ads_a100_v4| Ubuntu       | Nvidia525CudaDriver   |
 | standard_nc96ads_a100_v4| Ubuntu       | Nvidia525CudaDriver   |
 | standard_ncads_a100_v4  | Ubuntu       | Nvidia525CudaDriver   |
-| standard_nc8ads_a10_v4  | Ubuntu       | Nvidia510GridDriver   |
-| standard_nc16ads_a10_v4 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nc32ads_a10_v4 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv6ads_a10_v5  | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv12ads_a10_v5 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv18ads_a10_v5 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv36ads_a10_v5 | Ubuntu       | Nvidia510GridDriver   |
-| standard_nv36adms_a10_v5| Ubuntu       | Nvidia510GridDriver   |
-| standard_nv72ads_a10_v5 | Ubuntu       | Nvidia510GridDriver   |
+| standard_nc8ads_a10_v4  | Ubuntu       | Nvidia535GridDriver   |
+| standard_nc16ads_a10_v4 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nc32ads_a10_v4 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv6ads_a10_v5  | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv12ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv18ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv36ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
+| standard_nv36adms_a10_v5| Ubuntu       | Nvidia535GridDriver   |
+| standard_nv72ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
 | standard_nd96ams_v4     | Ubuntu       | Nvidia525CudaDriver   |
 | standard_nd96ams_a100_v4| Ubuntu       | Nvidia525CudaDriver   |
 
