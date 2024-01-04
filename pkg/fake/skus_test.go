@@ -20,8 +20,8 @@ import (
 	"testing"
 )
 
-// TestSKUExistenceEastus tests that we are not regressing in our codegen
-func TestSKUExistenceEastus(t *testing.T) {
+// TestSKUExistenceEastUS tests that we are not regressing in our codegen
+func TestSKUExistenceEastUS(t *testing.T) {
 	expectedSKUs := []string{
 		"Standard_A0",
 		"Standard_B1s",
@@ -55,7 +55,7 @@ func TestSKUExistenceEastus(t *testing.T) {
 	}
 }
 
-// TestSKUExistenceEastus tests that we are not regressing in our codegen
+// TestSKUExistenceWestCentralUS tests that we are not regressing in our codegen
 func TestSKUExistenceWestCentralUS(t *testing.T) {
 	expectedSKUs := []string{
 		"Standard_A0",
