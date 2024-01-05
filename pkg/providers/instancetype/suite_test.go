@@ -121,9 +121,6 @@ var _ = Describe("InstanceType Provider", func() {
 		os.Setenv("AZURE_SUBNET_NAME", "test-subnet-name")
 
 		nodeClass = test.AKSNodeClass()
-		// Sometimes we use nodeClass without applying it, when simulating the List() call.
-		// In that case, we need to set the default values for the node class.
-		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 		nodePool = coretest.NodePool(corev1beta1.NodePool{
 			Spec: corev1beta1.NodePoolSpec{
 				Template: corev1beta1.NodeClaimTemplate{
@@ -268,7 +265,6 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
 			// Create a Provisioner that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
-
 			np := coretest.NodePool()
 			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, v1.NodeSelectorRequirement{
 				Key:      "node.kubernetes.io/instance-type",
@@ -362,7 +358,6 @@ var _ = Describe("InstanceType Provider", func() {
 		}
 
 		It("should support provisioning with kubeletConfig, computeResources & maxPods not specified", func() {
-
 			nodePool.Spec.Template.Spec.Kubelet = kubeletConfig
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
@@ -672,7 +667,6 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should propagate all values to requirements from skewer", func() {
 			var gpuNode *corecloudprovider.InstanceType
 			var normalNode *corecloudprovider.InstanceType
-
 			for _, instanceType := range instanceTypes {
 				if instanceType.Name == "Standard_D2_v2" {
 					normalNode = instanceType

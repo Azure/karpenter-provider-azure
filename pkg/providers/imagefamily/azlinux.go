@@ -30,7 +30,6 @@ import (
 )
 
 const (
-	AzureLinuxImageFamily           = "AzureLinux"
 	AzureLinuxGen2CommunityImage    = "V2gen2"
 	AzureLinuxGen1CommunityImage    = "V2"
 	AzureLinuxGen2ArmCommunityImage = "V2gen2arm64"
@@ -41,7 +40,7 @@ type AzureLinux struct {
 }
 
 func (u AzureLinux) Name() string {
-	return AzureLinuxImageFamily
+	return v1alpha2.AzureLinuxImageFamily
 }
 
 func (u AzureLinux) DefaultImages() []DefaultImageOutput {

@@ -113,9 +113,9 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
-	case Ubuntu2204ImageFamily:
+	case v1alpha2.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
-	case AzureLinuxImageFamily:
+	case v1alpha2.AzureLinuxImageFamily:
 		return &AzureLinux{Options: parameters}
 	default:
 		return &Ubuntu2204{Options: parameters}

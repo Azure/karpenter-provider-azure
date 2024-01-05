@@ -46,9 +46,6 @@ import (
 const (
 	InstanceTypesCacheKey = "types"
 	InstanceTypesCacheTTL = 23 * time.Hour
-
-	Ubuntu2204ImageFamily = "Ubuntu2204"
-	AzureLinuxImageFamily = "AzureLinux"
 )
 
 type Provider struct {
@@ -78,8 +75,7 @@ func (p *Provider) List(
 	p.Lock()
 	defer p.Unlock()
 	// Get SKUs from Azure
-	imageFamily := lo.FromPtr(nodeClass.Spec.ImageFamily)
-	skus, err := p.getInstanceTypes(ctx, imageFamily)
+	skus, err := p.getInstanceTypes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +97,10 @@ func (p *Provider) List(
 		instanceTypeZones := instanceTypeZones(sku, p.region)
 		instanceType := NewInstanceType(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
 		if len(instanceType.Offerings) == 0 {
+			continue
+		}
+
+		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
 			continue
 		}
 		result = append(result, instanceType)
@@ -143,8 +143,23 @@ func (p *Provider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) []cl
 	return offerings
 }
 
+func (p *Provider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
+	// Currently only GPU has conditional support by image family
+	if !(utils.IsNvidiaEnabledSKU(skuName) || utils.IsMarinerEnabledGPUSKU(skuName)) {
+		return true
+	}
+	switch imageFamily {
+	case v1alpha2.Ubuntu2204ImageFamily:
+		return utils.IsNvidiaEnabledSKU(skuName)
+	case v1alpha2.AzureLinuxImageFamily:
+		return utils.IsMarinerEnabledGPUSKU(skuName)
+	default:
+		return false
+	}
+}
+
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
-func (p *Provider) getInstanceTypes(ctx context.Context, imageFamily string) (map[string]*skewer.SKU, error) {
+func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU, error) {
 	if cached, ok := p.cache.Get(InstanceTypesCacheKey); ok {
 		return cached.(map[string]*skewer.SKU), nil
 	}
@@ -164,7 +179,7 @@ func (p *Provider) getInstanceTypes(ctx context.Context, imageFamily string) (ma
 			continue
 		}
 
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, imageFamily) {
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -175,11 +190,11 @@ func (p *Provider) getInstanceTypes(ctx context.Context, imageFamily string) (ma
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *Provider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, imageFamily string) bool {
+func (p *Provider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
 	return p.hasMinimumCPU(sku) &&
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
-		!p.isUnsupportedGPU(sku, imageFamily) &&
+		!p.isUnsupportedGPU(sku) &&
 		!p.hasConstrainedCPUs(vmsize) &&
 		!p.isConfidential(sku)
 }
@@ -202,21 +217,13 @@ func (p *Provider) isUnsupportedByAKS(sku *skewer.SKU) bool {
 }
 
 // GPU SKUs AKS does not support
-func (p *Provider) isUnsupportedGPU(sku *skewer.SKU, imageFamily string) bool {
+func (p *Provider) isUnsupportedGPU(sku *skewer.SKU) bool {
 	name := lo.FromPtr(sku.Name)
 	gpu, err := sku.GPU()
 	if err != nil || gpu <= 0 {
 		return false
 	}
-
-	switch imageFamily {
-	case Ubuntu2204ImageFamily:
-		return !utils.IsNvidiaEnabledSKU(name)
-	case AzureLinuxImageFamily:
-		return !utils.IsMarinerEnabledGPUSKU(name)
-	default:
-		return false
-	}
+	return !utils.IsMarinerEnabledGPUSKU(name) && !utils.IsNvidiaEnabledSKU(name)
 }
 
 // SKU with constrained CPUs

@@ -30,7 +30,6 @@ import (
 )
 
 const (
-	Ubuntu2204ImageFamily           = "Ubuntu2204"
 	Ubuntu2204Gen2CommunityImage    = "2204gen2containerd"
 	Ubuntu2204Gen1CommunityImage    = "2204containerd"
 	Ubuntu2204Gen2ArmCommunityImage = "2204gen2arm64containerd"
@@ -41,7 +40,7 @@ type Ubuntu2204 struct {
 }
 
 func (u Ubuntu2204) Name() string {
-	return Ubuntu2204ImageFamily
+	return v1alpha2.Ubuntu2204ImageFamily
 }
 
 func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
