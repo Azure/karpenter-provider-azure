@@ -51,6 +51,8 @@ manifests:
                 value: westus2
               - name: ARM_USE_NEW_CRED_WORKFLOW
                 value: "true"
+              - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
+                value: "true"
               - name: ARM_USER_ASSIGNED_IDENTITY_ID
                 value: ""
               - name: AZURE_NODE_RESOURCE_GROUP

@@ -42,6 +42,7 @@ func newServicePrincipalTokenFromCredentials(config *Config, env *azure.Environm
 		return nil, fmt.Errorf("creating the OAuth config: %w", err)
 	}
 
+	// TODO (charliedmcb): look at updating this with the new workload identity logic. Would be nice if we could align all the auth.
 	if config.UseManagedIdentityExtension {
 		klog.V(2).Infoln("azure: using managed identity extension to retrieve access token")
 		msiEndpoint, err := adal.GetMSIVMEndpoint()
