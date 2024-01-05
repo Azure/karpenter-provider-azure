@@ -72,6 +72,7 @@ type Config struct {
 	AADClientSecret             string `json:"aadClientSecret" yaml:"aadClientSecret"`
 	AADClientCertPath           string `json:"aadClientCertPath" yaml:"aadClientCertPath"`
 	AADClientCertPassword       string `json:"aadClientCertPassword" yaml:"aadClientCertPassword"`
+	UseNewCredWorkflow          bool   `json:"useNewCredWorkflow" yaml:"useNewCredWorkflow"`
 	UseManagedIdentityExtension bool   `json:"useManagedIdentityExtension" yaml:"useManagedIdentityExtension"`
 	UserAssignedIdentityID      string `json:"userAssignedIdentityID" yaml:"userAssignedIdentityID"`
 
@@ -87,7 +88,7 @@ type Config struct {
 
 func (cfg *Config) PrepareConfig() error {
 	cfg.BaseVars()
-	err := cfg.prepareMSI()
+	err := cfg.prepareID()
 	if err != nil {
 		return err
 	}
@@ -113,7 +114,15 @@ func (cfg *Config) BaseVars() {
 	// cfg.VnetGuid = os.Getenv("AZURE_VNET_GUID") // This field needs to be resolved inside of karpenter, so we will get it in the azClient initialization
 }
 
-func (cfg *Config) prepareMSI() error {
+func (cfg *Config) prepareID() error {
+	useNewCredWorkflowFromEnv := os.Getenv("ARM_USE_NEW_CRED_WORKFLOW")
+	if len(useNewCredWorkflowFromEnv) > 0 {
+		shouldUse, err := strconv.ParseBool(useNewCredWorkflowFromEnv)
+		if err != nil {
+			return err
+		}
+		cfg.UseNewCredWorkflow = shouldUse
+	}
 	useManagedIdentityExtensionFromEnv := os.Getenv("ARM_USE_MANAGED_IDENTITY_EXTENSION")
 	if len(useManagedIdentityExtensionFromEnv) > 0 {
 		shouldUse, err := strconv.ParseBool(useManagedIdentityExtensionFromEnv)

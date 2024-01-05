@@ -29,6 +29,10 @@ func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
 		return nil, fmt.Errorf("failed to create credential, nil config provided")
 	}
 
+	if cfg.UseNewCredWorkflow {
+		return azidentity.NewDefaultAzureCredential(nil)
+	}
+
 	if cfg.UseManagedIdentityExtension || cfg.AADClientID == "msi" {
 		msiCred, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
 			ID: azidentity.ClientID(cfg.UserAssignedIdentityID),
