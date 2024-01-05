@@ -22,7 +22,6 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter/pkg/providers/launchtemplate/parameters"
-	"github.com/Azure/karpenter/pkg/utils"
 
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
@@ -74,25 +73,21 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, instanceType *cloudprovider.InstanceType) bootstrap.Bootstrapper {
-	var arch string = corev1beta1.ArchitectureAmd64
-	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
-		arch = corev1beta1.ArchitectureArm64
-	}
+func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
-			ClusterName:     u.Options.ClusterName,
-			ClusterEndpoint: u.Options.ClusterEndpoint,
-			KubeletConfig:   kubeletConfig,
-			Taints:          taints,
-			Labels:          labels,
-			CABundle:        caBundle,
-			// TODO: Move common calculations that can be shared across image families
-			// to shared options struct the user data can reference
-			GPUNode:          utils.IsMarinerEnabledGPUSKU(instanceType.Name),
-			GPUDriverVersion: utils.GetGPUDriverVersion(instanceType.Name),
+			ClusterName:      u.Options.ClusterName,
+			ClusterEndpoint:  u.Options.ClusterEndpoint,
+			KubeletConfig:    kubeletConfig,
+			Taints:           taints,
+			Labels:           labels,
+			CABundle:         caBundle,
+			GPUNode:          u.Options.GPUNode,
+			GPUDriverVersion: u.Options.GPUDriverVersion,
+			// GPUImageSHA: u.Options.GPUImageSHA, image sha only applies to ubuntu
+			// SEE: https://github.com/Azure/AgentBaker/blob/f393d6e4d689d9204d6000c85623ad9b764e2a29/vhdbuilder/packer/install-dependencies.sh#L201
 		},
-		Arch:                           arch,
+		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,
 		SubscriptionID:                 u.Options.SubscriptionID,
 		Location:                       u.Options.Location,

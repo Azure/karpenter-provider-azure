@@ -22,7 +22,6 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter/pkg/providers/launchtemplate/parameters"
-	"github.com/Azure/karpenter/pkg/utils"
 
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
@@ -74,26 +73,20 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, instanceType *cloudprovider.InstanceType) bootstrap.Bootstrapper {
-	var arch string = corev1beta1.ArchitectureAmd64
-	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
-		arch = corev1beta1.ArchitectureArm64
-	}
+func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
-			ClusterName:     u.Options.ClusterName,
-			ClusterEndpoint: u.Options.ClusterEndpoint,
-			KubeletConfig:   kubeletConfig,
-			Taints:          taints,
-			Labels:          labels,
-			CABundle:        caBundle,
-			// TODO: Move common calculations that can be shared across image families
-			// to shared options struct the user data can reference
-			GPUNode:          utils.IsNvidiaEnabledSKU(instanceType.Name),
-			GPUDriverVersion: utils.GetGPUDriverVersion(instanceType.Name),
-			GPUImageSHA:      utils.GetAKSGPUImageSHA(instanceType.Name),
+			ClusterName:      u.Options.ClusterName,
+			ClusterEndpoint:  u.Options.ClusterEndpoint,
+			KubeletConfig:    kubeletConfig,
+			Taints:           taints,
+			Labels:           labels,
+			CABundle:         caBundle,
+			GPUNode:          u.Options.GPUNode,
+			GPUDriverVersion: u.Options.GPUDriverVersion,
+			GPUImageSHA:      u.Options.GPUImageSHA,
 		},
-		Arch:                           arch,
+		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,
 		SubscriptionID:                 u.Options.SubscriptionID,
 		Location:                       u.Options.Location,
