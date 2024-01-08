@@ -18,11 +18,13 @@ package fake
 
 import (
 	"testing"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // TestSKUExistenceEastUS tests that we are not regressing in our codegen
 func TestSKUExistenceEastUS(t *testing.T) {
-	expectedSKUs := []string{
+	expectedSKUs := sets.New(
 		"Standard_A0",
 		"Standard_B1s",
 		"Standard_D2s_v3",
@@ -38,18 +40,18 @@ func TestSKUExistenceEastUS(t *testing.T) {
 		"Standard_NC24ads_A100_v4",
 		"Standard_NC6s_v3",
 		"Standard_NC16as_T4_v3",
-	}
+	)
 
 	generatedSKUs := ResourceSkus["eastus"]
 
-	skuMap := make(map[string]bool)
+	skuSets := make(sets.Set[string])
 	for _, sku := range generatedSKUs {
 		skuName := *sku.Name
-		skuMap[skuName] = true
+		skuSets.Insert(skuName)
 	}
 
-	for _, expectedSKU := range expectedSKUs {
-		if _, exists := skuMap[expectedSKU]; !exists {
+	for _, expectedSKU := range expectedSKUs.UnsortedList() {
+		if exists := skuSets.Has(expectedSKU); !exists {
 			t.Errorf("SKU not found %v", expectedSKU)
 		}
 	}
@@ -57,7 +59,7 @@ func TestSKUExistenceEastUS(t *testing.T) {
 
 // TestSKUExistenceWestCentralUS tests that we are not regressing in our codegen
 func TestSKUExistenceWestCentralUS(t *testing.T) {
-	expectedSKUs := []string{
+	expectedSKUs := sets.New( 
 		"Standard_A0",
 		"Standard_B1s",
 		"Standard_D2s_v3",
@@ -68,18 +70,18 @@ func TestSKUExistenceWestCentralUS(t *testing.T) {
 		"Standard_D64s_v3",
 		"Standard_DS2_v2",
 		"Standard_F16s_v2",
-	}
+	)
 
 	generatedSKUs := ResourceSkus["westcentralus"]
 
-	skuMap := make(map[string]bool)
+	skuSets := make(sets.Set[string])
 	for _, sku := range generatedSKUs {
 		skuName := *sku.Name
-		skuMap[skuName] = true
+		skuSets.Insert(skuName)
 	}
 
-	for _, expectedSKU := range expectedSKUs {
-		if _, exists := skuMap[expectedSKU]; !exists {
+	for _, expectedSKU := range expectedSKUs.UnsortedList() {
+		if exists := skuSets.Has(expectedSKU); !exists {
 			t.Errorf("SKU not found %v", expectedSKU)
 		}
 	}
