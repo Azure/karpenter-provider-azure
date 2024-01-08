@@ -9,7 +9,7 @@ build:
           paths:
             - '**/*.go'
             - '**/*.gtpl'
-        #flags: ['-tags', 'ccp']
+            #flags: ['-tags', 'ccp']
 manifests:
   helm:
     releases:
@@ -29,10 +29,10 @@ manifests:
               drift: true
             azure:
               clusterName: karpenter
-              clusterEndpoint: https://karpenter-tallaxes-azure-k-26fe00-j3imiwu5.hcp.westus2.staging.azmk8s.io:443
-              kubeletClientTLSBootstrapToken: "<updateme>" # TODO: get this from the cluster
+              clusterEndpoint: "Please run make az-all"
+              kubeletClientTLSBootstrapToken: "Please run make az-all" # TODO: get this from the cluster
               # TODO: autogenerate
-              sshPublicKey: "<updateme>"
+              sshPublicKey: "Please run make az-all"
               networkPlugin: "azure" # TODO: get this from the cluster
               networkPolicy: ""
           replicas: 1 # for better debugging experience
@@ -46,23 +46,23 @@ manifests:
             batchMaxDuration: 10s # 60s is a good value for large runs (500+ nodes)
             env:
               - name: ARM_SUBSCRIPTION_ID
-                value: ""
+                value: "Please run make az-all"
               - name: LOCATION
                 value: westus2
               - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
                 value: "true"
               - name: ARM_USER_ASSIGNED_IDENTITY_ID
-                value: ""
+                value: "Please run make az-all"
               - name: AZURE_NODE_RESOURCE_GROUP
-                value: ""
+                value: "Please run make az-all"
               - name: AZURE_SUBNET_ID # the id of subnet to create network interfaces on
-                value: ""
+                value: "Please run make az-all"
               - name: LEADER_ELECT # disable leader election for better debugging experience
                 value: "false"
               - name: AZURE_VNET_NAME
-                value: ""
+                value: "Please run make az-all"
               - name: AZURE_SUBNET_NAME
-                value: ""
+                value: "Please run make az-all"
                 # disable HTTP/2 to reduce ARM throttling on large-scale tests;
                 # with this in place write (and read) QPS can be increased too
                 #- name: GODEBUG
