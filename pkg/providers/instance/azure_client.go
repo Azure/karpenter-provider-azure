@@ -94,7 +94,7 @@ func NewAZClientFromAPI(
 	}
 }
 
-func CreateAzClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
+func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	// Defaulting env to Azure Public Cloud.
 	env := azure.PublicCloud
 	var err error

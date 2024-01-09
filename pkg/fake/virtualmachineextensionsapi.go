@@ -40,7 +40,7 @@ type VirtualMachineExtensionsBehavior struct {
 }
 
 // assert that ComputeAPI implements ARMComputeAPI
-var _ instance.VirtualMachineExtensionsAPI = (*VirtualMachineExtensionsAPI)(nil)
+var _ instance.VirtualMachineExtensionsAPI = &VirtualMachineExtensionsAPI{}
 
 type VirtualMachineExtensionsAPI struct {
 	// instance.VirtualMachineExtensionsAPI
