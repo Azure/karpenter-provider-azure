@@ -21,6 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"k8s.io/klog/v2"
 )
 
 // NewCredential provides a token credential for msi and service principal auth
@@ -30,10 +31,12 @@ func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
 	}
 
 	if cfg.UseNewCredWorkflow {
+		klog.V(2).Infoln("cred: using workload identity for new credential")
 		return azidentity.NewDefaultAzureCredential(nil)
 	}
 
 	if cfg.UseManagedIdentityExtension || cfg.AADClientID == "msi" {
+		klog.V(2).Infoln("cred: using msi for new credential")
 		msiCred, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
 			ID: azidentity.ClientID(cfg.UserAssignedIdentityID),
 		})
@@ -43,6 +46,7 @@ func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
 		return msiCred, nil
 	}
 	// service principal case
+	klog.V(2).Infoln("cred: using sp for new credential")
 	cred, err := azidentity.NewClientSecretCredential(cfg.TenantID, cfg.AADClientID, cfg.AADClientSecret, nil)
 	if err != nil {
 		return nil, err

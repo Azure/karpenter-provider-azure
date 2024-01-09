@@ -31,6 +31,7 @@ import (
 
 func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer, error) {
 	if config.UseNewCredWorkflow {
+		klog.V(2).Infoln("auth: using workload identity for new authorizer")
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, fmt.Errorf("default cred: %w", err)
