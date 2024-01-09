@@ -59,6 +59,6 @@ runs:
     run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-id-msi
   - name: update azure perms
     shell: bash
-    run: | 
+    run: |
     AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-perm
     AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-perm-acr
