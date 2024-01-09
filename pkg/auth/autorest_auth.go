@@ -23,10 +23,21 @@ import (
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
-	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/jongio/azidext/go/azidext"
 )
 
 func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer, error) {
+	if config.UseNewCredWorkflow {
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, fmt.Errorf("default cred: %w", err)
+		}
+		return azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope}), nil
+	}
+
 	token, err := newServicePrincipalTokenFromCredentials(config, env)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve service principal token: %w", err)

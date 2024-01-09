@@ -70,7 +70,6 @@ az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold con
 	$(eval SSH_PUBLIC_KEY=$(shell cat ~/.ssh/id_rsa.pub) azureuser)
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_SUBSCRIPTION_ID"))           .value = "$(AZURE_SUBSCRIPTION_ID)"'   skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="LOCATION"))                      .value = "$(AZURE_LOCATION)"'          skaffold.yaml
-	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USER_ASSIGNED_IDENTITY_ID")) .value = "$(KARPENTER_USER_ASSIGNED_CLIENT_ID)"'         skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_NODE_RESOURCE_GROUP"))     .value = "$(AZURE_RESOURCE_GROUP_MC)"' skaffold.yaml
 	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.clusterName =                                                "$(AZURE_CLUSTER_NAME)"'      skaffold.yaml
 	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.clusterEndpoint =                                            "$(CLUSTER_ENDPOINT)"'        skaffold.yaml
