@@ -23,11 +23,11 @@ import (
 // TODO: Get these from agentbaker
 const (
 	Nvidia470CudaDriverVersion = "cuda-470.82.01"
-	Nvidia525CudaDriverVersion = "cuda-525.85.12"
+	Nvidia535CudaDriverVersion = "cuda-535.54.03"
 	Nvidia535GridDriverVersion = "grid-535.54.03"
 
 	AKSGPUGridSHA = "sha-20ffa2"
-	AKSGPUCudaSHA = "sha-e8873b"
+	AKSGPUCudaSHA = "sha-ff213d"
 )
 
 func GetAKSGPUImageSHA(size string) string {
@@ -146,7 +146,7 @@ func GetGPUDriverVersion(size string) string {
 	if isStandardNCv1(size) {
 		return Nvidia470CudaDriverVersion
 	}
-	return Nvidia525CudaDriverVersion
+	return Nvidia535CudaDriverVersion
 }
 
 func isStandardNCv1(size string) bool {
