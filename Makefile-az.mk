@@ -10,13 +10,12 @@ endif
 AZURE_CLUSTER_NAME ?= karpenter
 AZURE_RESOURCE_GROUP_MC = MC_$(AZURE_RESOURCE_GROUP)_$(AZURE_CLUSTER_NAME)_$(AZURE_LOCATION)
 
-KARPENTER_NAMESPACE ?= karpenter
 KARPENTER_SERVICE_ACCOUNT_NAME ?= karpenter-sa
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME ?= karpentermsi
 KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID 
 
-az-all:         az-login az-mkaks-cilium az-create-karpenter-msi az-create-federate-creds az-perm az-perm-acr az-patch-skaffold-azureoverlay az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
-az-all-savm:    az-login az-mkaks-savm	az-perm az-patch-skaffold-azure	az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
+az-all:         az-login az-mkaks-cilium az-create-workload-id-msi az-perm az-perm-acr az-patch-skaffold-azureoverlay az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all-savm:    az-login az-mkaks-savm az-create-workload-id-msi az-perm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
 az-login: ## Login into Azure
 	az login
@@ -42,13 +41,13 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
-az-create-karpenter-msi:
-	az identity create --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --location "${AZURE_LOCATION}" --subscription "${AZURE_SUBSCRIPTION_ID}"
-
-az-create-federate-creds:
+az-create-workload-id-msi:
 	$(eval AKS_OIDC_ISSUER=$(shell az aks show -n "${AZURE_CLUSTER_NAME}" -g "${AZURE_RESOURCE_GROUP}" --query "oidcIssuerProfile.issuerUrl" -otsv))
 
-	az identity federated-credential create --name ${KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME} --identity-name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --issuer "${AKS_OIDC_ISSUER}" --subject system:serviceaccount:"${KARPENTER_NAMESPACE}":"${KARPENTER_SERVICE_ACCOUNT_NAME}" --audience api://AzureADTokenExchange
+	# create the workload MSI that is the backing for the karpenter pod auth
+	az identity create --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --location "${AZURE_LOCATION}" --subscription "${AZURE_SUBSCRIPTION_ID}"
+	# create federated credential linked to the karpenter service account for auth usage 
+	az identity federated-credential create --name ${KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME} --identity-name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --issuer "${AKS_OIDC_ISSUER}" --subject system:serviceaccount:"${SYSTEM_NAMESPACE}":"${KARPENTER_SERVICE_ACCOUNT_NAME}" --audience api://AzureADTokenExchange
 
 az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR)
 	az deployment group create --resource-group $(AZURE_RESOURCE_GROUP) --template-file hack/azure/aks-savm.bicep --parameters aksname=$(AZURE_CLUSTER_NAME) acrname=$(AZURE_ACR_NAME)

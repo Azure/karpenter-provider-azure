@@ -38,7 +38,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2022-05-01' = {
 //resource podsubnet  'subnets' existing = { name: 'podsubnet' }
 }
 
-resource aks 'Microsoft.ContainerService/managedClusters@2022-07-01' = {
+resource aks 'Microsoft.ContainerService/managedClusters@2023-01-02-preview' = {
   location: location
   name: aksname
   identity: {
@@ -68,6 +68,12 @@ resource aks 'Microsoft.ContainerService/managedClusters@2022-07-01' = {
       dnsServiceIP: '10.0.0.10'
       dockerBridgeCidr: '172.17.0.1/16'
     } 
+    "oidcIssuerProfile": {
+      "enabled": true
+    }
+    "workloadIdentity": {
+      "enabled": true
+    }
   }
 }
 
