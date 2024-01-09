@@ -55,9 +55,9 @@ func TestGetGPUDriverVersion(t *testing.T) {
 	}{
 		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", Nvidia535GridDriverVersion},
 		{"CUDA Driver - NC Series v1", "standard_nc6s", Nvidia470CudaDriverVersion},
-		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", Nvidia525CudaDriverVersion},
-		{"Unknown SKU", "unknown_sku", Nvidia525CudaDriverVersion},
-		{"CUDA Driver - NC Series v3", "standard_nc6s_v3", Nvidia525CudaDriverVersion},
+		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", Nvidia535CudaDriverVersion},
+		{"Unknown SKU", "unknown_sku", Nvidia535CudaDriverVersion},
+		{"CUDA Driver - NC Series v3", "standard_nc6s_v3", Nvidia535CudaDriverVersion},
 		{"GRID Driver - A10", "standard_nc8ads_a10_v4", Nvidia535GridDriverVersion},
 	}
 
