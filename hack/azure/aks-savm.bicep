@@ -68,11 +68,11 @@ resource aks 'Microsoft.ContainerService/managedClusters@2023-01-02-preview' = {
       dnsServiceIP: '10.0.0.10'
       dockerBridgeCidr: '172.17.0.1/16'
     } 
-    "oidcIssuerProfile": {
-      "enabled": true
+    oidcIssuerProfile: {
+      enabled: true
     }
-    "workloadIdentity": {
-      "enabled": true
+    workloadIdentity: {
+      enabled: true
     }
   }
 }
