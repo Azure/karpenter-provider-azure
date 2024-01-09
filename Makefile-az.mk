@@ -15,7 +15,7 @@ AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME ?= karpentermsi
 KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID 
 
 az-all:         az-login az-mkaks-cilium az-create-workload-id-msi az-perm az-perm-acr az-patch-skaffold-azureoverlay az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
-az-all-savm:    az-login az-mkaks-savm az-create-workload-id-msi az-perm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
+az-all-savm:    az-login az-mkaks-savm az-perm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
 az-login: ## Login into Azure
 	az login
@@ -58,7 +58,7 @@ az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use
 	az group delete --name $(AZURE_RESOURCE_GROUP)
 
 az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold config
-	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv))
+	$(eval AZURE_CLIENT_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".identityProfile.kubeletidentity.clientId"))
 	$(eval CLUSTER_ENDPOINT=$(shell kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'))
 	# bootstrap token
 	$(eval TOKEN_SECRET_NAME=$(shell kubectl get -n kube-system secrets --field-selector=type=bootstrap.kubernetes.io/token -o jsonpath='{.items[0].metadata.name}'))
@@ -69,17 +69,13 @@ az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold con
 	$(eval SSH_PUBLIC_KEY=$(shell cat ~/.ssh/id_rsa.pub) azureuser)
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_SUBSCRIPTION_ID"))           .value = "$(AZURE_SUBSCRIPTION_ID)"'   skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="LOCATION"))                      .value = "$(AZURE_LOCATION)"'          skaffold.yaml
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USER_ASSIGNED_IDENTITY_ID")) .value = "$(AZURE_CLIENT_ID)"'         skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_NODE_RESOURCE_GROUP"))     .value = "$(AZURE_RESOURCE_GROUP_MC)"' skaffold.yaml
 	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.clusterName =                                                "$(AZURE_CLUSTER_NAME)"'      skaffold.yaml
 	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.clusterEndpoint =                                            "$(CLUSTER_ENDPOINT)"'        skaffold.yaml
 	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.networkPlugin =                                              "azure"'                      skaffold.yaml
 	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.kubeletClientTLSBootstrapToken =                             "$(BOOTSTRAP_TOKEN)"'         skaffold.yaml
 	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.sshPublicKey =                                               "$(SSH_PUBLIC_KEY)"'          skaffold.yaml
-
-	yq -i  '.manifests.helm.releases[0].overrides.serviceAccount.annotations."azure.workload.identity/client-id" = "$(KARPENTER_USER_ASSIGNED_CLIENT_ID)"' skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.serviceAccount.name = "$(KARPENTER_SERVICE_ACCOUNT_NAME)"' skaffold.yaml
-
-	yq -i  '.manifests.helm.releases[0].overrides.podLabels ."azure.workload.identity/use" = "true"' skaffold.yaml
 
 az-patch-skaffold-kubenet: az-patch-skaffold	az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
@@ -94,6 +90,18 @@ az-patch-skaffold-azureoverlay: az-patch-skaffold	az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID")) .value = "$(AZURE_SUBNET_ID)"' skaffold.yaml
 	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.networkPlugin =                                              "azure"'                      skaffold.yaml
+
+	# old identity path is still the default, so need to override the values values with new logic.
+	# TODO (chmcbrid): update the new logic path as the default.
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv))
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USE_NEW_CRED_WORKFLOW")) .value = "true"'         skaffold.yaml
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USE_MANAGED_IDENTITY_EXTENSION")) .value = "false"'         skaffold.yaml
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USER_ASSIGNED_IDENTITY_ID")) .value = ""'         skaffold.yaml
+
+	yq -i  '.manifests.helm.releases[0].overrides.serviceAccount.annotations."azure.workload.identity/client-id" = "$(KARPENTER_USER_ASSIGNED_CLIENT_ID)"' skaffold.yaml
+	yq -i  '.manifests.helm.releases[0].overrides.serviceAccount.name = "$(KARPENTER_SERVICE_ACCOUNT_NAME)"' skaffold.yaml
+
+	yq -i  '.manifests.helm.releases[0].overrides.podLabels ."azure.workload.identity/use" = "true"' skaffold.yaml
 
 az-fetch-network-info:
 	$(eval AZURE_VNET_NAME=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) |  jq -r ".[0].name"))
