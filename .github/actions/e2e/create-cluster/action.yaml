@@ -57,9 +57,9 @@ runs:
   - name: create workload id
     shell: bash
     run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-id-msi
-  - name: wait for id to settle
+  - name: pause for msi to become available
     shell: bash
-    run: sleep 10
+    run: sleep 5
   - name: update azure perms
     shell: bash
     run: |
