@@ -30,6 +30,7 @@ import (
 )
 
 func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer, error) {
+	// TODO (charliedmcb): need to get track 2 support for the skewer API, and align all auth under workload identity in the same way within cred.go
 	if config.UseNewCredWorkflow {
 		klog.V(2).Infoln("auth: using workload identity for new authorizer")
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -54,7 +55,6 @@ func newServicePrincipalTokenFromCredentials(config *Config, env *azure.Environm
 		return nil, fmt.Errorf("creating the OAuth config: %w", err)
 	}
 
-	// TODO (charliedmcb): look at updating this with the new workload identity logic. Would be nice if we could align all the auth.
 	if config.UseManagedIdentityExtension {
 		klog.V(2).Infoln("azure: using managed identity extension to retrieve access token")
 		msiEndpoint, err := adal.GetMSIVMEndpoint()
