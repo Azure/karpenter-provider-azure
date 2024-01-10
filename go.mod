@@ -23,6 +23,7 @@ require (
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-playground/validator/v10 v10.13.0
 	github.com/imdario/mergo v0.3.16
+	github.com/jongio/azidext/go/azidext v0.5.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/onsi/ginkgo/v2 v2.13.2
 	github.com/onsi/gomega v1.29.0
@@ -92,7 +93,6 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.18.0 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jongio/azidext/go/azidext v0.5.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kelseyhightower/envconfig v1.4.0 // indirect
