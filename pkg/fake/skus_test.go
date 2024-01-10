@@ -59,7 +59,7 @@ func TestSKUExistenceEastUS(t *testing.T) {
 
 // TestSKUExistenceWestCentralUS tests that we are not regressing in our codegen
 func TestSKUExistenceWestCentralUS(t *testing.T) {
-	expectedSKUs := sets.New( 
+	expectedSKUs := sets.New(
 		"Standard_A0",
 		"Standard_B1s",
 		"Standard_D2s_v3",
