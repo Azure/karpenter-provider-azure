@@ -47,7 +47,7 @@ type NetworkInterfacesBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ instance.NetworkInterfacesAPI = (*NetworkInterfacesAPI)(nil)
+var _ instance.NetworkInterfacesAPI = &NetworkInterfacesAPI{}
 
 type NetworkInterfacesAPI struct {
 	// instance.NetworkInterfacesAPI

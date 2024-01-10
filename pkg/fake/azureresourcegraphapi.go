@@ -39,7 +39,7 @@ type AzureResourceGraphBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ instance.AzureResourceGraphAPI = (*AzureResourceGraphAPI)(nil)
+var _ instance.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
 
 type AzureResourceGraphAPI struct {
 	AzureResourceGraphBehavior

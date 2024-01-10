@@ -94,7 +94,7 @@ func NewAZClientFromAPI(
 	}
 }
 
-func CreateAzClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
+func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	// Defaulting env to Azure Public Cloud.
 	env := azure.PublicCloud
 	var err error
@@ -132,7 +132,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	}
 
 	opts := armopts.DefaultArmOpts()
-	extClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
+	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -178,14 +178,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
 
-	return &AZClient{
-		networkInterfacesClient:        interfacesClient,
-		virtualMachinesClient:          virtualMachinesClient,
-		virtualMachinesExtensionClient: extClient,
-		azureResourceGraphClient:       azureResourceGraphClient,
-
-		ImageVersionsClient: imageVersionsClient,
-		SKUClient:           skuClient,
-		LoadBalancersClient: loadBalancersClient,
-	}, nil
+	return NewAZClientFromAPI(virtualMachinesClient,
+		azureResourceGraphClient,
+		extensionsClient,
+		interfacesClient,
+		loadBalancersClient,
+		imageVersionsClient,
+		skuClient), nil
 }
