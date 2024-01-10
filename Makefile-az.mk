@@ -117,7 +117,7 @@ az-rmvmss-vms: ## Delete all VMs in VMSS Flex (use with care!)
 	az vmss delete-instances --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --instance-ids '*'
 
 az-perm: ## Create role assignments to let Karpenter manage VMs and Network
-	# Note (charliedmcb): need to be principalId for E2E workflow as the pipeline identity doesn't have permissions to "query Graph API"
+	# Note: need to be principalId for E2E workflow as the pipeline identity doesn't have permissions to "query Graph API"
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
