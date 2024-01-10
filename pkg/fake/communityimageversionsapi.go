@@ -30,7 +30,7 @@ type CommunityGalleryImageVersionsAPI struct {
 }
 
 // assert that the fake implements the interface
-var _ imagefamily.CommunityGalleryImageVersionsAPI = (*CommunityGalleryImageVersionsAPI)(nil)
+var _ imagefamily.CommunityGalleryImageVersionsAPI = &CommunityGalleryImageVersionsAPI{}
 
 // NewListPager returns a new pager to return the next page of CommunityGalleryImageVersionsClientListResponse
 func (c *CommunityGalleryImageVersionsAPI) NewListPager(_ string, _ string, _ string, _ *armcompute.CommunityGalleryImageVersionsClientListOptions) *runtime.Pager[armcompute.CommunityGalleryImageVersionsClientListResponse] {

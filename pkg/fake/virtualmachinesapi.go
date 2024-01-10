@@ -66,7 +66,7 @@ type VirtualMachinesBehavior struct {
 }
 
 // assert that the fake implements the interface
-var _ instance.VirtualMachinesAPI = (*VirtualMachinesAPI)(nil)
+var _ instance.VirtualMachinesAPI = &VirtualMachinesAPI{}
 
 type VirtualMachinesAPI struct {
 	// TODO: document the implications of embedding vs. not embedding the interface here
