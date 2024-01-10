@@ -19,11 +19,11 @@ package azure
 import (
 	"testing"
 
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"github.com/samber/lo"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	coretest "github.com/aws/karpenter-core/pkg/test"
+	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/test"
@@ -85,11 +85,11 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 }
 
 func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *corev1beta1.NodePool {
-	nodePool := env.DefaultNodePool(nodeClass) 
-	coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{	 
-		Key: v1.LabelArchStable,
-		Operator: v1.NodeSelectorOpIn, 
-		Values: []string{corev1beta1.ArchitectureArm64}, 
+	nodePool := env.DefaultNodePool(nodeClass)
+	coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
+		Key:      v1.LabelArchStable,
+		Operator: v1.NodeSelectorOpIn,
+		Values:   []string{corev1beta1.ArchitectureArm64},
 	})
 	return nodePool
 }
@@ -98,7 +98,6 @@ func (env *Environment) DefaultAKSNodeClass() *v1alpha2.AKSNodeClass {
 	nodeClass := test.AKSNodeClass()
 	return nodeClass
 }
-
 
 func (env *Environment) AZLinuxNodeClass() *v1alpha2.AKSNodeClass {
 	nodeClass := env.DefaultAKSNodeClass()

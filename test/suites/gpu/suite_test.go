@@ -51,53 +51,52 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("GPU", func() {
-    // Table test for gpu passing in different node classes
-    DescribeTable("should provision one GPU node and one GPU Pod",
-        func(nodeClass *v1alpha2.AKSNodeClass) {
-            nodePool := env.DefaultNodePool(nodeClass)
+	// Table test for gpu passing in different node classes
+	DescribeTable("should provision one GPU node and one GPU Pod",
+		func(nodeClass *v1alpha2.AKSNodeClass) {
+			nodePool := env.DefaultNodePool(nodeClass)
 
-            // Relax default SKU family selector to allow for GPU nodes
-            test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-                Key:      v1alpha2.LabelSKUFamily,
-                Operator: v1.NodeSelectorOpExists,
-            })
-            // Exclude some of the more expensive GPU SKUs
-            nodePool.Spec.Limits = corev1beta1.Limits{
-                v1.ResourceCPU:                    resource.MustParse("25"),
-                v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
-            }
+			// Relax default SKU family selector to allow for GPU nodes
+			test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
+				Key:      v1alpha2.LabelSKUFamily,
+				Operator: v1.NodeSelectorOpExists,
+			})
+			// Exclude some of the more expensive GPU SKUs
+			nodePool.Spec.Limits = corev1beta1.Limits{
+				v1.ResourceCPU:                    resource.MustParse("25"),
+				v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+			}
 
-            minstPodOptions := test.PodOptions{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name: "samples-fake-minst",
-                    Labels: map[string]string{
-                        "app": "samples-tf-mnist-demo",
-                    },
-                },
-                Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6",
-                ResourceRequirements: v1.ResourceRequirements{
-                    Limits: v1.ResourceList{
-                        "nvidia.com/gpu": resource.MustParse("1"),
-                    },
-                },
-            }
-            deployment := test.Deployment(test.DeploymentOptions{
-                Replicas:   1,
-                PodOptions: minstPodOptions,
-            })
+			minstPodOptions := test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "samples-fake-minst",
+					Labels: map[string]string{
+						"app": "samples-tf-mnist-demo",
+					},
+				},
+				Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6",
+				ResourceRequirements: v1.ResourceRequirements{
+					Limits: v1.ResourceList{
+						"nvidia.com/gpu": resource.MustParse("1"),
+					},
+				},
+			}
+			deployment := test.Deployment(test.DeploymentOptions{
+				Replicas:   1,
+				PodOptions: minstPodOptions,
+			})
 
-            devicePlugin := createNVIDIADevicePluginDaemonSet()
-            env.ExpectCreated(nodeClass, nodePool, deployment, devicePlugin)
+			devicePlugin := createNVIDIADevicePluginDaemonSet()
+			env.ExpectCreated(nodeClass, nodePool, deployment, devicePlugin)
 
-            // This test exercises the full lifecycle of the GPU Node, and validates it can successfully schedule GPU Resources
-            env.EventuallyExpectHealthyPodCountWithTimeout(time.Minute*15, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
-            env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
-        },
-        Entry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass()),
-        Entry("should provision one GPU Node and one GPU Pod (Ubuntu2204)", env.DefaultAKSNodeClass()),
-    )
+			// This test exercises the full lifecycle of the GPU Node, and validates it can successfully schedule GPU Resources
+			env.EventuallyExpectHealthyPodCountWithTimeout(time.Minute*15, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
+		},
+		Entry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass()),
+		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2204)", env.DefaultAKSNodeClass()),
+	)
 })
-
 
 func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {
 	return &appsv1.DaemonSet{
