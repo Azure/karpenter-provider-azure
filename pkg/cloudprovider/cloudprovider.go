@@ -133,16 +133,6 @@ func (c *CloudProvider) List(ctx context.Context) ([]*corev1beta1.NodeClaim, err
 	return nodeClaims, nil
 }
 
-func (c *CloudProvider) Link(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) error {
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("nodeclaim", nodeClaim.Name))
-	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
-	if err != nil {
-		return fmt.Errorf("getting vm name, %w", err)
-	}
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("vmName", vmName))
-	return c.instanceProvider.Link(ctx, vmName, nodeClaim.Labels[corev1beta1.NodePoolLabelKey])
-}
-
 func (c *CloudProvider) Get(ctx context.Context, providerID string) (*corev1beta1.NodeClaim, error) {
 	vmName, err := utils.GetVMName(providerID)
 	if err != nil {
@@ -190,8 +180,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *corev1be
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) error {
 	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("nodeclaim", nodeClaim.Name))
 
-	providerID := lo.Ternary(nodeClaim.Status.ProviderID != "", nodeClaim.Status.ProviderID, nodeClaim.Annotations[v1alpha2.NodeClaimLinkedAnnotationKey])
-	vmName, err := utils.GetVMName(providerID)
+	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("getting VM name, %w", err)
 	}
