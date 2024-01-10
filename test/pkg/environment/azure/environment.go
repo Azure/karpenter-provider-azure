@@ -21,7 +21,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-
+	"github.com/samber/lo"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	coretest "github.com/aws/karpenter-core/pkg/test"
 
@@ -37,7 +37,6 @@ type Environment struct {
 	Region string
 
 	// TODO (charliedmcb): explore porting over/implementing an Azure equivalent version
-	// SQSProvider *interruption.SQSProvider
 }
 
 func NewEnvironment(t *testing.T) *Environment {
@@ -46,8 +45,6 @@ func NewEnvironment(t *testing.T) *Environment {
 	return &Environment{
 		Region:      "westus2",
 		Environment: env,
-
-		// SQSProvider:   interruption.NewSQSProvider(sqs.New(session)),
 	}
 }
 
@@ -67,7 +64,6 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 			Operator: v1.NodeSelectorOpIn,
 			Values:   []string{corev1beta1.CapacityTypeOnDemand},
 		},
-		// TODO: remove constraint when arm64 is supported
 		{
 			Key:      v1.LabelArchStable,
 			Operator: v1.NodeSelectorOpIn,
@@ -88,10 +84,24 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 	return nodePool
 }
 
+func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *corev1beta1.NodePool {
+	nodePool := env.DefaultNodePool(nodeClass) 
+	coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{	 
+		Key: v1.LabelArchStable,
+		Operator: v1.NodeSelectorOpIn, 
+		Values: []string{corev1beta1.ArchitectureArm64}, 
+	})
+	return nodePool
+}
+
 func (env *Environment) DefaultAKSNodeClass() *v1alpha2.AKSNodeClass {
 	nodeClass := test.AKSNodeClass()
+	return nodeClass
+}
 
-	// TODO: override values for testing
 
+func (env *Environment) AZLinuxNodeClass() *v1alpha2.AKSNodeClass {
+	nodeClass := env.DefaultAKSNodeClass()
+	nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
 	return nodeClass
 }
