@@ -152,7 +152,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
 				&azcore.ResponseError{
-					ErrorCode: ErrCode,	
+					ErrorCode: ErrCode,
 					RawResponse: &http.Response{
 						Body: createSDKErrorBody(ErrCode, ErrMsg),
 					},
