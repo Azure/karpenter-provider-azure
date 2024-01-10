@@ -555,7 +555,7 @@ func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName strin
 		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
 	}
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
-	// nic, disk and all associated resources will be removed. If the VM was not created succesfully and a nic was found,
+	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
 	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
 	if nicErr != nil {
