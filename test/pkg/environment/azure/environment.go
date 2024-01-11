@@ -35,8 +35,6 @@ const WindowsDefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
 type Environment struct {
 	*common.Environment
 	Region string
-
-	// TODO (charliedmcb): explore porting over/implementing an Azure equivalent version
 }
 
 func NewEnvironment(t *testing.T) *Environment {

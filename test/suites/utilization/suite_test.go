@@ -49,6 +49,8 @@ var _ = AfterEach(func() { env.AfterEach() })
 var _ = Describe("Utilization", func() {
 	azLinuxNodeClass := env.AZLinuxNodeClass()
 	ubuntuNodeClass := env.DefaultAKSNodeClass()
+	azLinuxNodeClassArm := env.AZLinuxNodeClass()
+	ubuntuNodeClassArm := env.DefaultAKSNodeClass()
 
 	DescribeTable("should provision one pod per node",
 		func(nodeClass *v1alpha2.AKSNodeClass, nodePool *v1beta1.NodePool) {
@@ -76,8 +78,8 @@ var _ = Describe("Utilization", func() {
 		},
 
 		Entry("should provision one pod per node (AzureLinux, amd64)", azLinuxNodeClass, env.DefaultNodePool(azLinuxNodeClass)),
-		Entry("should provision one pod per node (AzureLinux, arm64)", azLinuxNodeClass, env.ArmNodepool(azLinuxNodeClass)),
+		Entry("should provision one pod per node (AzureLinux, arm64)", azLinuxNodeClassArm, env.ArmNodepool(azLinuxNodeClassArm)),
 		Entry("should provision one pod per node (Ubuntu, amd64)", ubuntuNodeClass, env.DefaultNodePool(ubuntuNodeClass)),
-		Entry("should provision one pod per node (Ubuntu, arm64)", ubuntuNodeClass, env.ArmNodepool(ubuntuNodeClass)),
+		Entry("should provision one pod per node (Ubuntu, arm64)", ubuntuNodeClassArm, env.ArmNodepool(ubuntuNodeClassArm)),
 	)
 })
