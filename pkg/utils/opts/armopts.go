@@ -25,8 +25,6 @@ import (
 	"github.com/Azure/karpenter/pkg/auth"
 )
 
-var MaxRetries = 20
-
 func DefaultArmOpts() *arm.ClientOptions {
 	opts := &arm.ClientOptions{}
 	opts.Telemetry = DefaultTelemetryOpts()
