@@ -225,8 +225,7 @@ var _ = Describe("Image ID Parsing", func() {
 	)
 })
 
-
-var _ = Describe("ImageFamily Name", func() { 
+var _ = Describe("ImageFamily Name", func() {
 	It("should return the correct image family name", func() {
 		Expect(imagefamily.Ubuntu2204{}.Name()).To(Equal(v1alpha2.Ubuntu2204ImageFamily))
 		Expect(imagefamily.AzureLinux{}.Name()).To(Equal(v1alpha2.AzureLinuxImageFamily))
