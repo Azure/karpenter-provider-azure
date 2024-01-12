@@ -140,6 +140,7 @@ var _ = Describe("Image ID Resolution", func() {
 		Entry("Image version is empty, should get latest", imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL, "", fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, latestImageVersion)),
 		Entry("Image version is specified, should use it", imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL, olderImageVersion, fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion)),
 	)
+
 	azLinuxNodeClass := test.AKSNodeClass()
 	azLinuxNodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
 	DescribeTable("AzureLinux Image Resolution",
