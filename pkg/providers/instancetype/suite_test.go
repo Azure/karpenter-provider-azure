@@ -766,6 +766,13 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 		})
+		It("should support provisioning with azure linux", func() { 
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily) 
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass) 
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod) 
+		})
 		Context("VM profile", func() {
 			It("should have OS disk and network interface set to auto-delete", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
