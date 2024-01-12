@@ -760,7 +760,7 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("ImageProvider + Image Family", func() {
-	 DescribeTable("should select the right image for a given instance type",
+		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
 				nC := test.AKSNodeClass()
 				nC.Spec.ImageFamily = lo.ToPtr(imageFamily)
@@ -782,7 +782,7 @@ var _ = Describe("InstanceType Provider", func() {
 				parts := strings.Split(*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID, "/")
 				Expect(parts[2]).To(Equal(expectedGalleryURL))
 				Expect(parts[4]).To(Equal(expectedImageDefinition))
-				
+
 				// Need to reset env since we are doing these nested tests
 				cluster.Reset()
 				azureEnv.Reset()
