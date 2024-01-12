@@ -759,6 +759,88 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("ImageProvider + Image Family", func() {
+		It("should select the right image for a given instance type", func() { 
+			testCases := []struct{ 
+				testName string
+				instanceType string 
+				imageFamily string 
+				expectedImageDefinition string 
+				expectedGalleryURL string 
+			}{ 
+				{
+					testName: "Gen2,Gen1 instance type with AKSUbuntu image family", 
+					instanceType: "Standard_D2_v5", 
+					imageFamily: "Ubuntu2204",
+					expectedImageDefinition: "2204gen2containerd", // We prefer gen2 image
+					expectedGalleryURL: v1alpha2.AKSUbuntuPublicGalleryURL,
+				},
+				{
+					testName: "Gen1 instance type with AKSUbuntu image family", 
+					instanceType: "Standard_D2_v3", 
+					imageFamily: "Ubuntu2204", 
+					expectedImageDefinition: "2204containerd", 
+					expectedGalleryURL: v1alpha2.AKSUbuntuPublicGalleryURL, 
+				},
+				{
+					testName: "ARM instance type with AKSUbuntu image family", 
+					instanceType: "Standard_D16plds_v5",
+					imageFamily: "Ubuntu2204", 
+					expectedImageDefinition: "2204gen2arm64containerd",
+					expectedGalleryURL: v1alpha2.AKSUbuntuPublicGalleryURL, 
+				}, 
+				{ 
+					testName: "Gen2 instance type with AzureLinux image family", 
+					instanceType: "Standard_D2_v5", 
+					imageFamily: "AzureLinux", 
+					expectedImageDefinition: "V2gen2",
+					expectedGalleryURL: v1alpha2.AKSAzureLinuxPublicGalleryURL, 
+				}, 
+				{
+					testName: "Gen1 instance type with AzureLinux image family", 
+					instanceType: "Standard_D2_v3",
+					imageFamily: "AzureLinux",
+					expectedImageDefinition: "V2", 
+					expectedGalleryURL: v1alpha2.AKSAzureLinuxPublicGalleryURL,
+				},
+				{
+					testName: "ARM instance type with AzureLinux image family",
+					instanceType: "Standard_D16plds_v5",
+					imageFamily: "AzureLinux",
+					expectedImageDefinition: "V2gen2arm64",
+					expectedGalleryURL: v1alpha2.AKSAzureLinuxPublicGalleryURL,
+				},
+			}
+
+			for _, c := range testCases { 
+				By(c.testName) 
+				nodeClass := test.AKSNodeClass()	
+				nodeClass.Spec.ImageFamily = lo.ToPtr(c.imageFamily)
+				coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{ 
+					Key: v1.LabelInstanceTypeStable, 
+					Operator: v1.NodeSelectorOpIn, 
+					Values: []string{c.instanceType},
+				})
+				nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{Name: nodeClass.Name}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass) 
+				pod := coretest.UnschedulablePod(coretest.PodOptions{}) 
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod) 
+				ExpectScheduled(ctx, env.Client, pod) 
+				
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1)) 
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM 
+				Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil()) 
+				Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).ToNot(BeNil()) 
+				parts := strings.Split(*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID, "/") 
+				Expect(parts[2]).To(Equal(c.expectedGalleryURL)) 
+				Expect(parts[4]).To(Equal(c.expectedImageDefinition))
+
+				cluster.Reset() 
+				azureEnv.Reset()
+			}
+
+		})
+	})
 	Context("Instance Types", func() {
 		It("should support provisioning with no labels", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -766,7 +848,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 		})
-		It("should support provisioning with azure linux", func() { 
+		It("should support provisioning with Azure Linux", func() { 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily) 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass) 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -777,7 +859,6 @@ var _ = Describe("InstanceType Provider", func() {
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM 
 			Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil()) 
 			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).ToNot(BeNil())
-			fmt.Println(*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)	
 			Expect(strings.HasPrefix(*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID, "/CommunityGalleries/AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b")).To(BeTrue())
 		})
 		Context("VM profile", func() {
