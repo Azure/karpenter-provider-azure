@@ -43,11 +43,11 @@ func (u AzureLinux) Name() string {
 }
 
 func (u AzureLinux) DefaultImages() []DefaultImageOutput {
-	// image provider will select these images in order, first match wins. This is why we chose to put AzureLinuxGen2containerd first in the defaultImages
+	// image provider will select these images in order, first match wins. This is why we chose to put V2Gen2 first in the defaultImages
 	return []DefaultImageOutput{
 		{
 			CommunityImage:   AzureLinuxGen2CommunityImage,
-			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
+			PublicGalleryURL: v1alpha2.AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
@@ -55,7 +55,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 		},
 		{
 			CommunityImage:   AzureLinuxGen1CommunityImage,
-			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
+			PublicGalleryURL: v1alpha2.AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
@@ -63,7 +63,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 		},
 		{
 			CommunityImage:   AzureLinuxGen2ArmCommunityImage,
-			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
+			PublicGalleryURL: v1alpha2.AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
