@@ -23,14 +23,15 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter/pkg/providers/launchtemplate/parameters"
-
+	"github.com/Azure/karpenter/pkg/utils"
 	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
 
 	"github.com/Azure/karpenter/pkg/apis/settings"
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
+	"github.com/aws/karpenter-core/pkg/scheduling"
 )
 
 const (
@@ -75,7 +76,7 @@ func NewProvider(_ context.Context, imageFamily *imagefamily.Resolver, imageProv
 
 func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim,
 	instanceType *cloudprovider.InstanceType, additionalLabels map[string]string) (*Template, error) {
-	staticParameters := p.getStaticParameters(ctx, nodeClass, lo.Assign(nodeClaim.Labels, additionalLabels))
+	staticParameters := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(nodeClaim.Labels, additionalLabels))
 	kubeServerVersion, err := p.imageProvider.KubeServerVersion(ctx)
 	if err != nil {
 		return nil, err
@@ -93,14 +94,22 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	return launchTemplate, nil
 }
 
-func (p *Provider) getStaticParameters(ctx context.Context, nodeTemplate *v1alpha2.AKSNodeClass, labels map[string]string) *parameters.StaticParameters {
-	return &parameters.StaticParameters{
-		ClusterName:     settings.FromContext(ctx).ClusterName,
-		ClusterEndpoint: p.clusterEndpoint,
-		Tags:            lo.Assign(settings.FromContext(ctx).Tags, nodeTemplate.Spec.Tags),
-		Labels:          labels,
-		CABundle:        p.caBundle,
+func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeTemplate *v1alpha2.AKSNodeClass, labels map[string]string) *parameters.StaticParameters {
+	var arch string = corev1beta1.ArchitectureAmd64
+	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
+		arch = corev1beta1.ArchitectureArm64
+	}
 
+	return &parameters.StaticParameters{
+		ClusterName:                    settings.FromContext(ctx).ClusterName,
+		ClusterEndpoint:                p.clusterEndpoint,
+		Tags:                           lo.Assign(settings.FromContext(ctx).Tags, nodeTemplate.Spec.Tags),
+		Labels:                         labels,
+		CABundle:                       p.caBundle,
+		Arch:                           arch,
+		GPUNode:                        utils.IsNvidiaEnabledSKU(instanceType.Name),
+		GPUDriverVersion:               utils.GetGPUDriverVersion(instanceType.Name),
+		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),
 		TenantID:                       p.tenantID,
 		SubscriptionID:                 p.subscriptionID,
 		UserAssignedIdentityID:         p.userAssignedIdentityID,

@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 )
 
-// generated at 2023-12-12T02:02:44Z
+// generated at 2023-12-18T15:28:53Z
 
 func init() {
 	// ResourceSkus is a list of selected VM SKUs for a given region
@@ -39,6 +39,17 @@ func init() {
 			APIVersions:  &[]string{},
 			Costs:        &[]compute.ResourceSkuCosts{},
 			Restrictions: &[]compute.ResourceSkuRestrictions{
+				{
+					Type:   compute.ResourceSkuRestrictionsType("Location"),
+					Values: &[]string{"eastus"},
+					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
+						Locations: &[]string{
+							"eastus",
+						},
+						Zones: &[]string{},
+					},
+					ReasonCode: "NotAvailableForSubscription",
+				},
 				{
 					Type:   compute.ResourceSkuRestrictionsType("Zone"),
 					Values: &[]string{"eastus"},
@@ -602,6 +613,53 @@ func init() {
 			},
 		},
 		{
+			Name:         lo.ToPtr("Standard_NC16as_T4_v3"),
+			Tier:         lo.ToPtr("Standard"),
+			Kind:         lo.ToPtr(""),
+			Size:         lo.ToPtr("NC16as_T4_v3"),
+			Family:       lo.ToPtr("Standard NCASv3_T4 Family"),
+			ResourceType: lo.ToPtr("virtualMachines"),
+			APIVersions:  &[]string{},
+			Costs:        &[]compute.ResourceSkuCosts{},
+			Restrictions: &[]compute.ResourceSkuRestrictions{},
+			Capabilities: &[]compute.ResourceSkuCapabilities{
+				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("360448")},
+				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("16")},
+				{Name: lo.ToPtr("MemoryPreservingMaintenanceSupported"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1,V2")},
+				{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("110")},
+				{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("32")},
+				{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+				{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+				{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("16")},
+				{Name: lo.ToPtr("GPUs"), Value: lo.ToPtr("1")},
+				{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("1")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedIOPS"), Value: lo.ToPtr("16320")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedReadBytesPerSecond"), Value: lo.ToPtr("251658240")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedWriteBytesPerSecond"), Value: lo.ToPtr("251658240")},
+				{Name: lo.ToPtr("CachedDiskBytes"), Value: lo.ToPtr("154619000000")},
+				{Name: lo.ToPtr("UncachedDiskIOPS"), Value: lo.ToPtr("24480")},
+				{Name: lo.ToPtr("UncachedDiskBytesPerSecond"), Value: lo.ToPtr("368640000")},
+				{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("CapacityReservationSupported"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
+			},
+			Locations: &[]string{"eastus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+				"1",
+				"2",
+				"3",
+			},
+			},
+			},
+		},
+		{
 			Name:         lo.ToPtr("Standard_NC24ads_A100_v4"),
 			Tier:         lo.ToPtr("Standard"),
 			Kind:         lo.ToPtr(""),
@@ -642,6 +700,63 @@ func init() {
 			},
 			Locations: &[]string{"eastus"},
 			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+				"3",
+			},
+			},
+			},
+		},
+		{
+			Name:         lo.ToPtr("Standard_NC6s_v3"),
+			Tier:         lo.ToPtr("Standard"),
+			Kind:         lo.ToPtr(""),
+			Size:         lo.ToPtr("NC6s_v3"),
+			Family:       lo.ToPtr("standardNCSv3Family"),
+			ResourceType: lo.ToPtr("virtualMachines"),
+			APIVersions:  &[]string{},
+			Costs:        &[]compute.ResourceSkuCosts{},
+			Restrictions: &[]compute.ResourceSkuRestrictions{
+				{
+					Type:   compute.ResourceSkuRestrictionsType("Zone"),
+					Values: &[]string{"eastus"},
+					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
+						Locations: &[]string{
+							"eastus",
+						},
+						Zones: &[]string{
+							"1",
+							"2",
+							"3",
+						},
+					},
+					ReasonCode: "NotAvailableForSubscription",
+				},
+			},
+			Capabilities: &[]compute.ResourceSkuCapabilities{
+				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("344064")},
+				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("6")},
+				{Name: lo.ToPtr("MemoryPreservingMaintenanceSupported"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1,V2")},
+				{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("112")},
+				{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("12")},
+				{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+				{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+				{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("6")},
+				{Name: lo.ToPtr("GPUs"), Value: lo.ToPtr("1")},
+				{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("1")},
+				{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("CapacityReservationSupported"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+			},
+			Locations: &[]string{"eastus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+				"1",
+				"2",
 				"3",
 			},
 			},

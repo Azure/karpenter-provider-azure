@@ -32,7 +32,7 @@ skugen() {
   NO_UPDATE=" pkg/fake/zz_generated.sku.$location.go | 2 +- 1 file changed, 1 insertion(+), 1 deletion(-)"
   SUBJECT="SKUGEN"
 
-  go run hack/code/instancetype_testdata_gen.go -- "${GENERATED_FILE}" "$location" "Standard_B1s,Standard_A0,Standard_D2_v2,Standard_D2_v3,Standard_DS2_v2,Standard_D2s_v3,Standard_D2_v5,Standard_F16s_v2,Standard_NC24ads_A100_v4,Standard_M8-2ms,Standard_D4s_v3,Standard_D64s_v3,Standard_DC8s_v3"
+  go run hack/code/instancetype_testdata_gen.go -- "${GENERATED_FILE}" "$location" "Standard_B1s,Standard_A0,Standard_D2_v2,Standard_D2_v3,Standard_DS2_v2,Standard_D2s_v3,Standard_D2_v5,Standard_F16s_v2,Standard_NC6s,Standard_NC6s_v3,Standard_NC16as_T4_v3,Standard_NC24ads_A100_v4,Standard_M8-2ms,Standard_D4s_v3,Standard_D64s_v3,Standard_DC8s_v3"
   go fmt "${GENERATED_FILE}"
 
   GIT_DIFF=$(git diff --stat "${GENERATED_FILE}")

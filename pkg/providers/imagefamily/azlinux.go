@@ -29,41 +29,41 @@ import (
 )
 
 const (
-	Ubuntu2204Gen2CommunityImage    = "2204gen2containerd"
-	Ubuntu2204Gen1CommunityImage    = "2204containerd"
-	Ubuntu2204Gen2ArmCommunityImage = "2204gen2arm64containerd"
+	AzureLinuxGen2CommunityImage    = "V2gen2"
+	AzureLinuxGen1CommunityImage    = "V2"
+	AzureLinuxGen2ArmCommunityImage = "V2gen2arm64"
 )
 
-type Ubuntu2204 struct {
+type AzureLinux struct {
 	Options *parameters.StaticParameters
 }
 
-func (u Ubuntu2204) Name() string {
-	return v1alpha2.Ubuntu2204ImageFamily
+func (u AzureLinux) Name() string {
+	return v1alpha2.AzureLinuxImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
-	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
+func (u AzureLinux) DefaultImages() []DefaultImageOutput {
+	// image provider will select these images in order, first match wins. This is why we chose to put AzureLinuxGen2containerd first in the defaultImages
 	return []DefaultImageOutput{
 		{
-			CommunityImage:   Ubuntu2204Gen2CommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			CommunityImage:   AzureLinuxGen2CommunityImage,
+			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
 			),
 		},
 		{
-			CommunityImage:   Ubuntu2204Gen1CommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			CommunityImage:   AzureLinuxGen1CommunityImage,
+			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
 			),
 		},
 		{
-			CommunityImage:   Ubuntu2204Gen2ArmCommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			CommunityImage:   AzureLinuxGen2ArmCommunityImage,
+			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
@@ -73,7 +73,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -84,7 +84,8 @@ func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 			CABundle:         caBundle,
 			GPUNode:          u.Options.GPUNode,
 			GPUDriverVersion: u.Options.GPUDriverVersion,
-			GPUImageSHA:      u.Options.GPUImageSHA,
+			// GPUImageSHA: u.Options.GPUImageSHA, image sha only applies to ubuntu
+			// SEE: https://github.com/Azure/AgentBaker/blob/f393d6e4d689d9204d6000c85623ad9b764e2a29/vhdbuilder/packer/install-dependencies.sh#L201
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,
