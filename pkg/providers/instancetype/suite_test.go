@@ -766,12 +766,19 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 		})
-		It("should support provisioning with Azure Linux", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		It("should support provisioning with azure linux", func() { 
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily) 
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass) 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM 
+			Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil()) 
+			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).ToNot(BeNil())
+			fmt.Println(*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)	
+			Expect(strings.HasPrefix(*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID, "/CommunityGalleries/AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b")).To(BeTrue())
 		})
 		Context("VM profile", func() {
 			It("should have OS disk and network interface set to auto-delete", func() {
