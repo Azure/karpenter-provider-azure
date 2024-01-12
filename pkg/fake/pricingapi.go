@@ -36,6 +36,9 @@ type PricingBehavior struct {
 	ProductsPricePage AtomicPtr[client.ProductsPricePage]
 }
 
+// assert that the fake implements the interface
+var _ client.PricingAPI = &PricingAPI{}
+
 func (p *PricingAPI) Reset() {
 	p.NextError.Reset()
 	p.ProductsPricePage.Reset()
