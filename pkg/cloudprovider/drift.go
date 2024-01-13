@@ -126,20 +126,18 @@ func (c *CloudProvider) isImageVersionDrifted(
 	return "", nil
 }
 
-// TODO: remove nolint on unparam. Added for now in order to pass "make verify"
-// nolint: unparam
 func (c *CloudProvider) isImageDrifted(
-	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodePool *corev1beta1.NodePool, _ *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodePool *corev1beta1.NodePool) error {
 	instanceTypes, err := c.GetInstanceTypes(ctx, nodePool)
 	if err != nil {
-		return "", fmt.Errorf("getting instanceTypes, %w", err)
+		return fmt.Errorf("getting instanceTypes, %w", err)
 	}
 	_, found := lo.Find(instanceTypes, func(instType *cloudprovider.InstanceType) bool {
 		return instType.Name == nodeClaim.Labels[v1.LabelInstanceTypeStable]
 	})
 	if !found {
-		return "", fmt.Errorf(`finding node instance type "%s"`, nodeClaim.Labels[v1.LabelInstanceTypeStable])
+		return fmt.Errorf(`finding node instance type "%s"`, nodeClaim.Labels[v1.LabelInstanceTypeStable])
 	}
 
-	return "", nil
+	return nil
 }

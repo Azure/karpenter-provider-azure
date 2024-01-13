@@ -218,11 +218,8 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.No
 	if imageVersionDrifted != "" {
 		return imageVersionDrifted, nil
 	}
-	imageDrifted, err := c.isImageDrifted(ctx, nodeClaim, nodePool, nodeClass)
-	if err != nil {
-		return "", err
-	}
-	return imageDrifted, nil
+	err = c.isImageDrifted(ctx, nodeClaim, nodePool)
+	return "", err
 }
 
 // Name returns the CloudProvider implementation name.
