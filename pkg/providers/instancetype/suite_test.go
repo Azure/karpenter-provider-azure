@@ -53,14 +53,14 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -82,7 +82,7 @@ func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx = settings.ToContext(ctx, test.Settings())
+	ctx = options.ToContext(ctx, test.Options())
 
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
 
@@ -715,7 +715,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		BeforeEach(func() {
 			// disable VM memory overhead for simpler capacity testing
-			ctx = settings.ToContext(ctx, test.Settings(test.SettingOptions{
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
 				VMMemoryOverheadPercent: lo.ToPtr[float64](0),
 			}))
 			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
@@ -849,9 +849,9 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectScheduled(ctx, env.Client, pod)
 		})
 		It("should have VM identity set", func() {
-			ctx = settings.ToContext(
+			ctx = options.ToContext(
 				ctx,
-				test.Settings(test.SettingOptions{
+				test.Options(test.OptionsFields{
 					NodeIdentities: []string{
 						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",

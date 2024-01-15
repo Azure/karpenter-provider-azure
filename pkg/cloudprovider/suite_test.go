@@ -30,7 +30,6 @@ import (
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	coresettings "github.com/aws/karpenter-core/pkg/apis/settings"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
 
@@ -44,8 +43,8 @@ import (
 	. "knative.dev/pkg/logging/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/aws/karpenter-core/pkg/test/expectations"
@@ -70,10 +69,14 @@ func TestCloudProvider(t *testing.T) {
 	RunSpecs(t, "CloudProvider")
 }
 
+func toBoolPtr(b bool) *bool {
+	return &b
+}
+
 var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
-	ctx = coresettings.ToContext(ctx, coretest.Settings(coresettings.Settings{DriftEnabled: true}))
-	ctx = settings.ToContext(ctx, test.Settings())
+	ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{FeatureGates: coretest.FeatureGates{Drift: toBoolPtr(true)}}))
+	ctx = options.ToContext(ctx, test.Options())
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 
@@ -92,7 +95,7 @@ var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	// TODO v1beta1 options
 	// ctx = options.ToContext(ctx, test.Options())
-	ctx = settings.ToContext(ctx, test.Settings())
+	ctx = options.ToContext(ctx, test.Options())
 	nodeClass = test.AKSNodeClass()
 	nodePool = coretest.NodePool(corev1beta1.NodePool{
 		Spec: corev1beta1.NodePoolSpec{

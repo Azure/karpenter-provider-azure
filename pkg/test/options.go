@@ -22,10 +22,10 @@ import (
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 
-	azsettings "github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
+	azoptions "github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 )
 
-type SettingsFields struct {
+type OptionsFields struct {
 	ClusterName                    *string
 	ClusterEndpoint                *string
 	ClusterID                      *string
@@ -35,17 +35,16 @@ type SettingsFields struct {
 	NetworkPolicy                  *string
 	VMMemoryOverheadPercent        *float64
 	NodeIdentities                 []string
-	Tags                           map[string]string
 }
 
-func Settings(overrides ...SettingsFields) *azsettings.Settings {
-	options := SettingsFields{}
+func Options(overrides ...OptionsFields) *azoptions.Options {
+	options := OptionsFields{}
 	for _, override := range overrides {
 		if err := mergo.Merge(&options, override, mergo.WithOverride); err != nil {
 			panic(fmt.Sprintf("Failed to merge settings: %s", err))
 		}
 	}
-	return &azsettings.Settings{
+	return &azoptions.Options{
 		ClusterName:                    lo.FromPtrOr(options.ClusterName, "test-cluster"),
 		ClusterEndpoint:                lo.FromPtrOr(options.ClusterEndpoint, "https://test-cluster"),
 		ClusterID:                      lo.FromPtrOr(options.ClusterID, "00000000"),
@@ -55,6 +54,5 @@ func Settings(overrides ...SettingsFields) *azsettings.Settings {
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, ""),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
-		Tags:                           options.Tags,
 	}
 }

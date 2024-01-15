@@ -27,9 +27,9 @@ import (
 	"k8s.io/client-go/transport"
 	"knative.dev/pkg/ptr"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -80,7 +80,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		imageResolver,
 		imageProvider,
 		lo.Must(getCABundle(operator.GetConfig())),
-		settings.FromContext(ctx).ClusterEndpoint,
+		options.FromContext(ctx).ClusterEndpoint,
 		azConfig.TenantID,
 		azConfig.SubscriptionID,
 		azConfig.UserAssignedIdentityID,
