@@ -51,7 +51,7 @@ func Settings(overrides ...SettingsFields) *azsettings.Settings {
 		ClusterID:                      lo.FromPtrOr(options.ClusterID, "00000000"),
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
-		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "kubenet"),
+		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, ""),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
