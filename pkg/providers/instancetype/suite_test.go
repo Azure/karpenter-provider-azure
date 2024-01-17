@@ -60,7 +60,6 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/Azure/karpenter/pkg/fake"
-	"github.com/Azure/karpenter/pkg/providers/instance"
 	"github.com/Azure/karpenter/pkg/providers/instancetype"
 	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter/pkg/test"
@@ -121,9 +120,6 @@ var _ = Describe("InstanceType Provider", func() {
 		os.Setenv("AZURE_SUBNET_NAME", "test-subnet-name")
 
 		nodeClass = test.AKSNodeClass()
-		// Sometimes we use nodeClass without applying it, when simulating the List() call.
-		// In that case, we need to set the default values for the node class.
-		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 		nodePool = coretest.NodePool(corev1beta1.NodePool{
 			Spec: corev1beta1.NodePoolSpec{
 				Template: corev1beta1.NodeClaimTemplate{
@@ -146,7 +142,36 @@ var _ = Describe("InstanceType Provider", func() {
 		ExpectCleanedUp(ctx, env.Client)
 	})
 
-	Context("subscription level quota error responses", func() {
+	Context("vm creation error responses", func() {
+		It("should delete the network interface on failure to create the vm", func() {
+			ErrMsg := "test error"
+			ErrCode := fmt.Sprint(http.StatusNotFound)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+				&azcore.ResponseError{
+					ErrorCode: ErrCode,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(ErrCode, ErrMsg),
+					},
+				},
+			)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			// We should have created a nic for the vm
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			// The nic we used in the vm create, should be cleaned up if the vm call fails
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+			Expect(ok).To(Equal(false))
+
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+			pod = coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+		})
 		It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
 			familyVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 100, Current Usage: 96, Additional Required: 32, (Minimum) New Limit Required: 128. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -161,6 +186,15 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
+
+			// We should have created a nic for the vm
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			// The nic we used in the vm create, should be cleaned up if the vm call fails
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+			Expect(ok).To(Equal(false))
+
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			pod = coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -180,6 +214,14 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
+			// We should have created a nic for the vm
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			// The nic we used in the vm create, should be cleaned up if the vm call fails
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+			Expect(ok).To(Equal(false))
+
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			pod = coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -243,12 +285,31 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 	})
+	Context("Filtering GPU SKUs ProviderList(AzureLinux)", func() {
+		var instanceTypes corecloudprovider.InstanceTypes
+		var err error
+		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+		BeforeEach(func() {
+			nodeClassAZLinux := test.AKSNodeClass()
+			nodeClassAZLinux.Spec.ImageFamily = lo.ToPtr("AzureLinux")
+			ExpectApplied(ctx, env.Client, nodeClassAZLinux)
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClassAZLinux)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should not include AKSUbuntu GPU SKUs in list results", func() {
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC24ads_A100_v4"))))
+		})
+		It("should include AKSUbuntu GPU SKUs in list results", func() {
+			Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
+		})
+	})
 
 	Context("Ephemeral Disk", func() {
 		It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
 			// Create a Provisioner that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
-
 			np := coretest.NodePool()
 			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, v1.NodeSelectorRequirement{
 				Key:      "node.kubernetes.io/instance-type",
@@ -342,7 +403,6 @@ var _ = Describe("InstanceType Provider", func() {
 		}
 
 		It("should support provisioning with kubeletConfig, computeResources & maxPods not specified", func() {
-
 			nodePool.Spec.Template.Spec.Kubelet = kubeletConfig
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
@@ -584,7 +644,7 @@ var _ = Describe("InstanceType Provider", func() {
 			AssertUnavailable := func(sku string, capacityType string) {
 				// fake a SKU not available error
 				azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
-					&azcore.ResponseError{ErrorCode: instance.SKUNotAvailableErrorCode},
+					&azcore.ResponseError{ErrorCode: sdkerrors.SKUNotAvailableErrorCode},
 				)
 				coretest.ReplaceRequirements(nodePool,
 					v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku}},
@@ -652,7 +712,6 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should propagate all values to requirements from skewer", func() {
 			var gpuNode *corecloudprovider.InstanceType
 			var normalNode *corecloudprovider.InstanceType
-
 			for _, instanceType := range instanceTypes {
 				if instanceType.Name == "Standard_D2_v2" {
 					normalNode = instanceType

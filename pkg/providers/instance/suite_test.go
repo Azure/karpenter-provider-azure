@@ -18,20 +18,26 @@ package instance_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clock "k8s.io/utils/clock/testing"
+
 	"k8s.io/client-go/tools/record"
 
 	"github.com/Azure/karpenter/pkg/apis"
 	"github.com/Azure/karpenter/pkg/apis/settings"
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
+	"github.com/Azure/karpenter/pkg/providers/instance"
 	"github.com/Azure/karpenter/pkg/test"
 	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
+	"github.com/aws/karpenter-core/pkg/controllers/provisioning"
+	"github.com/aws/karpenter-core/pkg/controllers/state"
 	"github.com/aws/karpenter-core/pkg/events"
 
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
@@ -52,15 +58,18 @@ var azureEnv *test.Environment
 var azureEnvNonZonal *test.Environment
 var cloudProvider *cloudprovider.CloudProvider
 var cloudProviderNonZonal *cloudprovider.CloudProvider
+var fakeClock *clock.FakeClock
+var cluster *state.Cluster
+var coreProvisioner *provisioning.Provisioner
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
+	// TODO v1beta1 options
 	// ctx = options.ToContext(ctx, test.Options())
 	ctx = settings.ToContext(ctx, test.Settings())
-
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
 
 	ctx, stop = context.WithCancel(ctx)
@@ -68,7 +77,9 @@ func TestAzure(t *testing.T) {
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
-
+	fakeClock = &clock.FakeClock{}
+	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
 	RunSpecs(t, "Provider/Azure")
 }
 
@@ -108,9 +119,12 @@ var _ = Describe("InstanceProvider", func() {
 				},
 			},
 		})
-
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
+	})
+
+	var _ = AfterEach(func() {
+		ExpectCleanedUp(ctx, env.Client)
 	})
 
 	var ZonalAndNonZonalRegions = []TableEntry{
@@ -138,4 +152,20 @@ var _ = Describe("InstanceProvider", func() {
 		},
 		ZonalAndNonZonalRegions,
 	)
+
+	It("should create VM with valid ARM tags", func() {
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
+		vm, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+		Expect(err).To(BeNil())
+		tags := vm.Tags
+		Expect(lo.FromPtr(tags[instance.NodePoolTagKey])).To(Equal(nodePool.Name))
+		Expect(lo.PickBy(tags, func(key string, value *string) bool {
+			return strings.Contains(key, "/") // ARM tags can't contain '/'
+		})).To(HaveLen(0))
+	})
 })

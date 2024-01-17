@@ -54,10 +54,10 @@ type Operator struct {
 }
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
-	azConfig, err := GetAzConfig()
+	azConfig, err := GetAZConfig()
 	lo.Must0(err, "creating Azure config") // TODO: I assume we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as this has a helpful error message?
 
-	azClient, err := instance.CreateAzClient(ctx, azConfig)
+	azClient, err := instance.CreateAZClient(ctx, azConfig)
 	lo.Must0(err, "creating Azure client")
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
@@ -125,7 +125,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	}
 }
 
-func GetAzConfig() (*auth.Config, error) {
+func GetAZConfig() (*auth.Config, error) {
 	cfg, err := auth.BuildAzureConfig()
 	if err != nil {
 		return nil, err
