@@ -33,6 +33,11 @@ func DefaultArmOpts() *arm.ClientOptions {
 	return opts
 }
 
+func DefaultNICClientOpts() *arm.ClientOptions {
+	opts := DefaultArmOpts()
+	return opts
+}
+
 func DefaultRetryOpts() policy.RetryOptions {
 	return policy.RetryOptions{
 		MaxRetries: 20,

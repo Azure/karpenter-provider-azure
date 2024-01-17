@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 )
 
-// generated at 2023-12-12T02:03:06Z
+// generated at 2023-12-18T15:29:11Z
 
 func init() {
 	// ResourceSkus is a list of selected VM SKUs for a given region
@@ -38,7 +38,19 @@ func init() {
 			ResourceType: lo.ToPtr("virtualMachines"),
 			APIVersions:  &[]string{},
 			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
+			Restrictions: &[]compute.ResourceSkuRestrictions{
+				{
+					Type:   compute.ResourceSkuRestrictionsType("Location"),
+					Values: &[]string{"westcentralus"},
+					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
+						Locations: &[]string{
+							"westcentralus",
+						},
+						Zones: &[]string{},
+					},
+					ReasonCode: "NotAvailableForSubscription",
+				},
+			},
 			Capabilities: &[]compute.ResourceSkuCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("20480")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
