@@ -22,10 +22,13 @@ import (
 
 // StaticParameters define the static launch template parameters
 type StaticParameters struct {
-	ClusterName     string
-	ClusterEndpoint string
-	CABundle        *string
-
+	ClusterName                    string
+	ClusterEndpoint                string
+	CABundle                       *string
+	Arch                           string
+	GPUNode                        bool
+	GPUDriverVersion               string
+	GPUImageSHA                    string
 	TenantID                       string
 	SubscriptionID                 string
 	UserAssignedIdentityID         string

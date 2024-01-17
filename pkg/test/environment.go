@@ -60,11 +60,21 @@ type Environment struct {
 	ImageResolver          *imagefamily.Resolver
 	LaunchTemplateProvider *launchtemplate.Provider
 	LoadBalancerProvider   *loadbalancer.Provider
+
+	// Settings
+	nonZonal bool
 }
 
 func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment {
+	return NewRegionalEnvironment(ctx, env, fake.Region, false)
+}
+
+func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Environment {
+	return NewRegionalEnvironment(ctx, env, fake.RegionNonZonal, true)
+}
+
+func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
 	testSettings := Settings()
-	location := fake.Region
 
 	// API
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
@@ -72,7 +82,7 @@ func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	pricingAPI := &fake.PricingAPI{}
-	skuClientSignalton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{}}
+	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
 	coummunityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 
@@ -83,10 +93,10 @@ func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 
 	// Providers
-	pricingProvider := pricing.NewProvider(ctx, pricingAPI, location, make(chan struct{}))
-	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, coummunityImageVersionsAPI, location)
+	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
+	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, coummunityImageVersionsAPI, region)
 	imageFamilyResolver := imagefamily.New(env.Client, imageFamilyProvider)
-	instanceTypesProvider := instancetype.NewProvider(location, instanceTypeCache, skuClientSignalton, pricingProvider, unavailableOfferingsCache)
+	instanceTypesProvider := instancetype.NewProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageFamilyResolver,
@@ -97,7 +107,7 @@ func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment
 		"test-subscription",
 		"test-userAssignedIdentity",
 		resourceGroup,
-		location,
+		region,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		loadBalancersAPI,
@@ -111,7 +121,7 @@ func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment
 		networkInterfacesAPI,
 		loadBalancersAPI,
 		coummunityImageVersionsAPI,
-		skuClientSignalton,
+		skuClientSingleton,
 	)
 	instanceProvider := instance.NewProvider(
 		ctx,
@@ -120,7 +130,7 @@ func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment
 		launchTemplateProvider,
 		loadBalancerProvider,
 		unavailableOfferingsCache,
-		location,      // region
+		region,        // region
 		resourceGroup, // resourceGroup
 		"",            // subnet
 		"",            // subscriptionID
@@ -132,7 +142,7 @@ func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:        networkInterfacesAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
-		MockSkuClientSignalton:      skuClientSignalton,
+		MockSkuClientSignalton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
@@ -147,6 +157,8 @@ func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment
 		ImageResolver:          imageFamilyResolver,
 		LaunchTemplateProvider: launchTemplateProvider,
 		LoadBalancerProvider:   loadBalancerProvider,
+
+		nonZonal: nonZonal,
 	}
 }
 
@@ -165,4 +177,12 @@ func (env *Environment) Reset() {
 	env.InstanceTypeCache.Flush()
 	env.UnavailableOfferingsCache.Flush()
 	env.LoadBalancerCache.Flush()
+}
+
+func (env *Environment) Zones() []string {
+	if env.nonZonal {
+		return []string{""}
+	} else {
+		return []string{fake.Region + "-1", fake.Region + "-2", fake.Region + "-3"}
+	}
 }

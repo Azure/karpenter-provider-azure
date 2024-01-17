@@ -60,7 +60,6 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/Azure/karpenter/pkg/fake"
-	"github.com/Azure/karpenter/pkg/providers/instance"
 	"github.com/Azure/karpenter/pkg/providers/instancetype"
 	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter/pkg/test"
@@ -71,19 +70,16 @@ import (
 var ctx context.Context
 var stop context.CancelFunc
 var env *coretest.Environment
-var azureEnv *test.Environment
+var azureEnv, azureEnvNonZonal *test.Environment
 var fakeClock *clock.FakeClock
-var coreProvisioner *provisioning.Provisioner
-var cluster *state.Cluster
-var cloudProvider *cloudprovider.CloudProvider
+var coreProvisioner, coreProvisionerNonZonal *provisioning.Provisioner
+var cluster, clusterNonZonal *state.Cluster
+var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Provider/Azure")
-}
 
-var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = settings.ToContext(ctx, test.Settings())
 
@@ -91,11 +87,21 @@ var _ = BeforeSuite(func() {
 
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
+	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 
 	fakeClock = &clock.FakeClock{}
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal)
+
+	RunSpecs(t, "Provider/Azure")
+}
+
+var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
@@ -114,9 +120,6 @@ var _ = Describe("InstanceType Provider", func() {
 		os.Setenv("AZURE_SUBNET_NAME", "test-subnet-name")
 
 		nodeClass = test.AKSNodeClass()
-		// Sometimes we use nodeClass without applying it, when simulating the List() call.
-		// In that case, we need to set the default values for the node class.
-		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 		nodePool = coretest.NodePool(corev1beta1.NodePool{
 			Spec: corev1beta1.NodePoolSpec{
 				Template: corev1beta1.NodeClaimTemplate{
@@ -130,14 +133,45 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		cluster.Reset()
+		clusterNonZonal.Reset()
 		azureEnv.Reset()
+		azureEnvNonZonal.Reset()
 	})
 
 	AfterEach(func() {
 		ExpectCleanedUp(ctx, env.Client)
 	})
 
-	Context("subscription level quota error responses", func() {
+	Context("vm creation error responses", func() {
+		It("should delete the network interface on failure to create the vm", func() {
+			ErrMsg := "test error"
+			ErrCode := fmt.Sprint(http.StatusNotFound)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+				&azcore.ResponseError{
+					ErrorCode: ErrCode,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(ErrCode, ErrMsg),
+					},
+				},
+			)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			// We should have created a nic for the vm
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			// The nic we used in the vm create, should be cleaned up if the vm call fails
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+			Expect(ok).To(Equal(false))
+
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+			pod = coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+		})
 		It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
 			familyVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 100, Current Usage: 96, Additional Required: 32, (Minimum) New Limit Required: 128. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -152,6 +186,15 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
+
+			// We should have created a nic for the vm
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			// The nic we used in the vm create, should be cleaned up if the vm call fails
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+			Expect(ok).To(Equal(false))
+
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			pod = coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -171,6 +214,14 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
+			// We should have created a nic for the vm
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			// The nic we used in the vm create, should be cleaned up if the vm call fails
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
+			Expect(ok).To(Equal(false))
+
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			pod = coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -234,12 +285,31 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 	})
+	Context("Filtering GPU SKUs ProviderList(AzureLinux)", func() {
+		var instanceTypes corecloudprovider.InstanceTypes
+		var err error
+		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+		BeforeEach(func() {
+			nodeClassAZLinux := test.AKSNodeClass()
+			nodeClassAZLinux.Spec.ImageFamily = lo.ToPtr("AzureLinux")
+			ExpectApplied(ctx, env.Client, nodeClassAZLinux)
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClassAZLinux)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should not include AKSUbuntu GPU SKUs in list results", func() {
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_NC24ads_A100_v4"))))
+		})
+		It("should include AKSUbuntu GPU SKUs in list results", func() {
+			Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
+		})
+	})
 
 	Context("Ephemeral Disk", func() {
 		It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
 			// Create a Provisioner that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
-
 			np := coretest.NodePool()
 			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, v1.NodeSelectorRequirement{
 				Key:      "node.kubernetes.io/instance-type",
@@ -333,7 +403,6 @@ var _ = Describe("InstanceType Provider", func() {
 		}
 
 		It("should support provisioning with kubeletConfig, computeResources & maxPods not specified", func() {
-
 			nodePool.Spec.Template.Spec.Kubelet = kubeletConfig
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
@@ -472,14 +541,12 @@ var _ = Describe("InstanceType Provider", func() {
 
 		})
 
-		It("Should not return unavailable offerings", func() {
-			zones := []string{"1", "2", "3"}
-			for _, zone := range zones {
-
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), corev1beta1.CapacityTypeSpot)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), corev1beta1.CapacityTypeOnDemand)
+		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
+			for _, zone := range azEnv.Zones() {
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeOnDemand)
 			}
-			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
+			instanceTypes, err := azEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			seeUnavailable := false
@@ -495,7 +562,10 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 			// we should see the unavailable offering in the list
 			Expect(seeUnavailable).To(BeTrue())
-		})
+		},
+			Entry("zonal", azureEnv),
+			Entry("non-zonal", azureEnvNonZonal),
+		)
 
 		It("should launch instances in a different zone than preferred", func() {
 			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), v1alpha5.CapacityTypeOnDemand)
@@ -547,31 +617,34 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 			Expect(nodeNames.Len()).To(Equal(2))
 		})
-		It("should launch instances on later reconciliation attempt with Insufficient Capacity Error Cache expiry", func() {
-			zones := []string{"1", "2", "3"}
-			for _, zone := range zones {
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), v1alpha5.CapacityTypeSpot)
-				azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", fmt.Sprintf("%s-%s", fake.Region, zone), v1alpha5.CapacityTypeOnDemand)
-			}
+		DescribeTable("should launch instances on later reconciliation attempt with Insufficient Capacity Error Cache expiry",
+			func(azureEnv *test.Environment, cluster *state.Cluster, cloudProvider *cloudprovider.CloudProvider, coreProvisioner *provisioning.Provisioner) {
+				for _, zone := range azureEnv.Zones() {
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeSpot)
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeOnDemand)
+				}
 
-			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-			pod := coretest.UnschedulablePod(coretest.PodOptions{
-				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
-			})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectNotScheduled(ctx, env.Client, pod)
-			// capacity shortage is over - expire the items from the cache and try again
-			azureEnv.UnavailableOfferingsCache.Flush()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
-		})
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{
+					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_D2_v2"},
+				})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectNotScheduled(ctx, env.Client, pod)
+				// capacity shortage is over - expire the items from the cache and try again
+				azureEnv.UnavailableOfferingsCache.Flush()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				node := ExpectScheduled(ctx, env.Client, pod)
+				Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_D2_v2"))
+			},
+			Entry("zonal", azureEnv, cluster, cloudProvider, coreProvisioner),
+			Entry("non-zonal", azureEnvNonZonal, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal),
+		)
 
 		Context("on SkuNotUnavailable, should cache SKU as unavailable in all zones", func() {
 			AssertUnavailable := func(sku string, capacityType string) {
 				// fake a SKU not available error
 				azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
-					&azcore.ResponseError{ErrorCode: instance.SKUNotAvailableErrorCode},
+					&azcore.ResponseError{ErrorCode: sdkerrors.SKUNotAvailableErrorCode},
 				)
 				coretest.ReplaceRequirements(nodePool,
 					v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku}},
@@ -639,7 +712,6 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should propagate all values to requirements from skewer", func() {
 			var gpuNode *corecloudprovider.InstanceType
 			var normalNode *corecloudprovider.InstanceType
-
 			for _, instanceType := range instanceTypes {
 				if instanceType.Name == "Standard_D2_v2" {
 					normalNode = instanceType
@@ -971,6 +1043,16 @@ var _ = Describe("InstanceType Provider", func() {
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm).NotTo(BeNil())
 			Expect(vm.Zones).To(ConsistOf(&vmZone))
+		})
+		It("should support provisioning in non-zonal regions", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Zones).To(BeEmpty())
 		})
 	})
 

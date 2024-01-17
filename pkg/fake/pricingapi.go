@@ -25,6 +25,7 @@ import (
 )
 
 const Region = "eastus"
+const RegionNonZonal = "westcentralus"
 
 type PricingAPI struct {
 	client.PricingAPI
@@ -34,6 +35,9 @@ type PricingBehavior struct {
 	NextError         AtomicError
 	ProductsPricePage AtomicPtr[client.ProductsPricePage]
 }
+
+// assert that the fake implements the interface
+var _ client.PricingAPI = &PricingAPI{}
 
 func (p *PricingAPI) Reset() {
 	p.NextError.Reset()

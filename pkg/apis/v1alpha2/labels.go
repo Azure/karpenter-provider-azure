@@ -122,3 +122,8 @@ var (
 
 	NodeClaimLinkedAnnotationKey = v1alpha5.MachineLinkedAnnotationKey // still using the one from v1alpha5
 )
+
+const (
+	Ubuntu2204ImageFamily = "Ubuntu2204"
+	AzureLinuxImageFamily = "AzureLinux"
+)

@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -72,8 +73,6 @@ var (
 	ZonalAllocationFailureReason   = "ZonalAllocationFailure"
 	SKUNotAvailableReason          = "SKUNotAvailable"
 
-	SKUNotAvailableErrorCode = "SkuNotAvailable"
-
 	SubscriptionQuotaReachedTTL = 1 * time.Hour
 	SKUNotAvailableSpotTTL      = 1 * time.Hour
 	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
@@ -125,6 +124,9 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...))
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
+		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
+			logging.FromContext(ctx).Errorf("failed to cleanup resources for node claim %s, %w", nodeClaim.Name, cleanupErr)
+		}
 		return nil, err
 	}
 	zone, err := GetZoneID(vm)
@@ -139,22 +141,6 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		"capacity-type", p.getPriorityForInstanceType(nodeClaim, instanceType)).Infof("launched new instance")
 
 	return vm, nil
-}
-
-func (p *Provider) Link(ctx context.Context, vmName, provisionerName string) error {
-	vm, err := p.Get(ctx, vmName)
-	if err != nil {
-		return fmt.Errorf("linking tags, %w", err)
-	}
-	updates := armcompute.VirtualMachineUpdate{
-		Tags: lo.Assign(vm.Tags, map[string]*string{
-			NodePoolTagKey: lo.ToPtr(provisionerName),
-		}),
-	}
-	if err = UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, updates); err != nil {
-		return fmt.Errorf("linking tags, %w", err)
-	}
-	return nil
 }
 
 func (p *Provider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
@@ -193,27 +179,19 @@ func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, erro
 	return vmList, nil
 }
 
-func (p *Provider) Delete(ctx context.Context, vmName string) error {
-	logging.FromContext(ctx).Debugf("Deleting virtual machine %s", vmName)
-	return deleteVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
+func (p *Provider) Delete(ctx context.Context, resourceName string) error {
+	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources")
+	return p.cleanupAzureResources(ctx, resourceName)
 }
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
-func (p *Provider) createAKSIdentifyingExtension(
-	ctx context.Context,
-	vmName, _ string,
-) error {
-	var err error
+func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName string) (err error) {
 	vmExt := p.getAKSIdentifyingExtension()
 	vmExtName := *vmExt.Name
 	logging.FromContext(ctx).Debugf("Creating virtual machine AKS identifying extension for %s", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
 		logging.FromContext(ctx).Errorf("Creating VM AKS identifying extension for VM %q failed, %w", vmName, err)
-		vmErr := deleteVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
-		if vmErr != nil {
-			logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", vmName, vmErr)
-		}
 		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
 	}
 	logging.FromContext(ctx).Debugf("Created  virtual machine AKS identifying extension for %s, with an id of %s", vmName, *v.ID)
@@ -258,7 +236,7 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 	}
 }
 
-func GenerateVMName(nodeClaimName string) string {
+func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
 
@@ -273,9 +251,6 @@ func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, l
 	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
 	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)
 	if err != nil {
-		if nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName); nicErr != nil {
-			logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", nicName, nicErr)
-		}
 		return "", err
 	}
 	logging.FromContext(ctx).Debugf("Successfully created network interface: %v", *res.ID)
@@ -392,14 +367,10 @@ func setVMTagsProvisionerName(tags map[string]*string, nodeClaim *corev1beta1.No
 	}
 }
 
-func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName, _ string) (*armcompute.VirtualMachine, error) {
+func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName string) (*armcompute.VirtualMachine, error) {
 	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
 	if err != nil {
 		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed: %v", vmName, err)
-		vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
-		if vmErr != nil {
-			logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", vmName, vmErr)
-		}
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
 	}
 	logging.FromContext(ctx).Debugf("Created virtual machine %s", *result.ID)
@@ -416,39 +387,32 @@ func (p *Provider) launchInstance(
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting launch template: %w", err)
 	}
-
-	vmName := GenerateVMName(nodeClaim.Name)
+	// resourceName for the NIC, VM, and Disk
+	resourceName := GenerateResourceName(nodeClaim.Name)
 
 	// create network interface
-	nicName := vmName
-	nicReference, err := p.createNetworkInterface(ctx, vmName, launchTemplate, instanceType)
+	nicReference, err := p.createNetworkInterface(ctx, resourceName, launchTemplate, instanceType)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	sshPublicKey := settings.FromContext(ctx).SSHPublicKey
 	nodeIdentityIDs := settings.FromContext(ctx).NodeIdentities
-	vm := newVMObject(vmName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
+	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
 
-	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", vmName, instanceType.Name)
+	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
-	resp, err := p.createVirtualMachine(ctx, vm, vmName, nicName)
+	resp, err := p.createVirtualMachine(ctx, vm, resourceName)
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
 		return nil, nil, azErr
 	}
 
-	err = p.createAKSIdentifyingExtension(ctx, vmName, nicName)
+	err = p.createAKSIdentifyingExtension(ctx, resourceName)
 	if err != nil {
 		return nil, nil, err
 	}
 	return resp, instanceType, nil
-}
-
-// isSKUNotAvailable - to be moved to azure-sdk-for-go-extensions
-func isSKUNotAvailable(err error) bool {
-	azErr := sdkerrors.IsResponseError(err)
-	return azErr != nil && azErr.ErrorCode == SKUNotAvailableErrorCode
 }
 
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
@@ -471,7 +435,7 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 		}
 		return fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
 	}
-	if isSKUNotAvailable(err) {
+	if sdkerrors.IsSKUNotAvailable(err) {
 		// https://aka.ms/azureskunotavailable: either not available for a location or zone, or out of capacity for Spot.
 		// We only expect to observe the Spot case, not location or zone restrictions, because:
 		// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
@@ -583,6 +547,22 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 		return instanceType, priority, zone
 	}
 	return nil, "", ""
+}
+
+func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName string) (err error) {
+	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
+	if vmErr != nil {
+		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
+	}
+	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
+	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
+	// then we attempt to delete the nic.
+	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
+	if nicErr != nil {
+		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
+	}
+
+	return errors.Join(vmErr, nicErr)
 }
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.

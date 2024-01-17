@@ -17,14 +17,12 @@ limitations under the License.
 package test
 
 import (
-	"context"
 	"fmt"
 
-	"github.com/imdario/mergo"
-
-	"github.com/aws/karpenter-core/pkg/test"
-
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/aws/karpenter-core/pkg/test"
+	"github.com/imdario/mergo"
+	"github.com/samber/lo"
 )
 
 func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
@@ -40,6 +38,9 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 		Spec:       options.Spec,
 		Status:     options.Status,
 	}
-	nc.SetDefaults(context.Background())
+	// In reality, these default values will be set via the defaulting done by the API server. The reason we provide them here is
+	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
+	nc.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+	nc.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2204ImageFamily)
 	return nc
 }
