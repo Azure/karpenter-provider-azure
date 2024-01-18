@@ -18,6 +18,8 @@ package azure
 
 import (
 	//nolint:revive,stylecheck
+	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -45,6 +47,8 @@ func (env *Environment) Cleanup() {
 }
 
 func (env *Environment) AfterEach() {
+	fmt.Println("##[group]AfterEach (CONTROLLER LOGS)")
+	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
 	// Ensure we reset settings after collecting the controller logs
 	env.ExpectSettingsReplaced(persistedSettings...)
