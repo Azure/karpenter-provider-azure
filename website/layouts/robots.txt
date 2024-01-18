@@ -1,0 +1,5 @@
+User-agent: *
+
+Allow: /docs/
+Allow: /index.html
+

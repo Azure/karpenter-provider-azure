@@ -1,0 +1,15 @@
+{
+  "name": "website",
+  "version": "1.0.0",
+  "devDependencies": {
+    "ansi-regex": ">=5.0.1",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "postcss-cli": "^10.1.0",
+    "hugo-extended": "0.121.1"
+  },
+
+  "scripts": {
+    "clean": "rm -rf node_modules"
+  }
+}
