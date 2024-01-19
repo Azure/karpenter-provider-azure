@@ -47,7 +47,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 	return []DefaultImageOutput{
 		{
 			CommunityImage:   Ubuntu2204Gen2CommunityImage,
-			PublicGalleryURL: v1alpha2.AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
@@ -55,7 +55,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 		},
 		{
 			CommunityImage:   Ubuntu2204Gen1CommunityImage,
-			PublicGalleryURL: v1alpha2.AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
@@ -63,7 +63,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 		},
 		{
 			CommunityImage:   Ubuntu2204Gen2ArmCommunityImage,
-			PublicGalleryURL: v1alpha2.AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),

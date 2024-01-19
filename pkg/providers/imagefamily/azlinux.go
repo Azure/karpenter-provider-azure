@@ -43,7 +43,7 @@ func (u AzureLinux) Name() string {
 }
 
 func (u AzureLinux) DefaultImages() []DefaultImageOutput {
-	// image provider will select these images in order, first match wins. This is why we chose to put V2Gen2 first in the defaultImages
+	// image provider will select these images in order, first match wins. This is why we chose to put Gen2 first in the defaultImages, as we prefer gen2 over gen1
 	return []DefaultImageOutput{
 		{
 			CommunityImage:   AzureLinuxGen2CommunityImage,
