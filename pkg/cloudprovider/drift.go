@@ -26,7 +26,6 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter/pkg/utils"
-	"github.com/samber/lo"
 
 	v1 "k8s.io/api/core/v1"
 
@@ -124,20 +123,4 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return ImageVersionDrift, nil
 	}
 	return "", nil
-}
-
-func (c *CloudProvider) isImageDrifted(
-	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodePool *corev1beta1.NodePool) error {
-	instanceTypes, err := c.GetInstanceTypes(ctx, nodePool)
-	if err != nil {
-		return fmt.Errorf("getting instanceTypes, %w", err)
-	}
-	_, found := lo.Find(instanceTypes, func(instType *cloudprovider.InstanceType) bool {
-		return instType.Name == nodeClaim.Labels[v1.LabelInstanceTypeStable]
-	})
-	if !found {
-		return fmt.Errorf(`finding node instance type "%s"`, nodeClaim.Labels[v1.LabelInstanceTypeStable])
-	}
-
-	return nil
 }
