@@ -126,7 +126,4 @@ var (
 const (
 	Ubuntu2204ImageFamily = "Ubuntu2204"
 	AzureLinuxImageFamily = "AzureLinux"
-
-	AKSUbuntuPublicGalleryURL     = "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"
-	AKSAzureLinuxPublicGalleryURL = "AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b"
 )
