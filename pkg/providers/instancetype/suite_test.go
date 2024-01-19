@@ -60,6 +60,7 @@ import (
 	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter/pkg/cloudprovider"
 	"github.com/Azure/karpenter/pkg/fake"
+	"github.com/Azure/karpenter/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter/pkg/providers/instancetype"
 	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter/pkg/test"
@@ -762,15 +763,14 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("ImageProvider + Image Family", func() {
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-				nC := test.AKSNodeClass()
-				nC.Spec.ImageFamily = lo.ToPtr(imageFamily)
+				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{instanceType},
 				})
-				nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{Name: nC.Name}
-				ExpectApplied(ctx, env.Client, nodePool, nC)
+				nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{Name: nodeClass.Name}
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectScheduled(ctx, env.Client, pod)
@@ -788,17 +788,17 @@ var _ = Describe("InstanceType Provider", func() {
 				azureEnv.Reset()
 			},
 			Entry("Gen2, Gen1 instance type with AKSUbuntu image family",
-				"Standard_D2_v5", "Ubuntu2204", "2204gen2containerd", v1alpha2.AKSUbuntuPublicGalleryURL),
+				"Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen1 instance type with AKSUbuntu image family",
-				"Standard_D2_v3", "Ubuntu2204", "2204containerd", v1alpha2.AKSUbuntuPublicGalleryURL),
+				"Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("ARM instance type with AKSUbuntu image family",
-				"Standard_D16plds_v5", "Ubuntu2204", "2204gen2arm64containerd", v1alpha2.AKSUbuntuPublicGalleryURL),
+				"Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmCommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen2 instance type with AzureLinux image family",
-				"Standard_D2_v5", "AzureLinux", "V2gen2", v1alpha2.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2CommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("Gen1 instance type with AzureLinux image family",
-				"Standard_D2_v3", "AzureLinux", "V2", v1alpha2.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1CommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("ARM instance type with AzureLinux image family",
-				"Standard_D16plds_v5", "AzureLinux", "V2gen2arm64", v1alpha2.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmCommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
 		)
 	})
 	Context("Instance Types", func() {
@@ -807,19 +807,6 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-		})
-		It("should support provisioning with Azure Linux", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
-			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).ToNot(BeNil())
-			Expect(strings.HasPrefix(*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID, "/CommunityGalleries/AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b")).To(BeTrue())
 		})
 		Context("VM profile", func() {
 			It("should have OS disk and network interface set to auto-delete", func() {

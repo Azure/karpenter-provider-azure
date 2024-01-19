@@ -125,7 +125,7 @@ var _ = Describe("Image ID Resolution", func() {
 		},
 		Entry("Image ID is specified in the NodeClass", nodeClassWithImageID, &cloudprovider.InstanceType{}, imagefamily.Ubuntu2204{}, testImageID),
 		Entry("Image ID and ImageVersion are specified in the NodeClass", nodeClassWithImageIDAndVersion, &cloudprovider.InstanceType{}, imagefamily.Ubuntu2204{}, testImageID),
-		Entry("ImageVersion is specified in the NodeClass", nodeClassWithImageVersion, &cloudprovider.InstanceType{}, imagefamily.Ubuntu2204{}, fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", v1alpha2.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion)),
+		Entry("ImageVersion is specified in the NodeClass", nodeClassWithImageVersion, &cloudprovider.InstanceType{}, imagefamily.Ubuntu2204{}, fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion)),
 	)
 
 	DescribeTable("Resolution Of Image ID",
@@ -134,8 +134,8 @@ var _ = Describe("Image ID Resolution", func() {
 			Expect(imageID).To(Equal(expectedImageID))
 			Expect(err).To(BeNil())
 		},
-		Entry("Image version is empty, should get latest", imagefamily.Ubuntu2204Gen2CommunityImage, v1alpha2.AKSUbuntuPublicGalleryURL, "", fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", v1alpha2.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, latestImageVersion)),
-		Entry("Image version is specified, should use it", imagefamily.Ubuntu2204Gen2CommunityImage, v1alpha2.AKSUbuntuPublicGalleryURL, olderImageVersion, fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", v1alpha2.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion)),
+		Entry("Image version is empty, should get latest", imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL, "", fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, latestImageVersion)),
+		Entry("Image version is specified, should use it", imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL, olderImageVersion, fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion)),
 	)
 
 })
@@ -153,15 +153,8 @@ var _ = Describe("Image ID Parsing", func() {
 			Expect(communityImageName).To(Equal(expectedCommunityImageName))
 			Expect(imageVersion).To(Equal(expectedImageVersion))
 		},
-		Entry("Valid image id should parse", fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", v1alpha2.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion), v1alpha2.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion, nil),
+		Entry("Valid image id should parse", fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion), imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion, nil),
 		Entry("invalid image id should not parse", "badimageid", "", "", "", true),
 		Entry("empty image id should not parse", "badimageid", "", "", "", true),
 	)
-})
-
-var _ = Describe("ImageFamily Name", func() {
-	It("should return the correct image family name", func() {
-		Expect(imagefamily.Ubuntu2204{}.Name()).To(Equal(v1alpha2.Ubuntu2204ImageFamily))
-		Expect(imagefamily.AzureLinux{}.Name()).To(Equal(v1alpha2.AzureLinuxImageFamily))
-	})
 })
