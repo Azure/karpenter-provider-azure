@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 )
 
-// generated at 2023-12-18T15:28:53Z
+// generated at 2024-01-12T06:16:27Z
 
 func init() {
 	// ResourceSkus is a list of selected VM SKUs for a given region
@@ -39,17 +39,6 @@ func init() {
 			APIVersions:  &[]string{},
 			Costs:        &[]compute.ResourceSkuCosts{},
 			Restrictions: &[]compute.ResourceSkuRestrictions{
-				{
-					Type:   compute.ResourceSkuRestrictionsType("Location"),
-					Values: &[]string{"eastus"},
-					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
-						Locations: &[]string{
-							"eastus",
-						},
-						Zones: &[]string{},
-					},
-					ReasonCode: "NotAvailableForSubscription",
-				},
 				{
 					Type:   compute.ResourceSkuRestrictionsType("Zone"),
 					Values: &[]string{"eastus"},
@@ -127,6 +116,53 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+			},
+			Locations: &[]string{"eastus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+				"1",
+				"2",
+				"3",
+			},
+			},
+			},
+		},
+		{
+			Name:         lo.ToPtr("Standard_D16plds_v5"),
+			Tier:         lo.ToPtr("Standard"),
+			Kind:         lo.ToPtr(""),
+			Size:         lo.ToPtr("D16plds_v5"),
+			Family:       lo.ToPtr("standardDPLDSv5Family"),
+			ResourceType: lo.ToPtr("virtualMachines"),
+			APIVersions:  &[]string{},
+			Costs:        &[]compute.ResourceSkuCosts{},
+			Restrictions: &[]compute.ResourceSkuRestrictions{},
+			Capabilities: &[]compute.ResourceSkuCapabilities{
+				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("614400")},
+				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("16")},
+				{Name: lo.ToPtr("MemoryPreservingMaintenanceSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V2")},
+				{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("32")},
+				{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("32")},
+				{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("Arm64")},
+				{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+				{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("16")},
+				{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("1")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedIOPS"), Value: lo.ToPtr("75000")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedReadBytesPerSecond"), Value: lo.ToPtr("1000000000")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedWriteBytesPerSecond"), Value: lo.ToPtr("1000000000")},
+				{Name: lo.ToPtr("CachedDiskBytes"), Value: lo.ToPtr("429496729600")},
+				{Name: lo.ToPtr("UncachedDiskIOPS"), Value: lo.ToPtr("25600")},
+				{Name: lo.ToPtr("UncachedDiskBytesPerSecond"), Value: lo.ToPtr("600000000")},
+				{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("CapacityReservationSupported"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("TrustedLaunchDisabled"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
 			},
 			Locations: &[]string{"eastus"},
 			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
@@ -449,7 +485,7 @@ func init() {
 			},
 			Locations: &[]string{"eastus"},
 			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
-				"3",
+				"1",
 			},
 			},
 			},
@@ -566,7 +602,7 @@ func init() {
 							"eastus",
 						},
 						Zones: &[]string{
-							"3",
+							"1",
 						},
 					},
 					ReasonCode: "NotAvailableForSubscription",
@@ -700,7 +736,7 @@ func init() {
 			},
 			Locations: &[]string{"eastus"},
 			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
-				"3",
+				"1",
 			},
 			},
 			},
