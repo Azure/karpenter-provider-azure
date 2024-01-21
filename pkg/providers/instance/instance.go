@@ -418,7 +418,7 @@ func (p *Provider) launchInstance(
 // nolint:gocyclo
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	if sdkerrors.LowPriorityQuotaHasBeenReached(err) {
-		// Mark in cache that spot quota has been reached for this subscription 
+		// Mark in cache that spot quota has been reached for this subscription
 		p.unavailableOfferings.Put(sdkerrors.LowPriorityQuotaExceededTerm, struct{}{}, SubscriptionQuotaReachedTTL)
 		logging.FromContext(ctx).Error(err)
 		return fmt.Errorf("LowPriorityQuota Has been reached and this subscription has hit the regional vCPU quota for spot. To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
