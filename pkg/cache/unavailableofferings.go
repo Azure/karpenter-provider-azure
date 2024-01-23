@@ -21,8 +21,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/patrickmn/go-cache"
 	"knative.dev/pkg/logging"
+)
+
+var (
+	spotKey = key("", "", v1beta1.CapacityTypeSpot)
 )
 
 // UnavailableOfferings stores any offerings that return ICE (insufficient capacity errors) when
@@ -40,16 +45,25 @@ func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
 }
 
 func NewUnavailableOfferings() *UnavailableOfferings {
-	c := cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval)
 	return &UnavailableOfferings{
-		cache: c,
+		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
 	}
 }
 
 // IsUnavailable returns true if the offering appears in the cache
 func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
-	_, found := u.cache.Get(u.key(instanceType, zone, capacityType))
+	if capacityType == v1beta1.CapacityTypeSpot {
+		if _, found := u.cache.Get(spotKey); found {
+			return true
+		}
+	}
+	_, found := u.cache.Get(key(instanceType, zone, capacityType))
 	return found
+}
+
+// MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
+func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, ttl time.Duration) {
+	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", v1beta1.CapacityTypeSpot, UnavailableOfferingsTTL)
 }
 
 // MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL
@@ -61,7 +75,7 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 		"zone", zone,
 		"capacity-type", capacityType,
 		"ttl", ttl).Debugf("removing offering from offerings")
-	u.cache.Set(u.key(instanceType, zone, capacityType), struct{}{}, ttl)
+	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
 }
 
 // MarkUnavailable communicates recently observed temporary capacity shortages in the provided offerings
@@ -74,6 +88,6 @@ func (u *UnavailableOfferings) Flush() {
 }
 
 // key returns the cache key for all offerings in the cache
-func (u *UnavailableOfferings) key(instanceType string, zone string, capacityType string) string {
+func key(instanceType string, zone string, capacityType string) string {
 	return fmt.Sprintf("%s:%s:%s", capacityType, instanceType, zone)
 }

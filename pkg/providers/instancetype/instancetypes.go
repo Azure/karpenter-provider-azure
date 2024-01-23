@@ -34,13 +34,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/logging"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
-
 	"github.com/Azure/karpenter/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter/pkg/providers/pricing"
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
+	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	"github.com/aws/karpenter-core/pkg/cloudprovider"
 )
 
 const (
