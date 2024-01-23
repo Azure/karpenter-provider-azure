@@ -57,7 +57,7 @@ func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType st
 }
 
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
-func (u *UnavailableOfferings) MarkSpotUnavailable(ctx context.Context) {
+func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, ttl time.Duration) {
 	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", v1beta1.CapacityTypeSpot, UnavailableOfferingsTTL)
 }
 
