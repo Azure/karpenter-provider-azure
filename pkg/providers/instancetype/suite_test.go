@@ -198,10 +198,8 @@ var _ = Describe("InstanceType Provider", func() {
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-			// Check the capacity type is on-demand
-			Expect(pod.Spec.NodeName).ToNot(BeNil())
-
-			// List all nodes in the nodepool and check the capacity type is on-demand
+		
+			// Expect that on-demand nodes are selected if spot capacity is unavailable, and the nodepool uses both spot + on-demand
 			nodes, err := env.KubernetesInterface.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(nodes.Items)).To(Equal(1))
