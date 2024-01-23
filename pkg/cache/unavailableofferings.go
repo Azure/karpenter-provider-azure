@@ -38,19 +38,17 @@ type UnavailableOfferings struct {
 }
 
 func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
-	u := &UnavailableOfferings{
-		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
+	return &UnavailableOfferings{
+		cache:   c,
+		spotKey: key("", "", v1beta1.CapacityTypeSpot),
 	}
-	u.spotKey = u.key("", "", v1beta1.CapacityTypeSpot)
-	return u
 }
 
 func NewUnavailableOfferings() *UnavailableOfferings {
-	u := &UnavailableOfferings{
-		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
+	return &UnavailableOfferings{
+		cache:   cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
+		spotKey: key("", "", v1beta1.CapacityTypeSpot),
 	}
-	u.spotKey = u.key("", "", v1beta1.CapacityTypeSpot)
-	return u
 }
 
 // IsUnavailable returns true if the offering appears in the cache
@@ -60,7 +58,7 @@ func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType st
 			return true
 		}
 	}
-	_, found := u.cache.Get(u.key(instanceType, zone, capacityType))
+	_, found := u.cache.Get(key(instanceType, zone, capacityType))
 	return found
 }
 
@@ -78,7 +76,7 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 		"zone", zone,
 		"capacity-type", capacityType,
 		"ttl", ttl).Debugf("removing offering from offerings")
-	u.cache.Set(u.key(instanceType, zone, capacityType), struct{}{}, ttl)
+	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
 }
 
 // MarkUnavailable communicates recently observed temporary capacity shortages in the provided offerings
@@ -91,6 +89,6 @@ func (u *UnavailableOfferings) Flush() {
 }
 
 // key returns the cache key for all offerings in the cache
-func (u *UnavailableOfferings) key(instanceType string, zone string, capacityType string) string {
+func key(instanceType string, zone string, capacityType string) string {
 	return fmt.Sprintf("%s:%s:%s", capacityType, instanceType, zone)
 }

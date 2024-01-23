@@ -52,12 +52,8 @@ func TestUnavailableOfferings(t *testing.T) {
 }
 
 func TestUnavailableOfferings_KeyGeneration(t *testing.T) {
-	c := cache.New(time.Second, time.Second)
-	u := NewUnavailableOfferingsWithCache(c)
-
-	// test that the key is generated correctly
 	expectedKey := "spot:NV16as_v4:westus"
-	key := u.key("NV16as_v4", "westus", "spot")
+	key := key("NV16as_v4", "westus", "spot")
 	if key != expectedKey {
 		t.Errorf("Expected key to be %s, but got %s", expectedKey, key)
 	}
