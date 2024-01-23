@@ -68,13 +68,13 @@ type Config struct {
 	AuthMethod string `json:"authMethod" yaml:"authMethod"`
 
 	// Settings for a service principal.
-	AADClientID                 string `json:"aadClientId" yaml:"aadClientId"`
-	AADClientSecret             string `json:"aadClientSecret" yaml:"aadClientSecret"`
-	AADClientCertPath           string `json:"aadClientCertPath" yaml:"aadClientCertPath"`
-	AADClientCertPassword       string `json:"aadClientCertPassword" yaml:"aadClientCertPassword"`
-	UseNewCredWorkflow          bool   `json:"useNewCredWorkflow" yaml:"useNewCredWorkflow"`
-	UseManagedIdentityExtension bool   `json:"useManagedIdentityExtension" yaml:"useManagedIdentityExtension"`
-	UserAssignedIdentityID      string `json:"userAssignedIdentityID" yaml:"userAssignedIdentityID"`
+	AADClientID                  string `json:"aadClientId" yaml:"aadClientId"`
+	AADClientSecret              string `json:"aadClientSecret" yaml:"aadClientSecret"`
+	AADClientCertPath            string `json:"aadClientCertPath" yaml:"aadClientCertPath"`
+	AADClientCertPassword        string `json:"aadClientCertPassword" yaml:"aadClientCertPassword"`
+	UseCredentialFromEnvironment bool   `json:"useCredentialFromEnvironment" yaml:"useCredentialFromEnvironment"`
+	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension" yaml:"useManagedIdentityExtension"`
+	UserAssignedIdentityID       string `json:"userAssignedIdentityID" yaml:"userAssignedIdentityID"`
 
 	//Configs only for AKS
 	ClusterName string `json:"clusterName" yaml:"clusterName"`
@@ -115,13 +115,13 @@ func (cfg *Config) BaseVars() {
 }
 
 func (cfg *Config) prepareID() error {
-	useNewCredWorkflowFromEnv := os.Getenv("ARM_USE_NEW_CRED_WORKFLOW")
-	if len(useNewCredWorkflowFromEnv) > 0 {
-		shouldUse, err := strconv.ParseBool(useNewCredWorkflowFromEnv)
+	useCredentialFromEnvironmentFromEnv := os.Getenv("ARM_USE_CREDENTIAL_FROM_ENVIRONMENT")
+	if len(useCredentialFromEnvironmentFromEnv) > 0 {
+		shouldUse, err := strconv.ParseBool(useCredentialFromEnvironmentFromEnv)
 		if err != nil {
 			return err
 		}
-		cfg.UseNewCredWorkflow = shouldUse
+		cfg.UseCredentialFromEnvironment = shouldUse
 	}
 	useManagedIdentityExtensionFromEnv := os.Getenv("ARM_USE_MANAGED_IDENTITY_EXTENSION")
 	if len(useManagedIdentityExtensionFromEnv) > 0 {

@@ -96,7 +96,7 @@ az-patch-skaffold-azureoverlay: az-patch-skaffold	az-fetch-network-info
 	# old identity path is still the default, so need to override the values values with new logic.
 	# TODO (chmcbrid): update the new logic path as the default.
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv))
-	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USE_NEW_CRED_WORKFLOW")) .value = "true"'         skaffold.yaml
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USE_CREDENTIAL_FROM_ENVIRONMENT")) .value = "true"'         skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USE_MANAGED_IDENTITY_EXTENSION")) .value = "false"'         skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USER_ASSIGNED_IDENTITY_ID")) .value = ""'         skaffold.yaml
 

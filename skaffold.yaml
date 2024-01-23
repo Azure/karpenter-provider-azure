@@ -49,7 +49,7 @@ manifests:
                 value: "Please run make az-all"
               - name: LOCATION
                 value: westus2
-              - name: ARM_USE_NEW_CRED_WORKFLOW
+              - name: ARM_USE_CREDENTIAL_FROM_ENVIRONMENT
                 value: "false"
               - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
                 value: "true"
