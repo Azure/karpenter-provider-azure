@@ -10,7 +10,7 @@ keywords:
   - scheduler
   - autoscaling
   - lifecycle
-home: https://github.com/Azure/karpenter/
+home: https://github.com/Azure/karpenter-provider-azure/
 icon: https://repository-images.githubusercontent.com/278480393/dab059c8-caa1-4b55-aaa7-3d30e47a5616
 sources:
-  - https://github.com/Azure/karpenter/
+  - https://github.com/Azure/karpenter-provider-azure/

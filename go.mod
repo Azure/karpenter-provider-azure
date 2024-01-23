@@ -1,4 +1,4 @@
-module github.com/Azure/karpenter
+module github.com/Azure/karpenter-provider-azure
 
 go 1.21
 

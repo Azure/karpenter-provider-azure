@@ -27,9 +27,9 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	kcache "github.com/Azure/karpenter/pkg/cache"
-	"github.com/Azure/karpenter/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/logging"
@@ -37,8 +37,8 @@ import (
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
 
-	"github.com/Azure/karpenter/pkg/providers/instance/skuclient"
-	"github.com/Azure/karpenter/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
 )
