@@ -69,15 +69,6 @@ func (u *UnavailableOfferings) MarkUnavailable(ctx context.Context, unavailableR
 	u.MarkUnavailableWithTTL(ctx, unavailableReason, instanceType, zone, capacityType, UnavailableOfferingsTTL)
 }
 
-func (u *UnavailableOfferings) Put(key string, value struct{}, ttl time.Duration) {
-	u.cache.Set(key, value, ttl)
-}
-
-func (u *UnavailableOfferings) Has(key string) bool {
-	_, found := u.cache.Get(key)
-	return found
-}
-
 func (u *UnavailableOfferings) Flush() {
 	u.cache.Flush()
 }
