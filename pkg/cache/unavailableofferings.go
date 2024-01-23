@@ -32,25 +32,33 @@ import (
 type UnavailableOfferings struct {
 	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{}
 	cache *cache.Cache
+	// pre-computed key for spot since we will be computing this key many times and it
+	// will always be the same.
+	spotKey string
 }
 
 func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
-	return &UnavailableOfferings{
-		cache: c,
+	u := &UnavailableOfferings{
+		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
 	}
+	u.spotKey = u.key("", "", v1beta1.CapacityTypeSpot)
+	return u
 }
 
 func NewUnavailableOfferings() *UnavailableOfferings {
-	c := cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval)
-	return &UnavailableOfferings{
-		cache: c,
+	u := &UnavailableOfferings{ 
+		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval), 
 	}
+	u.spotKey = u.key("", "", v1beta1.CapacityTypeSpot)
+	return u
 }
 
 // IsUnavailable returns true if the offering appears in the cache
 func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
-	if _, ok := u.cache.Get(u.key("", "", v1beta1.CapacityTypeSpot)); ok && capacityType == v1beta1.CapacityTypeSpot {
-		return true
+	if capacityType == v1beta1.CapacityTypeSpot {
+		if _, ok := u.cache.Get(u.spotKey); ok {
+			return true
+		}
 	}
 	_, found := u.cache.Get(u.key(instanceType, zone, capacityType))
 	return found
