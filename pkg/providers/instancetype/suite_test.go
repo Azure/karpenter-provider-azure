@@ -173,6 +173,39 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 		})
+		It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
+			LowPriorityCoresQuotaErrorMessage := "Operation could not be completed as it results in exceeding approved Low Priority Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22LowPriorityCores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:32,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22LowPriorityCores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
+			// Create nodepool that has both ondemand and spot capacity types enabled
+			coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
+				Key:      corev1beta1.CapacityTypeLabelKey,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{corev1beta1.CapacityTypeOnDemand, corev1beta1.CapacityTypeSpot},
+			})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			// Set the LowPriorityCoresQuota error to be returned when creating the vm
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+				&azcore.ResponseError{
+					ErrorCode: sdkerrors.OperationNotAllowed,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, LowPriorityCoresQuotaErrorMessage),
+					},
+				},
+			)
+			// Create a pod that should fail to schedule
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			// Expect that on-demand nodes are selected if spot capacity is unavailable, and the nodepool uses both spot + on-demand
+			nodes, err := env.KubernetesInterface.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(nodes.Items)).To(Equal(1))
+			Expect(nodes.Items[0].Labels[corev1beta1.CapacityTypeLabelKey]).To(Equal(corev1beta1.CapacityTypeOnDemand))
+		})
+
 		It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
 			familyVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 100, Current Usage: 96, Additional Required: 32, (Minimum) New Limit Required: 128. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)

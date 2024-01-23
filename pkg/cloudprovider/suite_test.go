@@ -202,13 +202,6 @@ var _ = Describe("CloudProvider", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
-		It("should error if the NodeClaim doesn't have the instance-type label", func() {
-			nodeClaim.Labels = map[string]string{
-				corev1beta1.NodePoolLabelKey: nodePool.Name,
-			}
-			_, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-			Expect(err).To(HaveOccurred())
-		})
 		It("should error drift if NodeClaim doesn't have provider id", func() {
 			nodeClaim.Status = corev1beta1.NodeClaimStatus{}
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)

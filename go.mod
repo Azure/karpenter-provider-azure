@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/Azure/azure-kusto-go v0.14.0
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
-	github.com/Azure/azure-sdk-for-go-extensions v0.1.5
+	github.com/Azure/azure-sdk-for-go-extensions v0.1.6
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.1
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.3.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
