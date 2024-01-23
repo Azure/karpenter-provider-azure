@@ -46,8 +46,8 @@ func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
 }
 
 func NewUnavailableOfferings() *UnavailableOfferings {
-	u := &UnavailableOfferings{ 
-		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval), 
+	u := &UnavailableOfferings{
+		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
 	}
 	u.spotKey = u.key("", "", v1beta1.CapacityTypeSpot)
 	return u
