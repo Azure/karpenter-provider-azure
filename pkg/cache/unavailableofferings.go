@@ -53,7 +53,7 @@ func NewUnavailableOfferings() *UnavailableOfferings {
 // IsUnavailable returns true if the offering appears in the cache
 func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
 	if capacityType == v1beta1.CapacityTypeSpot {
-		if _, ok := u.cache.Get(spotKey); ok {
+		if _, found := u.cache.Get(spotKey); found {
 			return true
 		}
 	}
