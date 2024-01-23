@@ -26,35 +26,34 @@ import (
 	"knative.dev/pkg/logging"
 )
 
+var (
+	spotKey = key("", "", v1beta1.CapacityTypeSpot)
+)
+
 // UnavailableOfferings stores any offerings that return ICE (insufficient capacity errors) when
 // attempting to launch the capacity. These offerings are ignored as long as they are in the cache on
 // GetInstanceTypes responses
 type UnavailableOfferings struct {
 	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{}
 	cache *cache.Cache
-	// pre-computed key for spot since we will be computing this key many times and it
-	// will always be the same.
-	spotKey string
 }
 
 func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
 	return &UnavailableOfferings{
-		cache:   c,
-		spotKey: key("", "", v1beta1.CapacityTypeSpot),
+		cache: c,
 	}
 }
 
 func NewUnavailableOfferings() *UnavailableOfferings {
 	return &UnavailableOfferings{
-		cache:   cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
-		spotKey: key("", "", v1beta1.CapacityTypeSpot),
+		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
 	}
 }
 
 // IsUnavailable returns true if the offering appears in the cache
 func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
 	if capacityType == v1beta1.CapacityTypeSpot {
-		if _, ok := u.cache.Get(u.spotKey); ok {
+		if _, ok := u.cache.Get(spotKey); ok {
 			return true
 		}
 	}
