@@ -23,11 +23,11 @@ import (
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/Azure/karpenter/pkg/cloudprovider"
-	nodeclaimgarbagecollection "github.com/Azure/karpenter/pkg/controllers/nodeclaim/garbagecollection"
-	"github.com/Azure/karpenter/pkg/controllers/nodeclaim/inplaceupdate"
-	"github.com/Azure/karpenter/pkg/providers/instance"
-	"github.com/Azure/karpenter/pkg/utils/project"
+	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/project"
 )
 
 func NewControllers(ctx context.Context, kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider, instanceProvider *instance.Provider) []controller.Controller {

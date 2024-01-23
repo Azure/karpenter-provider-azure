@@ -8,7 +8,7 @@ on:
 
 jobs:
   analyze:
-    if: github.repository == 'Azure/karpenter'
+    if: github.repository == 'Azure/karpenter-provider-azure'
     name: Analyze
     runs-on: ubuntu-latest
     permissions:

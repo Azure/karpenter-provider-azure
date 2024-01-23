@@ -21,11 +21,11 @@ package main
 import (
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter/pkg/cloudprovider"
-	"github.com/Azure/karpenter/pkg/operator"
-	"github.com/Azure/karpenter/pkg/webhooks"
+	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator"
+	"github.com/Azure/karpenter-provider-azure/pkg/webhooks"
 
-	controllers "github.com/Azure/karpenter/pkg/controllers"
+	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"github.com/aws/karpenter-core/pkg/cloudprovider/metrics"
 	corecontrollers "github.com/aws/karpenter-core/pkg/controllers"
 	"github.com/aws/karpenter-core/pkg/controllers/state"

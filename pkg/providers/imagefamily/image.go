@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/aws/karpenter-core/pkg/utils/pretty"
 	"github.com/patrickmn/go-cache"
@@ -136,8 +136,6 @@ func BuildImageID(publicGalleryURL, communityImageName, imageVersion string) str
 // ParseImageIDInfo parses the publicGalleryURL, communityImageName, and imageVersion out of an imageID
 func ParseCommunityImageIDInfo(imageID string) (string, string, string, error) {
 	// TODO (charliedmcb): assess if doing validation on splitting the string and validating the results is better? Mostly is regex too expensive?
-	// Discussion on the validation here:
-	// https://github.com/Azure/karpenter/pull/280#discussion_r1343252930
 	regexStr := fmt.Sprintf(imageIDFormat, "(?P<publicGalleryURL>.*)", "(?P<communityImageName>.*)", "(?P<imageVersion>.*)")
 	if imageID == "" {
 		return "", "", "", fmt.Errorf("can not parse empty string. Expect it of the form \"%s\"", regexStr)

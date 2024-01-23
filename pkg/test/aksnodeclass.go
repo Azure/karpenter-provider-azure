@@ -19,7 +19,7 @@ package test
 import (
 	"fmt"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/aws/karpenter-core/pkg/test"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
