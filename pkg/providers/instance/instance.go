@@ -422,7 +422,7 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 		p.unavailableOfferings.MarkUnavailable(ctx, "", "", "", corev1beta1.CapacityTypeSpot)
 
 		logging.FromContext(ctx).Error(err)
-		return fmt.Errorf("LowPriorityQuota Has been reached and this subscription has hit the regional vCPU quota for spot. To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
+		return fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
 	}
 	if sdkerrors.SKUFamilyQuotaHasBeenReached(err) {
 		// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
