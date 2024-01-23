@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/patrickmn/go-cache"
 	"knative.dev/pkg/logging"
 )
@@ -48,8 +49,16 @@ func NewUnavailableOfferings() *UnavailableOfferings {
 
 // IsUnavailable returns true if the offering appears in the cache
 func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
+	if _, ok := u.cache.Get(u.key("", "", v1beta1.CapacityTypeSpot)); ok && capacityType == v1beta1.CapacityTypeSpot {
+		return true
+	}
 	_, found := u.cache.Get(u.key(instanceType, zone, capacityType))
 	return found
+}
+
+// MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
+func (u *UnavailableOfferings) MarkSpotUnavailable(ctx context.Context) {
+	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", v1beta1.CapacityTypeSpot, UnavailableOfferingsTTL)
 }
 
 // MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL

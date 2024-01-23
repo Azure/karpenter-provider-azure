@@ -135,7 +135,7 @@ func (p *Provider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) []cl
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
 		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, corev1beta1.CapacityTypeOnDemand)
-		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, corev1beta1.CapacityTypeSpot) && !p.unavailableOfferings.IsUnavailable("", "", corev1beta1.CapacityTypeSpot)
+		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, corev1beta1.CapacityTypeSpot)
 		offerings = append(offerings, cloudprovider.Offering{Zone: zone, CapacityType: corev1beta1.CapacityTypeSpot, Price: spotPrice, Available: availableSpot})
 		offerings = append(offerings, cloudprovider.Offering{Zone: zone, CapacityType: corev1beta1.CapacityTypeOnDemand, Price: onDemandPrice, Available: availableOnDemand})
 	}
