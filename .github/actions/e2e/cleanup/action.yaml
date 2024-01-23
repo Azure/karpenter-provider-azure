@@ -45,7 +45,7 @@ runs:
       run: az aks delete --name ${{ inputs.cluster_name }} --resource-group ${{ inputs.resource_group }} --yes --no-wait
     - name: delete acr ${{ inputs.acr_name }}
       shell: bash
-      run: az acr delete --name ${{ inputs.acr_name }} --resource-group ${{ inputs.resource_group }} --yes --no-wait
+      run: az acr delete --name ${{ inputs.acr_name }} --resource-group ${{ inputs.resource_group }} --yes
     - name: delete rg ${{ inputs.resource_group }}
       shell: bash
       run: az group delete --name ${{ inputs.resource_group }} --yes --no-wait
