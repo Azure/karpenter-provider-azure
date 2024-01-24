@@ -27,7 +27,6 @@ import (
 )
 
 var persistedSettings []v1.EnvVar
-var persistedSettingsLegacy = &v1.ConfigMap{}
 
 var (
 	CleanableObjects = []client.Object{
@@ -37,7 +36,6 @@ var (
 
 func (env *Environment) BeforeEach() {
 	persistedSettings = env.ExpectSettings()
-	persistedSettingsLegacy = env.ExpectSettingsLegacy()
 	env.Environment.BeforeEach()
 }
 
@@ -52,5 +50,4 @@ func (env *Environment) AfterEach() {
 	env.Environment.AfterEach()
 	// Ensure we reset settings after collecting the controller logs
 	env.ExpectSettingsReplaced(persistedSettings...)
-	env.ExpectSettingsReplacedLegacy(persistedSettingsLegacy.Data)
 }
