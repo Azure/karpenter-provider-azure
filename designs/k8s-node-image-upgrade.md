@@ -286,9 +286,6 @@ https://github.com/aws/karpenter/issues/1738
 - Drift Max Surge design within `karpenter-core`: <br>
 https://github.com/aws/karpenter-core/pull/516#pullrequestreview-1636663551
 
-- POC PR for drift supporting k8s version upgrade: <br>
-https://github.com/Azure/karpenter/pull/262
-
 ---
 
 From template:

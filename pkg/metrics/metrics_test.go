@@ -19,7 +19,7 @@ package metrics_test
 import (
 	"testing"
 
-	"github.com/Azure/karpenter/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus/testutil"

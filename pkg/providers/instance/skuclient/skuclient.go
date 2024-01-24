@@ -23,7 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/go-autorest/autorest/azure"
-	"github.com/Azure/karpenter/pkg/auth"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/skewer"
 	klog "k8s.io/klog/v2"
 )

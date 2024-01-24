@@ -10,6 +10,6 @@
 ### Running the test case
 1. Make a draft PR
 2. Anytime you want to run the E2E test suite submit a review comment `/test`
-3. Each time a the given review comment is submited it will trigger the [E2EMatrixTrigger](https://github.com/Azure/karpenter/actions/workflows/e2e-matrix-trigger.yaml) workflow which will contain your test suite.
+3. Each time a the given review comment is submited it will trigger the [E2EMatrixTrigger](https://github.com/Azure/karpenter-provider-azure/actions/workflows/e2e-matrix-trigger.yaml) workflow which will contain your test suite.
 
     
