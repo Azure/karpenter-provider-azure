@@ -71,7 +71,7 @@ var _ = Describe("DaemonSet", func() {
 					Labels: map[string]string{"app": "large-app"},
 				},
 				ResourceRequirements: v1.ResourceRequirements{
-					Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("4")},
+					Requests: v1.ResourceList{v1.ResourceMemory: resource.MustParse("4")},
 				},
 			},
 		})
