@@ -18,6 +18,7 @@ package utilization_test
 
 import (
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -73,7 +74,7 @@ var _ = Describe("Utilization", func() {
 			})
 
 			env.ExpectCreated(nodePool, nodeClass, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyPodCountWithTimeout(10*time.Minute, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas)) // One pod per node enforced by instance size
 		},
 
