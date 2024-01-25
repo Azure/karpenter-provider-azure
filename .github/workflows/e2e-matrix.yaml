@@ -24,6 +24,11 @@ jobs:
     outputs:
       E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        with:
+          egress-policy: audit
+
       - id: generate-e2e-run-hash
         run: |
           E2E_HASH=$RANDOM$RANDOM
