@@ -30,11 +30,11 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: ./.github/actions/install-deps
       - run: make vulncheck
-      - uses: github/codeql-action/init@4759df8df70c5ebe7042c3029bbace20eee13edd # v2.23.1
+      - uses: github/codeql-action/init@0b21cf2492b6b02c465a3e5d7c473717ad7721ba # v3.23.1
         with:
           languages: ${{ matrix.language }}
-      - uses: github/codeql-action/autobuild@4759df8df70c5ebe7042c3029bbace20eee13edd # v2.23.1
-      - uses: github/codeql-action/analyze@4759df8df70c5ebe7042c3029bbace20eee13edd # v2.23.1
+      - uses: github/codeql-action/autobuild@0b21cf2492b6b02c465a3e5d7c473717ad7721ba # v3.23.1
+      - uses: github/codeql-action/analyze@0b21cf2492b6b02c465a3e5d7c473717ad7721ba # v3.23.1
