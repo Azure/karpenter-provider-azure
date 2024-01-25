@@ -22,7 +22,7 @@ import (
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 
-	azsettings "github.com/Azure/karpenter/pkg/apis/settings"
+	azsettings "github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 )
 
 type SettingOptions struct {

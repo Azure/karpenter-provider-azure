@@ -27,13 +27,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"knative.dev/pkg/ptr"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/aws/karpenter-core/pkg/scheduling"
 
-	"github.com/Azure/karpenter/pkg/apis/settings"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 
 	"github.com/aws/karpenter-core/pkg/utils/resources"
 )

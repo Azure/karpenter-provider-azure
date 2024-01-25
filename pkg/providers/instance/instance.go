@@ -34,16 +34,16 @@ import (
 	"knative.dev/pkg/logging"
 
 	"github.com/Azure/azure-kusto-go/kusto/kql"
-	"github.com/Azure/karpenter/pkg/cache"
-	"github.com/Azure/karpenter/pkg/providers/instancetype"
-	"github.com/Azure/karpenter/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 
 	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/aws/karpenter-core/pkg/scheduling"
 
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 
@@ -415,7 +415,15 @@ func (p *Provider) launchInstance(
 	return resp, instanceType, nil
 }
 
+// nolint:gocyclo
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+	if sdkerrors.LowPriorityQuotaHasBeenReached(err) {
+		// Mark in cache that spot quota has been reached for this subscription
+		p.unavailableOfferings.MarkSpotUnavailableWithTTL(ctx, SubscriptionQuotaReachedTTL)
+
+		logging.FromContext(ctx).Error(err)
+		return fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
+	}
 	if sdkerrors.SKUFamilyQuotaHasBeenReached(err) {
 		// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
 		// This will also update the TTL for an existing offering in the cache that is already unavailable

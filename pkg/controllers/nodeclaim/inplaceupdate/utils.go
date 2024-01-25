@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/karpenter/pkg/apis/settings"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 )
 
 // According to https://pkg.go.dev/encoding/json#Marshal, it's safe to use map-types (and encoding/json in general) to produce

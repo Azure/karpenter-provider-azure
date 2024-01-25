@@ -25,3 +25,18 @@ updates:
     directory: "/.github"
     schedule:
       interval: "monthly"
+
+  - package-ecosystem: docker
+    directory: /.devcontainer
+    schedule:
+      interval: daily
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: daily
+
+  - package-ecosystem: docker
+    directory: /hack/go-helper-image
+    schedule:
+      interval: daily

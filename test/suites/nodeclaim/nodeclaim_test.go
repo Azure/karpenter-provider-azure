@@ -17,7 +17,7 @@ limitations under the License.
 package nodeclaim_test
 
 import (
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"

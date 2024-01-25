@@ -1,9 +1,9 @@
-[![GitHub License](https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg)](https://github.com/Azure/karpenter/blob/main/LICENSE.txt)
-[![CI](https://github.com/Azure/karpenter/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Azure/karpenter/actions/workflows/ci.yml)
-![GitHub stars](https://img.shields.io/github/stars/Azure/karpenter)
-![GitHub forks](https://img.shields.io/github/forks/Azure/karpenter)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Azure/karpenter)](https://goreportcard.com/report/github.com/Azure/karpenter)
-[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/Azure/karpenter/issues)
+[![GitHub License](https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg)](https://github.com/Azure/karpenter-provider-azure/blob/main/LICENSE.txt)
+[![CI](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml)
+![GitHub stars](https://img.shields.io/github/stars/Azure/karpenter-provider-azure)
+![GitHub forks](https://img.shields.io/github/forks/Azure/karpenter-provider-azure)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Azure/karpenter-provider-azure)](https://goreportcard.com/report/github.com/Azure/karpenter-provider-azure)
+[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/Azure/karpenter-provider-azure/issues)
 
 ---
 ## Features Overview 

@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 
-	"github.com/Azure/karpenter/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	coresettings "github.com/aws/karpenter-core/pkg/apis/settings"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
@@ -43,11 +43,11 @@ import (
 
 	. "knative.dev/pkg/logging/testing"
 
-	"github.com/Azure/karpenter/pkg/apis"
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/providers/instance"
-	"github.com/Azure/karpenter/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/aws/karpenter-core/pkg/test/expectations"
 )
 
@@ -201,13 +201,6 @@ var _ = Describe("CloudProvider", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
-		})
-		It("should error if the NodeClaim doesn't have the instance-type label", func() {
-			nodeClaim.Labels = map[string]string{
-				corev1beta1.NodePoolLabelKey: nodePool.Name,
-			}
-			_, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-			Expect(err).To(HaveOccurred())
 		})
 		It("should error drift if NodeClaim doesn't have provider id", func() {
 			nodeClaim.Status = corev1beta1.NodeClaimStatus{}

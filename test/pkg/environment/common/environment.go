@@ -38,7 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/Azure/karpenter/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	coreapis "github.com/aws/karpenter-core/pkg/apis"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/operator"

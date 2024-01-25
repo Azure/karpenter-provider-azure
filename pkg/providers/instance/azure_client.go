@@ -31,12 +31,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/go-autorest/autorest/azure"
-	"github.com/Azure/karpenter/pkg/auth"
-	"github.com/Azure/karpenter/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter/pkg/providers/instance/skuclient"
-	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 
-	armopts "github.com/Azure/karpenter/pkg/utils/opts"
+	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 	klog "k8s.io/klog/v2"
 )
 

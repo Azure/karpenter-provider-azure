@@ -4,7 +4,7 @@ build:
   artifacts:
     - image: controller
       ko:
-        main: github.com/Azure/karpenter/cmd/controller
+        main: github.com/Azure/karpenter-provider-azure/cmd/controller
         dependencies:
           paths:
             - '**/*.go'

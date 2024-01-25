@@ -27,8 +27,8 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/aws/karpenter-core/pkg/apis"
 	coresettings "github.com/aws/karpenter-core/pkg/apis/settings"
 	"github.com/aws/karpenter-core/pkg/utils/functional"

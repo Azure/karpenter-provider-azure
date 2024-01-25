@@ -51,7 +51,7 @@ linters-settings:
     locale: US
     ignore-words: [karpenter]
   goimports:
-    local-prefixes: github.com/azure/karpenter
+    local-prefixes: github.com/azure/karpenter-provider-azure
   goheader:
     template: |-
       Portions Copyright (c) Microsoft Corporation.
