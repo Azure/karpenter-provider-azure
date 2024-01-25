@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,stylecheck
 	. "github.com/onsi/gomega"    //nolint:revive,stylecheck
 	"github.com/samber/lo"
@@ -64,8 +65,7 @@ var (
 
 // nolint:gocyclo
 func (env *Environment) BeforeEach() {
-	// TODO (charliedmcb): uncomment debugging lib, but removing references for now to avoid the need to review the entire package
-	// debug.BeforeEach(env.Context, env.Config, env.Client)
+	debug.BeforeEach(env.Context, env.Config, env.Client)
 	env.Context = injection.WithSettingsOrDie(env.Context, env.KubeClient, apis.Settings...)
 
 	// Expect this cluster to be clean for test runs to execute successfully
@@ -113,8 +113,7 @@ func (env *Environment) Cleanup() {
 }
 
 func (env *Environment) AfterEach() {
-	// TODO (charliedmcb): uncomment debugging lib, but removing references for now to avoid the need to review the entire package
-	// debug.AfterEach(env.Context)
+	debug.AfterEach(env.Context)
 	env.printControllerLogs(&v1.PodLogOptions{Container: "controller"})
 }
 
