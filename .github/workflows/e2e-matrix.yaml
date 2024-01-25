@@ -7,7 +7,7 @@ on:
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "westus2"
+        default: "eastus"
   #     k8s_version:
   #       type: string
   #       default: "1.27"
