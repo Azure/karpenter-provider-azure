@@ -4,10 +4,6 @@ on:
     outputs:
       GIT_REF:
         value: ${{ jobs.resolve.outputs.GIT_REF }}
-
-permissions:
-  contents: read
-  
 jobs:
   resolve:
     runs-on: ubuntu-latest

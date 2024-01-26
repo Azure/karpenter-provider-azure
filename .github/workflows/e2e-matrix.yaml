@@ -18,10 +18,6 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
-
-permissions:
-  contents: read
-        
 jobs:
   initialize-generative-params:
     runs-on: ubuntu-latest

@@ -10,7 +10,8 @@ on:
         type: string
 
 permissions:
-  contents: read
+  id-token: write # This is required for requesting the JWT
+  contents: read  # This is required for actions/checkout
 
 env:
   REGISTRY_REPO: unlisted/aks/karpenter
@@ -40,8 +41,6 @@ jobs:
           echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
 
   publish-images:
-    permissions:
-      id-token: write # This is required for requesting the JWT
     runs-on: ubuntu-latest
     needs: prepare-variables
     steps:
