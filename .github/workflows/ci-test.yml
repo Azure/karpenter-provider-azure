@@ -9,6 +9,7 @@ permissions:
 jobs:
   ci-test:
     permissions:
+      contents: read
       statuses: write
     runs-on: ubuntu-latest
     strategy:
