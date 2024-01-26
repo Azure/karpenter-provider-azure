@@ -787,9 +787,9 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(ok).To(BeTrue(), "Expected nvidia.com/gpu to be present in capacity")
 			Expect(gpuQuantity.Value()).To(Equal(int64(1)))
 
-			gpuQuanityNonGPU, ok := normalNode.Capacity["nvidia.com/gpu"]
+			gpuQuantityNonGPU, ok := normalNode.Capacity["nvidia.com/gpu"]
 			Expect(ok).To(BeTrue(), "Expected nvidia.com/gpu to be present in capacity, and be zero")
-			Expect(gpuQuanityNonGPU.Value()).To(Equal(int64(0)))
+			Expect(gpuQuantityNonGPU.Value()).To(Equal(int64(0)))
 		})
 	})
 
