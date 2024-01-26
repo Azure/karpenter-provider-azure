@@ -44,6 +44,10 @@ jobs:
       fail-fast: false
       matrix:
         suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim]
+    permissions:
+      contents: read
+      id-token: write
+      statuses: write
     uses: ./.github/workflows/e2e.yaml
     with:
       git_ref: ${{ inputs.git_ref }}
