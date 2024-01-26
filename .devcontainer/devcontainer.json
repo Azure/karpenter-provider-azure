@@ -25,7 +25,7 @@
 			"extensions": [
 				"golang.Go",
 				"ms-kubernetes-tools.vscode-kubernetes-tools",
-				"ms-kubernetes-tools.vscode-ask-tools",
+				"ms-kubernetes-tools.vscode-aks-tools",
 				"timonwong.shellcheck",
 				"mutantdino.resourcemonitor",
 				"Gruntfuggly.todo-tree",
