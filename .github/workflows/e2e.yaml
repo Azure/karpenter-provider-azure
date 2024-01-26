@@ -13,7 +13,7 @@ on:
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "westus2"
+        default: "eastus"
     #   k8s_version:
     #     type: string
     #     default: "1.27"
@@ -24,14 +24,18 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+
 permissions:
-  id-token: write # This is required for requesting the JWT
-  contents: read  # This is required for actions/checkout
-  statuses: write # ./.github/actions/commit-status/*
+  contents: read
+
 jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # This is required for requesting the JWT
+      statuses: write # ./.github/actions/commit-status/*      
     env:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
