@@ -5,7 +5,7 @@ on:
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "westus2"
+        default: "eastus"
   push:
     branches: [main]
   workflow_run:
@@ -27,7 +27,7 @@ jobs:
     uses: ./.github/workflows/e2e-matrix.yaml
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
-      location: ${{ inputs.location || 'westus2' }}
+      location: ${{ inputs.location || 'eastus' }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}

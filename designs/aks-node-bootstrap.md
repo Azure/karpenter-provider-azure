@@ -103,7 +103,7 @@ Karpenter also supports provider-specific configuration via `NodeTemplate` custo
 Note that this represents part of the external configuration surface / API, and should be treated as such.
 
 <!-- TODO: cover NodeTemplate details -->
-<!-- TODO: add guidance on what belongs to settins vs NodeTemplate -->
+<!-- TODO: add guidance on what belongs to settings vs NodeTemplate -->
 
 ### Auto-detected values
 
