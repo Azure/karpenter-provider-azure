@@ -28,6 +28,11 @@ on:
 permissions:
   contents: read
 
+env:
+  ACR_NAME:
+  RG_NAME:
+  CLUSTER_NAME:
+
 jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
