@@ -35,9 +35,9 @@ jobs:
 
       - id: generate-e2e-run-hash
         run: |
-          E2E_HASH=$RANDOM$RANDOM
+          E2E_HASH="$RANDOM$RANDOM"
           echo "Using e2e hash \"$E2E_HASH\""
-          echo E2E_HASH=$E2E_HASH >> $GITHUB_OUTPUT
+          echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
   e2e:
     needs: [initialize-generative-params]
     strategy:

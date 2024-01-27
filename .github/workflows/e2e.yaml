@@ -75,12 +75,12 @@ jobs:
         run: |
           RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.hash }} | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
-          echo RG_NAME=$RG_NAME >> $GITHUB_ENV
+          echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
         run: |
           ACR_NAME=$(echo ${{ inputs.suite }}acr${{ inputs.hash }} | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
-          echo ACR_NAME=$ACR_NAME >> $GITHUB_ENV
+          echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
         uses: ./.github/actions/e2e/create-acr
         with:
@@ -94,12 +94,12 @@ jobs:
       - name: add jitter on cluster creation
         run: |
           # Creating jitter so that we can stagger cluster creation to avoid throttling
-          sleep $(( $RANDOM % 60 + 1 ))
+          sleep $(( RANDOM % 60 + 1 ))
       - name: generate cluster name
         run: |
           CLUSTER_NAME=mc
           echo "Using cluster name \"$CLUSTER_NAME\""
-          echo CLUSTER_NAME=$CLUSTER_NAME >> $GITHUB_ENV
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
         uses: ./.github/actions/e2e/create-cluster
         with:
