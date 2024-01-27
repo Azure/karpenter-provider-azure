@@ -62,6 +62,7 @@
         },
         "ghcr.io/devcontainers/features/azure-cli:1": {
             "version": "latest"
-        }
+        },
+		"ghcr.io/marcozac/devcontainer-features/shellcheck:1": {}
 	}
 }
