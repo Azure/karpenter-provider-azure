@@ -39,6 +39,7 @@ updates:
     directory: / # covers .github/workflows
     schedule:
       interval: "weekly"
+    groups:
       # Group updates together, so that they are all applied in a single PR.
       # Grouped updates are currently in beta and is subject to change.
       # xref: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file#groups
