@@ -28,7 +28,7 @@ inputs:
   location:
     type: string
     description: "the azure location to run the e2e test in"
-    default: "westus2"
+    default: "eastus"
 runs:
   using: "composite"
   steps:

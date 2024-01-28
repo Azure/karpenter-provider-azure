@@ -7,7 +7,7 @@ on:
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "westus2"
+        default: "eastus"
   #     k8s_version:
   #       type: string
   #       default: "1.27"
@@ -18,12 +18,21 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+
+permissions:
+  contents: read
+        
 jobs:
   initialize-generative-params:
     runs-on: ubuntu-latest
     outputs:
       E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        with:
+          egress-policy: audit
+
       - id: generate-e2e-run-hash
         run: |
           E2E_HASH=$RANDOM$RANDOM
@@ -35,6 +44,10 @@ jobs:
       fail-fast: false
       matrix:
         suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim]
+    permissions:
+      contents: read
+      id-token: write
+      statuses: write
     uses: ./.github/workflows/e2e.yaml
     with:
       git_ref: ${{ inputs.git_ref }}

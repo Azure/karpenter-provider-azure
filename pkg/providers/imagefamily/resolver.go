@@ -88,7 +88,7 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		kubeletConfig = &corev1beta1.KubeletConfiguration{}
 	}
 
-	// TODO: revist computeResources and maxPods implementation
+	// TODO: revisit computeResources and maxPods implementation
 	kubeletConfig.KubeReserved = instanceType.Overhead.KubeReserved
 	kubeletConfig.SystemReserved = instanceType.Overhead.SystemReserved
 	kubeletConfig.EvictionHard = map[string]string{
