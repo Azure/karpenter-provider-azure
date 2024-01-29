@@ -72,7 +72,7 @@ func (a AKS) Script() (string, error) {
 // a : known argument/parameter, passed in (usually from environment)
 // x : unique per cluster,  extracted or specified. (Candidates for exposure/accessibility via API)
 // X : unique per nodepool, extracted or specified. (Candidates for exposure/accessibility via API)
-// o : user input, Options (provider-specific), e.g., could be from environment variables
+// c : user input, Options (provider-specific), e.g., could be from environment variables
 // p : user input, part of standard Provisioner (NodePool) CR spec. Example: custom labels, kubelet config
 // t : user input, NodeTemplate (potentially per node)
 // k : computed (at runtime) by Karpenter (e.g. based on VM SKU, extra labels, etc.)
@@ -86,7 +86,7 @@ func (a AKS) Script() (string, error) {
 //
 // Hardcoded (this file)       : unused (-), static (s) and unsupported (n), as well as selected defaults (s)
 // Computed at runtime         : computed (k)
-// Options (provider-specific) : cluster-level user input (o) - ALL DEFAULTED FOR NOW
+// cptions (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
 //                             : as well as unique per cluster (x) - until we have a better place for these
 // (TBD)                       : unique per nodepool. extracted or specified (X)
 // NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
@@ -143,7 +143,7 @@ type NodeBootstrapVariables struct {
 	ContainerRuntime                  string   // s   always containerd
 	CLITool                           string   // s   static/unnecessary
 	ContainerdDownloadURLBase         string   // -   unnecessary
-	NetworkMode                       string   // o   user input
+	NetworkMode                       string   // c   user input
 	UserAssignedIdentityID            string   // a   user input
 	APIServerName                     string   // x   unique per cluster
 	IsVHD                             bool     // s   static-ish
@@ -161,17 +161,17 @@ type NodeBootstrapVariables struct {
 	DisableSSH                        bool     // t   user input
 	NeedsContainerd                   bool     // s   static true
 	TeleportEnabled                   bool     // t   user input
-	ShouldConfigureHTTPProxy          bool     // o   user input
-	ShouldConfigureHTTPProxyCA        bool     // o   user input [secret]
-	HTTPProxyTrustedCA                string   // o   user input [secret]
-	ShouldConfigureCustomCATrust      bool     // o   user input
-	CustomCATrustConfigCerts          []string // o   user input [secret]
+	ShouldConfigureHTTPProxy          bool     // c   user input
+	ShouldConfigureHTTPProxyCA        bool     // c   user input [secret]
+	HTTPProxyTrustedCA                string   // c   user input [secret]
+	ShouldConfigureCustomCATrust      bool     // c   user input
+	CustomCATrustConfigCerts          []string // c   user input [secret]
 	IsKrustlet                        bool     // t   user input
 	GPUNeedsFabricManager             bool     // v   determined by GPU hardware type
 	NeedsDockerLogin                  bool     // t   user input [still needed?]
 	IPv6DualStackEnabled              bool     // t   user input
 	OutboundCommand                   string   // s   mostly static/can be
-	EnableUnattendedUpgrades          bool     // o   user input [presumably cluster level, correct?]
+	EnableUnattendedUpgrades          bool     // c   user input [presumably cluster level, correct?]
 	EnsureNoDupePromiscuousBridge     bool     // k   derived {{ and NeedsContainerd IsKubenet (not HasCalicoNetworkPolicy) }} [could be computed by template ...]
 	ShouldConfigSwapFile              bool     // t   user input
 	ShouldConfigTransparentHugePage   bool     // t   user input
@@ -184,18 +184,18 @@ type NodeBootstrapVariables struct {
 	CSEInstallFilepath                string   // s   static
 	CSEDistroInstallFilepath          string   // s   static
 	CSEConfigFilepath                 string   // s   static
-	AzurePrivateRegistryServer        string   // o   user input
-	HasCustomSearchDomain             bool     // o   user input
+	AzurePrivateRegistryServer        string   // c   user input
+	HasCustomSearchDomain             bool     // c   user input
 	CustomSearchDomainFilepath        string   // s   static
-	HTTPProxyURLs                     string   // o   user input [presumably cluster-level]
-	HTTPSProxyURLs                    string   // o   user input [presumably cluster-level]
-	NoProxyURLs                       string   // o   user input [presumably cluster-level]
+	HTTPProxyURLs                     string   // c   user input [presumably cluster-level]
+	HTTPSProxyURLs                    string   // c   user input [presumably cluster-level]
+	NoProxyURLs                       string   // c   user input [presumably cluster-level]
 	TLSBootstrappingEnabled           bool     // s   static true
 	SecureTLSBootstrappingEnabled     bool     // s   static false
 	DHCPv6ServiceFilepath             string   // k   derived from user input [how?]
 	DHCPv6ConfigFilepath              string   // k   derived from user input [how?]
-	THPEnabled                        string   // o   user input [presumably cluster-level][should be bool?]
-	THPDefrag                         string   // o   user input [presumably cluster-level][should be bool?]
+	THPEnabled                        string   // c   user input [presumably cluster-level][should be bool?]
+	THPDefrag                         string   // c   user input [presumably cluster-level][should be bool?]
 	ServicePrincipalFileContent       string   // s   only required for RP cluster [static: msi?]
 	KubeletClientContent              string   // -   unnecessary [if using TLS bootstrapping]
 	KubeletClientCertContent          string   // -   unnecessary
@@ -205,9 +205,9 @@ type NodeBootstrapVariables struct {
 	GPUImageSHA                       string   // s	  static sha rarely updated
 	GPUDriverVersion                  string   // k   determine by OS + GPU hardware requirements; can be determined automatically, but hard. suggest using GPU operator.
 	GPUInstanceProfile                string   // t   user-specified
-	CustomSearchDomainName            string   // o   user-specified [presumably cluster-level]
-	CustomSearchRealmUser             string   // o   user-specified [presumably cluster-level]
-	CustomSearchRealmPassword         string   // o   user-specified [presumably cluster-level]
+	CustomSearchDomainName            string   // c   user-specified [presumably cluster-level]
+	CustomSearchRealmUser             string   // c   user-specified [presumably cluster-level]
+	CustomSearchRealmPassword         string   // c   user-specified [presumably cluster-level]
 	MessageOfTheDay                   string   // t   user-specified [presumably node-level]
 	HasKubeletDiskType                bool     // t   user-specified [presumably node-level]
 	NeedsCgroupV2                     bool     // k   can be automatically determined
