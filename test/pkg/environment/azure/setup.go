@@ -47,7 +47,7 @@ func (env *Environment) Cleanup() {
 }
 
 func (env *Environment) AfterEach() {
-	fmt.Println("##[group]AfterEach (CONTROLLER LOGS)")
+	fmt.Println("##[group]    E2E SUITE: LOG DUMP")
 	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
 	// Ensure we reset settings after collecting the controller logs

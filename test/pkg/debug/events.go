@@ -55,7 +55,7 @@ func (c *EventClient) dumpKarpenterEvents(ctx context.Context) error {
 	if err := c.kubeClient.List(ctx, el, client.InNamespace("karpenter")); err != nil {
 		return err
 	}
-	for k, v := range coallateEvents(filterTestEvents(el.Items, c.start)) {
+	for k, v := range collateEvents(filterTestEvents(el.Items, c.start)) {
 		fmt.Print(getEventInformation(k, v))
 	}
 	return nil
@@ -71,7 +71,7 @@ func (c *EventClient) dumpPodEvents(ctx context.Context) error {
 	events := lo.Filter(filterTestEvents(el.Items, c.start), func(e v1.Event, _ int) bool {
 		return e.InvolvedObject.Namespace != "kube-system"
 	})
-	for k, v := range coallateEvents(events) {
+	for k, v := range collateEvents(events) {
 		fmt.Print(getEventInformation(k, v))
 	}
 	return nil
@@ -84,7 +84,7 @@ func (c *EventClient) dumpNodeEvents(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	for k, v := range coallateEvents(filterTestEvents(el.Items, c.start)) {
+	for k, v := range collateEvents(filterTestEvents(el.Items, c.start)) {
 		fmt.Print(getEventInformation(k, v))
 	}
 	return nil
@@ -103,7 +103,7 @@ func filterTestEvents(events []v1.Event, startTime time.Time) []v1.Event {
 	})
 }
 
-func coallateEvents(events []v1.Event) map[v1.ObjectReference]*v1.EventList {
+func collateEvents(events []v1.Event) map[v1.ObjectReference]*v1.EventList {
 	eventMap := map[v1.ObjectReference]*v1.EventList{}
 	for i := range events {
 		elem := events[i]
