@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/karpenter/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
 // test BeginCreateOrUpdate

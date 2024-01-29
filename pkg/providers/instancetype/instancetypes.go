@@ -27,20 +27,20 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	kcache "github.com/Azure/karpenter/pkg/cache"
-	"github.com/Azure/karpenter/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/logging"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 
-	"github.com/Azure/karpenter/pkg/providers/instance/skuclient"
-	"github.com/Azure/karpenter/pkg/providers/pricing"
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
+	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	"github.com/aws/karpenter-core/pkg/cloudprovider"
 )
 
 const (
@@ -99,6 +99,10 @@ func (p *Provider) List(
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}
+
+		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+			continue
+		}
 		result = append(result, instanceType)
 	}
 	return result, nil
@@ -137,6 +141,21 @@ func (p *Provider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) []cl
 		offerings = append(offerings, cloudprovider.Offering{Zone: zone, CapacityType: corev1beta1.CapacityTypeOnDemand, Price: onDemandPrice, Available: availableOnDemand})
 	}
 	return offerings
+}
+
+func (p *Provider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
+	// Currently only GPU has conditional support by image family
+	if !(utils.IsNvidiaEnabledSKU(skuName) || utils.IsMarinerEnabledGPUSKU(skuName)) {
+		return true
+	}
+	switch imageFamily {
+	case v1alpha2.Ubuntu2204ImageFamily:
+		return utils.IsNvidiaEnabledSKU(skuName)
+	case v1alpha2.AzureLinuxImageFamily:
+		return utils.IsMarinerEnabledGPUSKU(skuName)
+	default:
+		return false
+	}
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
@@ -201,7 +220,10 @@ func (p *Provider) isUnsupportedByAKS(sku *skewer.SKU) bool {
 func (p *Provider) isUnsupportedGPU(sku *skewer.SKU) bool {
 	name := lo.FromPtr(sku.Name)
 	gpu, err := sku.GPU()
-	return err == nil && gpu > 0 && !(utils.IsNvidiaEnabledSKU(name) || utils.IsMarinerEnabledGPUSKU(name))
+	if err != nil || gpu <= 0 {
+		return false
+	}
+	return !utils.IsMarinerEnabledGPUSKU(name) && !utils.IsNvidiaEnabledSKU(name)
 }
 
 // SKU with constrained CPUs

@@ -286,9 +286,6 @@ https://github.com/aws/karpenter/issues/1738
 - Drift Max Surge design within `karpenter-core`: <br>
 https://github.com/aws/karpenter-core/pull/516#pullrequestreview-1636663551
 
-- POC PR for drift supporting k8s version upgrade: <br>
-https://github.com/Azure/karpenter/pull/262
-
 ---
 
 From template:
@@ -313,5 +310,5 @@ From template:
     design doc by carefully reviewing it or assigning a tech leads that
     are domain expert in that SIG to review and approve this doc
 
-[^6]: Q&A style meeting notes from desgin review meeting to capture
+[^6]: Q&A style meeting notes from design review meeting to capture
     todos

@@ -17,15 +17,18 @@ limitations under the License.
 package parameters
 
 import (
-	"github.com/Azure/karpenter/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 )
 
 // StaticParameters define the static launch template parameters
 type StaticParameters struct {
-	ClusterName     string
-	ClusterEndpoint string
-	CABundle        *string
-
+	ClusterName                    string
+	ClusterEndpoint                string
+	CABundle                       *string
+	Arch                           string
+	GPUNode                        bool
+	GPUDriverVersion               string
+	GPUImageSHA                    string
 	TenantID                       string
 	SubscriptionID                 string
 	UserAssignedIdentityID         string

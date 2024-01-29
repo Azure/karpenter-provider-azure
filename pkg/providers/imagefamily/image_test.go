@@ -26,15 +26,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/fake"
-	"github.com/Azure/karpenter/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter/pkg/test"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/scheduling"
 	"github.com/samber/lo"
-	corev1 "k8s.io/api/core/v1"
 )
 
 var imageProvider *imagefamily.Provider
@@ -141,44 +138,6 @@ var _ = Describe("Image ID Resolution", func() {
 		Entry("Image version is specified, should use it", imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL, olderImageVersion, fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion)),
 	)
 
-	DescribeTable("Ubuntu2204 Image Resolution",
-		func(nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, expectedImageID string) {
-			imageID, err := imageProvider.Get(context.Background(), nodeClass, instanceType, imagefamily.Ubuntu2204{})
-			Expect(err).To(BeNil())
-			Expect(imageID).To(Equal(expectedImageID))
-		},
-		Entry("Arm64 Image for HyperV Gen 2",
-			test.AKSNodeClass(),
-			&cloudprovider.InstanceType{
-				Name:         "Standard_D8pls_v5",
-				Requirements: scheduling.NewRequirements(scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64), scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, corev1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2)),
-			},
-			fmt.Sprintf("/CommunityGalleries/%s/images/2204gen2arm64containerd/versions/1.1686127203.20217", imagefamily.AKSUbuntuPublicGalleryURL)),
-		Entry("Gen2 Image for HyperV Gen 2",
-			test.AKSNodeClass(),
-			&cloudprovider.InstanceType{
-				Name: "Standard_D2s_v3",
-				Requirements: scheduling.NewRequirements(
-					//					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
-					scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, corev1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
-				),
-			},
-			fmt.Sprintf("/CommunityGalleries/%s/images/2204gen2containerd/versions/1.1686127203.20217", imagefamily.AKSUbuntuPublicGalleryURL)),
-		Entry("Gen1 Image for HyperV Gen 1",
-			test.AKSNodeClass(),
-			&cloudprovider.InstanceType{
-				Name: "Standard_D2s_v3",
-				Requirements: scheduling.NewRequirements(
-					//					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
-					scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, corev1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
-				),
-			},
-			fmt.Sprintf("/CommunityGalleries/%s/images/2204containerd/versions/1.1686127203.20217", imagefamily.AKSUbuntuPublicGalleryURL)),
-		Entry("Gen2 Image if no preference is specified",
-			test.AKSNodeClass(),
-			&cloudprovider.InstanceType{Name: "Standard_D2s_v3", Requirements: scheduling.NewRequirements()},
-			fmt.Sprintf("/CommunityGalleries/%s/images/2204gen2containerd/versions/1.1686127203.20217", imagefamily.AKSUbuntuPublicGalleryURL)),
-	)
 })
 
 var _ = Describe("Image ID Parsing", func() {

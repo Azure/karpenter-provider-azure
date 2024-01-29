@@ -23,11 +23,11 @@ import (
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/metrics"
-	"github.com/Azure/karpenter/pkg/providers/imagefamily/bootstrap"
-	"github.com/Azure/karpenter/pkg/providers/instancetype"
-	template "github.com/Azure/karpenter/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/samber/lo"
@@ -88,7 +88,7 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		kubeletConfig = &corev1beta1.KubeletConfiguration{}
 	}
 
-	// TODO: revist computeResources and maxPods implementation
+	// TODO: revisit computeResources and maxPods implementation
 	kubeletConfig.KubeReserved = instanceType.Overhead.KubeReserved
 	kubeletConfig.SystemReserved = instanceType.Overhead.SystemReserved
 	kubeletConfig.EvictionHard = map[string]string{
@@ -113,8 +113,10 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
-	case Ubuntu2204ImageFamily:
+	case v1alpha2.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
+	case v1alpha2.AzureLinuxImageFamily:
+		return &AzureLinux{Options: parameters}
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}

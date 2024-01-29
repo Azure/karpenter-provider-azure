@@ -15,7 +15,7 @@
             // observed variation in mapping ("dlv sources" in DEBUG CONSOLE), reason unknown for now;
             // sometimes the below is needed, and somtimes not
             // "substitutePath": [
-            //    {"from": "${workspaceFolder}", "to": "github.com/Azure/karpenter/"}
+            //    {"from": "${workspaceFolder}", "to": "github.com/Azure/karpenter-provider-azure/"}
             //    {"from": "/go/pkg/mod/", "to": ""}  // source mapping for external modules, if needed
             //],
             "port": 56268,

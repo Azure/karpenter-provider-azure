@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Azure/karpenter/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/samber/lo"
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"

@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/Azure/karpenter/pkg/providers/pricing/client"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 )
 
 const Region = "eastus"

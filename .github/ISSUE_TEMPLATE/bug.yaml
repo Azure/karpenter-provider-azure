@@ -7,7 +7,7 @@ body:
     attributes:
       label: Version
       description: |
-        https://github.com/Azure/karpenter/releases
+        https://github.com/Azure/karpenter-provider-azure/releases
       value: |
         <!-- helm ls -A --all -o json | jq '.[] | select(.name=="karpenter") | .app_version' -r -->
         __Karpenter Version:__ v0.0.0

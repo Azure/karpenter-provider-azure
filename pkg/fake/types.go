@@ -136,7 +136,7 @@ type MockHandler[T any] struct {
 	err    error
 }
 
-// Done returns true if the LRO has reached a terminal state. TrivialHanlder is always done.
+// Done returns true if the LRO has reached a terminal state. TrivialHandler is always done.
 func (h MockHandler[T]) Done() bool {
 	return true
 }
