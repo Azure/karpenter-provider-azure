@@ -94,7 +94,7 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	return launchTemplate, nil
 }
 
-func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeTemplate *v1alpha2.AKSNodeClass, labels map[string]string) *parameters.StaticParameters {
+func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass, labels map[string]string) *parameters.StaticParameters {
 	var arch string = corev1beta1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
 		arch = corev1beta1.ArchitectureArm64
@@ -103,7 +103,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	return &parameters.StaticParameters{
 		ClusterName:                    settings.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
-		Tags:                           lo.Assign(settings.FromContext(ctx).Tags, nodeTemplate.Spec.Tags),
+		Tags:                           lo.Assign(settings.FromContext(ctx).Tags, nodeClass.Spec.Tags),
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
