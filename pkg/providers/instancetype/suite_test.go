@@ -462,7 +462,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // kubenet
+			Expect(kubeletFlags).To(ContainSubstring("--max-pods=250")) // networkPlugin=azure
 			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
@@ -521,7 +521,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // kubenet
+			Expect(kubeletFlags).To(ContainSubstring("--max-pods=250")) // networkPlugin=azure
 			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
