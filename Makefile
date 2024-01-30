@@ -1,7 +1,6 @@
 include Makefile-az.mk
 
 export K8S_VERSION ?= 1.27.x
-export KUBEBUILDER_ASSETS ?= ${HOME}/.kubebuilder/bin
 
 # # CR for local builds of Karpenter
 SYSTEM_NAMESPACE ?= karpenter
