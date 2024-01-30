@@ -23,10 +23,23 @@ import (
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
 	"github.com/Azure/go-autorest/autorest/azure"
-	klog "k8s.io/klog/v2"
+	"k8s.io/klog/v2"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/jongio/azidext/go/azidext"
 )
 
 func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer, error) {
+	// TODO (charliedmcb): need to get track 2 support for the skewer API, and align all auth under workload identity in the same way within cred.go
+	if config.UseCredentialFromEnvironment {
+		klog.V(2).Infoln("auth: using workload identity for new authorizer")
+		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		if err != nil {
+			return nil, fmt.Errorf("default cred: %w", err)
+		}
+		return azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope}), nil
+	}
+
 	token, err := newServicePrincipalTokenFromCredentials(config, env)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve service principal token: %w", err)
