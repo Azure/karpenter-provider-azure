@@ -60,6 +60,6 @@
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {},
         "ghcr.io/devcontainers/features/azure-cli:1": {},
         "ghcr.io/devcontainers-contrib/features/pre-commit:2": {},
-    		"ghcr.io/marcozac/devcontainer-features/shellcheck:1": {}
+        "ghcr.io/marcozac/devcontainer-features/shellcheck:1": {}
 	}
 }
