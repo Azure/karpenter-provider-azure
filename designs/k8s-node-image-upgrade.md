@@ -310,5 +310,5 @@ From template:
     design doc by carefully reviewing it or assigning a tech leads that
     are domain expert in that SIG to review and approve this doc
 
-[^6]: Q&A style meeting notes from desgin review meeting to capture
+[^6]: Q&A style meeting notes from design review meeting to capture
     todos
