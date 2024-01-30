@@ -529,6 +529,123 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("Provisioner with KubeletConfig on a kubenet Cluster", func() {
+		BeforeEach(func() {
+			var kubenet = "kubenet"
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin: &kubenet,
+				}))
+		})
+
+		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
+			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
+				PodsPerCore: lo.ToPtr(int32(110)),
+				EvictionSoft: map[string]string{
+					instancetype.MemoryAvailable: "1Gi",
+				},
+				EvictionSoftGracePeriod: map[string]metav1.Duration{
+					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
+				},
+				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
+				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
+				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
+				CPUCFSQuota:                 lo.ToPtr(true),
+			}
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			customData := *vm.Properties.OSProfile.CustomData
+			Expect(customData).ToNot(BeNil())
+			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+			Expect(err).To(Succeed())
+			decodedString := string(decodedBytes[:])
+			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+
+			Expect(kubeletFlags).To(SatisfyAny( // AKS default
+				ContainSubstring("--system-reserved=cpu=0,memory=0"),
+				ContainSubstring("--system-reserved=memory=0,cpu=0"),
+			))
+			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
+				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
+				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
+			))
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
+			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // networkPlugin=kubenet
+			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
+			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
+			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
+			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
+		})
+		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
+			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
+				PodsPerCore: lo.ToPtr(int32(110)),
+				EvictionSoft: map[string]string{
+					instancetype.MemoryAvailable: "1Gi",
+				},
+				EvictionSoftGracePeriod: map[string]metav1.Duration{
+					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
+				},
+				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
+				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
+				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
+				CPUCFSQuota:                 lo.ToPtr(true),
+
+				SystemReserved: v1.ResourceList{
+					v1.ResourceCPU:    resource.MustParse("200m"),
+					v1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+				KubeReserved: v1.ResourceList{
+					v1.ResourceCPU:    resource.MustParse("100m"),
+					v1.ResourceMemory: resource.MustParse("500Mi"),
+				},
+				EvictionHard: map[string]string{
+					instancetype.MemoryAvailable: "10Mi",
+				},
+				MaxPods: lo.ToPtr(int32(15)),
+			}
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			customData := *vm.Properties.OSProfile.CustomData
+			Expect(customData).ToNot(BeNil())
+			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+			Expect(err).To(Succeed())
+			decodedString := string(decodedBytes[:])
+			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+
+			Expect(kubeletFlags).To(SatisfyAny( // AKS default
+				ContainSubstring("--system-reserved=cpu=0,memory=0"),
+				ContainSubstring("--system-reserved=memory=0,cpu=0"),
+			))
+			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
+				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
+				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
+			))
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
+			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // networkPlugin=kubenet
+			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
+			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
+			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
+			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
+		})
+	})
+
 	Context("Provisioner with VNetNodeLabel", func() {
 		It("should support provisioning with VNet node labels", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
