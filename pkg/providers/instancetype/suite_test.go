@@ -471,13 +471,20 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("Provisioner with KubeletConfig on a kubenet Cluster", func() {
+		var originalOptions *options.Options
+
 		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
 			var kubenet = "kubenet"
 			ctx = options.ToContext(
 				ctx,
 				test.Options(test.OptionsFields{
 					NetworkPlugin: &kubenet,
 				}))
+		})
+
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, originalOptions)
 		})
 
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
