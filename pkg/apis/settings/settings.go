@@ -28,8 +28,6 @@ import (
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/configmap"
-
-	coresettings "github.com/aws/karpenter-core/pkg/apis/settings"
 )
 
 type settingsKeyType struct{}
@@ -145,10 +143,6 @@ func (s Settings) validateEndpoint() error {
 func (s Settings) GetAPIServerName() string {
 	endpoint, _ := url.Parse(s.ClusterEndpoint) // already validated
 	return endpoint.Hostname()
-}
-
-func (*Settings) FromContext(ctx context.Context) coresettings.Injectable {
-	return FromContext(ctx)
 }
 
 func ToContext(ctx context.Context, s *Settings) context.Context {
