@@ -222,7 +222,12 @@ var _ = Describe("Options", func() {
 
 	Context("Validation", func() {
 		It("should fail validation with panic when clusterName not included", func() {
-			err := opts.Parse(fs, "--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io")
+			err := opts.Parse(
+				fs,
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+			)
 			//Expect(err).To(HaveOccurred()) // TODO: Add back when karpenter-global-settings (and merge logic) are completely removed
 
 			// TODO: Remove below when karpenter-global-settings (and merge logic) are completely removed
@@ -232,7 +237,40 @@ var _ = Describe("Options", func() {
 
 		})
 		It("should fail validation with panic when clusterEndpoint not included", func() {
-			err := opts.Parse(fs, "--cluster-name", "my-name")
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+			)
+			//Expect(err).To(HaveOccurred()) // TODO: Add back when karpenter-global-settings (and merge logic) are completely removed
+
+			// TODO: Remove below when karpenter-global-settings (and merge logic) are completely removed
+			Expect(err).ToNot(HaveOccurred())
+			ctx = settings.ToContext(ctx, &settings.Settings{})
+			Expect(func() { opts.MergeSettings(ctx) }).To(Panic())
+		})
+		It("should fail validation with panic when kubeletClientTLSBootstrapToken not included", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--ssh-public-key", "flag-ssh-public-key",
+			)
+			//Expect(err).To(HaveOccurred()) // TODO: Add back when karpenter-global-settings (and merge logic) are completely removed
+
+			// TODO: Remove below when karpenter-global-settings (and merge logic) are completely removed
+			Expect(err).ToNot(HaveOccurred())
+			ctx = settings.ToContext(ctx, &settings.Settings{})
+			Expect(func() { opts.MergeSettings(ctx) }).To(Panic())
+		})
+		It("should fail validation with panic when SSHPublicKey not included", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+			)
 			//Expect(err).To(HaveOccurred()) // TODO: Add back when karpenter-global-settings (and merge logic) are completely removed
 
 			// TODO: Remove below when karpenter-global-settings (and merge logic) are completely removed
@@ -245,6 +283,8 @@ var _ = Describe("Options", func() {
 				fs,
 				"--cluster-name", "my-name",
 				"--cluster-endpoint", "karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
 			)
 			Expect(err).To(HaveOccurred())
 		})
@@ -253,6 +293,8 @@ var _ = Describe("Options", func() {
 				fs,
 				"--cluster-name", "my-name",
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
 				"--vm-memory-overhead-percent", "-0.01",
 			)
 			Expect(err).To(HaveOccurred())
