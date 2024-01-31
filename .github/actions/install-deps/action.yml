@@ -7,18 +7,23 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-go@v4
+    - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
       with:
         go-version-file: go.mod
         check-latest: true
         cache-dependency-path: "**/go.sum"
-    - uses: actions/cache@v3
+    # Root path permission workaround for caching https://github.com/actions/cache/issues/845#issuecomment-1252594999
+    - run: sudo chown "$USER" /usr/local
+      shell: bash
+    - uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
       id: cache-toolchain
       with:
         path: |
-          ~/.kubebuilder/bin
+          /usr/local/kubebuilder/bin
           ~/go/bin
         key: ${{ runner.os }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
-      run: K8S_VERSION=${{ inputs.k8sVersion }} make toolchain
+      env:
+        K8S_VERSION: ${{ inputs.k8sVersion }}
+      run: make toolchain

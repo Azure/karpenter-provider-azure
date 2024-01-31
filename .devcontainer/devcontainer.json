@@ -32,7 +32,8 @@
 				"ms-azuretools.vscode-bicep",
 				"GitHub.vscode-pull-request-github",
 				"jinliming2.vscode-go-template",
-				"tekumara.typos-vscode"
+				"tekumara.typos-vscode",
+				"github.vscode-github-actions"
 			]
 		}
 	},
@@ -58,6 +59,7 @@
         "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {},
         "ghcr.io/devcontainers/features/azure-cli:1": {},
-        "ghcr.io/devcontainers-contrib/features/pre-commit:2": {}
+        "ghcr.io/devcontainers-contrib/features/pre-commit:2": {},
+        "ghcr.io/marcozac/devcontainer-features/shellcheck:1": {}
 	}
 }
