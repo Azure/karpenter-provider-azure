@@ -24,7 +24,7 @@ az-login: ## Login into Azure
 az-mkrg: ## Create resource group
 	az group create --name $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) -o none
 
-az-mkacr: az-mkrg ## Create test ACR
+az-mkacr: ## Create test ACR
 	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --sku Basic --admin-enabled -o none
 	az acr login  --name $(AZURE_ACR_NAME)
 
@@ -41,7 +41,7 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
-az-create-workload-msi:
+az-create-workload-msi: az-mkrg
 	# create the workload MSI that is the backing for the karpenter pod auth
 	az identity create --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --location "${AZURE_LOCATION}"
 
