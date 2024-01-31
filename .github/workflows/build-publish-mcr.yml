@@ -34,10 +34,10 @@ jobs:
         run: |
           RELEASE_TAG=${{ inputs.releaseTag }}
           if [ -z "$RELEASE_TAG" ]; then
-            RELEASE_TAG=`git describe --tags $(git rev-list --tags --max-count=1)`
+            RELEASE_TAG="$(git describe --tags "$(git rev-list --tags --max-count=1)")"
             echo "The user input release tag is empty, will use the latest tag $RELEASE_TAG."
           fi
-          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
   publish-images:
     permissions:
