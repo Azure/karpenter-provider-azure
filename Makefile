@@ -1,7 +1,6 @@
 include Makefile-az.mk
 
 export K8S_VERSION ?= 1.27.x
-export KUBEBUILDER_ASSETS ?= ${HOME}/.kubebuilder/bin
 
 # # CR for local builds of Karpenter
 SYSTEM_NAMESPACE ?= karpenter
@@ -87,6 +86,7 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	# TODO: restore codegen if needed; decide on the future of docgen
 	#@echo "Validating codegen/docgen build scripts..."
 	#@find hack/code hack/docs -name "*.go" -type f -print0 | xargs -0 -I {} go build -o /dev/null {}
+	actionlint -oneline
 
 vulncheck: ## Verify code vulnerabilities
 	@govulncheck ./pkg/...
