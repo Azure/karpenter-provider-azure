@@ -9,7 +9,7 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 
 ## Development
 
-> A [GitHub Codespaces]((https://github.com/features/codespaces)) development flow is described below, which you can use to test karpenter functionality on your own cluster, and to aid rapid development of this project. 
+> A [GitHub Codespaces]((https://github.com/features/codespaces)) development flow is described below, which you can use to test Karpenter functionality on your own cluster, and to aid rapid development of this project. 
 
 1. **Install VSCode**: Go [here](https://code.visualstudio.com/download) to download VSCode for your platform. After installation, in your VSCode app install the "GitHub Codespaces" Extension. See [here](https://code.visualstudio.com/docs/remote/codespaces) for more information about this extension.
 
@@ -28,16 +28,6 @@ To debug Karpenter in-cluster, use `make az-debug`, wait for it to deploy, and a
 Once done, you can delete all infra with `make az-rmrg` (it deletes the resource group), and can delete the codespace (though it will be automatically suspended when not used, and deleted after 30 days.)
 
 ### Developer notes
-- During step 1 you will observe `Running postCreateCommand...` which takes ~10+ minutes. You don't have to wait for it to finish to proceed to step 2.
-- The following errors can be ignored during step 2:
-
-```
-ERRO[0007] gcloud binary not found
-...
-ERRO[0003] gcloud binary not found
-...
-ERRO[0187] walk.go:74: found symbolic link in path: /workspaces/karpenter/charts/karpenter/crds resolves to /workspaces/karpenter/pkg/apis/crds. Contents of linked file included and used  subtask=0 task=Render
-```
 - If you see platform architecture error during `skaffold debug`, adjust (or comment out) `--platform` argument.
 - If you are not able to set/hit breakpoints, it could be an issue with source paths mapping; see comments in debug launch configuration (`launch.json`)
 
@@ -80,7 +70,7 @@ We have three types of testing:
 ## FAQs
 ### What's the difference between `config.go` and `settings.go`?
 * `config.go` is in the [auth](https://github.com/Azure/karpenter/blob/main/pkg/auth/config.go) package and provides configurations needed to authenticate with Azure clients. 
-* `settings.go` is in the [apis](https://github.com/Azure/karpenter/blob/main/pkg/apis/settings/settings.go) package and provides settings needed for Karpenter to  access a particular cluster.
+* `settings.go` is in the [apis](https://github.com/Azure/karpenter/blob/main/pkg/apis/settings/settings.go) package and provides settings needed for Karpenter to access a particular cluster.
 ### What should be used for logging?
 * [klog](https://github.com/search?q=repo%3AAzure%2Fkarpenter%20klog&type=code) is only invoked when creating clients or authorizers.
 * [zapr](https://github.com/search?q=repo%3AAzure%2Fkarpenter%20zap&type=code) is only invoked in our debug package.
