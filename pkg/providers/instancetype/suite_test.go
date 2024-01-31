@@ -475,11 +475,10 @@ var _ = Describe("InstanceType Provider", func() {
 
 		BeforeEach(func() {
 			originalOptions = options.FromContext(ctx)
-			var kubenet = "kubenet"
 			ctx = options.ToContext(
 				ctx,
 				test.Options(test.OptionsFields{
-					NetworkPlugin: &kubenet,
+					NetworkPlugin: lo.ToPtr("kubenet"),
 				}))
 		})
 
