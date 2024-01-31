@@ -48,7 +48,7 @@ var _ = Describe("Options", func() {
 		"CLUSTER_ENDPOINT",
 		"VM_MEMORY_OVERHEAD_PERCENT",
 		"CLUSTER_ID",
-		"KUBELET_CLIENT_TLS_BOOTSTRAP_TOKEN",
+		"KUBELET_BOOTSTRAP_TOKEN",
 		"SSH_PUBLIC_KEY",
 		"NETWORK_PLUGIN",
 		"NETWORK_POLICY",
@@ -96,7 +96,7 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--vm-memory-overhead-percent", "0.1",
 				"--cluster-id", "options-cluster-id",
-				"--kubelet-client-tls-bootstrap-token", "options-bootstrap-token",
+				"--kubelet-bootstrap-token", "options-bootstrap-token",
 				"--ssh-public-key", "options-ssh-public-key",
 				"--network-plugin", "azure",
 				"--network-policy", "",
@@ -162,7 +162,7 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--vm-memory-overhead-percent", "0.1",
 				"--cluster-id", "options-cluster-id",
-				"--kubelet-client-tls-bootstrap-token", "options-bootstrap-token",
+				"--kubelet-bootstrap-token", "options-bootstrap-token",
 			)
 			Expect(err).ToNot(HaveOccurred())
 			ctx = settings.ToContext(ctx, &settings.Settings{
@@ -195,7 +195,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("CLUSTER_ENDPOINT", "https://env-cluster")
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
 			os.Setenv("CLUSTER_ID", "env-cluster-id")
-			os.Setenv("KUBELET_CLIENT_TLS_BOOTSTRAP_TOKEN", "env-bootstrap-token")
+			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
 			os.Setenv("NETWORK_PLUGIN", "env-network-plugin")
 			os.Setenv("NETWORK_POLICY", "env-network-policy")

@@ -70,14 +70,14 @@ type Options struct {
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
-	fs.StringVar(&o.ClusterName, "cluster-name", env.WithDefaultString("CLUSTER_NAME", ""), "[REQUIRED] The kubernetes cluster name for resource discovery.")
-	fs.StringVar(&o.ClusterEndpoint, "cluster-endpoint", env.WithDefaultString("CLUSTER_ENDPOINT", ""), "[REQUIRED] The external kubernetes cluster endpoint for new nodes to connect with. If not specified, will discover the cluster endpoint using DescribeCluster API.")
+	fs.StringVar(&o.ClusterName, "cluster-name", env.WithDefaultString("CLUSTER_NAME", ""), "[REQUIRED] The kubernetes cluster name for resource tags.")
+	fs.StringVar(&o.ClusterEndpoint, "cluster-endpoint", env.WithDefaultString("CLUSTER_ENDPOINT", ""), "[REQUIRED] The external kubernetes cluster endpoint for new nodes to connect with.")
 	fs.Float64Var(&o.VMMemoryOverheadPercent, "vm-memory-overhead-percent", env.WithDefaultFloat64("VM_MEMORY_OVERHEAD_PERCENT", 0.075), "The VM memory overhead as a percent that will be subtracted from the total memory for all instance types.")
-	fs.StringVar(&o.ClusterID, "cluster-id", env.WithDefaultString("CLUSTER_ID", ""), "The kubernetes cluster ID. If not specified, will generated based on cluster endpoint.")
-	fs.StringVar(&o.KubeletClientTLSBootstrapToken, "kubelet-client-tls-bootstrap-token", env.WithDefaultString("KUBELET_CLIENT_TLS_BOOTSTRAP_TOKEN", ""), "[REQUIRED] The bootstrap token for new nodes to join the cluster.")
+	fs.StringVar(&o.ClusterID, "cluster-id", env.WithDefaultString("CLUSTER_ID", ""), "The kubernetes cluster ID. If not specified, will be generated based on cluster endpoint.")
+	fs.StringVar(&o.KubeletClientTLSBootstrapToken, "kubelet-bootstrap-token", env.WithDefaultString("KUBELET_BOOTSTRAP_TOKEN", ""), "[REQUIRED] The bootstrap token for new nodes to join the cluster.")
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
-	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", "azure"), "AKS cluster networking plugin.")
-	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "AKS cluster network policy.")
+	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", "azure"), "The network plugin used by the cluster.")
+	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 }
 
@@ -131,7 +131,7 @@ func (o *Options) MergeSettings(ctx context.Context) {
 	mergeField(&o.ClusterEndpoint, s.ClusterEndpoint, o.setFlags["cluster-endpoint"])
 	mergeField(&o.VMMemoryOverheadPercent, s.VMMemoryOverheadPercent, o.setFlags["vm-memory-overhead-percent"])
 	mergeField(&o.ClusterID, s.ClusterID, o.setFlags["cluster-id"])
-	mergeField(&o.KubeletClientTLSBootstrapToken, s.KubeletClientTLSBootstrapToken, o.setFlags["kubelet-client-tls-bootstrap-token"])
+	mergeField(&o.KubeletClientTLSBootstrapToken, s.KubeletClientTLSBootstrapToken, o.setFlags["kubelet-bootstrap-token"])
 	mergeField(&o.SSHPublicKey, s.SSHPublicKey, o.setFlags["ssh-public-key"])
 	mergeField(&o.NetworkPlugin, s.NetworkPlugin, o.setFlags["network-plugin"])
 	mergeField(&o.NetworkPolicy, s.NetworkPolicy, o.setFlags["network-policy"])
