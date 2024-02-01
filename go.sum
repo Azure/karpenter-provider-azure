@@ -103,8 +103,8 @@ github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137/go.mod h1:OMCwj8V
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/avast/retry-go v3.0.0+incompatible h1:4SOWQ7Qs+oroOTQOYnAHqelpCO0biHSxpiH9JdtuBj0=
 github.com/avast/retry-go v3.0.0+incompatible/go.mod h1:XtSnn+n/sHqQIpZ10K1qAevBhOOCWBLXXy3hyiqqBrY=
-github.com/aws/karpenter-core v0.32.2-0.20231109191441-e32aafc81fb5 h1:za0geRskcT+Og9W/sRg+BiqJVLPNep8rTTB02aHR5oM=
-github.com/aws/karpenter-core v0.32.2-0.20231109191441-e32aafc81fb5/go.mod h1:x3pk+ePuEsKXchZqzv71SOzyWdAQLUNn1s0IcsS+o2I=
+github.com/aws/karpenter-core v0.32.3 h1:BS5jCl0OV31Lm+QMCaCWMk+utdZN17doV6xlhu2dlug=
+github.com/aws/karpenter-core v0.32.3/go.mod h1:RNih2g6qCiah8rFaZ7HkmClIK66Hjj38z3DbWnWGM2w=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=

@@ -18,7 +18,7 @@ require (
 	github.com/Azure/skewer v0.0.19
 	github.com/Pallinder/go-randomdata v1.2.0
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
-	github.com/aws/karpenter-core v0.32.2-0.20231109191441-e32aafc81fb5
+	github.com/aws/karpenter-core v0.32.3
 	github.com/go-logr/logr v1.4.1
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-playground/validator/v10 v10.17.0

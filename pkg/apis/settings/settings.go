@@ -73,6 +73,9 @@ func (*Settings) ConfigMap() string {
 // Inject creates a Settings from the supplied ConfigMap
 func (*Settings) Inject(ctx context.Context, cm *v1.ConfigMap) (context.Context, error) {
 	s := defaultSettings.DeepCopy()
+	if cm == nil {
+		return ToContext(ctx, s), nil
+	}
 
 	if err := configmap.Parse(cm.Data,
 		configmap.AsString("azure.clusterName", &s.ClusterName),

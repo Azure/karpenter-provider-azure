@@ -33,7 +33,7 @@ import (
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/aws/karpenter-core/pkg/scheduling"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
 	"github.com/aws/karpenter-core/pkg/utils/resources"
 )
@@ -316,7 +316,7 @@ func memory(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
 	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(memoryGiB(sku))))
 	// Account for VM overhead in calculation
 	memory.Sub(resource.MustParse(fmt.Sprintf("%dMi", int64(math.Ceil(
-		float64(memory.Value())*settings.FromContext(ctx).VMMemoryOverheadPercent/1024/1024)))))
+		float64(memory.Value())*options.FromContext(ctx).VMMemoryOverheadPercent/1024/1024)))))
 	return memory
 }
 
