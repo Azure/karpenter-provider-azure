@@ -86,7 +86,7 @@ func (a AKS) Script() (string, error) {
 //
 // Hardcoded (this file)       : unused (-), static (s) and unsupported (n), as well as selected defaults (s)
 // Computed at runtime         : computed (k)
-// cptions (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
+// Options (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
 //                             : as well as unique per cluster (x) - until we have a better place for these
 // (TBD)                       : unique per nodepool. extracted or specified (X)
 // NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
