@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 )
 
 // According to https://pkg.go.dev/encoding/json#Marshal, it's safe to use map-types (and encoding/json in general) to produce
@@ -63,10 +63,10 @@ func HashFromVM(vm *armcompute.VirtualMachine) (string, error) {
 	return hashStruct.CalculateHash()
 }
 
-// HashFromNodeClaim calculates an inplace update hash from the specified machine and settings
-func HashFromNodeClaim(settings *settings.Settings, _ *v1beta1.NodeClaim) (string, error) {
+// HashFromNodeClaim calculates an inplace update hash from the specified machine and options
+func HashFromNodeClaim(options *options.Options, _ *v1beta1.NodeClaim) (string, error) {
 	hashStruct := &inPlaceUpdateFields{
-		Identities: sets.New(settings.NodeIdentities...),
+		Identities: sets.New(options.NodeIdentities...),
 	}
 
 	return hashStruct.CalculateHash()

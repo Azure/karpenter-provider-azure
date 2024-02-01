@@ -37,6 +37,10 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = Describe("Validation", func() {
+	It("should not fail when ConfigMap is nil", func() {
+		_, err := (&settings.Settings{}).Inject(ctx, nil)
+		Expect(err).ToNot(HaveOccurred())
+	})
 	It("should succeed to set defaults", func() {
 		cm := &v1.ConfigMap{
 			Data: map[string]string{

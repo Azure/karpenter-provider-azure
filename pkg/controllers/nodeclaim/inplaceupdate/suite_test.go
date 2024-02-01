@@ -34,8 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -117,30 +117,30 @@ var _ = Describe("Unit tests", func() {
 
 	Context("HashFromNodeClaim", func() {
 		It("should not depend on identity ordering", func() {
-			settings := test.Settings()
-			settings.NodeIdentities = []string{
+			options := test.Options()
+			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 			}
 
-			hash1, err := HashFromNodeClaim(settings, nil)
+			hash1, err := HashFromNodeClaim(options, nil)
 			Expect(err).ToNot(HaveOccurred())
 
-			settings.NodeIdentities = []string{
+			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 			}
-			hash2, err := HashFromNodeClaim(settings, nil)
+			hash2, err := HashFromNodeClaim(options, nil)
 			Expect(err).ToNot(HaveOccurred())
 
-			settings.NodeIdentities = []string{
+			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			hash3, err := HashFromNodeClaim(settings, nil)
+			hash3, err := HashFromNodeClaim(options, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(hash1).To(Equal(hash2))
@@ -152,11 +152,11 @@ var _ = Describe("Unit tests", func() {
 		It("should add missing identities when there are no existing identities", func() {
 			currentVM := &armcompute.VirtualMachine{}
 
-			settings := test.Settings()
-			settings.NodeIdentities = []string{
+			options := test.Options()
+			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := calculateVMPatch(settings, currentVM)
+			update := calculateVMPatch(options, currentVM)
 
 			Expect(update).ToNot(BeNil())
 			Expect(update.Identity).ToNot(BeNil())
@@ -173,11 +173,11 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			settings := test.Settings()
-			settings.NodeIdentities = []string{
+			options := test.Options()
+			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 			}
-			update := calculateVMPatch(settings, currentVM)
+			update := calculateVMPatch(options, currentVM)
 
 			Expect(update).ToNot(BeNil())
 			Expect(update.Identity).ToNot(BeNil())
@@ -195,12 +195,12 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			settings := test.Settings()
-			settings.NodeIdentities = []string{
+			options := test.Options()
+			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := calculateVMPatch(settings, currentVM)
+			update := calculateVMPatch(options, currentVM)
 
 			Expect(update).To(BeNil())
 		})
@@ -215,11 +215,11 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			settings := test.Settings()
-			settings.NodeIdentities = []string{
+			options := test.Options()
+			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := calculateVMPatch(settings, currentVM)
+			update := calculateVMPatch(options, currentVM)
 
 			Expect(update).To(BeNil())
 		})
@@ -244,7 +244,7 @@ var _ = Describe("In Place Update Controller", func() {
 			},
 		})
 
-		ctx = settings.ToContext(ctx, test.Settings())
+		ctx = options.ToContext(ctx, test.Options())
 
 		azureEnv.Reset()
 	})
@@ -256,7 +256,7 @@ var _ = Describe("In Place Update Controller", func() {
 	Context("Basic tests", func() {
 		It("should not call Azure if the hash matches", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-			hash, err := HashFromNodeClaim(settings.FromContext(ctx), nodeClaim)
+			hash, err := HashFromNodeClaim(options.FromContext(ctx), nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Force the goal hash into annotations here, which should prevent the reconciler from doing anything on Azure
@@ -294,10 +294,10 @@ var _ = Describe("In Place Update Controller", func() {
 		It("should add a hash annotation to NodeClaim and update VM if there are missing identities", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-			ctx = settings.ToContext(
+			ctx = options.ToContext(
 				ctx,
-				test.Settings(
-					test.SettingOptions{
+				test.Options(
+					test.OptionsFields{
 						NodeIdentities: []string{
 							"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 						},
@@ -343,10 +343,10 @@ var _ = Describe("In Place Update Controller", func() {
 				},
 			}
 
-			ctx = settings.ToContext(
+			ctx = options.ToContext(
 				ctx,
-				test.Settings(
-					test.SettingOptions{
+				test.Options(
+					test.OptionsFields{
 						NodeIdentities: []string{
 							"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 						},

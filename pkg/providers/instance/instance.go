@@ -42,8 +42,8 @@ import (
 	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/aws/karpenter-core/pkg/scheduling"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 
@@ -396,8 +396,8 @@ func (p *Provider) launchInstance(
 		return nil, nil, err
 	}
 
-	sshPublicKey := settings.FromContext(ctx).SSHPublicKey
-	nodeIdentityIDs := settings.FromContext(ctx).NodeIdentities
+	sshPublicKey := options.FromContext(ctx).SSHPublicKey
+	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
 	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)

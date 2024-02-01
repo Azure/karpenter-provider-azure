@@ -34,11 +34,11 @@ import (
 )
 
 const (
-	networkPluginAzureCNIOverlay = "overlay"
-	networkPluginKubenet         = "kubenet"
+	networkPluginAzure   = "azure"
+	networkPluginKubenet = "kubenet"
 
-	// defaultKubernetesMaxPodsAzureCNIOverlay is the maximum number of pods to run on a node for Azure CNI Overlay.
-	defaultKubernetesMaxPodsAzureCNIOverlay = 250
+	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI Overlay.
+	defaultKubernetesMaxPodsAzure = 250
 	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
 	defaultKubernetesMaxPodsKubenet = 100
 	// defaultKubernetesMaxPods is the maximum number of pods on a node.
@@ -123,8 +123,8 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 }
 
 func getMaxPods(networkPlugin string) int32 {
-	if networkPlugin == networkPluginAzureCNIOverlay {
-		return defaultKubernetesMaxPodsAzureCNIOverlay
+	if networkPlugin == networkPluginAzure {
+		return defaultKubernetesMaxPodsAzure
 	} else if networkPlugin == networkPluginKubenet {
 		return defaultKubernetesMaxPodsKubenet
 	}
