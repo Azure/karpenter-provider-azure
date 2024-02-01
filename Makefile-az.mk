@@ -22,9 +22,11 @@ az-login: ## Login into Azure
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
 
 az-mkrg: ## Create resource group
-	az group create --name $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) -o none
+	if ! az group exists --name $(AZURE_RESOURCE_GROUP); then \
+		az group create --name $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) -o none; \
+	fi
 
-az-mkacr: ## Create test ACR
+az-mkacr: az-mkrg ## Create test ACR
 	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --sku Basic --admin-enabled -o none
 	az acr login  --name $(AZURE_ACR_NAME)
 
