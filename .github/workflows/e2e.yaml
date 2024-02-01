@@ -28,6 +28,11 @@ on:
 permissions:
   contents: read
 
+env:
+  ACR_NAME:
+  RG_NAME:
+  CLUSTER_NAME:
+
 jobs:
   run-suite:
     name: suite-${{ inputs.suite }}
@@ -40,7 +45,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
         with:
           egress-policy: audit
 
@@ -70,12 +75,12 @@ jobs:
         run: |
           RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.hash }} | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
-          echo RG_NAME=$RG_NAME >> $GITHUB_ENV
+          echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
         run: |
           ACR_NAME=$(echo ${{ inputs.suite }}acr${{ inputs.hash }} | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
-          echo ACR_NAME=$ACR_NAME >> $GITHUB_ENV
+          echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
         uses: ./.github/actions/e2e/create-acr
         with:
@@ -89,12 +94,12 @@ jobs:
       - name: add jitter on cluster creation
         run: |
           # Creating jitter so that we can stagger cluster creation to avoid throttling
-          sleep $(( $RANDOM % 60 + 1 ))
+          sleep $(( RANDOM % 60 + 1 ))
       - name: generate cluster name
         run: |
           CLUSTER_NAME=mc
           echo "Using cluster name \"$CLUSTER_NAME\""
-          echo CLUSTER_NAME=$CLUSTER_NAME >> $GITHUB_ENV
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
         uses: ./.github/actions/e2e/create-cluster
         with:

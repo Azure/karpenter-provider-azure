@@ -29,15 +29,15 @@ jobs:
       E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@eb238b55efaa70779f274895e782ed17c84f2895 # v2.6.1
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
         with:
           egress-policy: audit
 
       - id: generate-e2e-run-hash
         run: |
-          E2E_HASH=$RANDOM$RANDOM
+          E2E_HASH="$RANDOM$RANDOM"
           echo "Using e2e hash \"$E2E_HASH\""
-          echo E2E_HASH=$E2E_HASH >> $GITHUB_OUTPUT
+          echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
   e2e:
     needs: [initialize-generative-params]
     strategy:
