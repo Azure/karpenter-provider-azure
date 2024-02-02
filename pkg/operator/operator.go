@@ -36,7 +36,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
-	"github.com/aws/karpenter-core/pkg/operator"
+	"sigs.k8s.io/karpenter/pkg/operator"
 )
 
 type Operator struct {

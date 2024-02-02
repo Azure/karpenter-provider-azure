@@ -31,15 +31,15 @@ import (
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
-	"github.com/aws/karpenter-core/pkg/controllers/provisioning"
-	"github.com/aws/karpenter-core/pkg/controllers/state"
-	"github.com/aws/karpenter-core/pkg/events"
-	coreoptions "github.com/aws/karpenter-core/pkg/operator/options"
-	"github.com/aws/karpenter-core/pkg/operator/scheme"
-	coretest "github.com/aws/karpenter-core/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	"sigs.k8s.io/karpenter/pkg/events"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/operator/scheme"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	. "knative.dev/pkg/logging/testing"
 
@@ -48,7 +48,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	. "github.com/aws/karpenter-core/pkg/test/expectations"
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
 var ctx context.Context

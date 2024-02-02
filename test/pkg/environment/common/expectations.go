@@ -41,11 +41,11 @@ import (
 	"knative.dev/pkg/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	pscheduling "github.com/aws/karpenter-core/pkg/controllers/provisioning/scheduling"
-	"github.com/aws/karpenter-core/pkg/scheduling"
-	"github.com/aws/karpenter-core/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	pscheduling "sigs.k8s.io/karpenter/pkg/controllers/provisioning/scheduling"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
+	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 func (env *Environment) ExpectCreated(objects ...client.Object) {

@@ -19,9 +19,9 @@ package controllers
 import (
 	"context"
 
-	"github.com/aws/karpenter-core/pkg/operator/controller"
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/karpenter/pkg/operator/controller"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"

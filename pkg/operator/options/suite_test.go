@@ -30,7 +30,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	coreoptions "github.com/aws/karpenter-core/pkg/operator/options"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 )
 
 var ctx context.Context

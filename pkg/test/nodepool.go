@@ -19,8 +19,8 @@ package test
 import (
 	"context"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/test"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 func NodePool(options corev1beta1.NodePool) *corev1beta1.NodePool {

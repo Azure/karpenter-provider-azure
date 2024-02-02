@@ -30,21 +30,21 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/samber/lo"
 
-	"github.com/aws/karpenter-core/pkg/apis"
+	"sigs.k8s.io/karpenter/pkg/apis"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/events"
+	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
+	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/events"
 
-	coreoperator "github.com/aws/karpenter-core/pkg/operator"
-	coreoperatorlogging "github.com/aws/karpenter-core/pkg/operator/logging"
+	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
+	coreoperatorlogging "sigs.k8s.io/karpenter/pkg/operator/logging"
 
-	"github.com/aws/karpenter-core/pkg/operator/injection"
-	"github.com/aws/karpenter-core/pkg/operator/options"
-	"github.com/aws/karpenter-core/pkg/operator/scheme"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"sigs.k8s.io/karpenter/pkg/operator/injection"
+	"sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 
 	//"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"

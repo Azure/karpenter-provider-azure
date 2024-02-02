@@ -26,14 +26,14 @@ import (
 
 	altOperator "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/operator"
 	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
-	"github.com/aws/karpenter-core/pkg/cloudprovider/metrics"
-	corecontrollers "github.com/aws/karpenter-core/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
+	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
 
 	// Note the absence of corewebhooks: these pull in knative webhook-related packages and informers in init()
 	// We don't give cluster-level roles when running in AKS managed mode, so their informers will produce errors and halt all other operations
 	// corewebhooks "github.com/aws/karpenter-core/pkg/webhooks"
 
-	"github.com/aws/karpenter-core/pkg/controllers/state"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
 )
 
 func main() {

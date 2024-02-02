@@ -21,8 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	corecontroller "github.com/aws/karpenter-core/pkg/operator/controller"
 	"github.com/samber/lo"
 	"go.uber.org/zap/zapcore"
 	"knative.dev/pkg/logging"
@@ -33,6 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
