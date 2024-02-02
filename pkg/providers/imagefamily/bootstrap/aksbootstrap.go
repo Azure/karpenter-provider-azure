@@ -72,7 +72,7 @@ func (a AKS) Script() (string, error) {
 // a : known argument/parameter, passed in (usually from environment)
 // x : unique per cluster,  extracted or specified. (Candidates for exposure/accessibility via API)
 // X : unique per nodepool, extracted or specified. (Candidates for exposure/accessibility via API)
-// c : user input, global Karpenter config (provider-specific)
+// c : user input, Options (provider-specific), e.g., could be from environment variables
 // p : user input, part of standard Provisioner (NodePool) CR spec. Example: custom labels, kubelet config
 // t : user input, NodeTemplate (potentially per node)
 // k : computed (at runtime) by Karpenter (e.g. based on VM SKU, extra labels, etc.)
@@ -84,13 +84,13 @@ func (a AKS) Script() (string, error) {
 
 // Config sources for types:
 //
-// Hardcoded (this file)                         : unused (-), static (s) and unsupported (n), as well as selected defaults (s)
-// Computed at runtime                           : computed (k)
-// Karpenter global ConfigMap (provider-specific): cluster-level user input (c) - ALL DEFAULTED FOR NOW
-//                                               : as well as unique per cluster (x) - until we have a better place for these
-// (TBD)                                         : unique per nodepool. extracted or specified (X)
-// NodeTemplate                                  : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
-// Provisioner spec                              : selected nodepool-level user input (p)
+// Hardcoded (this file)       : unused (-), static (s) and unsupported (n), as well as selected defaults (s)
+// Computed at runtime         : computed (k)
+// Options (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
+//                             : as well as unique per cluster (x) - until we have a better place for these
+// (TBD)                       : unique per nodepool. extracted or specified (X)
+// NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
+// Provisioner spec            : selected nodepool-level user input (p)
 
 // NodeBootstrapVariables carries all variables needed to bootstrap a node
 // It is used as input rendering the bootstrap script Go template (customDataTemplate)

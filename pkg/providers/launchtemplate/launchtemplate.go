@@ -27,8 +27,8 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/aws/karpenter-core/pkg/scheduling"
@@ -101,9 +101,9 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	}
 
 	return &parameters.StaticParameters{
-		ClusterName:                    settings.FromContext(ctx).ClusterName,
+		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
-		Tags:                           lo.Assign(settings.FromContext(ctx).Tags, nodeClass.Spec.Tags),
+		Tags:                           nodeClass.Spec.Tags,
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
@@ -115,11 +115,11 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		UserAssignedIdentityID:         p.userAssignedIdentityID,
 		ResourceGroup:                  p.resourceGroup,
 		Location:                       p.location,
-		ClusterID:                      settings.FromContext(ctx).ClusterID,
-		APIServerName:                  settings.FromContext(ctx).GetAPIServerName(),
-		KubeletClientTLSBootstrapToken: settings.FromContext(ctx).KubeletClientTLSBootstrapToken,
-		NetworkPlugin:                  settings.FromContext(ctx).NetworkPlugin,
-		NetworkPolicy:                  settings.FromContext(ctx).NetworkPolicy,
+		ClusterID:                      options.FromContext(ctx).ClusterID,
+		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
+		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
+		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
+		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 	}
 }
 

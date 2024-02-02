@@ -35,8 +35,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -81,8 +81,8 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 	// TODO: To look it up and use that as input to calculate the goal state as well
 
 	// Compare the expected hash with the actual hash
-	settings := settings.FromContext(ctx)
-	goalHash, err := HashFromNodeClaim(settings, nodeClaim)
+	options := options.FromContext(ctx)
+	goalHash, err := HashFromNodeClaim(options, nodeClaim)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -105,7 +105,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 		return reconcile.Result{}, fmt.Errorf("getting azure VM for machine, %w", err)
 	}
 
-	update := calculateVMPatch(settings, vm)
+	update := calculateVMPatch(options, vm)
 	// This is safe only as long as we're not updating fields which we consider secret.
 	// If we do/are, we need to redact them.
 	logVMPatch(ctx, update)
@@ -133,12 +133,12 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 }
 
 func calculateVMPatch(
-	settings *settings.Settings,
+	options *options.Options,
 	// TODO: Can pass and consider NodeClaim and/or NodePool here if we need to in the future
 	currentVM *armcompute.VirtualMachine,
 ) *armcompute.VirtualMachineUpdate {
 	// Determine the differences between the current state and the goal state
-	expectedIdentities := settings.NodeIdentities
+	expectedIdentities := options.NodeIdentities
 	var currentIdentities []string
 	if currentVM.Identity != nil {
 		currentIdentities = lo.Keys(currentVM.Identity.UserAssignedIdentities)

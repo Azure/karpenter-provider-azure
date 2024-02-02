@@ -53,14 +53,14 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -82,7 +82,7 @@ func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx = settings.ToContext(ctx, test.Settings())
+	ctx = options.ToContext(ctx, test.Options())
 
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
 
@@ -462,7 +462,71 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // kubenet
+			Expect(kubeletFlags).To(ContainSubstring("--max-pods=250")) // networkPlugin=azure
+			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
+			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
+			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
+			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
+		})
+	})
+
+	Context("Provisioner with KubeletConfig on a kubenet Cluster", func() {
+		var originalOptions *options.Options
+
+		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin: lo.ToPtr("kubenet"),
+				}))
+		})
+
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, originalOptions)
+		})
+
+		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
+			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
+				PodsPerCore: lo.ToPtr(int32(110)),
+				EvictionSoft: map[string]string{
+					instancetype.MemoryAvailable: "1Gi",
+				},
+				EvictionSoftGracePeriod: map[string]metav1.Duration{
+					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
+				},
+				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
+				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
+				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
+				CPUCFSQuota:                 lo.ToPtr(true),
+			}
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			customData := *vm.Properties.OSProfile.CustomData
+			Expect(customData).ToNot(BeNil())
+			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+			Expect(err).To(Succeed())
+			decodedString := string(decodedBytes[:])
+			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+
+			Expect(kubeletFlags).To(SatisfyAny( // AKS default
+				ContainSubstring("--system-reserved=cpu=0,memory=0"),
+				ContainSubstring("--system-reserved=memory=0,cpu=0"),
+			))
+			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
+				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
+				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
+			))
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
+			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
+			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // networkPlugin=kubenet
 			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
@@ -521,7 +585,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
 			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // kubenet
+			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // networkPlugin=kubenet
 			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
@@ -715,7 +779,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		BeforeEach(func() {
 			// disable VM memory overhead for simpler capacity testing
-			ctx = settings.ToContext(ctx, test.Settings(test.SettingOptions{
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
 				VMMemoryOverheadPercent: lo.ToPtr[float64](0),
 			}))
 			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
@@ -849,9 +913,9 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectScheduled(ctx, env.Client, pod)
 		})
 		It("should have VM identity set", func() {
-			ctx = settings.ToContext(
+			ctx = options.ToContext(
 				ctx,
-				test.Settings(test.SettingOptions{
+				test.Options(test.OptionsFields{
 					NodeIdentities: []string{
 						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
