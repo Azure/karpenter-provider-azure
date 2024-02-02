@@ -17,10 +17,10 @@ limitations under the License.
 package v1alpha2
 
 import (
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/scheduling"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 func init() {

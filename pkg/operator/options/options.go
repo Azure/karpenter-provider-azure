@@ -28,9 +28,9 @@ import (
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
-	coreoptions "github.com/aws/karpenter-core/pkg/operator/options"
-	"github.com/aws/karpenter-core/pkg/utils/env"
 	"k8s.io/apimachinery/pkg/util/sets"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/utils/env"
 )
 
 func init() {

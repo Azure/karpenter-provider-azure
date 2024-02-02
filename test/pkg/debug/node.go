@@ -31,9 +31,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corecontroller "github.com/aws/karpenter-core/pkg/operator/controller"
-	nodeutils "github.com/aws/karpenter-core/pkg/utils/node"
+	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
+	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
+	nodeutils "sigs.k8s.io/karpenter/pkg/utils/node"
 )
 
 type NodeController struct {

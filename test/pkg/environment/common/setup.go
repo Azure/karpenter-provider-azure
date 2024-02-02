@@ -36,12 +36,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	"github.com/aws/karpenter-core/pkg/apis"
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/operator/injection"
-	"github.com/aws/karpenter-core/pkg/test"
-	"github.com/aws/karpenter-core/pkg/utils/pod"
+	"sigs.k8s.io/karpenter/pkg/apis"
+	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/operator/injection"
+	"sigs.k8s.io/karpenter/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/utils/pod"
 )
 
 var (

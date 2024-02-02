@@ -44,18 +44,18 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	nodeclaimutil "github.com/aws/karpenter-core/pkg/utils/nodeclaim"
 	"github.com/samber/lo"
+	nodeclaimutil "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
-	coreapis "github.com/aws/karpenter-core/pkg/apis"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/events"
+	coreapis "sigs.k8s.io/karpenter/pkg/apis"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/events"
 
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
-	"github.com/aws/karpenter-core/pkg/scheduling"
-	"github.com/aws/karpenter-core/pkg/utils/functional"
-	"github.com/aws/karpenter-core/pkg/utils/resources"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
+	"sigs.k8s.io/karpenter/pkg/utils/functional"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 func init() {

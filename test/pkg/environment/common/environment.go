@@ -39,10 +39,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	coreapis "github.com/aws/karpenter-core/pkg/apis"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/operator"
-	"github.com/aws/karpenter-core/pkg/operator/injection"
+	coreapis "sigs.k8s.io/karpenter/pkg/apis"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/operator"
+	"sigs.k8s.io/karpenter/pkg/operator/injection"
 )
 
 type ContextKey string

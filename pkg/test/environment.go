@@ -30,7 +30,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"knative.dev/pkg/ptr"
 
-	coretest "github.com/aws/karpenter-core/pkg/test"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 var resourceGroup = "test-resourceGroup"

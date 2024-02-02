@@ -26,11 +26,11 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/webhooks"
 
 	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
-	"github.com/aws/karpenter-core/pkg/cloudprovider/metrics"
-	corecontrollers "github.com/aws/karpenter-core/pkg/controllers"
-	"github.com/aws/karpenter-core/pkg/controllers/state"
-	coreoperator "github.com/aws/karpenter-core/pkg/operator"
-	corewebhooks "github.com/aws/karpenter-core/pkg/webhooks"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
+	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
+	corewebhooks "sigs.k8s.io/karpenter/pkg/webhooks"
 )
 
 func main() {
