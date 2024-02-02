@@ -93,7 +93,9 @@ var _ = Describe("GPU", func() {
 			env.EventuallyExpectHealthyPodCountWithTimeout(time.Minute*15, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
 		},
-		Entry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass()),
+		// DISABLED by charliedmcb.
+		// TODO: This test is experiencing known Quota issues, which @Bryce-Soghigian is working to resolve (re-enable after quota issues are solved)
+		XEntry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass()),
 		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2204)", env.DefaultAKSNodeClass()),
 	)
 })
