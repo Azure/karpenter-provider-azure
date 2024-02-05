@@ -30,7 +30,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"sigs.k8s.io/karpenter/pkg/apis"
-	coresettings "sigs.k8s.io/karpenter/pkg/operator/options"
+	coresettings "sigs.k8s.io/karpenter/pkg/apis/settings"
 	"sigs.k8s.io/karpenter/pkg/utils/functional"
 )
 
