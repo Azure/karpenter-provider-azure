@@ -18,7 +18,6 @@ package v1alpha2
 
 import (
 	"k8s.io/apimachinery/pkg/util/sets"
-	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
@@ -68,7 +67,7 @@ var (
 		LabelSKUHyperVGeneration,
 	)
 
-	AllowUndefinedLabels = func(options scheduling.CompatabilityOptions) scheduling.CompatabilityOptions {
+	AllowUndefinedLabels = func(options scheduling.CompatibilityOptions) scheduling.CompatibilityOptions {
 		options.AllowUndefined = corev1beta1.WellKnownLabels.Union(RestrictedLabels)
 		return options
 	}
@@ -119,8 +118,6 @@ var (
 		'c': LabelSKUConfidential,
 		'i': LabelSKUIsolatedSize,
 	}
-
-	NodeClaimLinkedAnnotationKey = v1alpha5.MachineLinkedAnnotationKey // still using the one from v1alpha5
 )
 
 const (
