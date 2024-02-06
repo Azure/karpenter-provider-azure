@@ -188,9 +188,6 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeC
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
 	// Not needed when GetInstanceTypes removes nodepool dependency
-	// nodePool, err := nodeclaimutil.Owner(ctx, c.kubeClient, nodeClaim)
-	// if err != nil {
-	// 	return "", client.IgnoreNotFound(fmt.Errorf("resolving owner, %w", err))
 	nodePoolName, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]
 	if !ok {
 		return "", nil
