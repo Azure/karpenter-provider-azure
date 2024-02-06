@@ -35,7 +35,6 @@ import (
 	// nolint SA1019 - deprecated package
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 
@@ -46,7 +45,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 
-	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/events"
 
@@ -56,10 +54,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/functional"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
-
-func init() {
-	coreapis.Settings = append(coreapis.Settings, apis.Settings...)
-}
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
