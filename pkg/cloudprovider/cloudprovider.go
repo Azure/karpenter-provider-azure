@@ -45,7 +45,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
-	nodeclaimutil "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
@@ -189,9 +188,16 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeC
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
 	// Not needed when GetInstanceTypes removes nodepool dependency
-	nodePool, err := nodeclaimutil.Owner(ctx, c.kubeClient, nodeClaim)
-	if err != nil {
-		return "", client.IgnoreNotFound(fmt.Errorf("resolving owner, %w", err))
+	// nodePool, err := nodeclaimutil.Owner(ctx, c.kubeClient, nodeClaim)
+	// if err != nil {
+	// 	return "", client.IgnoreNotFound(fmt.Errorf("resolving owner, %w", err))
+	nodePoolName, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]
+	if !ok {
+		return "", nil
+	}
+	nodePool := &corev1beta1.NodePool{}
+	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePoolName}, nodePool); err != nil {
+		return "", client.IgnoreNotFound(err)
 	}
 	if nodePool.Spec.Template.Spec.NodeClassRef == nil {
 		return "", nil
