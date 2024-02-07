@@ -27,10 +27,8 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"sigs.k8s.io/karpenter/pkg/apis"
-	coresettings "sigs.k8s.io/karpenter/pkg/apis/settings"
 	"sigs.k8s.io/karpenter/pkg/utils/functional"
 )
 
@@ -41,7 +39,6 @@ var (
 	)
 	// AddToScheme may be used to add all resources defined in the project to a Scheme
 	AddToScheme = Builder.AddToScheme
-	Settings    = []coresettings.Injectable{&settings.Settings{}}
 )
 
 //go:generate controller-gen crd object:headerFile="../../hack/boilerplate.go.txt" paths="./..." output:crd:artifacts:config=crds

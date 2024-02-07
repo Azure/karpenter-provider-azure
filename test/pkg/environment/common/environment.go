@@ -42,7 +42,6 @@ import (
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/operator"
-	"sigs.k8s.io/karpenter/pkg/operator/injection"
 )
 
 type ContextKey string
@@ -70,8 +69,6 @@ func NewEnvironment(t *testing.T) *Environment {
 	client := NewClient(ctx, config)
 
 	lo.Must0(os.Setenv(system.NamespaceEnvKey, "karpenter"))
-	kubernetesInterface := kubernetes.NewForConfigOrDie(config)
-	ctx = injection.WithSettingsOrDie(ctx, kubernetesInterface, apis.Settings...)
 	if val, ok := os.LookupEnv("GIT_REF"); ok {
 		ctx = context.WithValue(ctx, GitRefContextKey, val)
 	}
