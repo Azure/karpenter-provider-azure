@@ -45,7 +45,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
-	nodeclaimutil "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
