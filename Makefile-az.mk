@@ -75,16 +75,16 @@ az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold con
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="LOCATION"))                      .value = "$(AZURE_LOCATION)"'          skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USER_ASSIGNED_IDENTITY_ID")) .value = "$(AZURE_CLIENT_ID)"'         skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_NODE_RESOURCE_GROUP"))     .value = "$(AZURE_RESOURCE_GROUP_MC)"' skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.clusterName =                                                "$(AZURE_CLUSTER_NAME)"'      skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.clusterEndpoint =                                            "$(CLUSTER_ENDPOINT)"'        skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.networkPlugin =                                              "azure"'                      skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.kubeletClientTLSBootstrapToken =                             "$(BOOTSTRAP_TOKEN)"'         skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.sshPublicKey =                                               "$(SSH_PUBLIC_KEY)"'          skaffold.yaml
+	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="CLUSTER_NAME")).value =                                                "$(AZURE_CLUSTER_NAME)"'      skaffold.yaml
+	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="CLUSTER_ENDPOINT")).value =                                            "$(CLUSTER_ENDPOINT)"'        skaffold.yaml
+	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN")).value =                                              "azure"'                      skaffold.yaml
+	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="KUBELET_BOOTSTRAP_TOKEN")).value =                             "$(BOOTSTRAP_TOKEN)"'         skaffold.yaml
+	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="SSH_PUBLIC_KEY")).value =                                               "$(SSH_PUBLIC_KEY)"'          skaffold.yaml
 
 az-patch-skaffold-kubenet: az-patch-skaffold	az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID"))               .value = "$(AZURE_SUBNET_ID)"'         skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.networkPlugin =                                              "kubenet"'                    skaffold.yaml
+	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN")) =                                              "kubenet"'                    skaffold.yaml
 
 az-patch-skaffold-azure: az-patch-skaffold	az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
@@ -93,7 +93,7 @@ az-patch-skaffold-azure: az-patch-skaffold	az-fetch-network-info
 az-patch-skaffold-azureoverlay: az-patch-skaffold	az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID")) .value = "$(AZURE_SUBNET_ID)"' skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.settings.azure.networkPlugin =                                              "azure"'                      skaffold.yaml
+	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN")) =                                              "azure"'                      skaffold.yaml
 
 	# old identity path is still the default, so need to override the values values with new logic.
 	# TODO (chmcbrid): update the new logic path as the default.

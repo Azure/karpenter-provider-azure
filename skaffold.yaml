@@ -45,6 +45,18 @@ manifests:
             # time which usually results in fewer but larger nodes.
             batchMaxDuration: 10s # 60s is a good value for large runs (500+ nodes)
             env:
+              - name: CLUSTER_NAME
+                value: "Please run make az-all" 
+              - name: CLUSTER_ENDPOINT 
+                value: "Please run make az-all"
+              - name: KUBELET_BOOTSTRAP_TOKEN 
+                value: "" 
+              - name: SSH_PUBLIC_KEY 
+                value: "Please run make az-all" 
+              - name: NETWORK_PLUGIN 
+                value: ""
+              - name: NETWORK_POLICY 
+                value: ""
               - name: ARM_SUBSCRIPTION_ID
                 value: "Please run make az-all"
               - name: LOCATION
