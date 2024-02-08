@@ -38,10 +38,6 @@
 		}
 	},
 
-	"containerEnv": {
-		"KUBEBUILDER_ASSETS": "/home/vscode/.kubebuilder/bin"
-	},
-
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 
