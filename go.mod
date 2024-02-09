@@ -42,7 +42,7 @@ require (
 	knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd
 	sigs.k8s.io/cloud-provider-azure v1.28.2
 	sigs.k8s.io/controller-runtime v0.16.3
-	sigs.k8s.io/karpenter v0.32.2-0.20231129204947-79dc3457680f
+	sigs.k8s.io/karpenter v0.32.2-0.20231205044115-1cf3df4ba3cc
 )
 
 require (
@@ -127,7 +127,7 @@ require (
 	golang.org/x/sys v0.16.0 // indirect
 	golang.org/x/term v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/time v0.4.0 // indirect
+	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.16.1 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/api v0.146.0 // indirect
