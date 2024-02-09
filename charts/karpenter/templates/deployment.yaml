@@ -136,8 +136,8 @@ spec:
           {{- if .Values.webhook.enabled }}
             - name: webhook-metrics
               containerPort: {{ .Values.webhook.metrics.port }}
-          {{- end }}
               protocol: TCP
+          {{- end }}
             - name: http
               containerPort: {{ .Values.controller.healthProbe.port }}
               protocol: TCP
@@ -213,4 +213,3 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     {{- end }}
-    
