@@ -12,7 +12,7 @@ AZURE_RESOURCE_GROUP_MC = MC_$(AZURE_RESOURCE_GROUP)_$(AZURE_CLUSTER_NAME)_$(AZU
 
 KARPENTER_SERVICE_ACCOUNT_NAME ?= karpenter-sa
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME ?= karpentermsi
-KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID 
+KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 
 az-all:         az-login az-create-workload-msi az-mkaks-cilium az-create-federated-cred az-perm az-perm-acr az-patch-skaffold-azureoverlay az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 az-all-savm:    az-login az-mkaks-savm az-perm-savm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
@@ -50,7 +50,7 @@ az-create-workload-msi: az-mkrg
 az-create-federated-cred:
 	$(eval AKS_OIDC_ISSUER=$(shell az aks show -n "${AZURE_CLUSTER_NAME}" -g "${AZURE_RESOURCE_GROUP}" --query "oidcIssuerProfile.issuerUrl" -otsv))
 
-	# create federated credential linked to the karpenter service account for auth usage 
+	# create federated credential linked to the karpenter service account for auth usage
 	az identity federated-credential create --name ${KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME} --identity-name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --issuer "${AKS_OIDC_ISSUER}" --subject system:serviceaccount:"${SYSTEM_NAMESPACE}":"${KARPENTER_SERVICE_ACCOUNT_NAME}" --audience api://AzureADTokenExchange
 
 az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR)
@@ -75,16 +75,16 @@ az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold con
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="LOCATION"))                      .value = "$(AZURE_LOCATION)"'          skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="ARM_USER_ASSIGNED_IDENTITY_ID")) .value = "$(AZURE_CLIENT_ID)"'         skaffold.yaml
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_NODE_RESOURCE_GROUP"))     .value = "$(AZURE_RESOURCE_GROUP_MC)"' skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="CLUSTER_NAME")).value =                                                "$(AZURE_CLUSTER_NAME)"'      skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="CLUSTER_ENDPOINT")).value =                                            "$(CLUSTER_ENDPOINT)"'        skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN")).value =                                              "azure"'                      skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="KUBELET_BOOTSTRAP_TOKEN")).value =                             "$(BOOTSTRAP_TOKEN)"'         skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="SSH_PUBLIC_KEY")).value =                                               "$(SSH_PUBLIC_KEY)"'          skaffold.yaml
+	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="CLUSTER_NAME")).value =                                                "$(AZURE_CLUSTER_NAME)"'      skaffold.yaml
+	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="CLUSTER_ENDPOINT")).value =                                            "$(CLUSTER_ENDPOINT)"'        skaffold.yaml
+	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN")).value =                                              "azure"'                      skaffold.yaml
+	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="KUBELET_BOOTSTRAP_TOKEN")).value =                             "$(BOOTSTRAP_TOKEN)"'         skaffold.yaml
+	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="SSH_PUBLIC_KEY")).value =                                               "$(SSH_PUBLIC_KEY)"'          skaffold.yaml
 
 az-patch-skaffold-kubenet: az-patch-skaffold	az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID"))               .value = "$(AZURE_SUBNET_ID)"'         skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN")) =                                              "kubenet"'                    skaffold.yaml
+	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN").value) =                                              "kubenet"'                    skaffold.yaml
 
 az-patch-skaffold-azure: az-patch-skaffold	az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
@@ -93,7 +93,7 @@ az-patch-skaffold-azure: az-patch-skaffold	az-fetch-network-info
 az-patch-skaffold-azureoverlay: az-patch-skaffold	az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID")) .value = "$(AZURE_SUBNET_ID)"' skaffold.yaml
-	yq -i  '.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN")) =                                              "azure"'                      skaffold.yaml
+	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN").value) =                                              "azure"'                      skaffold.yaml
 
 	# old identity path is still the default, so need to override the values values with new logic.
 	# TODO (chmcbrid): update the new logic path as the default.
