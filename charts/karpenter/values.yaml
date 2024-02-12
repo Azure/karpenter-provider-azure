@@ -94,11 +94,13 @@ extraVolumes: []
 controller:
   image:
     # -- Repository path to the controller image.
-    repository: public.ecr.aws/karpenter/controller
+    repository: ksnap.azurecr.io/karpenter/snapshot/controller
     # -- Tag of the controller image.
-    tag: v0.32.1
+    tag: 41f6dcabe655c7fec84f4467e95bbd75285ae082
     # -- SHA256 digest of the controller image.
     # digest:
+
+    digest: sha256:e35e315face303a784e137c5af5683f4421fa8537f1ea70cacdc1673f7f08b28
   # -- Additional environment variables for the controller pod.
   env: []
   # - name:
@@ -177,6 +179,14 @@ settings:
     clusterName: ""
     # -- Cluster endpoint.
     clusterEndpoint: ""
+    # -- Kubelet client TLS bootstrap token.
+    kubeletClientTLSBootstrapToken: ""
+    # -- SSH public key.
+    sshPublicKey: ""
+    # -- Network plugin.
+    networkPlugin: "azure"
+    # -- Network policy.
+    networkPolicy: ""
     # -- The VM memory overhead as a percent that will be subtracted from the total memory for all instance types
     vmMemoryOverheadPercent: 0.075
     # -- The global tags to use on all Azure infrastructure resources (VMs, etc.)
@@ -188,4 +198,4 @@ settings:
     # -- drift is in ALPHA and is disabled by default.
     # Setting drift to true enables the drift disruption method to watch for drift between currently deployed nodes
     # and the desired state of nodes set in provisioners and node templates
-    drift: false
+    drift: true
