@@ -1,3 +1,4 @@
+
 [![GitHub License](https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg)](https://github.com/Azure/karpenter-provider-azure/blob/main/LICENSE.txt)
 [![CI](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml)
 ![GitHub stars](https://img.shields.io/github/stars/Azure/karpenter-provider-azure)
@@ -5,8 +6,25 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Azure/karpenter-provider-azure)](https://goreportcard.com/report/github.com/Azure/karpenter-provider-azure)
 [![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/Azure/karpenter-provider-azure/issues)
 
----
-## Features Overview 
+Table of contents:
+- [Features Overview](#features-overview)
+- [Node Auto Provisioning (NAP) vs. Self-hosted](#node-auto-provisioning-nap-vs-self-hosted)
+- [Known limitations](#known-limitations)
+- [Installation (self-hosted)](#installation-self-hosted)
+  - [Install utilities](#install-utilities)
+  - [Create a cluster](#create-a-cluster)
+  - [Configure Helm chart values](#configure-helm-chart-values)
+  - [Install Karpenter](#install-karpenter)
+  - [Create NodePool](#create-nodepool)
+  - [Scale up deployment](#scale-up-deployment)
+  - [Scale down deployment](#scale-down-deployment)
+  - [Delete Karpenter nodes manually](#delete-karpenter-nodes-manually)
+  - [Delete the cluster](#delete-the-cluster)
+- [Source Attribution](#source-attribution)
+- [Community, discussion, contribution, and support](#community-discussion-contribution-and-support)
+
+## Features Overview
+
 The AKS Karpenter Provider enables node autoprovisioning using [Karpenter](https://karpenter.sh/) on your AKS cluster.
 Karpenter improves the efficiency and cost of running workloads on Kubernetes clusters by:
 
@@ -16,29 +34,242 @@ Karpenter improves the efficiency and cost of running workloads on Kubernetes cl
 * **Removing** the nodes when they are no longer needed
 * **Consolidating** existing nodes onto cheaper nodes with higher utilization per node
 
-## Production Readiness Status
-- API-Version: AKS Karpenter Provider is currently in alpha (`v1alpha2`).
-- AKS-Feature State: [Node Auto Provisioning is currently in preview](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli)
 
-## Installation: Managed Karpenter (AKA Node Auto Provisioning) 
-The Node Auto Provisioning Preview, runs Karpenter as a managed addon similar to Managed Cluster Autoscaler. 
+## Node Auto Provisioning (NAP) vs. Self-hosted
 
-To get started, just go through the prerequisites of [installing the Preview CLI](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli#install-the-aks-preview-cli-extension), and [register the NodeAutoProvisioningPreview feature flag](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli#register-the-nodeautoprovisioningpreview-feature-flag).
+Karpenter provider for AKS can be used in two modes:
+* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) mode** (preview): Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users. Follow the instructions in Node Auto Provisioning documentation to use Karpenter in that mode.
+* **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment. The rest of this page describes how to use Karpenter in self-hosted mode.
 
-### Enable node autoprovisioning 
-To enable node autoprovisioning, create a new cluster using the `az aks create` command and set --node-provisioning-mode to "Auto". You'll also need to use overlay networking and the cilium network policy for now.
+## Known limitations
 
-```bash 
-az aks create --name myFirstNap --resource-group napTest --node-provisioning-mode Auto --network-plugin azure --network-plugin-mode overlay --network-dataplane cilium
+* Only AKS clusters with Azure CNI Overlay + Cilium networking are supported.
+* Only Linux nodes are supported.
+
+## Installation (self-hosted)
+
+This guide shows how to get started with Karpenter by creating an AKS cluster and installing Karpenter.
+
+### Install utilities
+
+Install these tools before proceeding:
+* [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
+* [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
+* [Helm](https://helm.sh/docs/intro/install/)
+* [jq](https://stedolan.github.io/jq/) - used by some of the scripts below
+* [yq](https://mikefarah.gitbook.io/yq/) - used by some of the scripts below
+
+### Create a cluster
+
+Create a new AKS cluster with the required configuration, and ready to run Karpenter using worload identity.
+
+> Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group>` to automate the following steps. 
+
+Set environment variables:
+
+```bash
+export CLUSTER_NAME=karpenter
+export RG=karpenter
+export LOCATION=eastus
 ```
 
-[View Limitations of the node autoprovisioning preview here](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli#limitations)
+Create the workload MSI that is the backing for the karpenter pod auth:
 
-### NAP Usage
-- [Learn More about Configuring the Nodepool CRDs to be more or less flexible](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli#node-pools)
+```bash
+az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}"
+```
 
-## Helm Chart
-a self-hosted experience similar to [aws/karpenter](https://artifacthub.io/packages/helm/karpenter/karpenter) is coming soon...
+Create AKS cluster compatible with Karpenter, and with the workload identity enabled:
+
+```bash
+az aks create \
+  --name "${CLUSTER_NAME}" --resource-group "${RG}" \
+  --node-count 3 --generate-ssh-keys \
+  --network-plugin azure --network-plugin-mode overlay --network-dataplane cilium \
+  --enable-managed-identity \
+  --enable-oidc-issuer --enable-workload-identity \
+  -o none
+az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overwrite-existing
+```
+
+Create federated credential linked to the karpenter service account for auth usage:
+
+```bash
+AKS_OIDC_ISSUER=$(az aks show -n "${CLUSTER_NAME}" -g "${RG}" --query "oidcIssuerProfile.issuerUrl" -otsv)
+az identity federated-credential create --name KARPENTER_FID --identity-name karpentermsi --resource-group "${RG}" \
+  --issuer "${AKS_OIDC_ISSUER}" \
+  --subject system:serviceaccount:karpenter:karpenter-sa \
+  --audience api://AzureADTokenExchange
+```
+
+Create role assignments to let Karpenter manage VMs and Network resources:
+
+```bash
+KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${RG}" --name karpentermsi --query 'principalId' -otsv)
+RG_MC=$(az aks show --name "$CLUSTER_NAME" --resource-group "$RG" | jq -r ".nodeResourceGroup")
+RG_MC_RES=$(az group show --name "${RG_MC}" --query "id" -otsv)
+for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identity Operator"; do
+  az role assignment create --assignee "${KARPENTER_USER_ASSIGNED_CLIENT_ID}" --scope "${RG_MC_RES}" --role "$role"
+done
+```
+
+### Configure Helm chart values
+
+Karpeter Helm chart requires some configuration via values to work with a specific AKS cluster. The values are documented in the Helm chart itself, but you can use `configure-values.sh` to generate `karpenter-values.yaml` with the required configuration. The script interrogates the AKS cluster and generates the values file, using `karpenter-values-template.yaml` as a template.
+
+```bash
+# use configure-values.sh to generate karpenter-values.yaml
+curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/hack/deploy/configure-values.sh
+chmod +x ./configure-values.sh && ./configure-values.sh
+```
+
+### Install Karpenter
+
+Usinge the generated `karpenter-values.yaml` file, install Karpenter using Helm:
+
+```bash
+export KARPENTER_NAMESPACE=kube-system
+export KARPENTER_VERSION=v0.3.0
+
+helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
+  --version "${KARPENTER_VERSION}" \
+  --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
+  --values karpenter-values.yaml \
+  --set controller.resources.requests.cpu=1 \
+  --set controller.resources.requests.memory=1Gi \
+  --set controller.resources.limits.cpu=1 \
+  --set controller.resources.limits.memory=1Gi \
+  --wait
+```
+
+Snapshot versions can be installed in a similar way:
+
+```bash
+export KARPENTER_NAMESPACE=kube-system
+export KARPENTER_VERSION=v0-41f6dcabe655c7fec84f4467e95bbd75285ae082
+
+helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot \
+  --version "${KARPENTER_VERSION}" \
+  --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
+  --values karpenter-values.yaml \
+  --set controller.resources.requests.cpu=1 \
+  --set controller.resources.requests.memory=1Gi \
+  --set controller.resources.limits.cpu=1 \
+  --set controller.resources.limits.memory=1Gi \
+  --wait
+```
+
+### Create NodePool
+
+A single Karpenter NodePool is capable of handling many different pod shapes. Karpenter makes scheduling and provisioning decisions based on pod attributes such as labels and affinity. In other words, Karpenter eliminates the need to manage many different node groups.
+
+Create a default NodePool using the command below. The `consolidationPolicy` set to `WhenUnderutilized` in the `disruption` block configures Karpenter to reduce cluster cost by removing and replacing nodes. As a result, consolidation will terminate any empty nodes on the cluster. This behavior can be disabled by setting consolidateAfter to `Never`, telling Karpenter that it should never consolidate nodes.
+
+Note: This NodePool will create capacity as long as the sum of all created capacity is less than the specified limit.
+
+```bash
+cat <<EOF | kubectl apply -f -
+---
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
+metadata:
+  name: general-purpose
+  annotations:
+    kubernetes.io/description: "General purpose NodePool for generic workloads"
+spec:
+  template:
+    spec:
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: karpenter.azure.com/sku-family
+          operator: In
+          values: [D]
+      nodeClassRef:
+        name: default
+  limits:
+    cpu: 100
+  disruption:
+    consolidationPolicy: WhenUnderutilized
+    expireAfter: Never
+---
+apiVersion: karpenter.azure.com/v1alpha2
+kind: AKSNodeClass
+metadata:
+  name: default
+  annotations:
+    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu2204 nodes"
+spec:
+  imageFamily: Ubuntu2204
+EOF
+```
+Karpenter is now active and ready to begin provisioning nodes.
+
+### Scale up deployment
+
+This deployment uses the [pause image](https://www.ianlewis.org/en/almighty-pause-container) and starts with zero replicas.
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inflate
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: inflate
+  template:
+    metadata:
+      labels:
+        app: inflate
+    spec:
+      terminationGracePeriodSeconds: 0
+      containers:
+        - name: inflate
+          image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+          resources:
+            requests:
+              cpu: 1
+EOF
+
+kubectl scale deployment inflate --replicas 5
+kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
+```
+
+### Scale down deployment
+
+Now, delete the deployment. After a short amount of time, Karpenter should terminate the empty nodes due to consolidation.
+
+```bash
+kubectl delete deployment inflate
+kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
+```
+
+### Delete Karpenter nodes manually
+
+If you delete a node with kubectl, Karpenter will gracefully cordon, drain, and shutdown the corresponding instance. Under the hood, Karpenter adds a finalizer to the node object, which blocks deletion until all pods are drained and the instance is terminated. Keep in mind, this only works for nodes provisioned by Karpenter.
+
+```bash
+kubectl delete node $NODE_NAME
+```
+
+### Delete the cluster
+
+To avoid additional charges, remove the demo infrastructure from your AKS account.
+
+```bash
+helm uninstall karpenter --namespace "${KARPENTER_NAMESPACE}"
+az aks delete --name "${CLUSTER_NAME}" --resource-group "${RG}"
+```
 
 ---
 
