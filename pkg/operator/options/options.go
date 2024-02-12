@@ -27,7 +27,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"k8s.io/apimachinery/pkg/util/sets"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/utils/env"
@@ -40,7 +39,10 @@ func init() {
 type nodeIdentitiesValue []string
 
 func newNodeIdentitiesValue(val string, p *[]string) *nodeIdentitiesValue {
-	*p = strings.Split(val, ",")
+	*p = []string{}
+	if val != "" {
+		*p = strings.Split(val, ",")
+	}
 	return (*nodeIdentitiesValue)(p)
 }
 
@@ -112,9 +114,7 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 	}
 
 	// if ClusterID is not set, generate it from cluster endpoint
-	// if clusterEndpoint is empty, it might awaiting merge from MergeSettings(), do not run GetAPIServerName() or it could panic
-	// TODO: chore: remove clusterEndpoint validation logic here when karpenter-global-settings (and merge logic) are completely removed
-	if o.ClusterID == "" && o.ClusterEndpoint != "" {
+	if o.ClusterID == "" {
 		o.ClusterID = getAKSClusterID(o.GetAPIServerName())
 	}
 
@@ -125,18 +125,8 @@ func (o *Options) ToContext(ctx context.Context) context.Context {
 	return ToContext(ctx, o)
 }
 
+// TODO(charliedmcb): need to remove this after updating tests
 func (o *Options) MergeSettings(ctx context.Context) {
-	s := settings.FromContext(ctx)
-	mergeField(&o.ClusterName, s.ClusterName, o.setFlags["cluster-name"])
-	mergeField(&o.ClusterEndpoint, s.ClusterEndpoint, o.setFlags["cluster-endpoint"])
-	mergeField(&o.VMMemoryOverheadPercent, s.VMMemoryOverheadPercent, o.setFlags["vm-memory-overhead-percent"])
-	mergeField(&o.ClusterID, s.ClusterID, o.setFlags["cluster-id"])
-	mergeField(&o.KubeletClientTLSBootstrapToken, s.KubeletClientTLSBootstrapToken, o.setFlags["kubelet-bootstrap-token"])
-	mergeField(&o.SSHPublicKey, s.SSHPublicKey, o.setFlags["ssh-public-key"])
-	mergeField(&o.NetworkPlugin, s.NetworkPlugin, o.setFlags["network-plugin"])
-	mergeField(&o.NetworkPolicy, s.NetworkPolicy, o.setFlags["network-policy"])
-	mergeField(&o.NodeIdentities, s.NodeIdentities, o.setFlags["node-identities"])
-
 	if err := o.validateRequiredFields(); err != nil {
 		panic(fmt.Errorf("checking required fields, %w", err))
 	}
