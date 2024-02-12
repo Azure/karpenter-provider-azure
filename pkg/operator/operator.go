@@ -26,7 +26,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	"knative.dev/pkg/ptr"
+	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -38,6 +40,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"sigs.k8s.io/karpenter/pkg/operator"
 )
+
+func init() {
+	lo.Must0(apis.AddToScheme(scheme.Scheme))
+}
 
 type Operator struct {
 	*operator.Operator

@@ -23,18 +23,6 @@ manifests:
           controller.image.tag: "{{.IMAGE_TAG_controller}}"
           controller.image.digest: "{{.IMAGE_DIGEST_controller}}"
         overrides:
-          # these go into the global config map
-          settings:
-            featureGates:
-              drift: true
-            azure:
-              clusterName: karpenter
-              clusterEndpoint: "Please run make az-all"
-              kubeletClientTLSBootstrapToken: "Please run make az-all" # TODO: get this from the cluster
-              # TODO: autogenerate
-              sshPublicKey: "Please run make az-all"
-              networkPlugin: "azure" # TODO: get this from the cluster
-              networkPolicy: ""
           replicas: 1 # for better debugging experience
           controller:
             # The maximum amount of time with no new ending pods that if exceeded ends the current batching window. If pods arrive
