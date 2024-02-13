@@ -27,7 +27,6 @@ import (
 	"github.com/samber/lo"
 	. "knative.dev/pkg/logging/testing"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/settings"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -72,11 +71,6 @@ var _ = Describe("Options", func() {
 		}
 		opts = &options.Options{}
 		opts.AddFlags(fs)
-
-		// Inject default settings
-		var err error
-		ctx, err = (&settings.Settings{}).Inject(ctx, nil)
-		Expect(err).To(BeNil())
 	})
 
 	AfterEach(func() {
