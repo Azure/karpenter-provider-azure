@@ -88,108 +88,7 @@ var _ = Describe("Options", func() {
 		}
 	})
 
-	Context("Merging", func() {
-		It("shouldn't overwrite options when all are set", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "options-cluster",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--vm-memory-overhead-percent", "0.1",
-				"--cluster-id", "options-cluster-id",
-				"--kubelet-bootstrap-token", "options-bootstrap-token",
-				"--ssh-public-key", "options-ssh-public-key",
-				"--network-plugin", "azure",
-				"--network-policy", "",
-				"--node-identities", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/optionsid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/optionsid2",
-			)
-			Expect(err).ToNot(HaveOccurred())
-			ctx = settings.ToContext(ctx, &settings.Settings{
-				ClusterName:                    "settings-cluster",
-				ClusterEndpoint:                "https://karpenter-000000000001.hcp.westus2.staging.azmk8s.io",
-				VMMemoryOverheadPercent:        0.1,
-				ClusterID:                      "settings-cluster-id",
-				KubeletClientTLSBootstrapToken: "settings-bootstrap-token",
-				SSHPublicKey:                   "settings-ssh-public-key",
-				NetworkPlugin:                  "kubenet",
-				NetworkPolicy:                  "azure",
-				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid2"},
-			})
-			opts.MergeSettings(ctx)
-			expectOptionsEqual(opts, test.Options(test.OptionsFields{
-				ClusterName:                    lo.ToPtr("options-cluster"),
-				ClusterEndpoint:                lo.ToPtr("https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io"),
-				VMMemoryOverheadPercent:        lo.ToPtr(0.1),
-				ClusterID:                      lo.ToPtr("options-cluster-id"),
-				KubeletClientTLSBootstrapToken: lo.ToPtr("options-bootstrap-token"),
-				SSHPublicKey:                   lo.ToPtr("options-ssh-public-key"),
-				NetworkPlugin:                  lo.ToPtr("azure"),
-				NetworkPolicy:                  lo.ToPtr(""),
-				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/optionsid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/optionsid2"},
-			}))
-		})
-		It("should overwrite options when none are set", func() {
-			err := opts.Parse(fs)
-			Expect(err).ToNot(HaveOccurred())
-			ctx = settings.ToContext(ctx, &settings.Settings{
-				ClusterName:                    "settings-cluster",
-				ClusterEndpoint:                "https://karpenter-000000000001.hcp.westus2.staging.azmk8s.io",
-				VMMemoryOverheadPercent:        0.1,
-				ClusterID:                      "settings-cluster-id",
-				KubeletClientTLSBootstrapToken: "settings-bootstrap-token",
-				SSHPublicKey:                   "settings-ssh-public-key",
-				NetworkPlugin:                  "kubenet",
-				NetworkPolicy:                  "azure",
-				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid2"},
-			})
-			opts.MergeSettings(ctx)
-			expectOptionsEqual(opts, test.Options(test.OptionsFields{
-				ClusterName:                    lo.ToPtr("settings-cluster"),
-				ClusterEndpoint:                lo.ToPtr("https://karpenter-000000000001.hcp.westus2.staging.azmk8s.io"),
-				VMMemoryOverheadPercent:        lo.ToPtr(0.1),
-				ClusterID:                      lo.ToPtr("settings-cluster-id"),
-				KubeletClientTLSBootstrapToken: lo.ToPtr("settings-bootstrap-token"),
-				SSHPublicKey:                   lo.ToPtr("settings-ssh-public-key"),
-				NetworkPlugin:                  lo.ToPtr("kubenet"),
-				NetworkPolicy:                  lo.ToPtr("azure"),
-				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid2"},
-			}))
-
-		})
-		It("should correctly merge options and settings when mixed", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "options-cluster",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--vm-memory-overhead-percent", "0.1",
-				"--cluster-id", "options-cluster-id",
-				"--kubelet-bootstrap-token", "options-bootstrap-token",
-			)
-			Expect(err).ToNot(HaveOccurred())
-			ctx = settings.ToContext(ctx, &settings.Settings{
-				ClusterName:                    "settings-cluster",
-				ClusterEndpoint:                "https://karpenter-000000000001.hcp.westus2.staging.azmk8s.io",
-				VMMemoryOverheadPercent:        0.1,
-				ClusterID:                      "settings-cluster-id",
-				KubeletClientTLSBootstrapToken: "settings-bootstrap-token",
-				SSHPublicKey:                   "settings-ssh-public-key",
-				NetworkPlugin:                  "kubenet",
-				NetworkPolicy:                  "azure",
-				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid2"},
-			})
-			opts.MergeSettings(ctx)
-			expectOptionsEqual(opts, test.Options(test.OptionsFields{
-				ClusterName:                    lo.ToPtr("options-cluster"),
-				ClusterEndpoint:                lo.ToPtr("https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io"),
-				VMMemoryOverheadPercent:        lo.ToPtr(0.1),
-				ClusterID:                      lo.ToPtr("options-cluster-id"),
-				KubeletClientTLSBootstrapToken: lo.ToPtr("options-bootstrap-token"),
-				SSHPublicKey:                   lo.ToPtr("settings-ssh-public-key"),
-				NetworkPlugin:                  lo.ToPtr("kubenet"),
-				NetworkPolicy:                  lo.ToPtr("azure"),
-				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/settingsid2"},
-			}))
-		})
-
+	Context("Env Vars", func() {
 		It("should correctly fallback to env vars when CLI flags aren't set", func() {
 			os.Setenv("CLUSTER_NAME", "env-cluster")
 			os.Setenv("CLUSTER_ENDPOINT", "https://env-cluster")
@@ -228,13 +127,7 @@ var _ = Describe("Options", func() {
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
-			//Expect(err).To(HaveOccurred()) // TODO: Add back when karpenter-global-settings (and merge logic) are completely removed
-
-			// TODO: Remove below when karpenter-global-settings (and merge logic) are completely removed
-			Expect(err).ToNot(HaveOccurred())
-			ctx = settings.ToContext(ctx, &settings.Settings{})
-			Expect(func() { opts.MergeSettings(ctx) }).To(Panic())
-
+			Expect(err).To(HaveOccurred())
 		})
 		It("should fail validation with panic when clusterEndpoint not included", func() {
 			err := opts.Parse(
@@ -243,12 +136,7 @@ var _ = Describe("Options", func() {
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
-			//Expect(err).To(HaveOccurred()) // TODO: Add back when karpenter-global-settings (and merge logic) are completely removed
-
-			// TODO: Remove below when karpenter-global-settings (and merge logic) are completely removed
-			Expect(err).ToNot(HaveOccurred())
-			ctx = settings.ToContext(ctx, &settings.Settings{})
-			Expect(func() { opts.MergeSettings(ctx) }).To(Panic())
+			Expect(err).To(HaveOccurred())
 		})
 		It("should fail validation with panic when kubeletClientTLSBootstrapToken not included", func() {
 			err := opts.Parse(
@@ -257,12 +145,7 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
-			//Expect(err).To(HaveOccurred()) // TODO: Add back when karpenter-global-settings (and merge logic) are completely removed
-
-			// TODO: Remove below when karpenter-global-settings (and merge logic) are completely removed
-			Expect(err).ToNot(HaveOccurred())
-			ctx = settings.ToContext(ctx, &settings.Settings{})
-			Expect(func() { opts.MergeSettings(ctx) }).To(Panic())
+			Expect(err).To(HaveOccurred())
 		})
 		It("should fail validation with panic when SSHPublicKey not included", func() {
 			err := opts.Parse(
@@ -271,12 +154,7 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 			)
-			//Expect(err).To(HaveOccurred()) // TODO: Add back when karpenter-global-settings (and merge logic) are completely removed
-
-			// TODO: Remove below when karpenter-global-settings (and merge logic) are completely removed
-			Expect(err).ToNot(HaveOccurred())
-			ctx = settings.ToContext(ctx, &settings.Settings{})
-			Expect(func() { opts.MergeSettings(ctx) }).To(Panic())
+			Expect(err).To(HaveOccurred())
 		})
 		It("should fail when clusterEndpoint is invalid (not absolute)", func() {
 			err := opts.Parse(
