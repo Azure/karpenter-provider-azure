@@ -149,12 +149,6 @@ func FromContext(ctx context.Context) *Options {
 	return retval.(*Options)
 }
 
-func mergeField[T any](dest *T, src T, isDestSet bool) {
-	if !isDestSet {
-		*dest = src
-	}
-}
-
 // getAKSClusterID returns cluster ID based on the DNS prefix of the cluster.
 // The logic comes from AgentBaker and other places, originally from aks-engine
 // with the additional assumption of DNS prefix being the first 33 chars of FQDN
