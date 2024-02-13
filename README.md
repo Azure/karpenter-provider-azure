@@ -71,6 +71,14 @@ Set environment variables:
 export CLUSTER_NAME=karpenter
 export RG=karpenter
 export LOCATION=eastus
+export KARPENTER_NAMESPACE=kube-system
+
+```
+
+Create the resource group:
+
+```bash
+az group create --name ${RG} --location ${LOCATION}
 ```
 
 Create the workload MSI that is the backing for the karpenter pod auth:
@@ -98,7 +106,7 @@ Create federated credential linked to the karpenter service account for auth usa
 AKS_OIDC_ISSUER=$(az aks show -n "${CLUSTER_NAME}" -g "${RG}" --query "oidcIssuerProfile.issuerUrl" -otsv)
 az identity federated-credential create --name KARPENTER_FID --identity-name karpentermsi --resource-group "${RG}" \
   --issuer "${AKS_OIDC_ISSUER}" \
-  --subject system:serviceaccount:karpenter:karpenter-sa \
+  --subject system:serviceaccount:${KARPENTER_NAMESPACE}:karpenter-sa \
   --audience api://AzureADTokenExchange
 ```
 
@@ -119,8 +127,9 @@ Karpeter Helm chart requires some configuration via values to work with a specif
 
 ```bash
 # use configure-values.sh to generate karpenter-values.yaml
+# (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/hack/deploy/configure-values.sh
-chmod +x ./configure-values.sh && ./configure-values.sh
+chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG}
 ```
 
 ### Install Karpenter
@@ -128,7 +137,6 @@ chmod +x ./configure-values.sh && ./configure-values.sh
 Usinge the generated `karpenter-values.yaml` file, install Karpenter using Helm:
 
 ```bash
-export KARPENTER_NAMESPACE=kube-system
 export KARPENTER_VERSION=v0.3.0
 
 helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
@@ -140,6 +148,8 @@ helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter
   --set controller.resources.limits.cpu=1 \
   --set controller.resources.limits.memory=1Gi \
   --wait
+
+kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
 Snapshot versions can be installed in a similar way:
@@ -148,7 +158,7 @@ Snapshot versions can be installed in a similar way:
 export KARPENTER_NAMESPACE=kube-system
 export KARPENTER_VERSION=v0-41f6dcabe655c7fec84f4467e95bbd75285ae082
 
-helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot \
+helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
   --version "${KARPENTER_VERSION}" \
   --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
   --values karpenter-values.yaml \
@@ -157,6 +167,8 @@ helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot \
   --set controller.resources.limits.cpu=1 \
   --set controller.resources.limits.memory=1Gi \
   --wait
+
+kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
 ### Create NodePool
