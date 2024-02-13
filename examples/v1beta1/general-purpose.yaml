@@ -34,4 +34,5 @@ metadata:
   annotations:
     kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu2204 nodes"
 spec:
+  # Supported Values: AzureLinux, Ubuntu2204, Ubuntu2004
   imageFamily: Ubuntu2204

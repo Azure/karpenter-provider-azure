@@ -51,6 +51,7 @@ spec:
                 description: ImageFamily is the image family that instances use.
                 enum:
                 - Ubuntu2204
+                - Ubuntu2004
                 - AzureLinux
                 type: string
               imageVersion:

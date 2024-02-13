@@ -115,6 +115,8 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	switch lo.FromPtr(familyName) {
 	case v1alpha2.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
+	case v1alpha2.Ubuntu2004ImageFamily:
+		return &Ubuntu2004{Options: parameters}
 	case v1alpha2.AzureLinuxImageFamily:
 		return &AzureLinux{Options: parameters}
 	default:
