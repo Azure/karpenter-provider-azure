@@ -67,7 +67,7 @@ var (
 		LabelSKUHyperVGeneration,
 	)
 
-	AllowUndefinedLabels = func(options scheduling.CompatibilityOptions) scheduling.CompatibilityOptions {
+	AllowUndefinedLabels = func(options scheduling.CompatabilityOptions) scheduling.CompatabilityOptions {
 		options.AllowUndefined = corev1beta1.WellKnownLabels.Union(RestrictedLabels)
 		return options
 	}
