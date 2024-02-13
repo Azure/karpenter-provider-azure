@@ -125,18 +125,6 @@ func (o *Options) ToContext(ctx context.Context) context.Context {
 	return ToContext(ctx, o)
 }
 
-// TODO(charliedmcb): need to remove this after updating tests
-func (o *Options) MergeSettings(ctx context.Context) {
-	if err := o.validateRequiredFields(); err != nil {
-		panic(fmt.Errorf("checking required fields, %w", err))
-	}
-
-	// if ClusterID is not set, generate it from cluster endpoint
-	if o.ClusterID == "" {
-		o.ClusterID = getAKSClusterID(o.GetAPIServerName())
-	}
-}
-
 func ToContext(ctx context.Context, opts *Options) context.Context {
 	return context.WithValue(ctx, optionsKey{}, opts)
 }
@@ -147,12 +135,6 @@ func FromContext(ctx context.Context) *Options {
 		return nil
 	}
 	return retval.(*Options)
-}
-
-func mergeField[T any](dest *T, src T, isDestSet bool) {
-	if !isDestSet {
-		*dest = src
-	}
 }
 
 // getAKSClusterID returns cluster ID based on the DNS prefix of the cluster.
