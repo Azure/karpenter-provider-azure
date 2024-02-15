@@ -36,7 +36,7 @@ Release Version: ${RELEASE_VERSION}
 Commit: $(git rev-parse HEAD)
 Helm Chart Version $(helmChartVersion "$RELEASE_VERSION")"
 
-  authenticatePrivateRepo
+  authenticatePrivateRepo "${SNAPSHOT_ACR}"
   buildImages "${SNAPSHOT_REPO_ACR}"
   updateHelmChart
   # not locking artifacts for snapshot releases
@@ -53,7 +53,7 @@ Release Version: ${RELEASE_VERSION}
 Commit: $(git rev-parse HEAD)
 Helm Chart Version $(helmChartVersion "$RELEASE_VERSION")"
 
-  authenticatePrivateRepo
+  authenticatePrivateRepo "${RELEASE_ACR}"
   buildImages "${RELEASE_REPO_ACR}"
   updateHelmChart "${RELEASE_REPO_MAR}"
   lockImage "${IMG_REPOSITORY}" "${IMG_TAG}"
@@ -65,7 +65,8 @@ Helm Chart Version $(helmChartVersion "$RELEASE_VERSION")"
 }
 
 authenticatePrivateRepo() {
-  az acr login -n "${SNAPSHOT_REPO_ACR}"
+  ACR=$1
+  az acr login -n "${ACR}"
 }
 
 buildImages() {
