@@ -38,7 +38,7 @@ Karpenter improves the efficiency and cost of running workloads on Kubernetes cl
 ## Node Auto Provisioning (NAP) vs. Self-hosted
 
 Karpenter provider for AKS can be used in two modes:
-* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) mode** (preview): Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users. Follow the instructions in Node Auto Provisioning documentation to use Karpenter in that mode.
+* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) mode** (preview): Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode.
 * **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment. The rest of this page describes how to use Karpenter in self-hosted mode.
 
 ## Known limitations
