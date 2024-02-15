@@ -21,7 +21,6 @@ AZURE_RESOURCE_GROUP_MC=$(az aks show --name "$AZURE_CLUSTER_NAME" --resource-gr
 KARPENTER_SERVICE_ACCOUNT_NAME=karpenter-sa
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=karpentermsi
 
-AZURE_CLIENT_ID=$(az aks show --name "$AZURE_CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP" | jq -r ".identityProfile.kubeletidentity.clientId")
 CLUSTER_ENDPOINT=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
 
 TOKEN_SECRET_NAME=$(kubectl get -n kube-system secrets --field-selector=type=bootstrap.kubernetes.io/token -o jsonpath='{.items[0].metadata.name}')
@@ -36,7 +35,7 @@ AZURE_SUBNET_ID=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_M
 
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv)
 
-export AZURE_CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME AZURE_CLIENT_ID \
+export AZURE_CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME \
     CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY AZURE_VNET_NAME AZURE_SUBNET_NAME AZURE_SUBNET_ID \
     KARPENTER_USER_ASSIGNED_CLIENT_ID
 
