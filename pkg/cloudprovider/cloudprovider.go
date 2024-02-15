@@ -181,22 +181,13 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeC
 }
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
-	// Not needed when GetInstanceTypes removes nodepool dependency
-	nodePoolName, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]
-	if !ok {
+	if nodeClaim.Spec.NodeClassRef == nil {
 		return "", nil
 	}
-	nodePool := &corev1beta1.NodePool{}
-	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePoolName}, nodePool); err != nil {
-		return "", client.IgnoreNotFound(err)
-	}
-	if nodePool.Spec.Template.Spec.NodeClassRef == nil {
-		return "", nil
-	}
-	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
+	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
 		}
 		return "", client.IgnoreNotFound(fmt.Errorf("resolving node class, %w", err))
 	}
