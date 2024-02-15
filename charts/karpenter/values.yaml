@@ -94,9 +94,9 @@ extraVolumes: []
 controller:
   image:
     # -- Repository path to the controller image.
-    repository: ksnap.azurecr.io/karpenter/snapshot/controller
+    repository: mcr.microsoft.com/aks/karpenter/controller
     # -- Tag of the controller image.
-    tag: 41f6dcabe655c7fec84f4467e95bbd75285ae082
+    tag: v0.32.1
     # -- SHA256 digest of the controller image.
     # digest:
 
