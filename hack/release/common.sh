@@ -60,7 +60,6 @@ Helm Chart Version $(helmChartVersion "$RELEASE_VERSION")"
   lockImage "${IMG_REPOSITORY}" "${IMG_TAG}-aks"
   cosignImage "${CONTROLLER_IMG}"
   cosignImage "${CONTROLLER_IMG_NAP}"
-  updateHelmChart
   publishHelmChart "karpenter" "${RELEASE_VERSION}" "${RELEASE_REPO_ACR}"
   publishHelmChart "karpenter-crd" "${RELEASE_VERSION}" "${RELEASE_REPO_ACR}"
 }
