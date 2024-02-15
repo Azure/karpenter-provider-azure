@@ -15,8 +15,9 @@ echo "Configuring karpenter-values.yaml for cluster $1 in resource group $2 ..."
 AZURE_CLUSTER_NAME=$1
 AZURE_RESOURCE_GROUP=$2
 
-AZURE_LOCATION=$(az aks show --name "$AZURE_CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP" | jq -r ".location")
-AZURE_RESOURCE_GROUP_MC=$(az aks show --name "$AZURE_CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP" | jq -r ".nodeResourceGroup")
+AKS_JSON=$(az aks show --name "$AZURE_CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP")
+AZURE_LOCATION=$(jq -r ".location" <<< "$AKS_JSON")
+AZURE_RESOURCE_GROUP_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
 
 KARPENTER_SERVICE_ACCOUNT_NAME=karpenter-sa
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=karpentermsi
@@ -29,9 +30,10 @@ TOKEN_SECRET=$(kubectl get -n kube-system secret "$TOKEN_SECRET_NAME" -o jsonpat
 BOOTSTRAP_TOKEN=$TOKEN_ID.$TOKEN_SECRET
 
 SSH_PUBLIC_KEY="$(cat ~/.ssh/id_rsa.pub) azureuser"
-AZURE_VNET_NAME=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" |  jq -r ".[0].name")
-AZURE_SUBNET_NAME=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" |  jq -r ".[0].subnets[0].name")
-AZURE_SUBNET_ID=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" | jq  -r ".[0].subnets[0].id")
+VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" | jq -r ".[0]")
+AZURE_VNET_NAME=$(jq -r ".name" <<< "$VNET_JSON")
+AZURE_SUBNET_NAME=$(jq -r ".subnets[0].name" <<< "$VNET_JSON")
+AZURE_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
 
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv)
 
