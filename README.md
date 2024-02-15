@@ -61,7 +61,7 @@ Install these tools before proceeding:
 
 ### Create a cluster
 
-Create a new AKS cluster with the required configuration, and ready to run Karpenter using worload identity.
+Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
 
 > Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group>` to automate the following steps. 
 
