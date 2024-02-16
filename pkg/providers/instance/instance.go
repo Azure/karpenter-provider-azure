@@ -333,7 +333,7 @@ func newVMObject(
 	}
 	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
-	setVMTagsProvisionerName(vm.Tags, nodeClaim)
+	setVMTagsNodepoolName(vm.Tags, nodeClaim)
 
 	return vm
 }
@@ -360,8 +360,8 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	}
 }
 
-// setVMTagsProvisionerName sets "karpenter.sh/provisioner-name" tag
-func setVMTagsProvisionerName(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
+// setVMTagsNodepoolName sets "karpenter.sh/nodepool-name" tag
+func setVMTagsNodepoolName(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
 	if val, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]; ok {
 		tags[NodePoolTagKey] = &val
 	}
