@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Source: github.com/aws/karpenter-core@v0.30.0/pkg/operator/operator.go
+// Source: https://github.com/kubernetes-sigs/karpenter/blob/v0.30.0/pkg/operator/operator.go
 
 package operator
 
