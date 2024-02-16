@@ -169,7 +169,7 @@ func (c *Controller) Builder(_ context.Context, m manager.Manager) corecontrolle
 			),
 		)).WithOptions(controller.Options{MaxConcurrentReconciles: 10}),
 	// TODO: Can add .Watches(&v1beta1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
-	// TODO: similar to https://github.com/aws/karpenter-core/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
+	// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
 	// TODO: if/when we need to monitor provisoner changes and flow updates on the NodePool down to the underlying VMs.
 	)
 }
