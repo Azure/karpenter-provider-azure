@@ -124,7 +124,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skuClientSingleton,
 	)
 	instanceProvider := instance.NewProvider(
-		ctx,
 		azClient,
 		instanceTypesProvider,
 		launchTemplateProvider,

@@ -100,7 +100,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.NodeResourceGroup,
 	)
 	instanceProvider := instance.NewProvider(
-		ctx,
 		azClient,
 		instanceTypeProvider,
 		launchTemplateProvider,
