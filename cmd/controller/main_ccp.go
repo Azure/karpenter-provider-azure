@@ -31,7 +31,7 @@ import (
 
 	// Note the absence of corewebhooks: these pull in knative webhook-related packages and informers in init()
 	// We don't give cluster-level roles when running in AKS managed mode, so their informers will produce errors and halt all other operations
-	// corewebhooks "github.com/aws/karpenter-core/pkg/webhooks"
+	// corewebhooks "sigs.k8s.io/karpenter/pkg/webhooks"
 
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 )
