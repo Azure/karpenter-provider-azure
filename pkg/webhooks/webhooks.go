@@ -59,5 +59,4 @@ func NewCRDValidationWebhook(ctx context.Context, _ configmap.Watcher) *controll
 
 var Resources = map[schema.GroupVersionKind]resourcesemantics.GenericCRD{
 	v1alpha2.SchemeGroupVersion.WithKind("AKSNodeClass"): &v1alpha2.AKSNodeClass{},
-	// corev1alpha5.SchemeGroupVersion.WithKind("Provisioner"): &v1alpha5.Provisioner{},
 }
