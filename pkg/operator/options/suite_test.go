@@ -114,41 +114,41 @@ var _ = Describe("Options", func() {
 	})
 
 	Context("Validation", func() {
-		It("should fail validation with panic when clusterName not included", func() {
+		It("should fail validation when clusterName not included", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
-			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("missing field, cluster-name")))
 		})
-		It("should fail validation with panic when clusterEndpoint not included", func() {
+		It("should fail validation when clusterEndpoint not included", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
-			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("missing field, cluster-endpoint")))
 		})
-		It("should fail validation with panic when kubeletClientTLSBootstrapToken not included", func() {
+		It("should fail validation when kubeletClientTLSBootstrapToken not included", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
-			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("missing field, kubelet-bootstrap-token")))
 		})
-		It("should fail validation with panic when SSHPublicKey not included", func() {
+		It("should fail validation when SSHPublicKey not included", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 			)
-			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("missing field, ssh-public-key")))
 		})
 		It("should fail when clusterEndpoint is invalid (not absolute)", func() {
 			err := opts.Parse(
@@ -158,7 +158,7 @@ var _ = Describe("Options", func() {
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
-			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("not a valid clusterEndpoint URL")))
 		})
 		It("should fail when vmMemoryOverheadPercent is negative", func() {
 			err := opts.Parse(
@@ -169,7 +169,7 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vm-memory-overhead-percent", "-0.01",
 			)
-			Expect(err).To(HaveOccurred())
+			Expect(err).To(MatchError(ContainSubstring("vm-memory-overhead-percent cannot be negative")))
 		})
 	})
 })
