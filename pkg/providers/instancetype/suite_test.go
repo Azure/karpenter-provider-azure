@@ -904,6 +904,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Entry("ARM instance type with AzureLinux image family",
 				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmCommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("Gen 1 Fips Compliant instance type with AKSUbuntu2004", "Standard_D2_v3", v1alpha2.Ubuntu2004ImageFamily, imagefamily.Ubuntu2004Gen1FipsCommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
+			Entry("Gen 2 Fips Compliant instance type with AKSUbuntu2004", "Standard_D2_v5", v1alpha2.Ubuntu2004ImageFamily, imagefamily.Ubuntu2004Gen2FipsCommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
 		)
 	})
 	Context("Instance Types", func() {

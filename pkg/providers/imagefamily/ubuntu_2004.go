@@ -30,6 +30,7 @@ import (
 
 const (
 	Ubuntu2004Gen1FipsCommunityImage = "2004fipscontainerd"
+	Ubuntu2004Gen2FipsCommunityImage = "2004gen2fipscontainerd"
 )
 
 type Ubuntu2004 struct {
@@ -42,6 +43,14 @@ func (u Ubuntu2004) Name() string {
 
 func (u Ubuntu2004) DefaultImages() []DefaultImageOutput {
 	return []DefaultImageOutput{
+		{
+			CommunityImage:   Ubuntu2004Gen2FipsCommunityImage,
+			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
+			),
+		},
 		{
 			CommunityImage:   Ubuntu2004Gen1FipsCommunityImage,
 			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
