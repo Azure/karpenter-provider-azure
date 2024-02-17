@@ -19,9 +19,13 @@ package utilization_test
 import (
 	"testing"
 
+	"github.com/samber/lo"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -48,9 +52,12 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Utilization", func() {
 	azLinuxNodeClass := env.AZLinuxNodeClass()
-	ubuntuNodeClass := env.DefaultAKSNodeClass()
+	Ubuntu2204NodeClass := env.DefaultAKSNodeClass()
 	azLinuxNodeClassArm := env.AZLinuxNodeClass()
-	ubuntuNodeClassArm := env.DefaultAKSNodeClass()
+	Ubuntu2204NodeClassArm := env.DefaultAKSNodeClass()
+
+	ubuntu2004NodeClass := env.DefaultAKSNodeClass()
+	ubuntu2004NodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2004ImageFamily)
 
 	DescribeTable("should provision one pod per node",
 		func(nodeClass *v1alpha2.AKSNodeClass, nodePool *v1beta1.NodePool) {
@@ -75,11 +82,19 @@ var _ = Describe("Utilization", func() {
 			env.ExpectCreated(nodePool, nodeClass, deployment)
 			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas)) // One pod per node enforced by instance size
+			// Get the node and validate the image family
+			nodes, err := env.KubeClient.CoreV1().Nodes().List(env.Context, metav1.ListOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			for _, node := range nodes.Items {
+				Expect(node.Labels[v1alpha2.LabelImageFamily]).To(Equal(nodeClass.Spec.ImageFamily))
+			}
 		},
 
 		Entry("should provision one pod per node (AzureLinux, amd64)", azLinuxNodeClass, env.DefaultNodePool(azLinuxNodeClass)),
 		Entry("should provision one pod per node (AzureLinux, arm64)", azLinuxNodeClassArm, env.ArmNodepool(azLinuxNodeClassArm)),
-		Entry("should provision one pod per node (Ubuntu, amd64)", ubuntuNodeClass, env.DefaultNodePool(ubuntuNodeClass)),
-		Entry("should provision one pod per node (Ubuntu, arm64)", ubuntuNodeClassArm, env.ArmNodepool(ubuntuNodeClassArm)),
+		Entry("should provision one pod per node (Ubuntu2204, amd64)", Ubuntu2204NodeClass, env.DefaultNodePool(Ubuntu2204NodeClass)),
+		Entry("should provision one pod per node (Ubuntu2204, arm64)", Ubuntu2204NodeClassArm, env.ArmNodepool(Ubuntu2204NodeClassArm)),
+		Entry("should provision one pod per node (Ubuntu2004, amd64)", ubuntu2004NodeClass, env.DefaultNodePool(ubuntu2004NodeClass)),
 	)
 })

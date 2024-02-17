@@ -77,6 +77,8 @@ func New(_ client.Client, imageProvider *Provider) *Resolver {
 func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
+	staticParameters.Labels[v1alpha2.LabelImageFamily] = imageFamily.Name()
+
 	imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()

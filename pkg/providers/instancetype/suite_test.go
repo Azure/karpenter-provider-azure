@@ -866,7 +866,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("ImageProvider + Image Family", func() {
 		DescribeTable("should select the right image for a given instance type",
-			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
+			func(instanceType, imageFamily, expectedImageDefinition, expectedGalleryURL string) {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,

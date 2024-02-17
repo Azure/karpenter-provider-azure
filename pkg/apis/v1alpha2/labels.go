@@ -51,6 +51,8 @@ func init() {
 		LabelSKUGPUCount,
 
 		AKSLabelCluster,
+
+		LabelImageFamily,
 	)
 }
 
@@ -124,6 +126,8 @@ var (
 )
 
 const (
+	LabelImageFamily = Group + "/image-family"
+
 	Ubuntu2204ImageFamily = "Ubuntu2204"
 	Ubuntu2004ImageFamily = "Ubuntu2004"
 	AzureLinuxImageFamily = "AzureLinux"
