@@ -271,11 +271,8 @@ func newVMObject(
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
 	// Build the image reference from template
-	imageReference := armcompute.ImageReference{}
-	if v1alpha2.IsComputeGalleryImageID(launchTemplate.ImageID) {
-		imageReference.ID = &launchTemplate.ImageID
-	} else {
-		imageReference.CommunityGalleryImageID = &launchTemplate.ImageID
+	imageReference := armcompute.ImageReference{
+		CommunityGalleryImageID: &launchTemplate.ImageID,
 	}
 	vm := armcompute.VirtualMachine{
 		Location: to.Ptr(location),
