@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
+	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
 	nodeutils "sigs.k8s.io/karpenter/pkg/utils/node"
 )
@@ -64,7 +64,7 @@ func (c *NodeController) Reconcile(ctx context.Context, req reconcile.Request) (
 
 func (c *NodeController) GetInfo(ctx context.Context, n *v1.Node) string {
 	pods, _ := nodeutils.GetNodePods(ctx, c.kubeClient, n)
-	return fmt.Sprintf("ready=%s schedulable=%t initialized=%s pods=%d taints=%v", nodeutils.GetCondition(n, v1.NodeReady).Status, !n.Spec.Unschedulable, n.Labels[v1alpha5.LabelNodeInitialized], len(pods), n.Spec.Taints)
+	return fmt.Sprintf("ready=%s schedulable=%t initialized=%s pods=%d taints=%v", nodeutils.GetCondition(n, v1.NodeReady).Status, !n.Spec.Unschedulable, n.Labels[v1beta1.NodeInitializedLabelKey], len(pods), n.Spec.Taints)
 }
 
 func (c *NodeController) Builder(ctx context.Context, m manager.Manager) corecontroller.Builder {
@@ -80,7 +80,7 @@ func (c *NodeController) Builder(ctx context.Context, m manager.Manager) corecon
 				},
 			},
 			predicate.NewPredicateFuncs(func(o client.Object) bool {
-				return o.GetLabels()[v1alpha5.ProvisionerNameLabelKey] != ""
+				return o.GetLabels()[v1beta1.NodePoolLabelKey] != ""
 			}),
 		)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 10}))

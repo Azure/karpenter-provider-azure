@@ -36,10 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	"sigs.k8s.io/karpenter/pkg/apis"
-	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/operator/injection"
 	"sigs.k8s.io/karpenter/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/utils/pod"
 )
@@ -53,12 +50,10 @@ var (
 		&v1.PersistentVolumeClaim{},
 		&v1.PersistentVolume{},
 		&storagev1.StorageClass{},
-		&v1alpha5.Provisioner{},
 		&corev1beta1.NodePool{},
 		&v1.LimitRange{},
 		&schedulingv1.PriorityClass{},
 		&v1.Node{},
-		&v1alpha5.Machine{},
 		&corev1beta1.NodeClaim{},
 	}
 )
@@ -66,7 +61,6 @@ var (
 // nolint:gocyclo
 func (env *Environment) BeforeEach() {
 	debug.BeforeEach(env.Context, env.Config, env.Client)
-	env.Context = injection.WithSettingsOrDie(env.Context, env.KubeClient, apis.Settings...)
 
 	// Expect this cluster to be clean for test runs to execute successfully
 	env.ExpectCleanCluster()
@@ -97,7 +91,7 @@ func (env *Environment) ExpectCleanCluster() {
 				fmt.Sprintf("expected to have no provisionable pods, found %s/%s", pods.Items[i].Namespace, pods.Items[i].Name))
 		}
 	}).WithPolling(10 * time.Second).WithTimeout(5 * time.Minute).Should(Succeed())
-	for _, obj := range []client.Object{&v1alpha5.Provisioner{}, &corev1beta1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
+	for _, obj := range []client.Object{&corev1beta1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
 		metaList := &metav1.PartialObjectMetadataList{}
 		gvk := lo.Must(apiutil.GVKForObject(obj, env.Client.Scheme()))
 		metaList.SetGroupVersionKind(gvk)

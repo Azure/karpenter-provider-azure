@@ -74,7 +74,7 @@ func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Env
 }
 
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
-	testSettings := Settings()
+	testOptions := Options()
 
 	// API
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
@@ -83,7 +83,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	pricingAPI := &fake.PricingAPI{}
 	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
-	coummunityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
+	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 
 	// Cache
@@ -94,7 +94,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
-	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, coummunityImageVersionsAPI, region)
+	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region)
 	imageFamilyResolver := imagefamily.New(env.Client, imageFamilyProvider)
 	instanceTypesProvider := instancetype.NewProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
@@ -102,7 +102,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		imageFamilyResolver,
 		imageFamilyProvider,
 		ptr.String("ca-bundle"),
-		testSettings.ClusterEndpoint,
+		testOptions.ClusterEndpoint,
 		"test-tenant",
 		"test-subscription",
 		"test-userAssignedIdentity",
@@ -120,7 +120,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
 		loadBalancersAPI,
-		coummunityImageVersionsAPI,
+		communityImageVersionsAPI,
 		skuClientSingleton,
 	)
 	instanceProvider := instance.NewProvider(

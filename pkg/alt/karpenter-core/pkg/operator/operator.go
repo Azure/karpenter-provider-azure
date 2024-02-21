@@ -30,9 +30,6 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/samber/lo"
 
-	"sigs.k8s.io/karpenter/pkg/apis"
-
-	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
 	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/events"
 
@@ -117,38 +114,15 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 	overlayConfig.UserAgent = appName
 
 	// Client
-	ccPlaneKubernetesInterface := kubernetes.NewForConfigOrDie(ccPlaneConfig)
 	overlayKubernetesInterface := kubernetes.NewForConfigOrDie(overlayConfig)
 	//configMapWatcher := informer.NewInformedWatcher(ccPlaneKubernetesInterface, system.Namespace())
 	//lo.Must0(configMapWatcher.Start(ccPlaneCtx.Done()))
 
-	// Inject settings from the ConfigMap(s) into the context
-	ccPlaneCtx = injection.WithSettingsOrDie(ccPlaneCtx, ccPlaneKubernetesInterface, apis.Settings...)
-	overlayCtx = injection.WithSettingsOrDie(overlayCtx, ccPlaneKubernetesInterface, apis.Settings...) // Note: still using ccPlaneKubernetesInterface
-
-	// Temporarily merge settings into options until configmap is removed
-	// Note: injectables are pointer to those already in context
-	for _, o := range options.Injectables {
-		o.MergeSettings(ccPlaneCtx)
-		o.MergeSettings(overlayCtx)
-	}
-
 	// Logging
-	logger := coreoperatorlogging.NewLogger(ccPlaneCtx, component, ccPlaneKubernetesInterface)
+	logger := coreoperatorlogging.NewLogger(ccPlaneCtx, component)
 	ccPlaneCtx = knativelogging.WithLogger(ccPlaneCtx, logger)
 	overlayCtx = knativelogging.WithLogger(overlayCtx, logger)
 	coreoperatorlogging.ConfigureGlobalLoggers(ccPlaneCtx)
-
-	// Inject settings from the ConfigMap(s) into the context
-	ccPlaneCtx = injection.WithSettingsOrDie(ccPlaneCtx, ccPlaneKubernetesInterface, apis.Settings...)
-	overlayCtx = injection.WithSettingsOrDie(overlayCtx, ccPlaneKubernetesInterface, apis.Settings...)
-
-	// Temporarily merge settings into options until configmap is removed
-	// Note: injectables are pointer to those already in context
-	for _, o := range options.Injectables {
-		o.MergeSettings(ccPlaneCtx)
-		o.MergeSettings(overlayCtx)
-	}
 
 	// Manager
 	mgrOpts := controllerruntime.Options{
@@ -164,7 +138,6 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 		BaseContext: func() context.Context {
 			ctx := context.Background()
 			ctx = knativelogging.WithLogger(ctx, logger)
-			ctx = injection.WithSettingsOrDie(ctx, ccPlaneKubernetesInterface, apis.Settings...)
 			// ctx = injection.WithConfig(ctx, overlayConfig)
 			ctx = injection.WithOptionsOrDie(ctx, options.Injectables...)
 			return ctx
@@ -212,9 +185,6 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 		})
 		return err
 	}(), "failed to setup nodeclaim provider id indexer, all attempts used")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &v1alpha5.Machine{}, "status.providerID", func(o client.Object) []string {
-		return []string{o.(*v1alpha5.Machine).Status.ProviderID}
-	}), "failed to setup machine provider id indexer")
 
 	lo.Must0(mgr.AddReadyzCheck("manager", func(req *http.Request) error {
 		return lo.Ternary(mgr.GetCache().WaitForCacheSync(req.Context()), nil, fmt.Errorf("failed to sync caches"))

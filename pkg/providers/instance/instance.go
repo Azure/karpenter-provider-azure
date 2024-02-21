@@ -44,7 +44,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
 	//nolint SA1019 - deprecated package
@@ -352,7 +351,7 @@ func setVMPropertiesStorageProfile(vmProperties *armcompute.VirtualMachineProper
 
 // setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
 func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string) {
-	if capacityType == v1alpha5.CapacityTypeSpot {
+	if capacityType == corev1beta1.CapacityTypeSpot {
 		vmProperties.EvictionPolicy = to.Ptr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
 			MaxPrice: to.Ptr(float64(-1)),
