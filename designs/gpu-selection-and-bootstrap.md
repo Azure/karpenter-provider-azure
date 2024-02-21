@@ -21,19 +21,19 @@ Karpenter should populate the following fields in the bootstrapping contract for
 
 ### 2. User-Level Control
 
-The user, through the requirements API in the provisioner, should be able to limit or exclude GPU instance types using the following dimensions:
+The user, through the requirements API in the nodepool, should be able to limit or exclude GPU instance types using the following dimensions:
 - **2a.** vCPU
 - **2b.** GPUCount
 
-### 3. Provisioner Limits and Workload
+### 3. NodePool Limits and Workload
 
-Provisioner limits should respect GPU resource types. Workloads should be able to request GPUs via the `nvidia.com/gpu` resource requests.
+NodePool limits should respect GPU resource types. Workloads should be able to request GPUs via the `nvidia.com/gpu` resource requests.
 
-**Provisioner Example:**
+**NodePool Example:**
 
 ```yaml
-apiVersion: karpenter.sh/v1alpha5
-kind: Provisioner
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
 metadata:
   name: default
 spec:
@@ -103,7 +103,7 @@ Note the device plugin is also responsible for the allocation of that resource a
 
 The Requirements API needs to provide an interface for selecting GPU SKUs, sizes, and preferences.
 
-## Karpenter Azure Provisioner: Available Labels
+## Karpenter Azure NodePool: Available Labels
 
 Here are some relevant labels:
 
@@ -115,7 +115,7 @@ Here are some relevant labels:
 
 **Note:** GPU SKUs usually support only a single hypervisor generation. Explicit image selection is moot in most cases, though there are some exceptions.
 
-## Karpenter AWS Provisioner: Existing GPU Labels
+## Karpenter AWS NodePool: Existing GPU Labels
 
 | Label                                         | Example Value | Description                                         |
 |-----------------------------------------------|---------------|-----------------------------------------------------|

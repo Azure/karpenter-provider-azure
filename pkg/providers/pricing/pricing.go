@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
-	"github.com/aws/karpenter-core/pkg/utils/pretty"
 	"github.com/samber/lo"
 	"knative.dev/pkg/logging"
+	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
 // pricingUpdatePeriod is how often we try to update our pricing information after the initial update on startup
