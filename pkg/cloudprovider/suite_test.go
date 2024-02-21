@@ -183,6 +183,11 @@ var _ = Describe("CloudProvider", func() {
 						v1.LabelInstanceTypeStable:   instanceType,
 					},
 				},
+				Spec: corev1beta1.NodeClaimSpec{
+					NodeClassRef: &corev1beta1.NodeClassReference{
+						Name: nodeClass.Name,
+					},
+				},
 			})
 		})
 		It("should not fail if nodeClass does not exist", func() {
