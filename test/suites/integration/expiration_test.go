@@ -28,9 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
-	coretest "github.com/aws/karpenter-core/pkg/test"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 var _ = Describe("Expiration", func() {

@@ -18,7 +18,6 @@ require (
 	github.com/Azure/skewer v0.0.19
 	github.com/Pallinder/go-randomdata v1.2.0
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
-	github.com/aws/karpenter-core v0.32.2-0.20231122223643-d0156e68fd30
 	github.com/go-logr/logr v1.4.1
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-playground/validator/v10 v10.17.0
@@ -43,6 +42,7 @@ require (
 	knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd
 	sigs.k8s.io/cloud-provider-azure v1.28.2
 	sigs.k8s.io/controller-runtime v0.16.3
+	sigs.k8s.io/karpenter v0.33.0
 )
 
 require (
@@ -127,7 +127,7 @@ require (
 	golang.org/x/sys v0.16.0 // indirect
 	golang.org/x/term v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	golang.org/x/time v0.4.0 // indirect
+	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.16.1 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/api v0.146.0 // indirect

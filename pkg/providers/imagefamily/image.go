@@ -25,12 +25,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/utils/pretty"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
 	"knative.dev/pkg/logging"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
 type Provider struct {

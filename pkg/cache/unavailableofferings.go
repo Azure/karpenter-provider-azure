@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"github.com/patrickmn/go-cache"
 	"knative.dev/pkg/logging"
+	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 )
 
 var (

@@ -54,7 +54,7 @@ We have three types of testing:
 **Testing framework**: [Go standard tests](https://pkg.go.dev/testing) 
 
 ### Acceptance Tests
-**When to use**: Acceptance tests are coarse grained tests that integrate with the upstream karpenter-core library and only fake the API calls to Azure clients. These are behavior-driven and should start from pending pod pressure whenever possible.
+**When to use**: Acceptance tests are coarse grained tests that integrate with the upstream karpenter library and only fake the API calls to Azure clients. These are behavior-driven and should start from pending pod pressure whenever possible.
 
 **File Locations**: Under `pkg/` next to the related components.   
 

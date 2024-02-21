@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Unmodified copy of ignoreDebugEventsSink from
-// https://github.com/aws/karpenter-core/blob/v0.30.0/pkg/operator/logger.go
+// https://github.com/kubernetes-sigs/karpenter/blob/v0.30.0/pkg/operator/logger.go
 
 package operator
 
