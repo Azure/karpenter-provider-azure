@@ -95,8 +95,8 @@ func TestAzure(t *testing.T) {
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
-	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal)
 
 	RunSpecs(t, "Provider/Azure")
 }
@@ -980,7 +980,7 @@ var _ = Describe("InstanceType Provider", func() {
 			clusterNodes := cluster.Nodes()
 			node := clusterNodes[0]
 			if node.Name() == pod.Spec.NodeName {
-				nodeLabels := node.GetLabels()
+				nodeLabels := node.Labels()
 				Expect(nodeLabels).To(HaveKeyWithValue("karpenter.k8s.azure/sku-gpu-count", "0"))
 			}
 		})
@@ -1022,7 +1022,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(node.Node.Status.Allocatable).To(HaveKeyWithValue(v1.ResourceName("nvidia.com/gpu"), resource.MustParse("1")))
 
 			if node.Name() == pod.Spec.NodeName {
-				nodeLabels := node.GetLabels()
+				nodeLabels := node.Labels()
 
 				Expect(nodeLabels).To(HaveKeyWithValue("karpenter.k8s.azure/sku-gpu-name", "A100"))
 				Expect(nodeLabels).To(HaveKeyWithValue("karpenter.k8s.azure/sku-gpu-manufacturer", v1alpha2.ManufacturerNvidia))
