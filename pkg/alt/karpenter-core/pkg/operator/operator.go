@@ -30,7 +30,6 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/samber/lo"
 
-	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
 	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/events"
 
@@ -186,9 +185,6 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 		})
 		return err
 	}(), "failed to setup nodeclaim provider id indexer, all attempts used")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &v1alpha5.Machine{}, "status.providerID", func(o client.Object) []string {
-		return []string{o.(*v1alpha5.Machine).Status.ProviderID}
-	}), "failed to setup machine provider id indexer")
 
 	lo.Must0(mgr.AddReadyzCheck("manager", func(req *http.Request) error {
 		return lo.Ternary(mgr.GetCache().WaitForCacheSync(req.Context()), nil, fmt.Errorf("failed to sync caches"))

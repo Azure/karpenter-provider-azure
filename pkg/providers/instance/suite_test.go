@@ -35,7 +35,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -134,8 +133,8 @@ var _ = Describe("InstanceProvider", func() {
 		func(azEnv *test.Environment, cp *cloudprovider.CloudProvider) {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 			for _, zone := range azEnv.Zones() {
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeSpot)
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeOnDemand)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeOnDemand)
 			}
 			instanceTypes, err := cp.GetInstanceTypes(ctx, nodePool)
 			Expect(err).ToNot(HaveOccurred())
