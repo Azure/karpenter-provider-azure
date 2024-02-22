@@ -21,8 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	corecontroller "github.com/aws/karpenter-core/pkg/operator/controller"
 	"github.com/samber/lo"
 	"go.uber.org/zap/zapcore"
 	"knative.dev/pkg/logging"
@@ -33,6 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -169,7 +169,7 @@ func (c *Controller) Builder(_ context.Context, m manager.Manager) corecontrolle
 			),
 		)).WithOptions(controller.Options{MaxConcurrentReconciles: 10}),
 	// TODO: Can add .Watches(&v1beta1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
-	// TODO: similar to https://github.com/aws/karpenter-core/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
+	// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
 	// TODO: if/when we need to monitor provisoner changes and flow updates on the NodePool down to the underlying VMs.
 	)
 }

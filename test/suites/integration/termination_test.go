@@ -19,7 +19,7 @@ package integration_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 
-	"github.com/aws/karpenter-core/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 var _ = Describe("Termination", func() {
