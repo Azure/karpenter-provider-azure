@@ -33,8 +33,6 @@ manifests:
             # time which usually results in fewer but larger nodes.
             batchMaxDuration: 10s # 60s is a good value for large runs (500+ nodes)
             env:
-              - name: FEATURE_GATES
-                value: Drift=true
               - name: CLUSTER_NAME
                 value: "Please run make az-all"
               - name: CLUSTER_ENDPOINT
