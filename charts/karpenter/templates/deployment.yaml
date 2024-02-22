@@ -100,8 +100,6 @@ spec:
                   containerName: controller
                   divisor: "0"
                   resource: limits.memory
-            - name: FEATURE_GATES
-              value: "Drift={{ or .Values.settings.featureGates.driftEnabled .Values.settings.featureGates.drift }}"
           {{- with .Values.settings.batchMaxDuration }}
             - name: BATCH_MAX_DURATION
               value: "{{ . }}"
