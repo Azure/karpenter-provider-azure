@@ -29,7 +29,7 @@ The goal of this document is to describe the relevant configuration data flows a
 
 Some of the mechanisms described below are specific to AKS. However, the overall configuration flow and wiring should be flexible enough to accommodate other flavors of Kubernetes on Azure in the future.
 
-> Note: The document uses "Karpenter" for brevity, though in some places "Azure/AKS Cloud Provider for Karpenter" might be more accurate. The distinction is not critical, especially since karpenter-core is used as library, and the build of Azure/AKS Cloud Provider for Karpenter represents Azure/AKS version of Karpenter.
+> Note: The document uses "Karpenter" for brevity, though in some places "Azure/AKS Cloud Provider for Karpenter" might be more accurate. The distinction is not critical, especially since sigs.k8s.io/karpenter is used as library, and the build of Azure/AKS Cloud Provider for Karpenter represents Azure/AKS version of Karpenter.
 
 ## Node bootstrapping
 
