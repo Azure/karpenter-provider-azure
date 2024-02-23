@@ -17,10 +17,9 @@ limitations under the License.
 package v1alpha2
 
 import (
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/scheduling"
 	"k8s.io/apimachinery/pkg/util/sets"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 func init() {
@@ -119,8 +118,6 @@ var (
 		'c': LabelSKUConfidential,
 		'i': LabelSKUIsolatedSize,
 	}
-
-	NodeClaimLinkedAnnotationKey = v1alpha5.MachineLinkedAnnotationKey // still using the one from v1alpha5
 )
 
 const (

@@ -30,8 +30,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
 	"github.com/samber/lo"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 var imageProvider *imagefamily.Provider

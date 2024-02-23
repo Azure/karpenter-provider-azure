@@ -19,7 +19,7 @@ package imagefamily
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/aws/karpenter-core/pkg/scheduling"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 const (
