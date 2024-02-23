@@ -42,7 +42,7 @@ require (
 	knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd
 	sigs.k8s.io/cloud-provider-azure v1.28.2
 	sigs.k8s.io/controller-runtime v0.16.3
-	sigs.k8s.io/karpenter v0.33.0
+	sigs.k8s.io/karpenter v0.33.2
 )
 
 require (

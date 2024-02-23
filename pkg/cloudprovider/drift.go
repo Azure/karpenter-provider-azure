@@ -76,11 +76,6 @@ func (c *CloudProvider) isImageVersionDrifted(
 	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
-	if !nodeClass.Spec.IsEmptyImageID() {
-		// Note: ImageID takes priority ATM
-		return "", nil
-	}
-
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?

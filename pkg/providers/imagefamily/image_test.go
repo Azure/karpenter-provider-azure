@@ -17,24 +17,14 @@ limitations under the License.
 package imagefamily_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	"github.com/samber/lo"
-	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
-
-var imageProvider *imagefamily.Provider
 
 func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -46,99 +36,6 @@ const (
 	olderImageVersion  = "1.1686127203.20214"
 	latestImageVersion = "1.1686127203.20217"
 )
-
-var _ = BeforeSuite(func() {
-	location := fake.Region
-
-	defaultImageVersions := []*armcompute.CommunityGalleryImageVersion{
-		{
-			Name:     lo.ToPtr("1.1686127203.20215"),
-			Location: &location,
-			Type:     lo.ToPtr("Microsoft.Compute/galleries/images/versions"),
-			Properties: &armcompute.CommunityGalleryImageVersionProperties{
-				PublishedDate: lo.ToPtr(time.Now().Add(time.Minute * -10)),
-			},
-		},
-		{
-			Name:     lo.ToPtr("1.1686127203.20213"),
-			Location: &location,
-			Type:     lo.ToPtr("Microsoft.Compute/galleries/images/versions"),
-			Properties: &armcompute.CommunityGalleryImageVersionProperties{
-				PublishedDate: lo.ToPtr(time.Now().Add(time.Minute * -20)),
-			},
-		},
-		{
-			Name:     lo.ToPtr(latestImageVersion),
-			Location: &location,
-			Type:     lo.ToPtr("Microsoft.Compute/galleries/images/versions"),
-			Properties: &armcompute.CommunityGalleryImageVersionProperties{
-				PublishedDate: lo.ToPtr(time.Now().Add(time.Minute * -5)),
-			},
-		},
-		{
-			Name:     lo.ToPtr(olderImageVersion),
-			Location: &location,
-			Type:     lo.ToPtr("Microsoft.Compute/galleries/images/versions"),
-			Properties: &armcompute.CommunityGalleryImageVersionProperties{
-				PublishedDate: lo.ToPtr(time.Now().Add(time.Minute * -15)),
-			},
-		},
-		{
-			Name:     lo.ToPtr("1.1686127203.20216"),
-			Location: &location,
-			Type:     lo.ToPtr("Microsoft.Compute/galleries/images/versions"),
-			Properties: &armcompute.CommunityGalleryImageVersionProperties{
-				PublishedDate: lo.ToPtr(time.Now().Add(time.Minute * -7)),
-			},
-		},
-	}
-
-	versionsClient := &fake.CommunityGalleryImageVersionsAPI{}
-	versionsClient.ImageVersions.Append(defaultImageVersions...)
-	imageProvider = imagefamily.NewProvider(nil, nil, versionsClient, fake.Region)
-})
-
-func newTestNodeClass(imageID, imageVersion string) *v1alpha2.AKSNodeClass {
-	nodeClass := test.AKSNodeClass()
-
-	if imageID != "" {
-		nodeClass.Spec.ImageID = lo.ToPtr(imageID)
-	}
-	if imageVersion != "" {
-		nodeClass.Spec.ImageVersion = lo.ToPtr(imageVersion)
-	}
-	return nodeClass
-}
-
-var _ = Describe("Image ID Resolution", func() {
-	var (
-		nodeClassWithImageID           = newTestNodeClass(testImageID, "")
-		nodeClassWithImageIDAndVersion = newTestNodeClass(testImageID, olderImageVersion)
-		nodeClassWithImageVersion      = newTestNodeClass("", olderImageVersion)
-	)
-
-	DescribeTable("Resolution Of Image ID",
-		func(nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily interface{}, expectedImageID string) {
-			imageID, err := imageProvider.Get(context.Background(), nodeClass, instanceType, imagefamily.Ubuntu2204{})
-			Expect(imageID).To(Equal(expectedImageID))
-			Expect(err).To(BeNil())
-		},
-		Entry("Image ID is specified in the NodeClass", nodeClassWithImageID, &cloudprovider.InstanceType{}, imagefamily.Ubuntu2204{}, testImageID),
-		Entry("Image ID and ImageVersion are specified in the NodeClass", nodeClassWithImageIDAndVersion, &cloudprovider.InstanceType{}, imagefamily.Ubuntu2204{}, testImageID),
-		Entry("ImageVersion is specified in the NodeClass", nodeClassWithImageVersion, &cloudprovider.InstanceType{}, imagefamily.Ubuntu2204{}, fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion)),
-	)
-
-	DescribeTable("Resolution Of Image ID",
-		func(communityImageName, publicGalleryURL, versionName string, expectedImageID string) {
-			imageID, err := imageProvider.GetImageID(communityImageName, publicGalleryURL, versionName)
-			Expect(imageID).To(Equal(expectedImageID))
-			Expect(err).To(BeNil())
-		},
-		Entry("Image version is empty, should get latest", imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL, "", fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, latestImageVersion)),
-		Entry("Image version is specified, should use it", imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL, olderImageVersion, fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion)),
-	)
-
-})
 
 var _ = Describe("Image ID Parsing", func() {
 	DescribeTable("Parse Image ID",
