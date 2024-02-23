@@ -19,19 +19,12 @@ package imagefamily_test
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	
-	"github.com/samber/lo"
 )
-
-var imageProvider *imagefamily.Provider
 
 func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
