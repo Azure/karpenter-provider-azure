@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  REGISTRY_REPO: unlisted/aks/karpenter
+  REGISTRY_REPO: public/aks/karpenter
 
 jobs:
   prepare-variables:
