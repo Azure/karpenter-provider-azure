@@ -23,7 +23,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
-	"github.com/Azure/karpenter-provider-azure/pkg/webhooks"
 
 	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
@@ -62,6 +61,5 @@ func main() {
 			aksCloudProvider,
 			op.InstanceProvider,
 		)...).
-		WithWebhooks(ctx, webhooks.NewWebhooks()...).
 		Start(ctx)
 }
