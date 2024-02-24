@@ -1,0 +1,61 @@
+name: E2EMatrixNAP
+on:
+  workflow_call:
+    inputs:
+      git_ref:
+        type: string
+      location:
+        type: string
+        description: "the azure location to run the e2e test in"
+        default: "eastus"
+  #     k8s_version:
+  #       type: string
+  #       default: "1.27"
+    secrets:
+      E2E_CLIENT_ID:
+        required: true
+      E2E_TENANT_ID:
+        required: true
+      E2E_SUBSCRIPTION_ID:
+        required: true
+
+permissions:
+  contents: read
+        
+jobs:
+  initialize-generative-params:
+    runs-on: ubuntu-latest
+    outputs:
+      E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+        with:
+          egress-policy: audit
+
+      - id: generate-e2e-run-hash
+        run: |
+          E2E_HASH="$RANDOM$RANDOM"
+          echo "Using e2e hash \"$E2E_HASH\""
+          echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
+  e2e:
+    needs: [initialize-generative-params]
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [Nonbehavioral, Utilization, GPU, Drift, Consolidation]
+    permissions:
+      contents: read
+      id-token: write
+      statuses: write
+    uses: ./.github/workflows/e2e-nap.yaml
+    with:
+      git_ref: ${{ inputs.git_ref }}
+      suite: ${{ matrix.suite }}
+      hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
+      location: ${{ inputs.location }}
+  #     k8s_version: ${{ inputs.k8s_version }}
+    secrets:
+      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
+      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
+      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}

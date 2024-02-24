@@ -1,0 +1,128 @@
+name: E2E
+on:
+  workflow_call:
+    inputs:
+      git_ref:
+        type: string
+      suite:
+        type: string
+        required: true
+      hash:
+        type: string
+        required: true
+      location:
+        type: string
+        description: "the azure location to run the e2e test in"
+        default: "eastus"
+    #   k8s_version:
+    #     type: string
+    #     default: "1.27"
+    secrets:
+      E2E_CLIENT_ID:
+        required: true
+      E2E_TENANT_ID:
+        required: true
+      E2E_SUBSCRIPTION_ID:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  ACR_NAME:
+  RG_NAME:
+  CLUSTER_NAME:
+
+jobs:
+  run-suite:
+    name: suite-${{ inputs.suite }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # This is required for requesting the JWT
+      statuses: write # ./.github/actions/commit-status/*
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ inputs.git_ref }}
+      - if: always() && github.event_name == 'workflow_run'
+        uses: ./.github/actions/commit-status/start
+        with:
+          name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
+          git_ref: ${{ inputs.git_ref }}
+      - uses: ./.github/actions/install-deps
+      - name: az login
+        uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      - name: az set sub
+        shell: bash
+        run: az account set --subscription ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      - name: install skaffold
+        run: |
+          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/v2.3.1/skaffold-linux-amd64
+          install skaffold /usr/local/bin/
+      - name: generate rg name
+        run: |
+          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.hash }} | awk '{print tolower($0)}')
+          echo "Using resource group name \"$RG_NAME\""
+          echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
+      - name: add jitter on cluster creation
+        run: |
+          # Creating jitter so that we can stagger cluster creation to avoid throttling
+          sleep $(( RANDOM % 60 + 1 ))
+      - name: generate cluster name
+        run: |
+          CLUSTER_NAME=mc
+          echo "Using cluster name \"$CLUSTER_NAME\""
+          echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
+      - name: create aks cluster '${{ env.CLUSTER_NAME }}'
+        uses: ./.github/actions/e2e/create-nap-cluster
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          resource_group: ${{ env.RG_NAME }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          acr_name: ${{ env.ACR_NAME }}
+          git_ref: ${{ inputs.git_ref }}
+          location: ${{ inputs.location }}
+      - name: run the ${{ inputs.suite }} test suite
+        if: inputs.suite != 'Nonbehavioral'
+        run: |
+          CLUSTER_NAME=${{ env.CLUSTER_NAME }} TEST_SUITE="${{ inputs.suite }}" GIT_REF="$(git rev-parse HEAD)" make e2etests
+      - name: dump logs on failure
+        uses: ./.github/actions/e2e/dump-logs
+        if: failure() || cancelled()
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          resource_group: ${{ env.RG_NAME }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          git_ref: ${{ inputs.git_ref }}
+      - name: cleanup resources
+        uses: ./.github/actions/e2e/cleanup
+        if: always()
+        with:
+          client-id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          resource_group: ${{ env.RG_NAME }}
+          cluster_name: ${{ env.CLUSTER_NAME }}
+          acr_name: ${{ env.ACR_NAME }}
+          git_ref: ${{ inputs.git_ref }}
+      - if: always() && github.event_name == 'workflow_run'
+        uses: ./.github/actions/commit-status/end
+        with:
+          name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
+          git_ref: ${{ inputs.git_ref }}
