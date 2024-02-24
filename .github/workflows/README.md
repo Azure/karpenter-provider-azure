@@ -12,4 +12,7 @@
 2. Anytime you want to run the E2E test suite submit a review comment `/test`
 3. Each time a the given review comment is submited it will trigger the [E2EMatrixTrigger](https://github.com/Azure/karpenter-provider-azure/actions/workflows/e2e-matrix-trigger.yaml) workflow which will contain your test suite.
 
-    
+
+
+## E2E NAP
+We want to create a github action, that allows us to run the e2e-matrix-trigger with a specified set of cluster create params and install self hosted or not install self hosted karpenter
