@@ -25,12 +25,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/utils/pretty"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
 	"knative.dev/pkg/logging"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
 type Provider struct {
@@ -64,11 +64,6 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 
 // Get returns Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
 func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily ImageFamily) (string, error) {
-	if !nodeClass.Spec.IsEmptyImageID() {
-		logging.FromContext(ctx).Debugf("Using user-provided image %s", *nodeClass.Spec.ImageID)
-		return *nodeClass.Spec.ImageID, nil
-	}
-
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
 		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedLabels); err == nil {

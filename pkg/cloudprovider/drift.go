@@ -31,8 +31,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 const (
@@ -75,11 +75,6 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *core
 func (c *CloudProvider) isImageVersionDrifted(
 	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
-
-	if !nodeClass.Spec.IsEmptyImageID() {
-		// Note: ImageID takes priority ATM
-		return "", nil
-	}
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
