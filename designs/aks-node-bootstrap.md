@@ -110,7 +110,7 @@ Note that this represents part of the external configuration surface / API, and 
 A small set of values that are (currently) required for bootstrap are auto-detected or computed:
 * Kubernetes version is auto-detected from the cluster (though we will likely add a way to override it)
 * CA bundle is obtained from TLS connection to kube-apiserver
-* ClusterID is computed from the cluster endpoint FQDN (currently also customizable)
+* ClusterID is computed from the cluster endpoint FQDN
 
 ### Computed values
 
