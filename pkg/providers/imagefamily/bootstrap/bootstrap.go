@@ -17,8 +17,8 @@ limitations under the License.
 package bootstrap
 
 import (
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	core "k8s.io/api/core/v1"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 )
 
 // Options is the node bootstrapping parameters passed from Karpenter to the provisioning node

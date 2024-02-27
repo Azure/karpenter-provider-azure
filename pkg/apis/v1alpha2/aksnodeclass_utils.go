@@ -16,10 +16,6 @@ limitations under the License.
 
 package v1alpha2
 
-func (in *AKSNodeClassSpec) IsEmptyImageID() bool {
-	return in.ImageID == nil || *in.ImageID == ""
-}
-
 func (in *AKSNodeClassSpec) GetImageVersion() string {
 	if in.ImageVersion == nil {
 		return ""

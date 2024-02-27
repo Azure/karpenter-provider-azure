@@ -35,7 +35,6 @@ import (
 	// nolint SA1019 - deprecated package
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 
@@ -44,23 +43,17 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	nodeclaimutil "github.com/aws/karpenter-core/pkg/utils/nodeclaim"
 	"github.com/samber/lo"
 
-	coreapis "github.com/aws/karpenter-core/pkg/apis"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/events"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/events"
 
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
-	"github.com/aws/karpenter-core/pkg/scheduling"
-	"github.com/aws/karpenter-core/pkg/utils/functional"
-	"github.com/aws/karpenter-core/pkg/utils/resources"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
+	"sigs.k8s.io/karpenter/pkg/utils/functional"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
-
-func init() {
-	coreapis.Settings = append(coreapis.Settings, apis.Settings...)
-}
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
@@ -188,18 +181,13 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeC
 }
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
-	// Not needed when GetInstanceTypes removes nodepool dependency
-	nodePool, err := nodeclaimutil.Owner(ctx, c.kubeClient, nodeClaim)
-	if err != nil {
-		return "", client.IgnoreNotFound(fmt.Errorf("resolving owner, %w", err))
-	}
-	if nodePool.Spec.Template.Spec.NodeClassRef == nil {
+	if nodeClaim.Spec.NodeClassRef == nil {
 		return "", nil
 	}
-	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
+	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
+			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
 		}
 		return "", client.IgnoreNotFound(fmt.Errorf("resolving node class, %w", err))
 	}

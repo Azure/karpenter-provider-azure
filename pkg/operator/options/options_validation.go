@@ -27,7 +27,7 @@ import (
 func (o Options) Validate() error {
 	validate := validator.New()
 	return multierr.Combine(
-		//o.validateRequiredFields(),	// TODO: add back to Validate when karpenter-global-settings (and merge logic) are completely removed
+		o.validateRequiredFields(),
 		o.validateEndpoint(),
 		o.validateVMMemoryOverheadPercent(),
 		validate.Struct(o),

@@ -21,8 +21,8 @@ import (
 	"hash/fnv"
 	"strconv"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
