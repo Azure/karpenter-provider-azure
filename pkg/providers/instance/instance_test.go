@@ -77,7 +77,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 			expectedPriority:     corev1beta1.CapacityTypeOnDemand,
 		},
 	}
-	provider := NewProvider(context.TODO(), nil, nil, nil, nil, cache.NewUnavailableOfferings(),
+	provider := NewProvider(nil, nil, nil, nil, cache.NewUnavailableOfferings(),
 		"westus-2",
 		"MC_xxxxx_yyyy-region",
 		"/subscriptions/0000000-0000-0000-0000-0000000000/resourceGroups/fake-resource-group-name/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodesubnet",
