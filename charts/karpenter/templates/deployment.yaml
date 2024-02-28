@@ -30,7 +30,6 @@ spec:
         {{- with .Values.podAnnotations }}
           {{- toYaml . | nindent 8 }}
         {{- end }}
-        checksum/settings: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -100,26 +99,6 @@ spec:
                   containerName: controller
                   divisor: "0"
                   resource: limits.memory
-          {{- with .Values.settings.batchMaxDuration }}
-            - name: BATCH_MAX_DURATION
-              value: "{{ . }}"
-          {{- end }}
-          {{- with .Values.settings.batchIdleDuration }}
-            - name: BATCH_IDLE_DURATION
-              value: "{{ . }}"
-          {{- end }}
-          {{- with or .Values.settings.azure.clusterName .Values.settings.clusterName }}
-            - name: CLUSTER_NAME
-              value: "{{ . }}"
-          {{- end }}
-          {{- with or .Values.settings.azure.clusterEndpoint .Values.settings.clusterEndpoint }}
-            - name: CLUSTER_ENDPOINT
-              value: "{{ . }}"
-          {{- end }}
-          {{- with or .Values.settings.azure.vmMemoryOverheadPercent .Values.settings.vmMemoryOverheadPercent }}
-            - name: VM_MEMORY_OVERHEAD_PERCENT
-              value: "{{ . }}"
-          {{- end }}
           {{- with .Values.controller.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
