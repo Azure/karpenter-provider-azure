@@ -92,7 +92,6 @@ type Provider struct {
 }
 
 func NewProvider(
-	_ context.Context, // TODO: Why is this here?
 	azClient *AZClient,
 	instanceTypeProvider *instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
