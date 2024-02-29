@@ -12,6 +12,8 @@ There's two options here I see:
 2. We drop any tests for older version once they go out of support. 
 
 # Release Versioning [Undecided]
+What's the release schedule? How frequently do we cut new minor version releases?
+
 What qualifies a minor, and patch bump?
 
 # Design docs
