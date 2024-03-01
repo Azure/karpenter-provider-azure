@@ -243,7 +243,7 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *cor
 		return nil, fmt.Errorf("getting instance types, %w", err)
 	}
 
-	reqs := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...)
+	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
 		return reqs.Compatible(i.Requirements, v1alpha2.AllowUndefinedLabels) == nil &&
 			len(i.Offerings.Compatible(reqs).Available()) > 0 &&
