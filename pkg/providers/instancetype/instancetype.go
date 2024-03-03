@@ -135,7 +135,7 @@ func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSize
 
 func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architecture string,
 	offerings cloudprovider.Offerings, region string) scheduling.Requirements {
-		requirements := scheduling.NewRequirements(
+	requirements := scheduling.NewRequirements(
 		// Well Known Upstream
 		scheduling.NewRequirement(v1.LabelInstanceTypeStable, v1.NodeSelectorOpIn, sku.GetName()),
 		scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, getArchitecture(architecture)),
@@ -194,8 +194,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 
 	return requirements
 }
-
-
 
 func setRequirementsStoragePremiumCapable(requirements scheduling.Requirements, sku *skewer.SKU) {
 	if sku.IsPremiumIO() {
