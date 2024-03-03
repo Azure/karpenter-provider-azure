@@ -813,6 +813,60 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 		})
 
+		It("should support individual instance type labels", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			nodeSelector := map[string]string{
+				// Well known
+				v1.LabelTopologyRegion:           "test-region-1",
+				corev1beta1.NodePoolLabelKey:     nodePool.Name,
+				v1.LabelTopologyZone:             "test-zone-1a",
+				v1.LabelInstanceTypeStable:       "Standard_NC24ads_A100_v4",
+				v1.LabelOSStable:                 "linux",
+				v1.LabelArchStable:               "amd64",
+				corev1beta1.CapacityTypeLabelKey: "on-demand",
+				// Well Known to AKS
+				v1alpha2.LabelSKUName:                      "Standard_NC24ads_A100_v4",
+				v1alpha2.LabelSKUFamily:                    "N",
+				v1alpha2.LabelSKUVersion:                   "4",
+				v1alpha2.LabelSKUConfidential:              "false",
+				v1alpha2.LabelSKUStorageCacheSize:          "0",
+				v1alpha2.LabelSKUStorageTempMaxSize:        "0",
+				v1alpha2.LabelSKUStorageEphemeralOSMaxSize: "0",
+				v1alpha2.LabelSKUAcceleratedNetworking:     "true",
+				v1alpha2.LabelSKUEncryptionAtHostSupported: "true",
+				v1alpha2.LabelSKUStoragePremiumCapable:     "true",
+				v1alpha2.LabelSKUIsolatedSize:              "false",
+				v1alpha2.AKSLabelCluster:                   "test-cluster",
+				v1alpha2.LabelSKUGPUName:                   "A100",
+				v1alpha2.LabelSKUGPUManufacturer:           "NVIDIA",
+				v1alpha2.LabelSKUGPUCount:                  "4",
+				v1alpha2.LabelSKUCPU:                       "96",
+				v1alpha2.LabelSKUMemory:                    "384",
+				v1alpha2.LabelSKUAccelerator:               "A100",
+
+				// Deprecated Labels
+				v1.LabelFailureDomainBetaRegion:    "westus",
+				v1.LabelFailureDomainBetaZone:      "test-zone-1a",
+				"beta.kubernetes.io/arch":          "amd64",
+				"beta.kubernetes.io/os":            "linux",
+				v1.LabelInstanceType:               "Standard_NC24ads_A100_v4",
+				"topology.disk.csi.azure.com/zone": "test-zone-1a",
+				v1.LabelWindowsBuild:               "window",
+			}
+
+			// Ensure that we're exercising all well known labels
+			Expect(lo.Keys(nodeSelector)).To(ContainElements(append(corev1beta1.WellKnownLabels.UnsortedList(), lo.Keys(corev1beta1.NormalizedLabels)...)))
+
+			var pods []*v1.Pod
+			for key, value := range nodeSelector {
+				pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{key: value}}))
+			}
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
+			for _, pod := range pods {
+				ExpectScheduled(ctx, env.Client, pod)
+			}
+		})
 		It("should propagate all values to requirements from skewer", func() {
 			var gpuNode *corecloudprovider.InstanceType
 			var normalNode *corecloudprovider.InstanceType
