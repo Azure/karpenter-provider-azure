@@ -135,7 +135,7 @@ func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSize
 
 func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architecture string,
 	offerings cloudprovider.Offerings, region string) scheduling.Requirements {
-	requirements := scheduling.NewRequirements(
+		requirements := scheduling.NewRequirements(
 		// Well Known Upstream
 		scheduling.NewRequirement(v1.LabelInstanceTypeStable, v1.NodeSelectorOpIn, sku.GetName()),
 		scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, getArchitecture(architecture)),
@@ -183,12 +183,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	// size parts
 	requirements[v1alpha2.LabelSKUFamily].Insert(vmsize.Family)
 
-	// everything from additive features
-	for _, featureLabel := range v1alpha2.SkuFeatureToLabel {
-		requirements.Add(scheduling.NewRequirement(featureLabel, v1.NodeSelectorOpDoesNotExist))
-	}
-
-	setRequirementsAdditiveFeatures(requirements, vmsize)
 	setRequirementsStoragePremiumCapable(requirements, sku)
 	setRequirementsEncryptionAtHostSupported(requirements, sku)
 	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
@@ -201,13 +195,7 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	return requirements
 }
 
-func setRequirementsAdditiveFeatures(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	for _, feature := range vmsize.AdditiveFeatures {
-		if featureLabel, ok := v1alpha2.SkuFeatureToLabel[feature]; ok {
-			requirements[featureLabel].Insert("true")
-		}
-	}
-}
+
 
 func setRequirementsStoragePremiumCapable(requirements scheduling.Requirements, sku *skewer.SKU) {
 	if sku.IsPremiumIO() {
