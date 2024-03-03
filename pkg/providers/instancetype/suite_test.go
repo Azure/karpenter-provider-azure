@@ -835,14 +835,12 @@ var _ = Describe("InstanceType Provider", func() {
 				v1alpha2.LabelSKUAcceleratedNetworking:     "true",
 				v1alpha2.LabelSKUEncryptionAtHostSupported: "true",
 				v1alpha2.LabelSKUStoragePremiumCapable:     "true",
-				v1alpha2.AKSLabelCluster:                   "test-cluster",
 				v1alpha2.LabelSKUGPUName:                   "A100",
 				v1alpha2.LabelSKUGPUManufacturer:           "nvidia",
 				v1alpha2.LabelSKUGPUCount:                  "1",
 				v1alpha2.LabelSKUCPU:                       "24",
 				v1alpha2.LabelSKUMemory:                    "8192",
 				v1alpha2.LabelSKUAccelerator:               "A100",
-
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
 				v1.LabelFailureDomainBetaZone:      fmt.Sprintf("%s-1", fake.Region),
@@ -851,6 +849,8 @@ var _ = Describe("InstanceType Provider", func() {
 				v1.LabelInstanceType:               "Standard_NC24ads_A100_v4",
 				"topology.disk.csi.azure.com/zone": fmt.Sprintf("%s-1", fake.Region),
 				v1.LabelWindowsBuild:               "window",
+				// Cluster Label
+				v1alpha2.AKSLabelCluster: "test-cluster",
 			}
 
 			// Ensure that we're exercising all well known labels
