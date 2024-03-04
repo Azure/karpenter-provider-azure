@@ -19,6 +19,8 @@ package test
 import (
 	"context"
 
+	"github.com/samber/lo"
+
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -28,10 +30,16 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/patrickmn/go-cache"
+	corev1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
 
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
+
+func init() {
+	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+}
 
 var resourceGroup = "test-resourceGroup"
 
