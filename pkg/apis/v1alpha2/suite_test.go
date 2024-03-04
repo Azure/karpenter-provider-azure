@@ -29,7 +29,6 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
-	uenv "sigs.k8s.io/karpenter/pkg/utils/env"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -47,7 +46,6 @@ func TestAPIs(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	fmt.Println("MADE IT 1")
-	fmt.Printf("\"%s\"\n", uenv.WithDefaultString("K8S_VERSION", "1.29.x"))
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
 	fmt.Println("MADE IT 2")
 	azureEnv = test.NewEnvironment(ctx, env)
