@@ -35,7 +35,6 @@ var (
 )
 
 func (env *Environment) BeforeEach() {
-	persistedSettings = env.ExpectSettings()
 	env.Environment.BeforeEach()
 }
 
@@ -48,6 +47,4 @@ func (env *Environment) AfterEach() {
 	fmt.Println("##[group]    E2E SUITE: LOG DUMP")
 	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
-	// Ensure we reset settings after collecting the controller logs
-	env.ExpectSettingsReplaced(persistedSettings...)
 }

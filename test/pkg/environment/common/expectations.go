@@ -97,34 +97,6 @@ func (env *Environment) ExpectCreatedOrUpdated(objects ...client.Object) {
 	}
 }
 
-func (env *Environment) ExpectSettings() (res []v1.EnvVar) {
-	GinkgoHelper()
-
-	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
-	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
-	return lo.Map(d.Spec.Template.Spec.Containers[0].Env, func(v v1.EnvVar, _ int) v1.EnvVar {
-		return *v.DeepCopy()
-	})
-}
-
-func (env *Environment) ExpectSettingsReplaced(vars ...v1.EnvVar) {
-	GinkgoHelper()
-
-	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
-	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
-
-	stored := d.DeepCopy()
-	d.Spec.Template.Spec.Containers[0].Env = vars
-
-	if !equality.Semantic.DeepEqual(d, stored) {
-		By("replacing environment variables for karpenter deployment")
-		Expect(env.Client.Patch(env.Context, d, client.MergeFrom(stored))).To(Succeed())
-		env.EventuallyExpectKarpenterRestarted()
-	}
-}
-
 func (env *Environment) ExpectSettingsOverridden(vars ...v1.EnvVar) {
 	GinkgoHelper()
 
