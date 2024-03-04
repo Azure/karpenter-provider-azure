@@ -111,7 +111,7 @@ jobs:
           cluster_name: ${{ env.CLUSTER_NAME }}
           git_ref: ${{ inputs.git_ref }}
       - name: cleanup resources
-        uses: ./.github/actions/e2e/cleanup
+        uses: ./.github/actions/e2e/cleanup-nap
         if: always()
         with:
           client-id: ${{ secrets.E2E_CLIENT_ID }}
