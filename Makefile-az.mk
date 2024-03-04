@@ -46,6 +46,7 @@ az-mkaks-cilium-nap:
 		--enable-oidc-issuer --enable-managed-identity --node-provisioning-mode Auto
 
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all
 
 az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane cilium, --network-plugin cilium, and --network-plugin-mode overlay)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \

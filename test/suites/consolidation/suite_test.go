@@ -23,12 +23,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/test"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/karpenter/test/pkg/debug"
-	environmentazure "github.com/Azure/karpenter/test/pkg/environment/azure"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
+	environmentazure "github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
