@@ -18,7 +18,6 @@ package v1alpha2_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -45,11 +44,8 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	fmt.Println("MADE IT 1")
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
-	fmt.Println("MADE IT 2")
 	azureEnv = test.NewEnvironment(ctx, env)
-	fmt.Println("MADE IT 3")
 })
 
 var _ = AfterEach(func() {
