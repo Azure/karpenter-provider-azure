@@ -747,7 +747,7 @@ func getNBContractPayload(nbv *NodeBootstrapVariables) *nbcontractv1.Configurati
 		IsKata:          nbv.IsKata,
 	}
 
-	return &payload, nil
+	return &payload
 }
 
 // getFeatureState takes a positive enablement state variable as input. For a negative case, please invert it (from true to false or vice versa) before passing in.
