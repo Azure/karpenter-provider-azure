@@ -25,7 +25,7 @@ jobs:
       id-token: write # This is required for requesting the JWT
       statuses: write # ./.github/actions/commit-status/*          
     needs: [resolve]
-    uses: ./.github/workflows/e2e-matrix-nap.yaml
+    uses: ./.github/workflows/e2e-matrix.yaml
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
       location: ${{ inputs.location || 'eastus' }}
