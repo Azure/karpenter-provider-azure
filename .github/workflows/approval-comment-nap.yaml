@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   approval-comment:
-    if: startsWith(github.event.review.body, '/test-nap')
+    if: startsWith(github.event.review.body, '/nap')
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
