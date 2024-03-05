@@ -20,9 +20,6 @@ inputs:
   cluster_name:
     description: 'Name of the cluster to be created'
     required: true
-  mc_put_additive_flags: 
-    description: "Additional flags for cluster create"
-    required: false
   acr_name:
     description: "Name of the acr holding the karpenter image"
     required: true
@@ -52,7 +49,7 @@ runs:
     run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-msi
   - name: create cluster
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium-nap
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
   - name: az login 2
     uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
     with:
