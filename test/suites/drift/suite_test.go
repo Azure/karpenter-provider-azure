@@ -61,8 +61,6 @@ var _ = Describe("Drift", func() {
 	var pod *v1.Pod
 
 	BeforeEach(func() {
-		env.ExpectSettingsOverridden(v1.EnvVar{Name: "FEATURE_GATES", Value: "Drift=true"})
-
 		test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
 			Key:      v1.LabelInstanceTypeStable,
 			Operator: v1.NodeSelectorOpIn,
