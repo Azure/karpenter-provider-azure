@@ -7,7 +7,7 @@ on:
         description: "the azure location to run the e2e test in"
         default: "eastus"
   push:
-    branches: [main, "bsoghigian/running-nap-clean"]
+    branches: [main]
   workflow_run:
     workflows: [ApprovalCommentNAP]
     types: [completed]
