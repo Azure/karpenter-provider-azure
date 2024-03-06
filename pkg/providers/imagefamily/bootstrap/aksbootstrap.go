@@ -288,111 +288,114 @@ var (
 )
 
 var (
+	enabledFeatureState  = getFeatureState(true)
+	disabledFeatureState = getFeatureState(false)
+	defaultSwapFileSize  = int32(0)
 
 	// baseline, covering unused (-), static (s), and unsupported (n) fields,
 	// as well as defaults, cluster/node level (cd/td/xd)
-	staticNodeBootstrapVars = NodeBootstrapVariables{
-		IsAKSCustomCloud:                  false,                  // n
-		InitAKSCustomCloudFilepath:        "",                     // n
-		AKSCustomCloudRepoDepotEndpoint:   "",                     // n
-		AdminUsername:                     "azureuser",            // td
-		MobyVersion:                       "",                     // -
-		HyperkubeURL:                      "",                     // -
-		KubeBinaryURL:                     "",                     // cd
-		CustomKubeBinaryURL:               "",                     // -
-		KubeproxyURL:                      "",                     // -
-		VMType:                            "vmss",                 // xd
-		Subnet:                            "aks-subnet",           // xd
-		VirtualNetworkResourceGroup:       "",                     // xd
-		PrimaryAvailabilitySet:            "",                     // -
-		PrimaryScaleSet:                   "",                     // -
-		ServicePrincipalClientID:          "msi",                  // ad
-		VNETCNILinuxPluginsURL:            vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
-		CNIPluginsURL:                     cniPluginsURL,          // - [currently required, same]
-		CloudProviderBackoff:              true,                   // s
-		CloudProviderBackoffMode:          "v2",                   // s
-		CloudProviderBackoffRetries:       "6",                    // s
-		CloudProviderBackoffExponent:      "0",                    // s
-		CloudProviderBackoffDuration:      "5",                    // s
-		CloudProviderBackoffJitter:        "0",                    // s
-		CloudProviderRatelimit:            true,                   // s
-		CloudProviderRatelimitQPS:         "10",                   // s
-		CloudProviderRatelimitQPSWrite:    "10",                   // s
-		CloudProviderRatelimitBucket:      "100",                  // s
-		CloudProviderRatelimitBucketWrite: "100",                  // s
-		LoadBalancerDisableOutboundSNAT:   false,                  // xd
-		UseManagedIdentityExtension:       false,                  // s
-		UseInstanceMetadata:               true,                   // s
-		LoadBalancerSKU:                   "Standard",             // xd
-		ExcludeMasterFromStandardLB:       true,                   // s
-		MaximumLoadbalancerRuleCount:      250,                    // xd
-		ContainerRuntime:                  "containerd",           // s
-		CLITool:                           "ctr",                  // s
-		ContainerdDownloadURLBase:         "",                     // -
-		NetworkMode:                       "",                     // cd
-		IsVHD:                             true,                   // s
-		SGXNode:                           false,                  // -
-		MIGNode:                           false,                  // td
-		ConfigGPUDriverIfNeeded:           true,                   // s
-		EnableGPUDevicePluginIfNeeded:     false,                  // -
-		TeleportdPluginDownloadURL:        "",                     // -
-		ContainerdVersion:                 "",                     // -
-		ContainerdPackageURL:              "",                     // -
-		RuncVersion:                       "",                     // -
-		RuncPackageURL:                    "",                     // -
-		DisableSSH:                        false,                  // td
-		EnableHostsConfigAgent:            false,                  // n
-		NeedsContainerd:                   true,                   // s
-		TeleportEnabled:                   false,                  // td
-		ShouldConfigureHTTPProxy:          false,                  // cd
-		ShouldConfigureHTTPProxyCA:        false,                  // cd
-		HTTPProxyTrustedCA:                "",                     // cd
-		ShouldConfigureCustomCATrust:      false,                  // cd
-		CustomCATrustConfigCerts:          []string{},             // cd
-
-		OutboundCommand:                 "curl -v --insecure --proxy-insecure https://mcr.microsoft.com/v2/", // s
-		EnableUnattendedUpgrades:        false,                                                               // cd
-		IsKrustlet:                      false,                                                               // td
-		ShouldConfigSwapFile:            false,                                                               // td
-		ShouldConfigTransparentHugePage: false,                                                               // td
-		TargetCloud:                     "AzurePublicCloud",                                                  // n
-		TargetEnvironment:               "AzurePublicCloud",                                                  // n
-		CustomEnvJSON:                   "",                                                                  // n
-		IsCustomCloud:                   false,                                                               // n
-		CSEHelpersFilepath:              "/opt/azure/containers/provision_source.sh",                         // s
-		CSEDistroHelpersFilepath:        "/opt/azure/containers/provision_source_distro.sh",                  // s
-		CSEInstallFilepath:              "/opt/azure/containers/provision_installs.sh",                       // s
-		CSEDistroInstallFilepath:        "/opt/azure/containers/provision_installs_distro.sh",                // s
-		CSEConfigFilepath:               "/opt/azure/containers/provision_configs.sh",                        // s
-		AzurePrivateRegistryServer:      "",                                                                  // cd
-		HasCustomSearchDomain:           false,                                                               // cd
-		CustomSearchDomainFilepath:      "/opt/azure/containers/setup-custom-search-domains.sh",              // s
-		HTTPProxyURLs:                   "",                                                                  // cd
-		HTTPSProxyURLs:                  "",                                                                  // cd
-		NoProxyURLs:                     "",                                                                  // cd
-		TLSBootstrappingEnabled:         true,                                                                // s
-		SecureTLSBootstrappingEnabled:   false,                                                               // s
-		THPEnabled:                      "",                                                                  // cd
-		THPDefrag:                       "",                                                                  // cd
-		ServicePrincipalFileContent:     base64.StdEncoding.EncodeToString([]byte("msi")),                    // s
-		KubeletClientContent:            "",                                                                  // -
-		KubeletClientCertContent:        "",                                                                  // -
-		KubeletConfigFileEnabled:        false,                                                               // s
-		KubeletConfigFileContent:        "",                                                                  // s
-		SwapFileSizeMB:                  0,                                                                   // td
-		GPUInstanceProfile:              "",                                                                  // td
-		CustomSearchDomainName:          "",                                                                  // cd
-		CustomSearchRealmUser:           "",                                                                  // cd
-		CustomSearchRealmPassword:       "",                                                                  // cd
-		MessageOfTheDay:                 "",                                                                  // td
-		HasKubeletDiskType:              false,                                                               // td
-		SysctlContent:                   base64.StdEncoding.EncodeToString(sysctlContent),                    // td
-		KubeletFlags:                    "",                                                                  // psX
-		AzureEnvironmentFilepath:        "",                                                                  // s
-		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
-		ContainerdConfigContent:         "",                                                                  // kd
-		IsKata:                          false,                                                               // n
-
+	staticNodeBootstrapVars = nbcontractv1.Configuration{
+		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{
+			Status:               &disabledFeatureState, //n
+			InitFilePath:         ptr.String(""),        //n
+			RepoDepotEndpoint:    ptr.String(""),        //n
+			TargetEnvironment:    "AzurePublicCloud",    //n
+			TargetCloud:          "AzurePublicCloud",    //n
+			CustomEnvJsonContent: "",                    //n
+		},
+		LinuxAdminUsername: "azureuser", // td
+		KubeBinaryConfig: &nbcontractv1.KubeBinaryConfig{
+			KubeBinaryUrl:        "", // cd
+			CustomKubeBinaryUrl:  "", // -
+			PrivateKubeBinaryUrl: "",
+		},
+		KubeproxyUrl: "", // -
+		ApiserverConfig: &nbcontractv1.ApiServerConfig{
+			ApiserverPublicKey: "", // not initialized anywhere?
+		},
+		VmType: "vmss", // xd
+		NetworkConfig: &nbcontractv1.NetworkConfig{
+			NetworkMode: getNetworkModeType(""), // cd
+			Subnet:      "aks-subnet",           // xd
+			VirtualNetworkConfig: &nbcontractv1.VirtualNetworkConfig{
+				ResourceGroup: "", // xd
+			},
+			VnetCniPluginsUrl: vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
+			CniPluginsUrl:     cniPluginsURL,          // - [currently required, same]
+		},
+		PrimaryAvailabilitySet: "",   // -
+		PrimaryScaleSet:        "",   // -
+		UseInstanceMetadata:    true, // s
+		LoadBalancerConfig: &nbcontractv1.LoadBalancerConfig{
+			LoadBalancerSku:                       getLoadBalancerSKU("Standard"), // xd
+			ExcludeMasterFromStandardLoadBalancer: true,                           //s
+			MaxLoadBalancerRuleCount:              int32(250),                     // xd
+		},
+		ContainerdConfig: &nbcontractv1.ContainerdConfig{
+			ContainerdDownloadUrlBase: "", // -
+			ContainerdVersion:         "", // -
+			ContainerdPackageUrl:      "", // -
+		},
+		IsVhd:     true,  // s
+		IsSgxNode: false, // -
+		GpuConfig: &nbcontractv1.GPUConfig{
+			ConfigGpuDriver:    &enabledFeatureState,  // s
+			GpuDevicePlugin:    &disabledFeatureState, // -
+			GpuInstanceProfile: ptr.String(""),        // td
+		},
+		TeleportConfig: &nbcontractv1.TeleportConfig{
+			TeleportdPluginDownloadUrl: "",                   // -
+			Status:                     disabledFeatureState, // td
+		},
+		RuncConfig: &nbcontractv1.RuncConfig{
+			RuncVersion:    "", // -
+			RuncPackageUrl: "", // -
+		},
+		SshStatus:              enabledFeatureState,  // td
+		HostsConfigAgentStatus: disabledFeatureState, // n
+		HttpProxyConfig: &nbcontractv1.HTTPProxyConfig{
+			Status:         &disabledFeatureState, // cd
+			HttpProxy:      "",                    // cd
+			HttpsProxy:     "",                    // cd
+			NoProxyEntries: []string{""},          // cd
+			ProxyTrustedCa: ptr.String(""),        // cd
+			CaStatus:       &disabledFeatureState, // cd
+		},
+		CustomCaTrustConfig: &nbcontractv1.CustomCATrustConfig{
+			Status:        disabledFeatureState, // cd
+			CustomCaCerts: []string{},           // cd
+		},
+		OutboundCommand:            ptr.String("curl -v --insecure --proxy-insecure https://mcr.microsoft.com/v2/"), // s
+		UnattendedUpgradeStatus:    &disabledFeatureState,                                                           // cd
+		IsKrustlet:                 false,                                                                           // n                                                     // td
+		AzurePrivateRegistryServer: "",                                                                              // cd
+		CustomSearchDomain: &nbcontractv1.CustomSearchDomain{
+			CustomSearchDomainFilepath:      "/opt/azure/containers/setup-custom-search-domains.sh", // s
+			CustomSearchDomainName:          "",                                                     // cd
+			CustomSearchDomainRealmUser:     "",                                                     // cd
+			CustomSearchDomainRealmPassword: "",                                                     // cd
+		},
+		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
+			TlsBootstrappingStatus:       enabledFeatureState,  // s
+			SecureTlsBootstrappingStatus: disabledFeatureState, // s
+		},
+		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
+			SwapFileSize:               &defaultSwapFileSize, // td
+			TransparentHugepageSupport: ptr.String(""),       // cd
+			TransparentDefrag:          ptr.String(""),       // cd
+		},
+		KubeletConfig: &nbcontractv1.KubeletConfig{
+			KubeletClientKey:         "",                   // -
+			KubeletClientCertContent: "",                   // -
+			KubeletConfigFileStatus:  disabledFeatureState, // s
+			KubeletConfigFileContent: "",                   // s
+			KubeletFlags:             map[string]string{},  // psX
+		},
+		MessageOfTheDay: "",    // td
+		IsKata:          false, // n
+		// ContainerdConfigContent:         "",                                                                  // kd
+		// SysctlContent:            base64.StdEncoding.EncodeToString(sysctlContent),   // td
+		// KubenetTemplate:          base64.StdEncoding.EncodeToString(kubenetTemplate), // s
 	}
 )
 
@@ -416,23 +419,19 @@ func (a AKS) aksBootstrapScript() (string, error) {
 	// apply overrides from passed in options
 	a.applyOptions(&nbv)
 
-	containerdConfigTemplate, err := containerdConfigFromNodeBootstrapVars(&nbv)
-	if err != nil {
-		return "", fmt.Errorf("error getting containerd config from node bootstrap variables: %w", err)
-	}
+	// containerdConfigTemplate, err := containerdConfigFromNodeBootstrapVars(&nbv)
+	// if err != nil {
+	// 	return "", fmt.Errorf("error getting containerd config from node bootstrap variables: %w", err)
+	// }
 
-	nbv.ContainerdConfigContent = base64.StdEncoding.EncodeToString([]byte(containerdConfigTemplate))
+	// nbv.ContainerdConfigContent = base64.StdEncoding.EncodeToString([]byte(containerdConfigTemplate))
 	// generate script from template using the variables
 	// customData, err := getCustomDataFromNodeBootstrapVars(&nbv)
 	// if err != nil {
 	// 	return "", fmt.Errorf("error getting custom data from node bootstrap variables: %w", err)
 	// }
 
-	nbcontractPayload := getNBContractPayload(&nbv)
-	if err != nil {
-		return "", fmt.Errorf("error getting nbcontract payload from node bootstrap variables: %w", err)
-	}
-	customDataNbContract, err := getCustomDataFromNodeBootstrapContract(nbcontractPayload)
+	customDataNbContract, err := getCustomDataFromNodeBootstrapContract(&nbv)
 	if err != nil {
 		return "", fmt.Errorf("error getting custom data nbcontract from node bootstrap variables: %w", err)
 	}
@@ -444,38 +443,40 @@ func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
 	return fmt.Sprintf("%s/kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
 }
 
-func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
-	nbv.KubeCACrt = *a.CABundle
-	nbv.APIServerName = a.APIServerName
-	nbv.TLSBootstrapToken = a.KubeletClientTLSBootstrapToken
+func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
+	nbv.ClusterCertificateAuthority = *a.CABundle
+	nbv.ApiserverConfig.ApiserverName = a.APIServerName
+	nbv.TlsBootstrappingConfig.TlsBootstrapToken = a.KubeletClientTLSBootstrapToken
 
-	nbv.TenantID = a.TenantID
-	nbv.SubscriptionID = a.SubscriptionID
+	nbv.TenantId = a.TenantID
+	nbv.SubscriptionId = a.SubscriptionID
 	nbv.Location = a.Location
 	nbv.ResourceGroup = a.ResourceGroup
-	nbv.UserAssignedIdentityID = a.UserAssignedIdentityID
+	servicePrincipalClientID := "msi"
+	servicePrincipalFileContent := base64.StdEncoding.EncodeToString([]byte("msi"))
+	nbv.IdentityConfig = getIdentityConfig(servicePrincipalClientID, servicePrincipalFileContent, a.UserAssignedIdentityID)
 
-	nbv.NetworkPlugin = a.NetworkPlugin
-	nbv.NetworkPolicy = a.NetworkPolicy
+	nbv.NetworkConfig.NetworkPlugin = getNetworkPluginType(a.NetworkPlugin)
+	nbv.NetworkConfig.NetworkPolicy = getNetworkPolicyType(a.NetworkPolicy)
 	nbv.KubernetesVersion = a.KubernetesVersion
 
-	nbv.KubeBinaryURL = kubeBinaryURL(a.KubernetesVersion, a.Arch)
-	nbv.VNETCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
-	nbv.CNIPluginsURL = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
+	nbv.KubeBinaryConfig.KubeBinaryUrl = kubeBinaryURL(a.KubernetesVersion, a.Arch)
+	nbv.NetworkConfig.VnetCniPluginsUrl = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
+	nbv.NetworkConfig.CniPluginsUrl = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
 
 	// calculated values
-	nbv.EnsureNoDupePromiscuousBridge = nbv.NeedsContainerd && nbv.NetworkPlugin == "kubenet" && nbv.NetworkPolicy != "calico"
-	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
-	nbv.VirtualNetwork = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
-	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
+	noDupePromiscuousBridge := nbv.NeedsContainerd && nbv.NetworkConfig.NetworkPlugin == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && nbv.NetworkConfig.NetworkPolicy != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
+	nbv.EnsureNoDupePromiscuousBridge = &noDupePromiscuousBridge
+	nbv.NetworkConfig.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
+	nbv.NetworkConfig.VirtualNetworkConfig.Name = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
+	nbv.NetworkConfig.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
 	if a.GPUNode {
-		nbv.GPUNode = true
-		nbv.ConfigGPUDriverIfNeeded = true
-		nbv.GPUDriverVersion = a.GPUDriverVersion
-		nbv.GPUImageSHA = a.GPUImageSHA
+		nbv.GpuConfig.NvidiaState = &enabledFeatureState
+		nbv.GpuConfig.ConfigGpuDriver = &enabledFeatureState
+		nbv.GpuConfig.GpuImageSha = &a.GPUImageSHA
 	}
-	nbv.NeedsCgroupV2 = true
+	nbv.NeedsCgroupv2 = true
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
@@ -495,10 +496,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	}
 
 	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
-	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
-		return fmt.Sprintf("%s=%s", k, v)
-	}), ",")
-	nbv.kubeletNodeLabelsMap = kubeletLabels
+	nbv.KubeletConfig.KubeletNodeLabels = kubeletLabels
 
 	// merge and stringify taints
 	kubeletFlags := lo.Assign(kubeletFlagsBase)
@@ -509,12 +507,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	machineKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, machineKubeletConfig)
-	nbv.KubeletFlagsMap = kubeletFlags
-
-	// striginify kubelet flags (including taints)
-	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
-		return fmt.Sprintf("%s=%s", k, v)
-	}), " ")
+	nbv.KubeletConfig.KubeletFlags = kubeletFlags
 }
 
 func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
