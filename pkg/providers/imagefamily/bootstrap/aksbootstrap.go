@@ -21,6 +21,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"text/template"
@@ -59,170 +60,9 @@ func (a AKS) Script() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error getting AKS bootstrap script: %w", err)
 	}
+	log.Println(base64.StdEncoding.EncodeToString([]byte(bootstrapScript)))
 
 	return base64.StdEncoding.EncodeToString([]byte(bootstrapScript)), nil
-}
-
-// Config item types classified by code:
-//
-// - : known unnecessary or unused - (empty) value set in code, until dropped from template
-// n : not (yet?) supported, set to empty or something reasonable in code
-// s : static/constant (or very slow changing), value set in code;
-//     also the choice for something that does not have to be exposed for customization yet
-//
-// a : known argument/parameter, passed in (usually from environment)
-// x : unique per cluster,  extracted or specified. (Candidates for exposure/accessibility via API)
-// X : unique per nodepool, extracted or specified. (Candidates for exposure/accessibility via API)
-// c : user input, Options (provider-specific), e.g., could be from environment variables
-// p : user input, part of standard Provisioner (NodePool) CR spec. Example: custom labels, kubelet config
-// t : user input, NodeTemplate (potentially per node)
-// k : computed (at runtime) by Karpenter (e.g. based on VM SKU, extra labels, etc.)
-//     (xk - computed from per cluster data, such as cluster id)
-//
-// ? : needs more investigation
-//
-// multiple codes: combined from several sources
-
-// Config sources for types:
-//
-// Hardcoded (this file)       : unused (-), static (s) and unsupported (n), as well as selected defaults (s)
-// Computed at runtime         : computed (k)
-// Options (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
-//                             : as well as unique per cluster (x) - until we have a better place for these
-// (TBD)                       : unique per nodepool. extracted or specified (X)
-// NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
-// Provisioner spec            : selected nodepool-level user input (p)
-
-// NodeBootstrapVariables carries all variables needed to bootstrap a node
-// It is used as input rendering the bootstrap script Go template (customDataTemplate)
-type NodeBootstrapVariables struct {
-	IsAKSCustomCloud                  bool              // n   (false)
-	InitAKSCustomCloudFilepath        string            // n   (static)
-	AKSCustomCloudRepoDepotEndpoint   string            // n   derived from custom cloud env?
-	AdminUsername                     string            // t   typically azureuser but can be user input
-	MobyVersion                       string            // -   unnecessary
-	TenantID                          string            // p   environment derived, unnecessary?
-	KubernetesVersion                 string            // ?   cluster/node pool specific, derived from user input
-	HyperkubeURL                      string            // -   should be unnecessary
-	KubeBinaryURL                     string            // -   necessary only for non-cached versions / static-ish
-	CustomKubeBinaryURL               string            // -   unnecessary
-	KubeproxyURL                      string            // -   should be unnecessary or bug
-	APIServerPublicKey                string            // -   unique per cluster, actually not sure best way to extract? [should not be needed on agent nodes]
-	SubscriptionID                    string            // a   can be derived from environment/imds
-	ResourceGroup                     string            // a   can be derived from environment/imds
-	Location                          string            // a   can be derived from environment/imds
-	VMType                            string            // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "vmss" for now]
-	Subnet                            string            // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "aks-subnet for now]
-	NetworkSecurityGroup              string            // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-agentpool-<clusterid>-nsg" for now]
-	VirtualNetwork                    string            // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-vnet-<clusterid>" for now]
-	VirtualNetworkResourceGroup       string            // xd  derived from cluster but unnecessary (?) only used by CCM [default to empty, looks like unused]
-	RouteTable                        string            // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-agentpool-<clusterid>-routetable" for now]
-	PrimaryAvailabilitySet            string            // -   derived from cluster but unnecessary (?) only used by CCM
-	PrimaryScaleSet                   string            // -   derived from cluster but unnecessary (?) only used by CCM
-	ServicePrincipalClientID          string            // ad  user input
-	NetworkPlugin                     string            // x   user input (? actually derived from cluster, right?)
-	NetworkPolicy                     string            // x   user input / unique per cluster. user-specified.
-	VNETCNILinuxPluginsURL            string            // -   unnecessary [actually, currently required]
-	CNIPluginsURL                     string            // -   unnecessary [actually, currently required]
-	CloudProviderBackoff              bool              // s   BEGIN CLOUD CONFIG for azure stuff, static/derived from user inputs
-	CloudProviderBackoffMode          string            // s   [static until has to be exposed; could propagate Karpenter RL config, but won't]
-	CloudProviderBackoffRetries       string            // s
-	CloudProviderBackoffExponent      string            // s
-	CloudProviderBackoffDuration      string            // s
-	CloudProviderBackoffJitter        string            // s
-	CloudProviderRatelimit            bool              // s
-	CloudProviderRatelimitQPS         string            // s
-	CloudProviderRatelimitQPSWrite    string            // s
-	CloudProviderRatelimitBucket      string            // s
-	CloudProviderRatelimitBucketWrite string            // s
-	LoadBalancerDisableOutboundSNAT   bool              // xd  [= false for now]
-	UseManagedIdentityExtension       bool              // s   [always false?]
-	UseInstanceMetadata               bool              // s   [always true?]
-	LoadBalancerSKU                   string            // xd  [= "Standard" for now]
-	ExcludeMasterFromStandardLB       bool              // s   [always true?]
-	MaximumLoadbalancerRuleCount      int               // xd  END CLOUD CONFIG [will default to 250 for now]
-	ContainerRuntime                  string            // s   always containerd
-	CLITool                           string            // s   static/unnecessary
-	ContainerdDownloadURLBase         string            // -   unnecessary
-	NetworkMode                       string            // c   user input
-	UserAssignedIdentityID            string            // a   user input
-	APIServerName                     string            // x   unique per cluster
-	IsVHD                             bool              // s   static-ish
-	GPUNode                           bool              // k   derived from VM size
-	SGXNode                           bool              // -   unused
-	MIGNode                           bool              // t   user input
-	ConfigGPUDriverIfNeeded           bool              // s   depends on hardware, unnecessary for oss, but aks provisions gpu drivers
-	EnableGPUDevicePluginIfNeeded     bool              // -   deprecated/preview only, don't do this for OSS
-	TeleportdPluginDownloadURL        string            // -   user input, don't do this for OSS
-	ContainerdVersion                 string            // -   unused
-	ContainerdPackageURL              string            // -   only for testing
-	RuncVersion                       string            // -   unused
-	RuncPackageURL                    string            // -   testing only
-	EnableHostsConfigAgent            bool              // n   derived from private cluster user input...I think?
-	DisableSSH                        bool              // t   user input
-	NeedsContainerd                   bool              // s   static true
-	TeleportEnabled                   bool              // t   user input
-	ShouldConfigureHTTPProxy          bool              // c   user input
-	ShouldConfigureHTTPProxyCA        bool              // c   user input [secret]
-	HTTPProxyTrustedCA                string            // c   user input [secret]
-	ShouldConfigureCustomCATrust      bool              // c   user input
-	CustomCATrustConfigCerts          []string          // c   user input [secret]
-	IsKrustlet                        bool              // t   user input
-	GPUNeedsFabricManager             bool              // v   determined by GPU hardware type
-	NeedsDockerLogin                  bool              // t   user input [still needed?]
-	IPv6DualStackEnabled              bool              // t   user input
-	OutboundCommand                   string            // s   mostly static/can be
-	EnableUnattendedUpgrades          bool              // c   user input [presumably cluster level, correct?]
-	EnsureNoDupePromiscuousBridge     bool              // k   derived {{ and NeedsContainerd IsKubenet (not HasCalicoNetworkPolicy) }} [could be computed by template ...]
-	ShouldConfigSwapFile              bool              // t   user input
-	ShouldConfigTransparentHugePage   bool              // t   user input
-	TargetCloud                       string            // n   derive from environment/user input
-	TargetEnvironment                 string            // n   derive from environment/user input
-	CustomEnvJSON                     string            // n   derive from environment/user input
-	IsCustomCloud                     bool              // n   derive from environment/user input
-	CSEHelpersFilepath                string            // s   static
-	CSEDistroHelpersFilepath          string            // s   static
-	CSEInstallFilepath                string            // s   static
-	CSEDistroInstallFilepath          string            // s   static
-	CSEConfigFilepath                 string            // s   static
-	AzurePrivateRegistryServer        string            // c   user input
-	HasCustomSearchDomain             bool              // c   user input
-	CustomSearchDomainFilepath        string            // s   static
-	HTTPProxyURLs                     string            // c   user input [presumably cluster-level]
-	HTTPSProxyURLs                    string            // c   user input [presumably cluster-level]
-	NoProxyURLs                       string            // c   user input [presumably cluster-level]
-	TLSBootstrappingEnabled           bool              // s   static true
-	SecureTLSBootstrappingEnabled     bool              // s   static false
-	DHCPv6ServiceFilepath             string            // k   derived from user input [how?]
-	DHCPv6ConfigFilepath              string            // k   derived from user input [how?]
-	THPEnabled                        string            // c   user input [presumably cluster-level][should be bool?]
-	THPDefrag                         string            // c   user input [presumably cluster-level][should be bool?]
-	ServicePrincipalFileContent       string            // s   only required for RP cluster [static: msi?]
-	KubeletClientContent              string            // -   unnecessary [if using TLS bootstrapping]
-	KubeletClientCertContent          string            // -   unnecessary
-	KubeletConfigFileEnabled          bool              // s   can be static	[should kubelet config be actually used/preferred instead of flags?]
-	KubeletConfigFileContent          string            // s   mix of user/static/RP-generated.
-	SwapFileSizeMB                    int               // t   user input
-	GPUImageSHA                       string            // s	  static sha rarely updated
-	GPUDriverVersion                  string            // k   determine by OS + GPU hardware requirements; can be determined automatically, but hard. suggest using GPU operator.
-	GPUInstanceProfile                string            // t   user-specified
-	CustomSearchDomainName            string            // c   user-specified [presumably cluster-level]
-	CustomSearchRealmUser             string            // c   user-specified [presumably cluster-level]
-	CustomSearchRealmPassword         string            // c   user-specified [presumably cluster-level]
-	MessageOfTheDay                   string            // t   user-specified [presumably node-level]
-	HasKubeletDiskType                bool              // t   user-specified [presumably node-level]
-	NeedsCgroupV2                     bool              // k   can be automatically determined
-	SysctlContent                     string            // t   user-specified
-	TLSBootstrapToken                 string            // X   nodepool or node specific. can be created automatically
-	KubeletFlags                      string            // psX unique per nodepool. partially user-specified, static, and RP-generated
-	KubeletFlagsMap                   map[string]string // Devin created for temp use. psX unique per nodepool. partially user-specified, static, and RP-generated
-	KubeletNodeLabels                 string            // pk  node-pool specific. user-specified.
-	kubeletNodeLabelsMap              map[string]string //  Devin created for temp use. pk  node-pool specific. user-specified.
-	AzureEnvironmentFilepath          string            // s   can be made static [usually "/etc/kubernetes/azure.json", but my examples use ""?]
-	KubeCACrt                         string            // x   unique per cluster
-	KubenetTemplate                   string            // s   static
-	ContainerdConfigContent           string            // k   determined by GPU VM size, WASM support, Kata support
-	IsKata                            bool              // n   user-specified
 }
 
 var (
@@ -292,6 +132,38 @@ var (
 	disabledFeatureState = getFeatureState(false)
 	defaultSwapFileSize  = int32(0)
 
+	// Config item types classified by code:
+	//
+	// - : known unnecessary or unused - (empty) value set in code, until dropped from template
+	// n : not (yet?) supported, set to empty or something reasonable in code
+	// s : static/constant (or very slow changing), value set in code;
+	//     also the choice for something that does not have to be exposed for customization yet
+	//
+	// a : known argument/parameter, passed in (usually from environment)
+	// x : unique per cluster,  extracted or specified. (Candidates for exposure/accessibility via API)
+	// X : unique per nodepool, extracted or specified. (Candidates for exposure/accessibility via API)
+	// c : user input, Options (provider-specific), e.g., could be from environment variables
+	// p : user input, part of standard Provisioner (NodePool) CR spec. Example: custom labels, kubelet config
+	// t : user input, NodeTemplate (potentially per node)
+	// k : computed (at runtime) by Karpenter (e.g. based on VM SKU, extra labels, etc.)
+	//     (xk - computed from per cluster data, such as cluster id)
+	//
+	// ? : needs more investigation
+	//
+	// multiple codes: combined from several sources
+
+	// Config sources for types:
+	//
+	// Hardcoded (this file)       : unused (-), static (s) and unsupported (n), as well as selected defaults (s)
+	// Computed at runtime         : computed (k)
+	// Options (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
+	//                             : as well as unique per cluster (x) - until we have a better place for these
+	// (TBD)                       : unique per nodepool. extracted or specified (X)
+	// NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
+	// Provisioner spec            : selected nodepool-level user input (p)
+
+	// NodeBootstrapVariables carries all variables needed to bootstrap a node
+	// It is used as input rendering the bootstrap script Go template (customDataTemplate)
 	// baseline, covering unused (-), static (s), and unsupported (n) fields,
 	// as well as defaults, cluster/node level (cd/td/xd)
 	staticNodeBootstrapVars = nbcontractv1.Configuration{
@@ -419,18 +291,6 @@ func (a AKS) aksBootstrapScript() (string, error) {
 	// apply overrides from passed in options
 	a.applyOptions(&nbv)
 
-	// containerdConfigTemplate, err := containerdConfigFromNodeBootstrapVars(&nbv)
-	// if err != nil {
-	// 	return "", fmt.Errorf("error getting containerd config from node bootstrap variables: %w", err)
-	// }
-
-	// nbv.ContainerdConfigContent = base64.StdEncoding.EncodeToString([]byte(containerdConfigTemplate))
-	// generate script from template using the variables
-	// customData, err := getCustomDataFromNodeBootstrapVars(&nbv)
-	// if err != nil {
-	// 	return "", fmt.Errorf("error getting custom data from node bootstrap variables: %w", err)
-	// }
-
 	customDataNbContract, err := getCustomDataFromNodeBootstrapContract(&nbv)
 	if err != nil {
 		return "", fmt.Errorf("error getting custom data nbcontract from node bootstrap variables: %w", err)
@@ -508,22 +368,6 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 	machineKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, machineKubeletConfig)
 	nbv.KubeletConfig.KubeletFlags = kubeletFlags
-}
-
-func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
-	var buffer bytes.Buffer
-	if err := containerdConfigTemplate.Execute(&buffer, *nbv); err != nil {
-		return "", fmt.Errorf("error executing containerd config template: %w", err)
-	}
-	return buffer.String(), nil
-}
-
-func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
-	var buffer bytes.Buffer
-	if err := customDataTemplate.Execute(&buffer, *nbv); err != nil {
-		return "", fmt.Errorf("error executing custom data template: %w", err)
-	}
-	return buffer.String(), nil
 }
 
 func getCustomDataFromNodeBootstrapContract(nbcp *nbcontractv1.Configuration) (string, error) {
@@ -606,141 +450,6 @@ func JoinParameterArgsToMap[K comparable, V any](result map[string]string, name 
 	if len(args) > 0 {
 		result[name] = strings.Join(args, ",")
 	}
-}
-
-func getNBContractPayload(nbv *NodeBootstrapVariables) *nbcontractv1.Configuration {
-	ipv6DualStackEnabled := getFeatureState(nbv.IPv6DualStackEnabled)
-	nvidiaState := getFeatureState(nbv.GPUNode)
-	configGpuDriver := getFeatureState(nbv.ConfigGPUDriverIfNeeded)
-	gpuDevicePlugin := getFeatureState(nbv.EnableGPUDevicePluginIfNeeded)
-	customCloudStatus := getFeatureState(nbv.IsAKSCustomCloud)
-	httpProxyStatus := getFeatureState(nbv.ShouldConfigureHTTPProxy)
-	httpProxyCAStatus := getFeatureState(nbv.ShouldConfigureHTTPProxyCA)
-	unattendedUpgradeStatus := getFeatureState(nbv.EnableUnattendedUpgrades)
-	swapFileSize := int32(nbv.SwapFileSizeMB)
-
-	payload := nbcontractv1.Configuration{
-		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{
-			Status:               &customCloudStatus,
-			InitFilePath:         &nbv.InitAKSCustomCloudFilepath,
-			RepoDepotEndpoint:    &nbv.AKSCustomCloudRepoDepotEndpoint,
-			TargetEnvironment:    nbv.TargetEnvironment,
-			TargetCloud:          nbv.TargetCloud,
-			CustomEnvJsonContent: nbv.CustomEnvJSON,
-		},
-		LinuxAdminUsername:          nbv.AdminUsername,
-		ClusterCertificateAuthority: nbv.KubeCACrt, // Karpenter is using a different way than AKS-RP does.
-		KubernetesVersion:           nbv.KubernetesVersion,
-		KubeBinaryConfig: &nbcontractv1.KubeBinaryConfig{
-			KubeBinaryUrl:        nbv.KubeBinaryURL,
-			CustomKubeBinaryUrl:  nbv.CustomKubeBinaryURL,
-			PrivateKubeBinaryUrl: "", // newly added. To be added in contract
-		},
-		KubeproxyUrl: nbv.KubeproxyURL,
-		ApiserverConfig: &nbcontractv1.ApiServerConfig{
-			ApiserverPublicKey: nbv.APIServerPublicKey,
-			ApiserverName:      nbv.APIServerName,
-		},
-		SubscriptionId:         nbv.SubscriptionID,
-		ResourceGroup:          nbv.ResourceGroup,
-		Location:               nbv.Location,
-		VmType:                 nbv.VMType,
-		TenantId:               nbv.TenantID,
-		PrimaryAvailabilitySet: nbv.PrimaryAvailabilitySet,
-		PrimaryScaleSet:        nbv.PrimaryScaleSet,
-		IdentityConfig:         getIdentityConfig(nbv.ServicePrincipalClientID, nbv.ServicePrincipalFileContent, nbv.UserAssignedIdentityID),
-		UseInstanceMetadata:    nbv.UseInstanceMetadata,
-		LoadBalancerConfig: &nbcontractv1.LoadBalancerConfig{
-			LoadBalancerSku:                       getLoadBalancerSKU(nbv.LoadBalancerSKU),
-			ExcludeMasterFromStandardLoadBalancer: nbv.ExcludeMasterFromStandardLB,
-			MaxLoadBalancerRuleCount:              int32(nbv.MaximumLoadbalancerRuleCount),
-		},
-		Ipv6DualStackEnabled:          &ipv6DualStackEnabled,
-		OutboundCommand:               &nbv.OutboundCommand,
-		UnattendedUpgradeStatus:       &unattendedUpgradeStatus,
-		EnsureNoDupePromiscuousBridge: &nbv.EnsureNoDupePromiscuousBridge,
-		CustomSearchDomain: &nbcontractv1.CustomSearchDomain{
-			CustomSearchDomainFilepath:      nbv.CustomSearchDomainFilepath,
-			CustomSearchDomainName:          nbv.CustomSearchDomainName,
-			CustomSearchDomainRealmUser:     nbv.CustomSearchRealmUser,
-			CustomSearchDomainRealmPassword: nbv.CustomSearchRealmPassword,
-		},
-		NetworkConfig: &nbcontractv1.NetworkConfig{
-			NetworkPlugin:        getNetworkPluginType(nbv.NetworkPlugin),
-			NetworkPolicy:        getNetworkPolicyType(nbv.NetworkPolicy),
-			NetworkMode:          getNetworkModeType(nbv.NetworkMode),
-			NetworkSecurityGroup: nbv.NetworkSecurityGroup,
-			VirtualNetworkConfig: &nbcontractv1.VirtualNetworkConfig{
-				Name:          nbv.VirtualNetwork,
-				ResourceGroup: nbv.VirtualNetworkResourceGroup,
-			},
-			VnetCniPluginsUrl: nbv.VNETCNILinuxPluginsURL,
-			CniPluginsUrl:     nbv.CNIPluginsURL,
-			Subnet:            nbv.Subnet,
-			RouteTable:        nbv.RouteTable,
-		},
-		IsVhd: nbv.IsVHD,
-		GpuConfig: &nbcontractv1.GPUConfig{
-			NvidiaState:        &nvidiaState,
-			ConfigGpuDriver:    &configGpuDriver,
-			GpuDevicePlugin:    &gpuDevicePlugin,
-			GpuInstanceProfile: &nbv.GPUInstanceProfile,
-			GpuImageSha:        &nbv.GPUImageSHA,
-		},
-		TeleportConfig: &nbcontractv1.TeleportConfig{
-			Status:                     getFeatureState(nbv.TeleportEnabled),
-			TeleportdPluginDownloadUrl: nbv.TeleportdPluginDownloadURL,
-		},
-		ContainerdConfig: &nbcontractv1.ContainerdConfig{
-			ContainerdDownloadUrlBase: nbv.ContainerdDownloadURLBase,
-			ContainerdVersion:         nbv.ContainerdVersion,
-			ContainerdPackageUrl:      nbv.ContainerdPackageURL,
-		},
-		RuncConfig: &nbcontractv1.RuncConfig{
-			RuncVersion:    nbv.RuncVersion,
-			RuncPackageUrl: nbv.RuncPackageURL,
-		},
-		HostsConfigAgentStatus: getFeatureState(nbv.EnableHostsConfigAgent),
-		SshStatus:              getFeatureState(!nbv.DisableSSH),
-		HttpProxyConfig: &nbcontractv1.HTTPProxyConfig{
-			Status:         &httpProxyStatus,
-			HttpProxy:      nbv.HTTPProxyURLs,
-			HttpsProxy:     nbv.HTTPSProxyURLs,
-			NoProxyEntries: []string{nbv.NoProxyURLs},
-			ProxyTrustedCa: &nbv.HTTPProxyTrustedCA,
-			CaStatus:       &httpProxyCAStatus,
-		},
-		CustomCaTrustConfig: &nbcontractv1.CustomCATrustConfig{
-			Status:        getFeatureState(nbv.ShouldConfigureCustomCATrust),
-			CustomCaCerts: nbv.CustomCATrustConfigCerts,
-		},
-		IsKrustlet: nbv.IsKrustlet,
-		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
-			SwapFileSize:               &swapFileSize,
-			TransparentHugepageSupport: &nbv.THPEnabled,
-			TransparentDefrag:          &nbv.THPDefrag,
-		},
-		IsSgxNode:                  nbv.SGXNode,
-		AzurePrivateRegistryServer: nbv.AzurePrivateRegistryServer,
-		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
-			TlsBootstrappingStatus:       getFeatureState(nbv.TLSBootstrappingEnabled),
-			SecureTlsBootstrappingStatus: getFeatureState(nbv.SecureTLSBootstrappingEnabled),
-			TlsBootstrapToken:            nbv.TLSBootstrapToken,
-		},
-		KubeletConfig: &nbcontractv1.KubeletConfig{
-			KubeletConfigFileStatus:  getFeatureState(nbv.KubeletConfigFileEnabled),
-			KubeletConfigFileContent: nbv.KubeletConfigFileContent,
-			KubeletFlags:             nbv.KubeletFlagsMap,
-			KubeletNodeLabels:        nbv.kubeletNodeLabelsMap,
-			KubeletClientKey:         nbv.KubeletClientContent,
-			KubeletClientCertContent: nbv.KubeletClientCertContent,
-		},
-		MessageOfTheDay: nbv.MessageOfTheDay,
-		NeedsCgroupv2:   nbv.NeedsCgroupV2,
-		IsKata:          nbv.IsKata,
-	}
-
-	return &payload
 }
 
 // getFeatureState takes a positive enablement state variable as input. For a negative case, please invert it (from true to false or vice versa) before passing in.
