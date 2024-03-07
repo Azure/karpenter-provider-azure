@@ -21,177 +21,80 @@ Therefore, Karpenter will not use these helper functions once the Go binary is r
 package bootstrap
 
 import (
-	"bytes"
 	_ "embed"
 	"encoding/base64"
-	"fmt"
-	"strconv"
 	"strings"
-	"text/template"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
-	"github.com/samber/lo"
+	"knative.dev/pkg/ptr"
 )
 
-var (
-	//go:embed kubenet-cni.json.gtpl
-	kubenetTemplateContent []byte
-	//go:embed sysctl.conf
-	sysctlTemplateContent []byte
-	//go:embed  containerdfornbcontract.toml.gtpl
-	containerdConfigTemplateTextForNBContract string
-	containerdConfigTemplateForNBContract     = template.Must(
-		template.New("containerdconfigfornbcontract").Funcs(getFuncMapForContainerdConfigTemplate()).Parse(containerdConfigTemplateTextForNBContract),
-	)
-)
-
-func getFuncMap() template.FuncMap {
-	return template.FuncMap{
-		"derefString":                      deref[string],
-		"derefBool":                        deref[bool],
-		"getStringFromNetworkModeType":     getStringFromNetworkModeType,
-		"getStringFromNetworkPluginType":   getStringFromNetworkPluginType,
-		"getStringFromNetworkPolicyType":   getStringFromNetworkPolicyType,
-		"getStringFromLoadBalancerSkuType": getStringFromLoadBalancerSkuType,
-		"getBoolFromFeatureState":          getBoolFromFeatureState,
-		"getBoolStringFromFeatureState":    getBoolStringFromFeatureState,
-		"getBoolStringFromFeatureStatePtr": getBoolStringFromFeatureStatePtr,
-		"getStringifiedMap":                getStringifiedMap,
-		"getKubenetTemplate":               getKubenetTemplate,
-		"getSysctlContent":                 getSysctlContent,
-		"getContainerdConfig":              getContainerdConfig,
-		"getStringifiedStringArray":        getStringifiedStringArray,
-		"getIsMIGNode":                     getIsMIGNode,
-	}
-}
-
-func getFuncMapForContainerdConfigTemplate() template.FuncMap {
-	return template.FuncMap{
-		"derefBool":               deref[bool],
-		"getBoolFromFeatureState": getBoolFromFeatureState,
-	}
-}
-
-func getStringFromNetworkModeType(enum nbcontractv1.NetworkModeType) string {
-	switch enum {
-	case nbcontractv1.NetworkModeType_NETWORK_MODE_TRANSPARENT:
-		return "transparent"
-	case nbcontractv1.NetworkModeType_NETWORK_MODE_L2BRIDGE:
-		return "l2bridge"
-	default:
-		return ""
-	}
-}
-
-func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPluginType) string {
-	switch enum {
-	case nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_AZURE:
-		return "azure"
-	case nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET:
-		return "kubenet"
-	default:
-		return ""
-	}
-}
-
-func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicyType) string {
-	switch enum {
-	case nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_AZURE:
-		return "azure"
-	case nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO:
-		return "calico"
-	default:
-		return ""
-	}
-}
-
-func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerSku) string {
-	switch enum {
-	case nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_BASIC:
-		return "Basic"
-	case nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_STANDARD:
-		return "Standard"
-	default:
-		return ""
-	}
-}
-
-func getBoolFromFeatureState(state nbcontractv1.FeatureState) bool {
-	return state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED
-}
-
-func getBoolStringFromFeatureState(state nbcontractv1.FeatureState) string {
-	return strconv.FormatBool(state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED)
-}
-
-func getBoolStringFromFeatureStatePtr(state *nbcontractv1.FeatureState) string {
-	if state == nil {
-		return "false"
+// getIdentityConfig returns the identityConfig object based on the identity inputs.
+func getIdentityConfig(servicePrincipalID string, servicePrincipalSecret string, userAssignedIdentityID string) *nbcontractv1.IdentityConfig {
+	identityConfig := nbcontractv1.IdentityConfig{
+		IdentityType:                nbcontractv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED,
+		ServicePrincipalId:          ptr.String(""),
+		ServicePrincipalSecret:      ptr.String(""),
+		AssignedIdentityId:          ptr.String(""),
+		UseManagedIdentityExtension: ptr.String("false"),
 	}
 
-	if *state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED {
-		return "true"
+	if userAssignedIdentityID != "" {
+		identityConfig.IdentityType = nbcontractv1.IdentityType_IDENTITY_TYPE_USER_IDENTITY
+		*identityConfig.AssignedIdentityId = userAssignedIdentityID
+		return &identityConfig
 	}
 
-	return "false"
-}
-
-// deref is a helper function to dereference a pointer of any type to its value
-func deref[T interface{}](p *T) T {
-	return *p
-}
-
-func getStringifiedMap(m map[string]string, delimiter string) string {
-	result := strings.Join(lo.MapToSlice(m, func(k, v string) string {
-		return fmt.Sprintf("%s=%s", k, v)
-	}), delimiter)
-	return result
-}
-
-func getStringifiedStringArray(arr []string, delimiter string) string {
-	if len(arr) == 0 {
-		return ""
+	if (servicePrincipalID != "" || servicePrincipalID == "msi") && (servicePrincipalSecret != "" || servicePrincipalSecret == base64.StdEncoding.EncodeToString([]byte("msi"))) {
+		identityConfig.IdentityType = nbcontractv1.IdentityType_IDENTITY_TYPE_SERVICE_PRINCIPAL
+		*identityConfig.ServicePrincipalId = servicePrincipalID
+		*identityConfig.ServicePrincipalSecret = servicePrincipalSecret
+		return &identityConfig
 	}
 
-	return strings.Join(arr, delimiter)
+	return &identityConfig
 }
 
-// getKubenetTemplate returns the base64 encoded Kubenet template.
-func getKubenetTemplate() string {
-	return base64.StdEncoding.EncodeToString(kubenetTemplateContent)
-}
-
-// getSysctlContent returns the base64 encoded sysctl content.
-func getSysctlContent() string {
-	return base64.StdEncoding.EncodeToString(sysctlTemplateContent)
-}
-
-func getContainerdConfig(nbcontract *nbcontractv1.Configuration) string {
-	if nbcontract == nil {
-		return ""
+// getLoadBalancerSKI returns the LoadBalancerSku enum based on the input string.
+func getLoadBalancerSKU(sku string) nbcontractv1.LoadBalancerSku {
+	if strings.EqualFold(sku, "Standard") {
+		return nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_STANDARD
+	} else if strings.EqualFold(sku, "Basic") {
+		return nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_BASIC
 	}
 
-	containerdConfig, err := containerdConfigFromNodeBootstrapContract(nbcontract)
-	if err != nil {
-		return fmt.Sprintf("error getting containerd config from node bootstrap variables: %v", err)
-	}
-
-	return base64.StdEncoding.EncodeToString([]byte(containerdConfig))
+	return nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_UNSPECIFIED
 }
 
-func containerdConfigFromNodeBootstrapContract(nbcontract *nbcontractv1.Configuration) (string, error) {
-	if nbcontract == nil {
-		return "", fmt.Errorf("node bootstrap contract is nil")
+// getNetworkModeType returns the NetworkMode enum based on the input string.
+func getNetworkModeType(networkMode string) nbcontractv1.NetworkModeType {
+	if strings.EqualFold(networkMode, "transparent") {
+		return nbcontractv1.NetworkModeType_NETWORK_MODE_TRANSPARENT
+	} else if strings.EqualFold(networkMode, "l2bridge") {
+		return nbcontractv1.NetworkModeType_NETWORK_MODE_L2BRIDGE
 	}
 
-	var buffer bytes.Buffer
-	if err := containerdConfigTemplateForNBContract.Execute(&buffer, nbcontract); err != nil {
-		return "", fmt.Errorf("error executing containerd config template for NBContract: %w", err)
-	}
-
-	return buffer.String(), nil
+	return nbcontractv1.NetworkModeType_NETWORK_MODE_UNSPECIFIED
 }
 
-func getIsMIGNode(gpuInstanceProfile string) bool {
-	return gpuInstanceProfile != ""
+// getNetworkPluginType returns the NetworkPluginType enum based on the input string.
+func getNetworkPluginType(networkPlugin string) nbcontractv1.NetworkPluginType {
+	if strings.EqualFold(networkPlugin, "azure") {
+		return nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_AZURE
+	} else if strings.EqualFold(networkPlugin, "kubenet") {
+		return nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET
+	}
+
+	return nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_NONE
+}
+
+// getNetworkPolicyType returns the NetworkPolicyType enum based on the input string.
+func getNetworkPolicyType(networkPolicy string) nbcontractv1.NetworkPolicyType {
+	if strings.EqualFold(networkPolicy, "azure") {
+		return nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_AZURE
+	} else if strings.EqualFold(networkPolicy, "calico") {
+		return nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
+	}
+
+	return nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_NONE
 }
