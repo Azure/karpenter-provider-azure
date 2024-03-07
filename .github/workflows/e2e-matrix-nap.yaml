@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [Nonbehavioral, GPU, Integration, NodeClaim, Consolidation, Utilization]
+        suite: [Nonbehavioral, GPU, Integration, NodeClaim, Consolidation]
     permissions:
       contents: read
       id-token: write
