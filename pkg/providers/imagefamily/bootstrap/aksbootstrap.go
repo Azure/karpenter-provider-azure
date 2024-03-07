@@ -21,7 +21,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"text/template"
@@ -60,7 +59,6 @@ func (a AKS) Script() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error getting AKS bootstrap script: %w", err)
 	}
-	log.Println(base64.StdEncoding.EncodeToString([]byte(bootstrapScript)))
 
 	return base64.StdEncoding.EncodeToString([]byte(bootstrapScript)), nil
 }
@@ -184,6 +182,7 @@ var (
 		KubeproxyUrl: "", // -
 		ApiserverConfig: &nbcontractv1.ApiServerConfig{
 			ApiserverPublicKey: "", // not initialized anywhere?
+			ApiserverName:      "", // xd
 		},
 		VmType: "vmss", // xd
 		NetworkConfig: &nbcontractv1.NetworkConfig{
@@ -211,9 +210,11 @@ var (
 		IsVhd:     true,  // s
 		IsSgxNode: false, // -
 		GpuConfig: &nbcontractv1.GPUConfig{
+			NvidiaState:        &disabledFeatureState, // td
 			ConfigGpuDriver:    &enabledFeatureState,  // s
 			GpuDevicePlugin:    &disabledFeatureState, // -
 			GpuInstanceProfile: ptr.String(""),        // td
+			GpuImageSha:        ptr.String(""),        // s
 		},
 		TeleportConfig: &nbcontractv1.TeleportConfig{
 			TeleportdPluginDownloadUrl: "",                   // -
@@ -265,9 +266,6 @@ var (
 		},
 		MessageOfTheDay: "",    // td
 		IsKata:          false, // n
-		// ContainerdConfigContent:         "",                                                                  // kd
-		// SysctlContent:            base64.StdEncoding.EncodeToString(sysctlContent),   // td
-		// KubenetTemplate:          base64.StdEncoding.EncodeToString(kubenetTemplate), // s
 	}
 )
 
