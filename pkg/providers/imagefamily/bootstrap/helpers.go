@@ -14,9 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-/* All the helper functions should be hosted by another public repo later. (e.g. agentbaker)
-This action of populating cse_cmd.sh should happen in the Go binary on VHD.
-Therefore, Karpenter will not use these helper functions once the Go binary is ready. */
+// All the helper functions should be hosted by another public repo later. (e.g. agentbaker)
+// Helper functions in this file will be called by bootstrappers to populate nb contract payload.
 
 package bootstrap
 
