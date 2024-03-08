@@ -19,12 +19,13 @@ This action of populating cse_cmd.sh should happen in the Go binary on VHD.
 Therefore, Karpenter will not use these helper functions once the Go binary is ready. */
 
 // Parser helpers are used to get values of the env variables to populate cse_cmd.sh. For example, default values, values computed by others, etc.
-// It's the parser who will call these functions.
+// It's the go binary parser who will call these functions.
 
 package bootstrap
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"strconv"
