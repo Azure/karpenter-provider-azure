@@ -183,12 +183,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	// size parts
 	requirements[v1alpha2.LabelSKUFamily].Insert(vmsize.Family)
 
-	// everything from additive features
-	for _, featureLabel := range v1alpha2.SkuFeatureToLabel {
-		requirements.Add(scheduling.NewRequirement(featureLabel, v1.NodeSelectorOpDoesNotExist))
-	}
-
-	setRequirementsAdditiveFeatures(requirements, vmsize)
 	setRequirementsStoragePremiumCapable(requirements, sku)
 	setRequirementsEncryptionAtHostSupported(requirements, sku)
 	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
@@ -199,14 +193,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	setRequirementsVersion(requirements, vmsize)
 
 	return requirements
-}
-
-func setRequirementsAdditiveFeatures(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	for _, feature := range vmsize.AdditiveFeatures {
-		if featureLabel, ok := v1alpha2.SkuFeatureToLabel[feature]; ok {
-			requirements[featureLabel].Insert("true")
-		}
-	}
 }
 
 func setRequirementsStoragePremiumCapable(requirements scheduling.Requirements, sku *skewer.SKU) {

@@ -33,9 +33,6 @@ func init() {
 		LabelSKUMemory,
 		LabelSKUAccelerator,
 
-		LabelSKUConfidential,
-		LabelSKUIsolatedSize,
-
 		LabelSKUAcceleratedNetworking,
 
 		LabelSKUStoragePremiumCapable,
@@ -67,7 +64,7 @@ var (
 		LabelSKUHyperVGeneration,
 	)
 
-	AllowUndefinedLabels = func(options scheduling.CompatabilityOptions) scheduling.CompatabilityOptions {
+	AllowUndefinedLabels = func(options scheduling.CompatibilityOptions) scheduling.CompatibilityOptions {
 		options.AllowUndefined = corev1beta1.WellKnownLabels.Union(RestrictedLabels)
 		return options
 	}
@@ -88,10 +85,6 @@ var (
 	LabelSKUAccelerator = Group + "/sku-accelerator"
 
 	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
-	// https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
-	LabelSKUConfidential = Group + "/sku-confidential"  // c
-	LabelSKUIsolatedSize = Group + "/sku-isolated-size" // i
-
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
@@ -113,11 +106,6 @@ var (
 	AKSLabelDomain = "kubernetes.azure.com"
 
 	AKSLabelCluster = AKSLabelDomain + "/cluster"
-
-	SkuFeatureToLabel = map[rune]string{
-		'c': LabelSKUConfidential,
-		'i': LabelSKUIsolatedSize,
-	}
 )
 
 const (
