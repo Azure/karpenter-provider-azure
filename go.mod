@@ -48,7 +48,7 @@ require (
 require (
 	contrib.go.opencensus.io/exporter/ocagent v0.7.1-0.20200907061046-05415f1de66d // indirect
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2 // indirect
-	github.com/Azure/agentbaker v0.20240304.0-devinwon // indirect
+	github.com/Azure/agentbaker v0.20240311.0-lilypan // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.5.1 // indirect
 	github.com/Azure/go-armbalancer v0.0.2 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect

@@ -248,10 +248,6 @@ var (
 			CustomSearchDomainRealmUser:     "",                                                     // cd
 			CustomSearchDomainRealmPassword: "",                                                     // cd
 		},
-		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
-			TlsBootstrappingStatus:       enabledFeatureState,  // s
-			SecureTlsBootstrappingStatus: disabledFeatureState, // s
-		},
 		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
 			SwapFileSize:               &defaultSwapFileSize, // td
 			TransparentHugepageSupport: ptr.String(""),       // cd
@@ -263,6 +259,9 @@ var (
 			KubeletConfigFileStatus:  disabledFeatureState, // s
 			KubeletConfigFileContent: "",                   // s
 			KubeletFlags:             map[string]string{},  // psX
+		},
+		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
+			TlsBootstrappingMode: nbcontractv1.BootstrappingMode_STANDARD,
 		},
 		MessageOfTheDay: "",    // td
 		IsKata:          false, // n
