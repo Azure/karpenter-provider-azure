@@ -9,7 +9,7 @@
 - [Karpenter configuration sources](#karpenter-configuration-sources)
   - [Hardcoded values](#hardcoded-values)
   - [Environment variables](#environment-variables)
-  - [Karpenter global settings](#karpenter-global-settings)
+  - [Karpenter global settings [OUTDATED]](#karpenter-global-settings)
   - [Provisioner CR spec](#provisioner-cr-spec)
   - [NodeTemplate CR spec](#nodetemplate-cr-spec)
   - [Auto-detected values](#auto-detected-values)
@@ -79,7 +79,7 @@ Hardcoded values are used for parameters in one of the following categories:
 
 Environment variables are used for global parameters that are needed for bootstrap and already required to be set for other reasons, such as Subscription ID - needed for Azure SDK.
 
-### Karpenter global settings
+### Karpenter global settings [OUTDATED]
 
 Karpenter uses a ConfigMap with flexible structure for global settings. Part of this configuration is generic, and part is provider specific. See [Concepts/Settings/ConfigMap](https://karpenter.sh/preview/concepts/settings/#configmap) in Karpenter documentation for an overview. Note that this represents part of the external configuration surface / API, and should be treated accordingly.
 
