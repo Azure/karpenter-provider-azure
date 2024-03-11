@@ -366,19 +366,19 @@ func (env *Environment) EventuallyExpectUniqueNodeNames(selector labels.Selector
 }
 
 func (env *Environment) eventuallyExpectScaleDown() {
-    GinkgoHelper()
-    var userNodeCount int
-    Eventually(func(g Gomega) {
-        // Get Nodes that are not part of the systempool. kubernetes.azure.com/mode=user  
-        userNodes := &v1.NodeList{}
-        err := env.Client.List(env, userNodes, client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{"kubernetes.azure.com/mode": "user"})})
-        if err != nil {
-            g.Expect(err).NotTo(HaveOccurred(), "Error listing user nodes")
-        }
-        userNodeCount = len(userNodes.Items)
+	GinkgoHelper()
+	var userNodeCount int
+	Eventually(func(g Gomega) {
+		// Get Nodes that are not part of the systempool. kubernetes.azure.com/mode=user
+		userNodes := &v1.NodeList{}
+		err := env.Client.List(env, userNodes, client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{"kubernetes.azure.com/mode": "user"})})
+		if err != nil {
+			g.Expect(err).NotTo(HaveOccurred(), "Error listing user nodes")
+		}
+		userNodeCount = len(userNodes.Items)
 
-        g.Expect(userNodeCount).To(Equal(0))
-    }).Should(Succeed(), fmt.Sprintf("expected zero user nodes, but had %d", userNodeCount))
+		g.Expect(userNodeCount).To(Equal(0))
+	}).Should(Succeed(), fmt.Sprintf("expected zero user nodes, but had %d", userNodeCount))
 }
 
 func (env *Environment) EventuallyExpectNotFound(objects ...client.Object) {

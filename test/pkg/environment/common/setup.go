@@ -97,11 +97,11 @@ func (env *Environment) ExpectCleanCluster() {
 		metaList.SetGroupVersionKind(gvk)
 		Expect(env.Client.List(env.Context, metaList, client.Limit(1))).To(Succeed())
 		if len(metaList.Items) > 0 {
-			for _, item := range metaList.Items { 
-				// only allow system-surge and default node pools to exist for nap purposes 
+			for _, item := range metaList.Items {
+				// only allow system-surge and default node pools to exist for nap purposes
 				Expect(item.GetName()).To(Or(Equal("system-surge"), Equal("default")), fmt.Sprintf("expected only system-surge and general-purpose %s to exist", gvk.Kind))
 			}
-		} 
+		}
 	}
 }
 
