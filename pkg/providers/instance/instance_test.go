@@ -22,10 +22,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/karpenter/pkg/cache"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/stretchr/testify/assert"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
@@ -77,7 +77,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 			expectedPriority:     corev1beta1.CapacityTypeOnDemand,
 		},
 	}
-	provider := NewProvider(context.TODO(), nil, nil, nil, nil, cache.NewUnavailableOfferings(),
+	provider := NewProvider(nil, nil, nil, nil, cache.NewUnavailableOfferings(),
 		"westus-2",
 		"MC_xxxxx_yyyy-region",
 		"/subscriptions/0000000-0000-0000-0000-0000000000/resourceGroups/fake-resource-group-name/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodesubnet",

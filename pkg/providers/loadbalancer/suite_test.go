@@ -28,9 +28,9 @@ import (
 	. "knative.dev/pkg/logging/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter/pkg/fake"
-	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
-	"github.com/Azure/karpenter/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
 
 var ctx context.Context

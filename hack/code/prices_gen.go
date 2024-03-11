@@ -29,7 +29,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Azure/karpenter/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/samber/lo"
 )
 
@@ -179,8 +179,7 @@ func writePricing(src *bytes.Buffer, instanceNames []string, region string, getP
 			continue
 		}
 
-		// TODO: look at grouping by families to make the generated output nicer:
-		// https://github.com/Azure/karpenter/pull/94#discussion_r1120901524
+		// TODO: look at grouping by families to make the generated output nicer
 		_, err := fmt.Fprintf(src, "\"%s\":%f, \n", instanceName, price)
 		if err != nil {
 			log.Fatalf("error writing, %s", err)

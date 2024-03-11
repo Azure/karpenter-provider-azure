@@ -29,26 +29,25 @@ import (
 
 	"k8s.io/client-go/tools/record"
 
-	"github.com/Azure/karpenter/pkg/apis"
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/cloudprovider"
-	"github.com/Azure/karpenter/pkg/providers/instance"
-	"github.com/Azure/karpenter/pkg/test"
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	"github.com/aws/karpenter-core/pkg/controllers/provisioning"
-	"github.com/aws/karpenter-core/pkg/controllers/state"
-	"github.com/aws/karpenter-core/pkg/events"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	"sigs.k8s.io/karpenter/pkg/events"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/operator/scheme"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 
-	. "github.com/aws/karpenter-core/pkg/test/expectations"
 	. "knative.dev/pkg/logging/testing"
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
-	coreoptions "github.com/aws/karpenter-core/pkg/operator/options"
-	coretest "github.com/aws/karpenter-core/pkg/test"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 var ctx context.Context
@@ -67,9 +66,7 @@ func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	// TODO v1beta1 options
-	// ctx = options.ToContext(ctx, test.Options())
-	ctx = settings.ToContext(ctx, test.Settings())
+	ctx = options.ToContext(ctx, test.Options())
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
 
 	ctx, stop = context.WithCancel(ctx)
@@ -79,7 +76,7 @@ func TestAzure(t *testing.T) {
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
 	RunSpecs(t, "Provider/Azure")
 }
 
@@ -136,8 +133,8 @@ var _ = Describe("InstanceProvider", func() {
 		func(azEnv *test.Environment, cp *cloudprovider.CloudProvider) {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 			for _, zone := range azEnv.Zones() {
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeSpot)
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, v1alpha5.CapacityTypeOnDemand)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeOnDemand)
 			}
 			instanceTypes, err := cp.GetInstanceTypes(ctx, nodePool)
 			Expect(err).ToNot(HaveOccurred())

@@ -26,17 +26,16 @@ inputs:
     description: "The git commit, tag, or branch to check out"
     required: false
   location:
-    type: string
     description: "the azure location to run the e2e test in"
-    default: "westus2"
+    default: "eastus"
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
     with:
       ref: ${{ inputs.git_ref }}
   - name: az login
-    uses: azure/login@v1
+    uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
     with:
       client-id: ${{ inputs.client-id }}
       tenant-id: ${{ inputs.tenant-id }}

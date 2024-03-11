@@ -27,17 +27,16 @@ inputs:
     description: "The git commit, tag, or branch to check out"
     required: false
   location:
-    type: string
-    description: "the azure location to run the e2e test in"
-    default: "westus2"
+    description: "The azure location to run the e2e test in"
+    default: "eastus"
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@v4
+  - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
     with:
       ref: ${{ inputs.git_ref }}
   - name: az login
-    uses: azure/login@v1
+    uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
     with:
       client-id: ${{ inputs.client-id }}
       tenant-id: ${{ inputs.tenant-id }}
@@ -45,15 +44,23 @@ runs:
   - name: az set sub
     shell: bash
     run: az account set --subscription ${{ inputs.subscription-id }}
+  - name: create workload msi
+    shell: bash
+    run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-msi
   - name: create cluster
     shell: bash
     run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
   - name: az login 2
-    uses: azure/login@v1
+    uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
     with:
       client-id: ${{ inputs.client-id }}
       tenant-id: ${{ inputs.tenant-id }}
       subscription-id: ${{ inputs.subscription-id }}
+  - name: create federated cred
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-create-federated-cred
   - name: update azure perms
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-perm
+    run: |
+      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-perm
+      AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-perm-acr

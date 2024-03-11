@@ -21,8 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	corecontroller "github.com/aws/karpenter-core/pkg/operator/controller"
 	"github.com/samber/lo"
 	"go.uber.org/zap/zapcore"
 	"knative.dev/pkg/logging"
@@ -33,12 +31,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/providers/instance"
-	"github.com/Azure/karpenter/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 type Controller struct {
@@ -81,8 +81,8 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 	// TODO: To look it up and use that as input to calculate the goal state as well
 
 	// Compare the expected hash with the actual hash
-	settings := settings.FromContext(ctx)
-	goalHash, err := HashFromNodeClaim(settings, nodeClaim)
+	options := options.FromContext(ctx)
+	goalHash, err := HashFromNodeClaim(options, nodeClaim)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -105,7 +105,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 		return reconcile.Result{}, fmt.Errorf("getting azure VM for machine, %w", err)
 	}
 
-	update := calculateVMPatch(settings, vm)
+	update := calculateVMPatch(options, vm)
 	// This is safe only as long as we're not updating fields which we consider secret.
 	// If we do/are, we need to redact them.
 	logVMPatch(ctx, update)
@@ -133,12 +133,12 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 }
 
 func calculateVMPatch(
-	settings *settings.Settings,
+	options *options.Options,
 	// TODO: Can pass and consider NodeClaim and/or NodePool here if we need to in the future
 	currentVM *armcompute.VirtualMachine,
 ) *armcompute.VirtualMachineUpdate {
 	// Determine the differences between the current state and the goal state
-	expectedIdentities := settings.NodeIdentities
+	expectedIdentities := options.NodeIdentities
 	var currentIdentities []string
 	if currentVM.Identity != nil {
 		currentIdentities = lo.Keys(currentVM.Identity.UserAssignedIdentities)
@@ -169,7 +169,7 @@ func (c *Controller) Builder(_ context.Context, m manager.Manager) corecontrolle
 			),
 		)).WithOptions(controller.Options{MaxConcurrentReconciles: 10}),
 	// TODO: Can add .Watches(&v1beta1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
-	// TODO: similar to https://github.com/aws/karpenter-core/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
+	// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
 	// TODO: if/when we need to monitor provisoner changes and flow updates on the NodePool down to the underlying VMs.
 	)
 }

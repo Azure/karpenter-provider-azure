@@ -21,19 +21,19 @@ package main
 import (
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter/pkg/cloudprovider"
-	"github.com/Azure/karpenter/pkg/operator"
+	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator"
 
-	altOperator "github.com/Azure/karpenter/pkg/alt/karpenter-core/pkg/operator"
-	controllers "github.com/Azure/karpenter/pkg/controllers"
-	"github.com/aws/karpenter-core/pkg/cloudprovider/metrics"
-	corecontrollers "github.com/aws/karpenter-core/pkg/controllers"
+	altOperator "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/operator"
+	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
+	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
 
 	// Note the absence of corewebhooks: these pull in knative webhook-related packages and informers in init()
 	// We don't give cluster-level roles when running in AKS managed mode, so their informers will produce errors and halt all other operations
-	// corewebhooks "github.com/aws/karpenter-core/pkg/webhooks"
+	// corewebhooks "sigs.k8s.io/karpenter/pkg/webhooks"
 
-	"github.com/aws/karpenter-core/pkg/controllers/state"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
 )
 
 func main() {

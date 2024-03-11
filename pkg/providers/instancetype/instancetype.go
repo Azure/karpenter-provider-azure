@@ -27,15 +27,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"knative.dev/pkg/ptr"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/utils"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/scheduling"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 
-	"github.com/Azure/karpenter/pkg/apis/settings"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
-	"github.com/aws/karpenter-core/pkg/utils/resources"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 const (
@@ -183,12 +183,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	// size parts
 	requirements[v1alpha2.LabelSKUFamily].Insert(vmsize.Family)
 
-	// everything from additive features
-	for _, featureLabel := range v1alpha2.SkuFeatureToLabel {
-		requirements.Add(scheduling.NewRequirement(featureLabel, v1.NodeSelectorOpDoesNotExist))
-	}
-
-	setRequirementsAdditiveFeatures(requirements, vmsize)
 	setRequirementsStoragePremiumCapable(requirements, sku)
 	setRequirementsEncryptionAtHostSupported(requirements, sku)
 	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
@@ -199,14 +193,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	setRequirementsVersion(requirements, vmsize)
 
 	return requirements
-}
-
-func setRequirementsAdditiveFeatures(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	for _, feature := range vmsize.AdditiveFeatures {
-		if featureLabel, ok := v1alpha2.SkuFeatureToLabel[feature]; ok {
-			requirements[featureLabel].Insert("true")
-		}
-	}
 }
 
 func setRequirementsStoragePremiumCapable(requirements scheduling.Requirements, sku *skewer.SKU) {
@@ -316,7 +302,7 @@ func memory(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
 	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(memoryGiB(sku))))
 	// Account for VM overhead in calculation
 	memory.Sub(resource.MustParse(fmt.Sprintf("%dMi", int64(math.Ceil(
-		float64(memory.Value())*settings.FromContext(ctx).VMMemoryOverheadPercent/1024/1024)))))
+		float64(memory.Value())*options.FromContext(ctx).VMMemoryOverheadPercent/1024/1024)))))
 	return memory
 }
 

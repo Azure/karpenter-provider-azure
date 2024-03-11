@@ -4,6 +4,10 @@ on:
     outputs:
       GIT_REF:
         value: ${{ jobs.resolve.outputs.GIT_REF }}
+
+permissions:
+  contents: read
+  
 jobs:
   resolve:
     runs-on: ubuntu-latest
@@ -11,7 +15,12 @@ jobs:
       GIT_REF: ${{ steps.resolve-step.outputs.GIT_REF }}
     steps:
       # Download the artifact and resolve the GIT_REF
-      - uses: actions/checkout@v4
+      - name: Harden Runner
+        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - if: github.event_name == 'workflow_run'
         uses: ./.github/actions/download-artifact
       - id: resolve-step

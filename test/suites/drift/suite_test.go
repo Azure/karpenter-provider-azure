@@ -28,12 +28,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/test/pkg/environment/azure"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
-	"github.com/aws/karpenter-core/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 var env *azure.Environment

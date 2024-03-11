@@ -21,17 +21,17 @@ import (
 	"strings"
 
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/Azure/karpenter/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter/pkg/providers/launchtemplate/parameters"
-	"github.com/Azure/karpenter/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/scheduling"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 const (
@@ -94,16 +94,16 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	return launchTemplate, nil
 }
 
-func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeTemplate *v1alpha2.AKSNodeClass, labels map[string]string) *parameters.StaticParameters {
+func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass, labels map[string]string) *parameters.StaticParameters {
 	var arch string = corev1beta1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
 		arch = corev1beta1.ArchitectureArm64
 	}
 
 	return &parameters.StaticParameters{
-		ClusterName:                    settings.FromContext(ctx).ClusterName,
+		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
-		Tags:                           lo.Assign(settings.FromContext(ctx).Tags, nodeTemplate.Spec.Tags),
+		Tags:                           nodeClass.Spec.Tags,
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
@@ -115,11 +115,11 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		UserAssignedIdentityID:         p.userAssignedIdentityID,
 		ResourceGroup:                  p.resourceGroup,
 		Location:                       p.location,
-		ClusterID:                      settings.FromContext(ctx).ClusterID,
-		APIServerName:                  settings.FromContext(ctx).GetAPIServerName(),
-		KubeletClientTLSBootstrapToken: settings.FromContext(ctx).KubeletClientTLSBootstrapToken,
-		NetworkPlugin:                  settings.FromContext(ctx).NetworkPlugin,
-		NetworkPolicy:                  settings.FromContext(ctx).NetworkPolicy,
+		ClusterID:                      options.FromContext(ctx).ClusterID,
+		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
+		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
+		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
+		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 	}
 }
 

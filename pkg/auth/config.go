@@ -68,12 +68,13 @@ type Config struct {
 	AuthMethod string `json:"authMethod" yaml:"authMethod"`
 
 	// Settings for a service principal.
-	AADClientID                 string `json:"aadClientId" yaml:"aadClientId"`
-	AADClientSecret             string `json:"aadClientSecret" yaml:"aadClientSecret"`
-	AADClientCertPath           string `json:"aadClientCertPath" yaml:"aadClientCertPath"`
-	AADClientCertPassword       string `json:"aadClientCertPassword" yaml:"aadClientCertPassword"`
-	UseManagedIdentityExtension bool   `json:"useManagedIdentityExtension" yaml:"useManagedIdentityExtension"`
-	UserAssignedIdentityID      string `json:"userAssignedIdentityID" yaml:"userAssignedIdentityID"`
+	AADClientID                  string `json:"aadClientId" yaml:"aadClientId"`
+	AADClientSecret              string `json:"aadClientSecret" yaml:"aadClientSecret"`
+	AADClientCertPath            string `json:"aadClientCertPath" yaml:"aadClientCertPath"`
+	AADClientCertPassword        string `json:"aadClientCertPassword" yaml:"aadClientCertPassword"`
+	UseCredentialFromEnvironment bool   `json:"useCredentialFromEnvironment" yaml:"useCredentialFromEnvironment"`
+	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension" yaml:"useManagedIdentityExtension"`
+	UserAssignedIdentityID       string `json:"userAssignedIdentityID" yaml:"userAssignedIdentityID"`
 
 	//Configs only for AKS
 	ClusterName string `json:"clusterName" yaml:"clusterName"`
@@ -87,7 +88,7 @@ type Config struct {
 
 func (cfg *Config) PrepareConfig() error {
 	cfg.BaseVars()
-	err := cfg.prepareMSI()
+	err := cfg.prepareID()
 	if err != nil {
 		return err
 	}
@@ -113,7 +114,15 @@ func (cfg *Config) BaseVars() {
 	// cfg.VnetGuid = os.Getenv("AZURE_VNET_GUID") // This field needs to be resolved inside of karpenter, so we will get it in the azClient initialization
 }
 
-func (cfg *Config) prepareMSI() error {
+func (cfg *Config) prepareID() error {
+	useCredentialFromEnvironmentFromEnv := os.Getenv("ARM_USE_CREDENTIAL_FROM_ENVIRONMENT")
+	if len(useCredentialFromEnvironmentFromEnv) > 0 {
+		shouldUse, err := strconv.ParseBool(useCredentialFromEnvironmentFromEnv)
+		if err != nil {
+			return err
+		}
+		cfg.UseCredentialFromEnvironment = shouldUse
+	}
 	useManagedIdentityExtensionFromEnv := os.Getenv("ARM_USE_MANAGED_IDENTITY_EXTENSION")
 	if len(useManagedIdentityExtensionFromEnv) > 0 {
 		shouldUse, err := strconv.ParseBool(useManagedIdentityExtensionFromEnv)

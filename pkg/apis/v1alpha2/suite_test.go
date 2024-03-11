@@ -24,13 +24,13 @@ import (
 	. "github.com/onsi/gomega"
 	. "knative.dev/pkg/logging/testing"
 
-	. "github.com/aws/karpenter-core/pkg/test/expectations"
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
-	"github.com/aws/karpenter-core/pkg/operator/scheme"
-	coretest "github.com/aws/karpenter-core/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/operator/scheme"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter/pkg/apis"
-	"github.com/Azure/karpenter/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
 
 var ctx context.Context

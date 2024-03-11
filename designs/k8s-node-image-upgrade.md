@@ -36,19 +36,19 @@ When considering options, there have been multiple factors important and conside
             - Deferred as its a risk to preview
             - Requires a whole new design space for addressing this
             - Changed to post preview support/stretch goal, as its a far easier design space once we have an agentpool representation
-        - Max Surge [Deferring as it'd require a `karpenter-core` fork, and they already have a design on the way for delivering this within the main line]
+        - Max Surge [Deferring as it'd require a `sigs.k8s.io/karpenter` fork, and they already have a design on the way for delivering this within the main line]
             - Max surge doesn't currently exist as a settable condition within karpetner core for drift.
             - Drift's current batching logic is to deprovision and remove all drifted nodes that don't have pods running on them in one big batch. After that it goes through one by one deprovisioning one candidate at a time, where it will spin up any needed replacement nodes before removing the older one.
-            - If we wanted to implement it for preview, I don't think it would be a hard section of code to add. There is actually a design in the works for `kaprenter-core`to add batching by node counts, but my concern is that it won't be available before our preview timeline.
+            - If we wanted to implement it for preview, I don't think it would be a hard section of code to add. There is actually a design in the works for `sigs.k8s.io/karpenter`to add batching by node counts, but my concern is that it won't be available before our preview timeline.
             - I think if we do implement max surge we should have it only be pod based, as its a better proxy for resources than node count. Note: it may have to round up to the nearest integer to have a minimum of 1 node [0 special cased to 0], which doesn't feel great as it'd be violating the actual setting as a threshold.
-            - I think the following design within `karpenter-core` will be the best working solution for us here: <br>
-            https://github.com/aws/karpenter-core/pull/516#pullrequestreview-1636663551 <br>
-            Although, it's node based which I don't like that much. That said if node based becomes an issue for other customers I expect `karpenter-core` to provide other  options for configurability. For preview though, the timeline of it is unknown, and expect it may not be available in time.
-        - Soak [Requires a more complicated work around, or forking `karpenter-core`]
+            - I think the following design within `sigs.k8s.io/karpenter` will be the best working solution for us here: <br>
+            https://github.com/kubernetes-sigs/karpenter/pull/516 <br>
+            Although, it's node based which I don't like that much. That said if node based becomes an issue for other customers I expect `sigs.k8s.io/karpenter` to provide other  options for configurability. For preview though, the timeline of it is unknown, and expect it may not be available in time.
+        - Soak [Requires a more complicated work around, or forking `sigs.k8s.io/karpenter`]
             - Soak currently doesn't exist for karpenter
             - Currently after a successful drift it will requeue after 1 millisecond
-            - I don't think implementing this would be too hard, if added within `karpenter-core`, as we could simply add a wait after the drifting of a batch is complete if its not he last batch. However, it would require forking `karpenter-core`, so plan to defer as we'd like to avoid that.
-            - The plan is to defer and push for/contribute to `karpenter-core` design/implementation to get this behavioral control within `karpenter-core` directly.
+            - I don't think implementing this would be too hard, if added within `sigs.k8s.io/karpenter`, as we could simply add a wait after the drifting of a batch is complete if its not he last batch. However, it would require forking `sigs.k8s.io/karpenter`, so plan to defer as we'd like to avoid that.
+            - The plan is to defer and push for/contribute to `sigs.k8s.io/karpenter` design/implementation to get this behavioral control within `sigs.k8s.io/karpenter` directly.
 
     - Removed:
         - Timeout [Removed as a requirement since karpenter retries forever, and so this doesn’t make much sense]
@@ -180,8 +180,8 @@ Modifying NodeTemplate [API]:
 
 **Open Question**:
 
-1. Q: Do we fork `karpenter-core`?
-    - Is `Max Surge` a hard requirement for preview, and will there be a satisfying `karpenter-core` option by preview?
+1. Q: Do we fork `sigs.k8s.io/karpenter`?
+    - Is `Max Surge` a hard requirement for preview, and will there be a satisfying `sigs.k8s.io/karpenter` option by preview?
     - A: No, `Max Surge`, and `Soak` have been deferred as to not require a fork
 2. Q: Do we do validation on node image version for preview?
     - A: Moved to a stretch goal
@@ -204,7 +204,7 @@ Modifying NodeTemplate [API]:
 
 If Max Surge remains at 1, this will be an issue for scale, as cluster upgrades will then take a long time to complete.
 
-I would like if Max Surge is controllable, and has a reasonable baseline default of 10%, or 30% of whatever resources its based on (pods, nodes, etc) [10-30% are magic numbers based on experience with RP upgrades], but this is dependent upon if we fork `karpenter-core`, and/or what design options are available to us.
+I would like if Max Surge is controllable, and has a reasonable baseline default of 10%, or 30% of whatever resources its based on (pods, nodes, etc) [10-30% are magic numbers based on experience with RP upgrades], but this is dependent upon if we fork `sigs.k8s.io/karpenter`, and/or what design options are available to us.
 
 ### **Monitoring**
 
@@ -283,11 +283,8 @@ Long discussions around the potential support for maintenance windows for node i
 - Mega Issue: Deprovisioning Controls <br>
 https://github.com/aws/karpenter/issues/1738
 
-- Drift Max Surge design within `karpenter-core`: <br>
-https://github.com/aws/karpenter-core/pull/516#pullrequestreview-1636663551
-
-- POC PR for drift supporting k8s version upgrade: <br>
-https://github.com/Azure/karpenter/pull/262
+- Drift Max Surge design within `sigs.k8s.io/karpenter`: <br>
+https://github.com/kubernetes-sigs/karpenter/pull/516
 
 ---
 
@@ -313,5 +310,5 @@ From template:
     design doc by carefully reviewing it or assigning a tech leads that
     are domain expert in that SIG to review and approve this doc
 
-[^6]: Q&A style meeting notes from desgin review meeting to capture
+[^6]: Q&A style meeting notes from design review meeting to capture
     todos

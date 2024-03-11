@@ -17,16 +17,16 @@ limitations under the License.
 package nodeclaim_test
 
 import (
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/test"
-	"github.com/aws/karpenter-core/pkg/utils/resources"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 var _ = Describe("StandaloneNodeClaim", func() {

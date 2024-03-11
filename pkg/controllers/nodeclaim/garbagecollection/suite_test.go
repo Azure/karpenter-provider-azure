@@ -23,14 +23,14 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/karpenter/pkg/apis"
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/cloudprovider"
-	"github.com/Azure/karpenter/pkg/controllers/nodeclaim/garbagecollection"
-	"github.com/Azure/karpenter/pkg/fake"
-	"github.com/Azure/karpenter/pkg/providers/instance"
-	"github.com/Azure/karpenter/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -40,18 +40,18 @@ import (
 	. "knative.dev/pkg/logging/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/Azure/karpenter/pkg/test"
-	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/controllers/provisioning"
-	"github.com/aws/karpenter-core/pkg/controllers/state"
-	"github.com/aws/karpenter-core/pkg/events"
-	"github.com/aws/karpenter-core/pkg/operator/controller"
-	coreoptions "github.com/aws/karpenter-core/pkg/operator/options"
-	"github.com/aws/karpenter-core/pkg/operator/scheme"
-	coretest "github.com/aws/karpenter-core/pkg/test"
-	. "github.com/aws/karpenter-core/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	"sigs.k8s.io/karpenter/pkg/events"
+	"sigs.k8s.io/karpenter/pkg/operator/controller"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/operator/scheme"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 )
 
 var ctx context.Context
@@ -74,9 +74,7 @@ func TestAPIs(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	// TODO v1beta1 we dont have options yet
-	// ctx = options.ToContext(ctx, test.Options())
-	ctx = settings.ToContext(ctx, test.Settings())
+	ctx = options.ToContext(ctx, test.Options())
 
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
 	ctx, stop = context.WithCancel(ctx)
@@ -85,7 +83,7 @@ var _ = BeforeSuite(func() {
 	garbageCollectionController = garbagecollection.NewController(env.Client, cloudProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
 })
 
 var _ = AfterSuite(func() {

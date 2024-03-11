@@ -22,10 +22,10 @@ import (
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 
-	azsettings "github.com/Azure/karpenter/pkg/apis/settings"
+	azoptions "github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 )
 
-type SettingOptions struct {
+type OptionsFields struct {
 	ClusterName                    *string
 	ClusterEndpoint                *string
 	ClusterID                      *string
@@ -35,26 +35,24 @@ type SettingOptions struct {
 	NetworkPolicy                  *string
 	VMMemoryOverheadPercent        *float64
 	NodeIdentities                 []string
-	Tags                           map[string]string
 }
 
-func Settings(overrides ...SettingOptions) *azsettings.Settings {
-	options := SettingOptions{}
+func Options(overrides ...OptionsFields) *azoptions.Options {
+	options := OptionsFields{}
 	for _, override := range overrides {
 		if err := mergo.Merge(&options, override, mergo.WithOverride); err != nil {
 			panic(fmt.Sprintf("Failed to merge settings: %s", err))
 		}
 	}
-	return &azsettings.Settings{
+	return &azoptions.Options{
 		ClusterName:                    lo.FromPtrOr(options.ClusterName, "test-cluster"),
 		ClusterEndpoint:                lo.FromPtrOr(options.ClusterEndpoint, "https://test-cluster"),
 		ClusterID:                      lo.FromPtrOr(options.ClusterID, "00000000"),
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
-		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "kubenet"),
+		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, ""),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
-		Tags:                           options.Tags,
 	}
 }

@@ -24,10 +24,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/karpenter/pkg/providers/pricing/client"
-	"github.com/aws/karpenter-core/pkg/utils/pretty"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 	"github.com/samber/lo"
 	"knative.dev/pkg/logging"
+	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
 // pricingUpdatePeriod is how often we try to update our pricing information after the initial update on startup
@@ -162,7 +162,7 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	prices := map[client.Item]bool{}
 	err := p.fetchPricing(ctx, processPage(prices))
 	if err != nil {
-		logging.FromContext(ctx).Errorf("error featching updated pricing for region %s, %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err, err.lastOnDemandUpdateTime.Format(time.RFC3339), err.lastSpotUpdateTime.Format(time.RFC3339))
+		logging.FromContext(ctx).Errorf("error fetching updated pricing for region %s, %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err, err.lastOnDemandUpdateTime.Format(time.RFC3339), err.lastSpotUpdateTime.Format(time.RFC3339))
 		return
 	}
 

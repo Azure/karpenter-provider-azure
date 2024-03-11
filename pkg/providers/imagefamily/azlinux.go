@@ -19,13 +19,13 @@ package imagefamily
 import (
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/providers/imagefamily/bootstrap"
-	"github.com/Azure/karpenter/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/scheduling"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 const (
@@ -43,7 +43,7 @@ func (u AzureLinux) Name() string {
 }
 
 func (u AzureLinux) DefaultImages() []DefaultImageOutput {
-	// image provider will select these images in order, first match wins. This is why we chose to put AzureLinuxGen2containerd first in the defaultImages
+	// image provider will select these images in order, first match wins. This is why we chose to put Gen2 first in the defaultImages, as we prefer gen2 over gen1
 	return []DefaultImageOutput{
 		{
 			CommunityImage:   AzureLinuxGen2CommunityImage,

@@ -34,18 +34,17 @@ import (
 	"knative.dev/pkg/logging"
 
 	"github.com/Azure/azure-kusto-go/kusto/kql"
-	"github.com/Azure/karpenter/pkg/cache"
-	"github.com/Azure/karpenter/pkg/providers/instancetype"
-	"github.com/Azure/karpenter/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 
-	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
-	"github.com/aws/karpenter-core/pkg/scheduling"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
 	//nolint SA1019 - deprecated package
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
@@ -93,7 +92,6 @@ type Provider struct {
 }
 
 func NewProvider(
-	_ context.Context, // TODO: Why is this here?
 	azClient *AZClient,
 	instanceTypeProvider *instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
@@ -272,11 +270,8 @@ func newVMObject(
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
 	// Build the image reference from template
-	imageReference := armcompute.ImageReference{}
-	if v1alpha2.IsComputeGalleryImageID(launchTemplate.ImageID) {
-		imageReference.ID = &launchTemplate.ImageID
-	} else {
-		imageReference.CommunityGalleryImageID = &launchTemplate.ImageID
+	imageReference := armcompute.ImageReference{
+		CommunityGalleryImageID: &launchTemplate.ImageID,
 	}
 	vm := armcompute.VirtualMachine{
 		Location: to.Ptr(location),
@@ -352,7 +347,7 @@ func setVMPropertiesStorageProfile(vmProperties *armcompute.VirtualMachineProper
 
 // setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
 func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string) {
-	if capacityType == v1alpha5.CapacityTypeSpot {
+	if capacityType == corev1beta1.CapacityTypeSpot {
 		vmProperties.EvictionPolicy = to.Ptr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
 			MaxPrice: to.Ptr(float64(-1)),
@@ -396,8 +391,8 @@ func (p *Provider) launchInstance(
 		return nil, nil, err
 	}
 
-	sshPublicKey := settings.FromContext(ctx).SSHPublicKey
-	nodeIdentityIDs := settings.FromContext(ctx).NodeIdentities
+	sshPublicKey := options.FromContext(ctx).SSHPublicKey
+	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
 	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
@@ -415,7 +410,15 @@ func (p *Provider) launchInstance(
 	return resp, instanceType, nil
 }
 
+// nolint:gocyclo
 func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+	if sdkerrors.LowPriorityQuotaHasBeenReached(err) {
+		// Mark in cache that spot quota has been reached for this subscription
+		p.unavailableOfferings.MarkSpotUnavailableWithTTL(ctx, SubscriptionQuotaReachedTTL)
+
+		logging.FromContext(ctx).Error(err)
+		return fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
+	}
 	if sdkerrors.SKUFamilyQuotaHasBeenReached(err) {
 		// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
 		// This will also update the TTL for an existing offering in the cache that is already unavailable
@@ -589,11 +592,11 @@ func orderInstanceTypesByPrice(instanceTypes []*corecloudprovider.InstanceType, 
 	sort.Slice(instanceTypes, func(i, j int) bool {
 		iPrice := math.MaxFloat64
 		jPrice := math.MaxFloat64
-		if len(instanceTypes[i].Offerings.Available().Requirements(requirements)) > 0 {
-			iPrice = instanceTypes[i].Offerings.Available().Requirements(requirements).Cheapest().Price
+		if len(instanceTypes[i].Offerings.Available().Compatible(requirements)) > 0 {
+			iPrice = instanceTypes[i].Offerings.Available().Compatible(requirements).Cheapest().Price
 		}
-		if len(instanceTypes[j].Offerings.Available().Requirements(requirements)) > 0 {
-			jPrice = instanceTypes[j].Offerings.Available().Requirements(requirements).Cheapest().Price
+		if len(instanceTypes[j].Offerings.Available().Compatible(requirements)) > 0 {
+			jPrice = instanceTypes[j].Offerings.Available().Compatible(requirements).Cheapest().Price
 		}
 		if iPrice == jPrice {
 			return instanceTypes[i].Name < instanceTypes[j].Name

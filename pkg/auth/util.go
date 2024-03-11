@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/crypto/pkcs12"
 
-	"github.com/Azure/karpenter/pkg/utils/project"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils/project"
 )
 
 // decodePkcs12 decodes a PKCS#12 client certificate by extracting the public certificate and

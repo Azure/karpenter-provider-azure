@@ -21,7 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,stylecheck
 	. "github.com/onsi/gomega"    //nolint:revive,stylecheck
 	"github.com/samber/lo"
@@ -35,12 +36,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	"github.com/aws/karpenter-core/pkg/apis"
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/operator/injection"
-	"github.com/aws/karpenter-core/pkg/test"
-	"github.com/aws/karpenter-core/pkg/utils/pod"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/utils/pod"
 )
 
 var (
@@ -52,21 +50,17 @@ var (
 		&v1.PersistentVolumeClaim{},
 		&v1.PersistentVolume{},
 		&storagev1.StorageClass{},
-		&v1alpha5.Provisioner{},
 		&corev1beta1.NodePool{},
 		&v1.LimitRange{},
 		&schedulingv1.PriorityClass{},
 		&v1.Node{},
-		&v1alpha5.Machine{},
 		&corev1beta1.NodeClaim{},
 	}
 )
 
 // nolint:gocyclo
 func (env *Environment) BeforeEach() {
-	// TODO (charliedmcb): uncomment debugging lib, but removing references for now to avoid the need to review the entire package
-	// debug.BeforeEach(env.Context, env.Config, env.Client)
-	env.Context = injection.WithSettingsOrDie(env.Context, env.KubeClient, apis.Settings...)
+	debug.BeforeEach(env.Context, env.Config, env.Client)
 
 	// Expect this cluster to be clean for test runs to execute successfully
 	env.ExpectCleanCluster()
@@ -97,7 +91,7 @@ func (env *Environment) ExpectCleanCluster() {
 				fmt.Sprintf("expected to have no provisionable pods, found %s/%s", pods.Items[i].Namespace, pods.Items[i].Name))
 		}
 	}).WithPolling(10 * time.Second).WithTimeout(5 * time.Minute).Should(Succeed())
-	for _, obj := range []client.Object{&v1alpha5.Provisioner{}, &corev1beta1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
+	for _, obj := range []client.Object{&corev1beta1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
 		metaList := &metav1.PartialObjectMetadataList{}
 		gvk := lo.Must(apiutil.GVKForObject(obj, env.Client.Scheme()))
 		metaList.SetGroupVersionKind(gvk)
@@ -113,8 +107,7 @@ func (env *Environment) Cleanup() {
 }
 
 func (env *Environment) AfterEach() {
-	// TODO (charliedmcb): uncomment debugging lib, but removing references for now to avoid the need to review the entire package
-	// debug.AfterEach(env.Context)
+	debug.AfterEach(env.Context)
 	env.printControllerLogs(&v1.PodLogOptions{Container: "controller"})
 }
 

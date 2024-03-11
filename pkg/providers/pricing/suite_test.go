@@ -26,9 +26,9 @@ import (
 	. "github.com/onsi/gomega"
 	. "knative.dev/pkg/logging/testing"
 
-	"github.com/Azure/karpenter/pkg/fake"
-	"github.com/Azure/karpenter/pkg/providers/pricing"
-	"github.com/Azure/karpenter/pkg/providers/pricing/client"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 )
 
 var ctx context.Context

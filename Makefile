@@ -1,7 +1,6 @@
 include Makefile-az.mk
 
 export K8S_VERSION ?= 1.27.x
-export KUBEBUILDER_ASSETS ?= ${HOME}/.kubebuilder/bin
 
 # # CR for local builds of Karpenter
 SYSTEM_NAMESPACE ?= karpenter
@@ -9,7 +8,7 @@ SYSTEM_NAMESPACE ?= karpenter
 # Common Directories
 # TODO: revisit testing tools (temporarily excluded here, for make verify)
 MOD_DIRS = $(shell find . -name go.mod -type f ! -path "./test/*" | xargs dirname)
-KARPENTER_CORE_DIR = $(shell go list -m -f '{{ .Dir }}' github.com/aws/karpenter-core)
+KARPENTER_CORE_DIR = $(shell go list -m -f '{{ .Dir }}' sigs.k8s.io/karpenter)
 
 # TEST_SUITE enables you to select a specific test suite directory to run "make e2etests" or "make test" against
 TEST_SUITE ?= "..."
@@ -77,6 +76,7 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	cp $(KARPENTER_CORE_DIR)/pkg/apis/crds/* pkg/apis/crds
 	yq -i '(.spec.versions[0].additionalPrinterColumns[] | select (.name=="Zone")) .jsonPath=".metadata.labels.karpenter\.azure\.com/zone"' \
 		pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
 	@git diff --quiet ||\
 		{ echo "New file modification detected in the Git working tree. Please check in before commit."; git --no-pager diff --name-only | uniq | awk '{print "  - " $$0}'; \
@@ -86,6 +86,7 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	# TODO: restore codegen if needed; decide on the future of docgen
 	#@echo "Validating codegen/docgen build scripts..."
 	#@find hack/code hack/docs -name "*.go" -type f -print0 | xargs -0 -I {} go build -o /dev/null {}
+	actionlint -oneline
 
 vulncheck: ## Verify code vulnerabilities
 	@govulncheck ./pkg/...

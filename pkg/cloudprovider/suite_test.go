@@ -23,32 +23,32 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 
-	"github.com/Azure/karpenter/pkg/utils"
-	coresettings "github.com/aws/karpenter-core/pkg/apis/settings"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	corecloudprovider "github.com/aws/karpenter-core/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
-	"github.com/aws/karpenter-core/pkg/controllers/provisioning"
-	"github.com/aws/karpenter-core/pkg/controllers/state"
-	"github.com/aws/karpenter-core/pkg/events"
-	coreoptions "github.com/aws/karpenter-core/pkg/operator/options"
-	"github.com/aws/karpenter-core/pkg/operator/scheme"
-	coretest "github.com/aws/karpenter-core/pkg/test"
+	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	"sigs.k8s.io/karpenter/pkg/events"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	"sigs.k8s.io/karpenter/pkg/operator/scheme"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	. "knative.dev/pkg/logging/testing"
 
-	"github.com/Azure/karpenter/pkg/apis"
-	"github.com/Azure/karpenter/pkg/apis/settings"
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/providers/instance"
-	"github.com/Azure/karpenter/pkg/test"
-	. "github.com/aws/karpenter-core/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
 var ctx context.Context
@@ -72,15 +72,15 @@ func TestCloudProvider(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
-	ctx = coresettings.ToContext(ctx, coretest.Settings(coresettings.Settings{DriftEnabled: true}))
-	ctx = settings.ToContext(ctx, test.Settings())
+	ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{FeatureGates: coretest.FeatureGates{Drift: lo.ToPtr(true)}}))
+	ctx = options.ToContext(ctx, test.Options())
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 
 	fakeClock = &clock.FakeClock{}
 	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
 })
 
 var _ = AfterSuite(func() {
@@ -92,7 +92,7 @@ var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	// TODO v1beta1 options
 	// ctx = options.ToContext(ctx, test.Options())
-	ctx = settings.ToContext(ctx, test.Settings())
+	ctx = options.ToContext(ctx, test.Options())
 	nodeClass = test.AKSNodeClass()
 	nodePool = coretest.NodePool(corev1beta1.NodePool{
 		Spec: corev1beta1.NodePoolSpec{
@@ -183,6 +183,11 @@ var _ = Describe("CloudProvider", func() {
 						v1.LabelInstanceTypeStable:   instanceType,
 					},
 				},
+				Spec: corev1beta1.NodeClaimSpec{
+					NodeClassRef: &corev1beta1.NodeClassReference{
+						Name: nodeClass.Name,
+					},
+				},
 			})
 		})
 		It("should not fail if nodeClass does not exist", func() {
@@ -201,13 +206,6 @@ var _ = Describe("CloudProvider", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
-		})
-		It("should error if the NodeClaim doesn't have the instance-type label", func() {
-			nodeClaim.Labels = map[string]string{
-				corev1beta1.NodePoolLabelKey: nodePool.Name,
-			}
-			_, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-			Expect(err).To(HaveOccurred())
 		})
 		It("should error drift if NodeClaim doesn't have provider id", func() {
 			nodeClaim.Status = corev1beta1.NodeClaimStatus{}

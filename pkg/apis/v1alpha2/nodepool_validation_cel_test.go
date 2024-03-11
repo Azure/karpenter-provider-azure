@@ -19,7 +19,7 @@ package v1alpha2_test
 import (
 	"strings"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Pallinder/go-randomdata"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/aws/karpenter-core/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 )
 
 var _ = Describe("CEL/Validation", func() {

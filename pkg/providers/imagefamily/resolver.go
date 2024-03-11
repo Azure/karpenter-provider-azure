@@ -23,22 +23,22 @@ import (
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/metrics"
-	"github.com/Azure/karpenter/pkg/providers/imagefamily/bootstrap"
-	"github.com/Azure/karpenter/pkg/providers/instancetype"
-	template "github.com/Azure/karpenter/pkg/providers/launchtemplate/parameters"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/samber/lo"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 const (
-	networkPluginAzureCNIOverlay = "overlay"
-	networkPluginKubenet         = "kubenet"
+	networkPluginAzure   = "azure"
+	networkPluginKubenet = "kubenet"
 
-	// defaultKubernetesMaxPodsAzureCNIOverlay is the maximum number of pods to run on a node for Azure CNI Overlay.
-	defaultKubernetesMaxPodsAzureCNIOverlay = 250
+	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI Overlay.
+	defaultKubernetesMaxPodsAzure = 250
 	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
 	defaultKubernetesMaxPodsKubenet = 100
 	// defaultKubernetesMaxPods is the maximum number of pods on a node.
@@ -88,7 +88,7 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		kubeletConfig = &corev1beta1.KubeletConfiguration{}
 	}
 
-	// TODO: revist computeResources and maxPods implementation
+	// TODO: revisit computeResources and maxPods implementation
 	kubeletConfig.KubeReserved = instanceType.Overhead.KubeReserved
 	kubeletConfig.SystemReserved = instanceType.Overhead.SystemReserved
 	kubeletConfig.EvictionHard = map[string]string{
@@ -123,8 +123,8 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 }
 
 func getMaxPods(networkPlugin string) int32 {
-	if networkPlugin == networkPluginAzureCNIOverlay {
-		return defaultKubernetesMaxPodsAzureCNIOverlay
+	if networkPlugin == networkPluginAzure {
+		return defaultKubernetesMaxPodsAzure
 	} else if networkPlugin == networkPluginKubenet {
 		return defaultKubernetesMaxPodsKubenet
 	}

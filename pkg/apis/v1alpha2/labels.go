@@ -17,10 +17,9 @@ limitations under the License.
 package v1alpha2
 
 import (
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/scheduling"
 	"k8s.io/apimachinery/pkg/util/sets"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 func init() {
@@ -33,9 +32,6 @@ func init() {
 		LabelSKUCPU,
 		LabelSKUMemory,
 		LabelSKUAccelerator,
-
-		LabelSKUConfidential,
-		LabelSKUIsolatedSize,
 
 		LabelSKUAcceleratedNetworking,
 
@@ -68,7 +64,7 @@ var (
 		LabelSKUHyperVGeneration,
 	)
 
-	AllowUndefinedLabels = func(options scheduling.CompatabilityOptions) scheduling.CompatabilityOptions {
+	AllowUndefinedLabels = func(options scheduling.CompatibilityOptions) scheduling.CompatibilityOptions {
 		options.AllowUndefined = corev1beta1.WellKnownLabels.Union(RestrictedLabels)
 		return options
 	}
@@ -89,10 +85,6 @@ var (
 	LabelSKUAccelerator = Group + "/sku-accelerator"
 
 	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
-	// https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
-	LabelSKUConfidential = Group + "/sku-confidential"  // c
-	LabelSKUIsolatedSize = Group + "/sku-isolated-size" // i
-
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
@@ -114,13 +106,6 @@ var (
 	AKSLabelDomain = "kubernetes.azure.com"
 
 	AKSLabelCluster = AKSLabelDomain + "/cluster"
-
-	SkuFeatureToLabel = map[rune]string{
-		'c': LabelSKUConfidential,
-		'i': LabelSKUIsolatedSize,
-	}
-
-	NodeClaimLinkedAnnotationKey = v1alpha5.MachineLinkedAnnotationKey // still using the one from v1alpha5
 )
 
 const (

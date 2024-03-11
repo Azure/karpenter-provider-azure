@@ -19,15 +19,15 @@ package azure
 import (
 	"testing"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	coretest "github.com/aws/karpenter-core/pkg/test"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/test"
-	"github.com/Azure/karpenter/test/pkg/environment/common"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 const WindowsDefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"

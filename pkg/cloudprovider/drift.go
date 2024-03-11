@@ -23,17 +23,16 @@ import (
 
 	"knative.dev/pkg/logging"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter/pkg/utils"
-	"github.com/samber/lo"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	v1 "k8s.io/api/core/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/cloudprovider"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 const (
@@ -77,11 +76,6 @@ func (c *CloudProvider) isImageVersionDrifted(
 	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
-	if !nodeClass.Spec.IsEmptyImageID() {
-		// Note: ImageID takes priority ATM
-		return "", nil
-	}
-
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
@@ -123,23 +117,5 @@ func (c *CloudProvider) isImageVersionDrifted(
 		logger.Debugf("drift triggered for %s, with expected image id %s, and actual image id %s", ImageVersionDrift, expectedImageID, vmImageID)
 		return ImageVersionDrift, nil
 	}
-	return "", nil
-}
-
-// TODO: remove nolint on unparam. Added for now in order to pass "make verify"
-// nolint: unparam
-func (c *CloudProvider) isImageDrifted(
-	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodePool *corev1beta1.NodePool, _ *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
-	instanceTypes, err := c.GetInstanceTypes(ctx, nodePool)
-	if err != nil {
-		return "", fmt.Errorf("getting instanceTypes, %w", err)
-	}
-	_, found := lo.Find(instanceTypes, func(instType *cloudprovider.InstanceType) bool {
-		return instType.Name == nodeClaim.Labels[v1.LabelInstanceTypeStable]
-	})
-	if !found {
-		return "", fmt.Errorf(`finding node instance type "%s"`, nodeClaim.Labels[v1.LabelInstanceTypeStable])
-	}
-
 	return "", nil
 }

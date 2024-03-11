@@ -19,10 +19,10 @@ package test
 import (
 	"fmt"
 
-	"github.com/Azure/karpenter/pkg/apis/v1alpha2"
-	"github.com/aws/karpenter-core/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
+	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {

@@ -19,19 +19,27 @@ package test
 import (
 	"context"
 
-	azurecache "github.com/Azure/karpenter/pkg/cache"
-	"github.com/Azure/karpenter/pkg/fake"
-	"github.com/Azure/karpenter/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter/pkg/providers/instance"
-	"github.com/Azure/karpenter/pkg/providers/instancetype"
-	"github.com/Azure/karpenter/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter/pkg/providers/loadbalancer"
-	"github.com/Azure/karpenter/pkg/providers/pricing"
+	"github.com/samber/lo"
+
+	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/patrickmn/go-cache"
+	corev1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
 
-	coretest "github.com/aws/karpenter-core/pkg/test"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
+
+func init() {
+	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+}
 
 var resourceGroup = "test-resourceGroup"
 
@@ -74,7 +82,7 @@ func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Env
 }
 
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
-	testSettings := Settings()
+	testOptions := Options()
 
 	// API
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
@@ -83,7 +91,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	pricingAPI := &fake.PricingAPI{}
 	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
-	coummunityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
+	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 
 	// Cache
@@ -94,7 +102,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
-	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, coummunityImageVersionsAPI, region)
+	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region)
 	imageFamilyResolver := imagefamily.New(env.Client, imageFamilyProvider)
 	instanceTypesProvider := instancetype.NewProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
@@ -102,7 +110,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		imageFamilyResolver,
 		imageFamilyProvider,
 		ptr.String("ca-bundle"),
-		testSettings.ClusterEndpoint,
+		testOptions.ClusterEndpoint,
 		"test-tenant",
 		"test-subscription",
 		"test-userAssignedIdentity",
@@ -120,11 +128,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
 		loadBalancersAPI,
-		coummunityImageVersionsAPI,
+		communityImageVersionsAPI,
 		skuClientSingleton,
 	)
 	instanceProvider := instance.NewProvider(
-		ctx,
 		azClient,
 		instanceTypesProvider,
 		launchTemplateProvider,

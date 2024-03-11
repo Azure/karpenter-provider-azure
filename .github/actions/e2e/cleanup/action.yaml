@@ -2,13 +2,13 @@ name: Cleanup
 description: 'Runs all the cleanup tasks to cleanup resources deployed during E2E'
 inputs:
   client-id:
-    description: 
+    description: "Client ID"
     required: true
   tenant-id:
-    description: 
+    description: "Tenant ID"
     required: true
   subscription-id:
-    description: 
+    description: "Subscription ID"
     required: true
   # region:
   #   description: "Region to create aks cluster"
@@ -28,11 +28,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       with:
         ref: ${{ inputs.git_ref }}
     - name: az login
-      uses: azure/login@v1
+      uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
       with:
         client-id: ${{ inputs.client-id }}
         tenant-id: ${{ inputs.tenant-id }}
@@ -42,10 +42,10 @@ runs:
       run: az account set --subscription ${{ inputs.subscription-id }}
     - name: delete cluster ${{ inputs.cluster_name }}
       shell: bash
-      run: az aks delete --name ${{ inputs.cluster_name }} --resource-group ${{ inputs.resource_group }} --yes
+      run: az aks delete --name ${{ inputs.cluster_name }} --resource-group ${{ inputs.resource_group }} --yes --no-wait
     - name: delete acr ${{ inputs.acr_name }}
       shell: bash
       run: az acr delete --name ${{ inputs.acr_name }} --resource-group ${{ inputs.resource_group }} --yes
     - name: delete rg ${{ inputs.resource_group }}
       shell: bash
-      run: az group delete --name ${{ inputs.resource_group }} --yes
+      run: az group delete --name ${{ inputs.resource_group }} --yes --no-wait

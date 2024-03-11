@@ -9,7 +9,7 @@
 - [Karpenter configuration sources](#karpenter-configuration-sources)
   - [Hardcoded values](#hardcoded-values)
   - [Environment variables](#environment-variables)
-  - [Karpenter global settings](#karpenter-global-settings)
+  - [Karpenter global settings [OUTDATED]](#karpenter-global-settings)
   - [Provisioner CR spec](#provisioner-cr-spec)
   - [NodeTemplate CR spec](#nodetemplate-cr-spec)
   - [Auto-detected values](#auto-detected-values)
@@ -29,7 +29,7 @@ The goal of this document is to describe the relevant configuration data flows a
 
 Some of the mechanisms described below are specific to AKS. However, the overall configuration flow and wiring should be flexible enough to accommodate other flavors of Kubernetes on Azure in the future.
 
-> Note: The document uses "Karpenter" for brevity, though in some places "Azure/AKS Cloud Provider for Karpenter" might be more accurate. The distinction is not critical, especially since karpenter-core is used as library, and the build of Azure/AKS Cloud Provider for Karpenter represents Azure/AKS version of Karpenter.
+> Note: The document uses "Karpenter" for brevity, though in some places "Azure/AKS Cloud Provider for Karpenter" might be more accurate. The distinction is not critical, especially since sigs.k8s.io/karpenter is used as library, and the build of Azure/AKS Cloud Provider for Karpenter represents Azure/AKS version of Karpenter.
 
 ## Node bootstrapping
 
@@ -79,7 +79,7 @@ Hardcoded values are used for parameters in one of the following categories:
 
 Environment variables are used for global parameters that are needed for bootstrap and already required to be set for other reasons, such as Subscription ID - needed for Azure SDK.
 
-### Karpenter global settings
+### Karpenter global settings [OUTDATED]
 
 Karpenter uses a ConfigMap with flexible structure for global settings. Part of this configuration is generic, and part is provider specific. See [Concepts/Settings/ConfigMap](https://karpenter.sh/preview/concepts/settings/#configmap) in Karpenter documentation for an overview. Note that this represents part of the external configuration surface / API, and should be treated accordingly.
 
@@ -103,14 +103,14 @@ Karpenter also supports provider-specific configuration via `NodeTemplate` custo
 Note that this represents part of the external configuration surface / API, and should be treated as such.
 
 <!-- TODO: cover NodeTemplate details -->
-<!-- TODO: add guidance on what belongs to settins vs NodeTemplate -->
+<!-- TODO: add guidance on what belongs to settings vs NodeTemplate -->
 
 ### Auto-detected values
 
 A small set of values that are (currently) required for bootstrap are auto-detected or computed:
 * Kubernetes version is auto-detected from the cluster (though we will likely add a way to override it)
 * CA bundle is obtained from TLS connection to kube-apiserver
-* ClusterID is computed from the cluster endpoint FQDN (currently also customizable)
+* ClusterID is computed from the cluster endpoint FQDN
 
 ### Computed values
 

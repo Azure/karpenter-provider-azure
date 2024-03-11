@@ -27,8 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/aws/karpenter-core/pkg/test"
 	"github.com/samber/lo"
+	"sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
 )
@@ -64,7 +64,7 @@ var _ = Describe("Dynamic PVC", func() {
 				Name: "azuredisk-claim",
 			},
 			StorageClassName: storageClassName,
-			Resources:        v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceStorage: resource.MustParse("5Gi")}},
+			Resources:        v1.VolumeResourceRequirements{Requests: v1.ResourceList{v1.ResourceStorage: resource.MustParse("5Gi")}},
 		})
 
 		pod := test.Pod(test.PodOptions{
@@ -109,7 +109,7 @@ var _ = Describe("Static PVC", func() {
 			},
 			StorageClassName: storageClassName,
 			VolumeName:       pv.Name,
-			Resources:        v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceStorage: resource.MustParse("5Gi")}},
+			Resources:        v1.VolumeResourceRequirements{Requests: v1.ResourceList{v1.ResourceStorage: resource.MustParse("5Gi")}},
 		})
 
 		pod := test.Pod(test.PodOptions{

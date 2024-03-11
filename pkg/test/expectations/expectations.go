@@ -19,8 +19,8 @@ package expectations
 import (
 	"fmt"
 
-	"github.com/Azure/karpenter/pkg/fake"
-	"github.com/Azure/karpenter/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/onsi/gomega"
 )
 
