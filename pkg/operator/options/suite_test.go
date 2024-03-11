@@ -85,9 +85,8 @@ var _ = Describe("Options", func() {
 	Context("Env Vars", func() {
 		It("should correctly fallback to env vars when CLI flags aren't set", func() {
 			os.Setenv("CLUSTER_NAME", "env-cluster")
-			os.Setenv("CLUSTER_ENDPOINT", "https://env-cluster")
+			os.Setenv("CLUSTER_ENDPOINT", "https://environment-cluster-id-value-for-testing")
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
-			os.Setenv("CLUSTER_ID", "env-cluster-id")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
 			os.Setenv("NETWORK_PLUGIN", "env-network-plugin")
@@ -101,9 +100,9 @@ var _ = Describe("Options", func() {
 			Expect(err).ToNot(HaveOccurred())
 			expectOptionsEqual(opts, test.Options(test.OptionsFields{
 				ClusterName:                    lo.ToPtr("env-cluster"),
-				ClusterEndpoint:                lo.ToPtr("https://env-cluster"),
+				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
-				ClusterID:                      lo.ToPtr("env-cluster-id"),
+				ClusterID:                      lo.ToPtr("46593302"),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
 				NetworkPlugin:                  lo.ToPtr("env-network-plugin"),
