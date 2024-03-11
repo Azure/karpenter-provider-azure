@@ -75,7 +75,7 @@ func (p *Provider) List(
 	p.Lock()
 	defer p.Unlock()
 	// Get SKUs from Azure
-	skus, err := p.getInstanceTypes(ctx)
+	skus, err := p.getInstanceTypes(ctx, lo.FromPtr(nodeClass.Spec.ImageFamily))
 	if err != nil {
 		return nil, err
 	}
@@ -100,9 +100,6 @@ func (p *Provider) List(
 			continue
 		}
 
-		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
-			continue
-		}
 		result = append(result, instanceType)
 	}
 	return result, nil
@@ -159,8 +156,8 @@ func (p *Provider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily str
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
-func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU, error) {
-	if cached, ok := p.cache.Get(InstanceTypesCacheKey); ok {
+func (p *Provider) getInstanceTypes(ctx context.Context, imageFamily string) (map[string]*skewer.SKU, error) {
+	if cached, ok := p.cache.Get(InstanceTypesCacheKey + imageFamily); ok {
 		return cached.(map[string]*skewer.SKU), nil
 	}
 	instanceTypes := map[string]*skewer.SKU{}
@@ -179,7 +176,7 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 			continue
 		}
 
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) && p.isInstanceTypeSupportedByImageFamily(skus[i].GetName(), imageFamily) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
