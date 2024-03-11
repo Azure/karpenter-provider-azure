@@ -37,12 +37,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/Azure/karpenter/test/pkg/debug"
-	"github.com/Azure/karpenter/test/pkg/environment/azure"
-	"github.com/aws/karpenter-core/pkg/apis/v1alpha5"
-	corev1beta1 "github.com/aws/karpenter-core/pkg/apis/v1beta1"
-	"github.com/aws/karpenter-core/pkg/test"
-	nodeutils "github.com/aws/karpenter-core/pkg/utils/node"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
+	"sigs.k8s.io/karpenter/pkg/apis/v1alpha5"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/test"
+	nodeutils "sigs.k8s.io/karpenter/pkg/utils/node"
 )
 
 var env *azure.Environment
