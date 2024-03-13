@@ -50,21 +50,25 @@ var (
 
 func getFuncMap() template.FuncMap {
 	return template.FuncMap{
-		"derefString":                      deref[string],
-		"derefBool":                        deref[bool],
-		"getStringFromNetworkModeType":     getStringFromNetworkModeType,
-		"getStringFromNetworkPluginType":   getStringFromNetworkPluginType,
-		"getStringFromNetworkPolicyType":   getStringFromNetworkPolicyType,
-		"getStringFromLoadBalancerSkuType": getStringFromLoadBalancerSkuType,
-		"getBoolFromFeatureState":          getBoolFromFeatureState,
-		"getBoolStringFromFeatureState":    getBoolStringFromFeatureState,
-		"getBoolStringFromFeatureStatePtr": getBoolStringFromFeatureStatePtr,
-		"getStringifiedMap":                getStringifiedMap,
-		"getKubenetTemplate":               getKubenetTemplate,
-		"getSysctlContent":                 getSysctlContent,
-		"getContainerdConfig":              getContainerdConfig,
-		"getStringifiedStringArray":        getStringifiedStringArray,
-		"getIsMIGNode":                     getIsMIGNode,
+		"derefString":                               deref[string],
+		"derefBool":                                 deref[bool],
+		"getStringFromNetworkModeType":              getStringFromNetworkModeType,
+		"getStringFromNetworkPluginType":            getStringFromNetworkPluginType,
+		"getStringFromNetworkPolicyType":            getStringFromNetworkPolicyType,
+		"getStringFromLoadBalancerSkuType":          getStringFromLoadBalancerSkuType,
+		"getBoolFromFeatureState":                   getBoolFromFeatureState,
+		"getBoolStringFromFeatureState":             getBoolStringFromFeatureState,
+		"getBoolStringFromFeatureStatePtr":          getBoolStringFromFeatureStatePtr,
+		"getStringifiedMap":                         getStringifiedMap,
+		"getKubenetTemplate":                        getKubenetTemplate,
+		"getSysctlContent":                          getSysctlContent,
+		"getContainerdConfig":                       getContainerdConfig,
+		"getStringifiedStringArray":                 getStringifiedStringArray,
+		"getIsMIGNode":                              getIsMIGNode,
+		"getEnableTLSBoostrap":                      getEnableTLSBoostrap,
+		"getEnableSecureTLSBootstrap":               getEnableSecureTLSBoostrap,
+		"getTLSBootstrapToken":                      getTLSBootstrapToken,
+		"getCustomSecureTLSBootstrapAADServerAppID": getCustomSecureTLSBootstrapAADServerAppID,
 	}
 }
 
@@ -197,4 +201,21 @@ func containerdConfigFromNodeBootstrapContract(nbcontract *nbcontractv1.Configur
 
 func getIsMIGNode(gpuInstanceProfile string) bool {
 	return gpuInstanceProfile != ""
+}
+
+func getEnableTLSBoostrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
+	return bootstrapConfig.GetTlsBootstrapToken() != ""
+}
+
+func getEnableSecureTLSBoostrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
+	// TODO: Change logic to default to false once Secure TLS Bootstrapping is complete
+	return bootstrapConfig.GetEnableSecureTlsBootstrapping()
+}
+
+func getTLSBootstrapToken(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) string {
+	return bootstrapConfig.GetTlsBootstrapToken()
+}
+
+func getCustomSecureTLSBootstrapAADServerAppID(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) string {
+	return bootstrapConfig.GetCustomSecureTlsBootstrapAppserverAppid()
 }

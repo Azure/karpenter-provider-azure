@@ -39,6 +39,10 @@ github.com/Azure/agentbaker v0.20240304.0-devinwon h1:aWSz8we73BmZp2kFszpq8RMdVJ
 github.com/Azure/agentbaker v0.20240304.0-devinwon/go.mod h1:myhORQREez1/+Rs4mkvWq9vdE89CXI5GoYxvkaWKIp8=
 github.com/Azure/agentbaker v0.20240311.0-lilypan h1:xKiIw3vWX+YRMCd85VUM5Bf6YnUX78yHPKE4tBjAVzE=
 github.com/Azure/agentbaker v0.20240311.0-lilypan/go.mod h1:myhORQREez1/+Rs4mkvWq9vdE89CXI5GoYxvkaWKIp8=
+github.com/Azure/agentbaker v0.20240311.1-lilypan h1:CEyo1GuENNT9fcMVxBLdtECqhTj7IH4I+dzxf2yfQ6Y=
+github.com/Azure/agentbaker v0.20240311.1-lilypan/go.mod h1:myhORQREez1/+Rs4mkvWq9vdE89CXI5GoYxvkaWKIp8=
+github.com/Azure/agentbaker v0.20240311.2-lilypan h1:UAobVbsmGIf8Qy7mRjO1ncFE8fH8KR8sQP+gu8dLTBA=
+github.com/Azure/agentbaker v0.20240311.2-lilypan/go.mod h1:myhORQREez1/+Rs4mkvWq9vdE89CXI5GoYxvkaWKIp8=
 github.com/Azure/azure-kusto-go v0.15.0 h1:Igr6JELHChySkmN/py5OHnqAUFVU004q+HB7oddDrTk=
 github.com/Azure/azure-kusto-go v0.15.0/go.mod h1:twZbo+gYmZPDzzMOqExT7rEZ6kyKFvZxqUl3DoTwaIo=
 github.com/Azure/azure-sdk-for-go v68.0.0+incompatible h1:fcYLmCpyNYRnvJbPerq7U0hS+6+I79yEDJBqVNcqUzU=
