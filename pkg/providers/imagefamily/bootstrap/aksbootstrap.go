@@ -128,6 +128,7 @@ var (
 var (
 	enabledFeatureState  = getFeatureState(true)
 	disabledFeatureState = getFeatureState(false)
+	defaultBoolFalse     = false
 	defaultSwapFileSize  = int32(0)
 
 	// Config item types classified by code:
@@ -249,8 +250,9 @@ var (
 			CustomSearchDomainRealmPassword: "",                                                     // cd
 		},
 		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
-			TlsBootstrappingStatus:       enabledFeatureState,  // s
-			SecureTlsBootstrappingStatus: disabledFeatureState, // s
+			EnableSecureTlsBootstrapping:           &defaultBoolFalse,
+			TlsBootstrapToken:                      "",
+			CustomSecureTlsBootstrapAppserverAppid: "",
 		},
 		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
 			SwapFileSize:               &defaultSwapFileSize, // td
