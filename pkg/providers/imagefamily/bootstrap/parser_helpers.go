@@ -65,8 +65,8 @@ func getFuncMap() template.FuncMap {
 		"getContainerdConfig":                       getContainerdConfig,
 		"getStringifiedStringArray":                 getStringifiedStringArray,
 		"getIsMIGNode":                              getIsMIGNode,
-		"getEnableTLSBoostrap":                      getEnableTLSBoostrap,
-		"getEnableSecureTLSBootstrap":               getEnableSecureTLSBoostrap,
+		"getEnableTLSBootstrap":                     getEnableTLSBootstrap,
+		"getEnableSecureTLSBootstrap":               getEnableSecureTLSBootstrap,
 		"getTLSBootstrapToken":                      getTLSBootstrapToken,
 		"getCustomSecureTLSBootstrapAADServerAppID": getCustomSecureTLSBootstrapAADServerAppID,
 	}
@@ -203,11 +203,11 @@ func getIsMIGNode(gpuInstanceProfile string) bool {
 	return gpuInstanceProfile != ""
 }
 
-func getEnableTLSBoostrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
+func getEnableTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
 	return bootstrapConfig.GetTlsBootstrapToken() != ""
 }
 
-func getEnableSecureTLSBoostrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
+func getEnableSecureTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
 	// TODO: Change logic to default to false once Secure TLS Bootstrapping is complete
 	return bootstrapConfig.GetEnableSecureTlsBootstrapping()
 }

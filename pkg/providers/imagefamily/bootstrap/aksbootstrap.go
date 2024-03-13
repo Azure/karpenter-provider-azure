@@ -260,11 +260,9 @@ var (
 			KubeletConfigFileContent: "",                   // s
 			KubeletFlags:             map[string]string{},  // psX
 		},
-		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
-			EnableSecureTlsBootstrapping: false,
-		},
-		MessageOfTheDay: "",    // td
-		IsKata:          false, // n
+		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{},
+		MessageOfTheDay:        "",    // td
+		IsKata:                 false, // n
 	}
 )
 
@@ -297,8 +295,7 @@ func (a AKS) aksBootstrapScript() (string, error) {
 
 // Download URL for KUBE_BINARY_URL publishes each k8s version in the URL.
 func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
-	return fmt.Sprintf("%s/
-	kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
+	return fmt.Sprintf("%s/kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
 }
 
 func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
