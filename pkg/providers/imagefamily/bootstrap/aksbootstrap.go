@@ -128,6 +128,7 @@ var (
 var (
 	enabledFeatureState  = getFeatureState(true)
 	disabledFeatureState = getFeatureState(false)
+	defaultBoolFalse     = false
 	defaultSwapFileSize  = int32(0)
 
 	// Config item types classified by code:
@@ -248,6 +249,11 @@ var (
 			CustomSearchDomainRealmUser:     "",                                                     // cd
 			CustomSearchDomainRealmPassword: "",                                                     // cd
 		},
+		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
+			EnableSecureTlsBootstrapping:           &defaultBoolFalse,
+			TlsBootstrapToken:                      "",
+			CustomSecureTlsBootstrapAppserverAppid: "",
+		},
 		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
 			SwapFileSize:               &defaultSwapFileSize, // td
 			TransparentHugepageSupport: ptr.String(""),       // cd
@@ -260,9 +266,8 @@ var (
 			KubeletConfigFileContent: "",                   // s
 			KubeletFlags:             map[string]string{},  // psX
 		},
-		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{},
-		MessageOfTheDay:        "",    // td
-		IsKata:                 false, // n
+		MessageOfTheDay: "",    // td
+		IsKata:          false, // n
 	}
 )
 
