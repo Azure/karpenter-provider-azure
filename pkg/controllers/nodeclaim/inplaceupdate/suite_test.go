@@ -21,10 +21,10 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	. "github.com/Azure/karpenter-provider-azure/pkg/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	. "knative.dev/pkg/logging/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"

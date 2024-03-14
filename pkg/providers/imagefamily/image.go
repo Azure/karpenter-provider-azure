@@ -28,7 +28,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
@@ -86,7 +86,7 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	version := strings.TrimPrefix(serverVersion.GitVersion, "v") // v1.24.9 -> 1.24.9
 	p.kubernetesVersionCache.SetDefault(kubernetesVersionCacheKey, version)
 	if p.cm.HasChanged("kubernetes-version", version) {
-		logging.FromContext(ctx).With("kubernetes-version", version).Debugf("discovered kubernetes version")
+		log.FromContext(ctx).V(1).WithValues("kubernetes-version", version).Info("discovered kubernetes version")
 	}
 	return version, nil
 }
@@ -118,7 +118,7 @@ func (p *Provider) GetImageID(communityImageName, publicGalleryURL, versionName 
 
 	selectedImageID := BuildImageID(publicGalleryURL, communityImageName, versionName)
 	if p.cm.HasChanged(key, selectedImageID) {
-		logging.FromContext(context.Background()).With("image-id", selectedImageID).Info("discovered new image id")
+		log.FromContext(context.Background()).WithValues("image-id", selectedImageID).Info("discovered new image id")
 	}
 	p.imageCache.Set(key, selectedImageID, imageExpirationInterval)
 	return selectedImageID, nil

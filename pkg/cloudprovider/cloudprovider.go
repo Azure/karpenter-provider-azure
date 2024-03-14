@@ -29,8 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"k8s.io/apimachinery/pkg/types"
-	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	// nolint SA1019 - deprecated package
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
@@ -131,7 +131,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*corev1beta
 	if err != nil {
 		return nil, fmt.Errorf("getting vm name, %w", err)
 	}
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("id", vmName))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("id", vmName))
 	instance, err := c.instanceProvider.Get(ctx, vmName)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance, %w", err)
@@ -171,7 +171,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *corev1be
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) error {
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("nodeclaim", nodeClaim.Name))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclaim", nodeClaim.Name))
 
 	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
@@ -299,7 +299,7 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	}
 
 	if zoneID, err := instance.GetZoneID(vm); err != nil {
-		logging.FromContext(ctx).Warnf("Failed to get zone for VM %s, %v", *vm.Name, err)
+		log.FromContext(ctx).Error(err, "Failed to get zone for VM %s", *vm.Name)
 	} else {
 		zone := makeZone(*vm.Location, zoneID)
 		// aks-node-validating-webhook protects v1.LabelTopologyZone, will be set elsewhere, so we use a different label

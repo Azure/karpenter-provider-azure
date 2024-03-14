@@ -26,13 +26,13 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"knative.dev/pkg/logging"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
@@ -86,12 +86,12 @@ func (p *Provider) List(
 	for _, sku := range skus {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *sku.Size, err)
+			log.FromContext(ctx).Error(err, "parsing VM size %s", *sku.Size)
 			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing SKU architecture %s, %v", *sku.Size, err)
+			log.FromContext(ctx).Error(err, "parsing SKU architecture %s", *sku.Size)
 			continue
 		}
 		instanceTypeZones := instanceTypeZones(sku, p.region)
@@ -171,11 +171,11 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 	}
 
 	skus := cache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines))
-	logging.FromContext(ctx).Debugf("Discovered %d SKUs", len(skus))
+	log.FromContext(ctx).V(1).Info("Discovered %d SKUs", len(skus))
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *skus[i].Size, err)
+			log.FromContext(ctx).Error(err, "parsing VM size %s", *skus[i].Size)
 			continue
 		}
 
@@ -184,7 +184,7 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 		}
 	}
 
-	logging.FromContext(ctx).Debugf("%d SKUs remaining after filtering", len(instanceTypes))
+	log.FromContext(ctx).V(1).Info("%d SKUs remaining after filtering", len(instanceTypes))
 	p.cache.SetDefault(InstanceTypesCacheKey, instanceTypes)
 	return instanceTypes, nil
 }

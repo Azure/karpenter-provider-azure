@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/Azure/karpenter-provider-azure/pkg/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "knative.dev/pkg/logging/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"

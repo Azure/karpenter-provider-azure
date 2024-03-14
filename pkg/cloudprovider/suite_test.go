@@ -41,7 +41,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	. "knative.dev/pkg/logging/testing"
+	. "github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"

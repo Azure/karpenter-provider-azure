@@ -27,8 +27,8 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/go-logr/zapr"
 	"github.com/samber/lo"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -50,7 +50,6 @@ import (
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/utils/clock"
 	knativeinjection "knative.dev/pkg/injection"
-	knativelogging "knative.dev/pkg/logging"
 	"knative.dev/pkg/signals"
 	"knative.dev/pkg/system"
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -119,14 +118,17 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 	//lo.Must0(configMapWatcher.Start(ccPlaneCtx.Done()))
 
 	// Logging
-	logger := coreoperatorlogging.NewLogger(ccPlaneCtx, component)
-	ccPlaneCtx = knativelogging.WithLogger(ccPlaneCtx, logger)
-	overlayCtx = knativelogging.WithLogger(overlayCtx, logger)
+	logger := log.FromContext(ccPlaneCtx).WithName(component)
+
+	ccPlaneCtx = log.IntoContext(overlayCtx, logger)
+	overlayCtx = log.IntoContext(overlayCtx, logger)
+	// ccPlaneCtx = knativelogging.WithLogger(ccPlaneCtx, logger)
+	// overlayCtx = knativelogging.WithLogger(overlayCtx, logger)
 	coreoperatorlogging.ConfigureGlobalLoggers(ccPlaneCtx)
 
 	// Manager
 	mgrOpts := controllerruntime.Options{
-		Logger:                     ignoreDebugEvents(zapr.NewLogger(logger.Desugar())),
+		Logger:                     logger,
 		LeaderElection:             options.FromContext(overlayCtx).EnableLeaderElection,
 		LeaderElectionID:           "karpenter-leader-election",
 		LeaderElectionResourceLock: resourcelock.LeasesResourceLock,
@@ -137,7 +139,7 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 		HealthProbeBindAddress: fmt.Sprintf(":%d", options.FromContext(overlayCtx).HealthProbePort),
 		BaseContext: func() context.Context {
 			ctx := context.Background()
-			ctx = knativelogging.WithLogger(ctx, logger)
+			ctx = log.IntoContext(ctx, logger)
 			// ctx = injection.WithConfig(ctx, overlayConfig)
 			ctx = injection.WithOptionsOrDie(ctx, options.Injectables...)
 			return ctx
@@ -179,7 +181,7 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 				return []string{o.(*v1beta1.NodeClaim).Status.ProviderID}
 			})
 			if err != nil {
-				knativelogging.FromContext(ccPlaneCtx).Infof("failed to setup machine provider id indexer, CRDs deployment may not be ready, index: %d, duration: %v, err: %v", index, duration, err)
+				log.FromContext(ccPlaneCtx).Info("failed to setup machine provider id indexer, CRDs deployment may not be ready, index: %d, duration: %v, err: %v", index, duration, err)
 			}
 			return err
 		})

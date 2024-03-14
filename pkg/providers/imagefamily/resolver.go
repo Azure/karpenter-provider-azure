@@ -20,8 +20,8 @@ import (
 	"context"
 
 	core "k8s.io/api/core/v1"
-	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
@@ -95,7 +95,7 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
 
-	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
+	log.FromContext(ctx).Info("Resolved image %s for instance type %s", imageID, instanceType.Name)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		UserData: imageFamily.UserData(

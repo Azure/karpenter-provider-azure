@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	loggingtesting "github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/onsi/gomega"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -32,7 +33,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	loggingtesting "knative.dev/pkg/logging/testing"
 	"knative.dev/pkg/system"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"

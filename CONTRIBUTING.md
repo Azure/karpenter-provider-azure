@@ -74,7 +74,7 @@ We have three types of testing:
 ### What should be used for logging?
 * [klog](https://github.com/search?q=repo%3AAzure%2Fkarpenter%20klog&type=code) is only invoked when creating clients or authorizers.
 * [zapr](https://github.com/search?q=repo%3AAzure%2Fkarpenter%20zap&type=code) is only invoked in our debug package.
-* [knative.dev/pkg/logging](https://pkg.go.dev/knative.dev/pkg/logging) _should_ be used everywhere else.
+* [sigs.k8s.io/controller-runtime/pkg/log](https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/log) _should_ be used everywhere else.
 
 ### What is `skaffold.yaml`?
 [skaffold.yaml](https://github.com/Azure/karpenter/blob/main/skaffold.yaml) is the configuration file for deploying Karpenter locally via [skaffold](https://skaffold.dev/docs/).

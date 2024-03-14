@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/patrickmn/go-cache"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 )
 
@@ -69,12 +69,12 @@ func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, t
 // MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL
 func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone, capacityType string, ttl time.Duration) {
 	// even if the key is already in the cache, we still need to call Set to extend the cached entry's TTL
-	logging.FromContext(ctx).With(
+	log.FromContext(ctx).V(1).WithValues(
 		"unavailable", unavailableReason,
 		"instance-type", instanceType,
 		"zone", zone,
 		"capacity-type", capacityType,
-		"ttl", ttl).Debugf("removing offering from offerings")
+		"ttl", ttl).Info("removing offering from offerings")
 	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
 }
 

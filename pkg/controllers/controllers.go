@@ -19,8 +19,8 @@ package controllers
 import (
 	"context"
 
-	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/operator/controller"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -31,7 +31,7 @@ import (
 )
 
 func NewControllers(ctx context.Context, kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider, instanceProvider *instance.Provider) []controller.Controller {
-	logging.FromContext(ctx).With("version", project.Version).Debugf("discovered version")
+	log.FromContext(ctx).V(1).WithValues("version", project.Version).Info("discovered version")
 	controllers := []controller.Controller{
 		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider),
 		inplaceupdate.NewController(kubeClient, instanceProvider),

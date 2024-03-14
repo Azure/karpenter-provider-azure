@@ -23,10 +23,11 @@ import (
 	"sync"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
-	"knative.dev/pkg/logging"
 )
 
 const (
@@ -95,7 +96,7 @@ func (p *Provider) LoadBalancerBackendPools(ctx context.Context) (*BackendAddres
 		return lo.FromPtr(backendPool.ID), true
 	})
 
-	logging.FromContext(ctx).Debugf("Returning %d IPv4 backend pools: %s", len(ipv4PoolIDs), ipv4PoolIDs)
+	log.FromContext(ctx).V(1).Info("Returning %d IPv4 backend pools: %s", len(ipv4PoolIDs), ipv4PoolIDs)
 
 	// RP only actually assigns the LB backend pools to VMs if OutboundType is LoadBalancer,
 	// but that's also the only OutboundType which creates the LoadBalancer, so as long as we're not allowing
@@ -127,7 +128,7 @@ func (p *Provider) getLoadBalancers(ctx context.Context) ([]*armnetwork.LoadBala
 }
 
 func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {
-	logging.FromContext(ctx).Infof("Querying load balancers in resource group %s", p.resourceGroup)
+	log.FromContext(ctx).Info("Querying load balancers in resource group %s", p.resourceGroup)
 
 	pager := p.loadBalancersAPI.NewListPager(p.resourceGroup, nil)
 
@@ -142,7 +143,7 @@ func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.LoadBalance
 
 	// Only return the LBs we actually care about
 	result := lo.Filter(lbs, isClusterLoadBalancer)
-	logging.FromContext(ctx).Infof("Found %d load balancers of interest", len(result))
+	log.FromContext(ctx).Info("Found %d load balancers of interest", len(result))
 	return result, nil
 }
 

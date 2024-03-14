@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -41,7 +41,7 @@ const (
 )
 
 func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
-	logger := logging.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	nodeName := nodeClaim.Status.NodeName
 
@@ -62,7 +62,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *core
 
 	nodeK8sVersion := strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")
 	if nodeK8sVersion != k8sVersion {
-		logger.Debugf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion)
+		logger.V(1).Info("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion)
 		return K8sVersionDrift, nil
 	}
 	return "", nil
@@ -74,7 +74,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *core
 // nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
 	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
-	logger := logging.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
@@ -97,7 +97,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		vm.Properties.StorageProfile.ImageReference == nil ||
 		vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID == nil ||
 		*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID == "" {
-		logger.Debug("not using a CommunityGalleryImageID for nodeClaim %s", nodeClaim.Name)
+		logger.V(1).Info("not using a CommunityGalleryImageID for nodeClaim %s", nodeClaim.Name)
 		return "", nil
 	}
 
@@ -114,7 +114,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 	}
 
 	if vmImageID != expectedImageID {
-		logger.Debugf("drift triggered for %s, with expected image id %s, and actual image id %s", ImageVersionDrift, expectedImageID, vmImageID)
+		logger.V(1).Info("drift triggered for %s, with expected image id %s, and actual image id %s", ImageVersionDrift, expectedImageID, vmImageID)
 		return ImageVersionDrift, nil
 	}
 	return "", nil

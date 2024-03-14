@@ -23,11 +23,11 @@ import (
 
 	"github.com/samber/lo"
 	"go.uber.org/zap/zapcore"
-	"knative.dev/pkg/logging"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -88,7 +88,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 	}
 	actualHash := nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash]
 
-	logging.FromContext(ctx).Debugf("goal hash is: %q, actual hash is: %q", goalHash, actualHash)
+	log.FromContext(ctx).V(1).Info("goal hash is: %q, actual hash is: %q", goalHash, actualHash)
 
 	// If there's no difference from goal state, no need to do anything else
 	if goalHash == actualHash {
@@ -175,12 +175,13 @@ func (c *Controller) Builder(_ context.Context, m manager.Manager) corecontrolle
 }
 
 func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
-	if logging.FromContext(ctx).Level().Enabled(zapcore.DebugLevel) {
+	if zapcore.Level(log.FromContext(ctx).GetV()).Enabled(zapcore.DebugLevel) {
+
 		rawStr := "<nil>"
 		if update != nil {
 			raw, _ := json.Marshal(update)
 			rawStr = string(raw)
 		}
-		logging.FromContext(ctx).Debugf("applying patch to Azure VM: %s", rawStr)
+		log.FromContext(ctx).V(1).Info("applying patch to Azure VM: %s", rawStr)
 	}
 }

@@ -43,7 +43,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 
-	. "knative.dev/pkg/logging/testing"
+	. "github.com/Azure/karpenter-provider-azure/pkg/utils"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"

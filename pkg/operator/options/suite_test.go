@@ -22,10 +22,10 @@ import (
 	"os"
 	"testing"
 
+	. "github.com/Azure/karpenter-provider-azure/pkg/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	. "knative.dev/pkg/logging/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"

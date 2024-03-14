@@ -21,8 +21,13 @@ import (
 	"fmt"
 	"regexp"
 
-	"knative.dev/pkg/logging"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
+
+	"knative.dev/pkg/logging"
 )
 
 // GetVMName parses the provider ID stored on the node to get the vmName
@@ -47,7 +52,7 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
 	if err != nil {
-		logging.FromContext(ctx).Warnf("Failed to convert resource group name to lower case in providerID %s: %v", providerID, err)
+		log.FromContext(ctx).Error(err, "Failed to convert resource group name to lower case in providerID %s", providerID)
 		// fallback to original providerID
 		return providerID
 	}
@@ -57,4 +62,19 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 func MkVMID(resourceGroupName string, vmName string) string {
 	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s"
 	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
+}
+
+// TestLogger gets a logger to use in unit and end to end tests
+func TestLogger(t zaptest.TestingT) *zap.SugaredLogger {
+	opts := zaptest.WrapOptions(
+		zap.AddCaller(),
+		zap.Development(),
+	)
+
+	return zaptest.NewLogger(t, opts).Sugar()
+}
+
+// TestContextWithLogger returns a context with a logger to be used in tests
+func TestContextWithLogger(t zaptest.TestingT) context.Context {
+	return logging.WithLogger(context.Background(), TestLogger(t))
 }
