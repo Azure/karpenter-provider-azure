@@ -97,3 +97,15 @@ func getNetworkPolicyType(networkPolicy string) nbcontractv1.NetworkPolicyType {
 
 	return nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_NONE
 }
+
+// getFeatureState takes a positive enablement state variable as input. For a negative case, please invert it (from true to false or vice versa) before passing in.
+// For example, variable XXX_enabled is a correct input while XXX_disabled is incorrect.
+func getFeatureState(enabled bool) nbcontractv1.FeatureState {
+	if enabled {
+		return nbcontractv1.FeatureState_FEATURE_STATE_ENABLED
+	} else if !enabled {
+		return nbcontractv1.FeatureState_FEATURE_STATE_DISABLED
+	}
+
+	return nbcontractv1.FeatureState_FEATURE_STATE_UNSPECIFIED
+}

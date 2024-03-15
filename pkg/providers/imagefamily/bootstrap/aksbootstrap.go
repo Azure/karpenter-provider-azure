@@ -21,6 +21,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"text/template"
@@ -59,6 +60,8 @@ func (a AKS) Script() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error getting AKS bootstrap script: %w", err)
 	}
+
+	log.Printf(base64.StdEncoding.EncodeToString([]byte(bootstrapScript)))
 
 	return base64.StdEncoding.EncodeToString([]byte(bootstrapScript)), nil
 }
@@ -234,10 +237,7 @@ var (
 			ProxyTrustedCa: ptr.String(""),        // cd
 			CaStatus:       &disabledFeatureState, // cd
 		},
-		CustomCaTrustConfig: &nbcontractv1.CustomCATrustConfig{
-			Status:        disabledFeatureState, // cd
-			CustomCaCerts: []string{},           // cd
-		},
+		CustomCaCerts:              []string{},                                                                      // cd
 		OutboundCommand:            ptr.String("curl -v --insecure --proxy-insecure https://mcr.microsoft.com/v2/"), // s
 		UnattendedUpgradeStatus:    &disabledFeatureState,                                                           // cd
 		IsKrustlet:                 false,                                                                           // n                                                     // td
@@ -448,16 +448,4 @@ func JoinParameterArgsToMap[K comparable, V any](result map[string]string, name 
 	if len(args) > 0 {
 		result[name] = strings.Join(args, ",")
 	}
-}
-
-// getFeatureState takes a positive enablement state variable as input. For a negative case, please invert it (from true to false or vice versa) before passing in.
-// For example, variable XXX_enabled is a correct input while XXX_disabled is incorrect.
-func getFeatureState(enabled bool) nbcontractv1.FeatureState {
-	if enabled {
-		return nbcontractv1.FeatureState_FEATURE_STATE_ENABLED
-	} else if !enabled {
-		return nbcontractv1.FeatureState_FEATURE_STATE_DISABLED
-	}
-
-	return nbcontractv1.FeatureState_FEATURE_STATE_UNSPECIFIED
 }

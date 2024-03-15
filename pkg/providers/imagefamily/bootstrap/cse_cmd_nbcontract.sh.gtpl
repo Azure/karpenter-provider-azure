@@ -73,9 +73,9 @@ HTTP_PROXY_TRUSTED_CA="{{.HttpProxyConfig.ProxyTrustedCa}}"
 HTTP_PROXY_URLS="{{.HttpProxyConfig.HttpProxy}}"
 HTTPS_PROXY_URLS="{{.HttpProxyConfig.HttpsProxy}}"
 NO_PROXY_URLS="{{getStringifiedStringArray .HttpProxyConfig.NoProxyEntries ","}}"
-SHOULD_CONFIGURE_CUSTOM_CA_TRUST="{{getBoolStringFromFeatureState .CustomCaTrustConfig.Status}}"
-CUSTOM_CA_TRUST_COUNT="{{len .CustomCaTrustConfig.CustomCaCerts}}"
-{{range $i, $cert := .CustomCaTrustConfig.CustomCaCerts}}
+SHOULD_CONFIGURE_CUSTOM_CA_TRUST="{{getCustomCACertsStatus .CustomCaCerts}}"
+CUSTOM_CA_TRUST_COUNT="{{len .CustomCaCerts}}"
+{{range $i, $cert := .CustomCaCerts}}
 CUSTOM_CA_CERT_{{$i}}="{{$cert}}"
 {{end}}
 IS_KRUSTLET="{{.IsKrustlet}}"

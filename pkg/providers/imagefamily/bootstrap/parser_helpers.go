@@ -65,6 +65,7 @@ func getFuncMap() template.FuncMap {
 		"getContainerdConfig":              getContainerdConfig,
 		"getStringifiedStringArray":        getStringifiedStringArray,
 		"getIsMIGNode":                     getIsMIGNode,
+		"getCustomCACertsStatus":           getCustomCACertsStatus,
 	}
 }
 
@@ -197,4 +198,11 @@ func containerdConfigFromNodeBootstrapContract(nbcontract *nbcontractv1.Configur
 
 func getIsMIGNode(gpuInstanceProfile string) bool {
 	return gpuInstanceProfile != ""
+}
+
+func getCustomCACertsStatus(customCACerts []string) bool {
+	if len(customCACerts) > 0 {
+		return true
+	}
+	return false
 }
