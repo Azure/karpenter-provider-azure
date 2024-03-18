@@ -17,7 +17,8 @@ env:
 
 jobs:
   prepare-variables:
-    runs-on: ubuntu-latest
+    runs-on:
+      labels: [self-hosted, "1ES.Pool=${{ secrets.RELEASE_1ES_POOL }}"]
     outputs:
       release_tag: ${{ steps.vars.outputs.release_tag }}
     steps:
@@ -43,7 +44,8 @@ jobs:
     permissions:
       contents: read
       id-token: write # This is required for requesting the JWT
-    runs-on: ubuntu-latest
+    runs-on:
+      labels: [self-hosted, "1ES.Pool=${{ secrets.RELEASE_1ES_POOL }}"]
     needs: prepare-variables
     steps:
     - name: Harden Runner
@@ -56,14 +58,6 @@ jobs:
         ref: ${{ needs.prepare-variables.outputs.release_tag }}
         
     - uses: ./.github/actions/install-deps
-
-    # reference: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-azure
-    - name: Login to Azure
-      uses: azure/login@8c334a195cbb38e46038007b304988d888bf676a # v2.0.0
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   
     - name: Build and publish image
       env:
