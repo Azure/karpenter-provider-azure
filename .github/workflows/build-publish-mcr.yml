@@ -63,6 +63,7 @@ jobs:
       env:
         KO_DOCKER_REPO: ${{ secrets.AZURE_REGISTRY }}/${{ env.REGISTRY_REPO }}
       run: |
+        az login --identity
         az acr login -n ${{ secrets.AZURE_REGISTRY }}
         cat >.ko.yaml <<EOF
         builds:
