@@ -18,7 +18,7 @@ env:
 jobs:
   prepare-variables:
     runs-on:
-      labels: [self-hosted, "1ES.Pool=${{ var.RELEASE_1ES_POOL }}"]
+      labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
     outputs:
       release_tag: ${{ steps.vars.outputs.release_tag }}
     steps:
@@ -45,7 +45,7 @@ jobs:
       contents: read
       id-token: write # This is required for requesting the JWT
     runs-on:
-      labels: [self-hosted, "1ES.Pool=${{ var.RELEASE_1ES_POOL }}"]
+      labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
     needs: prepare-variables
     steps:
     - name: Harden Runner
