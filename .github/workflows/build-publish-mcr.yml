@@ -72,6 +72,7 @@ jobs:
           flags: ['-tags','ccp']
         EOF
         ko build github.com/Azure/karpenter-provider-azure/cmd/controller \
+          --push=false \
           --platform linux/amd64,linux/arm64 \
           --base-import-paths \
           --sbom none \
