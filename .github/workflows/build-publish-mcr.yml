@@ -14,11 +14,12 @@ permissions:
 
 env:
   REGISTRY_REPO: public/aks/karpenter
+  RELEASE_1ES_POOL: ${{ secrets.RELEASE_1ES_POOL }}
 
 jobs:
   prepare-variables:
     runs-on:
-      labels: [self-hosted, "1ES.Pool=${{ secrets.RELEASE_1ES_POOL }}"]
+      labels: [self-hosted, "1ES.Pool=${{ env.RELEASE_1ES_POOL }}"]
     outputs:
       release_tag: ${{ steps.vars.outputs.release_tag }}
     steps:
@@ -45,7 +46,7 @@ jobs:
       contents: read
       id-token: write # This is required for requesting the JWT
     runs-on:
-      labels: [self-hosted, "1ES.Pool=${{ secrets.RELEASE_1ES_POOL }}"]
+      labels: [self-hosted, "1ES.Pool=${{ env.RELEASE_1ES_POOL }}"]
     needs: prepare-variables
     steps:
     - name: Harden Runner
