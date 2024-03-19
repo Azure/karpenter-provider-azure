@@ -50,22 +50,29 @@ var (
 
 func getFuncMap() template.FuncMap {
 	return template.FuncMap{
-		"derefString":                      deref[string],
-		"derefBool":                        deref[bool],
-		"getStringFromNetworkModeType":     getStringFromNetworkModeType,
-		"getStringFromNetworkPluginType":   getStringFromNetworkPluginType,
-		"getStringFromNetworkPolicyType":   getStringFromNetworkPolicyType,
-		"getStringFromLoadBalancerSkuType": getStringFromLoadBalancerSkuType,
-		"getBoolFromFeatureState":          getBoolFromFeatureState,
-		"getBoolStringFromFeatureState":    getBoolStringFromFeatureState,
-		"getBoolStringFromFeatureStatePtr": getBoolStringFromFeatureStatePtr,
-		"getStringifiedMap":                getStringifiedMap,
-		"getKubenetTemplate":               getKubenetTemplate,
-		"getSysctlContent":                 getSysctlContent,
-		"getContainerdConfig":              getContainerdConfig,
-		"getStringifiedStringArray":        getStringifiedStringArray,
-		"getIsMIGNode":                     getIsMIGNode,
-		"getCustomCACertsStatus":           getCustomCACertsStatus,
+		"derefString":                               deref[string],
+		"derefBool":                                 deref[bool],
+		"getStringFromNetworkModeType":              getStringFromNetworkModeType,
+		"getStringFromNetworkPluginType":            getStringFromNetworkPluginType,
+		"getStringFromNetworkPolicyType":            getStringFromNetworkPolicyType,
+		"getStringFromLoadBalancerSkuType":          getStringFromLoadBalancerSkuType,
+		"getBoolFromFeatureState":                   getBoolFromFeatureState,
+		"getBoolStringFromFeatureState":             getBoolStringFromFeatureState,
+		"getBoolStringFromFeatureStatePtr":          getBoolStringFromFeatureStatePtr,
+		"getStringifiedMap":                         getStringifiedMap,
+		"getKubenetTemplate":                        getKubenetTemplate,
+		"getSysctlContent":                          getSysctlContent,
+		"getContainerdConfig":                       getContainerdConfig,
+		"getStringifiedStringArray":                 getStringifiedStringArray,
+		"getIsMIGNode":                              getIsMIGNode,
+		"getCustomCACertsStatus":                    getCustomCACertsStatus,
+		"getEnableTLSBootstrap":                     getEnableTLSBootstrap,
+		"getEnableSecureTLSBootstrap":               getEnableSecureTLSBootstrap,
+		"getTLSBootstrapToken":                      getTLSBootstrapToken,
+		"getCustomSecureTLSBootstrapAADServerAppID": getCustomSecureTLSBootstrapAADServerAppID,
+		"getIsKrustlet":                             getIsKrustlet,
+		"getEnsureNoDupePromiscuousBridge":          getEnsureNoDupePromiscuousBridge,
+		"getHasSearchDomain":                        getHasSearchDomain,
 	}
 }
 
@@ -202,6 +209,41 @@ func getIsMIGNode(gpuInstanceProfile string) bool {
 
 func getCustomCACertsStatus(customCACerts []string) bool {
 	if len(customCACerts) > 0 {
+		return true
+	}
+	return false
+}
+
+func getEnableTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
+	return bootstrapConfig.GetTlsBootstrapToken() != ""
+}
+
+func getEnableSecureTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
+	// TODO: Change logic to default to false once Secure TLS Bootstrapping is complete
+	return bootstrapConfig.GetEnableSecureTlsBootstrapping()
+}
+
+func getTLSBootstrapToken(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) string {
+	return bootstrapConfig.GetTlsBootstrapToken()
+}
+
+func getCustomSecureTLSBootstrapAADServerAppID(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) string {
+	return bootstrapConfig.GetCustomSecureTlsBootstrapAppserverAppid()
+}
+
+func getIsKrustlet(wr nbcontractv1.WorkloadRuntime) bool {
+	if wr == nbcontractv1.WorkloadRuntime_WASM_WASI {
+		return true
+	}
+	return false
+}
+
+func getEnsureNoDupePromiscuousBridge(networkPlugin nbcontractv1.NetworkPluginType, networkPolicy nbcontractv1.NetworkPolicyType) bool {
+	return networkPlugin == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && networkPolicy != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
+}
+
+func getHasSearchDomain(csdName string, csdRealmPw string, csdRealmUser string) bool {
+	if csdName != "" && csdRealmPw != "" && csdRealmUser != "" {
 		return true
 	}
 	return false
