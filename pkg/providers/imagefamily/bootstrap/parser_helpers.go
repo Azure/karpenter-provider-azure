@@ -235,12 +235,12 @@ func getIsKrustlet(wr nbcontractv1.WorkloadRuntime) bool {
 	return wr == nbcontractv1.WorkloadRuntime_WASM_WASI
 }
 
-func getEnsureNoDupePromiscuousBridge(networkPlugin nbcontractv1.NetworkPluginType, networkPolicy nbcontractv1.NetworkPolicyType) bool {
-	return networkPlugin == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && networkPolicy != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
+func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.NetworkConfig) bool {
+	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
 }
 
 func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
-	if csd.CustomSearchDomainName != "" && csd.CustomSearchDomainRealmUser != "" && csd.CustomSearchDomainRealmPassword != "" {
+	if csd.GetCustomSearchDomainName() != "" && csd.GetCustomSearchDomainRealmUser() != "" && csd.GetCustomSearchDomainRealmPassword() != "" {
 		return true
 	}
 	return false
