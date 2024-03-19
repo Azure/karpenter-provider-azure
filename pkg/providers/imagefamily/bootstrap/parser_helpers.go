@@ -232,18 +232,15 @@ func getCustomSecureTLSBootstrapAADServerAppID(bootstrapConfig *nbcontractv1.TLS
 }
 
 func getIsKrustlet(wr nbcontractv1.WorkloadRuntime) bool {
-	if wr == nbcontractv1.WorkloadRuntime_WASM_WASI {
-		return true
-	}
-	return false
+	return wr == nbcontractv1.WorkloadRuntime_WASM_WASI
 }
 
 func getEnsureNoDupePromiscuousBridge(networkPlugin nbcontractv1.NetworkPluginType, networkPolicy nbcontractv1.NetworkPolicyType) bool {
 	return networkPlugin == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && networkPolicy != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
 }
 
-func getHasSearchDomain(csdName string, csdRealmPw string, csdRealmUser string) bool {
-	if csdName != "" && csdRealmPw != "" && csdRealmUser != "" {
+func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
+	if csd.CustomSearchDomainName != "" && csd.CustomSearchDomainRealmUser != "" && csd.CustomSearchDomainRealmPassword != "" {
 		return true
 	}
 	return false
