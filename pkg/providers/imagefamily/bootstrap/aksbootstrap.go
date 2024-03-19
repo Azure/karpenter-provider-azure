@@ -240,7 +240,7 @@ var (
 		},
 		CustomCaCerts:              []string{},                                  // cd
 		Ipv6DualStackEnabled:       false,                                       //s
-		OutboundCommand:            getDefaultOutboundCommand(),                 // s
+		OutboundCommand:            GetDefaultOutboundCommand(),                 // s
 		EnableUnattendedUpgrade:    false,                                       // cd
 		WorkloadRuntime:            nbcontractv1.WorkloadRuntime_WR_UNSPECIFIED, // s
 		AzurePrivateRegistryServer: "",                                          // cd
