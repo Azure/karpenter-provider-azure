@@ -65,10 +65,14 @@ func getFuncMap() template.FuncMap {
 		"getContainerdConfig":                       getContainerdConfig,
 		"getStringifiedStringArray":                 getStringifiedStringArray,
 		"getIsMIGNode":                              getIsMIGNode,
+		"getCustomCACertsStatus":                    getCustomCACertsStatus,
 		"getEnableTLSBootstrap":                     getEnableTLSBootstrap,
 		"getEnableSecureTLSBootstrap":               getEnableSecureTLSBootstrap,
 		"getTLSBootstrapToken":                      getTLSBootstrapToken,
 		"getCustomSecureTLSBootstrapAADServerAppID": getCustomSecureTLSBootstrapAADServerAppID,
+		"getIsKrustlet":                             getIsKrustlet,
+		"getEnsureNoDupePromiscuousBridge":          getEnsureNoDupePromiscuousBridge,
+		"getHasSearchDomain":                        getHasSearchDomain,
 	}
 }
 
@@ -203,6 +207,13 @@ func getIsMIGNode(gpuInstanceProfile string) bool {
 	return gpuInstanceProfile != ""
 }
 
+func getCustomCACertsStatus(customCACerts []string) bool {
+	if len(customCACerts) > 0 {
+		return true
+	}
+	return false
+}
+
 func getEnableTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
 	return bootstrapConfig.GetTlsBootstrapToken() != ""
 }
@@ -218,4 +229,19 @@ func getTLSBootstrapToken(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) 
 
 func getCustomSecureTLSBootstrapAADServerAppID(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) string {
 	return bootstrapConfig.GetCustomSecureTlsBootstrapAppserverAppid()
+}
+
+func getIsKrustlet(wr nbcontractv1.WorkloadRuntime) bool {
+	return wr == nbcontractv1.WorkloadRuntime_WASM_WASI
+}
+
+func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.NetworkConfig) bool {
+	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
+}
+
+func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
+	if csd.GetCustomSearchDomainName() != "" && csd.GetCustomSearchDomainRealmUser() != "" && csd.GetCustomSearchDomainRealmPassword() != "" {
+		return true
+	}
+	return false
 }

@@ -24,8 +24,14 @@ import (
 	"encoding/base64"
 	"strings"
 
+	"github.com/Azure/agentbaker/pkg/agent/datamodel"
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
+	"github.com/blang/semver"
 	"knative.dev/pkg/ptr"
+)
+
+const (
+	azureChinaCloud = "AzureChinaCloud"
 )
 
 // getIdentityConfig returns the identityConfig object based on the identity inputs.
@@ -96,4 +102,57 @@ func getNetworkPolicyType(networkPolicy string) nbcontractv1.NetworkPolicyType {
 	}
 
 	return nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_NONE
+}
+
+// getFeatureState takes a positive enablement state variable as input. For a negative case, please invert it (from true to false or vice versa) before passing in.
+// For example, variable XXX_enabled is a correct input while XXX_disabled is incorrect.
+func getFeatureState(enabled bool) nbcontractv1.FeatureState {
+	if enabled {
+		return nbcontractv1.FeatureState_FEATURE_STATE_ENABLED
+	} else if !enabled {
+		return nbcontractv1.FeatureState_FEATURE_STATE_DISABLED
+	}
+
+	return nbcontractv1.FeatureState_FEATURE_STATE_UNSPECIFIED
+}
+
+// GetOutBoundCmd returns a proper outbound traffic command based on some cloud and Linux distro configs.
+func GetOutBoundCmd(nbconfig *datamodel.NodeBootstrappingConfiguration, cloudName string) string {
+	cs := nbconfig.ContainerService
+	if cs.Properties.FeatureFlags.IsFeatureEnabled("BlockOutboundInternet") {
+		return ""
+	}
+
+	registry := ""
+	switch {
+	case cloudName == azureChinaCloud:
+		registry = `gcr.azk8s.cn`
+	case cs.IsAKSCustomCloud():
+		registry = cs.Properties.CustomCloudEnv.McrURL
+	default:
+		registry = `mcr.microsoft.com`
+	}
+
+	if registry == "" {
+		return ""
+	}
+
+	// curl on Ubuntu 16.04 (shipped prior to AKS 1.18) doesn't support proxy TLS.
+	// so we need to use nc for the connectivity check.
+	clusterVersion, _ := semver.Make(cs.Properties.OrchestratorProfile.OrchestratorVersion)
+	minVersion, _ := semver.Make("1.18.0")
+
+	var connectivityCheckCommand string
+	if clusterVersion.GTE(minVersion) {
+		connectivityCheckCommand = `curl -v --insecure --proxy-insecure https://` + registry + `/v2/`
+	} else {
+		connectivityCheckCommand = `nc -vz ` + registry + ` 443`
+	}
+
+	return connectivityCheckCommand
+}
+
+// GetDefaultOutboundCommand returns a default outbound traffic command.
+func GetDefaultOutboundCommand() string {
+	return "curl -v --insecure --proxy-insecure https://mcr.microsoft.com/v2/"
 }

@@ -225,8 +225,8 @@ var (
 			RuncVersion:    "", // -
 			RuncPackageUrl: "", // -
 		},
-		SshStatus:              enabledFeatureState,  // td
-		HostsConfigAgentStatus: disabledFeatureState, // n
+		EnableSsh:              true,  // td
+		EnableHostsConfigAgent: false, // n
 		HttpProxyConfig: &nbcontractv1.HTTPProxyConfig{
 			Status:         &disabledFeatureState, // cd
 			HttpProxy:      "",                    // cd
@@ -235,19 +235,16 @@ var (
 			ProxyTrustedCa: ptr.String(""),        // cd
 			CaStatus:       &disabledFeatureState, // cd
 		},
-		CustomCaTrustConfig: &nbcontractv1.CustomCATrustConfig{
-			Status:        disabledFeatureState, // cd
-			CustomCaCerts: []string{},           // cd
-		},
-		OutboundCommand:            ptr.String("curl -v --insecure --proxy-insecure https://mcr.microsoft.com/v2/"), // s
-		UnattendedUpgradeStatus:    &disabledFeatureState,                                                           // cd
-		IsKrustlet:                 false,                                                                           // n                                                     // td
-		AzurePrivateRegistryServer: "",                                                                              // cd
+		CustomCaCerts:              []string{},                                  // cd
+		Ipv6DualStackEnabled:       false,                                       //s
+		OutboundCommand:            GetDefaultOutboundCommand(),                 // s
+		EnableUnattendedUpgrade:    false,                                       // cd
+		WorkloadRuntime:            nbcontractv1.WorkloadRuntime_WR_UNSPECIFIED, // s
+		AzurePrivateRegistryServer: "",                                          // cd
 		CustomSearchDomain: &nbcontractv1.CustomSearchDomain{
-			CustomSearchDomainFilepath:      "/opt/azure/containers/setup-custom-search-domains.sh", // s
-			CustomSearchDomainName:          "",                                                     // cd
-			CustomSearchDomainRealmUser:     "",                                                     // cd
-			CustomSearchDomainRealmPassword: "",                                                     // cd
+			CustomSearchDomainName:          "", // cd
+			CustomSearchDomainRealmUser:     "", // cd
+			CustomSearchDomainRealmPassword: "", // cd
 		},
 		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
 			EnableSecureTlsBootstrapping:           &defaultBoolFalse,
@@ -325,8 +322,6 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 	nbv.NetworkConfig.CniPluginsUrl = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
 
 	// calculated values
-	noDupePromiscuousBridge := nbv.NeedsContainerd && nbv.NetworkConfig.NetworkPlugin == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && nbv.NetworkConfig.NetworkPolicy != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
-	nbv.EnsureNoDupePromiscuousBridge = &noDupePromiscuousBridge
 	nbv.NetworkConfig.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
 	nbv.NetworkConfig.VirtualNetworkConfig.Name = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
 	nbv.NetworkConfig.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
@@ -450,16 +445,4 @@ func JoinParameterArgsToMap[K comparable, V any](result map[string]string, name 
 	if len(args) > 0 {
 		result[name] = strings.Join(args, ",")
 	}
-}
-
-// getFeatureState takes a positive enablement state variable as input. For a negative case, please invert it (from true to false or vice versa) before passing in.
-// For example, variable XXX_enabled is a correct input while XXX_disabled is incorrect.
-func getFeatureState(enabled bool) nbcontractv1.FeatureState {
-	if enabled {
-		return nbcontractv1.FeatureState_FEATURE_STATE_ENABLED
-	} else if !enabled {
-		return nbcontractv1.FeatureState_FEATURE_STATE_DISABLED
-	}
-
-	return nbcontractv1.FeatureState_FEATURE_STATE_UNSPECIFIED
 }
