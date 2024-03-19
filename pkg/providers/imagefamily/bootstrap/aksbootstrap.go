@@ -21,7 +21,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"text/template"
@@ -60,8 +59,6 @@ func (a AKS) Script() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("error getting AKS bootstrap script: %w", err)
 	}
-
-	log.Printf(base64.StdEncoding.EncodeToString([]byte(bootstrapScript)))
 
 	return base64.StdEncoding.EncodeToString([]byte(bootstrapScript)), nil
 }
