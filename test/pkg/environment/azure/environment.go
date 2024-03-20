@@ -51,6 +51,7 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 	nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{
 		Name: nodeClass.Name,
 	}
+	nodePool.Spec.Weight = lo.ToPtr[int32](1)
 	nodePool.Spec.Template.Spec.Requirements = []v1.NodeSelectorRequirement{
 		{
 			Key:      v1.LabelOSStable,
@@ -84,6 +85,7 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 
 func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *corev1beta1.NodePool {
 	nodePool := env.DefaultNodePool(nodeClass)
+	nodePool.Spec.Weight = lo.ToPtr[int32](1)
 	coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
 		Key:      v1.LabelArchStable,
 		Operator: v1.NodeSelectorOpIn,

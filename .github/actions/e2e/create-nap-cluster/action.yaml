@@ -1,0 +1,65 @@
+name: CreateCluster
+description: 'Installs Go Downloads and installs Karpenter Dependencies'
+inputs:
+#   k8s_version:
+#     description: 'Version of Kubernetes to use for the launched cluster'
+#     required: false
+#     default: "1.27"
+  client-id:
+    description: 
+    required: true
+  tenant-id:
+    description: 
+    required: true
+  subscription-id:
+    description: 
+    required: true
+  resource_group:
+    description: "Name of the resource group to create the cluster within"
+    required: true
+  cluster_name:
+    description: 'Name of the cluster to be created'
+    required: true
+  mc_put_additive_flags: 
+    description: "Additional flags for cluster create"
+    required: false
+  acr_name:
+    description: "Name of the acr holding the karpenter image"
+    required: true
+  git_ref:
+    description: "The git commit, tag, or branch to check out"
+    required: false
+  location:
+    description: "The azure location to run the e2e test in"
+    default: "eastus"
+runs:
+  using: "composite"
+  steps:
+  - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    with:
+      ref: ${{ inputs.git_ref }}
+  - name: az login
+    uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
+    with:
+      client-id: ${{ inputs.client-id }}
+      tenant-id: ${{ inputs.tenant-id }}
+      subscription-id: ${{ inputs.subscription-id }}
+  - name: az set sub
+    shell: bash
+    run: az account set --subscription ${{ inputs.subscription-id }}
+  - name: create workload msi
+    shell: bash
+    run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-msi
+  - name: create cluster
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium-nap
+  - name: az login 2
+    uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
+    with:
+      client-id: ${{ inputs.client-id }}
+      tenant-id: ${{ inputs.tenant-id }}
+      subscription-id: ${{ inputs.subscription-id }}
+  - name: create federated cred
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-create-federated-cred
+

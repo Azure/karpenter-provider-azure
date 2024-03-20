@@ -1,4 +1,4 @@
-name: E2EMatrixTrigger
+name: E2EMatrixTriggerNap
 on:
   workflow_dispatch:
     inputs:
@@ -6,10 +6,9 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "eastus"
-  push:
-    branches: [main]
+
   workflow_run:
-    workflows: [ApprovalComment]
+    workflows: [ApprovalCommentNAP]
     types: [completed]
 
 permissions:
@@ -25,7 +24,7 @@ jobs:
       id-token: write # This is required for requesting the JWT
       statuses: write # ./.github/actions/commit-status/*          
     needs: [resolve]
-    uses: ./.github/workflows/e2e-matrix.yaml
+    uses: ./.github/workflows/e2e-matrix-nap.yaml
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
       location: ${{ inputs.location || 'eastus' }}
