@@ -37,9 +37,9 @@ kubectl scale deployments/inflate --replicas=3
 
 2. **Provision cluster, build and deploy Karpenter** : Set `AZURE_SUBSCRIPTION_ID` to your subscription (and customize region in `Makefile-az.mk` if desired). Then run `make az-all`. This logs into Azure (follow the prompts), provisions AKS and ACR (using resource group `$COMMON_NAME`, COMMON_NAME have to be unique), builds and deploys Karpenter, deploys sample `default` Provisioner and `inflate` Deployment workload.
 ```
-$ az config set core.output=json
-$ export AZURE_SUBSCRIPTION_ID=xxxx-xxxx-xxxx-xxxx
-$ sed -i 's/COMMON_NAME ?= karpenter/COMMON_NAME ?= karpenter2test/' Makefile-az.mk
+az config set core.output=json
+export AZURE_SUBSCRIPTION_ID=xxxx-xxxx-xxxx-xxxx
+sed -i 's/COMMON_NAME ?= karpenter/COMMON_NAME ?= karpenter2test/' Makefile-az.mk
 ```
 
 3. Manually scale the `inflate` Deployment workload, watch Karpenter controller log and Nodes in the cluster. Example of manually scaling up to 3 pods:
