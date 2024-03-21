@@ -39,7 +39,7 @@ kubectl scale deployments/inflate --replicas=3
 ```
 az config set core.output=json
 export AZURE_SUBSCRIPTION_ID=xxxx-xxxx-xxxx-xxxx
-sed -i 's/COMMON_NAME ?= karpenter/COMMON_NAME ?= karpenter2test/' Makefile-az.mk
+export COMMON_NAME=karpenter2test
 ```
 
 3. Manually scale the `inflate` Deployment workload, watch Karpenter controller log and Nodes in the cluster. Example of manually scaling up to 3 pods:
