@@ -9,6 +9,7 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 
 ## Development
 
+### Using GitHub Codespaces
 > A [GitHub Codespaces]((https://github.com/features/codespaces)) development flow is described below, which you can use to test Karpenter functionality on your own cluster, and to aid rapid development of this project. 
 
 1. **Install VSCode**: Go [here](https://code.visualstudio.com/download) to download VSCode for your platform. After installation, in your VSCode app install the "GitHub Codespaces" Extension. See [here](https://code.visualstudio.com/docs/remote/codespaces) for more information about this extension.
@@ -18,6 +19,28 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 3. **Provision cluster, build and deploy Karpenter** (~5min): Set `AZURE_SUBSCRIPTION_ID` to your subscription (and customize region in `Makefile-az.mk` if desired). Then at the VSCode command line run `make az-all`. This logs into Azure (follow the prompts), provisions AKS and ACR (using resource group `$CODESPACE_NAME`, so everything is unique / scoped to codespace), builds and deploys Karpenter, deploys sample `default` Provisioner and `inflate` Deployment workload.
 
 4. Manually scale the `inflate` Deployment workload, watch Karpenter controller log and Nodes in the cluster. Example of manually scaling up to 3 pods:
+```
+kubectl scale deployments/inflate --replicas=3
+```
+
+### Use local environment instead of GitHub Codespaces. 
+> Tested environment : WSL2
+
+1. **Install tools**
+   * make
+   * [golang](https://go.dev/dl/) > 1.21
+   * [yq](https://github.com/mikefarah/yq/releases) / [jq](https://github.com/jqlang/jq/releases)
+   * [skaffold](https://skaffold.dev/docs/install/#standalone-binary)
+   * [azure-cli](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+
+2. **Provision cluster, build and deploy Karpenter** : Set `AZURE_SUBSCRIPTION_ID` to your subscription (and customize region in `Makefile-az.mk` if desired). Then run `make az-all`. This logs into Azure (follow the prompts), provisions AKS and ACR (using resource group `$COMMON_NAME`, COMMON_NAME have to be unique), builds and deploys Karpenter, deploys sample `default` Provisioner and `inflate` Deployment workload.
+```
+$ az config set core.output=json
+$ export AZURE_SUBSCRIPTION_ID=xxxx-xxxx-xxxx-xxxx
+$ sed -i 's/COMMON_NAME ?= karpenter/COMMON_NAME ?= karpenter2test/' Makefile-az.mk
+```
+
+3. Manually scale the `inflate` Deployment workload, watch Karpenter controller log and Nodes in the cluster. Example of manually scaling up to 3 pods:
 ```
 kubectl scale deployments/inflate --replicas=3
 ```
