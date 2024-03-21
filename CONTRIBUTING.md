@@ -28,6 +28,8 @@ kubectl scale deployments/inflate --replicas=3
 
 1. **Install tools**
    * make
+   * kubectl
+   * [helm](https://github.com/helm/helm/releases)
    * [golang](https://go.dev/dl/) > 1.21
    * [yq](https://github.com/mikefarah/yq/releases) / [jq](https://github.com/jqlang/jq/releases)
    * [skaffold](https://skaffold.dev/docs/install/#standalone-binary)
