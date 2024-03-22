@@ -1,13 +1,14 @@
 AZURE_LOCATION ?= westus2
+COMMON_NAME ?= karpenter
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
 else
-  AZURE_RESOURCE_GROUP ?= karpenter
-  AZURE_ACR_NAME ?= karpenter
+  AZURE_RESOURCE_GROUP ?= $(COMMON_NAME)
+  AZURE_ACR_NAME ?= $(COMMON_NAME)
 endif
 
-AZURE_CLUSTER_NAME ?= karpenter
+AZURE_CLUSTER_NAME ?= $(COMMON_NAME)
 AZURE_RESOURCE_GROUP_MC = MC_$(AZURE_RESOURCE_GROUP)_$(AZURE_CLUSTER_NAME)_$(AZURE_LOCATION)
 
 KARPENTER_SERVICE_ACCOUNT_NAME ?= karpenter-sa
@@ -22,7 +23,7 @@ az-login: ## Login into Azure
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
 
 az-mkrg: ## Create resource group
-	if az group exists --name $(AZURE_RESOURCE_GROUP) | grep -q "false"; then \
+	if az group exists --name $(AZURE_RESOURCE_GROUP) | grep -qi "false"; then \
 		az group create --name $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) -o none; \
 	fi
 
