@@ -35,7 +35,7 @@ kubectl scale deployments/inflate --replicas=3
    * [skaffold](https://skaffold.dev/docs/install/#standalone-binary)
    * [azure-cli](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
 
-2. **Provision cluster, build and deploy Karpenter** : Set `AZURE_SUBSCRIPTION_ID` to your subscription (and customize region in `Makefile-az.mk` if desired). Then run `make az-all`. This logs into Azure (follow the prompts), provisions AKS and ACR (using resource group `$COMMON_NAME`, COMMON_NAME have to be unique), builds and deploys Karpenter, deploys sample `default` Provisioner and `inflate` Deployment workload.
+2. **Provision cluster, build and deploy Karpenter** : Set `AZURE_SUBSCRIPTION_ID` to your subscription (and customize region in `Makefile-az.mk` if desired). Then run `make az-all`. This logs into Azure (follow the prompts), provisions AKS and ACR (using resource group and cluster name `$COMMON_NAME`, ACR it will not allow dashes), builds and deploys Karpenter, deploys sample `default` Provisioner and `inflate` Deployment workload.
 ```
 az config set core.output=json
 export AZURE_SUBSCRIPTION_ID=xxxx-xxxx-xxxx-xxxx
