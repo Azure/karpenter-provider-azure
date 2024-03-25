@@ -33,14 +33,9 @@ func init() {
 		LabelSKUMemory,
 		LabelSKUAccelerator,
 
-		LabelSKUConfidential,
-		LabelSKUIsolatedSize,
-
 		LabelSKUAcceleratedNetworking,
 
 		LabelSKUStoragePremiumCapable,
-		LabelSKUStorageCacheSize,
-		LabelSKUStorageTempMaxSize,
 		LabelSKUStorageEphemeralOSMaxSize,
 
 		LabelSKUEncryptionAtHostSupported,
@@ -67,7 +62,7 @@ var (
 		LabelSKUHyperVGeneration,
 	)
 
-	AllowUndefinedLabels = func(options scheduling.CompatabilityOptions) scheduling.CompatabilityOptions {
+	AllowUndefinedLabels = func(options scheduling.CompatibilityOptions) scheduling.CompatibilityOptions {
 		options.AllowUndefined = corev1beta1.WellKnownLabels.Union(RestrictedLabels)
 		return options
 	}
@@ -88,15 +83,9 @@ var (
 	LabelSKUAccelerator = Group + "/sku-accelerator"
 
 	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
-	// https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
-	LabelSKUConfidential = Group + "/sku-confidential"  // c
-	LabelSKUIsolatedSize = Group + "/sku-isolated-size" // i
-
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
-	LabelSKUStorageCacheSize          = Group + "/sku-storage-cache-size"          // sku.CachedDiskBytes
-	LabelSKUStorageTempMaxSize        = Group + "/sku-storage-temp-maxsize"        // sku.MaxResourceVolumeMB
 	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // calculated as max(sku.CachedDiskBytes, sku.MaxResourceVolumeMB)
 
 	LabelSKUEncryptionAtHostSupported = Group + "/sku-encryptionathost-capable" // sku.EncryptionAtHostSupported
@@ -113,11 +102,6 @@ var (
 	AKSLabelDomain = "kubernetes.azure.com"
 
 	AKSLabelCluster = AKSLabelDomain + "/cluster"
-
-	SkuFeatureToLabel = map[rune]string{
-		'c': LabelSKUConfidential,
-		'i': LabelSKUIsolatedSize,
-	}
 )
 
 const (

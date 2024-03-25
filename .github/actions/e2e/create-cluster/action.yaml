@@ -32,11 +32,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+  - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
     with:
       ref: ${{ inputs.git_ref }}
   - name: az login
-    uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
+    uses: azure/login@8c334a195cbb38e46038007b304988d888bf676a # v2.0.0
     with:
       client-id: ${{ inputs.client-id }}
       tenant-id: ${{ inputs.tenant-id }}
@@ -51,7 +51,7 @@ runs:
     shell: bash
     run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
   - name: az login 2
-    uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
+    uses: azure/login@8c334a195cbb38e46038007b304988d888bf676a # v2.0.0
     with:
       client-id: ${{ inputs.client-id }}
       tenant-id: ${{ inputs.tenant-id }}

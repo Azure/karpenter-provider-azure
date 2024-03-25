@@ -23,9 +23,11 @@ import (
 
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	"knative.dev/pkg/ptr"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -43,6 +45,7 @@ import (
 
 func init() {
 	lo.Must0(apis.AddToScheme(scheme.Scheme))
+	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
 type Operator struct {
@@ -106,7 +109,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.NodeResourceGroup,
 	)
 	instanceProvider := instance.NewProvider(
-		ctx,
 		azClient,
 		instanceTypeProvider,
 		launchTemplateProvider,
