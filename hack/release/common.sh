@@ -37,7 +37,7 @@ Commit: $(git rev-parse HEAD)
 Helm Chart Version $(helmChartVersion "$RELEASE_VERSION")"
 
   authenticatePrivateRepo "${SNAPSHOT_ACR}"
-  buildImages "${SNAPSHOT_REPO_ACR}"
+  buildAndPublishImages "${SNAPSHOT_REPO_ACR}"
   updateHelmChart
   # not locking artifacts for snapshot releases
   cosignImage "${CONTROLLER_IMG}"
@@ -69,7 +69,7 @@ authenticatePrivateRepo() {
   az acr login -n "${ACR}"
 }
 
-buildImages() {
+buildAndPublishImages() {
   RELEASE_REPO=$1
   # Set the SOURCE_DATE_EPOCH and KO_DATA_DATE_EPOCH values for reproducable builds with timestamps
   # https://ko.build/advanced/faq/
@@ -137,6 +137,11 @@ buildDate(){
   date --utc --date="@${SOURCE_DATE_EPOCH}" $DATE_FMT 2>/dev/null
 }
 
+# When executed interactively, cosign will prompt you to authenticate via OIDC, where you'll sign in
+# with your email address. Under the hood, cosign will request a code signing certificate from the Fulcio
+# certificate authority. The subject of the certificate will match the email address you logged in with.
+# Cosign will then store the signature and certificate in the Rekor transparency log, and upload the signature
+# to the OCI registry alongside the image you're signing. For details see https://github.com/sigstore/cosign.
 cosignImage() {
   local image=$1
   COSIGN_EXPERIMENTAL=1 cosign sign \
