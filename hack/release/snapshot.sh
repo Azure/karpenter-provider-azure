@@ -9,6 +9,7 @@ config
 
 # Don't release with a dirty commit!
 if [[ "$(git status --porcelain)" != "" ]]; then
+    echo "There are uncommitted changes, please commit them before releasing."
     exit 1
 fi
 
