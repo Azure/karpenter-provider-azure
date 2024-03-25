@@ -100,10 +100,10 @@ vulncheck: ## Verify code vulnerabilities
 codegen: ## Auto generate files based on Azure API responses
 	./hack/codegen.sh
 
-snapshot: ## Builds and publishes snapshot release
+snapshot: az-login ## Builds and publishes snapshot release
 	$(WITH_GOFLAGS) ./hack/release/snapshot.sh
 
-release: ## Builds and publishes stable release
+release: az-login ## Builds and publishes stable release
 	$(WITH_GOFLAGS) ./hack/release/release.sh
 
 toolchain: ## Install developer toolchain
