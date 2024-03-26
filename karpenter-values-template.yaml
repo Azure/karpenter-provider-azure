@@ -1,0 +1,40 @@
+settings:
+  azure:
+    clusterName: "${AZURE_CLUSTER_NAME}"
+    clusterEndpoint: "${CLUSTER_ENDPOINT}"
+    kubeletClientTLSBootstrapToken: "${BOOTSTRAP_TOKEN}"
+    sshPublicKey: "${SSH_PUBLIC_KEY}"
+    
+replicas: 1 # for better debugging experience
+controller:
+  env:
+    - name: LEADER_ELECT # disable leader election for better debugging / troublshooting experience
+      value: "false"
+
+    - name: ARM_SUBSCRIPTION_ID
+      value: ${AZURE_SUBSCRIPTION_ID}
+    - name: LOCATION
+      value: ${AZURE_LOCATION}
+
+    # settings for managed workload ideneity
+    - name: ARM_USE_CREDENTIAL_FROM_ENVIRONMENT
+      value: "true"
+    - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
+      value: "false"
+    - name: ARM_USER_ASSIGNED_IDENTITY_ID
+      value: ""
+
+    - name: AZURE_NODE_RESOURCE_GROUP
+      value: ${AZURE_RESOURCE_GROUP_MC}
+    - name: AZURE_SUBNET_ID
+      value: ${AZURE_SUBNET_ID}
+    - name: AZURE_VNET_NAME
+      value: ${AZURE_VNET_NAME}
+    - name: AZURE_SUBNET_NAME
+      value: ${AZURE_SUBNET_NAME}
+serviceAccount:
+  name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
+  annotations:
+    azure.workload.identity/client-id: ${KARPENTER_USER_ASSIGNED_CLIENT_ID}
+podLabels:
+  azure.workload.identity/use: "true"
