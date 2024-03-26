@@ -26,40 +26,7 @@ kubectl scale deployments/inflate --replicas=3
 ### Use local environment instead of GitHub Codespaces. 
 > Tested environment : WSL2
 
-1. **Install tools**
-   * make
-     ```bash
-     sudo apt update && sudo apt install make -y
-     ```
-   * docker-cli
-     ```bash
-     curl -fsSL https://get.docker.com | bash -
-     ```
-   * kubectl
-     ```bash
-     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && sudo mv kubectl /usr/local/bin
-     ```
-   * [helm](https://github.com/helm/helm/releases)
-     ```bash
-     curl -L https://get.helm.sh/helm-v3.14.3-linux-amd64.tar.gz | sudo tar xvfz - linux-amd64/helm && sudo mv linux-amd64/helm /usr/local/bin/helm && rm -rf linux-amd64
-     ```
-   * [golang](https://go.dev/dl/) > 1.21
-     ```bash
-     curl -L https://go.dev/dl/go1.22.1.linux-amd64.tar.gz | sudo tar xvzf - -C /usr/local/ && PATH=$PATH:/usr/local/go/bin
-     ```
-   * [yq](https://github.com/mikefarah/yq/releases) / [jq](https://github.com/jqlang/jq/releases)
-     ```bash
-     sudo apt update && sudo apt install jq -y
-     curl -Lo yq https://github.com/mikefarah/yq/releases/download/v4.43.1/yq_linux_amd64 && chmod +x yq && sudo mv yq /usr/local/bin
-     ```
-   * [skaffold](https://skaffold.dev/docs/install/#standalone-binary)
-     ```bash
-     curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/v2.10.1/skaffold-linux-amd64 && chmod +x skaffold && sudo mv skaffold /usr/local/bin
-     ```
-   * [azure-cli](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-     ```bash
-     curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-     ```
+1. **Install tools** : run `make install-tools`. It is going to install tools(make,jq,yq,helm,docker,kubectl,go,skaffold,az-cli) in your local environment.
 
 2. **Provision cluster, build and deploy Karpenter** : Set `AZURE_SUBSCRIPTION_ID` to your subscription (and customize region in `Makefile-az.mk` if desired). Then run `make az-all`. This logs into Azure (follow the prompts), provisions AKS and ACR (using resource group and cluster name `$COMMON_NAME`, ACR it will not allow dashes), builds and deploys Karpenter, deploys sample `general-purpose` nodepool and `inflate` deployment workload.
 ```

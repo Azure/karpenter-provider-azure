@@ -17,6 +17,28 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 az-all:         az-login az-create-workload-msi az-mkaks-cilium az-create-federated-cred az-perm az-perm-acr az-patch-skaffold-azureoverlay az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 az-all-savm:    az-login az-mkaks-savm az-perm-savm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
+install-tools: ## install tools to create a local developer environment
+	sudo apt update && sudo apt install make jq -y
+	curl -Lo yq https://github.com/mikefarah/yq/releases/download/v4.43.1/yq_linux_amd64 && chmod +x yq && sudo mv yq /usr/local/bin
+	if test -z "$(shell which helm)"; then \
+		curl -L https://get.helm.sh/helm-v3.14.3-linux-amd64.tar.gz | sudo tar xvfz - linux-amd64/helm && sudo mv linux-amd64/helm /usr/local/bin/helm && rm -rf linux-amd64; \
+	fi
+	if test -z "$(shell which docker)"; then \
+		curl -fsSL https://get.docker.com | bash -; \
+	fi
+	if test -z "$(shell which kubectl)"; then \
+		curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && sudo mv kubectl /usr/local/bin; \
+	fi
+	if test -z "$(shell which go)"; then \
+		curl -L https://go.dev/dl/go1.22.1.linux-amd64.tar.gz | sudo tar xvzf - -C /usr/local/ && PATH=$PATH:/usr/local/go/bin; \
+	fi
+	if test -z "$(shell which skaffold)"; then \
+		curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/v2.10.1/skaffold-linux-amd64 && chmod +x skaffold && sudo mv skaffold /usr/local/bin; \
+	fi
+	if test -z "$(shell which az)"; then \
+		curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash; \
+	fi
+
 az-login: ## Login into Azure
 	az login
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
