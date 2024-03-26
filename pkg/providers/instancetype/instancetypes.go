@@ -107,7 +107,7 @@ func (p *Provider) List(
 		p.unavailableOfferings.SeqNum,
 		kcHash,
 		to.String(nodeClass.Spec.ImageFamily),
-		nodeClass.Spec.OSDiskSizeGB, // TODO: check this affects the instance type; check for other fields
+		nodeClass.Spec.OSDiskSizeGB,
 		kubeReservedHash,
 		systemReservedHash,
 	)
@@ -226,7 +226,7 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 		}
 	}
 
-	if p.cm.HasChanged("instance-types", instanceTypes) { // TODO: check CM compatibility with SKU structs
+	if p.cm.HasChanged("instance-types", instanceTypes) {
 		// Only update instanceTypesSeqNun with the instance types have been changed
 		// This is to not create new keys with duplicate instance types option
 		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
