@@ -23,10 +23,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 
+	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -41,6 +44,8 @@ import (
 	"github.com/alecthomas/units"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/utils/pretty"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 const (
@@ -49,13 +54,21 @@ const (
 )
 
 type Provider struct {
-	sync.Mutex
 	region               string
 	skuClient            skuclient.SkuClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
+
 	// Has one cache entry for all the instance types (key: InstanceTypesCacheKey)
+	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
+	// Fully initialized Instance Types are also cached based on the set of all instance types,
+	// unavailableOfferings cache, AWSNodeClass, and kubelet configuration from the NodePool
+	mu    sync.Mutex
 	cache *cache.Cache
+
+	cm *pretty.ChangeMonitor
+	// instanceTypesSeqNum is a monotonically increasing change counter used to avoid the expensive hashing operation on instance types
+	instanceTypesSeqNum uint64
 }
 
 func NewProvider(region string, cache *cache.Cache, skuClient skuclient.SkuClient, pricingProvider *pricing.Provider, offeringsCache *kcache.UnavailableOfferings) *Provider {
@@ -66,18 +79,40 @@ func NewProvider(region string, cache *cache.Cache, skuClient skuclient.SkuClien
 		pricingProvider:      pricingProvider,
 		unavailableOfferings: offeringsCache,
 		cache:                cache,
+		cm:                   pretty.NewChangeMonitor(),
+		instanceTypesSeqNum:  0,
 	}
 }
 
 // Get all instance type options
 func (p *Provider) List(
 	ctx context.Context, kc *corev1beta1.KubeletConfiguration, nodeClass *v1alpha2.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
-	p.Lock()
-	defer p.Unlock()
 	// Get SKUs from Azure
 	skus, err := p.getInstanceTypes(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Compute fully initialized instance types hash key
+	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+	// TODO: remove kubeReservedHash and systemReservedHash once v1.ResourceList objects are hashed as strings in KubeletConfiguration
+	// For more information on the v1.ResourceList hash issue: https://github.com/kubernetes-sigs/karpenter/issues/1080
+	kubeReservedHash, systemReservedHash := uint64(0), uint64(0)
+	if kc != nil {
+		kubeReservedHash, _ = hashstructure.Hash(resources.StringMap(kc.KubeReserved), hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+		systemReservedHash, _ = hashstructure.Hash(resources.StringMap(kc.SystemReserved), hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+	}
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%016x-%016x",
+		p.instanceTypesSeqNum,
+		p.unavailableOfferings.SeqNum,
+		kcHash,
+		to.String(nodeClass.Spec.ImageFamily),
+		to.Int32(nodeClass.Spec.OSDiskSizeGB),
+		kubeReservedHash,
+		systemReservedHash,
+	)
+	if item, ok := p.cache.Get(key); ok {
+		return item.([]*cloudprovider.InstanceType), nil
 	}
 
 	// Get Viable offerings
@@ -105,13 +140,12 @@ func (p *Provider) List(
 		}
 		result = append(result, instanceType)
 	}
+
+	p.cache.SetDefault(key, result)
 	return result, nil
 }
 
 func (p *Provider) LivenessProbe(req *http.Request) error {
-	p.Lock()
-	//nolint: staticcheck
-	p.Unlock()
 	return p.pricingProvider.LivenessProbe(req)
 }
 
@@ -160,6 +194,14 @@ func (p *Provider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily str
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
 func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU, error) {
+	// DO NOT REMOVE THIS LOCK ----------------------------------------------------------------------------
+	// We lock here so that multiple callers to GetInstanceTypes do not result in cache misses and multiple
+	// calls to Resource API when we could have just made one call. This lock is here because multiple callers result
+	// in A LOT of extra memory generated from the response for simultaneous callers.
+	// (This can be made more efficient by holding a Read lock and only obtaining the Write if not in cache)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if cached, ok := p.cache.Get(InstanceTypesCacheKey); ok {
 		return cached.(map[string]*skewer.SKU), nil
 	}
@@ -184,7 +226,13 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 		}
 	}
 
-	logging.FromContext(ctx).Debugf("%d SKUs remaining after filtering", len(instanceTypes))
+	if p.cm.HasChanged("instance-types", instanceTypes) {
+		// Only update instanceTypesSeqNun with the instance types have been changed
+		// This is to not create new keys with duplicate instance types option
+		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
+		logging.FromContext(ctx).With(
+			"count", len(instanceTypes)).Debugf("discovered instance types")
+	}
 	p.cache.SetDefault(InstanceTypesCacheKey, instanceTypes)
 	return instanceTypes, nil
 }
