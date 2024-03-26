@@ -19,6 +19,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/patrickmn/go-cache"
@@ -35,19 +36,24 @@ var (
 // GetInstanceTypes responses
 type UnavailableOfferings struct {
 	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{}
-	cache *cache.Cache
+	cache  *cache.Cache
+	SeqNum uint64
 }
 
 func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
-	return &UnavailableOfferings{
-		cache: c,
+	uo := &UnavailableOfferings{
+		cache:  c,
+		SeqNum: 0,
 	}
+	uo.cache.OnEvicted(func(_ string, _ interface{}) {
+		atomic.AddUint64(&uo.SeqNum, 1)
+	})
+	return uo
 }
 
 func NewUnavailableOfferings() *UnavailableOfferings {
-	return &UnavailableOfferings{
-		cache: cache.New(UnavailableOfferingsTTL, DefaultCleanupInterval),
-	}
+	return NewUnavailableOfferingsWithCache(
+		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval))
 }
 
 // IsUnavailable returns true if the offering appears in the cache
