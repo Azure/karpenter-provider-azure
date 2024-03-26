@@ -92,6 +92,7 @@ func (u *UnavailableOfferings) MarkUnavailable(ctx context.Context, unavailableR
 
 func (u *UnavailableOfferings) Flush() {
 	u.cache.Flush()
+	atomic.AddUint64(&u.SeqNum, 1)
 }
 
 // key returns the cache key for all offerings in the cache
