@@ -107,7 +107,7 @@ func (p *Provider) List(
 		p.unavailableOfferings.SeqNum,
 		kcHash,
 		to.String(nodeClass.Spec.ImageFamily),
-		nodeClass.Spec.OSDiskSizeGB,
+		to.Int32(nodeClass.Spec.OSDiskSizeGB),
 		kubeReservedHash,
 		systemReservedHash,
 	)
