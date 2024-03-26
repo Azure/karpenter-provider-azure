@@ -82,6 +82,7 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 		"capacity-type", capacityType,
 		"ttl", ttl).Debugf("removing offering from offerings")
 	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
+	atomic.AddUint64(&u.SeqNum, 1)
 }
 
 // MarkUnavailable communicates recently observed temporary capacity shortages in the provided offerings
