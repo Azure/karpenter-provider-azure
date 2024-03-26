@@ -30,9 +30,6 @@ metadata:
 rules:
   # Read
   - apiGroups: ["karpenter.sh"]
-    resources: ["provisioners", "provisioners/status", "machines", "machines/status"]
-    verbs: ["get", "list", "watch"]  
-  - apiGroups: ["karpenter.sh"]
     resources: ["nodepools", "nodepools/status", "nodeclaims", "nodeclaims/status"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
