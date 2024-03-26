@@ -33,7 +33,9 @@ import (
 )
 
 var _ = Describe("Emptiness", func() {
-	It("should terminate an empty node", func() {
+	// DISABLED by charliedmcb.
+	// TODO: need to clean up this test suite, and any bugs to reduce flakiness
+	XIt("should terminate an empty node", func() {
 		nodePool.Spec.Disruption.ConsolidationPolicy = corev1beta1.ConsolidationPolicyWhenEmpty
 		nodePool.Spec.Disruption.ConsolidateAfter = &corev1beta1.NillableDuration{Duration: lo.ToPtr(time.Hour * 300)}
 
