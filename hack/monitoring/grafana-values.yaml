@@ -1,3 +1,5 @@
+nodeSelector:
+  kubernetes.azure.com/mode: system
 datasources:
   datasources.yaml:
     apiVersion: 1
@@ -22,6 +24,7 @@ dashboardProviders:
 dashboards:
   default:
     capacity-dashboard:
-      url: https://karpenter.sh/v0.16.1/getting-started/getting-started-with-eksctl/karpenter-capacity-dashboard.json
+      url: https://karpenter.sh/preview/getting-started/getting-started-with-karpenter/karpenter-capacity-dashboard.json
     performance-dashboard:
-      url: https://karpenter.sh/v0.16.1/getting-started/getting-started-with-eksctl/karpenter-performance-dashboard.json
+      # url: https://karpenter.sh/preview/getting-started/getting-started-with-karpenter/karpenter-performance-dashboard.json
+      url: https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/hack/monitoring/karpenter-performance-dashboard.json
