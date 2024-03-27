@@ -1,11 +1,3 @@
-alertmanager:
-  persistentVolume:
-    enabled: false
-kube-state-metrics:
-  enabled: false
-prometheus-pushgateway:
-  enabled: false
-  
 server:
   fullnameOverride: prometheus-server
   persistentVolume:
@@ -13,6 +5,14 @@ server:
   nodeSelector:
     kubernetes.azure.com/mode: system
 
+alertmanager:
+  persistentVolume:
+    enabled: false
+
+kube-state-metrics:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
 prometheus-node-exporter:
   enabled: false
 
