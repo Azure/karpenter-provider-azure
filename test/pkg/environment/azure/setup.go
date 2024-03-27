@@ -20,9 +20,13 @@ import (
 	//nolint:revive,stylecheck
 	"fmt"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 )
+
+var persistedSettings []v1.EnvVar
 
 var (
 	CleanableObjects = []client.Object{
@@ -31,6 +35,7 @@ var (
 )
 
 func (env *Environment) BeforeEach() {
+	persistedSettings = env.ExpectSettings()
 	env.Environment.BeforeEach()
 }
 
@@ -43,4 +48,6 @@ func (env *Environment) AfterEach() {
 	fmt.Println("##[group]    E2E SUITE: LOG DUMP")
 	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
+	// Ensure we reset settings after collecting the controller logs
+	env.ExpectSettingsReplaced(persistedSettings...)
 }
