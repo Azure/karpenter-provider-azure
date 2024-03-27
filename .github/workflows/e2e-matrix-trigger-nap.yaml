@@ -8,7 +8,7 @@ on:
         default: "eastus"
 
   workflow_run:
-    workflows: [ApprovalCommentNAP]
+    workflows: [ApprovalComment]
     types: [completed]
 
 permissions:
@@ -18,12 +18,15 @@ jobs:
   resolve:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/resolve-args.yaml
+    with:
+      allowed_comment: "/nap"
   e2e-matrix:
     permissions:
       contents: read
       id-token: write # This is required for requesting the JWT
       statuses: write # ./.github/actions/commit-status/*          
     needs: [resolve]
+    if: needs.resolve.outputs.SHOULD_RUN == 'true'
     uses: ./.github/workflows/e2e-matrix-nap.yaml
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
