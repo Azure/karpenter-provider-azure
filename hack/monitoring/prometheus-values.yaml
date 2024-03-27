@@ -1,11 +1,20 @@
 alertmanager:
   persistentVolume:
     enabled: false
-
+kube-state-metrics:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+  
 server:
   fullnameOverride: prometheus-server
   persistentVolume:
     enabled: false
+  nodeSelector:
+    kubernetes.azure.com/mode: system
+
+prometheus-node-exporter:
+  enabled: false
 
 extraScrapeConfigs: |
     - job_name: karpenter
@@ -15,6 +24,8 @@ extraScrapeConfigs: |
           names:
           - karpenter
       relabel_configs:
-      - source_labels: [__meta_kubernetes_endpoint_port_name]
-        regex: http-metrics
+      - source_labels:
+        - __meta_kubernetes_endpoints_name
+        - __meta_kubernetes_endpoint_port_name
         action: keep
+        regex: karpenter;http-metrics
