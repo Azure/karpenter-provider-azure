@@ -232,7 +232,7 @@ az-rmnodeclaims-fin: ## Remove Karpenter finalizer from all nodeclaims (use with
 az-rmnodeclaims: ## kubectl delete all nodeclaims; don't wait for finalizers (use with care!)
 	kubectl delete --wait=false nodeclaims --all
 
-az-taintnodes: ## Taint all system nodepool nodes
+az-taintsystemnodes: ## Taint all system nodepool nodes
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --selector='kubernetes.azure.com/mode=system' --overwrite
 
 az-e2etests: ## Run e2etests
