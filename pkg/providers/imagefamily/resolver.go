@@ -19,7 +19,6 @@ package imagefamily
 import (
 	"context"
 	"os"
-	"strings"
 
 	core "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
@@ -30,6 +29,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -151,16 +151,17 @@ func getMaxPods(networkPlugin string) int32 {
 	return defaultMaxPods
 }
 
-// getVnetLabelValues returns the labels for AzureCNI for the vnet and subnet. This function assumes we assert in the auth config that AZURE_VNET_GUID and AZURE_SUBNET_ID are set.
-// See how split logic works here: https://go.dev/play/p/l3l7Zrg_pdd.
+// getVnetLabelValues returns the labels for AzureCNI for the vnet and subnet. 
+// This function assumes we assert in the auth config that AZURE_VNET_GUID and AZURE_SUBNET_ID are set.
 func getAzureCNILabels(nodeClass *v1alpha2.AKSNodeClass) map[string]string {
 	vnetSubnetID := lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID"))
-	vnetSubnetParts := strings.Split(vnetSubnetID, "/")
+	// we can throw out the error here because we validate the vnetSubnetID in multiple places before this point.
+	vnetSubnetComponents, _ := utils.GetVnetSubnetIDComponents(vnetSubnetID)
 	vnetLabels := map[string]string{
 		vnetDataPlaneLabel:      networkPolicyCilium,
-		vnetNetworkNameLabel:    vnetSubnetParts[len(vnetSubnetParts)-3],
-		vnetSubnetNameLabel:     vnetSubnetParts[len(vnetSubnetParts)-1],
-		vnetSubscriptionIDLabel: vnetSubnetParts[2],
+		vnetNetworkNameLabel:    vnetSubnetComponents.VNetName,
+		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
+		vnetSubscriptionIDLabel: vnetSubnetComponents.SubscriptionID,
 		vnetGUIDLabel:           os.Getenv("AZURE_VNET_GUID"),
 		vnetPodNetworkTypeLabel: overlayNetworkType,
 	}
