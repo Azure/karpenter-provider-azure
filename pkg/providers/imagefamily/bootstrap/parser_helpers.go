@@ -33,6 +33,7 @@ import (
 	"text/template"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 )
 
@@ -52,6 +53,7 @@ func getFuncMap() template.FuncMap {
 	return template.FuncMap{
 		"derefString":                               deref[string],
 		"derefBool":                                 deref[bool],
+		"getStringFromVmType":                       getStringFromVmType,
 		"getStringFromNetworkModeType":              getStringFromNetworkModeType,
 		"getStringFromNetworkPluginType":            getStringFromNetworkPluginType,
 		"getStringFromNetworkPolicyType":            getStringFromNetworkPolicyType,
@@ -73,6 +75,12 @@ func getFuncMap() template.FuncMap {
 		"getIsKrustlet":                             getIsKrustlet,
 		"getEnsureNoDupePromiscuousBridge":          getEnsureNoDupePromiscuousBridge,
 		"getHasSearchDomain":                        getHasSearchDomain,
+		"getExcludeMasterFromStandardLB":            getExcludeMasterFromStandardLB,
+		"getMaxLBRuleCount":                         getMaxLBRuleCount,
+		"getGpuNode":                                getGpuNode,
+		"getGpuImageSha":                            getGpuImageSha,
+		"getGpuDriverVersion":                       getGpuDriverVersion,
+		"getIsSgxEnabledSKU":                        getIsSgxEnabledSKU,
 	}
 }
 
@@ -81,6 +89,18 @@ func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 		"derefBool":               deref[bool],
 		"getBoolFromFeatureState": getBoolFromFeatureState,
 	}
+}
+
+func getStringFromVmType(enum nbcontractv1.VmType) string {
+	switch enum {
+	case nbcontractv1.VmType_VM_TYPE_STANDARD:
+		return "standard"
+	case nbcontractv1.VmType_VM_TYPE_VMSS:
+		return "vmss"
+	default:
+		return ""
+	}
+
 }
 
 func getStringFromNetworkModeType(enum nbcontractv1.NetworkModeType) string {
@@ -241,6 +261,41 @@ func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.NetworkConfig) bool {
 
 func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
 	if csd.GetCustomSearchDomainName() != "" && csd.GetCustomSearchDomainRealmUser() != "" && csd.GetCustomSearchDomainRealmPassword() != "" {
+		return true
+	}
+	return false
+}
+
+func getExcludeMasterFromStandardLB(lb *nbcontractv1.LoadBalancerConfig) bool {
+	if lb == nil || lb.ExcludeMasterFromStandardLoadBalancer == nil {
+		return true
+	}
+	return lb.GetExcludeMasterFromStandardLoadBalancer()
+}
+
+func getMaxLBRuleCount(lb *nbcontractv1.LoadBalancerConfig) int32 {
+	if lb == nil || lb.MaxLoadBalancerRuleCount == nil {
+		return int32(148)
+	}
+	return lb.GetMaxLoadBalancerRuleCount()
+}
+
+func getGpuNode(vmSize string) bool {
+	return utils.IsNvidiaEnabledSKU(vmSize)
+}
+
+func getGpuImageSha(vmSize string) string {
+	return utils.GetAKSGPUImageSHA(vmSize)
+}
+
+func getGpuDriverVersion(vmSize string) string {
+	return utils.GetGPUDriverVersion(vmSize)
+}
+
+// IsSgxEnabledSKU determines if an VM SKU has SGX driver support.
+func getIsSgxEnabledSKU(vmSize string) bool {
+	switch vmSize {
+	case "Standard_DC2s", "Standard_DC4s":
 		return true
 	}
 	return false

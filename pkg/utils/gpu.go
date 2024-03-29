@@ -158,6 +158,10 @@ func useGridDrivers(size string) bool {
 	return ConvergedGPUDriverSizes[strings.ToLower(size)]
 }
 
+func gpuNeedsFabricManager(size string) bool {
+	return FabricManagerGPUSizes[strings.ToLower(size)]
+}
+
 /* ConvergedGPUDriverSizes : these sizes use a "converged" driver to support both cuda/grid workloads.
 how do you figure this out? ask HPC or find out by trial and error.
 installing vanilla cuda drivers will fail to install with opaque errors.
@@ -174,4 +178,39 @@ var ConvergedGPUDriverSizes = map[string]bool{
 	"standard_nc8ads_a10_v4":   true,
 	"standard_nc16ads_a10_v4":  true,
 	"standard_nc32ads_a10_v4":  true,
+}
+
+/*
+FabricManagerGPUSizes list should be updated as needed if AKS supports
+new MIG-capable skus which require fabricmanager for nvlink training.
+Specifically, the 8-board VM sizes (ND96 and larger).
+Check with HPC or SKU API folks if we can improve this...
+*/
+//nolint:gochecknoglobals
+var FabricManagerGPUSizes = map[string]bool{
+	// A100
+	"standard_nd96asr_v4":        true,
+	"standard_nd112asr_a100_v4":  true,
+	"standard_nd120asr_a100_v4":  true,
+	"standard_nd96amsr_a100_v4":  true,
+	"standard_nd112amsr_a100_v4": true,
+	"standard_nd120amsr_a100_v4": true,
+	// TODO(ace): one of these is probably dupe...
+	// confirm with HPC/SKU owners.
+	"standard_nd96ams_a100_v4": true,
+	"standard_nd96ams_v4":      true,
+	// H100.
+	"standard_nd46s_h100_v5":    true,
+	"standard_nd48s_h100_v5":    true,
+	"standard_nd50s_h100_v5":    true,
+	"standard_nd92is_h100_v5":   true,
+	"standard_nd96is_h100_v5":   true,
+	"standard_nd100is_h100_v5":  true,
+	"standard_nd92isr_h100_v5":  true,
+	"standard_nd96isr_h100_v5":  true,
+	"standard_nd100isr_h100_v5": true,
+	// A100 oddballs.
+	"standard_nc24ads_a100_v4": false, // NCads_v4 will fail to start fabricmanager.
+	"standard_nc48ads_a100_v4": false,
+	"standard_nc96ads_a100_v4": false,
 }

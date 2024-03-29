@@ -21,44 +21,16 @@ package bootstrap
 
 import (
 	_ "embed"
-	"encoding/base64"
 	"strings"
 
 	"github.com/Azure/agentbaker/pkg/agent/datamodel"
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
 	"github.com/blang/semver"
-	"knative.dev/pkg/ptr"
 )
 
 const (
 	azureChinaCloud = "AzureChinaCloud"
 )
-
-// getIdentityConfig returns the identityConfig object based on the identity inputs.
-func getIdentityConfig(servicePrincipalID string, servicePrincipalSecret string, userAssignedIdentityID string) *nbcontractv1.IdentityConfig {
-	identityConfig := nbcontractv1.IdentityConfig{
-		IdentityType:                nbcontractv1.IdentityType_IDENTITY_TYPE_UNSPECIFIED,
-		ServicePrincipalId:          ptr.String(""),
-		ServicePrincipalSecret:      ptr.String(""),
-		AssignedIdentityId:          ptr.String(""),
-		UseManagedIdentityExtension: ptr.String("false"),
-	}
-
-	if userAssignedIdentityID != "" {
-		identityConfig.IdentityType = nbcontractv1.IdentityType_IDENTITY_TYPE_USER_IDENTITY
-		*identityConfig.AssignedIdentityId = userAssignedIdentityID
-		return &identityConfig
-	}
-
-	if (servicePrincipalID != "" || servicePrincipalID == "msi") && (servicePrincipalSecret != "" || servicePrincipalSecret == base64.StdEncoding.EncodeToString([]byte("msi"))) {
-		identityConfig.IdentityType = nbcontractv1.IdentityType_IDENTITY_TYPE_SERVICE_PRINCIPAL
-		*identityConfig.ServicePrincipalId = servicePrincipalID
-		*identityConfig.ServicePrincipalSecret = servicePrincipalSecret
-		return &identityConfig
-	}
-
-	return &identityConfig
-}
 
 // getLoadBalancerSKI returns the LoadBalancerSku enum based on the input string.
 func getLoadBalancerSKU(sku string) nbcontractv1.LoadBalancerSku {
