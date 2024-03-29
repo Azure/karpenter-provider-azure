@@ -10,7 +10,7 @@ endif
 
 AZURE_CLUSTER_NAME ?= $(COMMON_NAME)
 AZURE_RESOURCE_GROUP_MC = MC_$(AZURE_RESOURCE_GROUP)_$(AZURE_CLUSTER_NAME)_$(AZURE_LOCATION)
-
+AZURE_VNET_RESOURCE_GROUP ?= $(AZURE_RESOURCE_GROUP_MC)
 KARPENTER_SERVICE_ACCOUNT_NAME ?= karpenter-sa
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME ?= karpentermsi
 KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
@@ -36,6 +36,15 @@ az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySe
 		--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+
+az-mkaks-cilium-custom: az-mkacr ## This assumes you have a custom VNET and subnet created with make az-mkvnet and make az-mksubnet, adjust the pod-cidr and service-cidr to match your VNET 
+	AZURE_VNET_SUBNET_ID ?= /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/AZURE_VNET_RESOURCE_GROUP/providers/Microsoft.Network/virtualNetworks/$(COMMON_NAME)/subnets/$(COMMON_NAME)
+	az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+		--enable-oidc-issuer --enable-workload-identity --vnet-subnet-id $(AZURE_VNET_SUBNET_ID) --service-cidr 10.64.0.0/16 --pod-cidr 172.16.0.0/16 --dns-service-ip 10.64.0.10
+	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+
 
 az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane cilium, --network-plugin cilium, and --network-plugin-mode overlay)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
@@ -82,17 +91,17 @@ az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold con
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="KUBELET_BOOTSTRAP_TOKEN")).value =                             "$(BOOTSTRAP_TOKEN)"'         skaffold.yaml
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="SSH_PUBLIC_KEY")).value =                                               "$(SSH_PUBLIC_KEY)"'          skaffold.yaml
 
-az-patch-skaffold-kubenet: az-patch-skaffold	az-fetch-network-info
-	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
+az-patch-skaffold-kubenet: az-patch-skaffold az-fetch-network-info
+	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_VNET_RESOURCE_GROUP) | jq  -r ".[0].subnets[0].id"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID"))               .value = "$(AZURE_SUBNET_ID)"'         skaffold.yaml
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN").value) =                                              "kubenet"'                    skaffold.yaml
 
-az-patch-skaffold-azure: az-patch-skaffold	az-fetch-network-info
+az-patch-skaffold-azure: az-patch-skaffold az-fetch-network-info
 	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID"))               .value = "$(AZURE_SUBNET_ID)"'         skaffold.yaml
 
 az-patch-skaffold-azureoverlay: az-patch-skaffold	az-fetch-network-info
-	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
+	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_VNET_RESOURCE_GROUP) | jq  -r ".[0].subnets[0].id"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID")) .value = "$(AZURE_SUBNET_ID)"' skaffold.yaml
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN").value) =                                              "azure"'                      skaffold.yaml
 
@@ -109,10 +118,11 @@ az-patch-skaffold-azureoverlay: az-patch-skaffold	az-fetch-network-info
 	yq -i  '.manifests.helm.releases[0].overrides.podLabels ."azure.workload.identity/use" = "true"' skaffold.yaml
 
 az-fetch-network-info:
-	$(eval AZURE_VNET_NAME=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) |  jq -r ".[0].name"))
+	$(eval AZURE_VNET_NAME=$(shell az network vnet list --resource-group $(AZURE_VNET_RESOURCE_GROUP) |  jq -r ".[0].name"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_VNET_NAME"))	.value = "$(AZURE_VNET_NAME)"'         skaffold.yaml
-	$(eval AZURE_SUBNET_NAME=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) |  jq -r ".[0].subnets[0].name"))
+	$(eval AZURE_SUBNET_NAME=$(shell az network vnet list --resource-group $(AZURE_VNET_RESOURCE_GROUP) |  jq -r ".[0].subnets[0].name"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_NAME"))	.value = "$(AZURE_SUBNET_NAME)"'         skaffold.yaml
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_VNET_RESOURCE_GROUP"))	.value = "$(AZURE_VNET_RESOURCE_GROUP)"'         skaffold.yaml
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
 	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \
@@ -126,6 +136,7 @@ az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
+	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_VNET_RESOURCE_GROUP) --role "Network Contributor"
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
 	@echo Consider "make az-patch-skaffold"!
@@ -168,6 +179,12 @@ az-mc-show: ## show managed cluster
 az-mc-upgrade: ## upgrade managed cluster
 	$(eval UPGRADE_K8S_VERSION=$(shell az aks get-upgrades --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".controlPlaneProfile.upgrades[0].kubernetesVersion"))
 	az aks upgrade --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --kubernetes-version $(UPGRADE_K8S_VERSION)
+
+az-mkvnet: ## Create VNET
+	az network vnet create --name $(COMMON_NAME) --resource-group $(AZURE_VNET_RESOURCE_GROUP) --location $(AZURE_LOCATION) --address-prefixes "10.0.0.0/8"
+
+az-mksubnet: ## Create Subnet scales to 1 million IPs for azure cni overlay 
+	az network vnet subnet create --name $(COMMON_NAME) --resource-group $(AZURE_VNET_RESOURCE_GROUP) --vnet-name $(COMMON_NAME) --address-prefixes "10.0.0.0/10" 
 
 az-dev: ## Deploy and develop using skaffold dev
 	skaffold dev
@@ -283,9 +300,6 @@ az-rmcluster:
 az-portal: ## Get Azure Portal links for relevant resource groups
 	@echo https://ms.portal.azure.com/#@microsoft.onmicrosoft.com/asset/HubsExtension/ResourceGroups/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)
 	@echo https://ms.portal.azure.com/#@microsoft.onmicrosoft.com/asset/HubsExtension/ResourceGroups/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC)
-
-az-list-skus: ## List all public VM images from microsoft-aks
-	az vm image list-skus --publisher microsoft-aks --location $(AZURE_LOCATION) --offer aks -o table
 
 az-list-usage: ## List VM usage/quotas
 	az vm list-usage --location $(AZURE_LOCATION) -o table | grep "Family vCPU"
