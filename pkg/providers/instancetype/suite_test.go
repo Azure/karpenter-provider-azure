@@ -115,7 +115,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 	BeforeEach(func() {
 		os.Setenv("AZURE_VNET_GUID", "test-vnet-guid")
-		os.Setenv("AZURE_SUBNET_ID", "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
+		os.Setenv("AZURE_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 		nodeClass = test.AKSNodeClass()
 		nodePool = coretest.NodePool(corev1beta1.NodePool{
 			Spec: corev1beta1.NodePoolSpec{
@@ -148,18 +148,18 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectScheduled(ctx, env.Client, pod)
 			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 			Expect(nic).NotTo(BeNil())
-			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"))
+			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"))
 		})
 
 		It("should use the subnet specified in the nodeclass", func() {
-			nodeClass.Spec.VnetSubnetID = lo.ToPtr("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet")
+			nodeClass.Spec.VnetSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet")
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 			Expect(nic).NotTo(BeNil())
-			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet"))
+			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet"))
 		})
 
 		It("should produce all required azure cni labels", func() {
@@ -179,7 +179,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
 				ContainSubstring("kubernetes.azure.com/network-name=karpentervnet"),
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
-				ContainSubstring("kubernetes.azure.com/network-subscription=00000000-0000-0000-0000-00000000000"),
+				ContainSubstring("kubernetes.azure.com/network-subscription=12345678-1234-1234-1234-123456789012"),
 				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
 			))

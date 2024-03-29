@@ -43,7 +43,7 @@ func init() {
 
 var (
 	resourceGroup       = "test-resourceGroup"
-	defaultVnetSubnetID = "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"
+	defaultVnetSubnetID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"
 )
 
 type Environment struct {
