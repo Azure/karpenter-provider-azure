@@ -21,7 +21,6 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"strings"
 	"text/template"
 
@@ -389,16 +388,8 @@ var (
 	}
 )
 
-// Node Labels for Vnet
 const (
-	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
-	vnetNetworkNameLabel    = "kubernetes.azure.com/network-name"
 	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
-	vnetSubscriptionIDLabel = "kubernetes.azure.com/network-subscription"
-	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
-	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-	ciliumDataPlane         = "cilium"
-	overlayNetworkType      = "overlay"
 	globalAKSMirror         = "https://acs-mirror.azureedge.net"
 )
 
@@ -464,21 +455,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-	//Adding vnet-related labels to the nodeLabels.
-	azureVnetGUID := os.Getenv("AZURE_VNET_GUID")
-	azureVnetName := os.Getenv("AZURE_VNET_NAME")
-	azureSubnetName := os.Getenv("AZURE_SUBNET_NAME")
 
-	vnetLabels := map[string]string{
-		vnetDataPlaneLabel:      ciliumDataPlane,
-		vnetNetworkNameLabel:    azureVnetName,
-		vnetSubnetNameLabel:     azureSubnetName,
-		vnetSubscriptionIDLabel: a.SubscriptionID,
-		vnetGUIDLabel:           azureVnetGUID,
-		vnetPodNetworkTypeLabel: overlayNetworkType,
-	}
+	nbv.Subnet = a.Labels[vnetSubnetNameLabel] 
 
-	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), ",")

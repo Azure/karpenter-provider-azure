@@ -41,7 +41,11 @@ func init() {
 	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
-var resourceGroup = "test-resourceGroup"
+var (
+	resourceGroup = "test-resourceGroup"
+
+	DefaultVnetSubnetID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"
+)
 
 type Environment struct {
 	// API
@@ -137,10 +141,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		launchTemplateProvider,
 		loadBalancerProvider,
 		unavailableOfferingsCache,
-		region,        // region
-		resourceGroup, // resourceGroup
-		"",            // subnet
-		"",            // subscriptionID
+		region,              // region
+		resourceGroup,       // resourceGroup
+		DefaultVnetSubnetID, // subnet
+		"",                  // subscriptionID
 	)
 
 	return &Environment{

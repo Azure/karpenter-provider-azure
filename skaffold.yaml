@@ -63,10 +63,6 @@ manifests:
                 value: "Please run make az-all"
               - name: LEADER_ELECT # disable leader election for better debugging experience
                 value: "false"
-              - name: AZURE_VNET_NAME
-                value: "Please run make az-all"
-              - name: AZURE_SUBNET_NAME
-                value: "Please run make az-all"
                 # disable HTTP/2 to reduce ARM throttling on large-scale tests;
                 # with this in place write (and read) QPS can be increased too
                 #- name: GODEBUG

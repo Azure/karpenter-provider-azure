@@ -82,17 +82,17 @@ az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold con
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="KUBELET_BOOTSTRAP_TOKEN")).value =                             "$(BOOTSTRAP_TOKEN)"'         skaffold.yaml
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="SSH_PUBLIC_KEY")).value =                                               "$(SSH_PUBLIC_KEY)"'          skaffold.yaml
 
-az-patch-skaffold-kubenet: az-patch-skaffold	az-fetch-network-info
-	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
+az-patch-skaffold-kubenet: az-patch-skaffold
+	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID"))               .value = "$(AZURE_SUBNET_ID)"'         skaffold.yaml
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN").value) =                                              "kubenet"'                    skaffold.yaml
 
-az-patch-skaffold-azure: az-patch-skaffold	az-fetch-network-info
+az-patch-skaffold-azure: az-patch-skaffold
 	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID"))               .value = "$(AZURE_SUBNET_ID)"'         skaffold.yaml
 
-az-patch-skaffold-azureoverlay: az-patch-skaffold	az-fetch-network-info
-	$(eval AZURE_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
+az-patch-skaffold-azureoverlay: az-patch-skaffold	
+	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
 	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID")) .value = "$(AZURE_SUBNET_ID)"' skaffold.yaml
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN").value) =                                              "azure"'                      skaffold.yaml
 
@@ -107,12 +107,6 @@ az-patch-skaffold-azureoverlay: az-patch-skaffold	az-fetch-network-info
 	yq -i  '.manifests.helm.releases[0].overrides.serviceAccount.name = "$(KARPENTER_SERVICE_ACCOUNT_NAME)"' skaffold.yaml
 
 	yq -i  '.manifests.helm.releases[0].overrides.podLabels ."azure.workload.identity/use" = "true"' skaffold.yaml
-
-az-fetch-network-info:
-	$(eval AZURE_VNET_NAME=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) |  jq -r ".[0].name"))
-	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_VNET_NAME"))	.value = "$(AZURE_VNET_NAME)"'         skaffold.yaml
-	$(eval AZURE_SUBNET_NAME=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) |  jq -r ".[0].subnets[0].name"))
-	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_NAME"))	.value = "$(AZURE_SUBNET_NAME)"'         skaffold.yaml
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
 	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \
@@ -234,6 +228,9 @@ az-rmnodeclaims: ## kubectl delete all nodeclaims; don't wait for finalizers (us
 
 az-taintsystemnodes: ## Taint all system nodepool nodes
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --selector='kubernetes.azure.com/mode=system' --overwrite
+
+az-taintnodes: ## Run e2etests
+	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
 
 az-e2etests: ## Run e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
