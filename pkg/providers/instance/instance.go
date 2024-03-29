@@ -386,7 +386,7 @@ func (p *Provider) launchInstance(
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
 	// create network interface
-	nicReference, err := p.createNetworkInterface(ctx, resourceName, launchTemplate, instanceType)
+	nicReference, err := p.createNetworkInterface(ctx, resourceName, launchTemplate, instanceType, nodeClass)
 	if err != nil {
 		return nil, nil, err
 	}
