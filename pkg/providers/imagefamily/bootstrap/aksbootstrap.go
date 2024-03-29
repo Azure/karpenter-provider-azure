@@ -389,9 +389,9 @@ var (
 )
 
 const (
-	ciliumDataPlane         = "cilium"
-	overlayNetworkType      = "overlay"
-	globalAKSMirror         = "https://acs-mirror.azureedge.net"
+	ciliumDataPlane    = "cilium"
+	overlayNetworkType = "overlay"
+	globalAKSMirror    = "https://acs-mirror.azureedge.net"
 )
 
 func (a AKS) aksBootstrapScript() (string, error) {

@@ -42,9 +42,10 @@ func init() {
 }
 
 var (
-	resourceGroup = "test-resourceGroup"
-	defaultVnetSubnetID = "/subscriptions/<subscription>/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"
+	resourceGroup       = "test-resourceGroup"
+	defaultVnetSubnetID = "/subscriptions/00000000-0000-0000-0000-00000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"
 )
+
 type Environment struct {
 	// API
 	VirtualMachinesAPI          *fake.VirtualMachinesAPI
@@ -139,10 +140,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		launchTemplateProvider,
 		loadBalancerProvider,
 		unavailableOfferingsCache,
-		region,        // region
-		resourceGroup, // resourceGroup
+		region,              // region
+		resourceGroup,       // resourceGroup
 		defaultVnetSubnetID, // default subnet
-		"",            // subscriptionID
+		"",                  // subscriptionID
 	)
 
 	return &Environment{

@@ -86,7 +86,7 @@ type Provider struct {
 	launchTemplateProvider *launchtemplate.Provider
 	loadBalancerProvider   *loadbalancer.Provider
 	resourceGroup          string
-	defaultSubnetID               string
+	defaultSubnetID        string
 	subscriptionID         string
 	unavailableOfferings   *cache.UnavailableOfferings
 }

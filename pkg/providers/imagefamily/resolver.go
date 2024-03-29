@@ -38,8 +38,8 @@ import (
 const (
 	networkPluginAzure   = "azure"
 	networkPluginKubenet = "kubenet"
-	networkPolicyCilium = "cilium"
-	
+	networkPolicyCilium  = "cilium"
+
 	// defaultMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI Overlay.
 	defaultMaxPodsAzure = 250
 	// defaultMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
@@ -54,8 +54,8 @@ const (
 	vnetSubscriptionIDLabel = "kubernetes.azure.com/network-subscription"
 	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
 	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-	
-	overlayNetworkType  = "overlay"
+
+	overlayNetworkType = "overlay"
 )
 
 // Resolver is able to fill-in dynamic launch template parameters
@@ -96,7 +96,6 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		return nil, err
 	}
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
-	
 
 	kubeletConfig := nodeClaim.Spec.Kubelet
 	if kubeletConfig == nil {
@@ -128,7 +127,7 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		),
 		ImageID: imageID,
 	}
-	
+
 	return template, nil
 }
 
@@ -158,14 +157,12 @@ func getAzureCNILabels(nodeClass *v1alpha2.AKSNodeClass) map[string]string {
 	vnetSubnetID := lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID"))
 	vnetSubnetParts := strings.Split(vnetSubnetID, "/")
 	vnetLabels := map[string]string{
-		vnetDataPlaneLabel: networkPolicyCilium,
-		vnetNetworkNameLabel: vnetSubnetParts[len(vnetSubnetParts)-3],
-		vnetSubnetNameLabel:vnetSubnetParts[len(vnetSubnetParts)-1],
+		vnetDataPlaneLabel:      networkPolicyCilium,
+		vnetNetworkNameLabel:    vnetSubnetParts[len(vnetSubnetParts)-3],
+		vnetSubnetNameLabel:     vnetSubnetParts[len(vnetSubnetParts)-1],
 		vnetSubscriptionIDLabel: vnetSubnetParts[2],
-		vnetGUIDLabel: os.Getenv("AZURE_VNET_GUID"), 
+		vnetGUIDLabel:           os.Getenv("AZURE_VNET_GUID"),
 		vnetPodNetworkTypeLabel: overlayNetworkType,
 	}
 	return vnetLabels
 }
-
-

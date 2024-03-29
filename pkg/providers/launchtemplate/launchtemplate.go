@@ -36,7 +36,6 @@ import (
 
 const (
 	karpenterManagedTagKey = "karpenter.azure.com/cluster"
-
 )
 
 type Template struct {
@@ -100,7 +99,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
 		arch = corev1beta1.ArchitectureArm64
 	}
-	
+
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
@@ -140,8 +139,6 @@ func (p *Provider) createLaunchTemplate(_ context.Context, options *parameters.P
 	}
 	return template, nil
 }
-
-
 
 // MergeTags takes a variadic list of maps and merges them together
 // with format acceptable to ARM (no / in keys, pointer to strings as values)
