@@ -83,6 +83,7 @@ type Config struct {
 	//SubnetId is the resource ID of the subnet that VM network interfaces should use
 	SubnetID   string `json:"subnetId" yaml:"subnetId"`
 	VnetName   string `json:"vnetName" yaml:"vnetName"`
+	VnetResourceGroup string `json:"vnetResourceGroup" yaml:"vnetResourceGroup"`
 	SubnetName string `json:"subnetName" yaml:"subnetName"`
 }
 
@@ -111,6 +112,7 @@ func (cfg *Config) BaseVars() {
 	cfg.SubnetID = os.Getenv("AZURE_SUBNET_ID")
 	cfg.SubnetName = os.Getenv("AZURE_SUBNET_NAME")
 	cfg.VnetName = os.Getenv("AZURE_VNET_NAME")
+	cfg.VnetResourceGroup = os.Getenv("AZURE_VNET_RESOURCE_GROUP")
 	// cfg.VnetGuid = os.Getenv("AZURE_VNET_GUID") // This field needs to be resolved inside of karpenter, so we will get it in the azClient initialization
 }
 

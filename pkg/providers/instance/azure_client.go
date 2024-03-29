@@ -114,7 +114,7 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 }
 
 func handleVNET(cfg *auth.Config, vnetClient *armnetwork.VirtualNetworksClient) error {
-	vnet, err := vnetClient.Get(context.Background(), cfg.NodeResourceGroup, cfg.VnetName, nil)
+	vnet, err := vnetClient.Get(context.Background(), cfg.VnetResourceGroup, cfg.VnetName, nil)
 	if err != nil {
 		return err
 	}
