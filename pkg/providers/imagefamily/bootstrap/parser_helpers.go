@@ -28,19 +28,31 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
-	"github.com/samber/lo"
+	"github.com/blang/semver"
+)
+
+// cloud-init destination file references.
+const (
+	cseHelpersScriptFilepath             = "/opt/azure/containers/provision_source.sh"
+	cseHelpersScriptDistroFilepath       = "/opt/azure/containers/provision_source_distro.sh"
+	cseInstallScriptFilepath             = "/opt/azure/containers/provision_installs.sh"
+	cseInstallScriptDistroFilepath       = "/opt/azure/containers/provision_installs_distro.sh"
+	cseConfigScriptFilepath              = "/opt/azure/containers/provision_configs.sh"
+	customSearchDomainsCSEScriptFilepath = "/opt/azure/containers/setup-custom-search-domains.sh"
+	dhcpV6ServiceCSEScriptFilepath       = "/etc/systemd/system/dhcpv6.service"
+	dhcpV6ConfigCSEScriptFilepath        = "/opt/azure/containers/enable-dhcpv6.sh"
+	initAKSCustomCloudFilepath           = "/opt/azure/containers/init-aks-custom-cloud.sh"
 )
 
 var (
 	//go:embed kubenet-cni.json.gtpl
 	kubenetTemplateContent []byte
-	//go:embed sysctl.conf
-	sysctlTemplateContent []byte
 	//go:embed  containerdfornbcontract.toml.gtpl
 	containerdConfigTemplateTextForNBContract string
 	containerdConfigTemplateForNBContract     = template.Must(
@@ -59,9 +71,9 @@ func getFuncMap() template.FuncMap {
 		"getBoolFromFeatureState":                   getBoolFromFeatureState,
 		"getBoolStringFromFeatureState":             getBoolStringFromFeatureState,
 		"getBoolStringFromFeatureStatePtr":          getBoolStringFromFeatureStatePtr,
-		"getStringifiedMap":                         getStringifiedMap,
 		"getKubenetTemplate":                        getKubenetTemplate,
 		"getSysctlContent":                          getSysctlContent,
+		"getUlimitContent":                          getUlimitContent,
 		"getContainerdConfig":                       getContainerdConfig,
 		"getStringifiedStringArray":                 getStringifiedStringArray,
 		"getIsMIGNode":                              getIsMIGNode,
@@ -73,6 +85,19 @@ func getFuncMap() template.FuncMap {
 		"getIsKrustlet":                             getIsKrustlet,
 		"getEnsureNoDupePromiscuousBridge":          getEnsureNoDupePromiscuousBridge,
 		"getHasSearchDomain":                        getHasSearchDomain,
+		"getCSEHelpersFilepath":                     getCSEHelpersFilepath,
+		"getCSEDistroHelpersFilepath":               getCSEDistroHelpersFilepath,
+		"getCSEInstallFilepath":                     getCSEInstallFilepath,
+		"getCSEDistroInstallFilepath":               getCSEDistroInstallFilepath,
+		"getCSEConfigFilepath":                      getCSEConfigFilepath,
+		"getCustomSearchDomainFilepath":             getCustomSearchDomainFilepath,
+		"getDHCPV6ConfigFilepath":                   getDHCPV6ConfigFilepath,
+		"getDHCPV6ServiceFilepath":                  getDHCPV6ServiceFilepath,
+		"getShouldConfigContainerdUlimits":          getShouldConfigContainerdUlimits,
+		"getKubeletConfigFileEnabled":               getKubeletConfigFileEnabled,
+		"getShouldConfigSwapFile":                   getShouldConfigSwapFile,
+		"createSortedKeyValueStringPairs":           createSortedKeyValuePairs[string],
+		"createSortedKeyValueInt32Pairs":            createSortedKeyValuePairs[int32],
 	}
 }
 
@@ -152,13 +177,6 @@ func deref[T interface{}](p *T) T {
 	return *p
 }
 
-func getStringifiedMap(m map[string]string, delimiter string) string {
-	result := strings.Join(lo.MapToSlice(m, func(k, v string) string {
-		return fmt.Sprintf("%s=%s", k, v)
-	}), delimiter)
-	return result
-}
-
 func getStringifiedStringArray(arr []string, delimiter string) string {
 	if len(arr) == 0 {
 		return ""
@@ -170,11 +188,6 @@ func getStringifiedStringArray(arr []string, delimiter string) string {
 // getKubenetTemplate returns the base64 encoded Kubenet template.
 func getKubenetTemplate() string {
 	return base64.StdEncoding.EncodeToString(kubenetTemplateContent)
-}
-
-// getSysctlContent returns the base64 encoded sysctl content.
-func getSysctlContent() string {
-	return base64.StdEncoding.EncodeToString(sysctlTemplateContent)
 }
 
 func getContainerdConfig(nbcontract *nbcontractv1.Configuration) string {
@@ -244,4 +257,261 @@ func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
 		return true
 	}
 	return false
+}
+
+func getCSEHelpersFilepath() string {
+	return cseHelpersScriptFilepath
+}
+
+func getCSEDistroHelpersFilepath() string {
+	return cseHelpersScriptDistroFilepath
+}
+
+func getCSEInstallFilepath() string {
+	return cseInstallScriptFilepath
+}
+
+func getCSEDistroInstallFilepath() string {
+	return cseInstallScriptDistroFilepath
+}
+
+func getCSEConfigFilepath() string {
+	return cseConfigScriptFilepath
+}
+
+func getCustomSearchDomainFilepath() string {
+	return customSearchDomainsCSEScriptFilepath
+}
+
+func getDHCPV6ServiceFilepath() string {
+	return dhcpV6ServiceCSEScriptFilepath
+}
+
+func getDHCPV6ConfigFilepath() string {
+	return dhcpV6ConfigCSEScriptFilepath
+}
+
+// getSysctlContent converts nbcontractv1.SysctlConfig to a string with key=value pairs, with default values.
+//
+//gocyclo:ignore
+func getSysctlContent(s *nbcontractv1.SysctlConfig) string {
+	// This is a partial workaround to this upstream Kubernetes issue:
+	// https://github.com/kubernetes/kubernetes/issues/41916#issuecomment-312428731
+
+	if s == nil {
+		// If the sysctl config is nil, setting it to non-nil so that it can go through the defaulting logic below to get the default values.
+		s = &nbcontractv1.SysctlConfig{}
+	}
+
+	m := make(map[string]int32)
+	m["net.ipv4.tcp_retries2"] = 8
+	m["net.core.message_burst"] = 80
+	m["net.core.message_cost"] = 40
+
+	// Access the variable directly, instead of using the getter, so that it knows whether it's nil or not.
+	// This is based on protobuf3 explicit presence feature.
+	// Other directly access variables in this function implies the same idea.
+	if s.NetCoreSomaxconn == nil {
+		m["net.core.somaxconn"] = 16384
+	} else {
+		// either using getter for NetCoreSomaxconn or direct access is fine because we ensure it's not nil.
+		m["net.core.somaxconn"] = s.GetNetCoreSomaxconn()
+	}
+
+	if s.NetIpv4TcpMaxSynBacklog == nil {
+		m["net.ipv4.tcp_max_syn_backlog"] = 16384
+	} else {
+		m["net.ipv4.tcp_max_syn_backlog"] = s.GetNetIpv4TcpMaxSynBacklog()
+	}
+
+	if s.NetIpv4NeighDefaultGcThresh1 == nil {
+		m["net.ipv4.neigh.default.gc_thresh1"] = 4096
+	} else {
+		m["net.ipv4.neigh.default.gc_thresh1"] = s.GetNetIpv4NeighDefaultGcThresh1()
+	}
+
+	if s.NetIpv4NeighDefaultGcThresh2 == nil {
+		m["net.ipv4.neigh.default.gc_thresh2"] = 8192
+	} else {
+		m["net.ipv4.neigh.default.gc_thresh2"] = s.GetNetIpv4NeighDefaultGcThresh2()
+	}
+
+	if s.NetIpv4NeighDefaultGcThresh3 == nil {
+		m["net.ipv4.neigh.default.gc_thresh3"] = 16384
+	} else {
+		m["net.ipv4.neigh.default.gc_thresh3"] = s.GetNetIpv4NeighDefaultGcThresh3()
+	}
+
+	if s.NetCoreNetdevMaxBacklog != nil {
+		m["net.core.netdev_max_backlog"] = s.GetNetCoreNetdevMaxBacklog()
+	}
+
+	if s.NetCoreRmemDefault != nil {
+		m["net.core.rmem_default"] = s.GetNetCoreRmemDefault()
+	}
+
+	if s.NetCoreRmemMax != nil {
+		m["net.core.rmem_max"] = s.GetNetCoreRmemMax()
+	}
+
+	if s.NetCoreWmemDefault != nil {
+		m["net.core.wmem_default"] = s.GetNetCoreWmemDefault()
+	}
+
+	if s.NetCoreWmemMax != nil {
+		m["net.core.wmem_max"] = s.GetNetCoreWmemMax()
+	}
+
+	if s.NetCoreOptmemMax != nil {
+		m["net.core.optmem_max"] = s.GetNetCoreOptmemMax()
+	}
+
+	if s.NetIpv4TcpMaxTwBuckets != nil {
+		m["net.ipv4.tcp_max_tw_buckets"] = s.GetNetIpv4TcpMaxTwBuckets()
+	}
+
+	if s.NetIpv4TcpFinTimeout != nil {
+		m["net.ipv4.tcp_fin_timeout"] = s.GetNetIpv4TcpFinTimeout()
+	}
+
+	if s.NetIpv4TcpKeepaliveTime != nil {
+		m["net.ipv4.tcp_keepalive_time"] = s.GetNetIpv4TcpKeepaliveTime()
+	}
+
+	if s.NetIpv4TcpKeepaliveProbes != nil {
+		m["net.ipv4.tcp_keepalive_probes"] = s.GetNetIpv4TcpKeepaliveProbes()
+	}
+
+	if s.NetIpv4TcpkeepaliveIntvl != nil {
+		m["net.ipv4.tcp_keepalive_intvl"] = s.GetNetIpv4TcpkeepaliveIntvl()
+	}
+
+	if s.NetIpv4TcpTwReuse != nil {
+		if s.GetNetIpv4TcpTwReuse() {
+			m["net.ipv4.tcp_tw_reuse"] = 1
+		} else {
+			m["net.ipv4.tcp_tw_reuse"] = 0
+		}
+	}
+
+	if s.GetNetIpv4IpLocalPortRange() != "" {
+		if getPortRangeEndValue(s.GetNetIpv4IpLocalPortRange()) > 65330 {
+			m["net.ipv4.ip_local_reserved_ports"] = 65330
+		}
+	}
+
+	if s.NetNetfilterNfConntrackMax != nil {
+		m["net.netfilter.nf_conntrack_max"] = s.GetNetNetfilterNfConntrackMax()
+	}
+
+	if s.NetNetfilterNfConntrackBuckets != nil {
+		m["net.netfilter.nf_conntrack_buckets"] = s.GetNetNetfilterNfConntrackBuckets()
+	}
+
+	if s.FsInotifyMaxUserWatches != nil {
+		m["fs.inotify.max_user_watches"] = s.GetFsInotifyMaxUserWatches()
+	}
+
+	if s.FsFileMax != nil {
+		m["fs.file-max"] = s.GetFsFileMax()
+	}
+
+	if s.FsAioMaxNr != nil {
+		m["fs.aio-max-nr"] = s.GetFsAioMaxNr()
+	}
+
+	if s.FsNrOpen != nil {
+		m["fs.nr_open"] = s.GetFsNrOpen()
+	}
+
+	if s.KernelThreadsMax != nil {
+		m["kernel.threads-max"] = s.GetKernelThreadsMax()
+	}
+
+	if s.VMMaxMapCount != nil {
+		m["vm.max_map_count"] = s.GetVMMaxMapCount()
+	}
+
+	if s.VMSwappiness != nil {
+		m["vm.swappiness"] = s.GetVMSwappiness()
+	}
+
+	if s.VMVfsCachePressure != nil {
+		m["vm.vfs_cache_pressure"] = s.GetVMVfsCachePressure()
+	}
+
+	return base64.StdEncoding.EncodeToString([]byte(createSortedKeyValuePairs(m, " ")))
+}
+
+func getShouldConfigContainerdUlimits(u *nbcontractv1.UlimitConfig) bool {
+	return u != nil
+}
+
+// getUlimitContent converts nbcontractv1.UlimitConfig to a string with key=value pairs.
+func getUlimitContent(u *nbcontractv1.UlimitConfig) string {
+	if u == nil {
+		return ""
+	}
+
+	header := "[Service]\n"
+	m := make(map[string]string)
+	if u.NoFile != nil {
+		m["LimitNOFILE"] = u.GetNoFile()
+	}
+
+	if u.MaxLockedMemory != nil {
+		m["LimitMEMLOCK"] = u.GetMaxLockedMemory()
+	}
+
+	return base64.StdEncoding.EncodeToString([]byte(header + createSortedKeyValuePairs(m, " ")))
+}
+
+// getPortRangeEndValue returns the end value of the port range where the input is in the format of "start end".
+func getPortRangeEndValue(portRange string) int {
+	arr := strings.Split(portRange, " ")
+	num, err := strconv.Atoi(arr[1])
+	if err != nil {
+		return -1
+	}
+	return num
+}
+
+// createSortedKeyValuePairs creates a string with key=value pairs, sorted by key, with custom delimiter.
+func createSortedKeyValuePairs[T any](m map[string]T, delimiter string) string {
+	keys := []string{}
+	for key := range m {
+		keys = append(keys, key)
+	}
+
+	// we are sorting the keys for deterministic output for readability and testing.
+	sort.Strings(keys)
+	var buf bytes.Buffer
+	i := 0
+	for _, key := range keys {
+		i++
+		// set the last delimiter to empty string
+		if i == len(keys) {
+			delimiter = ""
+		}
+		buf.WriteString(fmt.Sprintf("%s=%v%s", key, m[key], delimiter))
+	}
+	return buf.String()
+}
+
+// getKubeletConfigFileEnabled returns true if the kubelet config content is not empty and the k8s version is greater than or equal to 1.14.0.
+func getKubeletConfigFileEnabled(configContent string, k8sVersion string) bool {
+	// In AgentBaker's utils.go, it also checks if the orchestrator is Kubernetes. We assume it is always Kubernetes here.
+	return configContent != "" && IsKubernetesVersionGe(k8sVersion, "1.14.0")
+}
+
+// IsKubernetesVersionGe returns true if actualVersion is greater than or equal to version.
+func IsKubernetesVersionGe(actualVersion, version string) bool {
+	v1, _ := semver.Make(actualVersion)
+	v2, _ := semver.Make(version)
+	return v1.GE(v2)
+}
+
+// getShouldConfigSwapFile returns true if the filesize is greater than 0.
+func getShouldConfigSwapFile(filesize int32) bool {
+	return filesize > 0
 }
