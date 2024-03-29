@@ -86,7 +86,7 @@ type Provider struct {
 	launchTemplateProvider *launchtemplate.Provider
 	loadBalancerProvider   *loadbalancer.Provider
 	resourceGroup          string
-	subnetID               string
+	defaultSubnetID               string
 	subscriptionID         string
 	unavailableOfferings   *cache.UnavailableOfferings
 }
@@ -99,7 +99,7 @@ func NewProvider(
 	offeringsCache *cache.UnavailableOfferings,
 	location string,
 	resourceGroup string,
-	subnetID string,
+	defaultSubnetID string,
 	subscriptionID string,
 ) *Provider {
 	listQuery = GetListQueryBuilder(resourceGroup).String()
@@ -109,8 +109,8 @@ func NewProvider(
 		launchTemplateProvider: launchTemplateProvider,
 		loadBalancerProvider:   loadBalancerProvider,
 		location:               location,
+		defaultSubnetID:        defaultSubnetID,
 		resourceGroup:          resourceGroup,
-		subnetID:               subnetID,
 		subscriptionID:         subscriptionID,
 		unavailableOfferings:   offeringsCache,
 	}
@@ -196,7 +196,7 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	return nil
 }
 
-func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
+func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
 	for _, poolID := range backendPools.IPv4PoolIDs {
 		poolID := poolID
@@ -222,7 +222,7 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 						Primary:                   to.Ptr(true),
 						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
 						Subnet: &armnetwork.Subnet{
-							ID: &p.subnetID,
+							ID: lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, nodeClass.Spec.VnetSubnetID, to.Ptr(p.defaultSubnetID)),
 						},
 						LoadBalancerBackendAddressPools: ipv4BackendPools,
 					},
@@ -238,13 +238,13 @@ func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
 
-func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, launchTemplateConfig *launchtemplate.Template, instanceType *corecloudprovider.InstanceType) (string, error) {
+func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, launchTemplateConfig *launchtemplate.Template, instanceType *corecloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) (string, error) {
 	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	nic := p.newNetworkInterfaceForVM(nicName, backendPools, instanceType)
+	nic := p.newNetworkInterfaceForVM(nicName, backendPools, instanceType, nodeClass)
 	p.applyTemplateToNic(&nic, launchTemplateConfig)
 	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
 	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)
