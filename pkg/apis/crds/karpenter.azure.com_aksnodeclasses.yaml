@@ -68,7 +68,9 @@ spec:
                 description: Tags to be applied on Azure resources like instances.
                 type: object
               vnetSubnetID:
-                description: VnetSubnetID is the ID of the subnet in the VNet.
+                description: VnetSubnetID is the ID of the subnet in the custom vnet
+                  specifed on the aks cluster in the field --vnet-subnet-id.
+                pattern: (?i)^\/subscriptions\/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\/resourceGroups\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]\/providers\/Microsoft\.Network\/virtualNetworks\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]\/subnets\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]$
                 type: string
             type: object
           status:
