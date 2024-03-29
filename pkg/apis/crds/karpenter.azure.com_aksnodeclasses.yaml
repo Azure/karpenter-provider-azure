@@ -67,6 +67,9 @@ spec:
                   type: string
                 description: Tags to be applied on Azure resources like instances.
                 type: object
+              vnetSubnetID:
+                description: VnetSubnetID is the ID of the subnet in the VNet.
+                type: string
             type: object
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass

@@ -27,6 +27,9 @@ import (
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 type AKSNodeClassSpec struct {
+	// VnetSubnetID is the ID of the subnet in the VNet.
+	// +optional
+	VnetSubnetID *string `json:"vnetSubnetID,omitempty"`
 	// +kubebuilder:default=128
 	// +kubebuilder:validation:Minimum=100
 	// osDiskSizeGB is the size of the OS disk in GB.
