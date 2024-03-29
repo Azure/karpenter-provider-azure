@@ -186,7 +186,6 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 	Context("VM Creation Failures", func() {
-		//It("should not continue to use a nodepool with a full subnet", func() {})
 		It("should delete the network interface on failure to create the vm", func() {
 			ErrMsg := "test error"
 			ErrCode := fmt.Sprint(http.StatusNotFound)
