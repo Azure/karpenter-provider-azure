@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inflate
+spec:
+  replicas: 200  # Scale up to 200 replicas
+  selector:
+    matchLabels:
+      app: inflate
+  template:
+    metadata:
+      labels:
+        app: inflate
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: "app"
+                operator: In
+                values:
+                - inflate
+            topologyKey: "kubernetes.io/hostname"
+      containers:
+      - image: mcr.microsoft.com/oss/kubernetes/pause:3.6
+        name: inflate
+        resources:
+          requests:
+            cpu: "1"
+            memory: 256M
+

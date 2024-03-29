@@ -1,0 +1,122 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubectl-scaler-up-5
+spec:
+  schedule: "0 * * * *"  # Every hour at minute 0
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: kubectl-scaler
+          containers:
+          - name: kubectl-scaler-up
+            image: bitnami/kubectl:1.25.11
+            command: ["/bin/sh", "-c"]
+            args:
+            - kubectl scale deployment inflate --replicas=5
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubectl-scaler-up-10
+spec:
+  schedule: "10 * * * *"  # Every hour at minute 10
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: kubectl-scaler
+          containers:
+          - name: kubectl-scaler-up
+            image: bitnami/kubectl:1.25.11
+            command: ["/bin/sh", "-c"]
+            args:
+            - kubectl scale deployment inflate --replicas=10
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubectl-scaler-up-25
+spec:
+  schedule: "20 * * * *"  # Every hour at minute 20
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: kubectl-scaler
+          containers:
+          - name: kubectl-scaler-up
+            image: bitnami/kubectl:1.25.11
+            command: ["/bin/sh", "-c"]
+            args:
+            - kubectl scale deployment inflate --replicas=25
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubectl-scaler-up-50
+spec:
+  schedule: "30 * * * *"  # Every hour at minute 30
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: kubectl-scaler
+          containers:
+          - name: kubectl-scaler-up
+            image: bitnami/kubectl:1.25.11
+            command: ["/bin/sh", "-c"]
+            args:
+            - kubectl scale deployment inflate --replicas=50
+          restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubectl-scaler-down-0
+spec:
+  schedule: "40 * * * *"  # Every hour at minute 40
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: kubectl-scaler
+          containers:
+          - name: kubectl-scaler-down
+            image: bitnami/kubectl:1.25.11
+            command: ["/bin/sh", "-c"]
+            args:
+            - kubectl scale deployment inflate --replicas=0
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubectl-scaler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kubectl-scaler
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "deployments/scale"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubectl-scaler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubectl-scaler
+subjects:
+- kind: ServiceAccount
+  name: kubectl-scaler
+  namespace: default
