@@ -81,10 +81,10 @@ type Config struct {
 	//Config only for AKS
 	NodeResourceGroup string `json:"nodeResourceGroup" yaml:"nodeResourceGroup"`
 	//SubnetId is the resource ID of the subnet that VM network interfaces should use
-	SubnetID   string `json:"subnetId" yaml:"subnetId"`
-	VnetName   string `json:"vnetName" yaml:"vnetName"`
+	SubnetID          string `json:"subnetId" yaml:"subnetId"`
+	VnetName          string `json:"vnetName" yaml:"vnetName"`
 	VnetResourceGroup string `json:"vnetResourceGroup" yaml:"vnetResourceGroup"`
-	SubnetName string `json:"subnetName" yaml:"subnetName"`
+	SubnetName        string `json:"subnetName" yaml:"subnetName"`
 }
 
 func (cfg *Config) PrepareConfig() error {
