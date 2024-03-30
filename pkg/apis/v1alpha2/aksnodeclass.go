@@ -27,6 +27,10 @@ import (
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 type AKSNodeClassSpec struct {
+	// VnetSubnetID is the ID of the subnet in the custom vnet specified on the aks cluster in the field --vnet-subnet-id.
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\/resourceGroups\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]\/providers\/Microsoft\.Network\/virtualNetworks\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]\/subnets\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]$`
+	// +optional
+	VnetSubnetID *string `json:"vnetSubnetID,omitempty"`
 	// +kubebuilder:default=128
 	// +kubebuilder:validation:Minimum=100
 	// osDiskSizeGB is the size of the OS disk in GB.
