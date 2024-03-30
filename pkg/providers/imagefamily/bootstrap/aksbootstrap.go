@@ -455,7 +455,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-
 	nbv.Subnet = a.Labels[vnetSubnetNameLabel] 
 
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
