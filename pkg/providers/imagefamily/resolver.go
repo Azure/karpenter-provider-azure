@@ -154,7 +154,6 @@ func getMaxPods(networkPlugin string) int32 {
 // getVnetLabelValues returns the labels for AzureCNI for the vnet and subnet. This function assumes we assert in the auth config that AZURE_VNET_GUID and AZURE_SUBNET_ID are set.
 // See how split logic works here: https://go.dev/play/p/l3l7Zrg_pdd.
 func getAzureCNILabels(nodeClass *v1alpha2.AKSNodeClass) map[string]string {
-	// TODO(bsoghigian): this should be refactored to  when we add VnetSubnetID to the nodeclass
 	vnetSubnetID := lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID"))
 	vnetSubnetComponents, _ := utils.GetVnetSubnetIDComponents(vnetSubnetID)
 	vnetLabels := map[string]string{
