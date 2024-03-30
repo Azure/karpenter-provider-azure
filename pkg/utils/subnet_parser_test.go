@@ -74,7 +74,7 @@ var _ = Describe("GetVnetSubnetIDComponents", func() {
 		Expect(vnet.SubnetName).To(Equal("subaru"))
 	})
 
-	It("real world wierdness (subnets is repeated broke old regex)", func() {
+	It("real world weirdness (subnets is repeated broke old regex)", func() {
 		vnetsubnetid := "/subscriptions/00000000-0000-0000-0000-0000000000/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/sillygeese-VNET/subnets/subnets/AKSMgmtv2-Subnet"
 		_, err := GetVnetSubnetIDComponents(vnetsubnetid)
 		Expect(err).ToNot(BeNil())
