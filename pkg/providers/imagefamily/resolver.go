@@ -18,6 +18,7 @@ package imagefamily
 
 import (
 	"context"
+	"os"
 
 	core "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
@@ -28,6 +29,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -37,12 +39,24 @@ const (
 	networkPluginAzure   = "azure"
 	networkPluginKubenet = "kubenet"
 
+	networkPolicyCilium = "cilium"
+
 	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI Overlay.
 	defaultKubernetesMaxPodsAzure = 250
 	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
 	defaultKubernetesMaxPodsKubenet = 100
 	// defaultKubernetesMaxPods is the maximum number of pods on a node.
 	defaultKubernetesMaxPods = 110
+
+	// AzureCNI VNET Labels
+	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
+	vnetNetworkNameLabel    = "kubernetes.azure.com/network-name"
+	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
+	vnetSubscriptionIDLabel = "kubernetes.azure.com/network-subscription"
+	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
+	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
+
+	overlayNetworkType = "overlay"
 )
 
 // Resolver is able to fill-in dynamic launch template parameters
@@ -95,6 +109,12 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
 
+	if staticParameters.NetworkPlugin == networkPluginAzure {
+		for k, v := range getAzureCNILabels(nodeClass) {
+			staticParameters.Labels[k] = v
+		}
+	}
+
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
@@ -129,4 +149,20 @@ func getMaxPods(networkPlugin string) int32 {
 		return defaultKubernetesMaxPodsKubenet
 	}
 	return defaultKubernetesMaxPods
+}
+
+// getVnetLabelValues returns the labels for AzureCNI for the vnet and subnet. This function assumes we assert in the auth config that AZURE_VNET_GUID and AZURE_SUBNET_ID are set.
+// See how split logic works here: https://go.dev/play/p/l3l7Zrg_pdd.
+func getAzureCNILabels(_ *v1alpha2.AKSNodeClass) map[string]string {
+	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
+	vnetSubnetComponents, _ := utils.GetVnetSubnetIDComponents(os.Getenv("AZURE_SUBNET_ID"))
+	vnetLabels := map[string]string{
+		vnetDataPlaneLabel:      networkPolicyCilium,
+		vnetNetworkNameLabel:    vnetSubnetComponents.VNetName,
+		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
+		vnetSubscriptionIDLabel: vnetSubnetComponents.SubscriptionID,
+		vnetGUIDLabel:           os.Getenv("AZURE_VNET_GUID"),
+		vnetPodNetworkTypeLabel: overlayNetworkType,
+	}
+	return vnetLabels
 }

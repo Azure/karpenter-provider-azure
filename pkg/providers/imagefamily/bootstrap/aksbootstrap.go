@@ -25,6 +25,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
@@ -464,21 +465,10 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-	//Adding vnet-related labels to the nodeLabels.
-	azureVnetGUID := os.Getenv("AZURE_VNET_GUID")
-	azureVnetName := os.Getenv("AZURE_VNET_NAME")
-	azureSubnetName := os.Getenv("AZURE_SUBNET_NAME")
+	// error can be ignored as id has been validated in handleVNET
+	subnetComponents, _ := utils.GetVnetSubnetIDComponents(os.Getenv("AZURE_SUBNET_ID"))
+	nbv.Subnet = subnetComponents.SubnetName
 
-	vnetLabels := map[string]string{
-		vnetDataPlaneLabel:      ciliumDataPlane,
-		vnetNetworkNameLabel:    azureVnetName,
-		vnetSubnetNameLabel:     azureSubnetName,
-		vnetSubscriptionIDLabel: a.SubscriptionID,
-		vnetGUIDLabel:           azureVnetGUID,
-		vnetPodNetworkTypeLabel: overlayNetworkType,
-	}
-
-	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), ",")

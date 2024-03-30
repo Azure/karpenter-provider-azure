@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 	klog "k8s.io/klog/v2"
@@ -114,12 +115,16 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 }
 
 func handleVNET(cfg *auth.Config, vnetClient *armnetwork.VirtualNetworksClient) error {
-	vnet, err := vnetClient.Get(context.Background(), cfg.VnetResourceGroup, cfg.VnetName, nil)
+	subnetParts, err := utils.GetVnetSubnetIDComponents(cfg.SubnetID)
+	if err != nil {
+		return err
+	}
+	vnet, err := vnetClient.Get(context.Background(), subnetParts.ResourceGroupName, subnetParts.VNetName, nil)
 	if err != nil {
 		return err
 	}
 	if vnet.Properties == nil || vnet.Properties.ResourceGUID == nil {
-		return fmt.Errorf("vnet %s does not have a resource GUID", cfg.VnetName)
+		return fmt.Errorf("vnet %s does not have a resource GUID", subnetParts.VNetName)
 	}
 	os.Setenv("AZURE_VNET_GUID", lo.FromPtr(vnet.Properties.ResourceGUID))
 	return nil
