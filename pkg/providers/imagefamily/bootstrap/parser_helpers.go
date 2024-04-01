@@ -106,6 +106,8 @@ func getFuncMap() template.FuncMap {
 		"getGpuImageSha":                            getGpuImageSha,
 		"getGpuDriverVersion":                       getGpuDriverVersion,
 		"getIsSgxEnabledSKU":                        getIsSgxEnabledSKU,
+		"getShouldConfigureHttpProxy":               getShouldConfigureHttpProxy,
+		"getShouldConfigureHttpProxyCa":             getShouldConfigureHttpProxyCa,
 	}
 }
 
@@ -132,8 +134,8 @@ func getStringFromNetworkModeType(enum nbcontractv1.NetworkModeType) string {
 	switch enum {
 	case nbcontractv1.NetworkModeType_NETWORK_MODE_TRANSPARENT:
 		return "transparent"
-	case nbcontractv1.NetworkModeType_NETWORK_MODE_L2BRIDGE:
-		return "l2bridge"
+	case nbcontractv1.NetworkModeType_NETWORK_MODE_BRIDGE:
+		return "bridge"
 	default:
 		return ""
 	}
@@ -198,7 +200,7 @@ func deref[T interface{}](p *T) T {
 }
 
 func getStringifiedStringArray(arr []string, delimiter string) string {
-	if len(arr) == 0 {
+	if arr == nil || len(arr) == 0 {
 		return ""
 	}
 
@@ -569,4 +571,12 @@ func getIsSgxEnabledSKU(vmSize string) bool {
 		return true
 	}
 	return false
+}
+
+func getShouldConfigureHttpProxy(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
+	return httpProxyConfig.GetHttpProxy() != "" || httpProxyConfig.GetHttpsProxy() != ""
+}
+
+func getShouldConfigureHttpProxyCa(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
+	return httpProxyConfig.GetProxyTrustedCa() != ""
 }

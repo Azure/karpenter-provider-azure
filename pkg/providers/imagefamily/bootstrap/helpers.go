@@ -47,8 +47,8 @@ func getLoadBalancerSKU(sku string) nbcontractv1.LoadBalancerSku {
 func getNetworkModeType(networkMode string) nbcontractv1.NetworkModeType {
 	if strings.EqualFold(networkMode, "transparent") {
 		return nbcontractv1.NetworkModeType_NETWORK_MODE_TRANSPARENT
-	} else if strings.EqualFold(networkMode, "l2bridge") {
-		return nbcontractv1.NetworkModeType_NETWORK_MODE_L2BRIDGE
+	} else if strings.EqualFold(networkMode, "bridge") {
+		return nbcontractv1.NetworkModeType_NETWORK_MODE_BRIDGE
 	}
 
 	return nbcontractv1.NetworkModeType_NETWORK_MODE_UNSPECIFIED

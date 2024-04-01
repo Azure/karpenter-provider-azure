@@ -76,15 +76,13 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
-			ClusterName:      u.Options.ClusterName,
-			ClusterEndpoint:  u.Options.ClusterEndpoint,
-			KubeletConfig:    kubeletConfig,
-			Taints:           taints,
-			Labels:           labels,
-			CABundle:         caBundle,
-			GPUNode:          u.Options.GPUNode,
-			GPUDriverVersion: u.Options.GPUDriverVersion,
-			GPUImageSHA:      u.Options.GPUImageSHA,
+			ClusterName:     u.Options.ClusterName,
+			ClusterEndpoint: u.Options.ClusterEndpoint,
+			KubeletConfig:   kubeletConfig,
+			Taints:          taints,
+			Labels:          labels,
+			CABundle:        caBundle,
+			VmSize:          u.Options.VmSize,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,

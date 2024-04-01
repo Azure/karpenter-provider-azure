@@ -215,11 +215,9 @@ var (
 		},
 		IsVhd: true, // s
 		GpuConfig: &nbcontractv1.GPUConfig{
-			NvidiaState:        &disabledFeatureState, // td
-			ConfigGpuDriver:    &enabledFeatureState,  // s
-			GpuDevicePlugin:    &disabledFeatureState, // -
-			GpuInstanceProfile: ptr.String(""),        // td
-			GpuImageSha:        ptr.String(""),        // s
+			ConfigGpuDriver:    true,  // s
+			GpuDevicePlugin:    false, // -
+			GpuInstanceProfile: "",    // td
 		},
 		TeleportConfig: &nbcontractv1.TeleportConfig{
 			TeleportdPluginDownloadUrl: "",                   // -
@@ -232,12 +230,10 @@ var (
 		EnableSsh:              true,  // td
 		EnableHostsConfigAgent: false, // n
 		HttpProxyConfig: &nbcontractv1.HTTPProxyConfig{
-			Status:         &disabledFeatureState, // cd
-			HttpProxy:      "",                    // cd
-			HttpsProxy:     "",                    // cd
-			NoProxyEntries: []string{""},          // cd
-			ProxyTrustedCa: ptr.String(""),        // cd
-			CaStatus:       &disabledFeatureState, // cd
+			HttpProxy:      "",           // cd
+			HttpsProxy:     "",           // cd
+			NoProxyEntries: []string{""}, // cd
+			ProxyTrustedCa: "",           // cd
 		},
 		CustomCaCerts:              []string{},                                  // cd
 		Ipv6DualStackEnabled:       false,                                       //s
@@ -334,7 +330,7 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 	nbv.VmSize = a.VmSize
 
 	if utils.IsNvidiaEnabledSKU(nbv.VmSize) {
-		nbv.GpuConfig.ConfigGpuDriver = &enabledFeatureState
+		nbv.GpuConfig.ConfigGpuDriver = true
 	}
 	nbv.NeedsCgroupv2 = true
 	// merge and stringify labels
