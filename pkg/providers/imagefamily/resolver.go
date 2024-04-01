@@ -18,7 +18,6 @@ package imagefamily
 
 import (
 	"context"
-	"os"
 
 	core "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
@@ -62,6 +61,8 @@ const (
 // Resolver is able to fill-in dynamic launch template parameters
 type Resolver struct {
 	imageProvider *Provider
+	vnetGUID      string
+	vnetSubnetID  string
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -81,9 +82,11 @@ type ImageFamily interface {
 }
 
 // New constructs a new launch template Resolver
-func New(_ client.Client, imageProvider *Provider) *Resolver {
+func New(_ client.Client, imageProvider *Provider, vnetSubnetID, vnetGUID string) *Resolver {
 	return &Resolver{
 		imageProvider: imageProvider,
+		vnetSubnetID:  vnetSubnetID,
+		vnetGUID:      vnetGUID,
 	}
 }
 
@@ -109,10 +112,8 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
 
-	if staticParameters.NetworkPlugin == networkPluginAzure {
-		for k, v := range getAzureCNILabels(nodeClass) {
-			staticParameters.Labels[k] = v
-		}
+	for k, v := range r.getAzureCNILabels(nodeClass) {
+		staticParameters.Labels[k] = v
 	}
 
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
@@ -151,17 +152,16 @@ func getMaxPods(networkPlugin string) int32 {
 	return defaultKubernetesMaxPods
 }
 
-// getVnetLabelValues returns the labels for AzureCNI for the vnet and subnet. This function assumes we assert in the auth config that AZURE_VNET_GUID and AZURE_SUBNET_ID are set.
-// See how split logic works here: https://go.dev/play/p/l3l7Zrg_pdd.
-func getAzureCNILabels(_ *v1alpha2.AKSNodeClass) map[string]string {
+// getAzureCNILabels returns the labels for Azure CNI overlay
+func (r *Resolver) getAzureCNILabels(_ *v1alpha2.AKSNodeClass) map[string]string {
 	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
-	vnetSubnetComponents, _ := utils.GetVnetSubnetIDComponents(os.Getenv("AZURE_SUBNET_ID"))
+	vnetSubnetComponents, _ := utils.GetVnetSubnetIDComponents(r.vnetSubnetID)
 	vnetLabels := map[string]string{
 		vnetDataPlaneLabel:      networkPolicyCilium,
 		vnetNetworkNameLabel:    vnetSubnetComponents.VNetName,
 		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
 		vnetSubscriptionIDLabel: vnetSubnetComponents.SubscriptionID,
-		vnetGUIDLabel:           os.Getenv("AZURE_VNET_GUID"),
+		vnetGUIDLabel:           r.vnetGUID,
 		vnetPodNetworkTypeLabel: overlayNetworkType,
 	}
 	return vnetLabels

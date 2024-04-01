@@ -107,7 +107,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region)
-	imageFamilyResolver := imagefamily.New(env.Client, imageFamilyProvider)
+	imageFamilyResolver := imagefamily.New(env.Client, imageFamilyProvider, DefaultVnetSubnetID, "test-vnet-guid")
 	instanceTypesProvider := instancetype.NewProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,

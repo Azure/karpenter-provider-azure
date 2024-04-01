@@ -80,8 +80,6 @@ type Config struct {
 	ClusterName string `json:"clusterName" yaml:"clusterName"`
 	//Config only for AKS
 	NodeResourceGroup string `json:"nodeResourceGroup" yaml:"nodeResourceGroup"`
-	//SubnetId is the resource ID of the subnet that VM network interfaces should use
-	SubnetID string `json:"subnetId" yaml:"subnetId"`
 }
 
 func (cfg *Config) PrepareConfig() error {
@@ -106,8 +104,6 @@ func (cfg *Config) BaseVars() {
 	cfg.AADClientCertPassword = os.Getenv("ARM_CLIENT_CERT_PASSWORD")
 	cfg.ClusterName = os.Getenv("AZURE_CLUSTER_NAME")
 	cfg.NodeResourceGroup = os.Getenv("AZURE_NODE_RESOURCE_GROUP")
-	cfg.SubnetID = os.Getenv("AZURE_SUBNET_ID")
-	// cfg.VnetGuid = os.Getenv("AZURE_VNET_GUID") // This field needs to be resolved inside of karpenter, so we will get it in the azClient initialization
 }
 
 func (cfg *Config) prepareID() error {
@@ -182,7 +178,6 @@ func (cfg *Config) TrimSpace() {
 	cfg.AADClientCertPassword = strings.TrimSpace(cfg.AADClientCertPassword)
 	cfg.ClusterName = strings.TrimSpace(cfg.ClusterName)
 	cfg.NodeResourceGroup = strings.TrimSpace(cfg.NodeResourceGroup)
-	cfg.SubnetID = strings.TrimSpace(cfg.SubnetID)
 }
 
 func (cfg *Config) validate() error {
@@ -193,7 +188,6 @@ func (cfg *Config) validate() error {
 		{cfg.VMType, "VM type"},
 		// Even though the config doesnt use some of these,
 		// its good to validate they were set in the environment
-		{cfg.SubnetID, "subnet ID"},
 	}
 
 	for _, field := range fields {

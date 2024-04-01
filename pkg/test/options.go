@@ -51,7 +51,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
 		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
-		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, ""),
+		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, "cilium"),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
 	}

@@ -389,8 +389,8 @@ var (
 )
 
 const (
-	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
-	globalAKSMirror         = "https://acs-mirror.azureedge.net"
+	vnetSubnetNameLabel = "kubernetes.azure.com/network-subnet"
+	globalAKSMirror     = "https://acs-mirror.azureedge.net"
 )
 
 func (a AKS) aksBootstrapScript() (string, error) {
@@ -455,8 +455,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-
-	nbv.Subnet = a.Labels[vnetSubnetNameLabel] 
+	nbv.Subnet = a.Labels[vnetSubnetNameLabel]
 
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)

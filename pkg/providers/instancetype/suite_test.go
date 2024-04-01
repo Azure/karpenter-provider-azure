@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -114,8 +113,6 @@ var _ = Describe("InstanceType Provider", func() {
 	var nodePool *corev1beta1.NodePool
 
 	BeforeEach(func() {
-		os.Setenv("AZURE_VNET_GUID", "test-vnet-guid")
-		os.Setenv("AZURE_SUBNET_ID", test.DefaultVnetSubnetID)
 		nodeClass = test.AKSNodeClass()
 		nodePool = coretest.NodePool(corev1beta1.NodePool{
 			Spec: corev1beta1.NodePoolSpec{
@@ -560,26 +557,6 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
 			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
-		})
-		It("should not contain the azure cni vnet labels", func() {
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			Expect(decodedString).ToNot(ContainSubstring("kubernetes.azure.com/ebpf-dataplane="))
-			Expect(decodedString).ToNot(ContainSubstring("kubernetes.azure.com/network-name="))
-			Expect(decodedString).ToNot(ContainSubstring("kubernetes.azure.com/network-subnet="))
-			Expect(decodedString).ToNot(ContainSubstring("kubernetes.azure.com/network-subscription="))
-			Expect(decodedString).ToNot(ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid="))
-			Expect(decodedString).ToNot(ContainSubstring("kubernetes.azure.com/podnetwork-type="))
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{

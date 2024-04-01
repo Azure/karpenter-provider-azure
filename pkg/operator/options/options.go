@@ -63,10 +63,12 @@ type Options struct {
 	VMMemoryOverheadPercent        float64
 	ClusterID                      string
 	KubeletClientTLSBootstrapToken string   // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
-	SSHPublicKey                   string   // ssh.publicKeys.keyData => VM SSH public key // TODO: move to node template?
+	SSHPublicKey                   string   // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1alpha2.AKSNodeClass?
 	NetworkPlugin                  string   // => NetworkPlugin in bootstrap
 	NetworkPolicy                  string   // => NetworkPolicy in bootstrap
 	NodeIdentities                 []string // => Applied onto each VM
+
+	SubnetID string // => VnetSubnetID set on the systempool that we will fall back to if not specified in the nodeclass
 
 	setFlags map[string]bool
 }
@@ -79,6 +81,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
 	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", "azure"), "The network plugin used by the cluster.")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
+	fs.StringVar(&o.SubnetID, "default-subnet-id", env.WithDefaultString("AZURE_SUBNET_ID", ""), "The default subnet ID to use for new nodes.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 }
 
