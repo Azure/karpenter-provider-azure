@@ -254,7 +254,7 @@ az-rmnodeclaims: ## kubectl delete all nodeclaims; don't wait for finalizers (us
 az-taintsystemnodes: ## Taint all system nodepool nodes
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --selector='kubernetes.azure.com/mode=system' --overwrite
 
-az-taintnodes: ## Run e2etests
+az-taintnodes:
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
 
 az-e2etests: ## Run e2etests
