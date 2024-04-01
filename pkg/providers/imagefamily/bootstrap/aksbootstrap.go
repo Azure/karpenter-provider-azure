@@ -256,16 +256,15 @@ var (
 			CustomSecureTlsBootstrapAppserverAppid: "",
 		},
 		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
-			SwapFileSize:               to.Int32Ptr(0), // td
-			TransparentHugepageSupport: ptr.String(""), // cd
-			TransparentDefrag:          ptr.String(""), // cd
+			SwapFileSize:               0,  // td
+			TransparentHugepageSupport: "", // cd
+			TransparentDefrag:          "", // cd
 		},
 		KubeletConfig: &nbcontractv1.KubeletConfig{
-			KubeletClientKey:         "",                   // -
-			KubeletClientCertContent: "",                   // -
-			KubeletConfigFileStatus:  disabledFeatureState, // s
-			KubeletConfigFileContent: "",                   // s
-			KubeletFlags:             map[string]string{},  // psX
+			KubeletClientKey:         "",                  // -
+			KubeletClientCertContent: "",                  // -
+			KubeletConfigFileContent: "",                  // s
+			KubeletFlags:             map[string]string{}, // psX
 		},
 		MessageOfTheDay: "",    // td
 		IsKata:          false, // n
