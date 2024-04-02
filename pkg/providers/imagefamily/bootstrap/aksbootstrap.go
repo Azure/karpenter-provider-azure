@@ -220,8 +220,8 @@ var (
 			GpuInstanceProfile: "",    // td
 		},
 		TeleportConfig: &nbcontractv1.TeleportConfig{
-			TeleportdPluginDownloadUrl: "",                   // -
-			Status:                     disabledFeatureState, // td
+			TeleportdPluginDownloadUrl: "",    // -
+			Status:                     false, // td
 		},
 		RuncConfig: &nbcontractv1.RuncConfig{
 			RuncVersion:    "", // -
