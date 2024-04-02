@@ -66,22 +66,9 @@ func (a AKS) Script() (string, error) {
 }
 
 var (
-	//go:embed cse_cmd.sh.gtpl
-	customDataTemplateText string
-	customDataTemplate     = template.Must(template.New("customdata").Parse(customDataTemplateText))
-
 	//go:embed cse_cmd_nbcontract.sh.gtpl
 	customDataTemplateTextNBContract string
 	customDataTemplateNBContract     = template.Must(template.New("customdata").Funcs(getFuncMap()).Parse(customDataTemplateTextNBContract))
-
-	//go:embed  containerd.toml.gtpl
-	containerdConfigTemplateText string
-	containerdConfigTemplate     = template.Must(template.New("containerdconfig").Parse(containerdConfigTemplateText))
-
-	//go:embed sysctl.conf
-	sysctlContent []byte
-	//go:embed kubenet-cni.json.gtpl
-	kubenetTemplate []byte
 
 	// source note: unique per nodepool. partially user-specified, static, and RP-generated
 	// removed --image-pull-progress-deadline=30m  (not in 1.24?)

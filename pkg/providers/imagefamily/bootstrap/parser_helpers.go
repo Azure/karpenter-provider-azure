@@ -112,8 +112,8 @@ func getFuncMap() template.FuncMap {
 
 func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 	return template.FuncMap{
-		"derefBool":               deref[bool],
-		"getBoolFromFeatureState": getBoolFromFeatureState,
+		"derefBool":  deref[bool],
+		"getGpuNode": getGpuNode,
 	}
 }
 
