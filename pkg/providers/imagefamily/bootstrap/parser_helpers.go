@@ -95,7 +95,6 @@ func getFuncMap() template.FuncMap {
 		"getDHCPV6ServiceFilepath":                  getDHCPV6ServiceFilepath,
 		"getShouldConfigContainerdUlimits":          getShouldConfigContainerdUlimits,
 		"getKubeletConfigFileEnabled":               getKubeletConfigFileEnabled,
-		"getShouldConfigSwapFile":                   getShouldConfigSwapFile,
 		"createSortedKeyValueStringPairs":           createSortedKeyValuePairs[string],
 		"createSortedKeyValueInt32Pairs":            createSortedKeyValuePairs[int32],
 	}
@@ -509,9 +508,4 @@ func IsKubernetesVersionGe(actualVersion, version string) bool {
 	v1, _ := semver.Make(actualVersion)
 	v2, _ := semver.Make(version)
 	return v1.GE(v2)
-}
-
-// getShouldConfigSwapFile returns true if the filesize is greater than 0.
-func getShouldConfigSwapFile(filesize int32) bool {
-	return filesize > 0
 }

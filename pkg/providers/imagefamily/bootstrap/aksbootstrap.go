@@ -251,6 +251,7 @@ var (
 			CustomSecureTlsBootstrapAppserverAppid: "",
 		},
 		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
+			EnableSwapConfig: 		 false, // td
 			SwapFileSize:               0,  // td
 			TransparentHugepageSupport: "", // cd
 			TransparentDefrag:          "", // cd
