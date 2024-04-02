@@ -52,12 +52,12 @@ az-mkvnet:
 	az network vnet create --name $(AZURE_CLUSTER_NAME)-vnet --resource-group $(AZURE_RESOURCE_GROUP)-vnet --location $(AZURE_LOCATION) --address-prefixes "10.1.0.0/16"
 
 az-mksubnet: 
-	az network vnet subnet create --name $(AZURE_CLUSTER_NAME)-subnet --resource-group $(AZURE_RESOURCE_GROUP)-vnet --vnet-name $(AZURE_CLUSTER_NAME)-vnet --address-prefixes "10.1.0.0/24"
+	az network vnet subnet create --name nodesubnet --resource-group $(AZURE_RESOURCE_GROUP)-vnet --vnet-name $(AZURE_CLUSTER_NAME)-vnet --address-prefixes "10.1.0.0/24"
 
 az-mkaks-custom-vnet: az-mkacr ## Create test AKS cluster with custom VNET
 	az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity --vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)-vnet/providers/Microsoft.Network/virtualNetworks/$(AZURE_CLUSTER_NAME)-vnet/subnets/$(AZURE_CLUSTER_NAME)-subnet"
+		--enable-oidc-issuer --enable-workload-identity --vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)-vnet/providers/Microsoft.Network/virtualNetworks/$(AZURE_CLUSTER_NAME)-vnet/subnets/nodesubnet"
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
@@ -100,17 +100,17 @@ az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold con
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="SSH_PUBLIC_KEY")).value =                                               "$(SSH_PUBLIC_KEY)"'          skaffold.yaml
 
 az-patch-skaffold-kubenet: az-patch-skaffold
-	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
-	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID"))               .value = "$(AZURE_SUBNET_ID)"'         skaffold.yaml
+	$(eval VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="VNET_SUBNET_ID"))               .value = "$(VNET_SUBNET_ID)"'         skaffold.yaml
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN").value) =                                              "kubenet"'                    skaffold.yaml
 
 az-patch-skaffold-azure: az-patch-skaffold
-	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
-	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID"))               .value = "$(AZURE_SUBNET_ID)"'         skaffold.yaml
+	$(eval VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="VNET_SUBNET_ID"))               .value = "$(VNET_SUBNET_ID)"'         skaffold.yaml
 
 az-patch-skaffold-azureoverlay: az-patch-skaffold	
-	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
-	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="AZURE_SUBNET_ID")) .value = "$(AZURE_SUBNET_ID)"' skaffold.yaml
+	$(eval VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
+	yq -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="VNET_SUBNET_ID")) .value = "$(VNET_SUBNET_ID)"' skaffold.yaml
 	yq -i  '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="NETWORK_PLUGIN").value) =                                              "azure"'                      skaffold.yaml
         
 	# old identity path is still the default, so need to override the values values with new logic.
@@ -144,8 +144,8 @@ az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 
 az-perm-subnet: 
 	# give Network Contributor permission to the subnet rg for the AKS cluster 
-	$(eval AZURE_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId")) 
-	$(eval SUBNET_RESOURCE_GROUP=$(shell az network vnet subnet show --id $(AZURE_SUBNET_ID) | jq -r ".resourceGroup")) 
+	$(eval VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId")) 
+	$(eval SUBNET_RESOURCE_GROUP=$(shell az network vnet subnet show --id $(VNET_SUBNET_ID) | jq -r ".resourceGroup")) 
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv)) 
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(SUBNET_RESOURCE_GROUP) --role "Network Contributor" 
 

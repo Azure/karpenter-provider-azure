@@ -24,6 +24,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
@@ -389,8 +390,7 @@ var (
 )
 
 const (
-	vnetSubnetNameLabel = "kubernetes.azure.com/network-subnet"
-	globalAKSMirror     = "https://acs-mirror.azureedge.net"
+	globalAKSMirror = "https://acs-mirror.azureedge.net"
 )
 
 func (a AKS) aksBootstrapScript() (string, error) {
@@ -441,7 +441,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	// calculated values
 	nbv.EnsureNoDupePromiscuousBridge = nbv.NeedsContainerd && nbv.NetworkPlugin == "kubenet" && nbv.NetworkPolicy != "calico"
 	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
-	nbv.VirtualNetwork = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
 	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
 	if a.GPUNode {
@@ -455,7 +454,10 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-	nbv.Subnet = a.Labels[vnetSubnetNameLabel]
+	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
+	nbv.Subnet = subnetParts.SubnetName
+	nbv.VirtualNetworkResourceGroup = subnetParts.ResourceGroupName
+	nbv.VirtualNetwork = subnetParts.VNetName
 
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)

@@ -137,7 +137,7 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("Subnet", func() {
-		It("should use the AZURE_SUBNET_ID", func() {
+		It("should use the VNET_SUBNET_ID", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)

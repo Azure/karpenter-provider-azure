@@ -93,8 +93,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	imageResolver := imagefamily.New(
 		operator.GetClient(),
 		imageProvider,
-		options.FromContext(ctx).SubnetID,
-		vnetGUID,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -107,6 +105,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.UserAssignedIdentityID,
 		azConfig.NodeResourceGroup,
 		azConfig.Location,
+		vnetGUID,
 	)
 	instanceTypeProvider := instancetype.NewProvider(
 		azConfig.Location,

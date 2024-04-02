@@ -41,6 +41,9 @@ type StaticParameters struct {
 	NetworkPolicy                  string
 	KubernetesVersion              string
 
+	// VNET
+	SubnetID string
+
 	Tags   map[string]string
 	Labels map[string]string
 }

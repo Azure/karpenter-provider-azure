@@ -59,7 +59,7 @@ manifests:
                 value: "Please run make az-all"
               - name: AZURE_NODE_RESOURCE_GROUP
                 value: "Please run make az-all"
-              - name: AZURE_SUBNET_ID # the id of subnet to create network interfaces on
+              - name: VNET_SUBNET_ID # the id of subnet to create network interfaces on
                 value: "Please run make az-all"
               - name: LEADER_ELECT # disable leader election for better debugging experience
                 value: "false"

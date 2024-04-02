@@ -28,7 +28,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -38,31 +37,17 @@ const (
 	networkPluginAzure   = "azure"
 	networkPluginKubenet = "kubenet"
 
-	networkPolicyCilium = "cilium"
-
 	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI Overlay.
 	defaultKubernetesMaxPodsAzure = 250
 	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
 	defaultKubernetesMaxPodsKubenet = 100
 	// defaultKubernetesMaxPods is the maximum number of pods on a node.
 	defaultKubernetesMaxPods = 110
-
-	// AzureCNI VNET Labels
-	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
-	vnetNetworkNameLabel    = "kubernetes.azure.com/network-name"
-	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
-	vnetSubscriptionIDLabel = "kubernetes.azure.com/network-subscription"
-	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
-	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-
-	overlayNetworkType = "overlay"
 )
 
 // Resolver is able to fill-in dynamic launch template parameters
 type Resolver struct {
 	imageProvider *Provider
-	vnetGUID      string
-	vnetSubnetID  string
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -82,11 +67,9 @@ type ImageFamily interface {
 }
 
 // New constructs a new launch template Resolver
-func New(_ client.Client, imageProvider *Provider, vnetSubnetID, vnetGUID string) *Resolver {
+func New(_ client.Client, imageProvider *Provider) *Resolver {
 	return &Resolver{
 		imageProvider: imageProvider,
-		vnetSubnetID:  vnetSubnetID,
-		vnetGUID:      vnetGUID,
 	}
 }
 
@@ -111,11 +94,6 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	kubeletConfig.EvictionHard = map[string]string{
 		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
-
-	for k, v := range r.getAzureCNILabels(nodeClass) {
-		staticParameters.Labels[k] = v
-	}
-
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
@@ -150,19 +128,4 @@ func getMaxPods(networkPlugin string) int32 {
 		return defaultKubernetesMaxPodsKubenet
 	}
 	return defaultKubernetesMaxPods
-}
-
-// getAzureCNILabels returns the labels for Azure CNI overlay
-func (r *Resolver) getAzureCNILabels(_ *v1alpha2.AKSNodeClass) map[string]string {
-	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
-	vnetSubnetComponents, _ := utils.GetVnetSubnetIDComponents(r.vnetSubnetID)
-	vnetLabels := map[string]string{
-		vnetDataPlaneLabel:      networkPolicyCilium,
-		vnetNetworkNameLabel:    vnetSubnetComponents.VNetName,
-		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
-		vnetSubscriptionIDLabel: vnetSubnetComponents.SubscriptionID,
-		vnetGUIDLabel:           r.vnetGUID,
-		vnetPodNetworkTypeLabel: overlayNetworkType,
-	}
-	return vnetLabels
 }

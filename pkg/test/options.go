@@ -35,6 +35,7 @@ type OptionsFields struct {
 	NetworkPolicy                  *string
 	VMMemoryOverheadPercent        *float64
 	NodeIdentities                 []string
+	SubnetID                       string
 }
 
 func Options(overrides ...OptionsFields) *azoptions.Options {
@@ -54,5 +55,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, "cilium"),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
+		SubnetID:                       DefaultVnetSubnetID,
 	}
 }
