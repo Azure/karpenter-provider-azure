@@ -76,15 +76,13 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
-			ClusterName:      u.Options.ClusterName,
-			ClusterEndpoint:  u.Options.ClusterEndpoint,
-			KubeletConfig:    kubeletConfig,
-			Taints:           taints,
-			Labels:           labels,
-			CABundle:         caBundle,
-			GPUNode:          u.Options.GPUNode,
-			GPUDriverVersion: u.Options.GPUDriverVersion,
-			// GPUImageSHA: u.Options.GPUImageSHA, image sha only applies to ubuntu
+			ClusterName:     u.Options.ClusterName,
+			ClusterEndpoint: u.Options.ClusterEndpoint,
+			KubeletConfig:   kubeletConfig,
+			Taints:          taints,
+			Labels:          labels,
+			CABundle:        caBundle,
+			VMSize:          u.Options.VMSize,
 			// SEE: https://github.com/Azure/AgentBaker/blob/f393d6e4d689d9204d6000c85623ad9b764e2a29/vhdbuilder/packer/install-dependencies.sh#L201
 		},
 		Arch:                           u.Options.Arch,
