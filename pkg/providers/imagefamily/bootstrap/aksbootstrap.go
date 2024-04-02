@@ -25,6 +25,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
@@ -128,7 +130,6 @@ var (
 var (
 	enabledFeatureState  = getFeatureState(true)
 	disabledFeatureState = getFeatureState(false)
-	defaultBoolFalse     = false
 
 	// Config item types classified by code:
 	//
@@ -170,7 +171,6 @@ var (
 			InitFilePath:         ptr.String(""),        //n
 			RepoDepotEndpoint:    ptr.String(""),        //n
 			TargetEnvironment:    "AzurePublicCloud",    //n
-			TargetCloud:          "AzurePublicCloud",    //n
 			CustomEnvJsonContent: "",                    //n
 		},
 		LinuxAdminUsername: "azureuser", // td
@@ -184,41 +184,44 @@ var (
 			ApiserverPublicKey: "", // not initialized anywhere?
 			ApiserverName:      "", // xd
 		},
-		VmType: "vmss", // xd
-		NetworkConfig: &nbcontractv1.NetworkConfig{
-			NetworkMode: getNetworkModeType(""), // cd
-			Subnet:      "aks-subnet",           // xd
-			VirtualNetworkConfig: &nbcontractv1.VirtualNetworkConfig{
-				ResourceGroup: "", // xd
+		AuthConfig: &nbcontractv1.AuthConfig{
+			TargetCloud:                 "AzurePublicCloud", //n
+			UseManagedIdentityExtension: false,
+		},
+		ClusterConfig: &nbcontractv1.ClusterConfig{
+			VmType:                 nbcontractv1.VmType_VM_TYPE_VMSS, // xd
+			PrimaryAvailabilitySet: "",                               // -
+			PrimaryScaleSet:        "",                               // -
+			UseInstanceMetadata:    true,                             // s
+			LoadBalancerConfig: &nbcontractv1.LoadBalancerConfig{
+				LoadBalancerSku:                       getLoadBalancerSKU("Standard"), // xd
+				ExcludeMasterFromStandardLoadBalancer: to.BoolPtr(true),               //s
+				MaxLoadBalancerRuleCount:              to.Int32Ptr(250),               // xd
 			},
+			VirtualNetworkConfig: &nbcontractv1.ClusterNetworkConfig{
+				Subnet:            "aks-subnet", // xd
+				VnetResourceGroup: "",           // xd
+			},
+		},
+		NetworkConfig: &nbcontractv1.NetworkConfig{
+			NetworkMode:       getNetworkModeType(""), // cd
 			VnetCniPluginsUrl: vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
 			CniPluginsUrl:     cniPluginsURL,          // - [currently required, same]
-		},
-		PrimaryAvailabilitySet: "",   // -
-		PrimaryScaleSet:        "",   // -
-		UseInstanceMetadata:    true, // s
-		LoadBalancerConfig: &nbcontractv1.LoadBalancerConfig{
-			LoadBalancerSku:                       getLoadBalancerSKU("Standard"), // xd
-			ExcludeMasterFromStandardLoadBalancer: true,                           //s
-			MaxLoadBalancerRuleCount:              int32(250),                     // xd
 		},
 		ContainerdConfig: &nbcontractv1.ContainerdConfig{
 			ContainerdDownloadUrlBase: "", // -
 			ContainerdVersion:         "", // -
 			ContainerdPackageUrl:      "", // -
 		},
-		IsVhd:     true,  // s
-		IsSgxNode: false, // -
+		IsVhd: true, // s
 		GpuConfig: &nbcontractv1.GPUConfig{
-			NvidiaState:        &disabledFeatureState, // td
-			ConfigGpuDriver:    &enabledFeatureState,  // s
-			GpuDevicePlugin:    &disabledFeatureState, // -
-			GpuInstanceProfile: ptr.String(""),        // td
-			GpuImageSha:        ptr.String(""),        // s
+			ConfigGpuDriver:    true,  // s
+			GpuDevicePlugin:    false, // -
+			GpuInstanceProfile: "",    // td
 		},
 		TeleportConfig: &nbcontractv1.TeleportConfig{
-			TeleportdPluginDownloadUrl: "",                   // -
-			Status:                     disabledFeatureState, // td
+			TeleportdPluginDownloadUrl: "",    // -
+			Status:                     false, // td
 		},
 		RuncConfig: &nbcontractv1.RuncConfig{
 			RuncVersion:    "", // -
@@ -227,12 +230,10 @@ var (
 		EnableSsh:              true,  // td
 		EnableHostsConfigAgent: false, // n
 		HttpProxyConfig: &nbcontractv1.HTTPProxyConfig{
-			Status:         &disabledFeatureState, // cd
-			HttpProxy:      "",                    // cd
-			HttpsProxy:     "",                    // cd
-			NoProxyEntries: []string{""},          // cd
-			ProxyTrustedCa: ptr.String(""),        // cd
-			CaStatus:       &disabledFeatureState, // cd
+			HttpProxy:      "",           // cd
+			HttpsProxy:     "",           // cd
+			NoProxyEntries: []string{""}, // cd
+			ProxyTrustedCa: "",           // cd
 		},
 		CustomCaCerts:              []string{},                                  // cd
 		Ipv6DualStackEnabled:       false,                                       //s
@@ -246,7 +247,7 @@ var (
 			CustomSearchDomainRealmPassword: "", // cd
 		},
 		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
-			EnableSecureTlsBootstrapping:           &defaultBoolFalse,
+			EnableSecureTlsBootstrapping:           to.BoolPtr(false),
 			TlsBootstrapToken:                      "",
 			CustomSecureTlsBootstrapAppserverAppid: "",
 		},
@@ -303,13 +304,15 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 	nbv.ApiserverConfig.ApiserverName = a.APIServerName
 	nbv.TlsBootstrappingConfig.TlsBootstrapToken = a.KubeletClientTLSBootstrapToken
 
-	nbv.TenantId = a.TenantID
-	nbv.SubscriptionId = a.SubscriptionID
-	nbv.Location = a.Location
-	nbv.ResourceGroup = a.ResourceGroup
+	nbv.AuthConfig.TenantId = a.TenantID
+	nbv.AuthConfig.SubscriptionId = a.SubscriptionID
+	nbv.ClusterConfig.Location = a.Location
+	nbv.ClusterConfig.ResourceGroup = a.ResourceGroup
 	servicePrincipalClientID := "msi"
 	servicePrincipalFileContent := base64.StdEncoding.EncodeToString([]byte("msi"))
-	nbv.IdentityConfig = getIdentityConfig(servicePrincipalClientID, servicePrincipalFileContent, a.UserAssignedIdentityID)
+	nbv.AuthConfig.ServicePrincipalId = servicePrincipalClientID
+	nbv.AuthConfig.ServicePrincipalSecret = servicePrincipalFileContent
+	nbv.AuthConfig.AssignedIdentityId = a.UserAssignedIdentityID
 
 	nbv.NetworkConfig.NetworkPlugin = getNetworkPluginType(a.NetworkPlugin)
 	nbv.NetworkConfig.NetworkPolicy = getNetworkPolicyType(a.NetworkPolicy)
@@ -320,14 +323,14 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 	nbv.NetworkConfig.CniPluginsUrl = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
 
 	// calculated values
-	nbv.NetworkConfig.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
-	nbv.NetworkConfig.VirtualNetworkConfig.Name = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
-	nbv.NetworkConfig.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
+	nbv.ClusterConfig.VirtualNetworkConfig.SecurityGroupName = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
+	nbv.ClusterConfig.VirtualNetworkConfig.VnetName = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
+	nbv.ClusterConfig.VirtualNetworkConfig.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
-	if a.GPUNode {
-		nbv.GpuConfig.NvidiaState = &enabledFeatureState
-		nbv.GpuConfig.ConfigGpuDriver = &enabledFeatureState
-		nbv.GpuConfig.GpuImageSha = &a.GPUImageSHA
+	nbv.VmSize = a.VmSize
+
+	if utils.IsNvidiaEnabledSKU(nbv.VmSize) {
+		nbv.GpuConfig.ConfigGpuDriver = true
 	}
 	nbv.NeedsCgroupv2 = true
 	// merge and stringify labels

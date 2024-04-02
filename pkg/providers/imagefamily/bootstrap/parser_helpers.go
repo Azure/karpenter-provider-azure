@@ -34,6 +34,7 @@ import (
 	"text/template"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver"
 )
 
@@ -64,6 +65,7 @@ func getFuncMap() template.FuncMap {
 	return template.FuncMap{
 		"derefString":                               deref[string],
 		"derefBool":                                 deref[bool],
+		"getStringFromVmType":                       getStringFromVmType,
 		"getStringFromNetworkModeType":              getStringFromNetworkModeType,
 		"getStringFromNetworkPluginType":            getStringFromNetworkPluginType,
 		"getStringFromNetworkPolicyType":            getStringFromNetworkPolicyType,
@@ -98,6 +100,14 @@ func getFuncMap() template.FuncMap {
 		"getShouldConfigSwapFile":                   getShouldConfigSwapFile,
 		"createSortedKeyValueStringPairs":           createSortedKeyValuePairs[string],
 		"createSortedKeyValueInt32Pairs":            createSortedKeyValuePairs[int32],
+		"getExcludeMasterFromStandardLB":            getExcludeMasterFromStandardLB,
+		"getMaxLBRuleCount":                         getMaxLBRuleCount,
+		"getGpuNode":                                getGpuNode,
+		"getGpuImageSha":                            getGpuImageSha,
+		"getGpuDriverVersion":                       getGpuDriverVersion,
+		"getIsSgxEnabledSKU":                        getIsSgxEnabledSKU,
+		"getShouldConfigureHttpProxy":               getShouldConfigureHttpProxy,
+		"getShouldConfigureHttpProxyCa":             getShouldConfigureHttpProxyCa,
 	}
 }
 
@@ -108,12 +118,24 @@ func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 	}
 }
 
+func getStringFromVmType(enum nbcontractv1.VmType) string {
+	switch enum {
+	case nbcontractv1.VmType_VM_TYPE_STANDARD:
+		return "standard"
+	case nbcontractv1.VmType_VM_TYPE_VMSS:
+		return "vmss"
+	default:
+		return ""
+	}
+
+}
+
 func getStringFromNetworkModeType(enum nbcontractv1.NetworkModeType) string {
 	switch enum {
 	case nbcontractv1.NetworkModeType_NETWORK_MODE_TRANSPARENT:
 		return "transparent"
-	case nbcontractv1.NetworkModeType_NETWORK_MODE_L2BRIDGE:
-		return "l2bridge"
+	case nbcontractv1.NetworkModeType_NETWORK_MODE_BRIDGE:
+		return "bridge"
 	default:
 		return ""
 	}
@@ -178,7 +200,7 @@ func deref[T interface{}](p *T) T {
 }
 
 func getStringifiedStringArray(arr []string, delimiter string) string {
-	if len(arr) == 0 {
+	if arr == nil || len(arr) == 0 {
 		return ""
 	}
 
@@ -514,4 +536,47 @@ func IsKubernetesVersionGe(actualVersion, version string) bool {
 // getShouldConfigSwapFile returns true if the filesize is greater than 0.
 func getShouldConfigSwapFile(filesize int32) bool {
 	return filesize > 0
+}
+
+func getExcludeMasterFromStandardLB(lb *nbcontractv1.LoadBalancerConfig) bool {
+	if lb == nil || lb.ExcludeMasterFromStandardLoadBalancer == nil {
+		return true
+	}
+	return lb.GetExcludeMasterFromStandardLoadBalancer()
+}
+
+func getMaxLBRuleCount(lb *nbcontractv1.LoadBalancerConfig) int32 {
+	if lb == nil || lb.MaxLoadBalancerRuleCount == nil {
+		return int32(148)
+	}
+	return lb.GetMaxLoadBalancerRuleCount()
+}
+
+func getGpuNode(vmSize string) bool {
+	return utils.IsNvidiaEnabledSKU(vmSize)
+}
+
+func getGpuImageSha(vmSize string) string {
+	return utils.GetAKSGPUImageSHA(vmSize)
+}
+
+func getGpuDriverVersion(vmSize string) string {
+	return utils.GetGPUDriverVersion(vmSize)
+}
+
+// IsSgxEnabledSKU determines if an VM SKU has SGX driver support.
+func getIsSgxEnabledSKU(vmSize string) bool {
+	switch vmSize {
+	case "Standard_DC2s", "Standard_DC4s":
+		return true
+	}
+	return false
+}
+
+func getShouldConfigureHttpProxy(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
+	return httpProxyConfig.GetHttpProxy() != "" || httpProxyConfig.GetHttpsProxy() != ""
+}
+
+func getShouldConfigureHttpProxyCa(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
+	return httpProxyConfig.GetProxyTrustedCa() != ""
 }
