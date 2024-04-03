@@ -9,7 +9,7 @@ for i in $(seq 1 1200); do
 grep -Fq "EOF" /opt/azure/containers/provision.sh && break;
 if [ $i -eq 1200 ]; then exit 100; else sleep 1; fi;
 done;
-{{if .CustomCloudConfig.GetEnableCustomCloudConfig}}
+{{if .CustomCloudConfig.GetIsAksCustomCloud}}
 for i in $(seq 1 1200); do
 grep -Fq "EOF" {{.CustomCloudConfig.InitFilePath}} && break;
 if [ $i -eq 1200 ]; then exit 100; else sleep 1; fi;
@@ -23,8 +23,8 @@ KUBE_BINARY_URL={{.KubeBinaryConfig.GetKubeBinaryUrl}}
 CUSTOM_KUBE_BINARY_URL={{.KubeBinaryConfig.GetCustomKubeBinaryUrl}}
 PRIVATE_KUBE_BINARY_URL={{.KubeBinaryConfig.GetPrivateKubeBinaryUrl}}
 KUBEPROXY_URL={{.KubeproxyUrl}}
-API_SERVER_NAME={{.ApiserverConfig.GetApiserverName}}
-APISERVER_PUBLIC_KEY={{.ApiserverConfig.GetApiserverPublicKey}}
+API_SERVER_NAME={{.ApiserverConfig.GetApiServerName}}
+APISERVER_PUBLIC_KEY={{.ApiserverConfig.GetApiServerPublicKey}}
 TENANT_ID={{.AuthConfig.GetTenantId}}
 TARGET_CLOUD="{{.AuthConfig.GetTargetCloud}}"
 SUBSCRIPTION_ID={{.AuthConfig.GetSubscriptionId}}
@@ -86,10 +86,10 @@ IS_KRUSTLET="{{getIsKrustlet .GetWorkloadRuntime}}"
 IPV6_DUAL_STACK_ENABLED="{{.GetIpv6DualStackEnabled}}"
 ENABLE_UNATTENDED_UPGRADES={{.GetEnableUnattendedUpgrade}}
 ENSURE_NO_DUPE_PROMISCUOUS_BRIDGE={{getEnsureNoDupePromiscuousBridge .GetNetworkConfig}}
-SWAP_FILE_SIZE_MB="{{.CustomLinuxOsConfig.SwapFileSize}}"
-TARGET_ENVIRONMENT="{{.CustomCloudConfig.TargetEnvironment}}"
-CUSTOM_ENV_JSON="{{.CustomCloudConfig.CustomEnvJsonContent}}"
-IS_CUSTOM_CLOUD="{{.CustomCloudConfig.GetEnableCustomCloudConfig}}"
+SWAP_FILE_SIZE_MB="{{.CustomLinuxOsConfig.GetSwapFileSize}}"
+TARGET_ENVIRONMENT="{{.CustomCloudConfig.GetTargetEnvironment}}"
+CUSTOM_ENV_JSON="{{.CustomCloudConfig.GetCustomEnvJsonContent}}"
+IS_CUSTOM_CLOUD="{{.CustomCloudConfig.GetIsAksCustomCloud}}"
 AZURE_PRIVATE_REGISTRY_SERVER="{{.AzurePrivateRegistryServer}}"
 ENABLE_TLS_BOOTSTRAPPING="{{getEnableTLSBootstrap .TlsBootstrappingConfig}}"
 ENABLE_SECURE_TLS_BOOTSTRAPPING="{{getEnableSecureTLSBootstrap .TlsBootstrappingConfig}}"
@@ -130,10 +130,12 @@ DHCPV6_SERVICE_FILEPATH="{{getDHCPV6ServiceFilepath}}"
 DHCPV6_CONFIG_FILEPATH="{{getDHCPV6ConfigFilepath}}"
 NEEDS_CONTAINERD="true"
 NEEDS_DOCKER_LOGIN="false"
-######
-# the following variables should be removed once we set the default values in the Go binary on VHD
+AZURE_ENVIRONMENT_FILEPATH="{{getAzureEnvironmentFilepath .GetCustomCloudConfig}}"
+LOAD_BALANCER_DISABLE_OUTBOUND_SNAT={{getLBDisableOutboundSnat .ClusterConfig.GetLoadBalancerConfig}}
 CONTAINER_RUNTIME=containerd
 CLI_TOOL=ctr
+######
+# the following variables should be removed once we set the default values in the Go binary on VHD
 CLOUDPROVIDER_BACKOFF=true
 CLOUDPROVIDER_BACKOFF_MODE=v2
 CLOUDPROVIDER_BACKOFF_RETRIES=6
@@ -145,9 +147,6 @@ CLOUDPROVIDER_RATELIMIT_QPS=10
 CLOUDPROVIDER_RATELIMIT_QPS_WRITE=10
 CLOUDPROVIDER_RATELIMIT_BUCKET=100
 CLOUDPROVIDER_RATELIMIT_BUCKET_WRITE=100
-LOAD_BALANCER_DISABLE_OUTBOUND_SNAT=false
-
-AZURE_ENVIRONMENT_FILEPATH="{{getAzureEnvironmentFilepath .CustomCloudConfig}}"
 # the above variables should be removed once we set the default values in the Go binary on VHD
 
 # the following variables are added to contract but not used in the script yet

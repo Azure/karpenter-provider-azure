@@ -70,9 +70,6 @@ func getFuncMap() template.FuncMap {
 		"getStringFromNetworkPluginType":            getStringFromNetworkPluginType,
 		"getStringFromNetworkPolicyType":            getStringFromNetworkPolicyType,
 		"getStringFromLoadBalancerSkuType":          getStringFromLoadBalancerSkuType,
-		"getBoolFromFeatureState":                   getBoolFromFeatureState,
-		"getBoolStringFromFeatureState":             getBoolStringFromFeatureState,
-		"getBoolStringFromFeatureStatePtr":          getBoolStringFromFeatureStatePtr,
 		"getKubenetTemplate":                        getKubenetTemplate,
 		"getSysctlContent":                          getSysctlContent,
 		"getUlimitContent":                          getUlimitContent,
@@ -108,6 +105,7 @@ func getFuncMap() template.FuncMap {
 		"getShouldConfigureHTTPProxy":               getShouldConfigureHTTPProxy,
 		"getShouldConfigureHTTPProxyCA":             getShouldConfigureHTTPProxyCA,
 		"getAzureEnvironmentFilepath":               getAzureEnvironmentFilepath,
+		"getLBDisableOutboundSnat":                  getLBDisableOutboundSnat,
 	}
 }
 
@@ -118,11 +116,11 @@ func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 	}
 }
 
-func getStringFromVMType(enum nbcontractv1.VmType) string {
+func getStringFromVMType(enum nbcontractv1.ClusterConfig_VmType) string {
 	switch enum {
-	case nbcontractv1.VmType_VM_TYPE_STANDARD:
+	case nbcontractv1.ClusterConfig_STANDARD:
 		return "standard"
-	case nbcontractv1.VmType_VM_TYPE_VMSS:
+	case nbcontractv1.ClusterConfig_VMSS:
 		return "vmss"
 	default:
 		return ""
@@ -131,9 +129,9 @@ func getStringFromVMType(enum nbcontractv1.VmType) string {
 
 func getStringFromNetworkModeType(enum nbcontractv1.NetworkModeType) string {
 	switch enum {
-	case nbcontractv1.NetworkModeType_NETWORK_MODE_TRANSPARENT:
+	case nbcontractv1.NetworkModeType_TRANSPARENT:
 		return "transparent"
-	case nbcontractv1.NetworkModeType_NETWORK_MODE_BRIDGE:
+	case nbcontractv1.NetworkModeType_BRIDGE:
 		return "bridge"
 	default:
 		return ""
@@ -142,9 +140,9 @@ func getStringFromNetworkModeType(enum nbcontractv1.NetworkModeType) string {
 
 func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPluginType) string {
 	switch enum {
-	case nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_AZURE:
+	case nbcontractv1.NetworkPluginType_NPT_AZURE:
 		return "azure"
-	case nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET:
+	case nbcontractv1.NetworkPluginType_NPT_KUBENET:
 		return "kubenet"
 	default:
 		return ""
@@ -153,44 +151,24 @@ func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPluginType) string 
 
 func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicyType) string {
 	switch enum {
-	case nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_AZURE:
+	case nbcontractv1.NetworkPolicyType_NPOT_AZURE:
 		return "azure"
-	case nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO:
+	case nbcontractv1.NetworkPolicyType_NPOT_CALICO:
 		return "calico"
 	default:
 		return ""
 	}
 }
 
-func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerSku) string {
+func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerConfig_LoadBalancerSku) string {
 	switch enum {
-	case nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_BASIC:
+	case nbcontractv1.LoadBalancerConfig_BASIC:
 		return "Basic"
-	case nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_STANDARD:
+	case nbcontractv1.LoadBalancerConfig_STANDARD:
 		return "Standard"
 	default:
 		return ""
 	}
-}
-
-func getBoolFromFeatureState(state nbcontractv1.FeatureState) bool {
-	return state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED
-}
-
-func getBoolStringFromFeatureState(state nbcontractv1.FeatureState) string {
-	return strconv.FormatBool(state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED)
-}
-
-func getBoolStringFromFeatureStatePtr(state *nbcontractv1.FeatureState) string {
-	if state == nil {
-		return "false"
-	}
-
-	if *state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED {
-		return "true"
-	}
-
-	return "false"
 }
 
 // deref is a helper function to dereference a pointer of any type to its value
@@ -270,7 +248,7 @@ func getIsKrustlet(wr nbcontractv1.WorkloadRuntime) bool {
 }
 
 func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.NetworkConfig) bool {
-	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
+	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPluginType_NPT_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicyType_NPOT_CALICO
 }
 
 func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
@@ -576,8 +554,18 @@ func getShouldConfigureHTTPProxyCA(httpProxyConfig *nbcontractv1.HTTPProxyConfig
 }
 
 func getAzureEnvironmentFilepath(v *nbcontractv1.CustomCloudConfig) string {
-	if v.GetEnableCustomCloudConfig() {
+	if v.GetIsAksCustomCloud() {
 		return fmt.Sprintf("/etc/kubernetes/%s.json", v.GetTargetEnvironment())
 	}
 	return ""
+}
+
+func getLBDisableOutboundSnat(lb *nbcontractv1.LoadBalancerConfig) bool {
+	if lb.GetLoadBalancerSku() != nbcontractv1.LoadBalancerConfig_STANDARD {
+		return false
+	}
+	if lb.DisableOutboundSnat == nil {
+		return false
+	}
+	return lb.GetDisableOutboundSnat()
 }

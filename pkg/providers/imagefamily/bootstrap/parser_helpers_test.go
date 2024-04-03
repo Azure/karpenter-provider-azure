@@ -379,8 +379,8 @@ func Test_getAzureEnvironmentFilepath(t *testing.T) {
 			name: "AzureEnvironmentFilepath when it is AKSCustomCloud",
 			args: args{
 				v: &nbcontractv1.CustomCloudConfig{
-					EnableCustomCloudConfig: true,
-					TargetEnvironment:       "testcloud",
+					IsAksCustomCloud:  true,
+					TargetEnvironment: "testcloud",
 				},
 			},
 			want: "/etc/kubernetes/testcloud.json",
