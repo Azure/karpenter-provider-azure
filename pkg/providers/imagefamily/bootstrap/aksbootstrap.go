@@ -115,9 +115,6 @@ var (
 )
 
 var (
-	enabledFeatureState  = getFeatureState(true)
-	disabledFeatureState = getFeatureState(false)
-
 	// Config item types classified by code:
 	//
 	// - : known unnecessary or unused - (empty) value set in code, until dropped from template
@@ -154,11 +151,11 @@ var (
 	// as well as defaults, cluster/node level (cd/td/xd)
 	staticNodeBootstrapVars = nbcontractv1.Configuration{
 		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{
-			Status:               &disabledFeatureState, //n
-			InitFilePath:         ptr.String(""),        //n
-			RepoDepotEndpoint:    ptr.String(""),        //n
-			TargetEnvironment:    "AzurePublicCloud",    //n
-			CustomEnvJsonContent: "",                    //n
+			EnableCustomCloudConfig: false,              //n
+			InitFilePath:            ptr.String(""),     //n
+			RepoDepotEndpoint:       ptr.String(""),     //n
+			TargetEnvironment:       "AzurePublicCloud", //n
+			CustomEnvJsonContent:    "",                 //n
 		},
 		LinuxAdminUsername: "azureuser", // td
 		KubeBinaryConfig: &nbcontractv1.KubeBinaryConfig{

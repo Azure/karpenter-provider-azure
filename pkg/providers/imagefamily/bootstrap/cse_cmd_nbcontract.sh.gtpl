@@ -9,7 +9,7 @@ for i in $(seq 1 1200); do
 grep -Fq "EOF" /opt/azure/containers/provision.sh && break;
 if [ $i -eq 1200 ]; then exit 100; else sleep 1; fi;
 done;
-{{if getBoolFromFeatureState .CustomCloudConfig.Status}}
+{{if .CustomCloudConfig.GetEnableCustomCloudConfig}}
 for i in $(seq 1 1200); do
 grep -Fq "EOF" {{.CustomCloudConfig.InitFilePath}} && break;
 if [ $i -eq 1200 ]; then exit 100; else sleep 1; fi;
@@ -89,7 +89,7 @@ ENSURE_NO_DUPE_PROMISCUOUS_BRIDGE={{getEnsureNoDupePromiscuousBridge .GetNetwork
 SWAP_FILE_SIZE_MB="{{.CustomLinuxOsConfig.SwapFileSize}}"
 TARGET_ENVIRONMENT="{{.CustomCloudConfig.TargetEnvironment}}"
 CUSTOM_ENV_JSON="{{.CustomCloudConfig.CustomEnvJsonContent}}"
-IS_CUSTOM_CLOUD="{{getBoolStringFromFeatureStatePtr .CustomCloudConfig.Status}}"
+IS_CUSTOM_CLOUD="{{.CustomCloudConfig.GetEnableCustomCloudConfig}}"
 AZURE_PRIVATE_REGISTRY_SERVER="{{.AzurePrivateRegistryServer}}"
 ENABLE_TLS_BOOTSTRAPPING="{{getEnableTLSBootstrap .TlsBootstrappingConfig}}"
 ENABLE_SECURE_TLS_BOOTSTRAPPING="{{getEnableSecureTLSBootstrap .TlsBootstrappingConfig}}"
