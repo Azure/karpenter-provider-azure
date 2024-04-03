@@ -358,3 +358,39 @@ func Test_getKubenetTemplate(t *testing.T) {
 		})
 	}
 }
+
+func Test_getAzureEnvironmentFilepath(t *testing.T) {
+	type args struct {
+		v *nbcontractv1.CustomCloudConfig
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "Empty AzureEnvironmentFilepath",
+			args: args{
+				v: &nbcontractv1.CustomCloudConfig{},
+			},
+			want: "",
+		},
+		{
+			name: "AzureEnvironmentFilepath when it is AKSCustomCloud",
+			args: args{
+				v: &nbcontractv1.CustomCloudConfig{
+					EnableCustomCloudConfig: true,
+					TargetEnvironment:       "testcloud",
+				},
+			},
+			want: "/etc/kubernetes/testcloud.json",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getAzureEnvironmentFilepath(tt.args.v); got != tt.want {
+				t.Errorf("getAzureEnvironmentFilepath() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

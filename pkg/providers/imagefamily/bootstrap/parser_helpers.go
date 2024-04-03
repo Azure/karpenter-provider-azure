@@ -107,6 +107,7 @@ func getFuncMap() template.FuncMap {
 		"getIsSgxEnabledSKU":                        getIsSgxEnabledSKU,
 		"getShouldConfigureHTTPProxy":               getShouldConfigureHTTPProxy,
 		"getShouldConfigureHTTPProxyCA":             getShouldConfigureHTTPProxyCA,
+		"getAzureEnvironmentFilepath":               getAzureEnvironmentFilepath,
 	}
 }
 
@@ -572,4 +573,11 @@ func getShouldConfigureHTTPProxy(httpProxyConfig *nbcontractv1.HTTPProxyConfig) 
 
 func getShouldConfigureHTTPProxyCA(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
 	return httpProxyConfig.GetProxyTrustedCa() != ""
+}
+
+func getAzureEnvironmentFilepath(v *nbcontractv1.CustomCloudConfig) string {
+	if v.GetEnableCustomCloudConfig() {
+		return fmt.Sprintf("/etc/kubernetes/%s.json", v.GetTargetEnvironment())
+	}
+	return ""
 }

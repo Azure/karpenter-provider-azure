@@ -147,7 +147,7 @@ CLOUDPROVIDER_RATELIMIT_BUCKET=100
 CLOUDPROVIDER_RATELIMIT_BUCKET_WRITE=100
 LOAD_BALANCER_DISABLE_OUTBOUND_SNAT=false
 
-AZURE_ENVIRONMENT_FILEPATH=""
+AZURE_ENVIRONMENT_FILEPATH="{{getAzureEnvironmentFilepath .CustomCloudConfig}}"
 # the above variables should be removed once we set the default values in the Go binary on VHD
 
 # the following variables are added to contract but not used in the script yet
