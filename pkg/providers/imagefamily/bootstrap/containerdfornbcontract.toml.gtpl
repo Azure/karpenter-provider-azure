@@ -3,7 +3,7 @@ oom_score = 0
 [plugins."io.containerd.grpc.v1.cri"]
   sandbox_image = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
   [plugins."io.containerd.grpc.v1.cri".containerd]
-    {{- if getBoolFromFeatureState .GpuConfig.NvidiaState }}
+    {{- if getGpuNode .VmSize }}
     default_runtime_name = "nvidia-container-runtime"
     [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia-container-runtime]
       runtime_type = "io.containerd.runc.v2"

@@ -65,7 +65,7 @@ func getFuncMap() template.FuncMap {
 	return template.FuncMap{
 		"derefString":                               deref[string],
 		"derefBool":                                 deref[bool],
-		"getStringFromVmType":                       getStringFromVmType,
+		"getStringFromVMType":                       getStringFromVMType,
 		"getStringFromNetworkModeType":              getStringFromNetworkModeType,
 		"getStringFromNetworkPluginType":            getStringFromNetworkPluginType,
 		"getStringFromNetworkPolicyType":            getStringFromNetworkPolicyType,
@@ -97,7 +97,6 @@ func getFuncMap() template.FuncMap {
 		"getDHCPV6ServiceFilepath":                  getDHCPV6ServiceFilepath,
 		"getShouldConfigContainerdUlimits":          getShouldConfigContainerdUlimits,
 		"getKubeletConfigFileEnabled":               getKubeletConfigFileEnabled,
-		"getShouldConfigSwapFile":                   getShouldConfigSwapFile,
 		"createSortedKeyValueStringPairs":           createSortedKeyValuePairs[string],
 		"createSortedKeyValueInt32Pairs":            createSortedKeyValuePairs[int32],
 		"getExcludeMasterFromStandardLB":            getExcludeMasterFromStandardLB,
@@ -106,19 +105,19 @@ func getFuncMap() template.FuncMap {
 		"getGpuImageSha":                            getGpuImageSha,
 		"getGpuDriverVersion":                       getGpuDriverVersion,
 		"getIsSgxEnabledSKU":                        getIsSgxEnabledSKU,
-		"getShouldConfigureHttpProxy":               getShouldConfigureHttpProxy,
-		"getShouldConfigureHttpProxyCa":             getShouldConfigureHttpProxyCa,
+		"getShouldConfigureHTTPProxy":               getShouldConfigureHTTPProxy,
+		"getShouldConfigureHTTPProxyCA":             getShouldConfigureHTTPProxyCA,
 	}
 }
 
 func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 	return template.FuncMap{
-		"derefBool":               deref[bool],
-		"getBoolFromFeatureState": getBoolFromFeatureState,
+		"derefBool":  deref[bool],
+		"getGpuNode": getGpuNode,
 	}
 }
 
-func getStringFromVmType(enum nbcontractv1.VmType) string {
+func getStringFromVMType(enum nbcontractv1.VmType) string {
 	switch enum {
 	case nbcontractv1.VmType_VM_TYPE_STANDARD:
 		return "standard"
@@ -127,7 +126,6 @@ func getStringFromVmType(enum nbcontractv1.VmType) string {
 	default:
 		return ""
 	}
-
 }
 
 func getStringFromNetworkModeType(enum nbcontractv1.NetworkModeType) string {
@@ -200,7 +198,7 @@ func deref[T interface{}](p *T) T {
 }
 
 func getStringifiedStringArray(arr []string, delimiter string) string {
-	if arr == nil || len(arr) == 0 {
+	if len(arr) == 0 {
 		return ""
 	}
 
@@ -533,11 +531,6 @@ func IsKubernetesVersionGe(actualVersion, version string) bool {
 	return v1.GE(v2)
 }
 
-// getShouldConfigSwapFile returns true if the filesize is greater than 0.
-func getShouldConfigSwapFile(filesize int32) bool {
-	return filesize > 0
-}
-
 func getExcludeMasterFromStandardLB(lb *nbcontractv1.LoadBalancerConfig) bool {
 	if lb == nil || lb.ExcludeMasterFromStandardLoadBalancer == nil {
 		return true
@@ -573,10 +566,10 @@ func getIsSgxEnabledSKU(vmSize string) bool {
 	return false
 }
 
-func getShouldConfigureHttpProxy(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
+func getShouldConfigureHTTPProxy(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
 	return httpProxyConfig.GetHttpProxy() != "" || httpProxyConfig.GetHttpsProxy() != ""
 }
 
-func getShouldConfigureHttpProxyCa(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
+func getShouldConfigureHTTPProxyCA(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
 	return httpProxyConfig.GetProxyTrustedCa() != ""
 }

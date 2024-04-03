@@ -17,8 +17,11 @@ limitations under the License.
 package bootstrap
 
 import (
+	_ "embed"
 	"fmt"
 	"testing"
+
+	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
 )
 
 func TestKubeBinaryURL(t *testing.T) {
@@ -55,6 +58,36 @@ func TestKubeBinaryURL(t *testing.T) {
 			if actual != tc.expected {
 				t.Errorf("Expected %s but got %s", tc.expected, actual)
 			}
+		})
+	}
+}
+
+func Test_getCustomDataFromNodeBootstrapContract(t *testing.T) {
+	type args struct {
+		nbcp *nbcontractv1.Configuration
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "Test with staticNodeBootstrapVars and expect no error",
+			args: args{
+				nbcp: &staticNodeBootstrapVars,
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := getCustomDataFromNodeBootstrapContract(tt.args.nbcp)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getCustomDataFromNodeBootstrapContract() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			// Didn't check the actual value of customData here. Only check if there is an error.
 		})
 	}
 }

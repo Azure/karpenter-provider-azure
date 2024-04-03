@@ -29,7 +29,7 @@ type Options struct {
 	Taints          []core.Taint      `hash:"set"`
 	Labels          map[string]string `hash:"set"`
 	CABundle        *string
-	VmSize          string
+	VMSize          string
 }
 
 // Bootstrapper can be implemented to generate a bootstrap script

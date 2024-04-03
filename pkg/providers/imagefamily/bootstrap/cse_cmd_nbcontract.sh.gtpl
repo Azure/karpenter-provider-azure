@@ -9,7 +9,7 @@ for i in $(seq 1 1200); do
 grep -Fq "EOF" /opt/azure/containers/provision.sh && break;
 if [ $i -eq 1200 ]; then exit 100; else sleep 1; fi;
 done;
-{{if getBoolFromFeatureState .CustomCloudConfig.Status}}
+{{if .CustomCloudConfig.GetEnableCustomCloudConfig}}
 for i in $(seq 1 1200); do
 grep -Fq "EOF" {{.CustomCloudConfig.InitFilePath}} && break;
 if [ $i -eq 1200 ]; then exit 100; else sleep 1; fi;
@@ -30,7 +30,7 @@ TARGET_CLOUD="{{.AuthConfig.GetTargetCloud}}"
 SUBSCRIPTION_ID={{.AuthConfig.GetSubscriptionId}}
 RESOURCE_GROUP={{.ClusterConfig.GetResourceGroup}}
 LOCATION={{.ClusterConfig.GetLocation}}
-VM_TYPE={{getStringFromVmType .ClusterConfig.GetVmType}}
+VM_TYPE={{getStringFromVMType .ClusterConfig.GetVmType}}
 PRIMARY_AVAILABILITY_SET={{.ClusterConfig.GetPrimaryAvailabilitySet}}
 PRIMARY_SCALE_SET={{.ClusterConfig.GetPrimaryScaleSet}}
 SERVICE_PRINCIPAL_CLIENT_ID="{{.AuthConfig.GetServicePrincipalId}}"
@@ -71,8 +71,8 @@ RUNC_VERSION={{.RuncConfig.GetRuncVersion}}
 RUNC_PACKAGE_URL={{.RuncConfig.GetRuncPackageUrl}}
 ENABLE_HOSTS_CONFIG_AGENT="{{.GetEnableHostsConfigAgent}}"
 DISABLE_SSH="{{not .GetEnableSsh}}"
-SHOULD_CONFIGURE_HTTP_PROXY="{{getShouldConfigureHttpProxy .HttpProxyConfig}}"
-SHOULD_CONFIGURE_HTTP_PROXY_CA="{{getShouldConfigureHttpProxyCa .HttpProxyConfig}}"
+SHOULD_CONFIGURE_HTTP_PROXY="{{getShouldConfigureHTTPProxy .HttpProxyConfig}}"
+SHOULD_CONFIGURE_HTTP_PROXY_CA="{{getShouldConfigureHTTPProxyCA .HttpProxyConfig}}"
 HTTP_PROXY_TRUSTED_CA="{{.HttpProxyConfig.GetProxyTrustedCa}}"
 HTTP_PROXY_URLS="{{.HttpProxyConfig.GetHttpProxy}}"
 HTTPS_PROXY_URLS="{{.HttpProxyConfig.GetHttpsProxy}}"
@@ -89,7 +89,7 @@ ENSURE_NO_DUPE_PROMISCUOUS_BRIDGE={{getEnsureNoDupePromiscuousBridge .GetNetwork
 SWAP_FILE_SIZE_MB="{{.CustomLinuxOsConfig.SwapFileSize}}"
 TARGET_ENVIRONMENT="{{.CustomCloudConfig.TargetEnvironment}}"
 CUSTOM_ENV_JSON="{{.CustomCloudConfig.CustomEnvJsonContent}}"
-IS_CUSTOM_CLOUD="{{getBoolStringFromFeatureStatePtr .CustomCloudConfig.Status}}"
+IS_CUSTOM_CLOUD="{{.CustomCloudConfig.GetEnableCustomCloudConfig}}"
 AZURE_PRIVATE_REGISTRY_SERVER="{{.AzurePrivateRegistryServer}}"
 ENABLE_TLS_BOOTSTRAPPING="{{getEnableTLSBootstrap .TlsBootstrappingConfig}}"
 ENABLE_SECURE_TLS_BOOTSTRAPPING="{{getEnableSecureTLSBootstrap .TlsBootstrappingConfig}}"
@@ -117,7 +117,7 @@ CONTAINERD_ULIMITS="{{getUlimitContent .CustomLinuxOsConfig.GetUlimitConfig}}"
 OUTBOUND_COMMAND={{.GetOutboundCommand}}
 IS_KATA="{{.GetIsKata}}"  # if we can get the value of distro of the VHD, we can compute this value in the Go binary on VHD
 NEEDS_CGROUPV2="{{.GetNeedsCgroupv2}}" # if we can get the value of distro of the VHD, we can compute this value in the Go binary on VHD
-SHOULD_CONFIG_SWAP_FILE="{{getShouldConfigSwapFile .CustomLinuxOsConfig.GetSwapFileSize}}"
+SHOULD_CONFIG_SWAP_FILE="{{.CustomLinuxOsConfig.GetEnableSwapConfig}}"
 HAS_KUBELET_DISK_TYPE="false" #Following Karpenter's default value. Set as "false" for now.
 ARTIFACT_STREAMING_ENABLED="{{.GetEnableArtifactStreaming}}"
 CSE_HELPERS_FILEPATH={{getCSEHelpersFilepath}}
@@ -149,13 +149,7 @@ LOAD_BALANCER_DISABLE_OUTBOUND_SNAT=false
 
 AZURE_ENVIRONMENT_FILEPATH=""
 # the above variables should be removed once we set the default values in the Go binary on VHD
-######
-#####
-# the following variables should be removed once we are able to compute each of them from other variables in the Go binary on VHD
 
-# the above variables should be removed once we are able to compute each of them from other variables in the Go binary on VHD.
-#####
-#####
 # the following variables are added to contract but not used in the script yet
 #KubeletConfig.taints
 #KubeletConfig.startup_taints

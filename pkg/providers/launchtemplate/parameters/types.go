@@ -26,7 +26,7 @@ type StaticParameters struct {
 	ClusterEndpoint                string
 	CABundle                       *string
 	Arch                           string
-	VmSize                         string
+	VMSize                         string
 	TenantID                       string
 	SubscriptionID                 string
 	UserAssignedIdentityID         string

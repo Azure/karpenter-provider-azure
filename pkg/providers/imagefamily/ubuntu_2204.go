@@ -82,7 +82,7 @@ func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 			Taints:          taints,
 			Labels:          labels,
 			CABundle:        caBundle,
-			VmSize:          u.Options.VmSize,
+			VMSize:          u.Options.VMSize,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,

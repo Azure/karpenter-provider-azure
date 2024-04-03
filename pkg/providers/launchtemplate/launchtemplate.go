@@ -106,7 +106,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
-		VmSize:                         instanceType.Name,
+		VMSize:                         instanceType.Name,
 		TenantID:                       p.tenantID,
 		SubscriptionID:                 p.subscriptionID,
 		UserAssignedIdentityID:         p.userAssignedIdentityID,

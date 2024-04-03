@@ -66,22 +66,9 @@ func (a AKS) Script() (string, error) {
 }
 
 var (
-	//go:embed cse_cmd.sh.gtpl
-	customDataTemplateText string
-	customDataTemplate     = template.Must(template.New("customdata").Parse(customDataTemplateText))
-
 	//go:embed cse_cmd_nbcontract.sh.gtpl
 	customDataTemplateTextNBContract string
 	customDataTemplateNBContract     = template.Must(template.New("customdata").Funcs(getFuncMap()).Parse(customDataTemplateTextNBContract))
-
-	//go:embed  containerd.toml.gtpl
-	containerdConfigTemplateText string
-	containerdConfigTemplate     = template.Must(template.New("containerdconfig").Parse(containerdConfigTemplateText))
-
-	//go:embed sysctl.conf
-	sysctlContent []byte
-	//go:embed kubenet-cni.json.gtpl
-	kubenetTemplate []byte
 
 	// source note: unique per nodepool. partially user-specified, static, and RP-generated
 	// removed --image-pull-progress-deadline=30m  (not in 1.24?)
@@ -128,9 +115,6 @@ var (
 )
 
 var (
-	enabledFeatureState  = getFeatureState(true)
-	disabledFeatureState = getFeatureState(false)
-
 	// Config item types classified by code:
 	//
 	// - : known unnecessary or unused - (empty) value set in code, until dropped from template
@@ -167,11 +151,11 @@ var (
 	// as well as defaults, cluster/node level (cd/td/xd)
 	staticNodeBootstrapVars = nbcontractv1.Configuration{
 		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{
-			Status:               &disabledFeatureState, //n
-			InitFilePath:         ptr.String(""),        //n
-			RepoDepotEndpoint:    ptr.String(""),        //n
-			TargetEnvironment:    "AzurePublicCloud",    //n
-			CustomEnvJsonContent: "",                    //n
+			EnableCustomCloudConfig: false,              //n
+			InitFilePath:            ptr.String(""),     //n
+			RepoDepotEndpoint:       ptr.String(""),     //n
+			TargetEnvironment:       "AzurePublicCloud", //n
+			CustomEnvJsonContent:    "",                 //n
 		},
 		LinuxAdminUsername: "azureuser", // td
 		KubeBinaryConfig: &nbcontractv1.KubeBinaryConfig{
@@ -252,9 +236,10 @@ var (
 			CustomSecureTlsBootstrapAppserverAppid: "",
 		},
 		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
-			SwapFileSize:               0,  // td
-			TransparentHugepageSupport: "", // cd
-			TransparentDefrag:          "", // cd
+			EnableSwapConfig:           false, // td
+			SwapFileSize:               0,     // td
+			TransparentHugepageSupport: "",    // cd
+			TransparentDefrag:          "",    // cd
 		},
 		KubeletConfig: &nbcontractv1.KubeletConfig{
 			KubeletClientKey:         "",                  // -
@@ -327,7 +312,7 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 	nbv.ClusterConfig.VirtualNetworkConfig.VnetName = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
 	nbv.ClusterConfig.VirtualNetworkConfig.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
-	nbv.VmSize = a.VmSize
+	nbv.VmSize = a.VMSize
 
 	if utils.IsNvidiaEnabledSKU(nbv.VmSize) {
 		nbv.GpuConfig.ConfigGpuDriver = true

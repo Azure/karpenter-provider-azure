@@ -266,3 +266,95 @@ func Test_createSortedKeyValueInt32Pairs(t *testing.T) {
 		})
 	}
 }
+
+func Test_getContainerdConfig(t *testing.T) {
+	type args struct {
+		nbcontract *nbcontractv1.Configuration
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "Default Configuration",
+			args: args{
+				nbcontract: &nbcontractv1.Configuration{
+					NeedsCgroupv2: true,
+				},
+			},
+			want: base64.StdEncoding.EncodeToString([]byte(`version = 2
+oom_score = 0
+[plugins."io.containerd.grpc.v1.cri"]
+  sandbox_image = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
+  [plugins."io.containerd.grpc.v1.cri".containerd]
+    default_runtime_name = "runc"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+      runtime_type = "io.containerd.runc.v2"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+      BinaryName = "/usr/bin/runc"
+      SystemdCgroup = true
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.untrusted]
+      runtime_type = "io.containerd.runc.v2"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.untrusted.options]
+      BinaryName = "/usr/bin/runc"
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    config_path = "/etc/containerd/certs.d"
+  [plugins."io.containerd.grpc.v1.cri".registry.headers]
+    X-Meta-Source-Client = ["azure/aks"]
+[metrics]
+  address = "0.0.0.0:10257"
+`)),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getContainerdConfig(tt.args.nbcontract); got != tt.want {
+				t.Errorf("getContainerdConfig() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getKubenetTemplate(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{
+			name: "Kubenet template",
+			want: base64.StdEncoding.EncodeToString([]byte(`{
+	"cniVersion": "0.3.1",
+	"name": "kubenet",
+	"plugins": [{
+		"type": "bridge",
+		"bridge": "cbr0",
+		"mtu": 1500,
+		"addIf": "eth0",
+		"isGateway": true,
+		"ipMasq": false,
+		"promiscMode": true,
+		"hairpinMode": false,
+		"ipam": {
+			"type": "host-local",
+			"ranges": [{{range $i, $range := .PodCIDRRanges}}{{if $i}}, {{end}}[{"subnet": "{{$range}}"}]{{end}}],
+			"routes": [{{range $i, $route := .Routes}}{{if $i}}, {{end}}{"dst": "{{$route}}"}{{end}}]
+		}
+	},
+	{
+		"type": "portmap",
+		"capabilities": {"portMappings": true},
+		"externalSetMarkChain": "KUBE-MARK-MASQ"
+	}]
+}
+`)),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getKubenetTemplate(); got != tt.want {
+				t.Errorf("getKubenetTemplate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

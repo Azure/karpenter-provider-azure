@@ -82,7 +82,7 @@ func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 			Taints:          taints,
 			Labels:          labels,
 			CABundle:        caBundle,
-			VmSize:          u.Options.VmSize,
+			VMSize:          u.Options.VMSize,
 			// SEE: https://github.com/Azure/AgentBaker/blob/f393d6e4d689d9204d6000c85623ad9b764e2a29/vhdbuilder/packer/install-dependencies.sh#L201
 		},
 		Arch:                           u.Options.Arch,
