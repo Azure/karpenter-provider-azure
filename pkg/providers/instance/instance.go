@@ -353,8 +353,8 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	}
 }
 
-// setNodePoolNameTag sets "karpenter.sh/nodepool" tag
-func setNodePoolNameTag(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
+// setTagsProvisionerName sets "karpenter.sh/provisioner-name" tag
+func setTagsProvisionerName(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
 	if val, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]; ok {
 		tags[NodePoolTagKey] = &val
 	}
@@ -382,7 +382,7 @@ func (p *Provider) launchInstance(
 	}
 
 	// set provisioner tag for NIC, VM, and Disk
-	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
+	setTagsProvisionerName(launchTemplate.Tags, nodeClaim)
 
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
