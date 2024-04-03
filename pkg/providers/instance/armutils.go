@@ -25,15 +25,15 @@ import (
 )
 
 func CreateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string, vm armcompute.VirtualMachine) (*armcompute.VirtualMachine, error) {
-	poller, err := client.BeginCreateOrUpdate(ctx, rg, vmName, vm, nil)
+	_, err := client.BeginCreateOrUpdate(ctx, rg, vmName, vm, nil)
 	if err != nil {
 		return nil, err
 	}
-	res, err := poller.PollUntilDone(ctx, nil)
+	vmget, err := client.Get(ctx, rg, vmName, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &res.VirtualMachine, nil
+	return &vmget.VirtualMachine, nil
 }
 
 func UpdateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string, updates armcompute.VirtualMachineUpdate) error {
@@ -64,15 +64,15 @@ func deleteVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vm
 }
 
 func createVirtualMachineExtension(ctx context.Context, client VirtualMachineExtensionsAPI, rg, vmName, extensionName string, vmExt armcompute.VirtualMachineExtension) (*armcompute.VirtualMachineExtension, error) {
-	poller, err := client.BeginCreateOrUpdate(ctx, rg, vmName, extensionName, vmExt, nil)
+	_, err := client.BeginCreateOrUpdate(ctx, rg, vmName, extensionName, vmExt, nil)
 	if err != nil {
 		return nil, err
 	}
-	res, err := poller.PollUntilDone(ctx, nil)
+	getExt, err := client.Get(ctx, rg, vmName, extensionName, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &res.VirtualMachineExtension, nil
+	return &getExt.VirtualMachineExtension, nil
 }
 
 func createNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string, nic armnetwork.Interface) (*armnetwork.Interface, error) {
