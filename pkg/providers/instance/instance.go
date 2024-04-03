@@ -266,7 +266,6 @@ func newVMObject(
 	sshPublicKey string,
 	nodeIdentities []string,
 	nodeClass *v1alpha2.AKSNodeClass,
-	nodeClaim *corev1beta1.NodeClaim,
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
 	// Build the image reference from template
