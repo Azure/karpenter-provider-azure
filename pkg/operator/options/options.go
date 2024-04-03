@@ -81,7 +81,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
 	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", "azure"), "The network plugin used by the cluster.")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
-	fs.StringVar(&o.SubnetID, "default-vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid subnet arm id that does not overlap with the service cidr or the pod cidr")
+	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 }
 
