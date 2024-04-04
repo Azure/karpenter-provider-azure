@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -146,6 +147,48 @@ func TestGetZone(t *testing.T) {
 		if err != nil {
 			assert.Equal(t, c.expectedError, err.Error(), c.testName)
 		}
+	}
+}
+
+func TestSetTagsProivisionerName(t *testing.T) {
+	tc := []struct {
+		testName      string
+		nodeClaim     *corev1beta1.NodeClaim
+		tags          map[string]*string
+		expectedError string
+		expectedTags  map[string]*string
+	}{
+		{
+			testName: "happy case",
+			nodeClaim: &corev1beta1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						corev1beta1.NodePoolLabelKey: "pool1",
+					},
+				},
+			},
+			tags: map[string]*string{},
+			expectedTags: map[string]*string{
+				NodePoolTagKey: to.Ptr("pool1"),
+			},
+		},
+		{
+			testName: "Node Claim is missing nodepool label",
+			nodeClaim: &corev1beta1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"key1": "val1",
+					},
+				},
+			},
+			tags:         map[string]*string{},
+			expectedTags: map[string]*string{},
+		},
+	}
+
+	for _, c := range tc {
+		setTagsProvisionerName(c.tags, c.nodeClaim)
+		assert.Equal(t, c.expectedTags, c.tags, c.testName)
 	}
 }
 
