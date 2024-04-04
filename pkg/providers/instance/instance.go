@@ -395,7 +395,7 @@ func (p *Provider) launchInstance(
 
 	sshPublicKey := options.FromContext(ctx).SSHPublicKey
 	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
+	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
