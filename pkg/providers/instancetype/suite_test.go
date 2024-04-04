@@ -368,7 +368,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		It("should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class", func() {
-			// Create a Provisioner that selects a sku that supports ephemeral
+			// Create a Nodepool that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 256GB
 			provider := test.AKSNodeClass()
 			provider.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
@@ -394,7 +394,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
 		})
 		It("should not use ephemeral disk if ephemeral is supported, but we don't have enough space", func() {
-			// Create a Provisioner that selects a sku that supports ephemeral Standard_D2s_v3
+			// Create a Nodepool that selects a sku that supports ephemeral Standard_D2s_v3
 			// Standard_D2s_V3 has 53GB Of CacheDisk space,
 			// and has 16GB of Temp Disk Space.
 			// With our rule of 100GB being the minimum OSDiskSize, this VM should be created without local disk
@@ -420,7 +420,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	Context("Provisioner with KubeletConfig", func() {
+	Context("Nodepool with KubeletConfig", func() {
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
 				PodsPerCore: lo.ToPtr(int32(110)),
@@ -469,7 +469,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	Context("Provisioner with KubeletConfig on a kubenet Cluster", func() {
+	Context("Nodepool with KubeletConfig on a kubenet Cluster", func() {
 		var originalOptions *options.Options
 
 		BeforeEach(func() {
@@ -592,7 +592,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	Context("Provisioner with VNetNodeLabel", func() {
+	Context("Nodepool with VNetNodeLabel", func() {
 		It("should support provisioning with VNet node labels", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()

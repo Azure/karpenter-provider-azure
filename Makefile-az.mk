@@ -14,8 +14,8 @@ KARPENTER_SERVICE_ACCOUNT_NAME ?= karpenter-sa
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME ?= karpentermsi
 KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 
-az-all:         az-login az-create-workload-msi az-mkaks-cilium az-create-federated-cred az-perm az-perm-acr az-patch-skaffold-azureoverlay az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
-az-all-savm:    az-login az-mkaks-savm az-perm-savm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
+az-all:         az-login az-create-workload-msi az-mkaks-cilium az-create-federated-cred az-perm az-perm-acr az-patch-skaffold-azureoverlay az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Nodepool and workload
+az-all-savm:    az-login az-mkaks-savm az-perm-savm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Nodepool and workload - StandaloneVirtualMachines
 
 az-login: ## Login into Azure
 	az login
