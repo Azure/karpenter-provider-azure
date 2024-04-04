@@ -15,6 +15,10 @@ KARPENTER_SERVICE_ACCOUNT_NAME ?= karpenter-sa
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME ?= karpentermsi
 KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 
+CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet 
+CUSTOM_SUBNET_NAME ?= nodesubnet
+
+
 az-all:         az-login az-create-workload-msi az-mkaks-cilium az-create-federated-cred az-perm az-perm-acr az-patch-skaffold-azureoverlay az-patch-vnet-subnet-id az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
 az-all-custom-vnet: az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm az-perm-acr az-patch-skaffold-azureoverlay az-patch-subnet-custom az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
@@ -47,17 +51,17 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
-az-mkvnet:
-	az group create --name $(AZURE_RESOURCE_GROUP)-vnet --location $(AZURE_LOCATION) 
-	az network vnet create --name $(AZURE_CLUSTER_NAME)-vnet --resource-group $(AZURE_RESOURCE_GROUP)-vnet --location $(AZURE_LOCATION) --address-prefixes "10.1.0.0/16"
+az-mkvnet: # Creates a vnet in the addr range of 10.1.0.0/16
+	az group create --name $(CUSTOM_VNET_NAME) --location $(AZURE_LOCATION) 
+	az network vnet create --name $(CUSTOM_VNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP)-vnet --location $(AZURE_LOCATION) --address-prefixes "10.1.0.0/16"
 
-az-mksubnet: 
-	az network vnet subnet create --name nodesubnet --resource-group $(AZURE_RESOURCE_GROUP)-vnet --vnet-name $(AZURE_CLUSTER_NAME)-vnet --address-prefixes "10.1.0.0/24"
+az-mksubnet:  # Creates a subnet with the range of 10.1.0.0/24
+	az network vnet subnet create --name $(CUSTOM_SUBNET_NAME) --resource-group $(CUSTOM_VNET_NAME) --vnet-name $(CUSTOM_VNET_NAME) --address-prefixes "10.1.0.0/24"
 
 az-mkaks-custom-vnet: az-mkacr ## Create test AKS cluster with custom VNET
 	az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity --vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)-vnet/providers/Microsoft.Network/virtualNetworks/$(AZURE_CLUSTER_NAME)-vnet/subnets/nodesubnet"
+		--enable-oidc-issuer --enable-workload-identity --vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(CUSTOM_VNET_NAME)/providers/Microsoft.Network/virtualNetworks/$(CUSTOM_VNET_NAME)/subnets/$(CUSTOM_SUBNET_NAME)"
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 

@@ -68,7 +68,7 @@ type Options struct {
 	NetworkPolicy                  string   // => NetworkPolicy in bootstrap
 	NodeIdentities                 []string // => Applied onto each VM
 
-	SubnetID string // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overriden via AKSNodeClass
+	SubnetID string // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 
 	setFlags map[string]bool
 }
