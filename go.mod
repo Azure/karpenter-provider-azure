@@ -1,6 +1,6 @@
 module github.com/Azure/karpenter-provider-azure
 
-go 1.22.2
+go 1.22
 
 require (
 	github.com/Azure/azure-kusto-go v0.15.1
