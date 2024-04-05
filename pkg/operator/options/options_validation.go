@@ -39,7 +39,7 @@ func (o Options) Validate() error {
 func (o Options) validateVnetSubnetID() error {
 	_, err := utils.GetVnetSubnetIDComponents(o.SubnetID)
 	if err != nil {
-		return fmt.Errorf("default-vnet-subnet-id is invalid: %w", err)
+		return fmt.Errorf("vnet-subnet-id is invalid: %w", err)
 	}
 	return nil
 }
