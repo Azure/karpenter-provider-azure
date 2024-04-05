@@ -55,7 +55,7 @@ az-mkvnet: # Creates a vnet in the addr range of 10.1.0.0/16
 	az group create --name $(CUSTOM_VNET_NAME) --location $(AZURE_LOCATION) 
 	az network vnet create --name $(CUSTOM_VNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP)-vnet --location $(AZURE_LOCATION) --address-prefixes "10.1.0.0/16"
 
-az-mksubnet:  # Creates a subnet with the range of 10.1.0.0/24
+az-mksubnet:  ## Create a subnet with address range of 10.1.0.0/24
 	az network vnet subnet create --name $(CUSTOM_SUBNET_NAME) --resource-group $(CUSTOM_VNET_NAME) --vnet-name $(CUSTOM_VNET_NAME) --address-prefixes "10.1.0.0/24"
 
 az-mkaks-custom-vnet: az-mkacr ## Create test AKS cluster with custom VNET
