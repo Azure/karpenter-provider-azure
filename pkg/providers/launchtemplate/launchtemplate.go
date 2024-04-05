@@ -172,7 +172,7 @@ func mergeTags(tags ...map[string]string) (result map[string]*string) {
 	})
 }
 
-// getVnetInfoLabels returns the labels for Azure CNI
+// getVnetInfoLabels returns VNet info labels
 func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeClass) (map[string]string, error) {
 	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
 	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(options.FromContext(ctx).SubnetID)
