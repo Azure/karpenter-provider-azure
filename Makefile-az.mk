@@ -58,7 +58,7 @@ az-mkvnet: # Creates a vnet in the addr range of 10.1.0.0/16
 az-mksubnet:  ## Create a subnet with address range of 10.1.0.0/24
 	az network vnet subnet create --name $(CUSTOM_SUBNET_NAME) --resource-group $(CUSTOM_VNET_NAME) --vnet-name $(CUSTOM_VNET_NAME) --address-prefixes "10.1.0.0/24"
 
-az-mkaks-custom-vnet: az-mkacr ## Create test AKS cluster with custom VNET
+az-mkaks-custom-vnet: az-mkacr ## Create test AKS cluster with custom VNet
 	az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
 		--enable-oidc-issuer --enable-workload-identity --vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(CUSTOM_VNET_NAME)/providers/Microsoft.Network/virtualNetworks/$(CUSTOM_VNET_NAME)/subnets/$(CUSTOM_SUBNET_NAME)"
