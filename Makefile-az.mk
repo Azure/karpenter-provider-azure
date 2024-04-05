@@ -284,6 +284,12 @@ az-portal: ## Get Azure Portal links for relevant resource groups
 	@echo https://ms.portal.azure.com/#@microsoft.onmicrosoft.com/asset/HubsExtension/ResourceGroups/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)
 	@echo https://ms.portal.azure.com/#@microsoft.onmicrosoft.com/asset/HubsExtension/ResourceGroups/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC)
 
+az-list-skus-ubuntu: 
+	az sig image-definition list-community --public-gallery-name "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"  --location $(AZURE_LOCATION) -o table
+
+az-list-skus-azlinux: 
+	az sig image-definition list-community --public-gallery-name "AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b"  --location $(AZURE_LOCATION) -o table
+
 az-list-skus: ## List all public VM images from microsoft-aks
 	az vm image list-skus --publisher microsoft-aks --location $(AZURE_LOCATION) --offer aks -o table
 
