@@ -73,7 +73,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	azClient, err := instance.CreateAZClient(ctx, azConfig)
 	lo.Must0(err, "creating Azure client")
 
-	vnetGUID, err := getVNETGUID(azConfig, options.FromContext(ctx).SubnetID)
+	vnetGUID, err := getVnetGUID(azConfig, options.FromContext(ctx).SubnetID)
 	lo.Must0(err, "getting VNET GUID")
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
@@ -168,7 +168,7 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	return ptr.String(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
-func getVNETGUID(cfg *auth.Config, subnetID string) (string, error) {
+func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {
 	creds, err := auth.NewCredential(cfg)
 	if err != nil {
 		return "", err

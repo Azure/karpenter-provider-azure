@@ -120,9 +120,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	if err != nil {
 		return nil, err
 	}
-	for key, value := range vnetLabels {
-		labels[key] = value
-	}
+	labels = lo.Assign(labels, vnetLabels)
 
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
@@ -173,7 +171,6 @@ func mergeTags(tags ...map[string]string) (result map[string]*string) {
 	})
 }
 
-// getVnetInfoLabels returns VNet info labels
 func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeClass) (map[string]string, error) {
 	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
 	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(options.FromContext(ctx).SubnetID)
@@ -181,10 +178,7 @@ func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeCla
 		return nil, err
 	}
 	vnetLabels := map[string]string{
-		vnetDataPlaneLabel:      networkDataplaneCilium,
-		vnetNetworkNameLabel:    vnetSubnetComponents.VNetName,
 		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
-		vnetSubscriptionIDLabel: vnetSubnetComponents.SubscriptionID,
 		vnetGUIDLabel:           p.vnetGUID,
 		vnetPodNetworkTypeLabel: networkModeOverlay,
 	}

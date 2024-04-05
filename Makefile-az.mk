@@ -112,7 +112,7 @@ az-patch-subnet-custom:
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(SUBNET_RESOURCE_GROUP) --role "Network Contributor" 
 	yq e -i '(.manifests.helm.releases[0].overrides.controller.env[] | select(.name=="VNET_SUBNET_ID")).value = "$(VNET_SUBNET_ID)"' skaffold.yaml
 
-az-patch-vnet-subnet-id:
+az-patch-vnet-subnet-id: ## Patch VNET_SUBNET_ID in skaffold.yaml
 	$(eval VNET_SUBNET_ID=$(shell az network vnet list --resource-group $(AZURE_RESOURCE_GROUP_MC) | jq  -r ".[0].subnets[0].id"))
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv)) 
 	$(eval SUBNET_RESOURCE_GROUP=$(shell az network vnet subnet show --id $(VNET_SUBNET_ID) | jq -r ".resourceGroup"))	
