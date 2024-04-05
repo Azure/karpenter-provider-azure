@@ -160,6 +160,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(err).To(Succeed())
 			decodedString := string(decodedBytes[:])
 			Expect(decodedString).To(SatisfyAll(
+				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
 				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),

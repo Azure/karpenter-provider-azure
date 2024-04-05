@@ -39,9 +39,7 @@ const (
 
 	networkDataplaneCilium  = "cilium"
 	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
-	vnetNetworkNameLabel    = "kubernetes.azure.com/network-name"
 	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
-	vnetSubscriptionIDLabel = "kubernetes.azure.com/network-subscription"
 	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
 	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
 
@@ -121,6 +119,15 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		return nil, err
 	}
 	labels = lo.Assign(labels, vnetLabels)
+
+	// TODO: Make conditional on epbf dataplane
+	// This label is required for the cilium agent daemonset because
+	// we select the nodes for the daemonset based on this label
+	//              - key: kubernetes.azure.com/ebpf-dataplane
+	//            operator: In
+	//            values:
+	//              - cilium
+	labels[vnetDataPlaneLabel] = networkDataplaneCilium
 
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
