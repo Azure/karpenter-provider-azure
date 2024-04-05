@@ -43,8 +43,6 @@ func init() {
 
 var (
 	resourceGroup = "test-resourceGroup"
-
-	DefaultVnetSubnetID = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"
 )
 
 type Environment struct {
@@ -142,10 +140,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		launchTemplateProvider,
 		loadBalancerProvider,
 		unavailableOfferingsCache,
-		region,              // region
-		resourceGroup,       // resourceGroup
-		DefaultVnetSubnetID, // subnet
-		"",                  // subscriptionID
+		region,
+		resourceGroup,
+		testOptions.SubnetID,
+		"", // subscriptionID
 	)
 
 	return &Environment{

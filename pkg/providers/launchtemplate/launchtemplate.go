@@ -115,7 +115,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
 		arch = corev1beta1.ArchitectureArm64
 	}
-    // TODO: make conditional on either Azure CNI Overlay or pod subnet
+	// TODO: make conditional on either Azure CNI Overlay or pod subnet
 	vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
 	if err != nil {
 		return nil, err

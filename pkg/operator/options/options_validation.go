@@ -77,5 +77,8 @@ func (o Options) validateRequiredFields() error {
 	if o.SSHPublicKey == "" {
 		return fmt.Errorf("missing field, ssh-public-key")
 	}
+	if o.SubnetID == "" {
+		return fmt.Errorf("missing field, vnet-subnet-id")
+	}
 	return nil
 }
