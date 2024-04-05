@@ -83,7 +83,7 @@ az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR
 az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use with care!)
 	az group delete --name $(AZURE_RESOURCE_GROUP)
 
-az-patch-skaffold: 	## Update Azur client env vars and settings in skaffold config
+az-patch-skaffold: 	## Update Azure client env vars and settings in skaffold config
 	$(eval AZURE_CLIENT_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".identityProfile.kubeletidentity.clientId"))
 	$(eval CLUSTER_ENDPOINT=$(shell kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'))
 	# bootstrap token
