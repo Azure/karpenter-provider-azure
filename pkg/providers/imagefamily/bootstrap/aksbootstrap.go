@@ -135,7 +135,7 @@ type NodeBootstrapVariables struct {
 	CloudProviderRatelimitBucket      string   // s
 	CloudProviderRatelimitBucketWrite string   // s
 	LoadBalancerDisableOutboundSNAT   bool     // xd  [= false for now]
-	UseManagedIdentityExtension       bool     // s   [always false?]
+	UseManagedIdentityExtension       bool     // s   [always true, as long as we only support managed identity]
 	UseInstanceMetadata               bool     // s   [always true?]
 	LoadBalancerSKU                   string   // xd  [= "Standard" for now]
 	ExcludeMasterFromStandardLB       bool     // s   [always true?]
@@ -314,7 +314,7 @@ var (
 		CloudProviderRatelimitBucket:      "100",                  // s
 		CloudProviderRatelimitBucketWrite: "100",                  // s
 		LoadBalancerDisableOutboundSNAT:   false,                  // xd
-		UseManagedIdentityExtension:       false,                  // s
+		UseManagedIdentityExtension:       true,                   // s
 		UseInstanceMetadata:               true,                   // s
 		LoadBalancerSKU:                   "Standard",             // xd
 		ExcludeMasterFromStandardLB:       true,                   // s
