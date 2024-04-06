@@ -32,6 +32,7 @@ type Options struct {
 	GPUNode          bool
 	GPUDriverVersion string
 	GPUImageSHA      string
+	SubnetID         string
 }
 
 // Bootstrapper can be implemented to generate a bootstrap script
