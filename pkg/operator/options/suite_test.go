@@ -92,6 +92,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("NETWORK_PLUGIN", "env-network-plugin")
 			os.Setenv("NETWORK_POLICY", "env-network-policy")
 			os.Setenv("NODE_IDENTITIES", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2")
+			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -107,6 +108,7 @@ var _ = Describe("Options", func() {
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
 				NetworkPlugin:                  lo.ToPtr("env-network-plugin"),
 				NetworkPolicy:                  lo.ToPtr("env-network-policy"),
+				SubnetID:                       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
 			}))
 		})

@@ -41,7 +41,9 @@ func init() {
 	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
-var resourceGroup = "test-resourceGroup"
+var (
+	resourceGroup = "test-resourceGroup"
+)
 
 type Environment struct {
 	// API
@@ -116,6 +118,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		"test-userAssignedIdentity",
 		resourceGroup,
 		region,
+		"test-vnet-guid",
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		loadBalancersAPI,
@@ -137,10 +140,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		launchTemplateProvider,
 		loadBalancerProvider,
 		unavailableOfferingsCache,
-		region,        // region
-		resourceGroup, // resourceGroup
-		"",            // subnet
-		"",            // subscriptionID
+		region,
+		resourceGroup,
+		testOptions.SubnetID,
+		"", // subscriptionID
 	)
 
 	return &Environment{
