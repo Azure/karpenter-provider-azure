@@ -486,8 +486,13 @@ func getPortRangeEndValue(portRange string) int {
 		return -1
 	}
 
-	// end value should be larger than the start value.
+	if start <= 0 || end <= 0 {
+		log.Printf("port range values should be greater than 0: %d", start)
+		return -1
+	}
+
 	if start >= end {
+		log.Printf("port range end value should be greater than the start value: %d >= %d", start, end)
 		return -1
 	}
 

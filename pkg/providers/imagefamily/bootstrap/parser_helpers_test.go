@@ -733,7 +733,7 @@ func Test_getPortRangeEndValue(t *testing.T) {
 			want: -1,
 		},
 		{
-			name: "Port range with start and end port",
+			name: "Port range with valid start and end port",
 			args: args{
 				portRange: "80 90",
 			},
@@ -761,16 +761,23 @@ func Test_getPortRangeEndValue(t *testing.T) {
 			want: -1,
 		},
 		{
-			name: "start value is equal to end value",
+			name: "start value is equal to end value (invalid)",
 			args: args{
 				portRange: "80 80",
 			},
 			want: -1,
 		},
 		{
-			name: "either value is not a number",
+			name: "either value is not a number (invalid)",
 			args: args{
 				portRange: "80 abc",
+			},
+			want: -1,
+		},
+		{
+			name: "either value is smaller than 0 (invalid)",
+			args: args{
+				portRange: "-1 80",
 			},
 			want: -1,
 		},
