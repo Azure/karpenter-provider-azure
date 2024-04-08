@@ -28,6 +28,7 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,13 +67,9 @@ func getFuncMap() template.FuncMap {
 		"derefString":                               deref[string],
 		"derefBool":                                 deref[bool],
 		"getStringFromVMType":                       getStringFromVMType,
-		"getStringFromNetworkModeType":              getStringFromNetworkModeType,
 		"getStringFromNetworkPluginType":            getStringFromNetworkPluginType,
 		"getStringFromNetworkPolicyType":            getStringFromNetworkPolicyType,
 		"getStringFromLoadBalancerSkuType":          getStringFromLoadBalancerSkuType,
-		"getBoolFromFeatureState":                   getBoolFromFeatureState,
-		"getBoolStringFromFeatureState":             getBoolStringFromFeatureState,
-		"getBoolStringFromFeatureStatePtr":          getBoolStringFromFeatureStatePtr,
 		"getKubenetTemplate":                        getKubenetTemplate,
 		"getSysctlContent":                          getSysctlContent,
 		"getUlimitContent":                          getUlimitContent,
@@ -107,6 +104,8 @@ func getFuncMap() template.FuncMap {
 		"getIsSgxEnabledSKU":                        getIsSgxEnabledSKU,
 		"getShouldConfigureHTTPProxy":               getShouldConfigureHTTPProxy,
 		"getShouldConfigureHTTPProxyCA":             getShouldConfigureHTTPProxyCA,
+		"getAzureEnvironmentFilepath":               getAzureEnvironmentFilepath,
+		"getLBDisableOutboundSnat":                  getLBDisableOutboundSnat,
 	}
 }
 
@@ -117,83 +116,56 @@ func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 	}
 }
 
-func getStringFromVMType(enum nbcontractv1.VmType) string {
+func getStringFromVMType(enum nbcontractv1.ClusterConfig_VM) string {
 	switch enum {
-	case nbcontractv1.VmType_VM_TYPE_STANDARD:
+	case nbcontractv1.ClusterConfig_STANDARD:
 		return "standard"
-	case nbcontractv1.VmType_VM_TYPE_VMSS:
+	case nbcontractv1.ClusterConfig_VMSS:
 		return "vmss"
 	default:
 		return ""
 	}
 }
 
-func getStringFromNetworkModeType(enum nbcontractv1.NetworkModeType) string {
+func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPlugin) string {
 	switch enum {
-	case nbcontractv1.NetworkModeType_NETWORK_MODE_TRANSPARENT:
-		return "transparent"
-	case nbcontractv1.NetworkModeType_NETWORK_MODE_BRIDGE:
-		return "bridge"
-	default:
-		return ""
-	}
-}
-
-func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPluginType) string {
-	switch enum {
-	case nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_AZURE:
+	case nbcontractv1.NetworkPlugin_NP_AZURE:
 		return "azure"
-	case nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET:
+	case nbcontractv1.NetworkPlugin_NP_KUBENET:
 		return "kubenet"
 	default:
 		return ""
 	}
 }
 
-func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicyType) string {
+func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicy) string {
 	switch enum {
-	case nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_AZURE:
+	case nbcontractv1.NetworkPolicy_NPO_AZURE:
 		return "azure"
-	case nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO:
+	case nbcontractv1.NetworkPolicy_NPO_CALICO:
 		return "calico"
 	default:
 		return ""
 	}
 }
 
-func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerSku) string {
+func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerConfig_LoadBalancerSku) string {
 	switch enum {
-	case nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_BASIC:
+	case nbcontractv1.LoadBalancerConfig_BASIC:
 		return "Basic"
-	case nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_STANDARD:
+	case nbcontractv1.LoadBalancerConfig_STANDARD:
 		return "Standard"
 	default:
 		return ""
 	}
 }
 
-func getBoolFromFeatureState(state nbcontractv1.FeatureState) bool {
-	return state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED
-}
-
-func getBoolStringFromFeatureState(state nbcontractv1.FeatureState) string {
-	return strconv.FormatBool(state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED)
-}
-
-func getBoolStringFromFeatureStatePtr(state *nbcontractv1.FeatureState) string {
-	if state == nil {
-		return "false"
-	}
-
-	if *state == nbcontractv1.FeatureState_FEATURE_STATE_ENABLED {
-		return "true"
-	}
-
-	return "false"
-}
-
 // deref is a helper function to dereference a pointer of any type to its value
 func deref[T interface{}](p *T) T {
+	if p == nil {
+		var zeroValue T
+		return zeroValue
+	}
 	return *p
 }
 
@@ -269,7 +241,7 @@ func getIsKrustlet(wr nbcontractv1.WorkloadRuntime) bool {
 }
 
 func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.NetworkConfig) bool {
-	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
+	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPlugin_NP_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicy_NPO_CALICO
 }
 
 func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
@@ -488,12 +460,43 @@ func getUlimitContent(u *nbcontractv1.UlimitConfig) string {
 
 // getPortRangeEndValue returns the end value of the port range where the input is in the format of "start end".
 func getPortRangeEndValue(portRange string) int {
-	arr := strings.Split(portRange, " ")
-	num, err := strconv.Atoi(arr[1])
-	if err != nil {
+	if portRange == "" {
 		return -1
 	}
-	return num
+
+	arr := strings.Split(portRange, " ")
+
+	// we are expecting only two values, start and end.
+	if len(arr) != 2 {
+		return -1
+	}
+
+	start, end := int(0), int(0)
+	var err error
+
+	// the start value should be a valid port number.
+	if start, err = strconv.Atoi(arr[0]); err != nil {
+		log.Printf("error converting port range start value to int: %v", err)
+		return -1
+	}
+
+	// the end value should be a valid port number.
+	if end, err = strconv.Atoi(arr[1]); err != nil {
+		log.Printf("error converting port range end value to int: %v", err)
+		return -1
+	}
+
+	if start <= 0 || end <= 0 {
+		log.Printf("port range values should be greater than 0: %d", start)
+		return -1
+	}
+
+	if start >= end {
+		log.Printf("port range end value should be greater than the start value: %d >= %d", start, end)
+		return -1
+	}
+
+	return end
 }
 
 // createSortedKeyValuePairs creates a string with key=value pairs, sorted by key, with custom delimiter.
@@ -572,4 +575,21 @@ func getShouldConfigureHTTPProxy(httpProxyConfig *nbcontractv1.HTTPProxyConfig) 
 
 func getShouldConfigureHTTPProxyCA(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
 	return httpProxyConfig.GetProxyTrustedCa() != ""
+}
+
+func getAzureEnvironmentFilepath(v *nbcontractv1.CustomCloudConfig) string {
+	if v.GetIsAksCustomCloud() {
+		return fmt.Sprintf("/etc/kubernetes/%s.json", v.GetTargetEnvironment())
+	}
+	return ""
+}
+
+func getLBDisableOutboundSnat(lb *nbcontractv1.LoadBalancerConfig) bool {
+	if lb.GetLoadBalancerSku() != nbcontractv1.LoadBalancerConfig_STANDARD {
+		return false
+	}
+	if lb.DisableOutboundSnat == nil {
+		return false
+	}
+	return lb.GetDisableOutboundSnat()
 }

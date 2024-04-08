@@ -33,59 +33,36 @@ const (
 )
 
 // getLoadBalancerSKI returns the LoadBalancerSku enum based on the input string.
-func getLoadBalancerSKU(sku string) nbcontractv1.LoadBalancerSku {
+func getLoadBalancerSKU(sku string) nbcontractv1.LoadBalancerConfig_LoadBalancerSku {
 	if strings.EqualFold(sku, "Standard") {
-		return nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_STANDARD
+		return nbcontractv1.LoadBalancerConfig_STANDARD
 	} else if strings.EqualFold(sku, "Basic") {
-		return nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_BASIC
+		return nbcontractv1.LoadBalancerConfig_BASIC
 	}
 
-	return nbcontractv1.LoadBalancerSku_LOAD_BALANCER_SKU_UNSPECIFIED
-}
-
-// getNetworkModeType returns the NetworkMode enum based on the input string.
-func getNetworkModeType(networkMode string) nbcontractv1.NetworkModeType {
-	if strings.EqualFold(networkMode, "transparent") {
-		return nbcontractv1.NetworkModeType_NETWORK_MODE_TRANSPARENT
-	} else if strings.EqualFold(networkMode, "bridge") {
-		return nbcontractv1.NetworkModeType_NETWORK_MODE_BRIDGE
-	}
-
-	return nbcontractv1.NetworkModeType_NETWORK_MODE_UNSPECIFIED
+	return nbcontractv1.LoadBalancerConfig_UNSPECIFIED
 }
 
 // getNetworkPluginType returns the NetworkPluginType enum based on the input string.
-func getNetworkPluginType(networkPlugin string) nbcontractv1.NetworkPluginType {
+func getNetworkPluginType(networkPlugin string) nbcontractv1.NetworkPlugin {
 	if strings.EqualFold(networkPlugin, "azure") {
-		return nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_AZURE
+		return nbcontractv1.NetworkPlugin_NP_AZURE
 	} else if strings.EqualFold(networkPlugin, "kubenet") {
-		return nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_KUBENET
+		return nbcontractv1.NetworkPlugin_NP_KUBENET
 	}
 
-	return nbcontractv1.NetworkPluginType_NETWORK_PLUGIN_TYPE_NONE
+	return nbcontractv1.NetworkPlugin_NP_NONE
 }
 
 // getNetworkPolicyType returns the NetworkPolicyType enum based on the input string.
-func getNetworkPolicyType(networkPolicy string) nbcontractv1.NetworkPolicyType {
+func getNetworkPolicyType(networkPolicy string) nbcontractv1.NetworkPolicy {
 	if strings.EqualFold(networkPolicy, "azure") {
-		return nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_AZURE
+		return nbcontractv1.NetworkPolicy_NPO_AZURE
 	} else if strings.EqualFold(networkPolicy, "calico") {
-		return nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_CALICO
+		return nbcontractv1.NetworkPolicy_NPO_CALICO
 	}
 
-	return nbcontractv1.NetworkPolicyType_NETWORK_POLICY_TYPE_NONE
-}
-
-// getFeatureState takes a positive enablement state variable as input. For a negative case, please invert it (from true to false or vice versa) before passing in.
-// For example, variable XXX_enabled is a correct input while XXX_disabled is incorrect.
-func getFeatureState(enabled bool) nbcontractv1.FeatureState {
-	if enabled {
-		return nbcontractv1.FeatureState_FEATURE_STATE_ENABLED
-	} else if !enabled {
-		return nbcontractv1.FeatureState_FEATURE_STATE_DISABLED
-	}
-
-	return nbcontractv1.FeatureState_FEATURE_STATE_UNSPECIFIED
+	return nbcontractv1.NetworkPolicy_NPO_NONE
 }
 
 // GetOutBoundCmd returns a proper outbound traffic command based on some cloud and Linux distro configs.

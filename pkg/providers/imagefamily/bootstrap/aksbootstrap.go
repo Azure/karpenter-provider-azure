@@ -151,11 +151,10 @@ var (
 	// as well as defaults, cluster/node level (cd/td/xd)
 	staticNodeBootstrapVars = nbcontractv1.Configuration{
 		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{
-			EnableCustomCloudConfig: false,              //n
-			InitFilePath:            ptr.String(""),     //n
-			RepoDepotEndpoint:       ptr.String(""),     //n
-			TargetEnvironment:       "AzurePublicCloud", //n
-			CustomEnvJsonContent:    "",                 //n
+			IsAksCustomCloud:  false,              //n
+			InitFilePath:      "",                 //n
+			RepoDepotEndpoint: "",                 //n
+			TargetEnvironment: "AzurePublicCloud", //n
 		},
 		LinuxAdminUsername: "azureuser", // td
 		KubeBinaryConfig: &nbcontractv1.KubeBinaryConfig{
@@ -165,22 +164,23 @@ var (
 		},
 		KubeproxyUrl: "", // -
 		ApiserverConfig: &nbcontractv1.ApiServerConfig{
-			ApiserverPublicKey: "", // not initialized anywhere?
-			ApiserverName:      "", // xd
+			ApiServerPublicKey: "", // not initialized anywhere?
+			ApiServerName:      "", // xd
 		},
 		AuthConfig: &nbcontractv1.AuthConfig{
 			TargetCloud:                 "AzurePublicCloud", //n
 			UseManagedIdentityExtension: false,
 		},
 		ClusterConfig: &nbcontractv1.ClusterConfig{
-			VmType:                 nbcontractv1.VmType_VM_TYPE_VMSS, // xd
-			PrimaryAvailabilitySet: "",                               // -
-			PrimaryScaleSet:        "",                               // -
-			UseInstanceMetadata:    true,                             // s
+			VmType:                 nbcontractv1.ClusterConfig_VMSS, // xd
+			PrimaryAvailabilitySet: "",                              // -
+			PrimaryScaleSet:        "",                              // -
+			UseInstanceMetadata:    true,                            // s
 			LoadBalancerConfig: &nbcontractv1.LoadBalancerConfig{
 				LoadBalancerSku:                       getLoadBalancerSKU("Standard"), // xd
 				ExcludeMasterFromStandardLoadBalancer: to.BoolPtr(true),               //s
 				MaxLoadBalancerRuleCount:              to.Int32Ptr(250),               // xd
+				DisableOutboundSnat:                   to.BoolPtr(false),              // s
 			},
 			VirtualNetworkConfig: &nbcontractv1.ClusterNetworkConfig{
 				Subnet:            "aks-subnet", // xd
@@ -188,7 +188,6 @@ var (
 			},
 		},
 		NetworkConfig: &nbcontractv1.NetworkConfig{
-			NetworkMode:       getNetworkModeType(""), // cd
 			VnetCniPluginsUrl: vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
 			CniPluginsUrl:     cniPluginsURL,          // - [currently required, same]
 		},
@@ -286,7 +285,7 @@ func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
 
 func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 	nbv.ClusterCertificateAuthority = *a.CABundle
-	nbv.ApiserverConfig.ApiserverName = a.APIServerName
+	nbv.ApiserverConfig.ApiServerName = a.APIServerName
 	nbv.TlsBootstrappingConfig.TlsBootstrapToken = a.KubeletClientTLSBootstrapToken
 
 	nbv.AuthConfig.TenantId = a.TenantID
@@ -338,7 +337,10 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 
 	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
 	nbv.KubeletConfig.KubeletNodeLabels = kubeletLabels
+	nbv.KubeletConfig.KubeletFlags = a.getKubeletFlags()
+}
 
+func (a AKS) getKubeletFlags() map[string]string {
 	// merge and stringify taints
 	kubeletFlags := lo.Assign(kubeletFlagsBase)
 	if len(a.Taints) > 0 {
@@ -348,7 +350,7 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 
 	machineKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, machineKubeletConfig)
-	nbv.KubeletConfig.KubeletFlags = kubeletFlags
+	return kubeletFlags
 }
 
 func getCustomDataFromNodeBootstrapContract(nbcp *nbcontractv1.Configuration) (string, error) {
