@@ -40,40 +40,29 @@ func getLoadBalancerSKU(sku string) nbcontractv1.LoadBalancerConfig_LoadBalancer
 		return nbcontractv1.LoadBalancerConfig_BASIC
 	}
 
-	return nbcontractv1.LoadBalancerConfig_LBS_UNSPECIFIED
-}
-
-// getNetworkModeType returns the NetworkMode enum based on the input string.
-func getNetworkModeType(networkMode string) nbcontractv1.NetworkModeType {
-	if strings.EqualFold(networkMode, "transparent") {
-		return nbcontractv1.NetworkModeType_TRANSPARENT
-	} else if strings.EqualFold(networkMode, "bridge") {
-		return nbcontractv1.NetworkModeType_BRIDGE
-	}
-
-	return nbcontractv1.NetworkModeType_NM_UNSPECIFIED
+	return nbcontractv1.LoadBalancerConfig_UNSPECIFIED
 }
 
 // getNetworkPluginType returns the NetworkPluginType enum based on the input string.
-func getNetworkPluginType(networkPlugin string) nbcontractv1.NetworkPluginType {
+func getNetworkPluginType(networkPlugin string) nbcontractv1.NetworkPlugin {
 	if strings.EqualFold(networkPlugin, "azure") {
-		return nbcontractv1.NetworkPluginType_NPT_AZURE
+		return nbcontractv1.NetworkPlugin_NP_AZURE
 	} else if strings.EqualFold(networkPlugin, "kubenet") {
-		return nbcontractv1.NetworkPluginType_NPT_KUBENET
+		return nbcontractv1.NetworkPlugin_NP_KUBENET
 	}
 
-	return nbcontractv1.NetworkPluginType_NPT_NONE
+	return nbcontractv1.NetworkPlugin_NP_NONE
 }
 
 // getNetworkPolicyType returns the NetworkPolicyType enum based on the input string.
-func getNetworkPolicyType(networkPolicy string) nbcontractv1.NetworkPolicyType {
+func getNetworkPolicyType(networkPolicy string) nbcontractv1.NetworkPolicy {
 	if strings.EqualFold(networkPolicy, "azure") {
-		return nbcontractv1.NetworkPolicyType_NPOT_AZURE
+		return nbcontractv1.NetworkPolicy_NPO_AZURE
 	} else if strings.EqualFold(networkPolicy, "calico") {
-		return nbcontractv1.NetworkPolicyType_NPOT_CALICO
+		return nbcontractv1.NetworkPolicy_NPO_CALICO
 	}
 
-	return nbcontractv1.NetworkPolicyType_NPOT_NONE
+	return nbcontractv1.NetworkPolicy_NPO_NONE
 }
 
 // GetOutBoundCmd returns a proper outbound traffic command based on some cloud and Linux distro configs.

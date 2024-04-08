@@ -188,7 +188,6 @@ var (
 			},
 		},
 		NetworkConfig: &nbcontractv1.NetworkConfig{
-			NetworkMode:       getNetworkModeType(""), // cd
 			VnetCniPluginsUrl: vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
 			CniPluginsUrl:     cniPluginsURL,          // - [currently required, same]
 		},
@@ -338,7 +337,10 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 
 	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
 	nbv.KubeletConfig.KubeletNodeLabels = kubeletLabels
+	nbv.KubeletConfig.KubeletFlags = a.getKubeletFlags()
+}
 
+func (a AKS) getKubeletFlags() map[string]string {
 	// merge and stringify taints
 	kubeletFlags := lo.Assign(kubeletFlagsBase)
 	if len(a.Taints) > 0 {
@@ -348,7 +350,7 @@ func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
 
 	machineKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, machineKubeletConfig)
-	nbv.KubeletConfig.KubeletFlags = kubeletFlags
+	return kubeletFlags
 }
 
 func getCustomDataFromNodeBootstrapContract(nbcp *nbcontractv1.Configuration) (string, error) {
