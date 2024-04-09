@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-set -x
-
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 # shellcheck source=./common.sh
 source "${SCRIPT_DIR}/common.sh"
