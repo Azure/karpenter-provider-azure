@@ -2,7 +2,6 @@
 set -euo pipefail
 
 config(){
-  GITHUB_ACCOUNT="Azure"
   RELEASE_ACR=${RELEASE_ACR:-ksnap.azurecr.io} # will always be ovreridden
   RELEASE_REPO_ACR=${RELEASE_REPO_ACR:-${RELEASE_ACR}/public/aks/karpenter/}
   RELEASE_REPO_MAR=mcr.microsoft.com/aks/karpenter
@@ -12,21 +11,8 @@ config(){
   CURRENT_MAJOR_VERSION="0"
   RELEASE_PLATFORM="--platform=linux/amd64,linux/arm64"
 
-  MAIN_GITHUB_ACCOUNT="Azure"
   RELEASE_TYPE_STABLE="stable"
   RELEASE_TYPE_SNAPSHOT="snapshot"
-}
-
-# versionData sets all the version properties for the passed release version. It sets the values
-# RELEASE_VERSION_MAJOR, RELEASE_VERSION_MINOR, and RELEASE_VERSION_PATCH to be used by other scripts
-versionData(){
-  local VERSION="$1"
-  local VERSION="${VERSION#[vV]}"
-  RELEASE_VERSION_MAJOR="${VERSION%%\.*}"
-  RELEASE_VERSION_MINOR="${VERSION#*.}"
-  RELEASE_VERSION_MINOR="${RELEASE_VERSION_MINOR%.*}"
-  RELEASE_VERSION_PATCH="${VERSION##*.}"
-  RELEASE_MINOR_VERSION="v${RELEASE_VERSION_MAJOR}.${RELEASE_VERSION_MINOR}"
 }
 
 snapshot() {
@@ -71,7 +57,7 @@ authenticatePrivateRepo() {
 
 buildAndPublishImages() {
   RELEASE_REPO=$1
-  # Set the SOURCE_DATE_EPOCH and KO_DATA_DATE_EPOCH values for reproducable builds with timestamps
+  # Set the SOURCE_DATE_EPOCH and KO_DATA_DATE_EPOCH values for reproducible builds with timestamps
   # https://ko.build/advanced/faq/
 
   CONTROLLER_IMG=$(GOFLAGS=${GOFLAGS} \
@@ -130,7 +116,7 @@ helmChartVersion(){
 }
 
 buildDate(){
-  # Set the SOURCE_DATE_EPOCH and KO_DATA_DATE_EPOCH values for reproducable builds with timestamps
+  # Set the SOURCE_DATE_EPOCH and KO_DATA_DATE_EPOCH values for reproducible builds with timestamps
   # https://ko.build/advanced/faq/
   DATE_FMT="+%Y-%m-%dT%H:%M:%SZ"
   SOURCE_DATE_EPOCH=$(git log -1 --format='%ct')
