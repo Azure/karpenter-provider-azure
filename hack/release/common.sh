@@ -128,6 +128,11 @@ publishHelmChart() {
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${oci_repo}${helm_chart}:${version}@${helm_chart_digest}"
 }
 
+# When executed interactively, cosign will prompt you to authenticate via OIDC, where you'll sign in
+# with your email address. Under the hood, cosign will request a code signing certificate from the Fulcio
+# certificate authority. The subject of the certificate will match the email address you logged in with.
+# Cosign will then store the signature and certificate in the Rekor transparency log, and upload the signature
+# to the OCI registry alongside the image you're signing. For details see https://github.com/sigstore/cosign.
 cosignOciArtifact() {
   local version commit_sha build_date artifact
 
