@@ -2,10 +2,10 @@
 set -euo pipefail
 
 RELEASE_ACR=${RELEASE_ACR:-ksnap.azurecr.io} # will always be ovreridden
-RELEASE_REPO_ACR=${RELEASE_REPO_ACR:-${RELEASE_ACR}/public/aks/karpenter/}
+RELEASE_REPO_ACR=${RELEASE_REPO_ACR:-${RELEASE_ACR}/public/aks/karpenter}
 RELEASE_REPO_MAR=mcr.microsoft.com/aks/karpenter
 SNAPSHOT_ACR=${SNAPSHOT_ACR:-ksnap.azurecr.io}
-SNAPSHOT_REPO_ACR=${SNAPSHOT_REPO_ACR:-${SNAPSHOT_ACR}/karpenter/snapshot/}
+SNAPSHOT_REPO_ACR=${SNAPSHOT_REPO_ACR:-${SNAPSHOT_ACR}/karpenter/snapshot}
 
 CURRENT_MAJOR_VERSION="0"
 
