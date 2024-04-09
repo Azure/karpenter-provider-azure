@@ -26,10 +26,10 @@ az-all-custom-vnet: az-login az-create-workload-msi az-mkaks-custom-vnet az-crea
 az-all-savm:    az-login az-mkaks-savm az-perm-savm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
 install-tools: az-tool ## install tools to create a local developer environment
-	sudo apt update && sudo apt install jq -y
+	sudo apt update && sudo apt install curl jq -y
 	curl -Lo yq https://github.com/mikefarah/yq/releases/download/v4.43.1/yq_linux_amd64 && chmod +x yq && sudo mv yq /usr/local/bin
 	if test -z "$(shell which helm)"; then \
-		curl -L https://get.helm.sh/helm-v3.14.3-linux-amd64.tar.gz | sudo tar xvfz - linux-amd64/helm && sudo mv linux-amd64/helm /usr/local/bin/helm && rm -rf linux-amd64; \
+		curl -sL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash -
 	fi
 	if test -z "$(shell which docker)"; then \
 		curl -fsSL https://get.docker.com | bash -; \
@@ -37,7 +37,7 @@ install-tools: az-tool ## install tools to create a local developer environment
 	if test -z "$(shell which kubectl)"; then \
 		curl -LO "https://dl.k8s.io/release/$(shell curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x kubectl && sudo mv kubectl /usr/local/bin; \
 	fi
-	if test -z "$(shell which go)" || [ $(shell go version | awk -F'[ .]' '{print$$3"."$$4}') = $(shell grep -E '^go' go.mod | sed 's/ //g') ]; then \
+	if test -z "$(shell which go)" || [ $(shell go version | awk -F'[ .]' '{print$$3"."$$4}') != $(shell grep -E '^go' go.mod | sed 's/ //g') ]; then \
 		curl -L https://go.dev/dl/go1.22.1.linux-amd64.tar.gz | sudo tar xvzf - -C /usr/local/ && PATH=$PATH:/usr/local/go/bin; \
 	fi
 	if test -z "$(shell which skaffold)"; then \
