@@ -1,154 +1,152 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-config(){
-  RELEASE_ACR=${RELEASE_ACR:-ksnap.azurecr.io} # will always be ovreridden
-  RELEASE_REPO_ACR=${RELEASE_REPO_ACR:-${RELEASE_ACR}/public/aks/karpenter/}
-  RELEASE_REPO_MAR=mcr.microsoft.com/aks/karpenter
-  SNAPSHOT_ACR=${SNAPSHOT_ACR:-ksnap.azurecr.io}
-  SNAPSHOT_REPO_ACR=${SNAPSHOT_REPO_ACR:-${SNAPSHOT_ACR}/karpenter/snapshot/}
+RELEASE_ACR=${RELEASE_ACR:-ksnap.azurecr.io} # will always be ovreridden
+RELEASE_REPO_ACR=${RELEASE_REPO_ACR:-${RELEASE_ACR}/public/aks/karpenter/}
+RELEASE_REPO_MAR=mcr.microsoft.com/aks/karpenter
+SNAPSHOT_ACR=${SNAPSHOT_ACR:-ksnap.azurecr.io}
+SNAPSHOT_REPO_ACR=${SNAPSHOT_REPO_ACR:-${SNAPSHOT_ACR}/karpenter/snapshot/}
 
-  CURRENT_MAJOR_VERSION="0"
-  RELEASE_PLATFORM="--platform=linux/amd64,linux/arm64"
-
-  RELEASE_TYPE_STABLE="stable"
-  RELEASE_TYPE_SNAPSHOT="snapshot"
-}
+CURRENT_MAJOR_VERSION="0"
 
 snapshot() {
-  RELEASE_VERSION=$1
-  echo "Release Type: snapshot
-Release Version: ${RELEASE_VERSION}
-Commit: $(git rev-parse HEAD)
-Helm Chart Version $(helmChartVersion "$RELEASE_VERSION")"
+  local commit_sha version helm_chart_version
 
-  authenticatePrivateRepo "${SNAPSHOT_ACR}"
-  buildAndPublishImages "${SNAPSHOT_REPO_ACR}"
-  updateHelmChart
-  # not locking artifacts for snapshot releases
-  cosignImage "${CONTROLLER_IMG}"
-  cosignImage "${CONTROLLER_IMG_NAP}"
-  publishHelmChart "karpenter" "${RELEASE_VERSION}" "${SNAPSHOT_REPO_ACR}"
-  publishHelmChart "karpenter-crd" "${RELEASE_VERSION}" "${SNAPSHOT_REPO_ACR}"
+  commit_sha="${1}"
+  version="${commit_sha}"
+  helm_chart_version="${CURRENT_MAJOR_VERSION}-${commit_sha}"
+
+  echo "Release Type: snapshot
+Release Version: ${version}
+Commit: ${commit_sha}
+Helm Chart Version ${helm_chart_version}"
+
+  authenticate "${SNAPSHOT_ACR}"
+  buildAndPublish "${SNAPSHOT_REPO_ACR}" "${version}" "${helm_chart_version}" "${commit_sha}"
 }
 
 release() {
-  RELEASE_VERSION=$1
+  local commit_sha version helm_chart_version
+
+  commit_sha="${1}"
+  version="${2}"
+  helm_chart_version="${version}"
+
   echo "Release Type: stable
-Release Version: ${RELEASE_VERSION}
-Commit: $(git rev-parse HEAD)
-Helm Chart Version $(helmChartVersion "$RELEASE_VERSION")"
+Release Version: ${version}
+Commit: ${commit_sha}
+Helm Chart Version ${helm_chart_version}"
 
-  authenticatePrivateRepo "${RELEASE_ACR}"
-  buildImages "${RELEASE_REPO_ACR}"
-  updateHelmChart "${RELEASE_REPO_MAR}"
-  lockImage "${IMG_REPOSITORY}" "${IMG_TAG}"
-  lockImage "${IMG_REPOSITORY}" "${IMG_TAG}-aks"
-  cosignImage "${CONTROLLER_IMG}"
-  cosignImage "${CONTROLLER_IMG_NAP}"
-  publishHelmChart "karpenter" "${RELEASE_VERSION}" "${RELEASE_REPO_ACR}"
-  publishHelmChart "karpenter-crd" "${RELEASE_VERSION}" "${RELEASE_REPO_ACR}"
+  authenticate "${RELEASE_ACR}"
+  buildAndPublish "${RELEASE_REPO_ACR}" "${version}" "${helm_chart_version}" "${commit_sha}" \
+    "${RELEASE_REPO_MAR}" # repo override for Helm chart
 }
 
-authenticatePrivateRepo() {
-  ACR=$1
-  az acr login -n "${ACR}"
+authenticate() {
+  local acr
+
+  acr="$1"
+  az acr login -n "${acr}"
 }
 
-buildAndPublishImages() {
-  RELEASE_REPO=$1
-  # Set the SOURCE_DATE_EPOCH and KO_DATA_DATE_EPOCH values for reproducible builds with timestamps
-  # https://ko.build/advanced/faq/
+buildAndPublish() {
+  local oci_repo version helm_chart_version commit_sha date_epoch build_date img img_repo img_tag img_digest
 
-  CONTROLLER_IMG=$(GOFLAGS=${GOFLAGS} \
-    SOURCE_DATE_EPOCH=$(git log -1 --format='%ct') KO_DATA_DATE_EPOCH=$(git log -1 --format='%ct') KO_DOCKER_REPO=${RELEASE_REPO} \
-    ko publish -B --sbom none -t "${RELEASE_VERSION}" "${RELEASE_PLATFORM}" ./cmd/controller)
-  CONTROLLER_IMG_NAP=$(GOFLAGS="${GOFLAGS} -tags=ccp" \
-    SOURCE_DATE_EPOCH=$(git log -1 --format='%ct') KO_DATA_DATE_EPOCH=$(git log -1 --format='%ct') KO_DOCKER_REPO=${RELEASE_REPO} \
-    ko publish -B --sbom none -t "${RELEASE_VERSION}-aks" "${RELEASE_PLATFORM}" ./cmd/controller)
-}
+  oci_repo="${1}"
+  version="${2}"
+  helm_chart_version="${3}"
+  commit_sha="${4}"
 
-updateHelmChart() {
-  HELM_CHART_VERSION=$(helmChartVersion "$RELEASE_VERSION")
-  IMG_REPOSITORY=$(echo "$CONTROLLER_IMG" | cut -d "@" -f 1 | cut -d ":" -f 1)
-  IMG_TAG=$(echo "$CONTROLLER_IMG" | cut -d "@" -f 1 | cut -d ":" -f 2 -s)
-  IMG_DIGEST=$(echo "$CONTROLLER_IMG" | cut -d "@" -f 2)
+  date_epoch="$(dateEpoch)"
+  build_date="$(buildDate "${date_epoch}")"
 
-  local REPO=${1:-$IMG_REPOSITORY} # override the release repo if provided
-  yq e -i ".controller.image.repository = \"${REPO}\"" charts/karpenter/values.yaml
-  yq e -i ".controller.image.tag = \"${IMG_TAG}\"" charts/karpenter/values.yaml
-  yq e -i ".controller.image.digest = \"${IMG_DIGEST}\"" charts/karpenter/values.yaml
-  yq e -i ".appVersion = \"${RELEASE_VERSION#v}\"" charts/karpenter/Chart.yaml
-  yq e -i ".version = \"${HELM_CHART_VERSION#v}\"" charts/karpenter/Chart.yaml
-  yq e -i ".appVersion = \"${RELEASE_VERSION#v}\"" charts/karpenter-crd/Chart.yaml
-  yq e -i ".version = \"${HELM_CHART_VERSION#v}\"" charts/karpenter-crd/Chart.yaml
+  img="$(GOFLAGS=${GOFLAGS:-} \
+    SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
+    ko publish -B --sbom none -t "${version}"     ./cmd/controller)"
+  img_nap="$(GOFLAGS="${GOFLAGS:-} -tags=ccp" \
+    SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
+    ko publish -B --sbom none -t "${version}"-aks ./cmd/controller)"
+
+  img_repo="$(echo "${img}" | cut -d "@" -f 1 | cut -d ":" -f 1)"
+  img_tag="$(echo "${img}" | cut -d "@" -f 1 | cut -d ":" -f 2 -s)"
+  img_digest="$(echo "${img}" | cut -d "@" -f 2)"
+
+  img_registry="$(echo "${img_repo}" | cut -d "/" -f 1)"
+  img_path="$(echo "${img_repo}" | cut -d "/" -f 2-)"
+
+  lockImage "${img_registry}" "${img_path}" "${img_tag}"
+  lockImage "${img_registry}" "${img_path}" "${img_tag}-aks"
+
+  cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img}"
+  cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img_nap}"
+
+  repo=${5:-$img_repo} # override the repo if provided (used for MCR)
+
+  yq e -i ".controller.image.repository = \"${repo}\"" charts/karpenter/values.yaml
+  yq e -i ".controller.image.tag = \"${img_tag}\"" charts/karpenter/values.yaml
+  yq e -i ".controller.image.digest = \"${img_digest}\"" charts/karpenter/values.yaml
+
+  publishHelmChart "${oci_repo}" "karpenter" "${helm_chart_version}" "${commit_sha}" "${build_date}"
+  publishHelmChart "${oci_repo}" "karpenter-crd" "${helm_chart_version}" "${commit_sha}" "${build_date}"
 }
 
 lockImage() {
-  local IMG_REPOSITORY=$1
-  local IMG_TAG=$2
-  IMG_REGISTRY=$(echo "$IMG_REPOSITORY" | cut -d "/" -f 1)
-  IMG_PATH=$(echo "$IMG_REPOSITORY" | cut -d "/" -f 2-)
-	az acr repository update -n "${IMG_REGISTRY}" --image "${IMG_PATH}:${IMG_TAG}" \
+  local img_registry img_path img_tag
+
+  img_registry="$1"
+  img_path="$2"
+  img_tag="$3"
+
+	az acr repository update -n "${img_registry}" --image "${img_path}:${img_tag}" \
     --write-enabled false \
     --delete-enabled false
 }
 
-releaseType(){
-  RELEASE_VERSION=$1
-
-  if [[ "${RELEASE_VERSION}" == v* ]]; then
-    echo "$RELEASE_TYPE_STABLE"
-  else
-    echo "$RELEASE_TYPE_SNAPSHOT"
-  fi
-}
-
-helmChartVersion(){
-  RELEASE_VERSION=$1
-  if [[ $(releaseType "$RELEASE_VERSION") == "$RELEASE_TYPE_STABLE" ]]; then
-    echo "$RELEASE_VERSION"
-  fi
-
-  if [[ $(releaseType "$RELEASE_VERSION") == "$RELEASE_TYPE_SNAPSHOT" ]]; then
-    echo "v${CURRENT_MAJOR_VERSION}-${RELEASE_VERSION}"
-  fi
-}
-
-buildDate(){
-  # Set the SOURCE_DATE_EPOCH and KO_DATA_DATE_EPOCH values for reproducible builds with timestamps
-  # https://ko.build/advanced/faq/
-  DATE_FMT="+%Y-%m-%dT%H:%M:%SZ"
-  SOURCE_DATE_EPOCH=$(git log -1 --format='%ct')
-  date --utc --date="@${SOURCE_DATE_EPOCH}" $DATE_FMT 2>/dev/null
-}
-
-# When executed interactively, cosign will prompt you to authenticate via OIDC, where you'll sign in
-# with your email address. Under the hood, cosign will request a code signing certificate from the Fulcio
-# certificate authority. The subject of the certificate will match the email address you logged in with.
-# Cosign will then store the signature and certificate in the Rekor transparency log, and upload the signature
-# to the OCI registry alongside the image you're signing. For details see https://github.com/sigstore/cosign.
-cosignImage() {
-  local image=$1
-  COSIGN_EXPERIMENTAL=1 cosign sign \
-      -a GIT_HASH="$(git rev-parse HEAD)" \
-      -a GIT_VERSION="${RELEASE_VERSION}" \
-      -a BUILD_DATE="$(buildDate)" \
-      "${image}"
-}
-
 publishHelmChart() {
-  CHART_NAME=$1
-  RELEASE_VERSION=$2
-  RELEASE_REPO=$3
-  HELM_CHART_VERSION=$(helmChartVersion "$RELEASE_VERSION")
-  HELM_CHART_FILE_NAME="${CHART_NAME}-${HELM_CHART_VERSION}.tgz"
+  local oci_repo helm_chart version commit_sha build_date helm_chart_artifact helm_chart_digest
+
+  oci_repo="${1}"
+  helm_chart="${2}"
+  version="${3}"
+  commit_sha="${4}"
+  build_date="${5}"
+
+  helm_chart_artifact="${helm_chart}-${version}.tgz"
+
+  yq e -i ".appVersion = \"${version}\"" "charts/${helm_chart}/Chart.yaml"
+  yq e -i ".version = \"${version}\"" "charts/${helm_chart}/Chart.yaml"
 
   cd charts
-  helm dependency update "${CHART_NAME}"
-  helm lint "${CHART_NAME}"
-  helm package "${CHART_NAME}" --version "$HELM_CHART_VERSION"
-  helm push "${HELM_CHART_FILE_NAME}" "oci://${RELEASE_REPO}"
-  rm "${HELM_CHART_FILE_NAME}"
+  helm dependency update "${helm_chart}"
+  helm lint "${helm_chart}"
+  helm package "${helm_chart}" --version "${version}"
+  helm push "${helm_chart_artifact}" "oci://${oci_repo}"
+  rm "${helm_chart_artifact}"
   cd ..
+
+  helm_chart_digest="$(crane digest "${oci_repo}/${helm_chart}:${version}")"
+  cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${oci_repo}${helm_chart}:${version}@${helm_chart_digest}"
+}
+
+cosignOciArtifact() {
+  local version commit_sha build_date artifact
+
+  version="${1}"
+  commit_sha="${2}"
+  build_date="${3}"
+  artifact="${4}"
+
+  cosign sign --yes -a version="${version}" -a commitSha="${commit_sha}" -a buildDate="${build_date}" "${artifact}"
+}
+
+dateEpoch() {
+  git log -1 --format='%ct'
+}
+
+buildDate() {
+  local date_epoch
+
+  date_epoch="${1}"
+
+  date -u --date="@${date_epoch}" "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null
 }
