@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_ACR=${RELEASE_ACR:-ksnap.azurecr.io} # will always be ovreridden
+RELEASE_ACR=${RELEASE_ACR:-ksnap.azurecr.io} # will always be overridden
 RELEASE_REPO_ACR=${RELEASE_REPO_ACR:-${RELEASE_ACR}/public/aks/karpenter}
 RELEASE_REPO_MAR=mcr.microsoft.com/aks/karpenter
 SNAPSHOT_ACR=${SNAPSHOT_ACR:-ksnap.azurecr.io}
