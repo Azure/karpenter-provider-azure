@@ -617,7 +617,6 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-
 	Context("Unavailable Offerings", func() {
 		It("should not allocate a vm in a zone marked as unavailable", func() {
 			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), corev1beta1.CapacityTypeSpot)
