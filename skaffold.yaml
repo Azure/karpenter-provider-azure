@@ -24,12 +24,5 @@ manifests:
           controller.image.digest: "{{.IMAGE_DIGEST_controller}}"
         valuesFiles:
           - karpenter-values.yaml
-        overrides:
-          controller:
-            env:
-            # disable HTTP/2 to reduce ARM throttling on large-scale tests;
-            # with this in place write (and read) QPS can be increased too
-            #- name: GODEBUG
-            #  value: http2client=0
 deploy:
   helm: {}

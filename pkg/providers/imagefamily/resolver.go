@@ -94,7 +94,6 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	kubeletConfig.EvictionHard = map[string]string{
 		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
-
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,

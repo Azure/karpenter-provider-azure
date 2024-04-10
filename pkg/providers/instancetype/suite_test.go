@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -110,15 +109,10 @@ var _ = AfterSuite(func() {
 })
 
 var _ = Describe("InstanceType Provider", func() {
-
 	var nodeClass *v1alpha2.AKSNodeClass
 	var nodePool *corev1beta1.NodePool
 
 	BeforeEach(func() {
-		os.Setenv("AZURE_VNET_GUID", "test-vnet-guid")
-		os.Setenv("AZURE_VNET_NAME", "aks-vnet-00000000")
-		os.Setenv("AZURE_SUBNET_NAME", "test-subnet-name")
-
 		nodeClass = test.AKSNodeClass()
 		nodePool = coretest.NodePool(corev1beta1.NodePool{
 			Spec: corev1beta1.NodePoolSpec{
@@ -142,6 +136,37 @@ var _ = Describe("InstanceType Provider", func() {
 		ExpectCleanedUp(ctx, env.Client)
 	})
 
+	Context("Subnet", func() {
+		It("should use the VNET_SUBNET_ID", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"))
+		})
+		It("should produce all required azure cni labels", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			customData := *vm.Properties.OSProfile.CustomData
+			Expect(customData).ToNot(BeNil())
+			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+			Expect(err).To(Succeed())
+			decodedString := string(decodedBytes[:])
+			Expect(decodedString).To(SatisfyAll(
+				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
+				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
+				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
+				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
+			))
+		})
+	})
 	Context("VM Creation Failures", func() {
 		It("should delete the network interface on failure to create the vm", func() {
 			ErrMsg := "test error"
@@ -589,31 +614,6 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
 			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
 			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
-		})
-	})
-
-	Context("Provisioner with VNetNodeLabel", func() {
-		It("should support provisioning with VNet node labels", func() {
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			Expect(decodedString).To(SatisfyAll(
-				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
-				ContainSubstring("kubernetes.azure.com/network-name=aks-vnet-00000000"),
-				ContainSubstring("kubernetes.azure.com/network-subnet=test-subnet-name"),
-				ContainSubstring("kubernetes.azure.com/network-subscription=test-subscription"),
-				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
-				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
-			))
 		})
 	})
 
