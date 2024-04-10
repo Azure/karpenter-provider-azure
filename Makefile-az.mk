@@ -315,7 +315,7 @@ az-mkaks-user: az-mkrg ## Create compatible AKS cluster, the way we tell users t
 az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot release
 	$(eval SNAPSHOT_VERSION ?= $(shell git rev-parse HEAD)) # guess which, specify explicitly with SNAPSHOT_VERSION=...
 	helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
-		--version v0-$(SNAPSHOT_VERSION) \
+		--version 0-$(SNAPSHOT_VERSION) \
 		--namespace karpenter --create-namespace \
 		--values karpenter-values.yaml \
 		--set controller.resources.requests.cpu=1 \
