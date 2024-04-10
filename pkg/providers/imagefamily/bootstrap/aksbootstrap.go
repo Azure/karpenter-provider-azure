@@ -145,32 +145,19 @@ var (
 	// NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
 	// Provisioner spec            : selected nodepool-level user input (p)
 
-	// NodeBootstrapVariables carries all variables needed to bootstrap a node
+	// staticNodeBootstrapVars carries all variables needed to bootstrap a node
 	// It is used as input rendering the bootstrap script Go template (customDataTemplate)
 	// baseline, covering unused (-), static (s), and unsupported (n) fields,
 	// as well as defaults, cluster/node level (cd/td/xd)
 	staticNodeBootstrapVars = nbcontractv1.Configuration{
-		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{
-			IsAksCustomCloud:  false,              //n
-			InitFilePath:      "",                 //n
-			RepoDepotEndpoint: "",                 //n
-			TargetEnvironment: "AzurePublicCloud", //n
-		},
-		LinuxAdminUsername: "azureuser", // td
-		KubeBinaryConfig: &nbcontractv1.KubeBinaryConfig{
-			KubeBinaryUrl:        "", // cd
-			CustomKubeBinaryUrl:  "", // -
-			PrivateKubeBinaryUrl: "",
-		},
-		KubeproxyUrl: "", // -
-		ApiserverConfig: &nbcontractv1.ApiServerConfig{
+		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{},
+		KubeBinaryConfig:  &nbcontractv1.KubeBinaryConfig{},
+		KubeProxyUrl:      "", // -
+		ApiServerConfig: &nbcontractv1.ApiServerConfig{
 			ApiServerPublicKey: "", // not initialized anywhere?
 			ApiServerName:      "", // xd
 		},
-		AuthConfig: &nbcontractv1.AuthConfig{
-			TargetCloud:                 "AzurePublicCloud", //n
-			UseManagedIdentityExtension: false,
-		},
+		AuthConfig: &nbcontractv1.AuthConfig{},
 		ClusterConfig: &nbcontractv1.ClusterConfig{
 			VmType:                 nbcontractv1.ClusterConfig_VMSS, // xd
 			PrimaryAvailabilitySet: "",                              // -
@@ -180,7 +167,7 @@ var (
 				LoadBalancerSku:                       getLoadBalancerSKU("Standard"), // xd
 				ExcludeMasterFromStandardLoadBalancer: to.BoolPtr(true),               //s
 				MaxLoadBalancerRuleCount:              to.Int32Ptr(250),               // xd
-				DisableOutboundSnat:                   to.BoolPtr(false),              // s
+				DisableOutboundSnat:                   false,                          // s
 			},
 			VirtualNetworkConfig: &nbcontractv1.ClusterNetworkConfig{
 				Subnet:            "aks-subnet", // xd
@@ -191,63 +178,25 @@ var (
 			VnetCniPluginsUrl: vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
 			CniPluginsUrl:     cniPluginsURL,          // - [currently required, same]
 		},
-		ContainerdConfig: &nbcontractv1.ContainerdConfig{
-			ContainerdDownloadUrlBase: "", // -
-			ContainerdVersion:         "", // -
-			ContainerdPackageUrl:      "", // -
-		},
-		IsVhd: true, // s
+		ContainerdConfig: &nbcontractv1.ContainerdConfig{},
+		IsVhd:            true, // s
 		GpuConfig: &nbcontractv1.GPUConfig{
 			ConfigGpuDriver:    true,  // s
 			GpuDevicePlugin:    false, // -
 			GpuInstanceProfile: "",    // td
 		},
-		TeleportConfig: &nbcontractv1.TeleportConfig{
-			TeleportdPluginDownloadUrl: "",    // -
-			Status:                     false, // td
-		},
-		RuncConfig: &nbcontractv1.RuncConfig{
-			RuncVersion:    "", // -
-			RuncPackageUrl: "", // -
-		},
-		EnableSsh:              true,  // td
-		EnableHostsConfigAgent: false, // n
-		HttpProxyConfig: &nbcontractv1.HTTPProxyConfig{
-			HttpProxy:      "",           // cd
-			HttpsProxy:     "",           // cd
-			NoProxyEntries: []string{""}, // cd
-			ProxyTrustedCa: "",           // cd
-		},
-		CustomCaCerts:              []string{},                                  // cd
-		Ipv6DualStackEnabled:       false,                                       //s
-		OutboundCommand:            GetDefaultOutboundCommand(),                 // s
-		EnableUnattendedUpgrade:    false,                                       // cd
-		WorkloadRuntime:            nbcontractv1.WorkloadRuntime_WR_UNSPECIFIED, // s
-		AzurePrivateRegistryServer: "",                                          // cd
-		CustomSearchDomain: &nbcontractv1.CustomSearchDomain{
-			CustomSearchDomainName:          "", // cd
-			CustomSearchDomainRealmUser:     "", // cd
-			CustomSearchDomainRealmPassword: "", // cd
-		},
+		TeleportConfig:     &nbcontractv1.TeleportConfig{},
+		RuncConfig:         &nbcontractv1.RuncConfig{},
+		EnableSsh:          true,                        // td
+		OutboundCommand:    GetDefaultOutboundCommand(), // s
+		CustomSearchDomain: &nbcontractv1.CustomSearchDomain{},
 		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
-			EnableSecureTlsBootstrapping:           to.BoolPtr(false),
-			TlsBootstrapToken:                      "",
-			CustomSecureTlsBootstrapAppserverAppid: "",
+			EnableSecureTlsBootstrapping:               to.BoolPtr(false),
+			TlsBootstrappingToken:                      "",
+			CustomSecureTlsBootstrappingAppserverAppid: "",
 		},
-		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{
-			EnableSwapConfig:           false, // td
-			SwapFileSize:               0,     // td
-			TransparentHugepageSupport: "",    // cd
-			TransparentDefrag:          "",    // cd
-		},
-		KubeletConfig: &nbcontractv1.KubeletConfig{
-			KubeletClientKey:         "",                  // -
-			KubeletClientCertContent: "",                  // -
-			KubeletConfigFileContent: "",                  // s
-			KubeletFlags:             map[string]string{}, // psX
-		},
-		MessageOfTheDay: "",    // td
-		IsKata:          false, // n
+		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{},
+		KubeletConfig:       &nbcontractv1.KubeletConfig{},
 	}
 )
 
@@ -284,9 +233,9 @@ func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
 }
 
 func (a AKS) applyOptions(nbv *nbcontractv1.Configuration) {
-	nbv.ClusterCertificateAuthority = *a.CABundle
-	nbv.ApiserverConfig.ApiServerName = a.APIServerName
-	nbv.TlsBootstrappingConfig.TlsBootstrapToken = a.KubeletClientTLSBootstrapToken
+	nbv.KubernetesCaCert = *a.CABundle
+	nbv.ApiServerConfig.ApiServerName = a.APIServerName
+	nbv.TlsBootstrappingConfig.TlsBootstrappingToken = a.KubeletClientTLSBootstrapToken
 
 	nbv.AuthConfig.TenantId = a.TenantID
 	nbv.AuthConfig.SubscriptionId = a.SubscriptionID
