@@ -25,10 +25,11 @@ manifests:
         valuesFiles:
           - karpenter-values.yaml
         overrides:
-          resources:
-            requests:
-              cpu: 200m
-            limits:
-              cpu: 500m
+          controller:
+            resources:
+              requests:
+                cpu: 200m
+              limits:
+                cpu: 500m
 deploy:
   helm: {}
