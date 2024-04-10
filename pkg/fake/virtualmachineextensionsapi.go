@@ -70,6 +70,10 @@ func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(_ context.Context, res
 	})
 }
 
+func (c *VirtualMachineExtensionsAPI) Get(ctx context.Context, resourceGroupName string, vmName string, vmExtensionName string, options *armcompute.VirtualMachineExtensionsClientGetOptions) (armcompute.VirtualMachineExtensionsClientGetResponse, error) {
+	return armcompute.VirtualMachineExtensionsClientGetResponse{}, nil
+}
+
 func mkVMExtensionID(resourceGroupName, vmName, extensionName string) string {
 	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s/extensions/%s"
 	return fmt.Sprintf(idFormat, resourceGroupName, vmName, extensionName)

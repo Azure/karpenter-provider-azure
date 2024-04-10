@@ -357,9 +357,8 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 
 // setVMTagsProvisionerName sets "karpenter.sh/provisioner-name" tag
 func setVMTagsProvisionerName(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
-	if val, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]; ok {
-		tags[NodePoolTagKey] = &val
-	}
+	nodePoolLabel := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]
+	tags[NodePoolTagKey] = &nodePoolLabel
 }
 
 func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName string) (*armcompute.VirtualMachine, error) {
