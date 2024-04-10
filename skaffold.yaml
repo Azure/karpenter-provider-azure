@@ -24,5 +24,11 @@ manifests:
           controller.image.digest: "{{.IMAGE_DIGEST_controller}}"
         valuesFiles:
           - karpenter-values.yaml
+        overrides:
+          resources:
+            requests:
+              cpu: 200m
+            limits:
+              cpu: 500m
 deploy:
   helm: {}
