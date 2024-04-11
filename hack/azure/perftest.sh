@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# This deploys Provisioner requiring small instances (2 vCPU) and 'inflate' deployment with 1 cpu request, requiring VM per replica.
+# This deploys a Nodepool requiring small instances (2 vCPU) and 'inflate' deployment with 1 cpu request, requiring VM per replica.
 # It then scales the deployment up to the requested number of replicas (allocating the same number of VMs) and then scales it down.
 # make az-mon-deploy and az-mon-access will configure some monitoring dashboards that can be used to observe the scale up.
 

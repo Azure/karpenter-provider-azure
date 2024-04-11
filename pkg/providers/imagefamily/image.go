@@ -68,7 +68,7 @@ func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, in
 	for _, defaultImage := range defaultImages {
 		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedLabels); err == nil {
 			communityImageName, publicGalleryURL := defaultImage.CommunityImage, defaultImage.PublicGalleryURL
-			return p.GetImageID(communityImageName, publicGalleryURL, nodeClass.Spec.GetImageVersion())
+			return p.GetImageID(ctx, communityImageName, publicGalleryURL, nodeClass.Spec.GetImageVersion())
 		}
 	}
 
@@ -92,7 +92,7 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 }
 
 // Input versionName == "" to get the latest version
-func (p *Provider) GetImageID(communityImageName, publicGalleryURL, versionName string) (string, error) {
+func (p *Provider) GetImageID(ctx context.Context, communityImageName, publicGalleryURL, versionName string) (string, error) {
 	key := fmt.Sprintf("%s/%s/%s", publicGalleryURL, communityImageName, versionName)
 	imageID, found := p.imageCache.Get(key)
 	if found {
@@ -118,7 +118,7 @@ func (p *Provider) GetImageID(communityImageName, publicGalleryURL, versionName 
 
 	selectedImageID := BuildImageID(publicGalleryURL, communityImageName, versionName)
 	if p.cm.HasChanged(key, selectedImageID) {
-		logging.FromContext(context.Background()).With("image-id", selectedImageID).Info("discovered new image id")
+		logging.FromContext(ctx).With("image-id", selectedImageID).Info("discovered new image id")
 	}
 	p.imageCache.Set(key, selectedImageID, imageExpirationInterval)
 	return selectedImageID, nil
