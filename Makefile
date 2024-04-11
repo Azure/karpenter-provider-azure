@@ -1,7 +1,5 @@
 include Makefile-az.mk
 
-export K8S_VERSION ?= 1.27.x
-
 # # CR for local builds of Karpenter
 SYSTEM_NAMESPACE ?= karpenter
 
