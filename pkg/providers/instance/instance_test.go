@@ -150,7 +150,7 @@ func TestGetZone(t *testing.T) {
 	}
 }
 
-func TestSetTagsProivisionerName(t *testing.T) {
+func TestSetNodePoolNameTag(t *testing.T) {
 	tc := []struct {
 		testName      string
 		nodeClaim     *corev1beta1.NodeClaim
@@ -187,7 +187,7 @@ func TestSetTagsProivisionerName(t *testing.T) {
 	}
 
 	for _, c := range tc {
-		setTagsProvisionerName(c.tags, c.nodeClaim)
+		setNodePoolNameTag(c.tags, c.nodeClaim)
 		assert.Equal(t, c.expectedTags, c.tags, c.testName)
 	}
 }
