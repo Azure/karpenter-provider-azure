@@ -152,6 +152,8 @@ logConfig:
   # -- Log errorOutputPaths - defaults to stderr only
   errorOutputPaths:
     - stderr
+  # -- Log disableCaller - can be overridden to false to log the caller field (file path, name, and line number)
+  disableCaller: true
   # -- Log encoding - defaults to json - must be one of 'json', 'console'
   logEncoding: json
   # -- Component-based log configuration
