@@ -72,8 +72,8 @@ func (a AKS) Script() (string, error) {
 // x : unique per cluster,  extracted or specified. (Candidates for exposure/accessibility via API)
 // X : unique per nodepool, extracted or specified. (Candidates for exposure/accessibility via API)
 // c : user input, Options (provider-specific), e.g., could be from environment variables
-// p : user input, part of standard Provisioner (NodePool) CR spec. Example: custom labels, kubelet config
-// t : user input, NodeTemplate (potentially per node)
+// p : user input, part of standard Nodepool CR spec. Example: custom labels, kubelet config
+// t : user input, AKSNodeClass (potentially per node)
 // k : computed (at runtime) by Karpenter (e.g. based on VM SKU, extra labels, etc.)
 //     (xk - computed from per cluster data, such as cluster id)
 //
@@ -88,8 +88,8 @@ func (a AKS) Script() (string, error) {
 // Options (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
 //                             : as well as unique per cluster (x) - until we have a better place for these
 // (TBD)                       : unique per nodepool. extracted or specified (X)
-// NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
-// Provisioner spec            : selected nodepool-level user input (p)
+// AKSNodeClass                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
+// Nodepool spec            : selected nodepool-level user input (p)
 
 // NodeBootstrapVariables carries all variables needed to bootstrap a node
 // It is used as input rendering the bootstrap script Go template (customDataTemplate)
