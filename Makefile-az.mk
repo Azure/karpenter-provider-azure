@@ -250,15 +250,15 @@ az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 	helm repo update
 	kubectl create namespace monitoring || true
 	helm install --namespace monitoring prometheus prometheus-community/prometheus \
-		--values examples/prometheus-values.yaml \
-		--set nodeExporter.enabled=false
+		--values hack/monitoring/prometheus-values.yaml
 	helm install --namespace monitoring grafana grafana-charts/grafana \
-		--values examples/grafana-values.yaml
+		--values hack/monitoring/grafana-values.yaml
 
 az-mon-access: ## Get Grafana admin password and forward port
 	kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode; echo
 	@echo Consider running port forward outside of codespace ...
-	kubectl port-forward --namespace monitoring svc/grafana 3000:80
+	$(eval POD_NAME=$(shell kubectl get pods --namespace monitoring -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=grafana" -o jsonpath="{.items[0].metadata.name}"))
+	kubectl port-forward --namespace monitoring $(POD_NAME) 3000
 
 az-mon-cleanup: ## Delete monitoring stack
 	helm delete --namespace monitoring grafana
