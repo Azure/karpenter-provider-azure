@@ -152,7 +152,6 @@ var (
 	staticNodeBootstrapVars = nbcontractv1.Configuration{
 		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{},
 		KubeBinaryConfig:  &nbcontractv1.KubeBinaryConfig{},
-		KubeProxyUrl:      "", // -
 		ApiServerConfig: &nbcontractv1.ApiServerConfig{
 			ApiServerPublicKey: "", // not initialized anywhere?
 			ApiServerName:      "", // xd

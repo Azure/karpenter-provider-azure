@@ -108,9 +108,9 @@ func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 func getStringFromVMType(enum nbcontractv1.ClusterConfig_VM) string {
 	switch enum {
 	case nbcontractv1.ClusterConfig_STANDARD:
-		return standard
+		return vmTypeStandard
 	case nbcontractv1.ClusterConfig_VMSS:
-		return vmss
+		return vmTypeVmss
 	default:
 		return ""
 	}
@@ -119,9 +119,9 @@ func getStringFromVMType(enum nbcontractv1.ClusterConfig_VM) string {
 func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPlugin) string {
 	switch enum {
 	case nbcontractv1.NetworkPlugin_NP_AZURE:
-		return azure
+		return networkPluginAzure
 	case nbcontractv1.NetworkPlugin_NP_KUBENET:
-		return kubenet
+		return networkPluginkubenet
 	default:
 		return ""
 	}
@@ -130,9 +130,9 @@ func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPlugin) string {
 func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicy) string {
 	switch enum {
 	case nbcontractv1.NetworkPolicy_NPO_AZURE:
-		return azure
+		return networkPolicyAzure
 	case nbcontractv1.NetworkPolicy_NPO_CALICO:
-		return calico
+		return networkPolicyCalico
 	default:
 		return ""
 	}
@@ -141,9 +141,9 @@ func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicy) string {
 func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerConfig_LoadBalancerSku) string {
 	switch enum {
 	case nbcontractv1.LoadBalancerConfig_BASIC:
-		return lbBasic
+		return loadBalancerBasic
 	case nbcontractv1.LoadBalancerConfig_STANDARD:
-		return lbStandard
+		return loadBalancerStandard
 	default:
 		return ""
 	}
@@ -559,21 +559,15 @@ func getIsSgxEnabledSKU(vmSize string) bool {
 }
 
 func getShouldConfigureHTTPProxy(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
-	if httpProxyConfig == nil {
-		return false
-	}
 	return httpProxyConfig.GetHttpProxy() != "" || httpProxyConfig.GetHttpsProxy() != ""
 }
 
 func getShouldConfigureHTTPProxyCA(httpProxyConfig *nbcontractv1.HTTPProxyConfig) bool {
-	if httpProxyConfig == nil {
-		return false
-	}
 	return httpProxyConfig.GetProxyTrustedCa() != ""
 }
 
 func getAzureEnvironmentFilepath(v *nbcontractv1.CustomCloudConfig) string {
-	if v != nil && v.GetIsAksCustomCloud() {
+	if v.GetIsAksCustomCloud() {
 		return fmt.Sprintf("/etc/kubernetes/%s.json", v.GetTargetEnvironment())
 	}
 	return ""
@@ -587,10 +581,6 @@ func getLinuxAdminUsername(username string) string {
 }
 
 func getTargetEnvironment(v *nbcontractv1.CustomCloudConfig) string {
-	if v == nil {
-		return defaultCloudName
-	}
-
 	if v.GetTargetEnvironment() == "" {
 		return defaultCloudName
 	}
@@ -599,10 +589,6 @@ func getTargetEnvironment(v *nbcontractv1.CustomCloudConfig) string {
 }
 
 func getTargetCloud(v *nbcontractv1.AuthConfig) string {
-	if v == nil {
-		return defaultCloudName
-	}
-
 	if v.GetTargetCloud() == "" {
 		return defaultCloudName
 	}

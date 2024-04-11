@@ -30,15 +30,16 @@ const (
 )
 
 const (
-	standard           = "standard"
-	vmss               = "vmss"
-	azure              = "azure"
-	kubenet            = "kubenet"
-	calico             = "calico"
-	lbBasic            = "basic"
-	lbStandard         = "Standard"
-	vmSizeStandardDc2s = "Standard_DC2s"
-	vmSizeStandardDc4s = "Standard_DC4s"
-	defaultLinuxUser   = "azureuser"
-	defaultCloudName   = "AzurePublicCloud"
+	vmTypeStandard       = "standard"
+	vmTypeVmss           = "vmss"
+	networkPluginAzure   = "azure"
+	networkPluginkubenet = "kubenet"
+	networkPolicyAzure   = "azure"
+	networkPolicyCalico  = "calico"
+	loadBalancerBasic    = "basic"
+	loadBalancerStandard = "Standard"
+	vmSizeStandardDc2s   = "Standard_DC2s"
+	vmSizeStandardDc4s   = "Standard_DC4s"
+	defaultLinuxUser     = "azureuser"
+	defaultCloudName     = "AzurePublicCloud"
 )
