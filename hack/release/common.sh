@@ -67,15 +67,19 @@ buildAndPublish() {
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"-aks ./cmd/controller)"
 
+  # img format is "repo:tag@digest"
   img_repo="$(echo "${img}" | cut -d "@" -f 1 | cut -d ":" -f 1)"
   img_tag="$(echo "${img}" | cut -d "@" -f 1 | cut -d ":" -f 2 -s)"
   img_digest="$(echo "${img}" | cut -d "@" -f 2)"
-
+  # img_repo format is "registry-fqdn/path0/path1/..."
   img_registry="$(echo "${img_repo}" | cut -d "/" -f 1)"
   img_path="$(echo "${img_repo}" | cut -d "/" -f 2-)"
 
-  lockImage "${img_registry}" "${img_path}" "${img_tag}"
-  lockImage "${img_registry}" "${img_path}" "${img_tag}-aks"
+  # lock releases, but not snapshots
+  if [[ "${oci_repo}" == "${RELEASE_REPO_ACR}" ]]; then
+    lockImage "${img_registry}" "${img_path}" "${img_tag}"
+    lockImage "${img_registry}" "${img_path}" "${img_tag}-aks"
+  fi
 
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img}"
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img_nap}"
@@ -97,7 +101,7 @@ lockImage() {
   img_path="$2"
   img_tag="$3"
 
-	az acr repository update -n "${img_registry}" --image "${img_path}:${img_tag}" \
+  az acr repository update -n "${img_registry}" --image "${img_path}:${img_tag}" \
     --write-enabled false \
     --delete-enabled false
 }
