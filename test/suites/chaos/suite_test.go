@@ -66,11 +66,12 @@ var _ = Describe("Chaos", func() {
 
 			nodeClass := env.DefaultAKSNodeClass()
 			nodePool := env.DefaultNodePool(nodeClass)
-			test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-				Key:      corev1beta1.CapacityTypeLabelKey,
-				Operator: v1.NodeSelectorOpIn,
-				Values:   []string{corev1beta1.CapacityTypeSpot},
-			})
+			test.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      corev1beta1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{corev1beta1.CapacityTypeSpot},
+				}})
 			nodePool.Spec.Disruption.ConsolidationPolicy = corev1beta1.ConsolidationPolicyWhenUnderutilized
 			nodePool.Spec.Disruption.ConsolidateAfter = nil
 
@@ -105,11 +106,12 @@ var _ = Describe("Chaos", func() {
 
 			nodeClass := env.DefaultAKSNodeClass()
 			nodePool := env.DefaultNodePool(nodeClass)
-			test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-				Key:      corev1beta1.CapacityTypeLabelKey,
-				Operator: v1.NodeSelectorOpIn,
-				Values:   []string{corev1beta1.CapacityTypeSpot},
-			})
+			test.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      corev1beta1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{corev1beta1.CapacityTypeSpot},
+				}})
 			nodePool.Spec.Disruption.ConsolidationPolicy = corev1beta1.ConsolidationPolicyWhenEmpty
 			nodePool.Spec.Disruption.ConsolidateAfter = &corev1beta1.NillableDuration{Duration: lo.ToPtr(30 * time.Second)}
 

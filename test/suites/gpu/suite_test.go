@@ -57,10 +57,11 @@ var _ = Describe("GPU", func() {
 			nodePool := env.DefaultNodePool(nodeClass)
 
 			// Relax default SKU family selector to allow for GPU nodes
-			test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-				Key:      v1alpha2.LabelSKUFamily,
-				Operator: v1.NodeSelectorOpExists,
-			})
+			test.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1alpha2.LabelSKUFamily,
+					Operator: v1.NodeSelectorOpExists,
+				}})
 			// Exclude some of the more expensive GPU SKUs
 			nodePool.Spec.Limits = corev1beta1.Limits{
 				v1.ResourceCPU:                    resource.MustParse("25"),

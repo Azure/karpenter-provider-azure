@@ -119,7 +119,7 @@ func NewProvider(
 // Create an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
 func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, error) {
-	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...))
+	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
@@ -536,7 +536,7 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	// Priority - Provisioner defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
 	// Zone - ideally random/spread from requested zones that support given Priority
-	requestedZones := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
+	requestedZones := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
 	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool {
 		return o.CapacityType == priority && requestedZones.Has(o.Zone)
 	})
@@ -574,8 +574,7 @@ func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName strin
 // This returns from a single pre-selected InstanceType, rather than all InstanceType options in nodeRequest,
 // because Azure Cloud Provider does client-side selection of particular InstanceType from options
 func (p *Provider) getPriorityForInstanceType(nodeClaim *corev1beta1.NodeClaim, instanceType *corecloudprovider.InstanceType) string {
-	requirements := scheduling.NewNodeSelectorRequirements(nodeClaim.
-		Spec.Requirements...)
+	requirements := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 
 	if requirements.Get(corev1beta1.CapacityTypeLabelKey).Has(corev1beta1.CapacityTypeSpot) {
 		for _, offering := range instanceType.Offerings.Available() {

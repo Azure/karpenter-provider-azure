@@ -29,7 +29,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -532,8 +531,8 @@ func KubeletConfigToMap(kubeletConfig *corev1beta1.KubeletConfiguration) map[str
 	if kubeletConfig.PodsPerCore != nil {
 		args["--pods-per-core"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.PodsPerCore))
 	}
-	JoinParameterArgsToMap(args, "--system-reserved", resources.StringMap(kubeletConfig.SystemReserved), "=")
-	JoinParameterArgsToMap(args, "--kube-reserved", resources.StringMap(kubeletConfig.KubeReserved), "=")
+	JoinParameterArgsToMap(args, "--system-reserved", kubeletConfig.SystemReserved, "=")
+	JoinParameterArgsToMap(args, "--kube-reserved", kubeletConfig.KubeReserved, "=")
 	JoinParameterArgsToMap(args, "--eviction-hard", kubeletConfig.EvictionHard, "<")
 	JoinParameterArgsToMap(args, "--eviction-soft", kubeletConfig.EvictionSoft, "<")
 	JoinParameterArgsToMap(args, "--eviction-soft-grace-period", lo.MapValues(kubeletConfig.EvictionSoftGracePeriod, func(v metav1.Duration, _ string) string {
