@@ -152,10 +152,18 @@ dateEpoch() {
   git log -1 --format='%ct'
 }
 
+
+
 buildDate() {
   local date_epoch
 
   date_epoch="${1}"
 
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+		# Date for macOS is different from GNU date
+        date -u -r "${date_epoch}" "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null
+		return
+  fi
+  # This logic is for GNU date
   date -u --date="@${date_epoch}" "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null
 }
