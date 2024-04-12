@@ -54,11 +54,12 @@ var _ = Describe("Utilization", func() {
 
 	DescribeTable("should provision one pod per node",
 		func(nodeClass *v1alpha2.AKSNodeClass, nodePool *v1beta1.NodePool) {
-			test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-				Key:      v1alpha2.LabelSKUCPU,
-				Operator: v1.NodeSelectorOpLt,
-				Values:   []string{"3"},
-			})
+			test.ReplaceRequirements(nodePool, v1beta1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1alpha2.LabelSKUCPU,
+					Operator: v1.NodeSelectorOpLt,
+					Values:   []string{"3"},
+				}})
 
 			deployment := test.Deployment(test.DeploymentOptions{
 				Replicas: 10,
