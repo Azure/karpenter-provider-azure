@@ -152,8 +152,6 @@ dateEpoch() {
   git log -1 --format='%ct'
 }
 
-
-
 buildDate() {
   local date_epoch
 
