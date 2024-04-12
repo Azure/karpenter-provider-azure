@@ -38,11 +38,11 @@ require (
 	k8s.io/apimachinery v0.29.3
 	k8s.io/client-go v0.29.3
 	k8s.io/klog/v2 v2.120.1
-	k8s.io/utils v0.0.0-20231127182322-b307cd553661
+	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
 	knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd
 	sigs.k8s.io/cloud-provider-azure v1.29.3
 	sigs.k8s.io/controller-runtime v0.17.2
-	sigs.k8s.io/karpenter v0.34.1
+	sigs.k8s.io/karpenter v0.36.0
 )
 
 require (
@@ -111,7 +111,7 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_model v0.5.0 // indirect
+	github.com/prometheus/client_model v0.6.0 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/prometheus/statsd_exporter v0.24.0 // indirect
@@ -149,7 +149,7 @@ require (
 	k8s.io/cloud-provider v0.29.3 // indirect
 	k8s.io/component-base v0.29.3 // indirect
 	k8s.io/component-helpers v0.29.3 // indirect
-	k8s.io/csi-translation-lib v0.29.1 // indirect
+	k8s.io/csi-translation-lib v0.29.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20231010175941-2dd684a91f00 // indirect
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.0.2 // indirect
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.0.1 // indirect
