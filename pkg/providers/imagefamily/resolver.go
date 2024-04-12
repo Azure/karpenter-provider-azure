@@ -31,6 +31,7 @@ import (
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 const (
@@ -89,8 +90,8 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	}
 
 	// TODO: revisit computeResources and maxPods implementation
-	kubeletConfig.KubeReserved = instanceType.Overhead.KubeReserved
-	kubeletConfig.SystemReserved = instanceType.Overhead.SystemReserved
+	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
+	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{
 		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
