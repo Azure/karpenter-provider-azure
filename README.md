@@ -63,7 +63,7 @@ Install these tools before proceeding:
 
 Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
 
-> Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group>` to automate the following steps. 
+> Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group>` to automate the following steps.
 
 Set environment variables:
 
@@ -127,7 +127,7 @@ Karpeter Helm chart requires some configuration via values to work with a specif
 # use configure-values.sh to generate karpenter-values.yaml
 # (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/hack/deploy/configure-values.sh
-chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG}
+chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
 ```
 
 ### Install Karpenter
@@ -293,7 +293,7 @@ Many thanks to @ellistarn, @jonathan-innis, @tzneal, @bwagner5, @njtran, and man
 Many thanks to @Bryce-Soghigian, @rakechill, @charliedmcb, @jackfrancis, @comtalyst, @aagusuab, @matthchr, @gandhipr, @dtzar for contributing to AKS Karpenter Provider!
 
 ---
-### Community, discussion, contribution, and support 
+### Community, discussion, contribution, and support
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
 or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.

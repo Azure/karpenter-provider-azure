@@ -4,9 +4,8 @@ set -euo pipefail
 # This script interrogates the AKS cluster and Azure resources to generate
 # the karpenter-values.yaml file using the karpenter-values-template.yaml file as a template.
 
-# Check the cluster name and resource group are provided
-if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 <cluster-name> <resource-group>"
+if [ "$#" -ne 4 ]; then
+    echo "Usage: $0 <cluster-name> <resource-group> <karpenter-service-account-name> <karpenter-user-assigned-identity-name>"
     exit 1
 fi
 
@@ -14,13 +13,12 @@ echo "Configuring karpenter-values.yaml for cluster $1 in resource group $2 ..."
 
 CLUSTER_NAME=$1
 AZURE_RESOURCE_GROUP=$2
+KARPENTER_SERVICE_ACCOUNT_NAME=$3
+AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=$4
 
 AKS_JSON=$(az aks show --name "$CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP")
 AZURE_LOCATION=$(jq -r ".location" <<< "$AKS_JSON")
 AZURE_RESOURCE_GROUP_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
-
-KARPENTER_SERVICE_ACCOUNT_NAME=karpenter-sa
-AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=karpentermsi
 
 CLUSTER_ENDPOINT=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
 
