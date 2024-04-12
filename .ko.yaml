@@ -1,0 +1,4 @@
+defaultBaseImage: mcr.microsoft.com/cbl-mariner/distroless/minimal:2.0-nonroot
+defaultPlatforms:
+  - linux/arm64
+  - linux/amd64
