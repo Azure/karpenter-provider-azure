@@ -21,15 +21,14 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"strings"
 	"text/template"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -73,8 +72,8 @@ func (a AKS) Script() (string, error) {
 // x : unique per cluster,  extracted or specified. (Candidates for exposure/accessibility via API)
 // X : unique per nodepool, extracted or specified. (Candidates for exposure/accessibility via API)
 // c : user input, Options (provider-specific), e.g., could be from environment variables
-// p : user input, part of standard Provisioner (NodePool) CR spec. Example: custom labels, kubelet config
-// t : user input, NodeTemplate (potentially per node)
+// p : user input, part of standard Nodepool CR spec. Example: custom labels, kubelet config
+// t : user input, AKSNodeClass (potentially per node)
 // k : computed (at runtime) by Karpenter (e.g. based on VM SKU, extra labels, etc.)
 //     (xk - computed from per cluster data, such as cluster id)
 //
@@ -89,8 +88,8 @@ func (a AKS) Script() (string, error) {
 // Options (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
 //                             : as well as unique per cluster (x) - until we have a better place for these
 // (TBD)                       : unique per nodepool. extracted or specified (X)
-// NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
-// Provisioner spec            : selected nodepool-level user input (p)
+// AKSNodeClass                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
+// Nodepool spec            : selected nodepool-level user input (p)
 
 // NodeBootstrapVariables carries all variables needed to bootstrap a node
 // It is used as input rendering the bootstrap script Go template (customDataTemplate)
@@ -389,17 +388,8 @@ var (
 	}
 )
 
-// Node Labels for Vnet
 const (
-	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
-	vnetNetworkNameLabel    = "kubernetes.azure.com/network-name"
-	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
-	vnetSubscriptionIDLabel = "kubernetes.azure.com/network-subscription"
-	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
-	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-	ciliumDataPlane         = "cilium"
-	overlayNetworkType      = "overlay"
-	globalAKSMirror         = "https://acs-mirror.azureedge.net"
+	globalAKSMirror = "https://acs-mirror.azureedge.net"
 )
 
 func (a AKS) aksBootstrapScript() (string, error) {
@@ -450,7 +440,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	// calculated values
 	nbv.EnsureNoDupePromiscuousBridge = nbv.NeedsContainerd && nbv.NetworkPlugin == "kubenet" && nbv.NetworkPolicy != "calico"
 	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
-	nbv.VirtualNetwork = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
 	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
 	if a.GPUNode {
@@ -464,21 +453,11 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-	//Adding vnet-related labels to the nodeLabels.
-	azureVnetGUID := os.Getenv("AZURE_VNET_GUID")
-	azureVnetName := os.Getenv("AZURE_VNET_NAME")
-	azureSubnetName := os.Getenv("AZURE_SUBNET_NAME")
+	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
+	nbv.Subnet = subnetParts.SubnetName
+	nbv.VirtualNetworkResourceGroup = subnetParts.ResourceGroupName
+	nbv.VirtualNetwork = subnetParts.VNetName
 
-	vnetLabels := map[string]string{
-		vnetDataPlaneLabel:      ciliumDataPlane,
-		vnetNetworkNameLabel:    azureVnetName,
-		vnetSubnetNameLabel:     azureSubnetName,
-		vnetSubscriptionIDLabel: a.SubscriptionID,
-		vnetGUIDLabel:           azureVnetGUID,
-		vnetPodNetworkTypeLabel: overlayNetworkType,
-	}
-
-	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), ",")
@@ -552,8 +531,8 @@ func KubeletConfigToMap(kubeletConfig *corev1beta1.KubeletConfiguration) map[str
 	if kubeletConfig.PodsPerCore != nil {
 		args["--pods-per-core"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.PodsPerCore))
 	}
-	JoinParameterArgsToMap(args, "--system-reserved", resources.StringMap(kubeletConfig.SystemReserved), "=")
-	JoinParameterArgsToMap(args, "--kube-reserved", resources.StringMap(kubeletConfig.KubeReserved), "=")
+	JoinParameterArgsToMap(args, "--system-reserved", kubeletConfig.SystemReserved, "=")
+	JoinParameterArgsToMap(args, "--kube-reserved", kubeletConfig.KubeReserved, "=")
 	JoinParameterArgsToMap(args, "--eviction-hard", kubeletConfig.EvictionHard, "<")
 	JoinParameterArgsToMap(args, "--eviction-soft", kubeletConfig.EvictionSoft, "<")
 	JoinParameterArgsToMap(args, "--eviction-soft-grace-period", lo.MapValues(kubeletConfig.EvictionSoftGracePeriod, func(v metav1.Duration, _ string) string {

@@ -108,7 +108,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", err
 	}
 
-	expectedImageID, err := c.imageProvider.GetImageID(communityImageName, publicGalleryURL, nodeClass.Spec.GetImageVersion())
+	expectedImageID, err := c.imageProvider.GetImageID(ctx, communityImageName, publicGalleryURL, nodeClass.Spec.GetImageVersion())
 	if err != nil {
 		return "", err
 	}

@@ -80,7 +80,7 @@ spec:
                               This is required if Schedule is set.
                               This regex has an optional 0s at the end since the duration.String() always adds
                               a 0s at the end.
-                            pattern: ^([0-9]+(m|h)+(0s)?)$
+                            pattern: ^((([0-9]+(h|m))|([0-9]+h[0-9]+m))(0s)?)$
                             type: string
                           nodes:
                             default: 10%
@@ -264,11 +264,8 @@ spec:
                               type: integer
                             kubeReserved:
                               additionalProperties:
-                                anyOf:
-                                  - type: integer
-                                  - type: string
+                                type: string
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                                x-kubernetes-int-or-string: true
                               description: KubeReserved contains resources reserved for Kubernetes system components.
                               type: object
                               x-kubernetes-validations:
@@ -293,11 +290,8 @@ spec:
                               type: integer
                             systemReserved:
                               additionalProperties:
-                                anyOf:
-                                  - type: integer
-                                  - type: string
+                                type: string
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                                x-kubernetes-int-or-string: true
                               description: SystemReserved contains resources reserved for OS system daemons and kernel memory.
                               type: object
                               x-kubernetes-validations:
@@ -332,8 +326,8 @@ spec:
                           description: Requirements are layered with GetLabels and applied to every node.
                           items:
                             description: |-
-                              A node selector requirement is a selector that contains values, a key, and an operator
-                              that relates the key and values.
+                              A node selector requirement with min values is a selector that contains values, a key, an operator that relates the key and values
+                              and minValues that represent the requirement to have at least that many values.
                             properties:
                               key:
                                 description: The label key that the selector applies to.
@@ -351,6 +345,13 @@ spec:
                                     rule: self != "karpenter.sh/nodepool"
                                   - message: label "kubernetes.io/hostname" is restricted
                                     rule: self != "kubernetes.io/hostname"
+                              minValues:
+                                description: |-
+                                  This field is ALPHA and can be dropped or replaced at any time
+                                  MinValues is the minimum number of unique values required to define the flexibility of the specific requirement.
+                                maximum: 50
+                                minimum: 1
+                                type: integer
                               operator:
                                 description: |-
                                   Represents a key's relationship to a set of values.
@@ -386,6 +387,8 @@ spec:
                               rule: 'self.all(x, x.operator == ''In'' ? x.values.size() != 0 : true)'
                             - message: requirements operator 'Gt' or 'Lt' must have a single positive integer value
                               rule: 'self.all(x, (x.operator == ''Gt'' || x.operator == ''Lt'') ? (x.values.size() == 1 && int(x.values[0]) >= 0) : true)'
+                            - message: requirements with 'minValues' must have at least that many values specified in the 'values' field
+                              rule: 'self.all(x, (x.operator == ''In'' && has(x.minValues)) ? x.values.size() >= x.minValues : true)'
                         resources:
                           description: Resources models the resource requirements for the NodeClaim to launch
                           properties:
@@ -511,6 +514,8 @@ spec:
                   description: Resources is the list of resources that have been provisioned.
                   type: object
               type: object
+          required:
+            - spec
           type: object
       served: true
       storage: true

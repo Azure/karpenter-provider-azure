@@ -61,11 +61,12 @@ var _ = Describe("Drift", func() {
 	var pod *v1.Pod
 
 	BeforeEach(func() {
-		test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-			Key:      v1.LabelInstanceTypeStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{"Standard_DS2_v2"},
-		})
+		test.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				Key:      v1.LabelInstanceTypeStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{"Standard_DS2_v2"},
+			}})
 
 		// Add a do-not-disrupt pod so that we can check node metadata before we disrupt
 		pod = test.Pod(test.PodOptions{

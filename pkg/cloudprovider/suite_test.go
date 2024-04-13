@@ -143,13 +143,16 @@ var _ = Describe("CloudProvider", func() {
 	})
 	It("should return an ICE error when there are no instance types to launch", func() {
 		// Specify no instance types and expect to receive a capacity error
-		nodeClaim.Spec.Requirements = []v1.NodeSelectorRequirement{
+		nodeClaim.Spec.Requirements = []corev1beta1.NodeSelectorRequirementWithMinValues{
 			{
-				Key:      v1.LabelInstanceTypeStable,
-				Operator: v1.NodeSelectorOpIn,
-				Values:   []string{"doesnotexist"}, // will not match any instance types
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"doesnotexist"}, // will not match any instance types
+				},
 			},
 		}
+
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
 		cloudProviderMachine, err := cloudProvider.Create(ctx, nodeClaim)
 		Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())

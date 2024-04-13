@@ -45,7 +45,7 @@ runs:
     run: az account set --subscription ${{ inputs.subscription-id }}
   - name: patch skaffold and cilium
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-patch-skaffold-azureoverlay
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-patch-skaffold-azureoverlay az-patch-vnet-subnet-id
   - name: deploy karpenter to cluster
     shell: bash
     run: AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run
