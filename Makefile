@@ -1,7 +1,5 @@
 include Makefile-az.mk
 
-export K8S_VERSION ?= 1.27.x
-
 ## Inject the app version into operator.Version
 LDFLAGS ?= -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=$(shell git describe --tags --always | cut -d"v" -f2)
 
