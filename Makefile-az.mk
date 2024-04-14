@@ -52,7 +52,7 @@ az-tool: az-login
 	az feature register --namespace "Microsoft.ContainerService" --name "NodeAutoProvisioningPreview"; \
 
 az-login: ## Login into Azure
-	az login
+	az account show -o none || az login
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
 
 az-mkrg: ## Create resource group

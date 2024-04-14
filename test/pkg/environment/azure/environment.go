@@ -51,27 +51,30 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 	nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{
 		Name: nodeClass.Name,
 	}
-	nodePool.Spec.Template.Spec.Requirements = []v1.NodeSelectorRequirement{
-		{
+	nodePool.Spec.Template.Spec.Requirements = []corev1beta1.NodeSelectorRequirementWithMinValues{
+		{NodeSelectorRequirement: v1.NodeSelectorRequirement{
 			Key:      v1.LabelOSStable,
 			Operator: v1.NodeSelectorOpIn,
 			Values:   []string{string(v1.Linux)},
-		},
+		}},
 		{
-			Key:      corev1beta1.CapacityTypeLabelKey,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{corev1beta1.CapacityTypeOnDemand},
-		},
+			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				Key:      corev1beta1.CapacityTypeLabelKey,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{corev1beta1.CapacityTypeOnDemand},
+			}},
 		{
-			Key:      v1.LabelArchStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{corev1beta1.ArchitectureAmd64},
-		},
+			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				Key:      v1.LabelArchStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{corev1beta1.ArchitectureAmd64},
+			}},
 		{
-			Key:      v1alpha2.LabelSKUFamily,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{"D"},
-		},
+			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				Key:      v1alpha2.LabelSKUFamily,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{"D"},
+			}},
 	}
 	nodePool.Spec.Disruption.ConsolidateAfter = &corev1beta1.NillableDuration{}
 	nodePool.Spec.Disruption.ExpireAfter.Duration = nil
@@ -84,11 +87,12 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 
 func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *corev1beta1.NodePool {
 	nodePool := env.DefaultNodePool(nodeClass)
-	coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-		Key:      v1.LabelArchStable,
-		Operator: v1.NodeSelectorOpIn,
-		Values:   []string{corev1beta1.ArchitectureArm64},
-	})
+	coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+		NodeSelectorRequirement: v1.NodeSelectorRequirement{
+			Key:      v1.LabelArchStable,
+			Operator: v1.NodeSelectorOpIn,
+			Values:   []string{corev1beta1.ArchitectureArm64},
+		}})
 	return nodePool
 }
 

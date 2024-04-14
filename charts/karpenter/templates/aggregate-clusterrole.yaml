@@ -10,10 +10,6 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 rules:
-  # at least listing machines appears to be required for now
-  - apiGroups: ["karpenter.sh"]
-    resources: ["provisioners", "provisioners/status", "machines", "machines/status"]
-    verbs: ["get", "list", "watch", "create", "delete", "patch"]
   - apiGroups: ["karpenter.sh"]
     resources: ["nodepools", "nodepools/status", "nodeclaims", "nodeclaims/status"]
     verbs: ["get", "list", "watch", "create", "delete", "patch"]
