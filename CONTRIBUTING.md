@@ -28,14 +28,16 @@ kubectl scale deployments/inflate --replicas=3
 
 1. **Install tools** : run `make install-tools`. It is going to install tools(make,jq,yq,helm,docker,kubectl,go,skaffold,az-cli) in your local environment.
 
-2. **Provision cluster, build and deploy Karpenter** : Set `AZURE_SUBSCRIPTION_ID` to your subscription (and customize region in `Makefile-az.mk` if desired). Then run `make az-all`. This logs into Azure (follow the prompts), provisions AKS and ACR (using resource group and cluster name `$COMMON_NAME`, ACR it will not allow dashes), builds and deploys Karpenter, deploys sample `general-purpose` nodepool and `inflate` deployment workload.
+2. **Install toolchain for developer** : run `make toolchain`. It is going to install packages and kubebuilder in your local environment. 
+
+3. **Provision cluster, build and deploy Karpenter** : Set `AZURE_SUBSCRIPTION_ID` to your subscription (and customize region in `Makefile-az.mk` if desired). Then run `make az-all`. This logs into Azure (follow the prompts), provisions AKS and ACR (using resource group and cluster name `$COMMON_NAME`, ACR it will not allow dashes), builds and deploys Karpenter, deploys sample `general-purpose` nodepool and `inflate` deployment workload.
 ```
 az config set core.output=json
 export AZURE_SUBSCRIPTION_ID=xxxx-xxxx-xxxx-xxxx
 export COMMON_NAME=karpenter2test
 ```
 
-3. Manually scale the `inflate` Deployment workload, watch Karpenter controller log and Nodes in the cluster. Example of manually scaling up to 3 pods:
+4. Manually scale the `inflate` Deployment workload, watch Karpenter controller log and Nodes in the cluster. Example of manually scaling up to 3 pods:
 ```
 kubectl scale deployments/inflate --replicas=3
 ```
