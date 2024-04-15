@@ -233,8 +233,8 @@ func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.NetworkConfig) bool {
 	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPlugin_NP_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicy_NPO_CALICO
 }
 
-func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
-	if csd.GetCustomSearchDomainName() != "" && csd.GetCustomSearchDomainRealmUser() != "" && csd.GetCustomSearchDomainRealmPassword() != "" {
+func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomainConfig) bool {
+	if csd.GetDomainName() != "" && csd.GetRealmUser() != "" && csd.GetRealmPassword() != "" {
 		return true
 	}
 	return false

@@ -444,7 +444,7 @@ func Test_getEnsureNoDupePromiscuousBridge(t *testing.T) {
 
 func Test_getHasSearchDomain(t *testing.T) {
 	type args struct {
-		csd *nbcontractv1.CustomSearchDomain
+		csd *nbcontractv1.CustomSearchDomainConfig
 	}
 	tests := []struct {
 		name string
@@ -454,16 +454,16 @@ func Test_getHasSearchDomain(t *testing.T) {
 		{
 			name: "CustomSearchDomain with empty search domain should return false",
 			args: args{
-				csd: &nbcontractv1.CustomSearchDomain{},
+				csd: &nbcontractv1.CustomSearchDomainConfig{},
 			},
 			want: false,
 		},
 		{
 			name: "CustomSearchDomain with empty search domain user should return false",
 			args: args{
-				csd: &nbcontractv1.CustomSearchDomain{
-					CustomSearchDomainName:          "fakedomain.com",
-					CustomSearchDomainRealmPassword: "fakepassword",
+				csd: &nbcontractv1.CustomSearchDomainConfig{
+					DomainName:    "fakedomain.com",
+					RealmPassword: "fakepassword",
 				},
 			},
 			want: false,
@@ -471,10 +471,10 @@ func Test_getHasSearchDomain(t *testing.T) {
 		{
 			name: "CustomSearchDomain with search domain, user and password should return true",
 			args: args{
-				csd: &nbcontractv1.CustomSearchDomain{
-					CustomSearchDomainName:          "fakedomain.com",
-					CustomSearchDomainRealmUser:     "fakeuser",
-					CustomSearchDomainRealmPassword: "fakepassword",
+				csd: &nbcontractv1.CustomSearchDomainConfig{
+					DomainName:    "fakedomain.com",
+					RealmUser:     "fakeuser",
+					RealmPassword: "fakepassword",
 				},
 			},
 			want: true,
