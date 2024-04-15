@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"testing"
 
-	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
+	"github.com/Azure/go-autorest/autorest/to"
+	core "k8s.io/api/core/v1"
+	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 )
 
 func TestKubeBinaryURL(t *testing.T) {
@@ -62,32 +64,78 @@ func TestKubeBinaryURL(t *testing.T) {
 	}
 }
 
-func Test_getCustomDataFromNodeBootstrapContract(t *testing.T) {
-	type args struct {
-		nbcp *nbcontractv1.Configuration
+func TestAKS_aksBootstrapScript(t *testing.T) {
+	type fields struct {
+		Options                        Options
+		Arch                           string
+		TenantID                       string
+		SubscriptionID                 string
+		UserAssignedIdentityID         string
+		Location                       string
+		ResourceGroup                  string
+		ClusterID                      string
+		APIServerName                  string
+		KubeletClientTLSBootstrapToken string
+		NetworkPlugin                  string
+		NetworkPolicy                  string
+		KubernetesVersion              string
 	}
 	tests := []struct {
 		name    string
-		args    args
+		fields  fields
 		want    string
 		wantErr bool
 	}{
 		{
-			name: "Test with staticNodeBootstrapVars and expect no error",
-			args: args{
-				nbcp: &staticNodeBootstrapVars,
+			name: "Test with all fields and expect no error",
+			fields: fields{
+				Options: Options{
+					ClusterName:     "clustername",
+					ClusterEndpoint: "clusterendpoint",
+					KubeletConfig:   &corev1beta1.KubeletConfiguration{},
+					Taints:          []core.Taint{},
+					Labels:          map[string]string{},
+					CABundle:        to.StringPtr("cabundle"),
+					VMSize:          "vmsize",
+				},
+				Arch:                           "amd64",
+				TenantID:                       "tenantid",
+				SubscriptionID:                 "subscriptionid",
+				UserAssignedIdentityID:         "userassignedidentityid",
+				Location:                       "location",
+				ResourceGroup:                  "resourcegroup",
+				ClusterID:                      "clusterid",
+				APIServerName:                  "apiservername",
+				KubeletClientTLSBootstrapToken: "kubeletclienttlsbootstraptoken",
+				NetworkPlugin:                  "networkplugin",
+				NetworkPolicy:                  "networkpolicy",
+				KubernetesVersion:              "1.24.5",
 			},
-			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := getCustomDataFromNodeBootstrapContract(tt.args.nbcp)
+			a := AKS{
+				Options:                        tt.fields.Options,
+				Arch:                           tt.fields.Arch,
+				TenantID:                       tt.fields.TenantID,
+				SubscriptionID:                 tt.fields.SubscriptionID,
+				UserAssignedIdentityID:         tt.fields.UserAssignedIdentityID,
+				Location:                       tt.fields.Location,
+				ResourceGroup:                  tt.fields.ResourceGroup,
+				ClusterID:                      tt.fields.ClusterID,
+				APIServerName:                  tt.fields.APIServerName,
+				KubeletClientTLSBootstrapToken: tt.fields.KubeletClientTLSBootstrapToken,
+				NetworkPlugin:                  tt.fields.NetworkPlugin,
+				NetworkPolicy:                  tt.fields.NetworkPolicy,
+				KubernetesVersion:              tt.fields.KubernetesVersion,
+			}
+			_, err := a.aksBootstrapScript()
+			// Didn't check the actual value of customData here. Only check if there is an error.
 			if (err != nil) != tt.wantErr {
-				t.Errorf("getCustomDataFromNodeBootstrapContract() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("AKS.aksBootstrapScript() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			// Didn't check the actual value of customData here. Only check if there is an error.
 		})
 	}
 }

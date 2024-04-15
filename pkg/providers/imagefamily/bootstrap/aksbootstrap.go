@@ -150,8 +150,7 @@ var (
 	// baseline, covering unused (-), static (s), and unsupported (n) fields,
 	// as well as defaults, cluster/node level (cd/td/xd)
 	staticNodeBootstrapVars = nbcontractv1.Configuration{
-		CustomCloudConfig: &nbcontractv1.CustomCloudConfig{},
-		KubeBinaryConfig:  &nbcontractv1.KubeBinaryConfig{},
+		KubeBinaryConfig: &nbcontractv1.KubeBinaryConfig{},
 		ApiServerConfig: &nbcontractv1.ApiServerConfig{
 			ApiServerPublicKey: "", // not initialized anywhere?
 			ApiServerName:      "", // xd
@@ -177,15 +176,12 @@ var (
 			VnetCniPluginsUrl: vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
 			CniPluginsUrl:     cniPluginsURL,          // - [currently required, same]
 		},
-		ContainerdConfig: &nbcontractv1.ContainerdConfig{},
-		IsVhd:            true, // s
+		IsVhd: true, // s
 		GpuConfig: &nbcontractv1.GPUConfig{
 			ConfigGpuDriver:    true,  // s
 			GpuDevicePlugin:    false, // -
 			GpuInstanceProfile: "",    // td
 		},
-		TeleportConfig:     &nbcontractv1.TeleportConfig{},
-		RuncConfig:         &nbcontractv1.RuncConfig{},
 		EnableSsh:          true,                        // td
 		OutboundCommand:    GetDefaultOutboundCommand(), // s
 		CustomSearchDomain: &nbcontractv1.CustomSearchDomain{},
@@ -194,8 +190,7 @@ var (
 			TlsBootstrappingToken:                      "",
 			CustomSecureTlsBootstrappingAppserverAppid: "",
 		},
-		CustomLinuxOsConfig: &nbcontractv1.CustomLinuxOSConfig{},
-		KubeletConfig:       &nbcontractv1.KubeletConfig{},
+		KubeletConfig: &nbcontractv1.KubeletConfig{},
 	}
 )
 
