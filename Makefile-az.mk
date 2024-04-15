@@ -26,7 +26,7 @@ az-all-custom-vnet: az-login az-create-workload-msi az-mkaks-custom-vnet az-crea
 az-all-savm:    az-login az-mkaks-savm az-perm-savm az-patch-skaffold-azure az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
 az-login: ## Login into Azure
-	az login
+	az account show -o none || az login
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
 
 az-mkrg: ## Create resource group
