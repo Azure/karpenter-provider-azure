@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 )
 
 func TestGetSysctlContent(t *testing.T) {
@@ -371,6 +370,13 @@ func Test_getAzureEnvironmentFilepath(t *testing.T) {
 		want string
 	}{
 		{
+			name: "Nil CustomCloudConfig",
+			args: args{
+				v: nil,
+			},
+			want: "",
+		},
+		{
 			name: "Empty AzureEnvironmentFilepath",
 			args: args{
 				v: &nbcontractv1.CustomCloudConfig{},
@@ -392,53 +398,6 @@ func Test_getAzureEnvironmentFilepath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := getAzureEnvironmentFilepath(tt.args.v); got != tt.want {
 				t.Errorf("getAzureEnvironmentFilepath() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_getLBDisableOutboundSnat(t *testing.T) {
-	type args struct {
-		lb *nbcontractv1.LoadBalancerConfig
-	}
-	tests := []struct {
-		name string
-		args args
-		want bool
-	}{
-		{
-			name: "LoadBalancerConfig when LoadBalancerSku is not Standard",
-			args: args{
-				lb: &nbcontractv1.LoadBalancerConfig{
-					LoadBalancerSku: nbcontractv1.LoadBalancerConfig_BASIC,
-				},
-			},
-			want: false,
-		},
-		{
-			name: "LoadBalancerConfig when LoadBalancerSku is Standard and DisableOutboundSnat is true",
-			args: args{
-				lb: &nbcontractv1.LoadBalancerConfig{
-					LoadBalancerSku:     nbcontractv1.LoadBalancerConfig_STANDARD,
-					DisableOutboundSnat: to.Ptr(true),
-				},
-			},
-			want: true,
-		},
-		{
-			name: "LoadBalancerConfig when LoadBalancerSku is Standard and DisableOutboundSnat is nil",
-			args: args{
-				lb: &nbcontractv1.LoadBalancerConfig{
-					LoadBalancerSku: nbcontractv1.LoadBalancerConfig_STANDARD,
-				},
-			},
-			want: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := getLBDisableOutboundSnat(tt.args.lb); got != tt.want {
-				t.Errorf("getLBDisableOutboundSnat() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -485,7 +444,7 @@ func Test_getEnsureNoDupePromiscuousBridge(t *testing.T) {
 
 func Test_getHasSearchDomain(t *testing.T) {
 	type args struct {
-		csd *nbcontractv1.CustomSearchDomain
+		csd *nbcontractv1.CustomSearchDomainConfig
 	}
 	tests := []struct {
 		name string
@@ -495,16 +454,16 @@ func Test_getHasSearchDomain(t *testing.T) {
 		{
 			name: "CustomSearchDomain with empty search domain should return false",
 			args: args{
-				csd: &nbcontractv1.CustomSearchDomain{},
+				csd: &nbcontractv1.CustomSearchDomainConfig{},
 			},
 			want: false,
 		},
 		{
 			name: "CustomSearchDomain with empty search domain user should return false",
 			args: args{
-				csd: &nbcontractv1.CustomSearchDomain{
-					CustomSearchDomainName:          "fakedomain.com",
-					CustomSearchDomainRealmPassword: "fakepassword",
+				csd: &nbcontractv1.CustomSearchDomainConfig{
+					DomainName:    "fakedomain.com",
+					RealmPassword: "fakepassword",
 				},
 			},
 			want: false,
@@ -512,10 +471,10 @@ func Test_getHasSearchDomain(t *testing.T) {
 		{
 			name: "CustomSearchDomain with search domain, user and password should return true",
 			args: args{
-				csd: &nbcontractv1.CustomSearchDomain{
-					CustomSearchDomainName:          "fakedomain.com",
-					CustomSearchDomainRealmUser:     "fakeuser",
-					CustomSearchDomainRealmPassword: "fakepassword",
+				csd: &nbcontractv1.CustomSearchDomainConfig{
+					DomainName:    "fakedomain.com",
+					RealmUser:     "fakeuser",
+					RealmPassword: "fakepassword",
 				},
 			},
 			want: true,
@@ -786,6 +745,289 @@ func Test_getPortRangeEndValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := getPortRangeEndValue(tt.args.portRange); got != tt.want {
 				t.Errorf("getPortRangeEndValue() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getShouldConfigureHTTPProxy(t *testing.T) {
+	type args struct {
+		httpProxyConfig *nbcontractv1.HTTPProxyConfig
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "Nil HTTPProxyConfig",
+			args: args{},
+			want: false,
+		},
+		{
+			name: "Empty HTTPProxyConfig",
+			args: args{
+				httpProxyConfig: &nbcontractv1.HTTPProxyConfig{},
+			},
+			want: false,
+		},
+		{
+			name: "HTTPProxyConfig with empty HttpProxy and valid HttpsProxy",
+			args: args{
+				httpProxyConfig: &nbcontractv1.HTTPProxyConfig{
+					HttpProxy:  "",
+					HttpsProxy: "https://fakeproxy.com:8080",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "HTTPProxyConfig with valid HttpProxy and empty HttpsProxy",
+			args: args{
+				httpProxyConfig: &nbcontractv1.HTTPProxyConfig{
+					HttpProxy:  "http://fakeproxy.com:8080",
+					HttpsProxy: "",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "HTTPProxyConfig with empty HttpProxy and empty HttpsProxy",
+			args: args{
+				httpProxyConfig: &nbcontractv1.HTTPProxyConfig{
+					HttpProxy:      "",
+					HttpsProxy:     "",
+					NoProxyEntries: []string{"fakesite1.com", "fakesite2.com"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "HTTPProxyConfig with valid HttpProxy",
+			args: args{
+				httpProxyConfig: &nbcontractv1.HTTPProxyConfig{
+					HttpProxy: "http://fakeproxy.com:8080",
+				},
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getShouldConfigureHTTPProxy(tt.args.httpProxyConfig); got != tt.want {
+				t.Errorf("getShouldConfigureHTTPProxy() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getShouldConfigureHTTPProxyCA(t *testing.T) {
+	type args struct {
+		httpProxyConfig *nbcontractv1.HTTPProxyConfig
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "Nil HTTPProxyConfig",
+			args: args{},
+			want: false,
+		},
+		{
+			name: "Empty HTTPProxyConfig",
+			args: args{
+				httpProxyConfig: &nbcontractv1.HTTPProxyConfig{},
+			},
+			want: false,
+		},
+		{
+			name: "HTTPProxyConfig with empty CA",
+			args: args{
+				httpProxyConfig: &nbcontractv1.HTTPProxyConfig{
+					HttpProxy:      "http://fakeproxy.com:8080",
+					ProxyTrustedCa: "",
+				},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getShouldConfigureHTTPProxyCA(tt.args.httpProxyConfig); got != tt.want {
+				t.Errorf("getShouldConfigureHTTPProxyCA() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getTargetEnvironment(t *testing.T) {
+	type args struct {
+		v *nbcontractv1.CustomCloudConfig
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "Nil CustomCloudConfig",
+			args: args{},
+			want: defaultCloudName,
+		},
+		{
+			name: "Empty CustomCloudConfig",
+			args: args{
+				v: &nbcontractv1.CustomCloudConfig{},
+			},
+			want: defaultCloudName,
+		},
+		{
+			name: "CustomCloudConfig with empty TargetEnvironment",
+			args: args{
+				v: &nbcontractv1.CustomCloudConfig{
+					TargetEnvironment: "",
+				},
+			},
+			want: defaultCloudName,
+		},
+		{
+			name: "CustomCloudConfig with TargetEnvironment",
+			args: args{
+				v: &nbcontractv1.CustomCloudConfig{
+					TargetEnvironment: "testcloud",
+				},
+			},
+			want: "testcloud",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getTargetEnvironment(tt.args.v); got != tt.want {
+				t.Errorf("getTargetEnvironment() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getTargetCloud(t *testing.T) {
+	type args struct {
+		v *nbcontractv1.AuthConfig
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "Nil AuthConfig",
+			args: args{},
+			want: defaultCloudName,
+		},
+		{
+			name: "Empty AuthConfig",
+			args: args{
+				v: &nbcontractv1.AuthConfig{},
+			},
+			want: defaultCloudName,
+		},
+		{
+			name: "AuthConfig with empty TargetCloud",
+			args: args{
+				v: &nbcontractv1.AuthConfig{
+					TargetCloud: "",
+				},
+			},
+			want: defaultCloudName,
+		},
+		{
+			name: "AuthConfig with TargetEnvironment",
+			args: args{
+				v: &nbcontractv1.AuthConfig{
+					TargetCloud: "testcloud",
+				},
+			},
+			want: "testcloud",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getTargetCloud(tt.args.v); got != tt.want {
+				t.Errorf("getTargetCloud() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getLinuxAdminUsername(t *testing.T) {
+	type args struct {
+		username string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "Empty username",
+			args: args{
+				username: "",
+			},
+			want: defaultLinuxUser,
+		},
+		{
+			name: "Non-empty username",
+			args: args{
+				username: "testuser",
+			},
+			want: "testuser",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getLinuxAdminUsername(tt.args.username); got != tt.want {
+				t.Errorf("getLinuxAdminUsername() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getIsSgxEnabledSKU(t *testing.T) {
+	type args struct {
+		vmSize string
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "Empty vmSize",
+			args: args{
+				vmSize: "",
+			},
+			want: false,
+		},
+		{
+			name: "Standard_D2s_v3",
+			args: args{
+				vmSize: "Standard_D2s_v3",
+			},
+			want: false,
+		},
+		{
+			name: vmSizeStandardDc2s,
+			args: args{
+				vmSize: vmSizeStandardDc2s,
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getIsSgxEnabledSKU(tt.args.vmSize); got != tt.want {
+				t.Errorf("getIsSgxEnabledSKU() = %v, want %v", got, tt.want)
 			}
 		})
 	}

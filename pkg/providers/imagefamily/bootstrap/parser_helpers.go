@@ -39,19 +39,6 @@ import (
 	"github.com/blang/semver"
 )
 
-// cloud-init destination file references.
-const (
-	cseHelpersScriptFilepath             = "/opt/azure/containers/provision_source.sh"
-	cseHelpersScriptDistroFilepath       = "/opt/azure/containers/provision_source_distro.sh"
-	cseInstallScriptFilepath             = "/opt/azure/containers/provision_installs.sh"
-	cseInstallScriptDistroFilepath       = "/opt/azure/containers/provision_installs_distro.sh"
-	cseConfigScriptFilepath              = "/opt/azure/containers/provision_configs.sh"
-	customSearchDomainsCSEScriptFilepath = "/opt/azure/containers/setup-custom-search-domains.sh"
-	dhcpV6ServiceCSEScriptFilepath       = "/etc/systemd/system/dhcpv6.service"
-	dhcpV6ConfigCSEScriptFilepath        = "/opt/azure/containers/enable-dhcpv6.sh"
-	initAKSCustomCloudFilepath           = "/opt/azure/containers/init-aks-custom-cloud.sh"
-)
-
 var (
 	//go:embed kubenet-cni.json.gtpl
 	kubenetTemplateContent []byte
@@ -105,7 +92,9 @@ func getFuncMap() template.FuncMap {
 		"getShouldConfigureHTTPProxy":               getShouldConfigureHTTPProxy,
 		"getShouldConfigureHTTPProxyCA":             getShouldConfigureHTTPProxyCA,
 		"getAzureEnvironmentFilepath":               getAzureEnvironmentFilepath,
-		"getLBDisableOutboundSnat":                  getLBDisableOutboundSnat,
+		"getLinuxAdminUsername":                     getLinuxAdminUsername,
+		"getTargetEnvironment":                      getTargetEnvironment,
+		"getTargetCloud":                            getTargetCloud,
 	}
 }
 
@@ -119,9 +108,9 @@ func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 func getStringFromVMType(enum nbcontractv1.ClusterConfig_VM) string {
 	switch enum {
 	case nbcontractv1.ClusterConfig_STANDARD:
-		return "standard"
+		return vmTypeStandard
 	case nbcontractv1.ClusterConfig_VMSS:
-		return "vmss"
+		return vmTypeVmss
 	default:
 		return ""
 	}
@@ -130,9 +119,9 @@ func getStringFromVMType(enum nbcontractv1.ClusterConfig_VM) string {
 func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPlugin) string {
 	switch enum {
 	case nbcontractv1.NetworkPlugin_NP_AZURE:
-		return "azure"
+		return networkPluginAzure
 	case nbcontractv1.NetworkPlugin_NP_KUBENET:
-		return "kubenet"
+		return networkPluginkubenet
 	default:
 		return ""
 	}
@@ -141,9 +130,9 @@ func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPlugin) string {
 func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicy) string {
 	switch enum {
 	case nbcontractv1.NetworkPolicy_NPO_AZURE:
-		return "azure"
+		return networkPolicyAzure
 	case nbcontractv1.NetworkPolicy_NPO_CALICO:
-		return "calico"
+		return networkPolicyCalico
 	default:
 		return ""
 	}
@@ -152,9 +141,9 @@ func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicy) string {
 func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerConfig_LoadBalancerSku) string {
 	switch enum {
 	case nbcontractv1.LoadBalancerConfig_BASIC:
-		return "Basic"
+		return loadBalancerBasic
 	case nbcontractv1.LoadBalancerConfig_STANDARD:
-		return "Standard"
+		return loadBalancerStandard
 	default:
 		return ""
 	}
@@ -220,7 +209,7 @@ func getCustomCACertsStatus(customCACerts []string) bool {
 }
 
 func getEnableTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
-	return bootstrapConfig.GetTlsBootstrapToken() != ""
+	return bootstrapConfig.GetTlsBootstrappingToken() != ""
 }
 
 func getEnableSecureTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
@@ -229,11 +218,11 @@ func getEnableSecureTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingC
 }
 
 func getTLSBootstrapToken(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) string {
-	return bootstrapConfig.GetTlsBootstrapToken()
+	return bootstrapConfig.GetTlsBootstrappingToken()
 }
 
 func getCustomSecureTLSBootstrapAADServerAppID(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) string {
-	return bootstrapConfig.GetCustomSecureTlsBootstrapAppserverAppid()
+	return bootstrapConfig.GetCustomSecureTlsBootstrappingAppserverAppid()
 }
 
 func getIsKrustlet(wr nbcontractv1.WorkloadRuntime) bool {
@@ -244,8 +233,8 @@ func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.NetworkConfig) bool {
 	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPlugin_NP_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicy_NPO_CALICO
 }
 
-func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomain) bool {
-	if csd.GetCustomSearchDomainName() != "" && csd.GetCustomSearchDomainRealmUser() != "" && csd.GetCustomSearchDomainRealmPassword() != "" {
+func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomainConfig) bool {
+	if csd.GetDomainName() != "" && csd.GetRealmUser() != "" && csd.GetRealmPassword() != "" {
 		return true
 	}
 	return false
@@ -563,7 +552,7 @@ func getGpuDriverVersion(vmSize string) string {
 // IsSgxEnabledSKU determines if an VM SKU has SGX driver support.
 func getIsSgxEnabledSKU(vmSize string) bool {
 	switch vmSize {
-	case "Standard_DC2s", "Standard_DC4s":
+	case vmSizeStandardDc2s, vmSizeStandardDc4s:
 		return true
 	}
 	return false
@@ -584,12 +573,25 @@ func getAzureEnvironmentFilepath(v *nbcontractv1.CustomCloudConfig) string {
 	return ""
 }
 
-func getLBDisableOutboundSnat(lb *nbcontractv1.LoadBalancerConfig) bool {
-	if lb.GetLoadBalancerSku() != nbcontractv1.LoadBalancerConfig_STANDARD {
-		return false
+func getLinuxAdminUsername(username string) string {
+	if username == "" {
+		return defaultLinuxUser
 	}
-	if lb.DisableOutboundSnat == nil {
-		return false
+	return username
+}
+
+func getTargetEnvironment(v *nbcontractv1.CustomCloudConfig) string {
+	if v.GetTargetEnvironment() == "" {
+		return defaultCloudName
 	}
-	return lb.GetDisableOutboundSnat()
+
+	return v.GetTargetEnvironment()
+}
+
+func getTargetCloud(v *nbcontractv1.AuthConfig) string {
+	if v.GetTargetCloud() == "" {
+		return defaultCloudName
+	}
+
+	return v.GetTargetCloud()
 }
