@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"testing"
 
+	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
 	"github.com/Azure/go-autorest/autorest/to"
 	core "k8s.io/api/core/v1"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
@@ -135,6 +136,83 @@ func TestAKS_aksBootstrapScript(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("AKS.aksBootstrapScript() error = %v, wantErr %v", err, tt.wantErr)
 				return
+			}
+		})
+	}
+}
+
+func TestAKS_applyOptions(t *testing.T) {
+	type fields struct {
+		Options                        Options
+		Arch                           string
+		TenantID                       string
+		SubscriptionID                 string
+		UserAssignedIdentityID         string
+		Location                       string
+		ResourceGroup                  string
+		ClusterID                      string
+		APIServerName                  string
+		KubeletClientTLSBootstrapToken string
+		NetworkPlugin                  string
+		NetworkPolicy                  string
+		KubernetesVersion              string
+	}
+	type args struct {
+		v *nbcontractv1.Configuration
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+	}{
+		{
+			name: "Test with all fields",
+			fields: fields{
+				Options: Options{
+					ClusterName:     "clustername",
+					ClusterEndpoint: "clusterendpoint",
+					KubeletConfig:   &corev1beta1.KubeletConfiguration{},
+					Taints:          []core.Taint{},
+					Labels:          map[string]string{},
+					CABundle:        to.StringPtr("cabundle"),
+					VMSize:          "vmsize",
+				},
+				Location:      "AKS location",
+				ResourceGroup: "AKS resourcegroup",
+			},
+			args: args{
+				v: &nbcontractv1.Configuration{
+					ClusterConfig: &nbcontractv1.ClusterConfig{
+						ResourceGroup: "static_resourcegroup",
+						Location:      "static_location",
+					},
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := AKS{
+				Options:                        tt.fields.Options,
+				Arch:                           tt.fields.Arch,
+				TenantID:                       tt.fields.TenantID,
+				SubscriptionID:                 tt.fields.SubscriptionID,
+				UserAssignedIdentityID:         tt.fields.UserAssignedIdentityID,
+				Location:                       tt.fields.Location,
+				ResourceGroup:                  tt.fields.ResourceGroup,
+				ClusterID:                      tt.fields.ClusterID,
+				APIServerName:                  tt.fields.APIServerName,
+				KubeletClientTLSBootstrapToken: tt.fields.KubeletClientTLSBootstrapToken,
+				NetworkPlugin:                  tt.fields.NetworkPlugin,
+				NetworkPolicy:                  tt.fields.NetworkPolicy,
+				KubernetesVersion:              tt.fields.KubernetesVersion,
+			}
+			got := a.applyOptions(tt.args.v)
+			if a.ResourceGroup != got.ClusterConfig.GetResourceGroup() {
+				t.Errorf("Expected resource group to be %s but got %s", a.ResourceGroup, got.ClusterConfig.GetResourceGroup())
+			}
+			if a.Location != got.ClusterConfig.GetLocation() {
+				t.Errorf("Expected location to be %s but got %s", a.Location, got.ClusterConfig.GetLocation())
 			}
 		})
 	}
