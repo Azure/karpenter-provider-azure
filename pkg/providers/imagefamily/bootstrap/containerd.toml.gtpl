@@ -44,11 +44,11 @@ oom_score = 0
     config_path = "/etc/containerd/certs.d"
   [plugins."io.containerd.grpc.v1.cri".registry.headers]
     X-Meta-Source-Client = ["azure/aks"]
+    {{- if .ArtifactStreamingEnabled }}
+    [proxy_plugins]
+      [proxy_plugins.overlaybd]
+        type = "snapshot"
+        address = "/run/overlaybd-snapshotter/overlaybd.sock"
+    {{- end}}
 [metrics]
   address = "0.0.0.0:10257"
-{{- if .ArtifactStreamingEnabled }}
-[proxy_plugins]
-  [proxy_plugins.overlaybd]
-    type = "snapshot"
-    address = "/run/overlaybd-snapshotter/overlaybd.sock"
-{{- end}}
