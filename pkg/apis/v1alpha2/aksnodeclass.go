@@ -27,6 +27,9 @@ import (
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 type AKSNodeClassSpec struct {
+	// AritfactStreamingEnabled is a flag to enable https://aka.ms/artifactstreaming
+	// +kubebuilder:default=false
+	ArtifactStreamingEnabled *bool `json:"artifactStreamingEnabled,omitempty"`
 	// +kubebuilder:default=128
 	// +kubebuilder:validation:Minimum=100
 	// osDiskSizeGB is the size of the OS disk in GB.

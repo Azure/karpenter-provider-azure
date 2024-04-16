@@ -40,9 +40,8 @@ type StaticParameters struct {
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
-
-	// VNET
 	SubnetID string
+	ArtifactStreamingEnabled bool
 
 	Tags   map[string]string
 	Labels map[string]string

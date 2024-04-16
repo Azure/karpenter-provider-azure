@@ -133,6 +133,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
 		Tags:                           nodeClass.Spec.Tags,
+		ArtifactStreamingEnabled:       lo.FromPtr(nodeClass.Spec.ArtifactStreamingEnabled),
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,

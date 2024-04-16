@@ -46,6 +46,10 @@ spec:
               AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              artifactStreamingEnabled:
+                default: false
+                description: AritfactStreamingEnabled is a flag to enable https://aka.ms/artifactstreaming
+                type: boolean
               imageFamily:
                 default: Ubuntu2204
                 description: ImageFamily is the image family that instances use.

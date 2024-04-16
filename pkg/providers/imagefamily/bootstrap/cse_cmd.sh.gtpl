@@ -18,6 +18,7 @@ REPO_DEPOT_ENDPOINT="{{.AKSCustomCloudRepoDepotEndpoint}}"
 {{.InitAKSCustomCloudFilepath}} >> /var/log/azure/cluster-provision.log 2>&1;
 {{end}}
 ADMINUSER={{.AdminUsername}}
+ARTIFACT_STREAMING_ENABLED={{.ArtifactStreamingEnabled}}
 MOBY_VERSION={{.MobyVersion}}
 TENANT_ID={{.TenantID}}
 KUBERNETES_VERSION={{.KubernetesVersion}}

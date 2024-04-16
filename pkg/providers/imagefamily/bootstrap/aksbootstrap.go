@@ -219,6 +219,7 @@ type NodeBootstrapVariables struct {
 	KubenetTemplate                   string   // s   static
 	ContainerdConfigContent           string   // k   determined by GPU VM size, WASM support, Kata support
 	IsKata                            bool     // n   user-specified
+	ArtifactStreamingEnabled         bool     // t   user-specified
 }
 
 var (
@@ -384,7 +385,7 @@ var (
 		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
 		ContainerdConfigContent:         "",                                                                  // kd
 		IsKata:                          false,                                                               // n
-
+		ArtifactStreamingEnabled:       false,                                                               // td
 	}
 )
 
@@ -448,6 +449,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
+	nbv.ArtifactStreamingEnabled = a.ArtifactStreamingEnabled
 	nbv.NeedsCgroupV2 = true
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
