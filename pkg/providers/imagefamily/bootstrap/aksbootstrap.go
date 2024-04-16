@@ -33,6 +33,7 @@ import (
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
+	"github.com/Azure/agentbaker/pkg/nbcontracthelper"
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -150,15 +151,9 @@ var (
 	// baseline, covering unused (-), static (s), and unsupported (n) fields,
 	// as well as defaults, cluster/node level (cd/td/xd)
 	staticNodeBootstrapVars = nbcontractv1.Configuration{
-		ApiServerConfig: &nbcontractv1.ApiServerConfig{
-			ApiServerPublicKey: "", // not initialized anywhere?
-			ApiServerName:      "", // xd
-		},
 		ClusterConfig: &nbcontractv1.ClusterConfig{
-			VmType:                 nbcontractv1.ClusterConfig_VMSS, // xd
-			PrimaryAvailabilitySet: "",                              // -
-			PrimaryScaleSet:        "",                              // -
-			UseInstanceMetadata:    true,                            // s
+			VmType:              nbcontractv1.ClusterConfig_VMSS, // xd
+			UseInstanceMetadata: true,                            // s
 			LoadBalancerConfig: &nbcontractv1.LoadBalancerConfig{
 				LoadBalancerSku:                       getLoadBalancerSKU("Standard"), // xd
 				ExcludeMasterFromStandardLoadBalancer: to.BoolPtr(true),               //s
@@ -166,8 +161,7 @@ var (
 				DisableOutboundSnat:                   false,                          // s
 			},
 			VirtualNetworkConfig: &nbcontractv1.ClusterNetworkConfig{
-				Subnet:            "aks-subnet", // xd
-				VnetResourceGroup: "",           // xd
+				Subnet: "aks-subnet", // xd
 			},
 		},
 		NetworkConfig: &nbcontractv1.NetworkConfig{
@@ -176,16 +170,13 @@ var (
 		},
 		IsVhd: true, // s
 		GpuConfig: &nbcontractv1.GPUConfig{
-			ConfigGpuDriver:    true,  // s
-			GpuDevicePlugin:    false, // -
-			GpuInstanceProfile: "",    // td
+			ConfigGpuDriver: true,  // s
+			GpuDevicePlugin: false, // -
 		},
 		EnableSsh:       true,                        // td
 		OutboundCommand: GetDefaultOutboundCommand(), // s
 		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
-			EnableSecureTlsBootstrapping:               to.BoolPtr(false),
-			TlsBootstrappingToken:                      "",
-			CustomSecureTlsBootstrappingAppserverAppid: "",
+			EnableSecureTlsBootstrapping: to.BoolPtr(false),
 		},
 	}
 )
@@ -221,40 +212,8 @@ func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
 	return fmt.Sprintf("%s/kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
 }
 
-// Check and initialize each field if it is nil
-func initializeIfNil[T any](field **T) {
-	if *field == nil {
-		*field = new(T)
-	}
-}
-
-// EnsureConfigsNonNil checks if the config is nil and initializes it if it is.
-func ensureConfigsNonNil(v *nbcontractv1.Configuration) *nbcontractv1.Configuration {
-	if v == nil {
-		v = &nbcontractv1.Configuration{}
-	}
-
-	initializeIfNil(&v.KubeBinaryConfig)
-	initializeIfNil(&v.ApiServerConfig)
-	initializeIfNil(&v.AuthConfig)
-	initializeIfNil(&v.ClusterConfig)
-	initializeIfNil(&v.NetworkConfig)
-	initializeIfNil(&v.GpuConfig)
-	initializeIfNil(&v.TlsBootstrappingConfig)
-	initializeIfNil(&v.KubeletConfig)
-	initializeIfNil(&v.RuncConfig)
-	initializeIfNil(&v.ContainerdConfig)
-	initializeIfNil(&v.TeleportConfig)
-	initializeIfNil(&v.CustomLinuxOsConfig)
-	initializeIfNil(&v.HttpProxyConfig)
-	initializeIfNil(&v.CustomCloudConfig)
-	initializeIfNil(&v.CustomSearchDomainConfig)
-
-	return v
-}
-
 func (a AKS) applyOptions(v *nbcontractv1.Configuration) {
-	nbcontract := ensureConfigsNonNil(v)
+	nbcontract := nbcontracthelper.NewNBContractConfiguration(v)
 
 	nbcontract.KubernetesCaCert = *a.CABundle
 	nbcontract.ApiServerConfig.ApiServerName = a.APIServerName
