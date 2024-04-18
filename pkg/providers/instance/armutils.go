@@ -107,15 +107,7 @@ func deleteNicIfExists(ctx context.Context, client NetworkInterfacesAPI, rg, nic
 	_, err := client.Get(ctx, rg, nicName, nil)
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
-			// try older name; remove the -nic suffix from the nicName, if exists
-			if len(nicName) > 4 && nicName[len(nicName)-4:] == "-nic" {
-				nicName = nicName[:len(nicName)-4]
-				_, oerr := client.Get(ctx, rg, nicName, nil)
-				if sdkerrors.IsNotFoundErr(oerr) {
-					return nil
-				}
-				return oerr
-			}
+			return nil
 		}
 		return err
 	}
