@@ -154,7 +154,7 @@ Snapshot versions can be installed in a similar way:
 
 ```bash
 export KARPENTER_NAMESPACE=kube-system
-export KARPENTER_VERSION=v0-41f6dcabe655c7fec84f4467e95bbd75285ae082
+export KARPENTER_VERSION=0-f83fadf2c99ffc2b7429cb40a316fcefc0c4752a
 
 helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
   --version "${KARPENTER_VERSION}" \
