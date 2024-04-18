@@ -118,6 +118,7 @@ var _ = Describe("InstanceProvider", func() {
 		})
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
+		cluster.Reset()
 	})
 
 	var _ = AfterEach(func() {
@@ -164,5 +165,19 @@ var _ = Describe("InstanceProvider", func() {
 		Expect(lo.PickBy(tags, func(key string, value *string) bool {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
+	})
+
+	It("should create Network Interfaces named vmname-nic", func() {
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		pod := coretest.UnschedulablePod()
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+		newVMs := &azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput
+		Expect(newVMs.Len()).To(Equal(1))
+		vmName := newVMs.Pop().VMName
+		newNics := &azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput
+		Expect(newNics.Len()).To(Equal(1))
+		nicName := newNics.Pop().InterfaceName
+		Expect(nicName).To(Equal(vmName + "-nic"))
 	})
 })
