@@ -21,6 +21,7 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -34,10 +35,13 @@ import (
 	"knative.dev/pkg/ptr"
 
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/operator/scheme"
+
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 func init() {
+	lo.Must0(apis.AddToScheme(scheme.Scheme))
 	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
