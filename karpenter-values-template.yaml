@@ -13,7 +13,7 @@ controller:
 
     # options
     - name: CLUSTER_NAME
-      value: $CLUSTER_NAME}
+      value: ${CLUSTER_NAME}
     - name: CLUSTER_ENDPOINT
       value: ${CLUSTER_ENDPOINT}
     - name: KUBELET_BOOTSTRAP_TOKEN
