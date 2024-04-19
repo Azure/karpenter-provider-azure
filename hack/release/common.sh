@@ -129,7 +129,7 @@ publishHelmChart() {
   cd ..
 
   helm_chart_digest="$(crane digest "${oci_repo}/${helm_chart}:${version}")"
-  cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${oci_repo}${helm_chart}:${version}@${helm_chart_digest}"
+  cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${oci_repo}/${helm_chart}:${version}@${helm_chart_digest}"
 }
 
 # When executed interactively, cosign will prompt you to authenticate via OIDC, where you'll sign in
