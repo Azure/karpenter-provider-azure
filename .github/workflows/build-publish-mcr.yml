@@ -59,4 +59,5 @@ jobs:
     - name: Build and publish image
       run: |
         az login --identity
+        ko version
         RELEASE_ACR=${{ secrets.AZURE_REGISTRY }} ./hack/release/release.sh
