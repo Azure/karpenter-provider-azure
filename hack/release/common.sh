@@ -84,9 +84,12 @@ buildAndPublish() {
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img}"
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img_nap}"
 
-  repo=${5:-$img_repo} # override the repo if provided (used for MCR)
+  final_img_repo="$img_repo" 
+  if [[ -n "$5" ]]; then # override the repo if provided (used for MCR)
+    final_img_repo="${5}/controller"
+  fi
 
-  yq e -i ".controller.image.repository = \"${repo}\"" charts/karpenter/values.yaml
+  yq e -i ".controller.image.repository = \"${final_img_repo}\"" charts/karpenter/values.yaml
   yq e -i ".controller.image.tag = \"${img_tag}\"" charts/karpenter/values.yaml
   yq e -i ".controller.image.digest = \"${img_digest}\"" charts/karpenter/values.yaml
 
