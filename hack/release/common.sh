@@ -84,9 +84,12 @@ buildAndPublish() {
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img}"
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img_nap}"
 
-  repo=${5:-$img_repo} # override the repo if provided (used for MCR)
+  final_img_repo="$img_repo" 
+  if [[ -n "$5" ]]; then # override the repo if provided (used for MCR)
+    final_img_repo="${5}/controller"
+  fi
 
-  yq e -i ".controller.image.repository = \"${repo}\"" charts/karpenter/values.yaml
+  yq e -i ".controller.image.repository = \"${final_img_repo}\"" charts/karpenter/values.yaml
   yq e -i ".controller.image.tag = \"${img_tag}\"" charts/karpenter/values.yaml
   yq e -i ".controller.image.digest = \"${img_digest}\"" charts/karpenter/values.yaml
 
@@ -129,7 +132,7 @@ publishHelmChart() {
   cd ..
 
   helm_chart_digest="$(crane digest "${oci_repo}/${helm_chart}:${version}")"
-  cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${oci_repo}${helm_chart}:${version}@${helm_chart_digest}"
+  cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${oci_repo}/${helm_chart}:${version}@${helm_chart_digest}"
 }
 
 # When executed interactively, cosign will prompt you to authenticate via OIDC, where you'll sign in
