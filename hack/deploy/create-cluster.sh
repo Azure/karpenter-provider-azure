@@ -8,7 +8,7 @@ fi
 
 CLUSTER_NAME=$1
 RG=$2
-KARPENTER_NAMESPACE=kube-system
+KARPENTER_NAMESPACE=karpenter
 
 echo "Creating the workload MSI for Karpenter use ..."
 LOCATION=$(az group show --name "${RG}" --query "location" -otsv)
