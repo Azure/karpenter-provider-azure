@@ -8,7 +8,7 @@ fi
 
 CLUSTER_NAME=$1
 RG=$2
-SYSTEM_NAMESPACE=$3
+KARPENTER_NAMESPACE=$3
 
 echo "Creating the workload MSI for Karpenter use ..."
 LOCATION=$(az group show --name "${RG}" --query "location" -otsv)
@@ -26,7 +26,7 @@ az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overw
 echo "Creating federated credential linked to the Karpenter service account ..."
 az identity federated-credential create --name KARPENTER_FID --identity-name karpentermsi --resource-group "${RG}" \
   --issuer "$(jq -r ".oidcIssuerProfile.issuerUrl" <<< "$AKS_JSON")" \
-  --subject system:serviceaccount:${SYSTEM_NAMESPACE}:karpenter-sa \
+  --subject system:serviceaccount:${KARPENTER_NAMESPACE}:karpenter-sa \
   --audience api://AzureADTokenExchange
 
 echo "Creating role assignments to let Karpenter manage VMs and Network resources ..."
