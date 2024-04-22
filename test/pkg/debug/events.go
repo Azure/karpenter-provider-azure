@@ -52,7 +52,7 @@ func (c *EventClient) DumpEvents(ctx context.Context) error {
 
 func (c *EventClient) dumpKarpenterEvents(ctx context.Context) error {
 	el := &v1.EventList{}
-	if err := c.kubeClient.List(ctx, el, client.InNamespace("karpenter")); err != nil {
+	if err := c.kubeClient.List(ctx, el, client.InNamespace("kube-system")); err != nil {
 		return err
 	}
 	for k, v := range collateEvents(filterTestEvents(el.Items, c.start)) {

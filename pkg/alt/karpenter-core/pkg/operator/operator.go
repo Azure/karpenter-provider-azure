@@ -82,7 +82,7 @@ const (
 func NewOperator() (context.Context, *coreoperator.Operator) {
 	overlayNamespace := os.Getenv("OVERLAY_NAMESPACE")
 	if overlayNamespace == "" {
-		overlayNamespace = "karpenter-system"
+		overlayNamespace = "karpenter-system" // Note: this namespace goes counter to our namespace usagage elsewhere
 	}
 
 	// Root Context

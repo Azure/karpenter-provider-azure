@@ -45,7 +45,7 @@ else
     # Linux, use GNU date syntax
     ENDUPKUBECTL=$(date --iso-8601=seconds)
 fi
-kubectl logs deployment/karpenter -n karpenter --since-time="${STARTKUBECTL}" > "${logk}"
+kubectl logs deployment/karpenter -n kube-system --since-time="${STARTKUBECTL}" > "${logk}"
 
 # scale down
 sleep 30
@@ -57,6 +57,6 @@ ENDDOWN=$(date ${FMT})
 date
 
 # review
-kubectl logs deployment/karpenter -n karpenter --since-time="${ENDUPKUBECTL}" >> "${logk}"
+kubectl logs deployment/karpenter -n kube-system --since-time="${ENDUPKUBECTL}" >> "${logk}"
 az resource list -o table --tag=karpenter.sh_nodepool=sm-general-purpose
 

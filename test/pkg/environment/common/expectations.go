@@ -101,7 +101,7 @@ func (env *Environment) ExpectSettings() (res []v1.EnvVar) {
 	GinkgoHelper()
 
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "kube-system", Name: "karpenter"}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 	return lo.Map(d.Spec.Template.Spec.Containers[0].Env, func(v v1.EnvVar, _ int) v1.EnvVar {
 		return *v.DeepCopy()
@@ -112,7 +112,7 @@ func (env *Environment) ExpectSettingsReplaced(vars ...v1.EnvVar) {
 	GinkgoHelper()
 
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "kube-system", Name: "karpenter"}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 	stored := d.DeepCopy()
@@ -129,7 +129,7 @@ func (env *Environment) ExpectSettingsOverridden(vars ...v1.EnvVar) {
 	GinkgoHelper()
 
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "kube-system", Name: "karpenter"}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 	stored := d.DeepCopy()
@@ -155,7 +155,7 @@ func (env *Environment) ExpectSettingsRemoved(vars ...v1.EnvVar) {
 	varNames := sets.New[string](lo.Map(vars, func(v v1.EnvVar, _ int) string { return v.Name })...)
 
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "kube-system", Name: "karpenter"}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 	stored := d.DeepCopy()
@@ -250,7 +250,7 @@ func (env *Environment) EventuallyExpectHealthyWithTimeout(timeout time.Duration
 func (env *Environment) EventuallyExpectKarpenterRestarted() {
 	GinkgoHelper()
 	By("rolling out the new karpenter deployment")
-	env.EventuallyExpectRollout("karpenter", "karpenter")
+	env.EventuallyExpectRollout("karpenter", "kube-system")
 	env.ExpectKarpenterLeaseOwnerChanged()
 }
 
@@ -310,7 +310,7 @@ func (env *Environment) ExpectKarpenterPods() []*v1.Pod {
 func (env *Environment) ExpectActiveKarpenterPodName() string {
 	GinkgoHelper()
 	lease := &coordinationv1.Lease{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: "karpenter-leader-election", Namespace: "karpenter"}, lease)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: "karpenter-leader-election", Namespace: "kube-system"}, lease)).To(Succeed())
 
 	// Holder identity for lease is always in the format "<pod-name>_<pseudo-random-value>
 	holderArr := strings.Split(lo.FromPtr(lease.Spec.HolderIdentity), "_")
@@ -324,7 +324,7 @@ func (env *Environment) ExpectActiveKarpenterPod() *v1.Pod {
 	podName := env.ExpectActiveKarpenterPodName()
 
 	pod := &v1.Pod{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: podName, Namespace: "karpenter"}, pod)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: podName, Namespace: "kube-system"}, pod)).To(Succeed())
 	return pod
 }
 
@@ -599,7 +599,7 @@ func (env *Environment) printControllerLogs(options *v1.PodLogOptions) {
 			fmt.Printf("[PREVIOUS CONTAINER LOGS]\n")
 			temp.Previous = true
 		}
-		stream, err := env.KubeClient.CoreV1().Pods("karpenter").GetLogs(pod.Name, temp).Stream(env.Context)
+		stream, err := env.KubeClient.CoreV1().Pods("kube-system").GetLogs(pod.Name, temp).Stream(env.Context)
 		if err != nil {
 			logging.FromContext(env.Context).Errorf("fetching controller logs: %s", err)
 			return
