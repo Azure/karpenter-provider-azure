@@ -71,7 +71,7 @@ Set environment variables:
 export CLUSTER_NAME=karpenter
 export RG=karpenter
 export LOCATION=eastus
-export SYSTEM_NAMESPACE=karpenter
+export SYSTEM_NAMESPACE=kube-system
 
 ```
 
@@ -153,7 +153,7 @@ kubectl logs -f -n "${SYSTEM_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c 
 Snapshot versions can be installed in a similar way for development:
 
 ```bash
-export SYSTEM_NAMESPACE=karpenter
+export SYSTEM_NAMESPACE=kube-system
 export KARPENTER_VERSION=0-f83fadf2c99ffc2b7429cb40a316fcefc0c4752a
 
 helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
