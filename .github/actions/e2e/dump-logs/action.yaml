@@ -39,15 +39,15 @@ runs:
     run: |
       echo "step: controller-logs"
       AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
-      POD_NAME=$(kubectl get pods -n karpenter --no-headers -o custom-columns=":metadata.name" | tail -n 1)
+      POD_NAME=$(kubectl get pods -n kube-system --no-headers -o custom-columns=":metadata.name" | tail -n 1)
       echo "logs from pod ${POD_NAME}"
-      kubectl logs "${POD_NAME}" -n karpenter -c controller
+      kubectl logs "${POD_NAME}" -n kube-system -c controller
   - name: describe-karpenter-pods
     shell: bash
     run: |
       echo "step: describe-karpenter-pods"
       AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
-      kubectl describe pods -n karpenter
+      kubectl describe pods -n kube-system
   - name: describe-nodes
     shell: bash
     run: |

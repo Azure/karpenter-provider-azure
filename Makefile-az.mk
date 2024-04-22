@@ -285,12 +285,12 @@ az-ratelimits: ## Show remaining ARM requests for subscription
 	@az group show   --name $(AZURE_RESOURCE_GROUP)                              --debug 2>&1 | grep x-ms-ratelimit-remaining-subscription-reads
 
 az-kdebug: ## Inject ephemeral debug container (kubectl debug) into Karpenter pod
-	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n karpenter -o name))
-	kubectl debug -n karpenter $(POD) --image wbitt/network-multitool -it -- sh
+	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n ${SYSTEM_NAMESPACE} -o name))
+	kubectl debug -n ${SYSTEM_NAMESPACE} $(POD) --image wbitt/network-multitool -it -- sh
 
 az-klogs: ## Karpenter logs
-	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n karpenter -o name))
-	kubectl logs -f -n karpenter $(POD)
+	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n ${SYSTEM_NAMESPACE} -o name))
+	kubectl logs -f -n ${SYSTEM_NAMESPACE} $(POD)
 
 az-kevents: ## Karpenter events
 	kubectl get events -A --field-selector source=karpenter
@@ -307,7 +307,7 @@ az-pprof-enable: ## Enable profiling
 	yq -i '.manifests.helm.releases[0].overrides.controller.env += [{"name":"ENABLE_PROFILING","value":"true"}]' skaffold.yaml
 
 az-pprof: ## Profile
-	kubectl port-forward service/karpenter -n karpenter 8000 &
+	kubectl port-forward service/karpenter -n ${SYSTEM_NAMESPACE} 8000 &
 	sleep 2 && go tool pprof -http 0.0.0.0:9000 localhost:8000/debug/pprof/heap
 
 az-mkaks-user: az-mkrg ## Create compatible AKS cluster, the way we tell users to
@@ -317,7 +317,7 @@ az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot rele
 	$(eval SNAPSHOT_VERSION ?= $(shell git rev-parse HEAD)) # guess which, specify explicitly with SNAPSHOT_VERSION=...
 	helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
 		--version 0-$(SNAPSHOT_VERSION) \
-		--namespace karpenter --create-namespace \
+		--namespace ${SYSTEM_NAMESPACE} --create-namespace \
 		--values karpenter-values.yaml \
 		--set controller.resources.requests.cpu=1 \
 		--set controller.resources.requests.memory=1Gi \

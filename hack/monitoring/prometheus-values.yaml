@@ -22,7 +22,7 @@ extraScrapeConfigs: |
       - role: endpoints
         namespaces:
           names:
-          - karpenter
+          - karpenter # Does this need to be updated?
       relabel_configs:
       - source_labels:
         - __meta_kubernetes_endpoints_name

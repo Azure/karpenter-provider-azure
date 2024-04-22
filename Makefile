@@ -7,7 +7,7 @@ GOFLAGS ?= $(LDFLAGS)
 WITH_GOFLAGS = GOFLAGS="$(GOFLAGS)"
 
 # # CR for local builds of Karpenter
-SYSTEM_NAMESPACE ?= karpenter
+SYSTEM_NAMESPACE ?= kube-system
 
 # Common Directories
 # TODO: revisit testing tools (temporarily excluded here, for make verify)

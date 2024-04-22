@@ -79,7 +79,7 @@ func (m *Monitor) RestartCount() map[string]int {
 	defer m.mu.RUnlock()
 	restarts := map[string]int{}
 	for _, pod := range st.pods.Items {
-		if pod.Namespace != "karpenter" {
+		if pod.Namespace != "kube-system" {
 			continue
 		}
 		for _, cs := range pod.Status.ContainerStatuses {

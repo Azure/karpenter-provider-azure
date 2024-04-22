@@ -88,7 +88,7 @@ func (c *PodController) Builder(_ context.Context, m manager.Manager) corecontro
 				},
 			},
 			predicate.NewPredicateFuncs(func(o client.Object) bool {
-				return o.GetNamespace() != "kube-system" && o.GetNamespace() != "karpenter"
+				return o.GetNamespace() != "kube-system"
 			}),
 		)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 10}))

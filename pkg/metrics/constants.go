@@ -18,7 +18,7 @@ package metrics
 
 const (
 	// Namespace(s).
-	Namespace = "karpenter"
+	Namespace = "kube-system"
 
 	// Subsystem(s).
 	imageFamilySubsystem = "image"
