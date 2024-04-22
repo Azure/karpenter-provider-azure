@@ -63,7 +63,7 @@ Install these tools before proceeding:
 
 Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
 
-> Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group>` to automate the following steps.
+> Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group> <namespace>` to automate the following steps.
 
 Set environment variables:
 
@@ -71,7 +71,7 @@ Set environment variables:
 export CLUSTER_NAME=karpenter
 export RG=karpenter
 export LOCATION=eastus
-export KARPENTER_NAMESPACE=karpenter
+export SYSTEM_NAMESPACE=karpenter
 
 ```
 
@@ -104,7 +104,7 @@ Create federated credential linked to the karpenter service account for auth usa
 ```bash
 az identity federated-credential create --name KARPENTER_FID --identity-name karpentermsi --resource-group "${RG}" \
   --issuer "$(jq -r ".oidcIssuerProfile.issuerUrl" <<< "$AKS_JSON")" \
-  --subject system:serviceaccount:${KARPENTER_NAMESPACE}:karpenter-sa \
+  --subject system:serviceaccount:${SYSTEM_NAMESPACE}:karpenter-sa \
   --audience api://AzureADTokenExchange
 ```
 
@@ -139,7 +139,7 @@ export KARPENTER_VERSION=v0.3.0
 
 helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
   --version "${KARPENTER_VERSION}" \
-  --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
+  --namespace "${SYSTEM_NAMESPACE}" --create-namespace \
   --values karpenter-values.yaml \
   --set controller.resources.requests.cpu=1 \
   --set controller.resources.requests.memory=1Gi \
@@ -147,18 +147,18 @@ helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter
   --set controller.resources.limits.memory=1Gi \
   --wait
 
-kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
+kubectl logs -f -n "${SYSTEM_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
-Snapshot versions can be installed in a similar way:
+Snapshot versions can be installed in a similar way for development:
 
 ```bash
-export KARPENTER_NAMESPACE=karpenter
+export SYSTEM_NAMESPACE=karpenter
 export KARPENTER_VERSION=0-f83fadf2c99ffc2b7429cb40a316fcefc0c4752a
 
 helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
   --version "${KARPENTER_VERSION}" \
-  --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
+  --namespace "${SYSTEM_NAMESPACE}" --create-namespace \
   --values karpenter-values.yaml \
   --set controller.resources.requests.cpu=1 \
   --set controller.resources.requests.memory=1Gi \
@@ -166,7 +166,7 @@ helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpe
   --set controller.resources.limits.memory=1Gi \
   --wait
 
-kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
+kubectl logs -f -n "${SYSTEM_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
 ### Create NodePool
@@ -252,7 +252,7 @@ spec:
 EOF
 
 kubectl scale deployment inflate --replicas 5
-kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
+kubectl logs -f -n "${SYSTEM_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
 ### Scale down deployment
@@ -261,7 +261,7 @@ Now, delete the deployment. After a short amount of time, Karpenter should termi
 
 ```bash
 kubectl delete deployment inflate
-kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
+kubectl logs -f -n "${SYSTEM_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
 ### Delete Karpenter nodes manually
@@ -277,7 +277,7 @@ kubectl delete node $NODE_NAME
 To avoid additional charges, remove the demo infrastructure from your AKS account.
 
 ```bash
-helm uninstall karpenter --namespace "${KARPENTER_NAMESPACE}"
+helm uninstall karpenter --namespace "${SYSTEM_NAMESPACE}"
 az aks delete --name "${CLUSTER_NAME}" --resource-group "${RG}"
 ```
 
