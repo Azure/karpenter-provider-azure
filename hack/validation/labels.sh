@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # labels validation for nodepool
 # checking for restricted labels while filtering out well known labels

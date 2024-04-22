@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # requirements validation for nodeclaim and nodepool
 # checking for restricted labels while filtering out well known labels
