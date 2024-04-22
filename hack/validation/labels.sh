@@ -22,6 +22,7 @@ rule=$'self.all(x, x in
     || !x.find("^([^/]+)").endsWith("karpenter.azure.com")
 )
 '
+# above regex: everything before the first '/' (any characters except '/' at the beginning of the string)
 
 rule=${rule//\"/\\\"}            # escape double quotes
 rule=${rule//$'\n'/}             # remove newlines
