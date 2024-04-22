@@ -72,7 +72,7 @@ az-create-federated-cred:
 	$(eval AKS_OIDC_ISSUER=$(shell az aks show -n "${AZURE_CLUSTER_NAME}" -g "${AZURE_RESOURCE_GROUP}" --query "oidcIssuerProfile.issuerUrl" -otsv))
 
 	# create federated credential linked to the karpenter service account for auth usage
-	az identity federated-credential create --name ${KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME} --identity-name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --issuer "${AKS_OIDC_ISSUER}" --subject system:serviceaccount:"${SYSTEM_NAMESPACE}":"${KARPENTER_SERVICE_ACCOUNT_NAME}" --audience api://AzureADTokenExchange
+	az identity federated-credential create --name ${KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME} --identity-name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --resource-group "${AZURE_RESOURCE_GROUP}" --issuer "${AKS_OIDC_ISSUER}" --subject system:serviceaccount:"${KARPENTER_NAMESPACE}":"${KARPENTER_SERVICE_ACCOUNT_NAME}" --audience api://AzureADTokenExchange
 
 az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR)
 	az deployment group create --resource-group $(AZURE_RESOURCE_GROUP) --template-file hack/azure/aks-savm.bicep --parameters aksname=$(AZURE_CLUSTER_NAME) acrname=$(AZURE_ACR_NAME)
@@ -285,12 +285,12 @@ az-ratelimits: ## Show remaining ARM requests for subscription
 	@az group show   --name $(AZURE_RESOURCE_GROUP)                              --debug 2>&1 | grep x-ms-ratelimit-remaining-subscription-reads
 
 az-kdebug: ## Inject ephemeral debug container (kubectl debug) into Karpenter pod
-	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n karpenter -o name))
-	kubectl debug -n karpenter $(POD) --image wbitt/network-multitool -it -- sh
+	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n "${KARPENTER_NAMESPACE}" -o name))
+	kubectl debug -n "${KARPENTER_NAMESPACE}" $(POD) --image wbitt/network-multitool -it -- sh
 
 az-klogs: ## Karpenter logs
-	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n karpenter -o name))
-	kubectl logs -f -n karpenter $(POD)
+	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n "${KARPENTER_NAMESPACE}" -o name))
+	kubectl logs -f -n "${KARPENTER_NAMESPACE}" $(POD)
 
 az-kevents: ## Karpenter events
 	kubectl get events -A --field-selector source=karpenter
@@ -307,17 +307,17 @@ az-pprof-enable: ## Enable profiling
 	yq -i '.manifests.helm.releases[0].overrides.controller.env += [{"name":"ENABLE_PROFILING","value":"true"}]' skaffold.yaml
 
 az-pprof: ## Profile
-	kubectl port-forward service/karpenter -n karpenter 8000 &
+	kubectl port-forward service/karpenter -n "${KARPENTER_NAMESPACE}" 8000 &
 	sleep 2 && go tool pprof -http 0.0.0.0:9000 localhost:8000/debug/pprof/heap
 
 az-mkaks-user: az-mkrg ## Create compatible AKS cluster, the way we tell users to
-	hack/deploy/create-cluster.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP)
+	hack/deploy/create-cluster.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) "${KARPENTER_NAMESPACE}"
 
 az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot release
 	$(eval SNAPSHOT_VERSION ?= $(shell git rev-parse HEAD)) # guess which, specify explicitly with SNAPSHOT_VERSION=...
 	helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
 		--version 0-$(SNAPSHOT_VERSION) \
-		--namespace karpenter --create-namespace \
+		--namespace "${KARPENTER_NAMESPACE}" --create-namespace \
 		--values karpenter-values.yaml \
 		--set controller.resources.requests.cpu=1 \
 		--set controller.resources.requests.memory=1Gi \
