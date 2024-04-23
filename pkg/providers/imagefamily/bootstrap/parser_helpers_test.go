@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestGetSysctlContent(t *testing.T) {
@@ -281,7 +282,7 @@ func Test_getContainerdConfig(t *testing.T) {
 			name: "Default Configuration",
 			args: args{
 				nbcontract: &nbcontractv1.Configuration{
-					NeedsCgroupv2: true,
+					NeedsCgroupv2: ptr.To(true),
 				},
 			},
 			want: base64.StdEncoding.EncodeToString([]byte(`version = 2
@@ -405,7 +406,7 @@ func Test_getAzureEnvironmentFilepath(t *testing.T) {
 
 func Test_getEnsureNoDupePromiscuousBridge(t *testing.T) {
 	type args struct {
-		nc *nbcontractv1.NetworkConfig
+		nc *nbcontractv1.ClusterNetworkConfig
 	}
 	tests := []struct {
 		name string
@@ -415,9 +416,9 @@ func Test_getEnsureNoDupePromiscuousBridge(t *testing.T) {
 		{
 			name: "NetworkConfig with no promiscuous bridge",
 			args: args{
-				nc: &nbcontractv1.NetworkConfig{
-					NetworkPlugin: nbcontractv1.NetworkPlugin_NP_AZURE,
-					NetworkPolicy: nbcontractv1.NetworkPolicy_NPO_AZURE,
+				nc: &nbcontractv1.ClusterNetworkConfig{
+					NetworkPlugin: nbcontractv1.ClusterNetworkConfig_NP_AZURE,
+					NetworkPolicy: nbcontractv1.ClusterNetworkConfig_NPO_AZURE,
 				},
 			},
 			want: false,
@@ -425,9 +426,9 @@ func Test_getEnsureNoDupePromiscuousBridge(t *testing.T) {
 		{
 			name: "NetworkConfig with promiscuous bridge",
 			args: args{
-				nc: &nbcontractv1.NetworkConfig{
-					NetworkPlugin: nbcontractv1.NetworkPlugin_NP_KUBENET,
-					NetworkPolicy: nbcontractv1.NetworkPolicy_NPO_AZURE,
+				nc: &nbcontractv1.ClusterNetworkConfig{
+					NetworkPlugin: nbcontractv1.ClusterNetworkConfig_NP_KUBENET,
+					NetworkPolicy: nbcontractv1.ClusterNetworkConfig_NPO_AZURE,
 				},
 			},
 			want: true,

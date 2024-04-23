@@ -44,25 +44,25 @@ func getLoadBalancerSKU(sku string) nbcontractv1.LoadBalancerConfig_LoadBalancer
 }
 
 // getNetworkPluginType returns the NetworkPluginType enum based on the input string.
-func getNetworkPluginType(networkPlugin string) nbcontractv1.NetworkPlugin {
+func getNetworkPluginType(networkPlugin string) nbcontractv1.ClusterNetworkConfig_NetworkPlugin {
 	if strings.EqualFold(networkPlugin, "azure") {
-		return nbcontractv1.NetworkPlugin_NP_AZURE
+		return nbcontractv1.ClusterNetworkConfig_NP_AZURE
 	} else if strings.EqualFold(networkPlugin, "kubenet") {
-		return nbcontractv1.NetworkPlugin_NP_KUBENET
+		return nbcontractv1.ClusterNetworkConfig_NP_KUBENET
 	}
 
-	return nbcontractv1.NetworkPlugin_NP_NONE
+	return nbcontractv1.ClusterNetworkConfig_NP_NONE
 }
 
 // getNetworkPolicyType returns the NetworkPolicyType enum based on the input string.
-func getNetworkPolicyType(networkPolicy string) nbcontractv1.NetworkPolicy {
+func getNetworkPolicyType(networkPolicy string) nbcontractv1.ClusterNetworkConfig_NetworkPolicy {
 	if strings.EqualFold(networkPolicy, "azure") {
-		return nbcontractv1.NetworkPolicy_NPO_AZURE
+		return nbcontractv1.ClusterNetworkConfig_NPO_AZURE
 	} else if strings.EqualFold(networkPolicy, "calico") {
-		return nbcontractv1.NetworkPolicy_NPO_CALICO
+		return nbcontractv1.ClusterNetworkConfig_NPO_CALICO
 	}
 
-	return nbcontractv1.NetworkPolicy_NPO_NONE
+	return nbcontractv1.ClusterNetworkConfig_NPO_NONE
 }
 
 // GetOutBoundCmd returns a proper outbound traffic command based on some cloud and Linux distro configs.
