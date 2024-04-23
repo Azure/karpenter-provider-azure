@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -ne 2 ]; then
-    echo "Usage: $0 <cluster-name> <resource-group>"
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 <cluster-name> <resource-group> <namespace>"
     exit 1
 fi
 
 CLUSTER_NAME=$1
 RG=$2
-KARPENTER_NAMESPACE=kube-system
+KARPENTER_NAMESPACE=$3
 
 echo "Creating the workload MSI for Karpenter use ..."
 LOCATION=$(az group show --name "${RG}" --query "location" -otsv)
