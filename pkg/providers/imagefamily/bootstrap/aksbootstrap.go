@@ -160,11 +160,10 @@ var (
 				DisableOutboundSnat:                   false,                          // s
 			},
 			ClusterNetworkConfig: &nbcontractv1.ClusterNetworkConfig{
-				VnetCniPluginsUrl: vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
-				CniPluginsUrl:     cniPluginsURL,          // - [currently required, same]
-				Subnet:            "aks-subnet",           // xd
+				Subnet: "aks-subnet", // xd
 			},
 		},
+		NetworkConfig: &nbcontractv1.NetworkConfig{},
 		GpuConfig: &nbcontractv1.GPUConfig{
 			ConfigGpuDriver: true,  // s
 			GpuDevicePlugin: false, // -
@@ -229,14 +228,13 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) (*nbcontractv1.Configur
 	nBCB.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalId = servicePrincipalClientID
 	nBCB.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalSecret = servicePrincipalFileContent
 	nBCB.GetNodeBootstrapConfig().AuthConfig.AssignedIdentityId = a.UserAssignedIdentityID
-
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.NetworkPlugin = getNetworkPluginType(a.NetworkPlugin)
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.NetworkPolicy = getNetworkPolicyType(a.NetworkPolicy)
+	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPlugin = getNetworkPluginType(a.NetworkPlugin)
+	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPolicy = getNetworkPolicyType(a.NetworkPolicy)
 	nBCB.GetNodeBootstrapConfig().KubernetesVersion = a.KubernetesVersion
 
 	nBCB.GetNodeBootstrapConfig().KubeBinaryConfig.KubeBinaryUrl = kubeBinaryURL(a.KubernetesVersion, a.Arch)
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.VnetCniPluginsUrl = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.CniPluginsUrl = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
+	nBCB.GetNodeBootstrapConfig().NetworkConfig.VnetCniPluginsUrl = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
+	nBCB.GetNodeBootstrapConfig().NetworkConfig.CniPluginsUrl = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
 
 	// calculated values
 	nBCB.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.SecurityGroupName = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)

@@ -117,22 +117,22 @@ func getStringFromVMType(enum nbcontractv1.ClusterConfig_VM) string {
 	}
 }
 
-func getStringFromNetworkPluginType(enum nbcontractv1.ClusterNetworkConfig_NetworkPlugin) string {
+func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPlugin) string {
 	switch enum {
-	case nbcontractv1.ClusterNetworkConfig_NP_AZURE:
+	case nbcontractv1.NetworkPlugin_NP_AZURE:
 		return networkPluginAzure
-	case nbcontractv1.ClusterNetworkConfig_NP_KUBENET:
+	case nbcontractv1.NetworkPlugin_NP_KUBENET:
 		return networkPluginkubenet
 	default:
 		return ""
 	}
 }
 
-func getStringFromNetworkPolicyType(enum nbcontractv1.ClusterNetworkConfig_NetworkPolicy) string {
+func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicy) string {
 	switch enum {
-	case nbcontractv1.ClusterNetworkConfig_NPO_AZURE:
+	case nbcontractv1.NetworkPolicy_NPO_AZURE:
 		return networkPolicyAzure
-	case nbcontractv1.ClusterNetworkConfig_NPO_CALICO:
+	case nbcontractv1.NetworkPolicy_NPO_CALICO:
 		return networkPolicyCalico
 	default:
 		return ""
@@ -230,8 +230,8 @@ func getIsKrustlet(wr nbcontractv1.WorkloadRuntime) bool {
 	return wr == nbcontractv1.WorkloadRuntime_WASM_WASI
 }
 
-func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.ClusterNetworkConfig) bool {
-	return nc.GetNetworkPlugin() == nbcontractv1.ClusterNetworkConfig_NP_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.ClusterNetworkConfig_NPO_CALICO
+func getEnsureNoDupePromiscuousBridge(nc *nbcontractv1.NetworkConfig) bool {
+	return nc.GetNetworkPlugin() == nbcontractv1.NetworkPlugin_NP_KUBENET && nc.GetNetworkPolicy() != nbcontractv1.NetworkPolicy_NPO_CALICO
 }
 
 func getHasSearchDomain(csd *nbcontractv1.CustomSearchDomainConfig) bool {

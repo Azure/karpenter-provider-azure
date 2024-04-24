@@ -406,7 +406,7 @@ func Test_getAzureEnvironmentFilepath(t *testing.T) {
 
 func Test_getEnsureNoDupePromiscuousBridge(t *testing.T) {
 	type args struct {
-		nc *nbcontractv1.ClusterNetworkConfig
+		nc *nbcontractv1.NetworkConfig
 	}
 	tests := []struct {
 		name string
@@ -416,9 +416,9 @@ func Test_getEnsureNoDupePromiscuousBridge(t *testing.T) {
 		{
 			name: "NetworkConfig with no promiscuous bridge",
 			args: args{
-				nc: &nbcontractv1.ClusterNetworkConfig{
-					NetworkPlugin: nbcontractv1.ClusterNetworkConfig_NP_AZURE,
-					NetworkPolicy: nbcontractv1.ClusterNetworkConfig_NPO_AZURE,
+				nc: &nbcontractv1.NetworkConfig{
+					NetworkPlugin: nbcontractv1.NetworkPlugin_NP_AZURE,
+					NetworkPolicy: nbcontractv1.NetworkPolicy_NPO_AZURE,
 				},
 			},
 			want: false,
@@ -426,9 +426,9 @@ func Test_getEnsureNoDupePromiscuousBridge(t *testing.T) {
 		{
 			name: "NetworkConfig with promiscuous bridge",
 			args: args{
-				nc: &nbcontractv1.ClusterNetworkConfig{
-					NetworkPlugin: nbcontractv1.ClusterNetworkConfig_NP_KUBENET,
-					NetworkPolicy: nbcontractv1.ClusterNetworkConfig_NPO_AZURE,
+				nc: &nbcontractv1.NetworkConfig{
+					NetworkPlugin: nbcontractv1.NetworkPlugin_NP_KUBENET,
+					NetworkPolicy: nbcontractv1.NetworkPolicy_NPO_AZURE,
 				},
 			},
 			want: true,
