@@ -3,7 +3,7 @@ set -euo pipefail
 
 RELEASE_ACR=${RELEASE_ACR:-ksnap.azurecr.io} # will always be overridden
 RELEASE_REPO_ACR=${RELEASE_REPO_ACR:-${RELEASE_ACR}/public/aks/karpenter}
-RELEASE_REPO_MAR=mcr.microsoft.com/aks/karpenter
+RELEASE_IMAGE_REPO_MAR=mcr.microsoft.com/aks/karpenter/controller
 SNAPSHOT_ACR=${SNAPSHOT_ACR:-ksnap.azurecr.io}
 SNAPSHOT_REPO_ACR=${SNAPSHOT_REPO_ACR:-${SNAPSHOT_ACR}/karpenter/snapshot}
 
@@ -39,7 +39,7 @@ Helm Chart Version ${helm_chart_version}"
 
   authenticate "${RELEASE_ACR}"
   buildAndPublish "${RELEASE_REPO_ACR}" "${version}" "${helm_chart_version}" "${commit_sha}" \
-    "${RELEASE_REPO_MAR}" # repo override for Helm chart
+    "${RELEASE_IMAGE_REPO_MAR}" # image repo override for Helm chart
 }
 
 authenticate() {
@@ -84,10 +84,7 @@ buildAndPublish() {
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img}"
   cosignOciArtifact "${version}" "${commit_sha}" "${build_date}" "${img_nap}"
 
-  final_img_repo="$img_repo" 
-  if [[ -n "$5" ]]; then # override the repo if provided (used for MCR)
-    final_img_repo="${5}/controller"
-  fi
+  final_img_repo=${5:-$img_repo} # override the image repo if provided (used for MCR)
 
   yq e -i ".controller.image.repository = \"${final_img_repo}\"" charts/karpenter/values.yaml
   yq e -i ".controller.image.tag = \"${img_tag}\"" charts/karpenter/values.yaml
