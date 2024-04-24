@@ -135,7 +135,7 @@ chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} ka
 Usinge the generated `karpenter-values.yaml` file, install Karpenter using Helm:
 
 ```bash
-export KARPENTER_VERSION=v0.3.0
+export KARPENTER_VERSION=v0.4.0
 
 helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
   --version "${KARPENTER_VERSION}" \
