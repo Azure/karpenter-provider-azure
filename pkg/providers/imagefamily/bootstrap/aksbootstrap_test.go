@@ -188,6 +188,7 @@ func TestAKS_applyOptions(t *testing.T) {
 		ResourceGroup:  "AKS resourcegroup",
 		SubscriptionID: "AKS subscriptionid",
 		TenantID:       "AKS tenantid",
+		APIServerName:  "AKS apiservername",
 	}
 	tests := []struct {
 		name    string
@@ -245,12 +246,20 @@ func TestAKS_applyOptions(t *testing.T) {
 				KubernetesVersion:              tt.fields.KubernetesVersion,
 			}
 			got, gotErr := a.applyOptions(tt.args.v)
-			if a.ResourceGroup != got.ClusterConfig.GetResourceGroup() {
-				t.Errorf("Expected resource group to be %s but got %s", a.ResourceGroup, got.ClusterConfig.GetResourceGroup())
+			if !tt.wantErr {
+				if gotErr != nil {
+					t.Errorf("Expected no error but got %v", gotErr)
+				} else {
+					// even if there is no error, we still want to check if the fields are updated correctly
+					if a.ResourceGroup != got.ClusterConfig.GetResourceGroup() {
+						t.Errorf("Expected resource group to be %s but got %s", a.ResourceGroup, got.ClusterConfig.GetResourceGroup())
+					}
+					if a.Location != got.ClusterConfig.GetLocation() {
+						t.Errorf("Expected location to be %s but got %s", a.Location, got.ClusterConfig.GetLocation())
+					}
+				}
 			}
-			if a.Location != got.ClusterConfig.GetLocation() {
-				t.Errorf("Expected location to be %s but got %s", a.Location, got.ClusterConfig.GetLocation())
-			}
+
 			if tt.wantErr && gotErr == nil {
 				t.Errorf("Expected error but got none")
 			}

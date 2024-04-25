@@ -163,7 +163,6 @@ var (
 				Subnet: "aks-subnet", // xd
 			},
 		},
-		NetworkConfig: &nbcontractv1.NetworkConfig{},
 		GpuConfig: &nbcontractv1.GPUConfig{
 			ConfigGpuDriver: true,  // s
 			GpuDevicePlugin: false, // -
@@ -269,7 +268,7 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) (*nbcontractv1.Configur
 	nBCB.GetNodeBootstrapConfig().KubeletConfig.KubeletNodeLabels = kubeletLabels
 	nBCB.GetNodeBootstrapConfig().KubeletConfig.KubeletFlags = a.getKubeletFlags()
 	if error := nBCB.ValidateNBContract(); error != nil {
-		return nBCB.GetNodeBootstrapConfig(), fmt.Errorf("error when validating node bootstrap contract: %w", error)
+		return nil, fmt.Errorf("error when validating node bootstrap contract: %w", error)
 	}
 	return nBCB.GetNodeBootstrapConfig(), nil
 }
