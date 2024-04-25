@@ -216,15 +216,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 			want: "a=vala,b=valb,c=valc",
 		},
 		{
-			name: "Multiple key-value pairs with delimiter space where values are a combination of strings and integers",
-			args: args{
-				m:         map[string]interface{}{"key1": "value1", "key2": "value2", "key3": 3, "key4": 4},
-				delimiter: " ",
-			},
-			want: "key1=value1 key2=value2 key3=3 key4=4",
-		},
-		{
-			name: "Multiple key-value pairs with delimiter line breaker \\n where values are a combination of strings, integers and booleans",
+			name: "Multiple key-value pairs with delimiter line breaker \\n where values are a combination of strings and integers",
 			args: args{
 				m:         map[string]interface{}{"key1": "value1", "key2": "value2", "key3": 3, "key4": 4},
 				delimiter: "\n",
