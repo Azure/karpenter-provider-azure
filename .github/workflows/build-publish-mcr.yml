@@ -12,9 +12,6 @@ on:
 permissions:
   contents: read
 
-env:
-  REGISTRY_REPO: public/aks/karpenter
-
 jobs:
   prepare-variables:
     runs-on:
@@ -60,19 +57,7 @@ jobs:
     - uses: ./.github/actions/install-deps
   
     - name: Build and publish image
-      env:
-        KO_DOCKER_REPO: ${{ secrets.AZURE_REGISTRY }}/${{ env.REGISTRY_REPO }}
       run: |
         az login --identity
-        az acr login -n ${{ secrets.AZURE_REGISTRY }}
-        cat >.ko.yaml <<EOF
-        builds:
-        - id: controller
-          main: ./cmd/controller
-          flags: ['-tags','ccp']
-        EOF
-        ko build github.com/Azure/karpenter-provider-azure/cmd/controller \
-          --platform linux/amd64,linux/arm64 \
-          --base-import-paths \
-          --sbom none \
-          --tags ${{ needs.prepare-variables.outputs.release_tag }}-aks
+        ko version
+        RELEASE_ACR=${{ secrets.AZURE_REGISTRY }} ./hack/release/release.sh
