@@ -167,7 +167,7 @@ func Test_getKubeletConfigFileEnabled(t *testing.T) {
 
 func Test_createSortedKeyValueStringPairs(t *testing.T) {
 	type args struct {
-		m         map[string]string
+		m         map[string]interface{}
 		delimiter string
 	}
 	tests := []struct {
@@ -178,7 +178,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Empty map",
 			args: args{
-				m:         map[string]string{},
+				m:         map[string]interface{}{},
 				delimiter: ",",
 			},
 			want: "",
@@ -186,7 +186,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Single key-value pair",
 			args: args{
-				m:         map[string]string{"key1": "value1"},
+				m:         map[string]interface{}{"key1": "value1"},
 				delimiter: " ",
 			},
 			want: "key1=value1",
@@ -194,7 +194,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Multiple key-value pairs with delimiter ,",
 			args: args{
-				m:         map[string]string{"key1": "value1", "key2": "value2"},
+				m:         map[string]interface{}{"key1": "value1", "key2": "value2"},
 				delimiter: ",",
 			},
 			want: "key1=value1,key2=value2",
@@ -202,7 +202,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Multiple key-value pairs with delimiter space",
 			args: args{
-				m:         map[string]string{"key1": "value1", "key2": "value2"},
+				m:         map[string]interface{}{"key1": "value1", "key2": "value2"},
 				delimiter: " ",
 			},
 			want: "key1=value1 key2=value2",
@@ -210,10 +210,26 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Sorting key-value pairs",
 			args: args{
-				m:         map[string]string{"b": "valb", "a": "vala", "c": "valc"},
+				m:         map[string]interface{}{"b": "valb", "a": "vala", "c": "valc"},
 				delimiter: ",",
 			},
 			want: "a=vala,b=valb,c=valc",
+		},
+		{
+			name: "Multiple key-value pairs with delimiter space where values are a combination of strings and integers",
+			args: args{
+				m:         map[string]interface{}{"key1": "value1", "key2": "value2", "key3": 3, "key4": 4},
+				delimiter: " ",
+			},
+			want: "key1=value1 key2=value2 key3=3 key4=4",
+		},
+		{
+			name: "Multiple key-value pairs with delimiter line breaker \\n where values are a combination of strings, integers and booleans",
+			args: args{
+				m:         map[string]interface{}{"key1": "value1", "key2": "value2", "key3": 3, "key4": 4},
+				delimiter: "\n",
+			},
+			want: "key1=value1\nkey2=value2\nkey3=3\nkey4=4",
 		},
 	}
 	for _, tt := range tests {
