@@ -26,12 +26,11 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func TestGetSysctlContent(t *testing.T) {
-	// TestGetSysctlContent tests the getSysctlContent function.
+func Test_getSysctlContent(t *testing.T) {
+	// Test_getSysctlContent tests the getSysctlContent function.
 	type args struct {
 		s *nbcontractv1.SysctlConfig
 	}
-	int9999 := int32(9999)
 	tests := []struct {
 		name string
 		args args
@@ -43,18 +42,35 @@ func TestGetSysctlContent(t *testing.T) {
 				s: &nbcontractv1.SysctlConfig{},
 			},
 			want: base64.StdEncoding.EncodeToString(
-				[]byte("net.core.message_burst=80 net.core.message_cost=40 net.core.somaxconn=16384 net.ipv4.neigh.default.gc_thresh1=4096 net.ipv4.neigh.default.gc_thresh2=8192 net.ipv4.neigh.default.gc_thresh3=16384 net.ipv4.tcp_max_syn_backlog=16384 net.ipv4.tcp_retries2=8")), // Update with expected value
+				[]byte(`net.core.message_burst=80
+net.core.message_cost=40
+net.core.somaxconn=16384
+net.ipv4.neigh.default.gc_thresh1=4096
+net.ipv4.neigh.default.gc_thresh2=8192
+net.ipv4.neigh.default.gc_thresh3=16384
+net.ipv4.tcp_max_syn_backlog=16384
+net.ipv4.tcp_retries2=8`)),
 		},
 		{
 			name: "SysctlConfig with custom values",
 			args: args{
 				s: &nbcontractv1.SysctlConfig{
-					NetIpv4TcpMaxSynBacklog: &int9999,
-					NetCoreRmemDefault:      &int9999,
+					NetIpv4TcpMaxSynBacklog: ptr.To(int32(9999)),
+					NetCoreRmemDefault:      ptr.To(int32(9999)),
+					NetIpv4IpLocalPortRange: ptr.To("32768 62535"),
 				},
 			},
 			want: base64.StdEncoding.EncodeToString(
-				[]byte("net.core.message_burst=80 net.core.message_cost=40 net.core.rmem_default=9999 net.core.somaxconn=16384 net.ipv4.neigh.default.gc_thresh1=4096 net.ipv4.neigh.default.gc_thresh2=8192 net.ipv4.neigh.default.gc_thresh3=16384 net.ipv4.tcp_max_syn_backlog=9999 net.ipv4.tcp_retries2=8")), // Update with expected value
+				[]byte(`net.core.message_burst=80
+net.core.message_cost=40
+net.core.rmem_default=9999
+net.core.somaxconn=16384
+net.ipv4.ip_local_port_range=32768 62535
+net.ipv4.neigh.default.gc_thresh1=4096
+net.ipv4.neigh.default.gc_thresh2=8192
+net.ipv4.neigh.default.gc_thresh3=16384
+net.ipv4.tcp_max_syn_backlog=9999
+net.ipv4.tcp_retries2=8`)),
 		},
 	}
 	for _, tt := range tests {
