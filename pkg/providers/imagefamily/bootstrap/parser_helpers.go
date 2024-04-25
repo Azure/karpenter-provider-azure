@@ -95,6 +95,7 @@ func getFuncMap() template.FuncMap {
 		"getLinuxAdminUsername":                     getLinuxAdminUsername,
 		"getTargetEnvironment":                      getTargetEnvironment,
 		"getTargetCloud":                            getTargetCloud,
+		"getIsVHD":                                  getIsVHD,
 	}
 }
 
@@ -284,7 +285,7 @@ func getSysctlContent(s *nbcontractv1.SysctlConfig) string {
 		s = &nbcontractv1.SysctlConfig{}
 	}
 
-	m := make(map[string]int32)
+	m := make(map[string]interface{})
 	m["net.ipv4.tcp_retries2"] = 8
 	m["net.core.message_burst"] = 80
 	m["net.core.message_cost"] = 40
@@ -376,6 +377,7 @@ func getSysctlContent(s *nbcontractv1.SysctlConfig) string {
 	}
 
 	if s.GetNetIpv4IpLocalPortRange() != "" {
+		m["net.ipv4.ip_local_port_range"] = s.GetNetIpv4IpLocalPortRange()
 		if getPortRangeEndValue(s.GetNetIpv4IpLocalPortRange()) > 65330 {
 			m["net.ipv4.ip_local_reserved_ports"] = 65330
 		}
@@ -421,7 +423,7 @@ func getSysctlContent(s *nbcontractv1.SysctlConfig) string {
 		m["vm.vfs_cache_pressure"] = s.GetVMVfsCachePressure()
 	}
 
-	return base64.StdEncoding.EncodeToString([]byte(createSortedKeyValuePairs(m, " ")))
+	return base64.StdEncoding.EncodeToString([]byte(createSortedKeyValuePairs(m, "\n")))
 }
 
 func getShouldConfigContainerdUlimits(u *nbcontractv1.UlimitConfig) bool {
@@ -594,4 +596,11 @@ func getTargetCloud(v *nbcontractv1.AuthConfig) string {
 	}
 
 	return v.GetTargetCloud()
+}
+
+func getIsVHD(v *bool) bool {
+	if v == nil {
+		return true
+	}
+	return *v
 }

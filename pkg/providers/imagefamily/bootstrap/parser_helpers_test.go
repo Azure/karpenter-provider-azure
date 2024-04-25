@@ -23,14 +23,14 @@ import (
 	"testing"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
+	"k8s.io/utils/ptr"
 )
 
-func TestGetSysctlContent(t *testing.T) {
-	// TestGetSysctlContent tests the getSysctlContent function.
+func Test_getSysctlContent(t *testing.T) {
+	// Test_getSysctlContent tests the getSysctlContent function.
 	type args struct {
 		s *nbcontractv1.SysctlConfig
 	}
-	int9999 := int32(9999)
 	tests := []struct {
 		name string
 		args args
@@ -42,18 +42,35 @@ func TestGetSysctlContent(t *testing.T) {
 				s: &nbcontractv1.SysctlConfig{},
 			},
 			want: base64.StdEncoding.EncodeToString(
-				[]byte("net.core.message_burst=80 net.core.message_cost=40 net.core.somaxconn=16384 net.ipv4.neigh.default.gc_thresh1=4096 net.ipv4.neigh.default.gc_thresh2=8192 net.ipv4.neigh.default.gc_thresh3=16384 net.ipv4.tcp_max_syn_backlog=16384 net.ipv4.tcp_retries2=8")), // Update with expected value
+				[]byte(`net.core.message_burst=80
+net.core.message_cost=40
+net.core.somaxconn=16384
+net.ipv4.neigh.default.gc_thresh1=4096
+net.ipv4.neigh.default.gc_thresh2=8192
+net.ipv4.neigh.default.gc_thresh3=16384
+net.ipv4.tcp_max_syn_backlog=16384
+net.ipv4.tcp_retries2=8`)),
 		},
 		{
 			name: "SysctlConfig with custom values",
 			args: args{
 				s: &nbcontractv1.SysctlConfig{
-					NetIpv4TcpMaxSynBacklog: &int9999,
-					NetCoreRmemDefault:      &int9999,
+					NetIpv4TcpMaxSynBacklog: ptr.To(int32(9999)),
+					NetCoreRmemDefault:      ptr.To(int32(9999)),
+					NetIpv4IpLocalPortRange: ptr.To("32768 62535"),
 				},
 			},
 			want: base64.StdEncoding.EncodeToString(
-				[]byte("net.core.message_burst=80 net.core.message_cost=40 net.core.rmem_default=9999 net.core.somaxconn=16384 net.ipv4.neigh.default.gc_thresh1=4096 net.ipv4.neigh.default.gc_thresh2=8192 net.ipv4.neigh.default.gc_thresh3=16384 net.ipv4.tcp_max_syn_backlog=9999 net.ipv4.tcp_retries2=8")), // Update with expected value
+				[]byte(`net.core.message_burst=80
+net.core.message_cost=40
+net.core.rmem_default=9999
+net.core.somaxconn=16384
+net.ipv4.ip_local_port_range=32768 62535
+net.ipv4.neigh.default.gc_thresh1=4096
+net.ipv4.neigh.default.gc_thresh2=8192
+net.ipv4.neigh.default.gc_thresh3=16384
+net.ipv4.tcp_max_syn_backlog=9999
+net.ipv4.tcp_retries2=8`)),
 		},
 	}
 	for _, tt := range tests {
@@ -150,7 +167,7 @@ func Test_getKubeletConfigFileEnabled(t *testing.T) {
 
 func Test_createSortedKeyValueStringPairs(t *testing.T) {
 	type args struct {
-		m         map[string]string
+		m         map[string]interface{}
 		delimiter string
 	}
 	tests := []struct {
@@ -161,7 +178,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Empty map",
 			args: args{
-				m:         map[string]string{},
+				m:         map[string]interface{}{},
 				delimiter: ",",
 			},
 			want: "",
@@ -169,7 +186,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Single key-value pair",
 			args: args{
-				m:         map[string]string{"key1": "value1"},
+				m:         map[string]interface{}{"key1": "value1"},
 				delimiter: " ",
 			},
 			want: "key1=value1",
@@ -177,7 +194,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Multiple key-value pairs with delimiter ,",
 			args: args{
-				m:         map[string]string{"key1": "value1", "key2": "value2"},
+				m:         map[string]interface{}{"key1": "value1", "key2": "value2"},
 				delimiter: ",",
 			},
 			want: "key1=value1,key2=value2",
@@ -185,7 +202,7 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Multiple key-value pairs with delimiter space",
 			args: args{
-				m:         map[string]string{"key1": "value1", "key2": "value2"},
+				m:         map[string]interface{}{"key1": "value1", "key2": "value2"},
 				delimiter: " ",
 			},
 			want: "key1=value1 key2=value2",
@@ -193,10 +210,18 @@ func Test_createSortedKeyValueStringPairs(t *testing.T) {
 		{
 			name: "Sorting key-value pairs",
 			args: args{
-				m:         map[string]string{"b": "valb", "a": "vala", "c": "valc"},
+				m:         map[string]interface{}{"b": "valb", "a": "vala", "c": "valc"},
 				delimiter: ",",
 			},
 			want: "a=vala,b=valb,c=valc",
+		},
+		{
+			name: "Multiple key-value pairs with delimiter line breaker \\n where values are a combination of strings and integers",
+			args: args{
+				m:         map[string]interface{}{"key1": "value1", "key2": "value2", "key3": 3, "key4": 4},
+				delimiter: "\n",
+			},
+			want: "key1=value1\nkey2=value2\nkey3=3\nkey4=4",
 		},
 	}
 	for _, tt := range tests {
@@ -281,7 +306,7 @@ func Test_getContainerdConfig(t *testing.T) {
 			name: "Default Configuration",
 			args: args{
 				nbcontract: &nbcontractv1.Configuration{
-					NeedsCgroupv2: true,
+					NeedsCgroupv2: ptr.To(true),
 				},
 			},
 			want: base64.StdEncoding.EncodeToString([]byte(`version = 2

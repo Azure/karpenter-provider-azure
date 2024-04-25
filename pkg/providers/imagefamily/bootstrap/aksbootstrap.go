@@ -33,7 +33,6 @@ import (
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
-	"github.com/Azure/agentbaker/pkg/nbcontracthelper"
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -164,11 +163,6 @@ var (
 				Subnet: "aks-subnet", // xd
 			},
 		},
-		NetworkConfig: &nbcontractv1.NetworkConfig{
-			VnetCniPluginsUrl: vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
-			CniPluginsUrl:     cniPluginsURL,          // - [currently required, same]
-		},
-		IsVhd: true, // s
 		GpuConfig: &nbcontractv1.GPUConfig{
 			ConfigGpuDriver: true,  // s
 			GpuDevicePlugin: false, // -
@@ -198,7 +192,11 @@ func (a AKS) aksBootstrapScript() (string, error) {
 	// use staticNodeBootstrapVars as the base / defaults
 
 	// apply overrides from passed in options
-	NodeBootstrapConfig := a.applyOptions(&staticNodeBootstrapVars)
+	NodeBootstrapConfig, err := a.applyOptions(&staticNodeBootstrapVars)
+
+	if err != nil {
+		return "", fmt.Errorf("error applying options to node bootstrap contract: %w", err)
+	}
 
 	customDataNbContract, err := getCustomDataFromNodeBootstrapContract(NodeBootstrapConfig)
 	if err != nil {
@@ -212,8 +210,8 @@ func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
 	return fmt.Sprintf("%s/kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
 }
 
-func (a AKS) applyOptions(v *nbcontractv1.Configuration) *nbcontractv1.Configuration {
-	nBCB := nbcontracthelper.NewNBContractBuilder()
+func (a AKS) applyOptions(v *nbcontractv1.Configuration) (*nbcontractv1.Configuration, error) {
+	nBCB := nbcontractv1.NewNBContractBuilder()
 	nBCB.ApplyConfiguration(v)
 
 	nBCB.GetNodeBootstrapConfig().KubernetesCaCert = *a.CABundle
@@ -229,7 +227,6 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) *nbcontractv1.Configura
 	nBCB.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalId = servicePrincipalClientID
 	nBCB.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalSecret = servicePrincipalFileContent
 	nBCB.GetNodeBootstrapConfig().AuthConfig.AssignedIdentityId = a.UserAssignedIdentityID
-
 	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPlugin = getNetworkPluginType(a.NetworkPlugin)
 	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPolicy = getNetworkPolicyType(a.NetworkPolicy)
 	nBCB.GetNodeBootstrapConfig().KubernetesVersion = a.KubernetesVersion
@@ -248,7 +245,7 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) *nbcontractv1.Configura
 	if utils.IsNvidiaEnabledSKU(nBCB.GetNodeBootstrapConfig().VmSize) {
 		nBCB.GetNodeBootstrapConfig().GpuConfig.ConfigGpuDriver = true
 	}
-	nBCB.GetNodeBootstrapConfig().NeedsCgroupv2 = true
+	nBCB.GetNodeBootstrapConfig().NeedsCgroupv2 = ptr.Bool(true)
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
@@ -270,8 +267,10 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) *nbcontractv1.Configura
 	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
 	nBCB.GetNodeBootstrapConfig().KubeletConfig.KubeletNodeLabels = kubeletLabels
 	nBCB.GetNodeBootstrapConfig().KubeletConfig.KubeletFlags = a.getKubeletFlags()
-
-	return nBCB.GetNodeBootstrapConfig()
+	if error := nBCB.ValidateNBContract(); error != nil {
+		return nil, fmt.Errorf("error when validating node bootstrap contract: %w", error)
+	}
+	return nBCB.GetNodeBootstrapConfig(), nil
 }
 
 func (a AKS) getKubeletFlags() map[string]string {
