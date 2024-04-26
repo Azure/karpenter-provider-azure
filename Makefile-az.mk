@@ -324,3 +324,6 @@ az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot rele
 		--set controller.resources.limits.cpu=1 \
 		--set controller.resources.limits.memory=1Gi \
 		--wait
+
+az-rmcrds: ## Delete Karpenter CRDs
+	kubectl delete crd nodepools.karpenter.sh nodeclaims.karpenter.sh aksnodeclasses.karpenter.azure.com

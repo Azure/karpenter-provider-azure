@@ -151,6 +151,28 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("missing field, ssh-public-key")))
 		})
+		It("should fail validation when VNet SubnetID not included", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "",
+			)
+			Expect(err).To(MatchError(ContainSubstring("missing field, vnet-subnet-id")))
+		})
+		It("should fail validation when VNet SubnetID is invalid (not absolute)", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "invalid-vnet-subnet-id",
+			)
+			Expect(err).To(MatchError(ContainSubstring("vnet-subnet-id is invalid: invalid vnet subnet id: invalid-vnet-subnet-id")))
+		})
 		It("should fail when clusterEndpoint is invalid (not absolute)", func() {
 			err := opts.Parse(
 				fs,
