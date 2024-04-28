@@ -25,7 +25,7 @@ require (
 	github.com/jongio/azidext/go/azidext v0.5.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/onsi/ginkgo/v2 v2.17.1
-	github.com/onsi/gomega v1.32.0
+	github.com/onsi/gomega v1.33.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus/client_golang v1.19.0
 	github.com/samber/lo v1.39.0
@@ -42,7 +42,7 @@ require (
 	knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd
 	sigs.k8s.io/cloud-provider-azure v1.29.3
 	sigs.k8s.io/controller-runtime v0.17.3
-	sigs.k8s.io/karpenter v0.36.0
+	sigs.k8s.io/karpenter v0.36.1
 )
 
 require (

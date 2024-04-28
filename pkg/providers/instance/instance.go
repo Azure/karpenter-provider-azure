@@ -266,7 +266,6 @@ func newVMObject(
 	sshPublicKey string,
 	nodeIdentities []string,
 	nodeClass *v1alpha2.AKSNodeClass,
-	nodeClaim *corev1beta1.NodeClaim,
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
 	// Build the image reference from template
@@ -328,7 +327,6 @@ func newVMObject(
 	}
 	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
-	setVMTagsNodepoolName(vm.Tags, nodeClaim)
 
 	return vm
 }
@@ -355,8 +353,8 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	}
 }
 
-// setVMTagsNodepoolName sets "karpenter.sh/nodepool" tag
-func setVMTagsNodepoolName(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
+// setNodePoolNameTag sets "karpenter.sh/nodepool" tag
+func setNodePoolNameTag(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
 	if val, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]; ok {
 		tags[NodePoolTagKey] = &val
 	}
@@ -382,6 +380,10 @@ func (p *Provider) launchInstance(
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting launch template: %w", err)
 	}
+
+	// set provisioner tag for NIC, VM, and Disk
+	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
+
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
@@ -393,7 +395,7 @@ func (p *Provider) launchInstance(
 
 	sshPublicKey := options.FromContext(ctx).SSHPublicKey
 	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
+	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
