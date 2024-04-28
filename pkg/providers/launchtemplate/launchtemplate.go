@@ -43,6 +43,7 @@ const (
 	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
 	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
 
+	networkPluginAzure = "azure"
 	networkModeOverlay = "overlay"
 )
 
@@ -114,7 +115,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		arch = corev1beta1.ArchitectureArm64
 	}
 
-	if options.FromContext(ctx).NetworkPluginMode == networkModeOverlay {
+	if options.FromContext(ctx).NetworkPlugin == networkPluginAzure && options.FromContext(ctx).NetworkPluginMode == networkModeOverlay {
 		// TODO: make conditional on pod subnet
 		vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
 		if err != nil {
