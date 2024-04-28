@@ -19,6 +19,7 @@ package options_test
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"testing"
 
@@ -115,6 +116,21 @@ var _ = Describe("Options", func() {
 	})
 
 	Context("Validation", func() {
+		It("should fail validation when networkPluginMode is invalid", func() {
+			typo := "overlaay"
+			errMsg := fmt.Sprintf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay', 'none' or ''.", typo)
+
+			err := opts.Parse(
+				fs, 
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vm-memory-overhead-percent", "-0.01",
+				"--network-plugin-mode", typo,
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
 		It("should fail validation when clusterName not included", func() {
 			err := opts.Parse(
 				fs,

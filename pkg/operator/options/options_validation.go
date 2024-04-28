@@ -31,9 +31,19 @@ func (o Options) Validate() error {
 		o.validateRequiredFields(),
 		o.validateEndpoint(),
 		o.validateVMMemoryOverheadPercent(),
+		o.validateNetworkPluginMode(),
 		o.validateVnetSubnetID(),
 		validate.Struct(o),
 	)
+}
+
+func (o Options) validateNetworkPluginMode() error {
+	// TODO: Move overlay and none to shared constants in AgentBaker
+	// NOTE: Network Plugin Mode should be normalized on the AKS API Level, so if we are passing values in from the ManagedCluster, NetworkPluginMode will already be normalized.
+	if o.NetworkPluginMode != "overlay" && o.NetworkPluginMode != "" && o.NetworkPluginMode != "none" {
+		return fmt.Errorf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay', 'none' or ''.", o.NetworkPluginMode)
+	}
+	return nil
 }
 
 func (o Options) validateVnetSubnetID() error {
