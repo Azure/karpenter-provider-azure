@@ -113,21 +113,24 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
 		arch = corev1beta1.ArchitectureArm64
 	}
-	// TODO: make conditional on either Azure CNI Overlay or pod subnet
-	vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
-	if err != nil {
-		return nil, err
-	}
-	labels = lo.Assign(labels, vnetLabels)
 
-	// TODO: Make conditional on epbf dataplane
-	// This label is required for the cilium agent daemonset because
-	// we select the nodes for the daemonset based on this label
-	//              - key: kubernetes.azure.com/ebpf-dataplane
-	//            operator: In
-	//            values:
-	//              - cilium
-	labels[vnetDataPlaneLabel] = networkDataplaneCilium
+	if options.FromContext(ctx).NetworkPluginMode == networkModeOverlay {
+		// TODO: make conditional on pod subnet
+		vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
+		if err != nil {
+			return nil, err
+		}
+		labels = lo.Assign(labels, vnetLabels)
+	}
+	if options.FromContext(ctx).NetworkPolicy == networkDataplaneCilium { 
+		// This label is required for the cilium agent daemonset because
+		// we select the nodes for the daemonset based on this label
+		//              - key: kubernetes.azure.com/ebpf-dataplane
+		//            operator: In
+		//            values:
+		//              - cilium
+		labels[vnetDataPlaneLabel] = networkDataplaneCilium
+	}
 
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
