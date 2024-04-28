@@ -66,7 +66,7 @@ type Options struct {
 	SSHPublicKey                   string   // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1alpha2.AKSNodeClass?
 	NetworkPlugin                  string   // => NetworkPlugin in bootstrap
 	NetworkPolicy                  string   // => NetworkPolicy in bootstrap
-	NetworkPluginMode				string  // => Network Plugin mode is used to set AzureCNIs network plugin mode to overlay. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
+	NetworkPluginMode              string   // => Network Plugin mode is used to set AzureCNIs network plugin mode to overlay. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
 	NodeIdentities                 []string // => Applied onto each VM
 
 	SubnetID string // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass

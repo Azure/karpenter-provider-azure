@@ -533,7 +533,6 @@ var _ = Describe("InstanceType Provider", func() {
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
 				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
-
 			)))
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
