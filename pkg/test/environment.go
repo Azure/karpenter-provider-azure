@@ -146,7 +146,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		unavailableOfferingsCache,
 		region,
 		resourceGroup,
-		testOptions.SubnetID,
 		"", // subscriptionID
 	)
 

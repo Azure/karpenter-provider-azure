@@ -127,7 +127,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		unavailableOfferingsCache,
 		azConfig.Location,
 		azConfig.NodeResourceGroup,
-		options.FromContext(ctx).SubnetID,
 		azConfig.SubscriptionID,
 	)
 
