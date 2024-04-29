@@ -49,6 +49,7 @@ const (
 type Template struct {
 	UserData string
 	ImageID  string
+	SubnetID string
 	Tags     map[string]*string
 }
 
@@ -113,8 +114,11 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
 		arch = corev1beta1.ArchitectureArm64
 	}
+
+	subnetID := lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), options.FromContext(ctx).SubnetID)
+
 	// TODO: make conditional on either Azure CNI Overlay or pod subnet
-	vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
+	vnetLabels, err := p.getVnetInfoLabels(subnetID)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +153,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
 		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
-		SubnetID:                       options.FromContext(ctx).SubnetID,
+		SubnetID:                       subnetID,
 	}, nil
 }
 
@@ -166,6 +170,7 @@ func (p *Provider) createLaunchTemplate(_ context.Context, options *parameters.P
 		UserData: userData,
 		ImageID:  options.ImageID,
 		Tags:     azureTags,
+		SubnetID: options.SubnetID,
 	}
 	return template, nil
 }
@@ -178,9 +183,8 @@ func mergeTags(tags ...map[string]string) (result map[string]*string) {
 	})
 }
 
-func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeClass) (map[string]string, error) {
-	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
-	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(options.FromContext(ctx).SubnetID)
+func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error) {
+	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		return nil, err
 	}

@@ -86,7 +86,6 @@ type Provider struct {
 	launchTemplateProvider *launchtemplate.Provider
 	loadBalancerProvider   *loadbalancer.Provider
 	resourceGroup          string
-	subnetID               string
 	subscriptionID         string
 	unavailableOfferings   *cache.UnavailableOfferings
 }
@@ -99,7 +98,6 @@ func NewProvider(
 	offeringsCache *cache.UnavailableOfferings,
 	location string,
 	resourceGroup string,
-	subnetID string,
 	subscriptionID string,
 ) *Provider {
 	listQuery = GetListQueryBuilder(resourceGroup).String()
@@ -110,7 +108,6 @@ func NewProvider(
 		loadBalancerProvider:   loadBalancerProvider,
 		location:               location,
 		resourceGroup:          resourceGroup,
-		subnetID:               subnetID,
 		subscriptionID:         subscriptionID,
 		unavailableOfferings:   offeringsCache,
 	}
@@ -221,9 +218,10 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Primary:                   to.Ptr(true),
 						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
-						Subnet: &armnetwork.Subnet{
-							ID: &p.subnetID,
-						},
+						// Subnet is set in p.applyTemplateToNic
+						//Subnet: &armnetwork.Subnet{
+						//	ID: launchTemplate.SubnetID
+						//},
 						LoadBalancerBackendAddressPools: ipv4BackendPools,
 					},
 				},
@@ -495,8 +493,10 @@ func cpuLimitIsZero(err error) bool {
 }
 
 func (p *Provider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
-	// set tags
 	nic.Tags = template.Tags
+	for i := range nic.Properties.IPConfigurations {
+		nic.Properties.IPConfigurations[i].Properties.Subnet = &armnetwork.Subnet{ID: &template.SubnetID}
+	}
 }
 
 func (p *Provider) getLaunchTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim,
