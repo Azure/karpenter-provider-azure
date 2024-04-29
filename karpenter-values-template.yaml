@@ -22,6 +22,8 @@ controller:
       value: "${SSH_PUBLIC_KEY}"
     - name: NETWORK_PLUGIN
       value: "azure"
+    - name: NETWORK_PLUGIN_MODE
+      value: "overlay"
     - name: NETWORK_POLICY
       value: ""
     - name: VNET_SUBNET_ID
