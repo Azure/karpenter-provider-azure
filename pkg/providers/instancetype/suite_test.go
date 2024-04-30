@@ -527,7 +527,7 @@ var _ = Describe("InstanceType Provider", func() {
 			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
 			Expect(err).To(Succeed())
 			decodedString := string(decodedBytes[:])
-			// Since the network plugin is not "azure" and the network plugin is calico, it should not include the following kubeletLabels
+			// Since the network plugin is not "azure" and the network policy is calico, it should not include the following kubeletLabels
 			Expect(decodedString).To(Not(SatisfyAny(
 				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
