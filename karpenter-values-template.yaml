@@ -28,6 +28,8 @@ controller:
       value: ""
     - name: VNET_SUBNET_ID
       value: ${VNET_SUBNET_ID}
+    - name: NODE_IDENTITIES
+      value: ${NODE_IDENTITIES}
 
     # Azure client settings
     - name: ARM_SUBSCRIPTION_ID
