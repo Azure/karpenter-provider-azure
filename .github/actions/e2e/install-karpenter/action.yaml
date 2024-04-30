@@ -2,13 +2,13 @@ name: InstallKarpenter
 description: 'Installs Karpenter on the aks cluster'
 inputs:
   client-id:
-    description: 
+    description:
     required: true
   tenant-id:
-    description: 
+    description:
     required: true
   subscription-id:
-    description: 
+    description:
     required: true
   # region:
   #   description: "Region to create aks cluster"
@@ -31,11 +31,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+  - uses: actions/checkout@1d96c772d19495a3b5c517cd2bc0cb401ea0529f # v4.1.3
     with:
       ref: ${{ inputs.git_ref }}
   - name: az login
-    uses: azure/login@8c334a195cbb38e46038007b304988d888bf676a # v2.0.0
+    uses: azure/login@6b2456866fc08b011acb422a92a4aa20e2c4de32 # v2.1.0
     with:
       client-id: ${{ inputs.client-id }}
       tenant-id: ${{ inputs.tenant-id }}
@@ -43,9 +43,9 @@ runs:
   - name: az set sub
     shell: bash
     run: az account set --subscription ${{ inputs.subscription-id }}
-  - name: patch skaffold and cilium
+  - name: configure Helm chart values
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-patch-skaffold-azureoverlay az-patch-vnet-subnet-id
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-configure-values
   - name: deploy karpenter to cluster
     shell: bash
     run: AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run
