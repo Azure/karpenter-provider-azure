@@ -307,7 +307,7 @@ func memory(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
 }
 
 func ephemeralStorage(nodeClass *v1alpha2.AKSNodeClass) *resource.Quantity {
-	return resource.NewScaledQuantity(int64(*nodeClass.Spec.OSDiskSizeGB), resource.Giga)
+	return resource.NewScaledQuantity(int64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)), resource.Giga)
 }
 
 func pods(sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration) *resource.Quantity {
