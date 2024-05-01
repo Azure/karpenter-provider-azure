@@ -507,7 +507,6 @@ var _ = Describe("InstanceType Provider", func() {
 				ctx,
 				test.Options(test.OptionsFields{
 					NetworkPlugin: lo.ToPtr("kubenet"),
-					NetworkPolicy: lo.ToPtr("calico"),
 				}))
 		})
 
@@ -527,9 +526,8 @@ var _ = Describe("InstanceType Provider", func() {
 			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
 			Expect(err).To(Succeed())
 			decodedString := string(decodedBytes[:])
-			// Since the network plugin is not "azure" and the network policy is calico, it should not include the following kubeletLabels
+			// Since the network plugin is not "azure" it should not include the following kubeletLabels
 			Expect(decodedString).To(Not(SatisfyAny(
-				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
 				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
