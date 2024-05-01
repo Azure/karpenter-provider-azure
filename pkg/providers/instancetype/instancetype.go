@@ -27,8 +27,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"knative.dev/pkg/ptr"
 
+	agentbakercommon "github.com/Azure/agentbaker/pkg/agent/common"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -229,7 +229,7 @@ func setRequirementsHyperVGeneration(requirements scheduling.Requirements, sku *
 }
 
 func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
-	if utils.IsNvidiaEnabledSKU(sku.GetName()) {
+	if agentbakercommon.IsNvidiaEnabledSKU(sku.GetName()) {
 		requirements[v1alpha2.LabelSKUGPUManufacturer].Insert(v1alpha2.ManufacturerNvidia)
 		if vmsize.AcceleratorType != nil {
 			requirements[v1alpha2.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
@@ -276,7 +276,7 @@ func computeCapacity(ctx context.Context, sku *skewer.SKU, kc *corev1beta1.Kubel
 // gpuNvidiaCount returns the number of Nvidia GPUs in the SKU. Currently nvidia is the only gpu manufacturer we support.
 func gpuNvidiaCount(sku *skewer.SKU) *resource.Quantity {
 	count, err := sku.GPU()
-	if err != nil || !utils.IsNvidiaEnabledSKU(sku.GetName()) {
+	if err != nil || !agentbakercommon.IsNvidiaEnabledSKU(sku.GetName()) {
 		count = 0
 	}
 	return resources.Quantity(fmt.Sprint(count))

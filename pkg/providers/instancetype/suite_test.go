@@ -54,6 +54,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 
+	agentbakercommon "github.com/Azure/agentbaker/pkg/agent/common"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -64,7 +65,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 var ctx context.Context
@@ -1027,7 +1027,7 @@ var _ = Describe("InstanceType Provider", func() {
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Properties).ToNot(BeNil())
 			Expect(vm.Properties.HardwareProfile).ToNot(BeNil())
-			Expect(utils.IsNvidiaEnabledSKU(string(*vm.Properties.HardwareProfile.VMSize))).To(BeFalse())
+			Expect(agentbakercommon.IsNvidiaEnabledSKU(string(*vm.Properties.HardwareProfile.VMSize))).To(BeFalse())
 
 			clusterNodes := cluster.Nodes()
 			node := clusterNodes[0]

@@ -30,16 +30,7 @@ const (
 )
 
 const (
-	vmTypeStandard       = "standard"
-	vmTypeVmss           = "vmss"
-	networkPluginAzure   = "azure"
-	networkPluginkubenet = "kubenet"
-	networkPolicyAzure   = "azure"
-	networkPolicyCalico  = "calico"
-	loadBalancerBasic    = "basic"
-	loadBalancerStandard = "Standard"
-	vmSizeStandardDc2s   = "Standard_DC2s"
-	vmSizeStandardDc4s   = "Standard_DC4s"
-	defaultLinuxUser     = "azureuser"
-	defaultCloudName     = "AzurePublicCloud"
+	maxLBRuleCountDefault = 148
+	ipLocalReservedPorts  = 65330
+	MinArgs               = 2
 )

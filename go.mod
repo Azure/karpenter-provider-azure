@@ -3,7 +3,7 @@ module github.com/Azure/karpenter-provider-azure
 go 1.21
 
 require (
-	github.com/Azure/agentbaker v0.20240424.3-devinwon
+	github.com/Azure/agentbaker v0.20240430.0-lilypan
 	github.com/Azure/azure-kusto-go v0.15.0
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/azure-sdk-for-go-extensions v0.1.6
