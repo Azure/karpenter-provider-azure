@@ -2,10 +2,10 @@
 set -euo pipefail
 
 main() {
-    tools
+    devtools
 }
 
-tools() {
+devtools() {
     sudo apt update && sudo apt install curl jq -y
     curl -Lo yq https://github.com/mikefarah/yq/releases/download/v4.43.1/yq_linux_amd64 && chmod +x yq && sudo mv yq /usr/local/bin
     if test -z "$(which helm)"; then \
