@@ -27,9 +27,9 @@ import (
 
 	"github.com/samber/lo"
 
+	agentbakercommon "github.com/Azure/agentbaker/pkg/agent/common"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/logging"
@@ -145,14 +145,14 @@ func (p *Provider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) []cl
 
 func (p *Provider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
 	// Currently only GPU has conditional support by image family
-	if !(utils.IsNvidiaEnabledSKU(skuName) || utils.IsMarinerEnabledGPUSKU(skuName)) {
+	if !(agentbakercommon.IsNvidiaEnabledSKU(skuName) || agentbakercommon.IsMarinerEnabledGPUSKU(skuName)) {
 		return true
 	}
 	switch imageFamily {
 	case v1alpha2.Ubuntu2204ImageFamily:
-		return utils.IsNvidiaEnabledSKU(skuName)
+		return agentbakercommon.IsNvidiaEnabledSKU(skuName)
 	case v1alpha2.AzureLinuxImageFamily:
-		return utils.IsMarinerEnabledGPUSKU(skuName)
+		return agentbakercommon.IsMarinerEnabledGPUSKU(skuName)
 	default:
 		return false
 	}
@@ -223,7 +223,7 @@ func (p *Provider) isUnsupportedGPU(sku *skewer.SKU) bool {
 	if err != nil || gpu <= 0 {
 		return false
 	}
-	return !utils.IsMarinerEnabledGPUSKU(name) && !utils.IsNvidiaEnabledSKU(name)
+	return !agentbakercommon.IsMarinerEnabledGPUSKU(name) && !agentbakercommon.IsNvidiaEnabledSKU(name)
 }
 
 // SKU with constrained CPUs

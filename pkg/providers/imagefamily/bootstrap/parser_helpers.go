@@ -34,18 +34,18 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/agentbaker/pkg/agent/common"
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/blang/semver"
 )
 
 var (
 	//go:embed kubenet-cni.json.gtpl
 	kubenetTemplateContent []byte
 	//go:embed  containerdfornbcontract.toml.gtpl
-	containerdConfigTemplateTextForNBContract string
-	containerdConfigTemplateForNBContract     = template.Must(
-		template.New("containerdconfigfornbcontract").Funcs(getFuncMapForContainerdConfigTemplate()).Parse(containerdConfigTemplateTextForNBContract),
+	containerdConfigTemplateText string
+	//nolint:gochecknoglobals
+	containerdConfigTemplate = template.Must(
+		template.New("containerdconfigfornbcontract").Funcs(getFuncMapForContainerdConfigTemplate()).Parse(containerdConfigTemplateText),
 	)
 )
 
@@ -80,12 +80,10 @@ func getFuncMap() template.FuncMap {
 		"getDHCPV6ConfigFilepath":                   getDHCPV6ConfigFilepath,
 		"getDHCPV6ServiceFilepath":                  getDHCPV6ServiceFilepath,
 		"getShouldConfigContainerdUlimits":          getShouldConfigContainerdUlimits,
-		"getKubeletConfigFileEnabled":               getKubeletConfigFileEnabled,
 		"createSortedKeyValueStringPairs":           createSortedKeyValuePairs[string],
 		"createSortedKeyValueInt32Pairs":            createSortedKeyValuePairs[int32],
 		"getExcludeMasterFromStandardLB":            getExcludeMasterFromStandardLB,
 		"getMaxLBRuleCount":                         getMaxLBRuleCount,
-		"getGpuNode":                                getGpuNode,
 		"getGpuImageSha":                            getGpuImageSha,
 		"getGpuDriverVersion":                       getGpuDriverVersion,
 		"getIsSgxEnabledSKU":                        getIsSgxEnabledSKU,
@@ -94,63 +92,82 @@ func getFuncMap() template.FuncMap {
 		"getAzureEnvironmentFilepath":               getAzureEnvironmentFilepath,
 		"getLinuxAdminUsername":                     getLinuxAdminUsername,
 		"getTargetEnvironment":                      getTargetEnvironment,
-		"getTargetCloud":                            getTargetCloud,
 		"getIsVHD":                                  getIsVHD,
+		"getDisableSSH":                             getDisableSSH,
+		"getServicePrincipalFileContent":            getServicePrincipalFileContent,
+		"getEnableSwapConfig":                       getEnableSwapConfig,
+		"getShouldCOnfigTransparentHugePage":        getShouldCOnfigTransparentHugePage,
+		"getProxyVariables":                         getProxyVariables,
+		"getHasKubeletDiskType":                     getHasKubeletDiskType,
+		"getInitAKSCustomCloudFilepath":             getInitAKSCustomCloudFilepath,
+		"getTargetCloud":                            getTargetCloud,
+		"getIsAksCustomCloud":                       getIsAksCustomCloud,
+		"getGPUNeedsFabricManager":                  getGPUNeedsFabricManager,
+		"getEnableNvidia":                           getEnableNvidia,
 	}
 }
 
 func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 	return template.FuncMap{
-		"derefBool":  deref[bool],
-		"getGpuNode": getGpuNode,
+		"derefBool":                        deref[bool],
+		"getIsKrustlet":                    getIsKrustlet,
+		"getEnsureNoDupePromiscuousBridge": getEnsureNoDupePromiscuousBridge,
+		"isKubernetesVersionGe":            nbcontractv1.IsKubernetesVersionGe,
+		"getHasDataDir":                    getHasDataDir,
+		"getEnableNvidia":                  getEnableNvidia,
 	}
 }
 
 func getStringFromVMType(enum nbcontractv1.ClusterConfig_VM) string {
 	switch enum {
 	case nbcontractv1.ClusterConfig_STANDARD:
-		return vmTypeStandard
+		return nbcontractv1.VMTypeStandard
 	case nbcontractv1.ClusterConfig_VMSS:
-		return vmTypeVmss
+		return nbcontractv1.VMTypeVmss
+	case nbcontractv1.ClusterConfig_UNSPECIFIED:
+		return ""
 	default:
 		return ""
 	}
 }
 
+//nolint:exhaustive // NetworkPlugin_NP_NONE and NetworkPlugin_NP_UNSPECIFIED should both return ""
 func getStringFromNetworkPluginType(enum nbcontractv1.NetworkPlugin) string {
 	switch enum {
 	case nbcontractv1.NetworkPlugin_NP_AZURE:
-		return networkPluginAzure
+		return nbcontractv1.NetworkPluginAzure
 	case nbcontractv1.NetworkPlugin_NP_KUBENET:
-		return networkPluginkubenet
+		return nbcontractv1.NetworkPluginKubenet
 	default:
 		return ""
 	}
 }
 
+//nolint:exhaustive // NetworkPolicy_NPO_NONE and NetworkPolicy_NPO_UNSPECIFIED should both return ""
 func getStringFromNetworkPolicyType(enum nbcontractv1.NetworkPolicy) string {
 	switch enum {
 	case nbcontractv1.NetworkPolicy_NPO_AZURE:
-		return networkPolicyAzure
+		return nbcontractv1.NetworkPolicyAzure
 	case nbcontractv1.NetworkPolicy_NPO_CALICO:
-		return networkPolicyCalico
+		return nbcontractv1.NetworkPolicyCalico
 	default:
 		return ""
 	}
 }
 
+//nolint:exhaustive // Default and LoadBalancerConfig_UNSPECIFIED should both return ""
 func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerConfig_LoadBalancerSku) string {
 	switch enum {
 	case nbcontractv1.LoadBalancerConfig_BASIC:
-		return loadBalancerBasic
+		return nbcontractv1.LoadBalancerBasic
 	case nbcontractv1.LoadBalancerConfig_STANDARD:
-		return loadBalancerStandard
+		return nbcontractv1.LoadBalancerStandard
 	default:
 		return ""
 	}
 }
 
-// deref is a helper function to dereference a pointer of any type to its value
+// deref is a helper function to dereference a pointer of any type to its value.
 func deref[T interface{}](p *T) T {
 	if p == nil {
 		var zeroValue T
@@ -191,7 +208,7 @@ func containerdConfigFromNodeBootstrapContract(nbcontract *nbcontractv1.Configur
 	}
 
 	var buffer bytes.Buffer
-	if err := containerdConfigTemplateForNBContract.Execute(&buffer, nbcontract); err != nil {
+	if err := containerdConfigTemplate.Execute(&buffer, nbcontract); err != nil {
 		return "", fmt.Errorf("error executing containerd config template for NBContract: %w", err)
 	}
 
@@ -203,10 +220,7 @@ func getIsMIGNode(gpuInstanceProfile string) bool {
 }
 
 func getCustomCACertsStatus(customCACerts []string) bool {
-	if len(customCACerts) > 0 {
-		return true
-	}
-	return false
+	return len(customCACerts) > 0
 }
 
 func getEnableTLSBootstrap(bootstrapConfig *nbcontractv1.TLSBootstrappingConfig) bool {
@@ -276,6 +290,7 @@ func getDHCPV6ConfigFilepath() string {
 // getSysctlContent converts nbcontractv1.SysctlConfig to a string with key=value pairs, with default values.
 //
 //gocyclo:ignore
+//nolint:funlen,gocognit,cyclop // This function is long because it has to handle all the sysctl values.
 func getSysctlContent(s *nbcontractv1.SysctlConfig) string {
 	// This is a partial workaround to this upstream Kubernetes issue:
 	// https://github.com/kubernetes/kubernetes/issues/41916#issuecomment-312428731
@@ -378,8 +393,8 @@ func getSysctlContent(s *nbcontractv1.SysctlConfig) string {
 
 	if s.GetNetIpv4IpLocalPortRange() != "" {
 		m["net.ipv4.ip_local_port_range"] = s.GetNetIpv4IpLocalPortRange()
-		if getPortRangeEndValue(s.GetNetIpv4IpLocalPortRange()) > 65330 {
-			m["net.ipv4.ip_local_reserved_ports"] = 65330
+		if getPortRangeEndValue(s.GetNetIpv4IpLocalPortRange()) > ipLocalReservedPorts {
+			m["net.ipv4.ip_local_reserved_ports"] = ipLocalReservedPorts
 		}
 	}
 
@@ -458,11 +473,11 @@ func getPortRangeEndValue(portRange string) int {
 	arr := strings.Split(portRange, " ")
 
 	// we are expecting only two values, start and end.
-	if len(arr) != 2 {
+	if len(arr) != MinArgs {
 		return -1
 	}
 
-	start, end := int(0), int(0)
+	var start, end int
 	var err error
 
 	// the start value should be a valid port number.
@@ -512,19 +527,6 @@ func createSortedKeyValuePairs[T any](m map[string]T, delimiter string) string {
 	return buf.String()
 }
 
-// getKubeletConfigFileEnabled returns true if the kubelet config content is not empty and the k8s version is greater than or equal to 1.14.0.
-func getKubeletConfigFileEnabled(configContent string, k8sVersion string) bool {
-	// In AgentBaker's utils.go, it also checks if the orchestrator is Kubernetes. We assume it is always Kubernetes here.
-	return configContent != "" && IsKubernetesVersionGe(k8sVersion, "1.14.0")
-}
-
-// IsKubernetesVersionGe returns true if actualVersion is greater than or equal to version.
-func IsKubernetesVersionGe(actualVersion, version string) bool {
-	v1, _ := semver.Make(actualVersion)
-	v2, _ := semver.Make(version)
-	return v1.GE(v2)
-}
-
 func getExcludeMasterFromStandardLB(lb *nbcontractv1.LoadBalancerConfig) bool {
 	if lb == nil || lb.ExcludeMasterFromStandardLoadBalancer == nil {
 		return true
@@ -534,27 +536,23 @@ func getExcludeMasterFromStandardLB(lb *nbcontractv1.LoadBalancerConfig) bool {
 
 func getMaxLBRuleCount(lb *nbcontractv1.LoadBalancerConfig) int32 {
 	if lb == nil || lb.MaxLoadBalancerRuleCount == nil {
-		return int32(148)
+		return int32(maxLBRuleCountDefault)
 	}
 	return lb.GetMaxLoadBalancerRuleCount()
 }
 
-func getGpuNode(vmSize string) bool {
-	return utils.IsNvidiaEnabledSKU(vmSize)
-}
-
 func getGpuImageSha(vmSize string) string {
-	return utils.GetAKSGPUImageSHA(vmSize)
+	return common.GetAKSGPUImageSHA(vmSize)
 }
 
 func getGpuDriverVersion(vmSize string) string {
-	return utils.GetGPUDriverVersion(vmSize)
+	return common.GetGPUDriverVersion(vmSize)
 }
 
 // IsSgxEnabledSKU determines if an VM SKU has SGX driver support.
 func getIsSgxEnabledSKU(vmSize string) bool {
 	switch vmSize {
-	case vmSizeStandardDc2s, vmSizeStandardDc4s:
+	case nbcontractv1.VMSizeStandardDc2s, nbcontractv1.VMSizeStandardDc4s:
 		return true
 	}
 	return false
@@ -568,34 +566,53 @@ func getShouldConfigureHTTPProxyCA(httpProxyConfig *nbcontractv1.HTTPProxyConfig
 	return httpProxyConfig.GetProxyTrustedCa() != ""
 }
 
-func getAzureEnvironmentFilepath(v *nbcontractv1.CustomCloudConfig) string {
-	if v.GetIsAksCustomCloud() {
-		return fmt.Sprintf("/etc/kubernetes/%s.json", v.GetTargetEnvironment())
+func getIsAksCustomCloud(customCloudConfig *nbcontractv1.CustomCloudConfig) bool {
+	return strings.EqualFold(customCloudConfig.GetCustomCloudEnvName(), nbcontractv1.AksCustomCloudName)
+}
+
+/* GetCloudTargetEnv determines and returns whether the region is a sovereign cloud which
+have their own data compliance regulations (China/Germany/USGov) or standard.  */
+// Azure public cloud.
+func getCloudTargetEnv(v *nbcontractv1.Configuration) string {
+	loc := strings.ToLower(strings.Join(strings.Fields(v.GetClusterConfig().GetLocation()), ""))
+	switch {
+	case strings.HasPrefix(loc, "china"):
+		return "AzureChinaCloud"
+	case loc == "germanynortheast" || loc == "germanycentral":
+		return "AzureGermanCloud"
+	case strings.HasPrefix(loc, "usgov") || strings.HasPrefix(loc, "usdod"):
+		return "AzureUSGovernmentCloud"
+	default:
+		return nbcontractv1.DefaultCloudName
+	}
+}
+
+func getTargetEnvironment(v *nbcontractv1.Configuration) string {
+	if getIsAksCustomCloud(v.GetCustomCloudConfig()) {
+		return nbcontractv1.AksCustomCloudName
+	}
+	return getCloudTargetEnv(v)
+}
+
+func getTargetCloud(v *nbcontractv1.Configuration) string {
+	if getIsAksCustomCloud(v.GetCustomCloudConfig()) {
+		return nbcontractv1.AzureStackCloud
+	}
+	return getTargetEnvironment(v)
+}
+
+func getAzureEnvironmentFilepath(v *nbcontractv1.Configuration) string {
+	if getIsAksCustomCloud(v.GetCustomCloudConfig()) {
+		return fmt.Sprintf("/etc/kubernetes/%s.json", getTargetEnvironment(v))
 	}
 	return ""
 }
 
 func getLinuxAdminUsername(username string) string {
 	if username == "" {
-		return defaultLinuxUser
+		return nbcontractv1.DefaultLinuxUser
 	}
 	return username
-}
-
-func getTargetEnvironment(v *nbcontractv1.CustomCloudConfig) string {
-	if v.GetTargetEnvironment() == "" {
-		return defaultCloudName
-	}
-
-	return v.GetTargetEnvironment()
-}
-
-func getTargetCloud(v *nbcontractv1.AuthConfig) string {
-	if v.GetTargetCloud() == "" {
-		return defaultCloudName
-	}
-
-	return v.GetTargetCloud()
 }
 
 func getIsVHD(v *bool) bool {
@@ -603,4 +620,65 @@ func getIsVHD(v *bool) bool {
 		return true
 	}
 	return *v
+}
+
+func getDisableSSH(v *nbcontractv1.Configuration) bool {
+	if v.EnableSsh == nil {
+		return false
+	}
+	return !v.GetEnableSsh()
+}
+
+func getServicePrincipalFileContent(authConfig *nbcontractv1.AuthConfig) string {
+	if authConfig.GetServicePrincipalSecret() == "" {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString([]byte(authConfig.GetServicePrincipalSecret()))
+}
+
+func getEnableSwapConfig(v *nbcontractv1.CustomLinuxOSConfig) bool {
+	return v.GetEnableSwapConfig() && v.GetSwapFileSize() > 0
+}
+
+func getShouldCOnfigTransparentHugePage(v *nbcontractv1.CustomLinuxOSConfig) bool {
+	return v.GetTransparentDefrag() != "" || v.GetTransparentHugepageSupport() != ""
+}
+
+func getProxyVariables(proxyConfig *nbcontractv1.HTTPProxyConfig) string {
+	// only use https proxy, if user doesn't specify httpsProxy we autofill it with value from httpProxy.
+	proxyVars := ""
+	if proxyConfig.GetHttpProxy() != "" {
+		// from https://curl.se/docs/manual.html, curl uses http_proxy but uppercase for others?
+		proxyVars = fmt.Sprintf("export http_proxy=\"%s\";", proxyConfig.GetHttpProxy())
+	}
+	if proxyConfig.GetHttpsProxy() != "" {
+		proxyVars = fmt.Sprintf("export HTTPS_PROXY=\"%s\"; %s", proxyConfig.GetHttpsProxy(), proxyVars)
+	}
+	if proxyConfig.GetNoProxyEntries() != nil {
+		proxyVars = fmt.Sprintf("export NO_PROXY=\"%s\"; %s", strings.Join(proxyConfig.GetNoProxyEntries(), ","), proxyVars)
+	}
+	return proxyVars
+}
+
+func getHasDataDir(kubeletConfig *nbcontractv1.KubeletConfig) bool {
+	return kubeletConfig.GetContainerDataDir() != ""
+}
+
+func getHasKubeletDiskType(kubeletConfig *nbcontractv1.KubeletConfig) bool {
+	return kubeletConfig.GetKubeletDiskType() == nbcontractv1.KubeletDisk_TEMP_DISK
+}
+
+func getInitAKSCustomCloudFilepath() string {
+	return initAKSCustomCloudFilepath
+}
+
+func getGPUNeedsFabricManager(vmSize string) bool {
+	return common.GPUNeedsFabricManager(vmSize)
+}
+
+func getEnableNvidia(config *nbcontractv1.Configuration) bool {
+	if config.GpuConfig != nil && config.GpuConfig.EnableNvidia != nil {
+		return *config.GpuConfig.EnableNvidia
+	}
+	return common.IsNvidiaEnabledSKU(config.GetVmSize())
 }

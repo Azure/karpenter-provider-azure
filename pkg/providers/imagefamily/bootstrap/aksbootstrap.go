@@ -26,13 +26,13 @@ import (
 	"text/template"
 
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
+	agentbakercommon "github.com/Azure/agentbaker/pkg/agent/common"
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -154,10 +154,10 @@ var (
 			VmType:              nbcontractv1.ClusterConfig_VMSS, // xd
 			UseInstanceMetadata: true,                            // s
 			LoadBalancerConfig: &nbcontractv1.LoadBalancerConfig{
-				LoadBalancerSku:                       getLoadBalancerSKU("Standard"), // xd
-				ExcludeMasterFromStandardLoadBalancer: to.BoolPtr(true),               //s
-				MaxLoadBalancerRuleCount:              to.Int32Ptr(250),               // xd
-				DisableOutboundSnat:                   false,                          // s
+				LoadBalancerSku:                       nbcontractv1.GetLoadBalancerSKU("Standard"), // xd
+				ExcludeMasterFromStandardLoadBalancer: to.BoolPtr(true),                            //s
+				MaxLoadBalancerRuleCount:              to.Int32Ptr(250),                            // xd
+				DisableOutboundSnat:                   false,                                       // s
 			},
 			ClusterNetworkConfig: &nbcontractv1.ClusterNetworkConfig{
 				Subnet: "aks-subnet", // xd
@@ -167,8 +167,7 @@ var (
 			ConfigGpuDriver: true,  // s
 			GpuDevicePlugin: false, // -
 		},
-		EnableSsh:       true,                        // td
-		OutboundCommand: GetDefaultOutboundCommand(), // s
+		OutboundCommand: nbcontractv1.GetDefaultOutboundCommand(), // s
 		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
 			EnableSecureTlsBootstrapping: to.BoolPtr(false),
 		},
@@ -227,8 +226,8 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) (*nbcontractv1.Configur
 	nBCB.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalId = servicePrincipalClientID
 	nBCB.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalSecret = servicePrincipalFileContent
 	nBCB.GetNodeBootstrapConfig().AuthConfig.AssignedIdentityId = a.UserAssignedIdentityID
-	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPlugin = getNetworkPluginType(a.NetworkPlugin)
-	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPolicy = getNetworkPolicyType(a.NetworkPolicy)
+	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPlugin = nbcontractv1.GetNetworkPluginType(a.NetworkPlugin)
+	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPolicy = nbcontractv1.GetNetworkPolicyType(a.NetworkPolicy)
 	nBCB.GetNodeBootstrapConfig().KubernetesVersion = a.KubernetesVersion
 
 	nBCB.GetNodeBootstrapConfig().KubeBinaryConfig.KubeBinaryUrl = kubeBinaryURL(a.KubernetesVersion, a.Arch)
@@ -242,7 +241,7 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) (*nbcontractv1.Configur
 
 	nBCB.GetNodeBootstrapConfig().VmSize = a.VMSize
 
-	if utils.IsNvidiaEnabledSKU(nBCB.GetNodeBootstrapConfig().VmSize) {
+	if agentbakercommon.IsNvidiaEnabledSKU(nBCB.GetNodeBootstrapConfig().VmSize) {
 		nBCB.GetNodeBootstrapConfig().GpuConfig.ConfigGpuDriver = true
 	}
 	nBCB.GetNodeBootstrapConfig().NeedsCgroupv2 = ptr.Bool(true)
