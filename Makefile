@@ -1,9 +1,13 @@
 include Makefile-az.mk
 
-export K8S_VERSION ?= 1.27.x
+## Inject the app version into operator.Version
+LDFLAGS ?= -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=$(shell git describe --tags --always | cut -d"v" -f2)
+
+GOFLAGS ?= $(LDFLAGS)
+WITH_GOFLAGS = GOFLAGS="$(GOFLAGS)"
 
 # # CR for local builds of Karpenter
-SYSTEM_NAMESPACE ?= karpenter
+KARPENTER_NAMESPACE ?= karpenter
 
 # Common Directories
 # TODO: revisit testing tools (temporarily excluded here, for make verify)
@@ -76,6 +80,9 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	cp $(KARPENTER_CORE_DIR)/pkg/apis/crds/* pkg/apis/crds
 	yq -i '(.spec.versions[0].additionalPrinterColumns[] | select (.name=="Zone")) .jsonPath=".metadata.labels.karpenter\.azure\.com/zone"' \
 		pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+	hack/validation/labels.sh
+	hack/validation/requirements.sh
+	hack/validation/common.sh
 	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
 	@git diff --quiet ||\
@@ -94,6 +101,12 @@ vulncheck: ## Verify code vulnerabilities
 codegen: ## Auto generate files based on Azure API responses
 	./hack/codegen.sh
 
+snapshot: az-login ## Builds and publishes snapshot release
+	$(WITH_GOFLAGS) ./hack/release/snapshot.sh
+
+release: az-login ## Builds and publishes stable release
+	$(WITH_GOFLAGS) ./hack/release/release.sh
+
 toolchain: ## Install developer toolchain
 	./hack/toolchain.sh
 
@@ -103,7 +116,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help test battletest e2etests verify tidy download codegen toolchain vulncheck
+.PHONY: help test battletest e2etests verify tidy download codegen toolchain vulncheck snapshot release
 
 define newline
 

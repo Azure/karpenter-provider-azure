@@ -85,14 +85,14 @@ var _ = Describe("Options", func() {
 	Context("Env Vars", func() {
 		It("should correctly fallback to env vars when CLI flags aren't set", func() {
 			os.Setenv("CLUSTER_NAME", "env-cluster")
-			os.Setenv("CLUSTER_ENDPOINT", "https://env-cluster")
+			os.Setenv("CLUSTER_ENDPOINT", "https://environment-cluster-id-value-for-testing")
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
-			os.Setenv("CLUSTER_ID", "env-cluster-id")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
 			os.Setenv("NETWORK_PLUGIN", "env-network-plugin")
 			os.Setenv("NETWORK_POLICY", "env-network-policy")
 			os.Setenv("NODE_IDENTITIES", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2")
+			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -101,13 +101,14 @@ var _ = Describe("Options", func() {
 			Expect(err).ToNot(HaveOccurred())
 			expectOptionsEqual(opts, test.Options(test.OptionsFields{
 				ClusterName:                    lo.ToPtr("env-cluster"),
-				ClusterEndpoint:                lo.ToPtr("https://env-cluster"),
+				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
-				ClusterID:                      lo.ToPtr("env-cluster-id"),
+				ClusterID:                      lo.ToPtr("46593302"),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
 				NetworkPlugin:                  lo.ToPtr("env-network-plugin"),
 				NetworkPolicy:                  lo.ToPtr("env-network-policy"),
+				SubnetID:                       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
 			}))
 		})
@@ -149,6 +150,28 @@ var _ = Describe("Options", func() {
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 			)
 			Expect(err).To(MatchError(ContainSubstring("missing field, ssh-public-key")))
+		})
+		It("should fail validation when VNet SubnetID not included", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "",
+			)
+			Expect(err).To(MatchError(ContainSubstring("missing field, vnet-subnet-id")))
+		})
+		It("should fail validation when VNet SubnetID is invalid (not absolute)", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "invalid-vnet-subnet-id",
+			)
+			Expect(err).To(MatchError(ContainSubstring("vnet-subnet-id is invalid: invalid vnet subnet id: invalid-vnet-subnet-id")))
 		})
 		It("should fail when clusterEndpoint is invalid (not absolute)", func() {
 			err := opts.Parse(

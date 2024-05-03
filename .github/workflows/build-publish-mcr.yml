@@ -12,12 +12,10 @@ on:
 permissions:
   contents: read
 
-env:
-  REGISTRY_REPO: public/aks/karpenter
-
 jobs:
   prepare-variables:
-    runs-on: ubuntu-latest
+    runs-on:
+      labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
     outputs:
       release_tag: ${{ steps.vars.outputs.release_tag }}
     steps:
@@ -26,7 +24,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
       - name: 'Set output variables'
@@ -43,7 +41,8 @@ jobs:
     permissions:
       contents: read
       id-token: write # This is required for requesting the JWT
-    runs-on: ubuntu-latest
+    runs-on:
+      labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
     needs: prepare-variables
     steps:
     - name: Harden Runner
@@ -51,33 +50,14 @@ jobs:
       with:
         egress-policy: audit
 
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
       with:
         ref: ${{ needs.prepare-variables.outputs.release_tag }}
         
     - uses: ./.github/actions/install-deps
-
-    # reference: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-azure
-    - name: Login to Azure
-      uses: azure/login@cb79c773a3cfa27f31f25eb3f677781210c9ce3d # v1.6.1
-      with:
-        client-id: ${{ secrets.AZURE_CLIENT_ID }}
-        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   
     - name: Build and publish image
-      env:
-        KO_DOCKER_REPO: ${{ secrets.AZURE_REGISTRY }}/${{ env.REGISTRY_REPO }}
       run: |
-        az acr login -n ${{ secrets.AZURE_REGISTRY }}
-        cat >.ko.yaml <<EOF
-        builds:
-        - id: controller
-          main: ./cmd/controller
-          flags: ['-tags','ccp']
-        EOF
-        ko build github.com/Azure/karpenter-provider-azure/cmd/controller \
-          --platform linux/amd64,linux/arm64 \
-          --base-import-paths \
-          --sbom none \
-          --tags ${{ needs.prepare-variables.outputs.release_tag }}-aks
+        az login --identity
+        ko version
+        RELEASE_ACR=${{ secrets.AZURE_REGISTRY }} ./hack/release/release.sh

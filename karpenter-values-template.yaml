@@ -1,0 +1,51 @@
+
+replicas: 1 # for better debugging experience
+controller:
+  env:
+    - name: FEATURE_GATES
+      value: Drift=true
+    - name: LEADER_ELECT # disable leader election for better debugging / troubleshooting experience
+      value: "false"
+    # disable HTTP/2 to reduce ARM throttling on large-scale tests;
+    # with this in place write (and read) QPS can be increased too
+    #- name: GODEBUG
+    #  value: http2client=0
+
+    # options
+    - name: CLUSTER_NAME
+      value: ${CLUSTER_NAME}
+    - name: CLUSTER_ENDPOINT
+      value: ${CLUSTER_ENDPOINT}
+    - name: KUBELET_BOOTSTRAP_TOKEN
+      value: ${BOOTSTRAP_TOKEN}
+    - name: SSH_PUBLIC_KEY
+      value: "${SSH_PUBLIC_KEY}"
+    - name: NETWORK_PLUGIN
+      value: "azure"
+    - name: NETWORK_POLICY
+      value: ""
+    - name: VNET_SUBNET_ID
+      value: ${VNET_SUBNET_ID}
+    - name: NODE_IDENTITIES
+      value: ${NODE_IDENTITIES}
+
+    # Azure client settings
+    - name: ARM_SUBSCRIPTION_ID
+      value: ${AZURE_SUBSCRIPTION_ID}
+    - name: LOCATION
+      value: ${AZURE_LOCATION}
+    # settings for managed workload ideneity
+    - name: ARM_USE_CREDENTIAL_FROM_ENVIRONMENT
+      value: "true"
+    - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
+      value: "false"
+    - name: ARM_USER_ASSIGNED_IDENTITY_ID
+      value: ""
+    - name: AZURE_NODE_RESOURCE_GROUP
+      value: ${AZURE_RESOURCE_GROUP_MC}
+serviceAccount:
+  name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
+  annotations:
+    azure.workload.identity/client-id: ${KARPENTER_USER_ASSIGNED_CLIENT_ID}
+podLabels:
+  azure.workload.identity/use: "true"

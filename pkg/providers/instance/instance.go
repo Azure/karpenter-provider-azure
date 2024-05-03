@@ -119,7 +119,7 @@ func NewProvider(
 // Create an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
 func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, error) {
-	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...))
+	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
@@ -266,7 +266,6 @@ func newVMObject(
 	sshPublicKey string,
 	nodeIdentities []string,
 	nodeClass *v1alpha2.AKSNodeClass,
-	nodeClaim *corev1beta1.NodeClaim,
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
 	// Build the image reference from template
@@ -328,7 +327,6 @@ func newVMObject(
 	}
 	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
-	setVMTagsProvisionerName(vm.Tags, nodeClaim)
 
 	return vm
 }
@@ -355,8 +353,8 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	}
 }
 
-// setVMTagsProvisionerName sets "karpenter.sh/provisioner-name" tag
-func setVMTagsProvisionerName(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
+// setNodePoolNameTag sets "karpenter.sh/nodepool" tag
+func setNodePoolNameTag(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
 	if val, ok := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]; ok {
 		tags[NodePoolTagKey] = &val
 	}
@@ -382,6 +380,10 @@ func (p *Provider) launchInstance(
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting launch template: %w", err)
 	}
+
+	// set provisioner tag for NIC, VM, and Disk
+	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
+
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
@@ -393,7 +395,7 @@ func (p *Provider) launchInstance(
 
 	sshPublicKey := options.FromContext(ctx).SSHPublicKey
 	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
+	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
@@ -533,10 +535,10 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	// InstanceType/VM SKU - just pick the first one for now. They are presorted by cheapest offering price (taking node requirements into account)
 	instanceType := instanceTypes[0]
 	logging.FromContext(ctx).Infof("Selected instance type %s", instanceType.Name)
-	// Priority - Provisioner defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
+	// Priority - Nodepool defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
 	// Zone - ideally random/spread from requested zones that support given Priority
-	requestedZones := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
+	requestedZones := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
 	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool {
 		return o.CapacityType == priority && requestedZones.Has(o.Zone)
 	})
@@ -574,8 +576,7 @@ func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName strin
 // This returns from a single pre-selected InstanceType, rather than all InstanceType options in nodeRequest,
 // because Azure Cloud Provider does client-side selection of particular InstanceType from options
 func (p *Provider) getPriorityForInstanceType(nodeClaim *corev1beta1.NodeClaim, instanceType *corecloudprovider.InstanceType) string {
-	requirements := scheduling.NewNodeSelectorRequirements(nodeClaim.
-		Spec.Requirements...)
+	requirements := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 
 	if requirements.Get(corev1beta1.CapacityTypeLabelKey).Has(corev1beta1.CapacityTypeSpot) {
 		for _, offering := range instanceType.Offerings.Available() {
@@ -592,11 +593,11 @@ func orderInstanceTypesByPrice(instanceTypes []*corecloudprovider.InstanceType, 
 	sort.Slice(instanceTypes, func(i, j int) bool {
 		iPrice := math.MaxFloat64
 		jPrice := math.MaxFloat64
-		if len(instanceTypes[i].Offerings.Available().Requirements(requirements)) > 0 {
-			iPrice = instanceTypes[i].Offerings.Available().Requirements(requirements).Cheapest().Price
+		if len(instanceTypes[i].Offerings.Available().Compatible(requirements)) > 0 {
+			iPrice = instanceTypes[i].Offerings.Available().Compatible(requirements).Cheapest().Price
 		}
-		if len(instanceTypes[j].Offerings.Available().Requirements(requirements)) > 0 {
-			jPrice = instanceTypes[j].Offerings.Available().Requirements(requirements).Cheapest().Price
+		if len(instanceTypes[j].Offerings.Available().Compatible(requirements)) > 0 {
+			jPrice = instanceTypes[j].Offerings.Available().Compatible(requirements).Cheapest().Price
 		}
 		if iPrice == jPrice {
 			return instanceTypes[i].Name < instanceTypes[j].Name

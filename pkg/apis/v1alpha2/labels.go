@@ -36,8 +36,6 @@ func init() {
 		LabelSKUAcceleratedNetworking,
 
 		LabelSKUStoragePremiumCapable,
-		LabelSKUStorageCacheSize,
-		LabelSKUStorageTempMaxSize,
 		LabelSKUStorageEphemeralOSMaxSize,
 
 		LabelSKUEncryptionAtHostSupported,
@@ -64,7 +62,7 @@ var (
 		LabelSKUHyperVGeneration,
 	)
 
-	AllowUndefinedLabels = func(options scheduling.CompatabilityOptions) scheduling.CompatabilityOptions {
+	AllowUndefinedLabels = func(options scheduling.CompatibilityOptions) scheduling.CompatibilityOptions {
 		options.AllowUndefined = corev1beta1.WellKnownLabels.Union(RestrictedLabels)
 		return options
 	}
@@ -88,8 +86,6 @@ var (
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
-	LabelSKUStorageCacheSize          = Group + "/sku-storage-cache-size"          // sku.CachedDiskBytes
-	LabelSKUStorageTempMaxSize        = Group + "/sku-storage-temp-maxsize"        // sku.MaxResourceVolumeMB
 	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // calculated as max(sku.CachedDiskBytes, sku.MaxResourceVolumeMB)
 
 	LabelSKUEncryptionAtHostSupported = Group + "/sku-encryptionathost-capable" // sku.EncryptionAtHostSupported

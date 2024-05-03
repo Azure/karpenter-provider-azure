@@ -22,13 +22,20 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/client-go/kubernetes/scheme"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
+
+func init() {
+	lo.Must0(apis.AddToScheme(scheme.Scheme))
+	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": v1.LabelTopologyZone})
+}
 
 const WindowsDefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
 
@@ -51,27 +58,30 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 	nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{
 		Name: nodeClass.Name,
 	}
-	nodePool.Spec.Template.Spec.Requirements = []v1.NodeSelectorRequirement{
-		{
+	nodePool.Spec.Template.Spec.Requirements = []corev1beta1.NodeSelectorRequirementWithMinValues{
+		{NodeSelectorRequirement: v1.NodeSelectorRequirement{
 			Key:      v1.LabelOSStable,
 			Operator: v1.NodeSelectorOpIn,
 			Values:   []string{string(v1.Linux)},
-		},
+		}},
 		{
-			Key:      corev1beta1.CapacityTypeLabelKey,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{corev1beta1.CapacityTypeOnDemand},
-		},
+			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				Key:      corev1beta1.CapacityTypeLabelKey,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{corev1beta1.CapacityTypeOnDemand},
+			}},
 		{
-			Key:      v1.LabelArchStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{corev1beta1.ArchitectureAmd64},
-		},
+			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				Key:      v1.LabelArchStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{corev1beta1.ArchitectureAmd64},
+			}},
 		{
-			Key:      v1alpha2.LabelSKUFamily,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{"D"},
-		},
+			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				Key:      v1alpha2.LabelSKUFamily,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{"D"},
+			}},
 	}
 	nodePool.Spec.Disruption.ConsolidateAfter = &corev1beta1.NillableDuration{}
 	nodePool.Spec.Disruption.ExpireAfter.Duration = nil
@@ -84,11 +94,12 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 
 func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *corev1beta1.NodePool {
 	nodePool := env.DefaultNodePool(nodeClass)
-	coretest.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-		Key:      v1.LabelArchStable,
-		Operator: v1.NodeSelectorOpIn,
-		Values:   []string{corev1beta1.ArchitectureArm64},
-	})
+	coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+		NodeSelectorRequirement: v1.NodeSelectorRequirement{
+			Key:      v1.LabelArchStable,
+			Operator: v1.NodeSelectorOpIn,
+			Values:   []string{corev1beta1.ArchitectureArm64},
+		}})
 	return nodePool
 }
 

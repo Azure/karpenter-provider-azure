@@ -21,16 +21,15 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"strings"
 	"text/template"
 
 	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
 	agentbakercommon "github.com/Azure/agentbaker/pkg/agent/common"
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
@@ -174,17 +173,8 @@ var (
 	}
 )
 
-// Node Labels for Vnet
 const (
-	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
-	vnetNetworkNameLabel    = "kubernetes.azure.com/network-name"
-	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
-	vnetSubscriptionIDLabel = "kubernetes.azure.com/network-subscription"
-	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
-	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-	ciliumDataPlane         = "cilium"
-	overlayNetworkType      = "overlay"
-	globalAKSMirror         = "https://acs-mirror.azureedge.net"
+	globalAKSMirror = "https://acs-mirror.azureedge.net"
 )
 
 func (a AKS) aksBootstrapScript() (string, error) {
@@ -249,19 +239,10 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) (*nbcontractv1.Configur
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-	//Adding vnet-related labels to the nodeLabels.
-	azureVnetGUID := os.Getenv("AZURE_VNET_GUID")
-	azureVnetName := os.Getenv("AZURE_VNET_NAME")
-	azureSubnetName := os.Getenv("AZURE_SUBNET_NAME")
-
-	vnetLabels := map[string]string{
-		vnetDataPlaneLabel:      ciliumDataPlane,
-		vnetNetworkNameLabel:    azureVnetName,
-		vnetSubnetNameLabel:     azureSubnetName,
-		vnetSubscriptionIDLabel: a.SubscriptionID,
-		vnetGUIDLabel:           azureVnetGUID,
-		vnetPodNetworkTypeLabel: overlayNetworkType,
-	}
+	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
+	nbv.Subnet = subnetParts.SubnetName
+	nbv.VirtualNetworkResourceGroup = subnetParts.ResourceGroupName
+	nbv.VirtualNetwork = subnetParts.VNetName
 
 	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
 	nBCB.GetNodeBootstrapConfig().KubeletConfig.KubeletNodeLabels = kubeletLabels
@@ -330,8 +311,8 @@ func KubeletConfigToMap(kubeletConfig *corev1beta1.KubeletConfiguration) map[str
 	if kubeletConfig.PodsPerCore != nil {
 		args["--pods-per-core"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.PodsPerCore))
 	}
-	JoinParameterArgsToMap(args, "--system-reserved", resources.StringMap(kubeletConfig.SystemReserved), "=")
-	JoinParameterArgsToMap(args, "--kube-reserved", resources.StringMap(kubeletConfig.KubeReserved), "=")
+	JoinParameterArgsToMap(args, "--system-reserved", kubeletConfig.SystemReserved, "=")
+	JoinParameterArgsToMap(args, "--kube-reserved", kubeletConfig.KubeReserved, "=")
 	JoinParameterArgsToMap(args, "--eviction-hard", kubeletConfig.EvictionHard, "<")
 	JoinParameterArgsToMap(args, "--eviction-soft", kubeletConfig.EvictionSoft, "<")
 	JoinParameterArgsToMap(args, "--eviction-soft-grace-period", lo.MapValues(kubeletConfig.EvictionSoftGracePeriod, func(v metav1.Duration, _ string) string {

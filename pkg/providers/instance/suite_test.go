@@ -76,7 +76,7 @@ func TestAzure(t *testing.T) {
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, env.KubernetesInterface.CoreV1(), events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
 	RunSpecs(t, "Provider/Azure")
 }
 
@@ -150,11 +150,13 @@ var _ = Describe("InstanceProvider", func() {
 		ZonalAndNonZonalRegions,
 	)
 
-	It("should create VM with valid ARM tags", func() {
+	It("should create VM and NIC with valid ARM tags", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
 		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 		ExpectScheduled(ctx, env.Client, pod)
+
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 		vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
 		vm, err := azureEnv.InstanceProvider.Get(ctx, vmName)
@@ -162,6 +164,15 @@ var _ = Describe("InstanceProvider", func() {
 		tags := vm.Tags
 		Expect(lo.FromPtr(tags[instance.NodePoolTagKey])).To(Equal(nodePool.Name))
 		Expect(lo.PickBy(tags, func(key string, value *string) bool {
+			return strings.Contains(key, "/") // ARM tags can't contain '/'
+		})).To(HaveLen(0))
+
+		Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+		Expect(nic).ToNot(BeNil())
+		nicTags := nic.Tags
+		Expect(lo.FromPtr(nicTags[instance.NodePoolTagKey])).To(Equal(nodePool.Name))
+		Expect(lo.PickBy(nicTags, func(key string, value *string) bool {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
 	})

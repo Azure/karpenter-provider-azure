@@ -169,30 +169,6 @@ func (env *Environment) ExpectSettingsRemoved(vars ...v1.EnvVar) {
 	}
 }
 
-// ExpectSettingsLegacy gets the karpenter-global-settings ConfigMap
-func (env *Environment) ExpectSettingsLegacy() *v1.ConfigMap {
-	GinkgoHelper()
-	return env.ExpectConfigMapExists(types.NamespacedName{Namespace: "karpenter", Name: "karpenter-global-settings"})
-}
-
-// ExpectSettingsReplacedLegacy performs a full replace of the settings, replacing the existing data
-// with the data passed through
-func (env *Environment) ExpectSettingsReplacedLegacy(data ...map[string]string) {
-	GinkgoHelper()
-	if env.ExpectConfigMapDataReplaced(types.NamespacedName{Namespace: "karpenter", Name: "karpenter-global-settings"}, data...) {
-		env.EventuallyExpectKarpenterRestarted()
-	}
-}
-
-// ExpectSettingsOverriddenLegacy overrides specific values specified through data. It only overrides
-// or inserts the specific values specified and does not upsert any of the existing data
-func (env *Environment) ExpectSettingsOverriddenLegacy(data ...map[string]string) {
-	GinkgoHelper()
-	if env.ExpectConfigMapDataOverridden(types.NamespacedName{Namespace: "karpenter", Name: "karpenter-global-settings"}, data...) {
-		env.EventuallyExpectKarpenterRestarted()
-	}
-}
-
 func (env *Environment) ExpectConfigMapExists(key types.NamespacedName) *v1.ConfigMap {
 	GinkgoHelper()
 	cm := &v1.ConfigMap{}
@@ -244,30 +220,6 @@ func (env *Environment) ExpectConfigMapDataOverridden(key types.NamespacedName, 
 	// Update the configMap to update the settings
 	env.ExpectCreatedOrUpdated(cm)
 	return true
-}
-
-func (env *Environment) ExpectPodENIEnabled() {
-	GinkgoHelper()
-	env.ExpectDaemonSetEnvironmentVariableUpdated(types.NamespacedName{Namespace: "kube-system", Name: "aws-node"},
-		"ENABLE_POD_ENI", "true", "aws-node")
-}
-
-func (env *Environment) ExpectPodENIDisabled() {
-	GinkgoHelper()
-	env.ExpectDaemonSetEnvironmentVariableUpdated(types.NamespacedName{Namespace: "kube-system", Name: "aws-node"},
-		"ENABLE_POD_ENI", "false", "aws-node")
-}
-
-func (env *Environment) ExpectPrefixDelegationEnabled() {
-	GinkgoHelper()
-	env.ExpectDaemonSetEnvironmentVariableUpdated(types.NamespacedName{Namespace: "kube-system", Name: "aws-node"},
-		"ENABLE_PREFIX_DELEGATION", "true", "aws-node")
-}
-
-func (env *Environment) ExpectPrefixDelegationDisabled() {
-	GinkgoHelper()
-	env.ExpectDaemonSetEnvironmentVariableUpdated(types.NamespacedName{Namespace: "kube-system", Name: "aws-node"},
-		"ENABLE_PREFIX_DELEGATION", "false", "aws-node")
 }
 
 func (env *Environment) ExpectExists(obj client.Object) {
