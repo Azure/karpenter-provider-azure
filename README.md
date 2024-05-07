@@ -63,7 +63,7 @@ Install these tools before proceeding:
 
 Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
 
-> Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group>` to automate the following steps.
+> Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group> <namespace>` to automate the following steps.
 
 Set environment variables:
 
@@ -135,7 +135,7 @@ chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} ka
 Usinge the generated `karpenter-values.yaml` file, install Karpenter using Helm:
 
 ```bash
-export KARPENTER_VERSION=v0.3.0
+export KARPENTER_VERSION=0.4.0
 
 helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
   --version "${KARPENTER_VERSION}" \
@@ -150,11 +150,11 @@ helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
-Snapshot versions can be installed in a similar way:
+Snapshot versions can be installed in a similar way for development:
 
 ```bash
 export KARPENTER_NAMESPACE=kube-system
-export KARPENTER_VERSION=v0-41f6dcabe655c7fec84f4467e95bbd75285ae082
+export KARPENTER_VERSION=0-f83fadf2c99ffc2b7429cb40a316fcefc0c4752a
 
 helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
   --version "${KARPENTER_VERSION}" \

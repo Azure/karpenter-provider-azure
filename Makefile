@@ -7,7 +7,7 @@ GOFLAGS ?= $(LDFLAGS)
 WITH_GOFLAGS = GOFLAGS="$(GOFLAGS)"
 
 # # CR for local builds of Karpenter
-SYSTEM_NAMESPACE ?= karpenter
+KARPENTER_NAMESPACE ?= karpenter
 
 # Common Directories
 # TODO: revisit testing tools (temporarily excluded here, for make verify)
@@ -80,6 +80,9 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	cp $(KARPENTER_CORE_DIR)/pkg/apis/crds/* pkg/apis/crds
 	yq -i '(.spec.versions[0].additionalPrinterColumns[] | select (.name=="Zone")) .jsonPath=".metadata.labels.karpenter\.azure\.com/zone"' \
 		pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+	hack/validation/labels.sh
+	hack/validation/requirements.sh
+	hack/validation/common.sh
 	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
 	@git diff --quiet ||\

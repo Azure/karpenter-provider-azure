@@ -13,7 +13,7 @@ controller:
 
     # options
     - name: CLUSTER_NAME
-      value: $CLUSTER_NAME}
+      value: ${CLUSTER_NAME}
     - name: CLUSTER_ENDPOINT
       value: ${CLUSTER_ENDPOINT}
     - name: KUBELET_BOOTSTRAP_TOKEN
@@ -26,6 +26,8 @@ controller:
       value: ""
     - name: VNET_SUBNET_ID
       value: ${VNET_SUBNET_ID}
+    - name: NODE_IDENTITIES
+      value: ${NODE_IDENTITIES}
 
     # Azure client settings
     - name: ARM_SUBSCRIPTION_ID

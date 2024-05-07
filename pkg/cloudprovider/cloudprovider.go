@@ -99,7 +99,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *corev1beta1.NodeC
 		return nil, fmt.Errorf("creating instance, %w", err)
 	}
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
-		return i.Name == string(*instance.Properties.HardwareProfile.VMSize)
+		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
 
 	return c.instanceToNodeClaim(ctx, instance, instanceType)
@@ -279,7 +279,7 @@ func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, ins
 		return nil, client.IgnoreNotFound(fmt.Errorf("resolving node template, %w", err))
 	}
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
-		return i.Name == string(*instance.Properties.HardwareProfile.VMSize)
+		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
 	return instanceType, nil
 }

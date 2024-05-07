@@ -12,9 +12,6 @@ on:
 permissions:
   contents: read
 
-env:
-  REGISTRY_REPO: public/aks/karpenter
-
 jobs:
   prepare-variables:
     runs-on:
@@ -27,7 +24,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
       - name: 'Set output variables'
@@ -53,26 +50,14 @@ jobs:
       with:
         egress-policy: audit
 
-    - uses: actions/checkout@9bb56186c3b09b4f86b1c65136769dd318469633 # v4.1.2
+    - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
       with:
         ref: ${{ needs.prepare-variables.outputs.release_tag }}
         
     - uses: ./.github/actions/install-deps
   
     - name: Build and publish image
-      env:
-        KO_DOCKER_REPO: ${{ secrets.AZURE_REGISTRY }}/${{ env.REGISTRY_REPO }}
       run: |
         az login --identity
-        az acr login -n ${{ secrets.AZURE_REGISTRY }}
-        cat >.ko.yaml <<EOF
-        builds:
-        - id: controller
-          main: ./cmd/controller
-          flags: ['-tags','ccp']
-        EOF
-        ko build github.com/Azure/karpenter-provider-azure/cmd/controller \
-          --platform linux/amd64,linux/arm64 \
-          --base-import-paths \
-          --sbom none \
-          --tags ${{ needs.prepare-variables.outputs.release_tag }}-aks
+        ko version
+        RELEASE_ACR=${{ secrets.AZURE_REGISTRY }} ./hack/release/release.sh

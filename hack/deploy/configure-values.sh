@@ -35,10 +35,12 @@ if [[ ! -v VNET_SUBNET_ID ]]; then
     VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
 fi
 
+NODE_IDENTITIES=$(jq -r ".identityProfile.kubeletidentity.resourceId" <<< "$AKS_JSON")
+
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv)
 
 export CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME \
-    CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID KARPENTER_USER_ASSIGNED_CLIENT_ID
+    CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID KARPENTER_USER_ASSIGNED_CLIENT_ID NODE_IDENTITIES
 
 # get karpenter-values-template.yaml, if not already present (e.g. outside of repo context)
 if [ ! -f karpenter-values-template.yaml ]; then

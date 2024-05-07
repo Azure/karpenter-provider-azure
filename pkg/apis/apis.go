@@ -23,8 +23,6 @@ import (
 	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"sigs.k8s.io/karpenter/pkg/operator/scheme"
-
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -47,7 +45,3 @@ var (
 	AKSNodeClassCRD []byte
 	CRDs            = append(apis.CRDs, lo.Must(functional.Unmarshal[v1.CustomResourceDefinition](AKSNodeClassCRD)))
 )
-
-func init() {
-	lo.Must0(AddToScheme(scheme.Scheme))
-}
