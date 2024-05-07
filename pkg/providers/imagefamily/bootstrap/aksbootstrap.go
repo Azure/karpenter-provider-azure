@@ -277,7 +277,7 @@ func (a AKS) getKubeletFlags() map[string]string {
 func getCustomDataFromNodeBootstrapContract(nbcp *nbcontractv1.Configuration) (string, error) {
 	var buffer bytes.Buffer
 	if err := customDataTemplateNBContract.Execute(&buffer, nbcp); err != nil {
-		return "", fmt.Errorf("error executing custom data NbContract template: %w", err)
+		return "", fmt.Errorf("error executing custom data node bootstrapping template: %w", err)
 	}
 	return buffer.String(), nil
 }
