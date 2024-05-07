@@ -86,7 +86,6 @@ func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 			GPUDriverVersion: u.Options.GPUDriverVersion,
 			GPUImageSHA:      u.Options.GPUImageSHA,
 			SubnetID:         u.Options.SubnetID,
-			ArtifactStreamingEnabled: u.Options.ArtifactStreamingEnabled,		
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,

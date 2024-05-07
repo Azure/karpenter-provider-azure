@@ -385,7 +385,7 @@ var (
 		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
 		ContainerdConfigContent:         "",                                                                  // kd
 		IsKata:                          false,                                                               // n
-		ArtifactStreamingEnabled:       false,                                                               // td
+		ArtifactStreamingEnabled:       true,                                                               // td
 	}
 )
 
@@ -449,7 +449,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
-	nbv.ArtifactStreamingEnabled = a.ArtifactStreamingEnabled
 	nbv.NeedsCgroupV2 = true
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)

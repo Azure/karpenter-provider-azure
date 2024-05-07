@@ -41,7 +41,6 @@ type StaticParameters struct {
 	NetworkPolicy                  string
 	KubernetesVersion              string
 	SubnetID string
-	ArtifactStreamingEnabled bool
 
 	Tags   map[string]string
 	Labels map[string]string

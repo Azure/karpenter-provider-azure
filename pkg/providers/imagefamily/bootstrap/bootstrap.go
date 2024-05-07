@@ -33,7 +33,6 @@ type Options struct {
 	GPUDriverVersion string
 	GPUImageSHA      string
 	SubnetID         string
-	ArtifactStreamingEnabled bool
 }
 
 // Bootstrapper can be implemented to generate a bootstrap script
