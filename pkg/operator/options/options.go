@@ -67,7 +67,7 @@ type Options struct {
 	NetworkPlugin                  string   // => NetworkPlugin in bootstrap
 	NetworkPolicy                  string   // => NetworkPolicy in bootstrap
 	NodeIdentities                 []string // => Applied onto each VM
-
+	DNSServiceIP				   string	// --dns-service-ip An IP address assigned to the Kubernetes DNS service. This address must be within the Kubernetes service address range specified by "--service-cidr". For example, 10.0.0.10. Service Cidr is defaulted to {"serviceCidr": "10.0.0.0/16"}
 	SubnetID string // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 
 	setFlags map[string]bool
@@ -81,6 +81,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
 	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", "azure"), "The network plugin used by the cluster.")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
+	fs.StringVar(&o.DNSServiceIP, "dns-service-ip", env.WithDefaultString("DNS_SERVICE_IP", "10.0.0.10"), "An IP Address assigned to the K8s DNS service. This IP must be within the service cidr")
 	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 }

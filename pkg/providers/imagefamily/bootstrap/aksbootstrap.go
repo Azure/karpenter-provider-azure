@@ -469,8 +469,8 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlags = lo.Assign(kubeletFlags, map[string]string{"--register-with-taints": strings.Join(taintStrs, ",")})
 	}
 
-	machineKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
-	kubeletFlags = lo.Assign(kubeletFlags, machineKubeletConfig)
+	kubeletConfig := KubeletConfigToMap(a.KubeletConfig)
+	kubeletFlags = lo.Assign(kubeletFlags, kubeletConfig)
 
 	// striginify kubelet flags (including taints)
 	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {

@@ -18,6 +18,7 @@ package options
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -42,6 +43,16 @@ func (o Options) validateVnetSubnetID() error {
 		return fmt.Errorf("vnet-subnet-id is invalid: %w", err)
 	}
 	return nil
+}
+
+func (o Options) validateDNSServiceIP() error {
+	// TODO: Take Address and validate its in service cidr range
+	_, err := netip.ParseAddr(o.DNSServiceIP)
+	if err != nil {
+		return fmt.Errorf("dns-service-ip is invalid %w", err)
+
+	}
+	return nil 
 }
 
 func (o Options) validateEndpoint() error {

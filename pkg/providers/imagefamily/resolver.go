@@ -23,6 +23,7 @@ import (
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -83,23 +84,13 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
 	}
-
-	kubeletConfig := nodeClaim.Spec.Kubelet
-	if kubeletConfig == nil {
-		kubeletConfig = &corev1beta1.KubeletConfiguration{}
-	}
-
-	// TODO: revisit computeResources and maxPods implementation
-	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
-	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
-	kubeletConfig.EvictionHard = map[string]string{
-		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
-	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
+
+	kc := prepareKubeletConfiguration(ctx, instanceType, nodeClaim)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		UserData: imageFamily.UserData(
-			kubeletConfig,
+			kc,
 			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
 			staticParameters.Labels,
 			staticParameters.CABundle,
@@ -107,7 +98,6 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		),
 		ImageID: imageID,
 	}
-
 	return template, nil
 }
 
@@ -120,6 +110,25 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}
+}
+
+
+// TODO: Split out Kubelet Configuration into AKSNodeclass to align with V1 Release
+func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nc *corev1beta1.NodeClaim) *corev1beta1.KubeletConfiguration {
+	kubeletConfig := nc.Spec.Kubelet
+	if kubeletConfig == nil {
+		kubeletConfig = &corev1beta1.KubeletConfiguration{}
+	}
+	
+	kubeletConfig.ClusterDNS = append(kubeletConfig.ClusterDNS, options.FromContext(ctx).DNSServiceIP)
+
+	// TODO: revisit computeResources and maxPods implementation
+	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
+	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
+	kubeletConfig.EvictionHard = map[string]string{
+		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
+	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(options.FromContext(ctx).NetworkPlugin))
+	return kubeletConfig
 }
 
 func getMaxPods(networkPlugin string) int32 {
