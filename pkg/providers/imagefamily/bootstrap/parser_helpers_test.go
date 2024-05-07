@@ -19,7 +19,6 @@ package bootstrap
 import (
 	_ "embed"
 	"encoding/base64"
-	"reflect"
 	"testing"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
@@ -551,56 +550,6 @@ func Test_getStringifiedStringArray(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := getStringifiedStringArray(tt.args.arr, tt.args.delimiter); got != tt.want {
 				t.Errorf("getStringifiedStringArray() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_deref(t *testing.T) {
-	type args struct {
-		p *interface{}
-	}
-	var s interface{} = "test"
-	var i interface{} = 123
-	var b interface{} = true
-	tests := []struct {
-		name string
-		args args
-		want interface{}
-	}{
-		{
-			name: "Dereference nil pointer should not panic and should return interface{}(nil)",
-			args: args{
-				p: nil,
-			},
-			want: interface{}(nil),
-		},
-		{
-			name: "Dereference pointer to string should return the string",
-			args: args{
-				p: &s,
-			},
-			want: "test",
-		},
-		{
-			name: "Dereference pointer to int should return the int",
-			args: args{
-				p: &i,
-			},
-			want: 123,
-		},
-		{
-			name: "Dereference pointer to bool should return the bool",
-			args: args{
-				p: &b,
-			},
-			want: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := deref(tt.args.p); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("deref() = %v, want %v", got, tt.want)
 			}
 		})
 	}

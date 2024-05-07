@@ -82,6 +82,7 @@ func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 			Taints:          taints,
 			Labels:          labels,
 			CABundle:        caBundle,
+			SubnetID:        u.Options.SubnetID,
 			VMSize:          u.Options.VMSize,
 		},
 		Arch:                           u.Options.Arch,

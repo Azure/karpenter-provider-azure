@@ -14,255 +14,137 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package bootstrap
+package bootstrap_test
 
 import (
-	_ "embed"
 	"fmt"
-	"testing"
 
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
-	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	core "k8s.io/api/core/v1"
-	"sigs.k8s.io/cloud-provider-azure/pkg/util/deepcopy"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 )
 
-func TestKubeBinaryURL(t *testing.T) {
-	cases := []struct {
-		name     string
-		version  string
-		expected string
-	}{
-		{
-			name:     "Test version 1.24.x",
-			version:  "1.24.5",
-			expected: fmt.Sprintf("%s/kubernetes/v1.24.5/binaries/kubernetes-node-linux-amd64.tar.gz", globalAKSMirror),
-		},
-		{
-			name:     "Test version 1.25.x",
-			version:  "1.25.2",
-			expected: fmt.Sprintf("%s/kubernetes/v1.25.2/binaries/kubernetes-node-linux-amd64.tar.gz", globalAKSMirror),
-		},
-		{
-			name:     "Test version 1.26.x",
-			version:  "1.26.0",
-			expected: fmt.Sprintf("%s/kubernetes/v1.26.0/binaries/kubernetes-node-linux-amd64.tar.gz", globalAKSMirror),
-		},
-		{
-			name:     "Test version 1.27.x",
-			version:  "1.27.1",
-			expected: fmt.Sprintf("%s/kubernetes/v1.27.1/binaries/kubernetes-node-linux-amd64.tar.gz", globalAKSMirror),
-		},
-	}
+var _ = Describe("Aksbootstrap", func() {
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			actual := kubeBinaryURL(tc.version, "amd64")
-			if actual != tc.expected {
-				t.Errorf("Expected %s but got %s", tc.expected, actual)
-			}
-		})
-	}
-}
+	DescribeTable("Testing KubeBinary Url",
+		func(version, kubeBinaryURL string) {
+			b := &bootstrap.AKS{}
+			Expect(bootstrap.ExportKubeBinaryURL(b, version, "amd64")).To(Equal(kubeBinaryURL))
+		},
+		Entry("with Kubernetes version 1.24.5", "1.24.5", fmt.Sprintf("%s/kubernetes/v1.24.5/binaries/kubernetes-node-linux-amd64.tar.gz", bootstrap.ExportGlobalAKSMirror)),
+		Entry("with Kubernetes version 1.25.2", "1.25.2", fmt.Sprintf("%s/kubernetes/v1.25.2/binaries/kubernetes-node-linux-amd64.tar.gz", bootstrap.ExportGlobalAKSMirror)),
+		Entry("with Kubernetes version 1.26.0", "1.26.0", fmt.Sprintf("%s/kubernetes/v1.26.0/binaries/kubernetes-node-linux-amd64.tar.gz", bootstrap.ExportGlobalAKSMirror)),
+		Entry("with Kubernetes version 1.27.1", "1.27.1", fmt.Sprintf("%s/kubernetes/v1.27.1/binaries/kubernetes-node-linux-amd64.tar.gz", bootstrap.ExportGlobalAKSMirror)),
+	)
 
-func TestAKS_aksBootstrapScript(t *testing.T) {
-	type fields struct {
-		Options                        Options
-		Arch                           string
-		TenantID                       string
-		SubscriptionID                 string
-		UserAssignedIdentityID         string
-		Location                       string
-		ResourceGroup                  string
-		ClusterID                      string
-		APIServerName                  string
-		KubeletClientTLSBootstrapToken string
-		NetworkPlugin                  string
-		NetworkPolicy                  string
-		KubernetesVersion              string
-		Version                        string
-	}
-	baseFields := fields{
-		Options: Options{
-			ClusterName:     "clustername",
-			ClusterEndpoint: "clusterendpoint",
-			KubeletConfig:   &corev1beta1.KubeletConfiguration{},
-			Taints:          []core.Taint{},
-			Labels:          map[string]string{},
-			CABundle:        to.StringPtr("cabundle"),
-			VMSize:          "vmsize",
-		},
-		Arch:                           "amd64",
-		TenantID:                       "tenantid",
-		SubscriptionID:                 "subscriptionid",
-		UserAssignedIdentityID:         "userassignedidentityid",
-		Location:                       "location",
-		ResourceGroup:                  "resourcegroup",
-		ClusterID:                      "clusterid",
-		APIServerName:                  "apiservername",
-		KubeletClientTLSBootstrapToken: "kubeletclienttlsbootstraptoken",
-		NetworkPlugin:                  "networkplugin",
-		NetworkPolicy:                  "networkpolicy",
-		KubernetesVersion:              "1.24.5",
-		Version:                        "v1.0.0",
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		want    string
-		wantErr bool
-	}{
-		{
-			name:   "Test with all required fields and expect no error",
-			fields: baseFields,
-		},
-		{
-			name: "Test with missing required field (ResourceGroup) and expect error",
-			fields: func() fields {
-				// Deep copy the baseFields to avoid modifying the original baseFields
-				clonedBaseFields := deepcopy.Copy(baseFields).(fields)
-				clonedBaseFields.ResourceGroup = ""
-				return clonedBaseFields
-			}(),
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := AKS{
-				Options:                        tt.fields.Options,
-				Arch:                           tt.fields.Arch,
-				TenantID:                       tt.fields.TenantID,
-				SubscriptionID:                 tt.fields.SubscriptionID,
-				UserAssignedIdentityID:         tt.fields.UserAssignedIdentityID,
-				Location:                       tt.fields.Location,
-				ResourceGroup:                  tt.fields.ResourceGroup,
-				ClusterID:                      tt.fields.ClusterID,
-				APIServerName:                  tt.fields.APIServerName,
-				KubeletClientTLSBootstrapToken: tt.fields.KubeletClientTLSBootstrapToken,
-				NetworkPlugin:                  tt.fields.NetworkPlugin,
-				NetworkPolicy:                  tt.fields.NetworkPolicy,
-				KubernetesVersion:              tt.fields.KubernetesVersion,
-			}
-			_, err := a.aksBootstrapScript()
-			// Didn't check the actual value of customData here. Only check if there is an error.
-			if (err != nil) != tt.wantErr {
-				t.Errorf("AKS.aksBootstrapScript() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-		})
-	}
-}
-
-func TestAKS_applyOptions(t *testing.T) {
-	type fields struct {
-		Options                        Options
-		Arch                           string
-		TenantID                       string
-		SubscriptionID                 string
-		UserAssignedIdentityID         string
-		Location                       string
-		ResourceGroup                  string
-		ClusterID                      string
-		APIServerName                  string
-		KubeletClientTLSBootstrapToken string
-		NetworkPlugin                  string
-		NetworkPolicy                  string
-		KubernetesVersion              string
-	}
-	type args struct {
-		v *nbcontractv1.Configuration
-	}
-	baseFields := fields{
-		Options: Options{
-			ClusterName:     "clustername",
-			ClusterEndpoint: "clusterendpoint",
-			KubeletConfig:   &corev1beta1.KubeletConfiguration{},
-			Taints:          []core.Taint{},
-			Labels:          map[string]string{},
-			CABundle:        to.StringPtr("cabundle"),
-			VMSize:          "vmsize",
-		},
-		Location:       "AKS location",
-		ResourceGroup:  "AKS resourcegroup",
-		SubscriptionID: "AKS subscriptionid",
-		TenantID:       "AKS tenantid",
-		APIServerName:  "AKS apiservername",
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		{
-			name:   "Test with all fields and expect fields to be updated",
-			fields: baseFields,
-			args: args{
-				v: &nbcontractv1.Configuration{
-					ClusterConfig: &nbcontractv1.ClusterConfig{
-						ResourceGroup: "static_resourcegroup",
-						Location:      "static_location",
-					},
-				},
+	DescribeTable("aks BootstrapScript", func(validator func(*bootstrap.AKS)) {
+		a := &bootstrap.AKS{
+			Options: bootstrap.Options{
+				ClusterName:     "clustername",
+				ClusterEndpoint: "clusterendpoint",
+				KubeletConfig:   &corev1beta1.KubeletConfiguration{},
+				Taints:          []core.Taint{},
+				Labels:          map[string]string{},
+				CABundle:        lo.ToPtr("cabundle"),
+				VMSize:          "vmsize",
+				SubnetID:        "/SubscriPtioNS/SUB_ID/REsourceGroupS/RG_NAME/ProViderS/MicrosoFT.NetWorK/VirtualNetWorKS/VNET_NAME/SubneTS/SUBNET_NAME",
 			},
-			wantErr: false,
-		},
-		{
-			name: "Test with missing required field (ResourceGroup) and expect error",
-			fields: func() fields {
-				// Deep copy the baseFields to avoid modifying the original baseFields
-				clonedBaseFields := deepcopy.Copy(baseFields).(fields)
-				clonedBaseFields.ResourceGroup = ""
-				return clonedBaseFields
-			}(),
-			args: args{
-				v: &nbcontractv1.Configuration{
-					ClusterConfig: &nbcontractv1.ClusterConfig{
-						ResourceGroup: "static_resourcegroup",
-						Location:      "static_location",
-					},
-				},
+			Arch:                           "amd64",
+			TenantID:                       "tenantid",
+			SubscriptionID:                 "subscriptionid",
+			UserAssignedIdentityID:         "userassignedidentityid",
+			Location:                       "location",
+			ResourceGroup:                  "resourcegroup",
+			ClusterID:                      "clusterid",
+			APIServerName:                  "apiservername",
+			KubeletClientTLSBootstrapToken: "kubeletclienttlsbootstraptoken",
+			NetworkPlugin:                  "networkplugin",
+			NetworkPolicy:                  "networkpolicy",
+			KubernetesVersion:              "1.24.5",
+		}
+		if validator != nil {
+			validator(a)
+		}
+	},
+		Entry("with all required fields should expect no error and non-empty script",
+			func(a *bootstrap.AKS) {
+				script, err := bootstrap.ExportAKSBootstrapScript(a)
+				Expect(err).To(BeNil())
+				Expect(script).ToNot(BeEmpty())
 			},
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := AKS{
-				Options:                        tt.fields.Options,
-				Arch:                           tt.fields.Arch,
-				TenantID:                       tt.fields.TenantID,
-				SubscriptionID:                 tt.fields.SubscriptionID,
-				UserAssignedIdentityID:         tt.fields.UserAssignedIdentityID,
-				Location:                       tt.fields.Location,
-				ResourceGroup:                  tt.fields.ResourceGroup,
-				ClusterID:                      tt.fields.ClusterID,
-				APIServerName:                  tt.fields.APIServerName,
-				KubeletClientTLSBootstrapToken: tt.fields.KubeletClientTLSBootstrapToken,
-				NetworkPlugin:                  tt.fields.NetworkPlugin,
-				NetworkPolicy:                  tt.fields.NetworkPolicy,
-				KubernetesVersion:              tt.fields.KubernetesVersion,
-			}
-			got, gotErr := a.applyOptions(tt.args.v)
-			if !tt.wantErr {
-				if gotErr != nil {
-					t.Errorf("Expected no error but got %v", gotErr)
-				} else {
-					// even if there is no error, we still want to check if the fields are updated correctly
-					if a.ResourceGroup != got.ClusterConfig.GetResourceGroup() {
-						t.Errorf("Expected resource group to be %s but got %s", a.ResourceGroup, got.ClusterConfig.GetResourceGroup())
-					}
-					if a.Location != got.ClusterConfig.GetLocation() {
-						t.Errorf("Expected location to be %s but got %s", a.Location, got.ClusterConfig.GetLocation())
-					}
-				}
-			}
+		),
+		Entry("with missing required field (ResourceGroup) should expect error",
+			func(a *bootstrap.AKS) {
+				a.ResourceGroup = ""
+				script, err := bootstrap.ExportAKSBootstrapScript(a)
+				Expect(err).ToNot(BeNil())
+				Expect(script).To(BeEmpty())
+			},
+		),
+	)
 
-			if tt.wantErr && gotErr == nil {
-				t.Errorf("Expected error but got none")
-			}
-		})
-	}
-}
+	DescribeTable("aks ApplyOptions", func(validator func(*bootstrap.AKS)) {
+		a := &bootstrap.AKS{
+			Options: bootstrap.Options{
+				ClusterName:     "clustername",
+				ClusterEndpoint: "clusterendpoint",
+				KubeletConfig:   &corev1beta1.KubeletConfiguration{},
+				Taints:          []core.Taint{},
+				Labels:          map[string]string{},
+				CABundle:        lo.ToPtr("cabundle"),
+				VMSize:          "vmsize",
+				SubnetID:        "/SubscriPtioNS/SUB_ID/REsourceGroupS/RG_NAME/ProViderS/MicrosoFT.NetWorK/VirtualNetWorKS/VNET_NAME/SubneTS/SUBNET_NAME",
+			},
+			Location:       "Updated location",
+			ResourceGroup:  "Updated resourcegroup",
+			SubscriptionID: "AKS subscriptionid",
+			TenantID:       "AKS tenantid",
+			APIServerName:  "AKS apiservername",
+		}
+		if validator != nil {
+			validator(a)
+		}
+	},
+		Entry("with all required fields should expect no error and non-empty script",
+			func(a *bootstrap.AKS) {
+				nbconfig, err := bootstrap.ExportAKSApplyOptions(a, &nbcontractv1.Configuration{
+					ClusterConfig: &nbcontractv1.ClusterConfig{
+						Location:      "AKS location",
+						ResourceGroup: "AKS resourcegroup",
+					},
+					AuthConfig: &nbcontractv1.AuthConfig{
+						SubscriptionId: "AKS subscriptionid",
+						TenantId:       "AKS tenantid",
+					},
+					ApiServerConfig: &nbcontractv1.ApiServerConfig{
+						ApiServerName: "AKS apiservername",
+					},
+				})
+				Expect(err).To(BeNil())
+				Expect(nbconfig.ClusterConfig.Location).To(Equal("Updated location"))
+				Expect(nbconfig.ClusterConfig.ResourceGroup).To(Equal("Updated resourcegroup"))
+				Expect(nbconfig.AuthConfig.SubscriptionId).To(Equal("AKS subscriptionid"))
+				Expect(nbconfig.AuthConfig.TenantId).To(Equal("AKS tenantid"))
+				Expect(nbconfig.ApiServerConfig.ApiServerName).To(Equal("AKS apiservername"))
+			},
+		),
+		Entry("with missing required field (ResourceGroup) should expect error",
+			func(a *bootstrap.AKS) {
+				a.ResourceGroup = ""
+				nbconfig, err := bootstrap.ExportAKSApplyOptions(a, &nbcontractv1.Configuration{
+					ClusterConfig: &nbcontractv1.ClusterConfig{
+						Location:      "AKS location",
+						ResourceGroup: "AKS resourcegroup",
+					},
+				})
+				Expect(err).To(MatchError("error when validating node bootstrap contract: required field ClusterConfig.ResourceGroup is missing"))
+				Expect(nbconfig).To(BeNil())
+			},
+		),
+	)
+
+})

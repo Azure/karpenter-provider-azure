@@ -51,8 +51,6 @@ var (
 
 func getFuncMap() template.FuncMap {
 	return template.FuncMap{
-		"derefString":                               deref[string],
-		"derefBool":                                 deref[bool],
 		"getStringFromVMType":                       getStringFromVMType,
 		"getStringFromNetworkPluginType":            getStringFromNetworkPluginType,
 		"getStringFromNetworkPolicyType":            getStringFromNetworkPolicyType,
@@ -109,7 +107,6 @@ func getFuncMap() template.FuncMap {
 
 func getFuncMapForContainerdConfigTemplate() template.FuncMap {
 	return template.FuncMap{
-		"derefBool":                        deref[bool],
 		"getIsKrustlet":                    getIsKrustlet,
 		"getEnsureNoDupePromiscuousBridge": getEnsureNoDupePromiscuousBridge,
 		"isKubernetesVersionGe":            nbcontractv1.IsKubernetesVersionGe,
@@ -165,15 +162,6 @@ func getStringFromLoadBalancerSkuType(enum nbcontractv1.LoadBalancerConfig_LoadB
 	default:
 		return ""
 	}
-}
-
-// deref is a helper function to dereference a pointer of any type to its value.
-func deref[T interface{}](p *T) T {
-	if p == nil {
-		var zeroValue T
-		return zeroValue
-	}
-	return *p
 }
 
 func getStringifiedStringArray(arr []string, delimiter string) string {

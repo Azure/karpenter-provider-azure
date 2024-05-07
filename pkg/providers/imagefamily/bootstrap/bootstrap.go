@@ -30,6 +30,7 @@ type Options struct {
 	Labels          map[string]string `hash:"set"`
 	CABundle        *string
 	VMSize          string
+	SubnetID        string
 }
 
 // Bootstrapper can be implemented to generate a bootstrap script

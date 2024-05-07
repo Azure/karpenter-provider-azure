@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 

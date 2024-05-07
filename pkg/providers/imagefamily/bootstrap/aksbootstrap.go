@@ -21,18 +21,16 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"strings"
 	"text/template"
 
-	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	"knative.dev/pkg/ptr"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
 	agentbakercommon "github.com/Azure/agentbaker/pkg/agent/common"
 	nbcontractv1 "github.com/Azure/agentbaker/pkg/proto/nbcontract/v1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -154,8 +152,8 @@ var (
 			UseInstanceMetadata: true,                            // s
 			LoadBalancerConfig: &nbcontractv1.LoadBalancerConfig{
 				LoadBalancerSku:                       nbcontractv1.GetLoadBalancerSKU("Standard"), // xd
-				ExcludeMasterFromStandardLoadBalancer: to.BoolPtr(true),                            //s
-				MaxLoadBalancerRuleCount:              to.Int32Ptr(250),                            // xd
+				ExcludeMasterFromStandardLoadBalancer: lo.ToPtr(true),                              //s
+				MaxLoadBalancerRuleCount:              lo.ToPtr(int32(250)),                        // xd
 				DisableOutboundSnat:                   false,                                       // s
 			},
 			ClusterNetworkConfig: &nbcontractv1.ClusterNetworkConfig{
@@ -168,7 +166,7 @@ var (
 		},
 		OutboundCommand: nbcontractv1.GetDefaultOutboundCommand(), // s
 		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
-			EnableSecureTlsBootstrapping: to.BoolPtr(false),
+			EnableSecureTlsBootstrapping: lo.ToPtr(false),
 		},
 	}
 )
@@ -204,71 +202,63 @@ func (a AKS) aksBootstrapScript() (string, error) {
 }
 
 // Download URL for KUBE_BINARY_URL publishes each k8s version in the URL.
-func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
+func (a AKS) kubeBinaryURL(kubernetesVersion, cpuArch string) string {
 	return fmt.Sprintf("%s/kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
 }
 
 func (a AKS) applyOptions(v *nbcontractv1.Configuration) (*nbcontractv1.Configuration, error) {
-	nBCB := nbcontractv1.NewNBContractBuilder()
-	nBCB.ApplyConfiguration(v)
+	contractBuilder := nbcontractv1.NewNBContractBuilder()
+	contractBuilder.ApplyConfiguration(v)
 
-	nBCB.GetNodeBootstrapConfig().KubernetesCaCert = *a.CABundle
-	nBCB.GetNodeBootstrapConfig().ApiServerConfig.ApiServerName = a.APIServerName
-	nBCB.GetNodeBootstrapConfig().TlsBootstrappingConfig.TlsBootstrappingToken = a.KubeletClientTLSBootstrapToken
+	contractBuilder.GetNodeBootstrapConfig().KubernetesCaCert = lo.FromPtr(a.CABundle)
+	contractBuilder.GetNodeBootstrapConfig().ApiServerConfig.ApiServerName = a.APIServerName
+	contractBuilder.GetNodeBootstrapConfig().TlsBootstrappingConfig.TlsBootstrappingToken = a.KubeletClientTLSBootstrapToken
 
-	nBCB.GetNodeBootstrapConfig().AuthConfig.TenantId = a.TenantID
-	nBCB.GetNodeBootstrapConfig().AuthConfig.SubscriptionId = a.SubscriptionID
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.Location = a.Location
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.ResourceGroup = a.ResourceGroup
+	contractBuilder.GetNodeBootstrapConfig().AuthConfig.TenantId = a.TenantID
+	contractBuilder.GetNodeBootstrapConfig().AuthConfig.SubscriptionId = a.SubscriptionID
+	contractBuilder.GetNodeBootstrapConfig().ClusterConfig.Location = a.Location
+	contractBuilder.GetNodeBootstrapConfig().ClusterConfig.ResourceGroup = a.ResourceGroup
 	servicePrincipalClientID := "msi"
 	servicePrincipalFileContent := base64.StdEncoding.EncodeToString([]byte("msi"))
-	nBCB.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalId = servicePrincipalClientID
-	nBCB.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalSecret = servicePrincipalFileContent
-	nBCB.GetNodeBootstrapConfig().AuthConfig.AssignedIdentityId = a.UserAssignedIdentityID
-	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPlugin = nbcontractv1.GetNetworkPluginType(a.NetworkPlugin)
-	nBCB.GetNodeBootstrapConfig().NetworkConfig.NetworkPolicy = nbcontractv1.GetNetworkPolicyType(a.NetworkPolicy)
-	nBCB.GetNodeBootstrapConfig().KubernetesVersion = a.KubernetesVersion
+	contractBuilder.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalId = servicePrincipalClientID
+	contractBuilder.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalSecret = servicePrincipalFileContent
+	contractBuilder.GetNodeBootstrapConfig().AuthConfig.AssignedIdentityId = a.UserAssignedIdentityID
+	contractBuilder.GetNodeBootstrapConfig().AuthConfig.UseManagedIdentityExtension = true
+	contractBuilder.GetNodeBootstrapConfig().NetworkConfig.NetworkPlugin = nbcontractv1.GetNetworkPluginType(a.NetworkPlugin)
+	contractBuilder.GetNodeBootstrapConfig().NetworkConfig.NetworkPolicy = nbcontractv1.GetNetworkPolicyType(a.NetworkPolicy)
+	contractBuilder.GetNodeBootstrapConfig().KubernetesVersion = a.KubernetesVersion
 
-	nBCB.GetNodeBootstrapConfig().KubeBinaryConfig.KubeBinaryUrl = kubeBinaryURL(a.KubernetesVersion, a.Arch)
-	nBCB.GetNodeBootstrapConfig().NetworkConfig.VnetCniPluginsUrl = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
-	nBCB.GetNodeBootstrapConfig().NetworkConfig.CniPluginsUrl = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
+	contractBuilder.GetNodeBootstrapConfig().KubeBinaryConfig.KubeBinaryUrl = a.kubeBinaryURL(a.KubernetesVersion, a.Arch)
+	contractBuilder.GetNodeBootstrapConfig().NetworkConfig.VnetCniPluginsUrl = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
+	contractBuilder.GetNodeBootstrapConfig().NetworkConfig.CniPluginsUrl = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
 
 	// calculated values
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.SecurityGroupName = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.VnetName = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
-	nBCB.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
+	contractBuilder.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.SecurityGroupName = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
+	contractBuilder.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
-	nBCB.GetNodeBootstrapConfig().VmSize = a.VMSize
+	contractBuilder.GetNodeBootstrapConfig().VmSize = a.VMSize
 
-	if agentbakercommon.IsNvidiaEnabledSKU(nBCB.GetNodeBootstrapConfig().VmSize) {
-		nBCB.GetNodeBootstrapConfig().GpuConfig.ConfigGpuDriver = true
+	if agentbakercommon.IsNvidiaEnabledSKU(contractBuilder.GetNodeBootstrapConfig().VmSize) {
+		contractBuilder.GetNodeBootstrapConfig().GpuConfig.ConfigGpuDriver = true
 	}
-	nBCB.GetNodeBootstrapConfig().NeedsCgroupv2 = ptr.Bool(true)
+	contractBuilder.GetNodeBootstrapConfig().NeedsCgroupv2 = lo.ToPtr(true)
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-	//Adding vnet-related labels to the nodeLabels.
-	azureVnetGUID := os.Getenv("AZURE_VNET_GUID")
-	azureVnetName := os.Getenv("AZURE_VNET_NAME")
-	azureSubnetName := os.Getenv("AZURE_SUBNET_NAME")
+	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
+	contractBuilder.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.Subnet = subnetParts.SubnetName
+	contractBuilder.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.VnetResourceGroup = subnetParts.ResourceGroupName
+	contractBuilder.GetNodeBootstrapConfig().ClusterConfig.ClusterNetworkConfig.VnetName = subnetParts.VNetName
 
-	vnetLabels := map[string]string{
-		vnetDataPlaneLabel:      ciliumDataPlane,
-		vnetNetworkNameLabel:    azureVnetName,
-		vnetSubnetNameLabel:     azureSubnetName,
-		vnetSubscriptionIDLabel: a.SubscriptionID,
-		vnetGUIDLabel:           azureVnetGUID,
-		vnetPodNetworkTypeLabel: overlayNetworkType,
-	}
+	contractBuilder.GetNodeBootstrapConfig().KubeletConfig.KubeletNodeLabels = kubeletLabels
+	contractBuilder.GetNodeBootstrapConfig().KubeletConfig.KubeletFlags = a.getKubeletFlags()
+	contractBuilder.GetNodeBootstrapConfig().EnableArtifactStreaming = true
 
-	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
-	nBCB.GetNodeBootstrapConfig().KubeletConfig.KubeletNodeLabels = kubeletLabels
-	nBCB.GetNodeBootstrapConfig().KubeletConfig.KubeletFlags = a.getKubeletFlags()
-	if error := nBCB.ValidateNBContract(); error != nil {
+	if error := contractBuilder.ValidateNBContract(); error != nil {
 		return nil, fmt.Errorf("error when validating node bootstrap contract: %w", error)
 	}
-	return nBCB.GetNodeBootstrapConfig(), nil
+	return contractBuilder.GetNodeBootstrapConfig(), nil
 }
 
 func (a AKS) getKubeletFlags() map[string]string {
@@ -324,10 +314,10 @@ func KubeletConfigToMap(kubeletConfig *corev1beta1.KubeletConfiguration) map[str
 		return args
 	}
 	if kubeletConfig.MaxPods != nil {
-		args["--max-pods"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.MaxPods))
+		args["--max-pods"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.MaxPods))
 	}
 	if kubeletConfig.PodsPerCore != nil {
-		args["--pods-per-core"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.PodsPerCore))
+		args["--pods-per-core"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.PodsPerCore))
 	}
 	JoinParameterArgsToMap(args, "--system-reserved", kubeletConfig.SystemReserved, "=")
 	JoinParameterArgsToMap(args, "--kube-reserved", kubeletConfig.KubeReserved, "=")
@@ -338,13 +328,13 @@ func KubeletConfigToMap(kubeletConfig *corev1beta1.KubeletConfiguration) map[str
 	}), "=")
 
 	if kubeletConfig.EvictionMaxPodGracePeriod != nil {
-		args["--eviction-max-pod-grace-period"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.EvictionMaxPodGracePeriod))
+		args["--eviction-max-pod-grace-period"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.EvictionMaxPodGracePeriod))
 	}
 	if kubeletConfig.ImageGCHighThresholdPercent != nil {
-		args["--image-gc-high-threshold"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.ImageGCHighThresholdPercent))
+		args["--image-gc-high-threshold"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ImageGCHighThresholdPercent))
 	}
 	if kubeletConfig.ImageGCLowThresholdPercent != nil {
-		args["--image-gc-low-threshold"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.ImageGCLowThresholdPercent))
+		args["--image-gc-low-threshold"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ImageGCLowThresholdPercent))
 	}
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
