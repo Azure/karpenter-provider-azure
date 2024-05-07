@@ -219,7 +219,7 @@ type NodeBootstrapVariables struct {
 	KubenetTemplate                   string   // s   static
 	ContainerdConfigContent           string   // k   determined by GPU VM size, WASM support, Kata support
 	IsKata                            bool     // n   user-specified
-	ArtifactStreamingEnabled         bool     // t   user-specified
+	ArtifactStreamingEnabled          bool     // t   user-specified
 }
 
 var (
@@ -385,7 +385,7 @@ var (
 		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
 		ContainerdConfigContent:         "",                                                                  // kd
 		IsKata:                          false,                                                               // n
-		ArtifactStreamingEnabled:       true,                                                               // td
+		ArtifactStreamingEnabled:        true,                                                                // td
 	}
 )
 
