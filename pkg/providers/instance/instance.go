@@ -81,7 +81,7 @@ type Resource = map[string]interface{}
 
 type Provider struct {
 	location               string
-	azClient               *AZClient
+	AZClient               *AZClient
 	instanceTypeProvider   *instancetype.Provider
 	launchTemplateProvider *launchtemplate.Provider
 	loadBalancerProvider   *loadbalancer.Provider
@@ -91,7 +91,7 @@ type Provider struct {
 }
 
 func NewProvider(
-	azClient *AZClient,
+	AZClient *AZClient,
 	instanceTypeProvider *instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,
@@ -102,7 +102,7 @@ func NewProvider(
 ) *Provider {
 	listQuery = GetListQueryBuilder(resourceGroup).String()
 	return &Provider{
-		azClient:               azClient,
+		AZClient:               AZClient,
 		instanceTypeProvider:   instanceTypeProvider,
 		launchTemplateProvider: launchTemplateProvider,
 		loadBalancerProvider:   loadBalancerProvider,
@@ -139,14 +139,14 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 }
 
 func (p *Provider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
-	return UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, update)
+	return UpdateVirtualMachine(ctx, p.AZClient.virtualMachinesClient, p.resourceGroup, vmName, update)
 }
 
 func (p *Provider) Get(ctx context.Context, vmName string) (*armcompute.VirtualMachine, error) {
 	var vm armcompute.VirtualMachinesClientGetResponse
 	var err error
 
-	if vm, err = p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
+	if vm, err = p.AZClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
@@ -158,7 +158,7 @@ func (p *Provider) Get(ctx context.Context, vmName string) (*armcompute.VirtualM
 
 func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
 	req := NewQueryRequest(&(p.subscriptionID), listQuery)
-	client := p.azClient.azureResourceGraphClient
+	client := p.AZClient.azureResourceGraphClient
 	data, err := GetResourceData(ctx, client, *req)
 	if err != nil {
 		return nil, fmt.Errorf("querying azure resource graph, %w", err)
@@ -184,7 +184,7 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	vmExt := p.getAKSIdentifyingExtension()
 	vmExtName := *vmExt.Name
 	logging.FromContext(ctx).Debugf("Creating virtual machine AKS identifying extension for %s", vmName)
-	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
+	v, err := createVirtualMachineExtension(ctx, p.AZClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
 		logging.FromContext(ctx).Errorf("Creating VM AKS identifying extension for VM %q failed, %w", vmName, err)
 		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
@@ -245,7 +245,7 @@ func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, l
 	nic := p.newNetworkInterfaceForVM(nicName, backendPools, instanceType)
 	p.applyTemplateToNic(&nic, launchTemplateConfig)
 	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
-	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)
+	res, err := createNic(ctx, p.AZClient.NetworkInterfacesClient, p.resourceGroup, nicName, nic)
 	if err != nil {
 		return "", err
 	}
@@ -359,7 +359,7 @@ func setNodePoolNameTag(tags map[string]*string, nodeClaim *corev1beta1.NodeClai
 }
 
 func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName string) (*armcompute.VirtualMachine, error) {
-	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
+	result, err := CreateVirtualMachine(ctx, p.AZClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
 	if err != nil {
 		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed: %v", vmName, err)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
@@ -555,14 +555,14 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 }
 
 func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName string) (err error) {
-	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
+	vmErr := deleteVirtualMachineIfExists(ctx, p.AZClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
 	}
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
-	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
+	nicErr := deleteNicIfExists(ctx, p.AZClient.NetworkInterfacesClient, p.resourceGroup, resourceName)
 	if nicErr != nil {
 		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
 	}
