@@ -107,8 +107,6 @@ var (
 	kubeletNodeLabelsBase = map[string]string{
 		"kubernetes.azure.com/mode": "user",
 	}
-	vnetCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-amd64-v1.4.32.tgz", globalAKSMirror)
-	cniPluginsURL          = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-amd64-v1.1.1.tgz", globalAKSMirror)
 )
 
 var (
