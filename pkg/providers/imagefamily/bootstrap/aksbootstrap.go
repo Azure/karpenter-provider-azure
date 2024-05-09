@@ -166,6 +166,9 @@ var (
 		TlsBootstrappingConfig: &nbcontractv1.TLSBootstrappingConfig{
 			EnableSecureTlsBootstrapping: lo.ToPtr(false),
 		},
+		AuthConfig: &nbcontractv1.AuthConfig{
+			UseManagedIdentityExtension: true, // s
+		},
 	}
 )
 
@@ -221,7 +224,6 @@ func (a AKS) applyOptions(v *nbcontractv1.Configuration) (*nbcontractv1.Configur
 	contractBuilder.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalId = servicePrincipalClientID
 	contractBuilder.GetNodeBootstrapConfig().AuthConfig.ServicePrincipalSecret = servicePrincipalFileContent
 	contractBuilder.GetNodeBootstrapConfig().AuthConfig.AssignedIdentityId = a.UserAssignedIdentityID
-	contractBuilder.GetNodeBootstrapConfig().AuthConfig.UseManagedIdentityExtension = true
 	contractBuilder.GetNodeBootstrapConfig().NetworkConfig.NetworkPlugin = nbcontractv1.GetNetworkPluginType(a.NetworkPlugin)
 	contractBuilder.GetNodeBootstrapConfig().NetworkConfig.NetworkPolicy = nbcontractv1.GetNetworkPolicyType(a.NetworkPolicy)
 	contractBuilder.GetNodeBootstrapConfig().KubernetesVersion = a.KubernetesVersion
