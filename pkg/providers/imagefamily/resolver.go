@@ -25,25 +25,15 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
-)
-
-const (
-	networkPluginAzure   = "azure"
-	networkPluginKubenet = "kubenet"
-
-	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI Overlay.
-	defaultKubernetesMaxPodsAzure = 250
-	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
-	defaultKubernetesMaxPodsKubenet = 100
-	// defaultKubernetesMaxPods is the maximum number of pods on a node.
-	defaultKubernetesMaxPods = 110
 )
 
 // Resolver is able to fill-in dynamic launch template parameters
@@ -94,7 +84,7 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{
 		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
-	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
+	kubeletConfig.MaxPods = lo.ToPtr(utils.DefaultMaxPods(staticParameters.NetworkPlugin, options.FromContext(ctx).NetworkPluginMode))
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
@@ -122,11 +112,4 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	}
 }
 
-func getMaxPods(networkPlugin string) int32 {
-	if networkPlugin == networkPluginAzure {
-		return defaultKubernetesMaxPodsAzure
-	} else if networkPlugin == networkPluginKubenet {
-		return defaultKubernetesMaxPodsKubenet
-	}
-	return defaultKubernetesMaxPods
-}
+
