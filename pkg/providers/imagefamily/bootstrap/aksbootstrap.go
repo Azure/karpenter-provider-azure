@@ -25,6 +25,7 @@ import (
 	"text/template"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
@@ -238,12 +239,12 @@ var (
 	// source note: unique per nodepool. partially user-specified, static, and RP-generated
 	// removed --image-pull-progress-deadline=30m  (not in 1.24?)
 	// removed --network-plugin=cni (not in 1.24?)
+	// removed  "--azure-container-registry-config" (not in 1.30)
 	kubeletFlagsBase = map[string]string{
 		"--address":                           "0.0.0.0",
 		"--anonymous-auth":                    "false",
 		"--authentication-token-webhook":      "true",
 		"--authorization-mode":                "Webhook",
-		"--azure-container-registry-config":   "/etc/kubernetes/azure.json",
 		"--cgroups-per-qos":                   "true",
 		"--client-ca-file":                    "/etc/kubernetes/certs/ca.crt",
 		"--cloud-config":                      "/etc/kubernetes/azure.json",
@@ -384,6 +385,7 @@ var (
 		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
 		ContainerdConfigContent:         "",                                                                  // kd
 		IsKata:                          false,                                                               // n
+		NeedsCgroupV2:                   true,                                                                // s only static for karpenter
 
 	}
 )
@@ -448,9 +450,11 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
-	nbv.NeedsCgroupV2 = true
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
+	if semver.MustParse(a.KubernetesVersion).Minor < 30 {
+		kubeletLabels["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
+	}
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
 	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
