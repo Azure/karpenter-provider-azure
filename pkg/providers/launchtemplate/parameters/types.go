@@ -26,9 +26,7 @@ type StaticParameters struct {
 	ClusterEndpoint                string
 	CABundle                       *string
 	Arch                           string
-	GPUNode                        bool
-	GPUDriverVersion               string
-	GPUImageSHA                    string
+	VMSize                         string
 	TenantID                       string
 	SubscriptionID                 string
 	UserAssignedIdentityID         string
