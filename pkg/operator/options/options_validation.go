@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/go-playground/validator/v10"
 	"go.uber.org/multierr"
@@ -40,7 +41,7 @@ func (o Options) Validate() error {
 func (o Options) validateNetworkPluginMode() error {
 	// TODO: Move overlay and none to shared constants in AgentBaker
 	// NOTE: Network Plugin Mode should be normalized on the AKS API Level, so if we are passing values in from the ManagedCluster, NetworkPluginMode will already be normalized.
-	if o.NetworkPluginMode != "overlay" && o.NetworkPluginMode != "" && o.NetworkPluginMode != "none" {
+	if o.NetworkPluginMode != consts.PodNetworkTypeOverlay && o.NetworkPluginMode != "" && o.NetworkPluginMode != "none" {
 		return fmt.Errorf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay', 'none' or ''", o.NetworkPluginMode)
 	}
 	return nil

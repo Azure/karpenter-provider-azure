@@ -38,10 +38,12 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
@@ -196,7 +198,7 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	return nil
 }
 
-func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
+func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
 	for _, poolID := range backendPools.IPv4PoolIDs {
 		poolID := poolID
@@ -212,15 +214,15 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 		enableAcceleratedNetworking = true
 	}
 
-	return armnetwork.Interface{
+	nic := armnetwork.Interface{
 		Location: to.Ptr(p.location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
 					Name: &vmName,
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   to.Ptr(true),
-						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
+						Primary:                   lo.ToPtr(true),
+						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
 						Subnet: &armnetwork.Subnet{
 							ID: &p.subnetID,
 						},
@@ -228,10 +230,34 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 					},
 				},
 			},
-			EnableAcceleratedNetworking: to.Ptr(enableAcceleratedNetworking),
-			EnableIPForwarding:          to.Ptr(true),
+			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
+			EnableIPForwarding:          lo.ToPtr(true),
 		},
 	}
+	networkPlugin := options.FromContext(ctx).NetworkPlugin 
+	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
+	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode != consts.PodNetworkTypeOverlay {
+		// NOTE: We don't need to set LoadBalancerBackendAddressPools for secondary ip configs.
+		// AzureCNI without overlay as pod networking type requires we configure additional secondary ips
+		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary 
+		// ips from the nodeclass instead of using the default
+		for i := 1; i < utils.DefaultMaxPods(networkPlugin, networkPluginMode); i++ {
+			nic.Properties.IPConfigurations = append(
+				nic.Properties.IPConfigurations,
+				&armnetwork.InterfaceIPConfiguration{
+					Name: lo.ToPtr(fmt.Sprintf("ipconfig-%d", i)),
+					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+						Primary: lo.ToPtr(false),
+						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+						Subnet: &armnetwork.Subnet{
+							ID: &p.subnetID,
+						},
+					},
+				},
+			)
+		}
+	}
+	return nic
 }
 
 func GenerateResourceName(nodeClaimName string) string {
@@ -244,7 +270,7 @@ func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, l
 		return "", err
 	}
 
-	nic := p.newNetworkInterfaceForVM(nicName, backendPools, instanceType)
+	nic := p.newNetworkInterfaceForVM(ctx, nicName, backendPools, instanceType)
 	p.applyTemplateToNic(&nic, launchTemplateConfig)
 	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
 	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)

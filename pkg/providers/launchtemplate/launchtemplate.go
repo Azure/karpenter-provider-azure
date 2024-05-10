@@ -27,6 +27,7 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
@@ -37,14 +38,10 @@ import (
 const (
 	karpenterManagedTagKey = "karpenter.azure.com/cluster"
 
-	networkDataplaneCilium  = "cilium"
 	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
 	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
 	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
 	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-
-	networkPluginAzure = "azure"
-	networkModeOverlay = "overlay"
 )
 
 type Template struct {
@@ -101,7 +98,7 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	if err != nil {
 		return nil, err
 	}
-	launchTemplate, err := p.createLaunchTemplate(ctx, templateParameters)
+	launchTemplate, err := p.createLaunchTemplate(templateParameters)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +112,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		arch = corev1beta1.ArchitectureArm64
 	}
 
-	if options.FromContext(ctx).NetworkPlugin == networkPluginAzure && options.FromContext(ctx).NetworkPluginMode == networkModeOverlay {
+	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.PodNetworkTypeOverlay {
 		// TODO: make conditional on pod subnet
 		vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
 		if err != nil {
@@ -129,7 +126,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	//            operator: In
 	//            values:
 	//              - cilium
-	labels[vnetDataPlaneLabel] = networkDataplaneCilium
+	labels[vnetDataPlaneLabel] = consts.NetworkDataplaneCilium
 
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
@@ -155,7 +152,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	}, nil
 }
 
-func (p *Provider) createLaunchTemplate(_ context.Context, options *parameters.Parameters) (*Template, error) {
+func (p *Provider) createLaunchTemplate(options *parameters.Parameters) (*Template, error) {
 	// render user data
 	userData, err := options.UserData.Script()
 	if err != nil {
@@ -189,7 +186,7 @@ func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeCla
 	vnetLabels := map[string]string{
 		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
 		vnetGUIDLabel:           p.vnetGUID,
-		vnetPodNetworkTypeLabel: networkModeOverlay,
+		vnetPodNetworkTypeLabel: consts.PodNetworkTypeOverlay,
 	}
 	return vnetLabels, nil
 }

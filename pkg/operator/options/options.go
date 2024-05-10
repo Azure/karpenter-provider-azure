@@ -27,6 +27,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/consts"
 	"k8s.io/apimachinery/pkg/util/sets"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/utils/env"
@@ -80,8 +81,8 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.Float64Var(&o.VMMemoryOverheadPercent, "vm-memory-overhead-percent", env.WithDefaultFloat64("VM_MEMORY_OVERHEAD_PERCENT", 0.075), "The VM memory overhead as a percent that will be subtracted from the total memory for all instance types.")
 	fs.StringVar(&o.KubeletClientTLSBootstrapToken, "kubelet-bootstrap-token", env.WithDefaultString("KUBELET_BOOTSTRAP_TOKEN", ""), "[REQUIRED] The bootstrap token for new nodes to join the cluster.")
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
-	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", "azure"), "The network plugin used by the cluster.")
-	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", "overlay"), "[REQUIRED] network plugin mode of the cluster")
+	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", consts.NetworkPluginAzure), "The network plugin used by the cluster.")
+	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", consts.PodNetworkTypeOverlay), "[REQUIRED] network plugin mode of the cluster")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
 	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")

@@ -80,11 +80,13 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	}
 
 	// TODO: revisit computeResources and maxPods implementation
+	// TODO: Migrate KubletConfiguration to the AKSNodeClass, and split out internal vs 
+	// external kubelet configuration into both a type exposed in the NodeClass, and a type used internally
 	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{
 		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
-	kubeletConfig.MaxPods = lo.ToPtr(utils.DefaultMaxPods(staticParameters.NetworkPlugin, options.FromContext(ctx).NetworkPluginMode))
+	kubeletConfig.MaxPods = lo.ToPtr(int32(utils.DefaultMaxPods(staticParameters.NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)))
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,

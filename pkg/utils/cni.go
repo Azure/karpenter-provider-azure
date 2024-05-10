@@ -19,7 +19,7 @@ const (
 
 
 // DefaultMaxPods returns for a given network plugin the default value for pods per node
-func DefaultMaxPods(networkPlugin string, networkPluginMode string) int32 {
+func DefaultMaxPods(networkPlugin string, networkPluginMode string) int {
 	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.PodNetworkTypeOverlay {
 		return defaultKubernetesMaxPodsAzureOverlay 
 	}

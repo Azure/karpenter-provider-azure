@@ -1,11 +1,11 @@
-package consts 
-
-
+package consts
 
 const (
-	NetworkPluginAzure   = "azure"
-	NetworkPluginKubenet = "kubenet"
-	PodNetworkTypeOverlay = "overlay"
+	NetworkPluginAzure     = "azure"
+	NetworkPluginKubenet   = "kubenet"
+	
+	PodNetworkTypeOverlay  = "overlay"
+	PodNetworkTypeNone = ""
+
+	NetworkDataplaneCilium = "cilium"
 )
-
-
