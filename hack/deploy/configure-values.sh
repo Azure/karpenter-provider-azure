@@ -19,7 +19,7 @@ AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=$4
 AKS_JSON=$(az aks show --name "$CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP")
 AZURE_LOCATION=$(jq -r ".location" <<< "$AKS_JSON")
 AZURE_RESOURCE_GROUP_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
-AZURE_SUBSCRIPTION_ID=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON" | cut -d'/' -f3)
+AZURE_SUBSCRIPTION_ID=$(az account show --query 'id' -otsv)
 
 CLUSTER_ENDPOINT=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
 
