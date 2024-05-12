@@ -33,6 +33,7 @@ func (o Options) Validate() error {
 		o.validateEndpoint(),
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
+		o.validateDNSServiceIP(),
 		validate.Struct(o),
 	)
 }
@@ -47,6 +48,7 @@ func (o Options) validateVnetSubnetID() error {
 
 func (o Options) validateDNSServiceIP() error {
 	// TODO: Take Address and validate its in service cidr range
+	// The intended flow is to flow this value in from the aks cluster
 	_, err := netip.ParseAddr(o.DNSServiceIP)
 	if err != nil {
 		return fmt.Errorf("dns-service-ip is invalid %w", err)
