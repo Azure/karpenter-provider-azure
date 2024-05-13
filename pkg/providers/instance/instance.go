@@ -241,7 +241,7 @@ func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, 
 		// AzureCNI without overlay as pod networking type requires we configure additional secondary ips
 		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary 
 		// ips from the nodeclass instead of using the default
-		for i := 1; i < utils.DefaultMaxPods(networkPlugin, networkPluginMode); i++ {
+		for i := 1; i < utils.DefaultMaxPods(networkPlugin, networkPluginMode) - consts.StaticAzureCNIHostNetworkAddons; i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
 				&armnetwork.InterfaceIPConfiguration{
