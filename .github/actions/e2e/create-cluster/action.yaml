@@ -47,20 +47,36 @@ runs:
   - name: create workload msi
     shell: bash
     run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-msi
-  - name: create cluster
+  - name: create cluster with CNI v1
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cniv1
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-cniv1 AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cniv1
+  - name: create cluster with Cilium
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-cilium AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
+  - name: create cluster with Overlay
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-overlay AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-overlay
   - name: az login 2
     uses: azure/login@6b2456866fc08b011acb422a92a4aa20e2c4de32 # v2.1.0
     with:
       client-id: ${{ inputs.client-id }}
       tenant-id: ${{ inputs.tenant-id }}
       subscription-id: ${{ inputs.subscription-id }}
-  - name: create federated cred
+  - name: create federated cred for CNI v1
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-create-federated-cred
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-cniv1 AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-create-federated-cred
+  - name: create federated cred for Cilium
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-cilium AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-create-federated-cred
+  - name: create federated cred for Overlay
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-overlay AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-create-federated-cred
   - name: update azure perms
     shell: bash
     run: |
-      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-perm
+      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-cniv1 AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-perm
+      AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-perm-acr
+      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-cilium AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-perm
+      AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-perm-acr
+      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-overlay AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-perm
       AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-perm-acr

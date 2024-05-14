@@ -46,9 +46,15 @@ runs:
   - name: configure Helm chart values
     shell: bash
     run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-configure-values
-  - name: deploy karpenter to cluster
+  - name: deploy karpenter to cluster with CNI v1
     shell: bash
-    run: AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-cniv1 AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run
+  - name: deploy karpenter to cluster with Cilium
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-cilium AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run
+  - name: deploy karpenter to cluster with Overlay
+    shell: bash
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }}-overlay AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run
   - name: taint nodes as karpenter-system
     shell: bash
     run: |
