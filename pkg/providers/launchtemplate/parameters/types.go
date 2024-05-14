@@ -40,9 +40,8 @@ type StaticParameters struct {
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
-
-	// VNET
-	SubnetID string
+	SubnetID                       string
+	MaxPods                        int32
 
 	Tags   map[string]string
 	Labels map[string]string

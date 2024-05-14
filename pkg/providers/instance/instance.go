@@ -234,20 +234,20 @@ func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, 
 			EnableIPForwarding:          lo.ToPtr(true),
 		},
 	}
-	networkPlugin := options.FromContext(ctx).NetworkPlugin 
+	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode != consts.PodNetworkTypeOverlay {
 		// NOTE: We don't need to set LoadBalancerBackendAddressPools for secondary ip configs.
 		// AzureCNI without overlay as pod networking type requires we configure additional secondary ips
-		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary 
+		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
 		// ips from the nodeclass instead of using the default
-		for i := 1; i < utils.DefaultMaxPods(networkPlugin, networkPluginMode) - consts.StaticAzureCNIHostNetworkAddons; i++ {
+		for i := 1; i < utils.DefaultMaxPods(networkPlugin, networkPluginMode)-consts.StaticAzureCNIHostNetworkAddons; i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
 				&armnetwork.InterfaceIPConfiguration{
 					Name: lo.ToPtr(fmt.Sprintf("ipconfig-%d", i)),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary: lo.ToPtr(false),
+						Primary:                   lo.ToPtr(false),
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
 						Subnet: &armnetwork.Subnet{
 							ID: &p.subnetID,

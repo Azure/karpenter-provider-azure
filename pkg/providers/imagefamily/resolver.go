@@ -25,11 +25,9 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -74,24 +72,14 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		return nil, err
 	}
 
-	kubeletConfig := nodeClaim.Spec.Kubelet
-	if kubeletConfig == nil {
-		kubeletConfig = &corev1beta1.KubeletConfiguration{}
-	}
-
-	// TODO: revisit computeResources and maxPods implementation
-	// TODO: Migrate KubletConfiguration to the AKSNodeClass, and split out internal vs 
-	// external kubelet configuration into both a type exposed in the NodeClass, and a type used internally
-	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
-	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
-	kubeletConfig.EvictionHard = map[string]string{
-		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
-	kubeletConfig.MaxPods = lo.ToPtr(int32(utils.DefaultMaxPods(staticParameters.NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)))
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
+
+	kc := prepareKubeletConfiguration(instanceType, nodeClaim)
+	kc.MaxPods = lo.ToPtr(staticParameters.MaxPods)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		UserData: imageFamily.UserData(
-			kubeletConfig,
+			kc,
 			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
 			staticParameters.Labels,
 			staticParameters.CABundle,
@@ -101,6 +89,19 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	}
 
 	return template, nil
+}
+
+// TODO: Split out Kubelet Configuration into AKSNodeclass to align with V1 Release
+func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nc *corev1beta1.NodeClaim) *corev1beta1.KubeletConfiguration {
+	kubeletConfig := nc.Spec.Kubelet
+	if kubeletConfig == nil {
+		kubeletConfig = &corev1beta1.KubeletConfiguration{}
+	}
+	// TODO: revisit computeResources and maxPods implementation
+	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
+	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
+	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
+	return kubeletConfig
 }
 
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
@@ -113,5 +114,3 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 		return &Ubuntu2204{Options: parameters}
 	}
 }
-
-
