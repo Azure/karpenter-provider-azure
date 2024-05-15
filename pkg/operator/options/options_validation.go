@@ -17,17 +17,17 @@ limitations under the License.
 package options
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/go-playground/validator/v10"
-	"go.uber.org/multierr"
 )
 
 func (o Options) Validate() error {
 	validate := validator.New()
-	return multierr.Combine(
+	return errors.Join(
 		o.validateRequiredFields(),
 		o.validateEndpoint(),
 		o.validateVMMemoryOverheadPercent(),

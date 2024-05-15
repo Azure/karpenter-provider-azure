@@ -18,12 +18,12 @@ package garbagecollection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/samber/lo"
-	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
@@ -87,7 +87,7 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 		}
 	})
 	c.successfulCount++
-	return reconcile.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, multierr.Combine(errs...)
+	return reconcile.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, errors.Join(errs...)
 }
 
 func (c *Controller) garbageCollect(ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeList *v1.NodeList) error {

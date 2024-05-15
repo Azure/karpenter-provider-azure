@@ -18,12 +18,12 @@ package debug
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/samber/lo"
-	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -43,7 +43,7 @@ func NewEventClient(kubeClient client.Client) *EventClient {
 }
 
 func (c *EventClient) DumpEvents(ctx context.Context) error {
-	return multierr.Combine(
+	return errors.Join(
 		c.dumpKarpenterEvents(ctx),
 		c.dumpPodEvents(ctx),
 		c.dumpNodeEvents(ctx),
