@@ -10,7 +10,6 @@ controller:
     # with this in place write (and read) QPS can be increased too
     #- name: GODEBUG
     #  value: http2client=0
-
     # options
     - name: CLUSTER_NAME
       value: ${CLUSTER_NAME}
@@ -21,11 +20,11 @@ controller:
     - name: SSH_PUBLIC_KEY
       value: "${SSH_PUBLIC_KEY}"
     - name: NETWORK_PLUGIN
-      value: "azure"
+      value: ${NETWORK_PLUGIN} 
     - name: NETWORK_PLUGIN_MODE
-      value: "overlay"
+      value: ${NETWORK_PLUGIN_MODE}
     - name: NETWORK_POLICY
-      value: ""
+      value: ${NETWORK_POLICY}
     - name: VNET_SUBNET_ID
       value: ${VNET_SUBNET_ID}
     - name: NODE_IDENTITIES
