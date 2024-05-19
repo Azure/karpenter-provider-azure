@@ -149,7 +149,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       options.FromContext(ctx).SubnetID,
-		MaxPods:                        int32(utils.DefaultMaxPods(options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)),
+		MaxPods:                        int32(utils.DefaultMaxPods(options.FromContext(ctx).NetworkPlugin)),
 	}, nil
 }
 

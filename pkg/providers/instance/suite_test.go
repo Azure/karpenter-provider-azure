@@ -18,7 +18,6 @@ package instance_test
 
 import (
 	"context"
-	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -167,7 +166,7 @@ var _ = Describe("InstanceProvider", func() {
 		AfterEach(func() {
 			ctx = options.ToContext(ctx, originalOptions)
 		})
-		It("should include 28 secondary ips by default", func() {
+		It("should include 248 secondary ips by default", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -179,26 +178,10 @@ var _ = Describe("InstanceProvider", func() {
 			Expect(nic).ToNot(BeNil())
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-			// AzureCNI V1 has a DefaultMaxPods of 28
-			Expect(len(nic.Properties.IPConfigurations)).To(Equal(28))
+			// AzureCNI V1 has a DefaultMaxPods of 250, then we dont need to generate
+			// ip configurations for kube-proxy + ip-masq-agent
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(248))
 		})
-		It("should default max pods to 30 in kubelet configuration", func() {
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=30"))
-		})
-
 	})
 	It("should create VM and NIC with valid ARM tags", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)

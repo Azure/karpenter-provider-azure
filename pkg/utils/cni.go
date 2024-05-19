@@ -20,11 +20,8 @@ import (
 )
 
 const (
-	// defaultKubernetesMaxPodsAzureOverlay is the maximum number of pods to run on a node for Azure CNI Overlay.
-	defaultKubernetesMaxPodsAzureOverlay = 250
-
-	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI
-	defaultKubernetesMaxPodsAzure = 30
+	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI.
+	defaultKubernetesMaxPodsAzure = 250
 
 	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
 	defaultKubernetesMaxPodsKubenet = 100
@@ -33,11 +30,7 @@ const (
 )
 
 // DefaultMaxPods returns for a given network plugin the default value for pods per node
-func DefaultMaxPods(networkPlugin, networkPluginMode string) int {
-	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.PodNetworkTypeOverlay {
-		return defaultKubernetesMaxPodsAzureOverlay
-	}
-	// Pod
+func DefaultMaxPods(networkPlugin string) int {
 	if networkPlugin == consts.NetworkPluginAzure {
 		return defaultKubernetesMaxPodsAzure
 	}
