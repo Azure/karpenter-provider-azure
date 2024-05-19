@@ -29,6 +29,10 @@ inputs:
   location:
     description: "The azure location to run the e2e test in"
     default: "eastus"
+  network_configuration:
+    description: 'Type of network configuration to use'
+    required: true
+    default: 'azurecniv1'
 runs:
   using: "composite"
   steps:
@@ -49,7 +53,16 @@ runs:
     run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-msi
   - name: create cluster
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cniv1
+    run: |
+      if [ "${{ inputs.network_configuration }}" == "azurecni-overlay" ]; then
+        AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-overlay
+      elif [ "${{ inputs.network_configuration }}" == "azcni-overlay-cilium" ]; then
+        AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
+      elif [ "${{ inputs.network_configuration }} == "azurecniv1"]; then
+        AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cniv1
+      else
+        AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
+      fi
   - name: az login 2
     uses: azure/login@6b2456866fc08b011acb422a92a4aa20e2c4de32 # v2.1.0
     with:

@@ -43,6 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        network_configuration: ['azurecniv1', 'azurecni-overlay', 'azcni-overlay-cilium']
         suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim, Chaos]
     permissions:
       contents: read
@@ -52,6 +53,7 @@ jobs:
     with:
       git_ref: ${{ inputs.git_ref }}
       suite: ${{ matrix.suite }}
+      network_configuration: ${{ matrix.network_configuration }}
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
       location: ${{ inputs.location }}
   #     k8s_version: ${{ inputs.k8s_version }}
