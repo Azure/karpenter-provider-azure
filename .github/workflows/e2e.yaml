@@ -14,6 +14,9 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "eastus"
+      network_configuration:
+        type: string
+        required: true
     #   k8s_version:
     #     type: string
     #     default: "1.27"
@@ -35,7 +38,7 @@ env:
 
 jobs:
   run-suite:
-    name: suite-${{ inputs.suite }}
+    name: suite-${{ inputs.suite }}-${{ inputs.network_configuration }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
