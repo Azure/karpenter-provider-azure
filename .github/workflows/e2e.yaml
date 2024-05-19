@@ -73,12 +73,12 @@ jobs:
           install skaffold /usr/local/bin/
       - name: generate rg name
         run: |
-          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.hash }} | awk '{print tolower($0)}')
+          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.network_configuration  }}-${{ inputs.hash }} | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
         run: |
-          ACR_NAME=$(echo ${{ inputs.suite }}acr${{ inputs.hash }} | awk '{print tolower($0)}')
+          ACR_NAME=$(echo ${{ inputs.suite }}${{ inputs.network_configuration }}acr${{ inputs.hash }} | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
@@ -125,6 +125,7 @@ jobs:
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
+          network_configuration: ${{ inputs.network_configuration }}
       - name: run the ${{ inputs.suite }} test suite
         if: inputs.suite != 'Nonbehavioral'
         run: |

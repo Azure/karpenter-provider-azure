@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        network_configuration: ['azurecniv1', 'azurecni-overlay', 'azcni-overlay-cilium']
+        network_configuration: ['azcniv1', 'azoverlay', 'azcilium']
         suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim, Chaos]
     permissions:
       contents: read

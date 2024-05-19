@@ -32,7 +32,7 @@ inputs:
   network_configuration:
     description: 'Type of network configuration to use'
     required: true
-    default: 'azurecniv1'
+    default: 'azcniv1'
 runs:
   using: "composite"
   steps:
@@ -54,11 +54,11 @@ runs:
   - name: create cluster
     shell: bash
     run: |
-      if [ "${{ inputs.network_configuration }}" == "azurecni-overlay" ]; then
+      if [ "${{ inputs.network_configuration }}" == "azoverlay" ]; then
         AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-overlay
-      elif [ "${{ inputs.network_configuration }}" == "azcni-overlay-cilium" ]; then
+      elif [ "${{ inputs.network_configuration }}" == "azcilium" ]; then
         AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
-      elif [ "${{ inputs.network_configuration }} == "azurecniv1"]; then
+      elif [ "${{ inputs.network_configuration }} == "azcniv1"]; then
         AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cniv1
       else
         AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
