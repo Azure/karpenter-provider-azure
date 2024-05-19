@@ -43,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        network_configuration: ['azcniv1', 'azoverlay', 'azcilium']
+        create_params: ['azcniv1', 'azoverlay', 'azcilium']
         suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim, Chaos]
     permissions:
       contents: read
@@ -53,7 +53,7 @@ jobs:
     with:
       git_ref: ${{ inputs.git_ref }}
       suite: ${{ matrix.suite }}
-      network_configuration: ${{ matrix.network_configuration }}
+      create_params: ${{ matrix.create_params }}
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
       location: ${{ inputs.location }}
   #     k8s_version: ${{ inputs.k8s_version }}
