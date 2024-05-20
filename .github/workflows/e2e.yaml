@@ -100,7 +100,7 @@ jobs:
           sleep $(( RANDOM % 60 + 1 ))
       - name: generate cluster name
         run: |
-          CLUSTER_NAME=mc
+          CLUSTER_NAME=$(echo karp-{{ inputs.suite }}-$(1 + $RANDOM % 100000000000))
           echo "Using cluster name \"$CLUSTER_NAME\""
           echo "CLUSTER_NAME=$CLUSTER_NAME" >> "$GITHUB_ENV"
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
