@@ -92,7 +92,6 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	return template, nil
 }
 
-// TODO: Split out Kubelet Configuration into AKSNodeclass to align with V1 Release
 func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nc *corev1beta1.NodeClaim) *corev1beta1.KubeletConfiguration {
 	kubeletConfig := nc.Spec.Kubelet
 	if kubeletConfig == nil {

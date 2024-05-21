@@ -1039,7 +1039,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(lo.FromPtr(nicDeleteOption)).To(Equal(armcompute.DeleteOptionsDelete))
 				}
 			})
-			It("should not unneeded secondary ips for azure cni with overlay", func() {
+			It("should not create unneeded secondary ips for azure cni with overlay", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)

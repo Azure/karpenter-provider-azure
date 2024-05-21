@@ -178,8 +178,7 @@ var _ = Describe("InstanceProvider", func() {
 			Expect(nic).ToNot(BeNil())
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-			// AzureCNI V1 has a DefaultMaxPods of 250, then we dont need to generate
-			// ip configurations for kube-proxy + ip-masq-agent
+			// AzureCNI V1 has a DefaultMaxPods of 250. We get 248 ip configurations because we don't need to generate ip configs for kube-proxy + ip-masq-agent 
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(248))
 		})
 	})

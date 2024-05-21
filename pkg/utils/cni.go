@@ -22,10 +22,10 @@ import (
 const (
 	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI.
 	defaultKubernetesMaxPodsAzure = 250
-
 	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
 	defaultKubernetesMaxPodsKubenet = 100
-	// defaultKubernetesMaxPods is the maximum number of pods on a node.
+	// defaultKubernetesMaxPods is the default we fall back onto if no other networkPlugin exists. In 
+	// reality, we should never be hitting this case on azure since we only support kubenet, and azure cni.
 	defaultKubernetesMaxPods = 110
 )
 
