@@ -119,6 +119,7 @@ var _ = Describe("InstanceProvider", func() {
 		})
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
+		cluster.Reset()
 	})
 
 	var _ = AfterEach(func() {
