@@ -469,32 +469,21 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
+			expectedFlags := map[string]string{
+				"system-reserved":                "cpu=0,memory=0",
+				"kube-reserved":                  "cpu=100m,memory=1843Mi", 
+				"eviction-hard":                  "memory.available<750Mi",
+				"eviction-soft":                  "memory.available<1Gi",
+				"eviction-soft-grace-period":     "memory.available=10s",
+				"max-pods":                       "250",
+				"pods-per-core":                  "110",
+				"image-gc-low-threshold":         "20",
+				"image-gc-high-threshold":        "30",
+				"cpu-cfs-quota":                  "true",
+			}
 
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
-
-			Expect(kubeletFlags).To(SatisfyAny( // AKS default
-				ContainSubstring("--system-reserved=cpu=0,memory=0"),
-				ContainSubstring("--system-reserved=memory=0,cpu=0"),
-			))
-			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
-				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-			))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=250")) // networkPlugin=azure
-			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
-			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
+			ExpectKubeletFlags(azureEnv, expectedFlags)			
+			
 		})
 	})
 
@@ -518,7 +507,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-
+			
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			customData := *vm.Properties.OSProfile.CustomData
@@ -553,31 +542,19 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
-
-			Expect(kubeletFlags).To(SatisfyAny( // AKS default
-				ContainSubstring("--system-reserved=cpu=0,memory=0"),
-				ContainSubstring("--system-reserved=memory=0,cpu=0"),
-			))
-			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
-				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-			))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // networkPlugin=kubenet
-			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
-			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
+			expectedFlags := map[string]string{
+				"system-reserved":                "cpu=0,memory=0", 
+				"kube-reserved":                  "cpu=100m,memory=1843Mi", 
+				"eviction-hard":                  "memory.available<750Mi",
+				"eviction-soft":                  "memory.available<1Gi",
+				"eviction-soft-grace-period":     "memory.available=10s",
+				"max-pods":                       "100",
+				"pods-per-core":                  "110",
+				"image-gc-low-threshold":         "20",
+				"image-gc-high-threshold":        "30",
+				"cpu-cfs-quota":                  "true",
+			}
+			ExpectKubeletFlags(azureEnv, expectedFlags)
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
@@ -612,31 +589,20 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+			expectedFlags := map[string]string{
+				"system-reserved":                "cpu=0,memory=0",
+				"kube-reserved":                  "cpu=100m,memory=1843Mi",
+				"eviction-hard":                  "memory.available<750Mi",
+				"eviction-soft":                  "memory.available<1Gi",
+				"eviction-soft-grace-period":     "memory.available=10s",
+				"max-pods":                       "100", // Karpenter should use the default max pods for kubenet which is 100
+				"pods-per-core":                  "110",
+				"image-gc-low-threshold":         "20",
+				"image-gc-high-threshold":        "30",
+				"cpu-cfs-quota":                  "true",
+			}
 
-			Expect(kubeletFlags).To(SatisfyAny( // AKS default
-				ContainSubstring("--system-reserved=cpu=0,memory=0"),
-				ContainSubstring("--system-reserved=memory=0,cpu=0"),
-			))
-			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
-				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
-				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
-			))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // networkPlugin=kubenet
-			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
-			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
+			ExpectKubeletFlags(azureEnv, expectedFlags)
 		})
 	})
 
