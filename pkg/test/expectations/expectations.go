@@ -19,6 +19,7 @@ package expectations
 import (
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -29,8 +30,16 @@ func ExpectUnavailable(env *test.Environment, instanceType string, zone string, 
 	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, fmt.Sprintf("%s-%s", fake.Region, zone), capacityType)).To(BeTrue())
 }
 
-func ExpectKubeletFlags(env *test.Environment, expectedFlags map[string]string) {
+func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {
+	kubeletFlags := customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+	for flag, value := range expectedFlags {
+		Expect(kubeletFlags).To(ContainSubstring(fmt.Sprintf("--%s=%s", flag, value)))
+	}
+}
+
+func AssertDecodeCustomData(env *test.Environment) string {
 	Expect(env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
 	vm := env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 	customData := *vm.Properties.OSProfile.CustomData
 	Expect(customData).ToNot(BeNil())
@@ -39,7 +48,5 @@ func ExpectKubeletFlags(env *test.Environment, expectedFlags map[string]string) 
 	Expect(err).To(Succeed())
 	decodedString := string(decodedBytes[:])
 
-	for key, value := range expectedFlags {
-		Expect(decodedString).To(ContainSubstring(fmt.Sprintf("--%s=%s", key, value)))
-	}
+	return decodedString
 }
