@@ -19,7 +19,6 @@ package instancetype_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -509,16 +508,10 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
+			
+			customData := AssertDecodeCustomData(azureEnv)
 			// Since the network plugin is not "azure" it should not include the following kubeletLabels
-			Expect(decodedString).To(Not(SatisfyAny(
+			Expect(customData).To(Not(SatisfyAny(
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
 				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
