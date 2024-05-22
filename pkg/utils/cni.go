@@ -17,7 +17,7 @@ limitations under the License.
 package utils
 
 import (
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
 
 const (

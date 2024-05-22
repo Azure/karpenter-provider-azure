@@ -30,9 +30,9 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -179,7 +179,7 @@ var _ = Describe("InstanceProvider", func() {
 			Expect(nic).ToNot(BeNil())
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-			// AzureCNI V1 has a DefaultMaxPods of 250 so we should set 250 ip configurations 
+			// AzureCNI V1 has a DefaultMaxPods of 250 so we should set 250 ip configurations
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(250))
 		})
 	})

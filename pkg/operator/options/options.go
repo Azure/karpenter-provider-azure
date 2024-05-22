@@ -27,7 +27,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"k8s.io/apimachinery/pkg/util/sets"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/utils/env"
