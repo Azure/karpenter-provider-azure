@@ -508,7 +508,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-			
+
 			customData := AssertDecodeCustomData(azureEnv)
 			// Since the network plugin is not "azure" it should not include the following kubeletLabels
 			Expect(customData).To(Not(SatisfyAny(
