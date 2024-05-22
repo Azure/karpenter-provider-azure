@@ -27,8 +27,8 @@ import (
 
 const (
 	// auth methods
-	authMethodSysMSI      = "system-assigned-msi"
-	authMethodCredFromEnv = "credential-from-environment"
+	authMethodSysMSI           = "system-assigned-msi"
+	authMethodWorkloadIdentity = "workload-identity"
 )
 
 const (
@@ -61,8 +61,8 @@ type Config struct {
 	VMType         string `json:"vmType" yaml:"vmType"`
 
 	// AuthMethod determines how to authorize requests for the Azure cloud.
-	// Valid options are "system-assigned-msi" and "credential-from-environment"
-	// The default is "credential-from-environment".
+	// Valid options are "system-assigned-msi" and "workload-identity"
+	// The default is "workload-identity".
 	AuthMethod string `json:"authMethod" yaml:"authMethod"`
 
 	// Managed identity for Kubelet (not to be confused with Azure cloud authorization)
@@ -123,7 +123,7 @@ func (cfg *Config) Default() error {
 	}
 
 	if cfg.AuthMethod == "" {
-		cfg.AuthMethod = authMethodCredFromEnv
+		cfg.AuthMethod = authMethodWorkloadIdentity
 	}
 
 	return nil
@@ -145,7 +145,7 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
-	if cfg.AuthMethod != authMethodSysMSI && cfg.AuthMethod != authMethodCredFromEnv {
+	if cfg.AuthMethod != authMethodSysMSI && cfg.AuthMethod != authMethodWorkloadIdentity {
 		return fmt.Errorf("unsupported authorization method: %s", cfg.AuthMethod)
 	}
 

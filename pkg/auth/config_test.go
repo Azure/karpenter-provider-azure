@@ -41,7 +41,7 @@ func TestBuildAzureConfig(t *testing.T) {
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
 				VMType:            "vmss",
-				AuthMethod:        "credential-from-environment",
+				AuthMethod:        "workload-identity",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -60,7 +60,7 @@ func TestBuildAzureConfig(t *testing.T) {
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
 				VMType:            "vm",
-				AuthMethod:        "credential-from-environment",
+				AuthMethod:        "workload-identity",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -108,13 +108,13 @@ func TestBuildAzureConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "auth method credential from environment",
+			name: "auth method workload identity",
 			expected: &Config{
 				SubscriptionID:    "12345",
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
 				VMType:            "vmss",
-				AuthMethod:        "credential-from-environment",
+				AuthMethod:        "workload-identity",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -124,7 +124,7 @@ func TestBuildAzureConfig(t *testing.T) {
 				"AZURE_SUBNET_ID":           "12345",
 				"AZURE_SUBNET_NAME":         "my-subnet",
 				"AZURE_VNET_NAME":           "my-vnet",
-				"ARM_AUTH_METHOD":           "credential-from-environment",
+				"ARM_AUTH_METHOD":           "workload-identity",
 			},
 		},
 		{

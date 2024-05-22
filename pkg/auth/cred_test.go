@@ -63,9 +63,9 @@ func TestNewCredential(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "auth method credential-from-environment",
+			name: "auth method workload-identity",
 			cfg: &Config{
-				AuthMethod: authMethodCredFromEnv,
+				AuthMethod: authMethodWorkloadIdentity,
 			},
 			want:    reflect.TypeOf(&azidentity.DefaultAzureCredential{}),
 			wantErr: false,

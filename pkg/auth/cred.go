@@ -30,7 +30,7 @@ func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
 		return nil, fmt.Errorf("failed to create credential, nil config provided")
 	}
 
-	if cfg.AuthMethod == authMethodCredFromEnv {
+	if cfg.AuthMethod == authMethodWorkloadIdentity {
 		klog.V(2).Infoln("cred: using workload identity for new credential")
 		return azidentity.NewDefaultAzureCredential(nil)
 	}
