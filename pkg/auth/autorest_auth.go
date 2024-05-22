@@ -30,7 +30,7 @@ import (
 
 func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer, error) {
 	// TODO (charliedmcb): need to get track 2 support for the skewer API, and align all auth under workload identity in the same way within cred.go
-	if config.AuthMethod == authMethodCredFromEnv {
+	if config.AuthMethod == authMethodWorkloadIdentity {
 		klog.V(2).Infoln("auth: using workload identity for new authorizer")
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
