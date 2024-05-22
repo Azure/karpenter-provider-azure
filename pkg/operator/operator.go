@@ -102,7 +102,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ClusterEndpoint,
 		azConfig.TenantID,
 		azConfig.SubscriptionID,
-		azConfig.UserAssignedIdentityID,
+		azConfig.KubeletIdentityClientID,
 		azConfig.NodeResourceGroup,
 		azConfig.Location,
 		vnetGUID,

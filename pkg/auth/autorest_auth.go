@@ -18,7 +18,6 @@ package auth
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
@@ -31,7 +30,7 @@ import (
 
 func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer, error) {
 	// TODO (charliedmcb): need to get track 2 support for the skewer API, and align all auth under workload identity in the same way within cred.go
-	if config.UseCredentialFromEnvironment {
+	if config.AuthMethod == authMethodCredFromEnv {
 		klog.V(2).Infoln("auth: using workload identity for new authorizer")
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
@@ -40,66 +39,21 @@ func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer,
 		return azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope}), nil
 	}
 
-	token, err := newServicePrincipalTokenFromCredentials(config, env)
-	if err != nil {
-		return nil, fmt.Errorf("retrieve service principal token: %w", err)
-	}
-	return autorest.NewBearerAuthorizer(token), nil
-}
-
-// newServicePrincipalTokenFromCredentials creates a new ServicePrincipalToken using values of the
-// passed credentials map.
-func newServicePrincipalTokenFromCredentials(config *Config, env *azure.Environment) (*adal.ServicePrincipalToken, error) {
-	oauthConfig, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, config.TenantID)
-	if err != nil {
-		return nil, fmt.Errorf("creating the OAuth config: %w", err)
-	}
-
-	if config.UseManagedIdentityExtension {
-		klog.V(2).Infoln("azure: using managed identity extension to retrieve access token")
+	if config.AuthMethod == authMethodSysMSI {
+		klog.V(2).Infoln("auth: using system assigned MSI to retrieve access token")
 		msiEndpoint, err := adal.GetMSIVMEndpoint()
 		if err != nil {
 			return nil, fmt.Errorf("getting the managed service identity endpoint: %w", err)
 		}
 
-		if len(config.UserAssignedIdentityID) > 0 {
-			klog.V(4).Info("azure: using User Assigned MSI ID to retrieve access token")
-			return adal.NewServicePrincipalTokenFromMSIWithUserAssignedID(msiEndpoint,
-				env.ServiceManagementEndpoint,
-				config.UserAssignedIdentityID)
-		}
-		klog.V(4).Info("azure: using System Assigned MSI to retrieve access token")
-		return adal.NewServicePrincipalTokenFromMSI(
+		token, err := adal.NewServicePrincipalTokenFromMSI(
 			msiEndpoint,
 			env.ServiceManagementEndpoint)
-	}
-
-	if len(config.AADClientSecret) > 0 {
-		klog.V(2).Infoln("azure: using client_id+client_secret to retrieve access token")
-		return adal.NewServicePrincipalToken(
-			*oauthConfig,
-			config.AADClientID,
-			config.AADClientSecret,
-			env.ServiceManagementEndpoint)
-	}
-
-	if len(config.AADClientCertPath) > 0 && len(config.AADClientCertPassword) > 0 {
-		klog.V(2).Infoln("azure: using jwt client_assertion (client_cert+client_private_key) to retrieve access token")
-		certData, err := os.ReadFile(config.AADClientCertPath)
 		if err != nil {
-			return nil, fmt.Errorf("reading the client certificate from file %s: %w", config.AADClientCertPath, err)
+			return nil, fmt.Errorf("retrieve service principal token: %w", err)
 		}
-		certificate, privateKey, err := decodePkcs12(certData, config.AADClientCertPassword)
-		if err != nil {
-			return nil, fmt.Errorf("decoding the client certificate: %w", err)
-		}
-		return adal.NewServicePrincipalTokenFromCertificate(
-			*oauthConfig,
-			config.AADClientID,
-			certificate,
-			privateKey,
-			env.ServiceManagementEndpoint)
+		return autorest.NewBearerAuthorizer(token), nil
 	}
 
-	return nil, fmt.Errorf("no credentials provided for AAD application %s", config.AADClientID)
+	return nil, fmt.Errorf("auth: unsupported auth method %s", config.AuthMethod)
 }
