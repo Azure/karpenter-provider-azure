@@ -167,7 +167,7 @@ var _ = Describe("InstanceProvider", func() {
 		AfterEach(func() {
 			ctx = options.ToContext(ctx, originalOptions)
 		})
-		It("should include 248 secondary ips by default", func() {
+		It("should include 250 secondary ips by default", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -179,8 +179,8 @@ var _ = Describe("InstanceProvider", func() {
 			Expect(nic).ToNot(BeNil())
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-			// AzureCNI V1 has a DefaultMaxPods of 250. We get 248 ip configurations because we don't need to generate ip configs for kube-proxy + ip-masq-agent
-			Expect(len(nic.Properties.IPConfigurations)).To(Equal(248))
+			// AzureCNI V1 has a DefaultMaxPods of 250 so we should set 250 ip configurations 
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(250))
 		})
 	})
 	It("should create VM and NIC with valid ARM tags", func() {
