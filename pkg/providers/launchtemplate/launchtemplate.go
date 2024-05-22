@@ -53,34 +53,34 @@ type Template struct {
 }
 
 type Provider struct {
-	imageFamily            *imagefamily.Resolver
-	imageProvider          *imagefamily.Provider
-	caBundle               *string
-	clusterEndpoint        string
-	tenantID               string
-	subscriptionID         string
-	userAssignedIdentityID string
-	resourceGroup          string
-	location               string
-	vnetGUID               string
+	imageFamily             *imagefamily.Resolver
+	imageProvider           *imagefamily.Provider
+	caBundle                *string
+	clusterEndpoint         string
+	tenantID                string
+	subscriptionID          string
+	kubeletIdentityClientID string
+	resourceGroup           string
+	location                string
+	vnetGUID                string
 }
 
 // TODO: add caching of launch templates
 
 func NewProvider(_ context.Context, imageFamily *imagefamily.Resolver, imageProvider *imagefamily.Provider, caBundle *string, clusterEndpoint string,
-	tenantID, subscriptionID, userAssignedIdentityID, resourceGroup, location, vnetGUID string,
+	tenantID, subscriptionID, kubeletIdentityClientID, resourceGroup, location, vnetGUID string,
 ) *Provider {
 	return &Provider{
-		imageFamily:            imageFamily,
-		imageProvider:          imageProvider,
-		caBundle:               caBundle,
-		clusterEndpoint:        clusterEndpoint,
-		tenantID:               tenantID,
-		subscriptionID:         subscriptionID,
-		userAssignedIdentityID: userAssignedIdentityID,
-		resourceGroup:          resourceGroup,
-		location:               location,
-		vnetGUID:               vnetGUID,
+		imageFamily:             imageFamily,
+		imageProvider:           imageProvider,
+		caBundle:                caBundle,
+		clusterEndpoint:         clusterEndpoint,
+		tenantID:                tenantID,
+		subscriptionID:          subscriptionID,
+		kubeletIdentityClientID: kubeletIdentityClientID,
+		resourceGroup:           resourceGroup,
+		location:                location,
+		vnetGUID:                vnetGUID,
 	}
 }
 
@@ -144,7 +144,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),
 		TenantID:                       p.tenantID,
 		SubscriptionID:                 p.subscriptionID,
-		UserAssignedIdentityID:         p.userAssignedIdentityID,
+		KubeletIdentityClientID:        p.kubeletIdentityClientID,
 		ResourceGroup:                  p.resourceGroup,
 		Location:                       p.location,
 		ClusterID:                      options.FromContext(ctx).ClusterID,

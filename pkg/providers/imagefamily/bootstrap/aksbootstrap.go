@@ -40,7 +40,7 @@ type AKS struct {
 	Arch                           string
 	TenantID                       string
 	SubscriptionID                 string
-	UserAssignedIdentityID         string
+	KubeletIdentityClientID        string
 	Location                       string
 	ResourceGroup                  string
 	ClusterID                      string
@@ -454,7 +454,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.SubscriptionID = a.SubscriptionID
 	nbv.Location = a.Location
 	nbv.ResourceGroup = a.ResourceGroup
-	nbv.UserAssignedIdentityID = a.UserAssignedIdentityID
+	nbv.UserAssignedIdentityID = a.KubeletIdentityClientID
 
 	nbv.NetworkPlugin = a.NetworkPlugin
 	nbv.NetworkPolicy = a.NetworkPolicy
