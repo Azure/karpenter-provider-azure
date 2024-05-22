@@ -70,36 +70,6 @@ func TestNewCredential(t *testing.T) {
 			want:    reflect.TypeOf(&azidentity.DefaultAzureCredential{}),
 			wantErr: false,
 		},
-		{
-			name: "legacy is not supported",
-			cfg: &Config{
-				UseCredentialFromEnvironment: true,
-				UseManagedIdentityExtension:  true,
-			},
-			want:       nil,
-			wantErr:    true,
-			wantErrStr: "cred: unsupported auth method: ",
-		},
-		{
-			name: "auth method system-assigned-msi takes precedence over legacy",
-			cfg: &Config{
-				AuthMethod:                   authMethodSysMSI,
-				UseCredentialFromEnvironment: true,
-				UseManagedIdentityExtension:  false,
-			},
-			want:    reflect.TypeOf(&azidentity.ManagedIdentityCredential{}),
-			wantErr: false,
-		},
-		{
-			name: "auth method credential-from-environment takes precedence over legacy",
-			cfg: &Config{
-				AuthMethod:                   authMethodCredFromEnv,
-				UseCredentialFromEnvironment: false,
-				UseManagedIdentityExtension:  true,
-			},
-			want:    reflect.TypeOf(&azidentity.DefaultAzureCredential{}),
-			wantErr: false,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
