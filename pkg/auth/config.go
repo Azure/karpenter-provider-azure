@@ -19,7 +19,6 @@ package auth
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/Azure/go-autorest/autorest"
@@ -72,11 +71,6 @@ type Config struct {
 	// Configs only for AKS
 	ClusterName       string `json:"clusterName" yaml:"clusterName"`
 	NodeResourceGroup string `json:"nodeResourceGroup" yaml:"nodeResourceGroup"`
-
-	// LEGACY: old AuthMethod fields, will only be used with AuthMethod is not provided
-	// Should not be used elsewhere apart from building AuthMethod when not provided
-	UseManagedIdentityExtension  bool `json:"useManagedIdentityExtension" yaml:"useManagedIdentityExtension"`
-	UseCredentialFromEnvironment bool `json:"useCredentialFromEnvironment" yaml:"useCredentialFromEnvironment"`
 }
 
 // BuildAzureConfig returns a Config object for the Azure clients
@@ -119,22 +113,6 @@ func (cfg *Config) Build() error {
 	cfg.AuthMethod = strings.TrimSpace(os.Getenv("ARM_AUTH_METHOD"))
 	cfg.KubeletIdentityClientID = strings.TrimSpace(os.Getenv("ARM_KUBELET_IDENTITY_CLIENT_ID"))
 
-	// LEGACY: old AuthMethod fields, will only be used with AuthMethod is not provided
-	if gotEnv := os.Getenv("ARM_USE_MANAGED_IDENTITY_EXTENSION"); len(gotEnv) > 0 {
-		shouldUse, err := strconv.ParseBool(gotEnv)
-		if err != nil {
-			return err
-		}
-		cfg.UseManagedIdentityExtension = shouldUse
-	}
-	if gotEnv := os.Getenv("ARM_USE_CREDENTIAL_FROM_ENVIRONMENT"); len(gotEnv) > 0 {
-		shouldUse, err := strconv.ParseBool(gotEnv)
-		if err != nil {
-			return err
-		}
-		cfg.UseCredentialFromEnvironment = shouldUse
-	}
-
 	return nil
 }
 
@@ -146,13 +124,6 @@ func (cfg *Config) Default() error {
 
 	if cfg.AuthMethod == "" {
 		cfg.AuthMethod = authMethodCredFromEnv
-
-		// LEGACY: old AuthMethod fields, will only be used with AuthMethod is not provided
-		if cfg.UseCredentialFromEnvironment {
-			cfg.AuthMethod = authMethodCredFromEnv
-		} else if cfg.UseManagedIdentityExtension {
-			cfg.AuthMethod = authMethodSysMSI
-		}
 	}
 
 	return nil
