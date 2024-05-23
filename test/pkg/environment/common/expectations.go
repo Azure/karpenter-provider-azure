@@ -108,31 +108,6 @@ func (env *Environment) ExpectSettings() (res []v1.EnvVar) {
 	})
 }
 
-func (env *Environment) RetrieveACRName() (string) {
-	GinkgoHelper()
-
-	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
-	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
-	
-	for i := 0; i < len(d.Spec.Template.Spec.Containers[0].Env); i++ {
-		envVar := d.Spec.Template.Spec.Containers[0].Env[i] 
-		if envVar.Name == "AZURE_NODE_RESOURCE_GROUP" {
-			// We want to split the mc rg it will look like 
-			// 'MC_karpenter-e2e-utilization-rg-<hash>_utilization-mc-<hash>_westus2'
-			clusterName := strings.Split(envVar.Value, "_")[2]
-			clusterParts := strings.Split(clusterName, "-")
-			return fmt.Sprintf("%vacr%v", clusterParts[0], clusterParts[2])
-
-
-		}
-	}
-	// If we went through the list of environment vars and we dont see node resource AZURE_NODE_RESOURCE_GROUP 
-	// we want to fail our test here 
-	Fail("failed to find AZURE_NODE_RESOURCE_GROUP to parse the acr name")
-	return ""
-}
-
 func (env *Environment) ExpectSettingsReplaced(vars ...v1.EnvVar) {
 	GinkgoHelper()
 
