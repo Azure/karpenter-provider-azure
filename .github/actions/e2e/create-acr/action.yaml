@@ -40,3 +40,13 @@ runs:
   - name: create ACR
     shell: bash
     run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkacr
+  - name: import needed images 
+    shell: bash 
+    run: | 
+      # If this is the acr unit test, lets add the pause mcr image into our registry 
+      # we can tell this is the acr suite if  the acr we create starts with a prefix acr
+      AZURE_ACR_NAME=${{ inputs.acr_name }}
+      if [[ "$AZURE_ACR_NAME" =~ ^"$acr" ]]; then
+        make az-acrimport 
+      fi
+        
