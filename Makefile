@@ -28,7 +28,7 @@ ci-test: battletest coverage ## Runs tests and submits coverage
 ci-non-test: verify vulncheck ## Runs checks other than tests
 
 test: ## Run tests
-	ginkgo -v --focus="${FOCUS}" ./pkg/$(shell echo $(TEST_SUITE) | tr A-Z a-z)
+	ginkgo -v --focus="${FOCUS}" ./pkg/$(shell echo $(TEST_SUITE) | tr A-Z a-z) 
 
 battletest: ## Run randomized, racing, code-covered tests
 	ginkgo -v \
@@ -45,7 +45,7 @@ e2etests: ## Run the e2e suite against your local cluster
 	# -count 1: prevents caching
 	# -timeout: If a test binary runs longer than TEST_TIMEOUT, panic
 	# -v: verbose output
-	cd test && CLUSTER_NAME=${CLUSTER_NAME} go test \
+	cd test && CLUSTER_NAME=${CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} go test \
 		-p 1 \
 		-count 1 \
 		-timeout ${TEST_TIMEOUT} \
