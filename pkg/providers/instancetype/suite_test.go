@@ -1091,6 +1091,33 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("Bootstrap", func() {
+		It("should gate kubelet flags that are dependent on kubelet version", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			customData := *vm.Properties.OSProfile.CustomData
+			Expect(customData).ToNot(BeNil())
+			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+			Expect(err).To(Succeed())
+			decodedString := string(decodedBytes[:])
+			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+			if env.Version.Minor() < 30 {
+				Expect(kubeletFlags).To(
+					ContainSubstring("--azure-container-registry-config"),
+				)
+			} else {
+				Expect(kubeletFlags).To(Not(
+					ContainSubstring("--azure-container-registry-config"),
+				))
+			}
+		})
+	})
+
 	Context("LoadBalancer", func() {
 		resourceGroup := "test-resourceGroup"
 
