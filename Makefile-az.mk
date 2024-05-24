@@ -1,5 +1,5 @@
 AZURE_LOCATION ?= westus2
-COMMON_NAME ?= karpenter
+COMMON_NAME ?= karpenter 
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
@@ -37,10 +37,10 @@ az-mkacr: az-mkrg ## Create test ACR
 	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --sku Basic --admin-enabled -o none
 	az acr login  --name $(AZURE_ACR_NAME)
 
-az-acrimport: ## Imports an image to an acr registry
+az-acrimport: az-mkacr ## Imports an image to an acr registry
 	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6"
 
-az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySet for compatibility with standalone VMs)
+az-mkaks: az-acrimport ## Create test AKS cluster (with --vm-set-type AvailabilitySet for compatibility with standalone VMs)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
@@ -224,7 +224,7 @@ az-taintnodes:
 
 az-e2etests: ## Run e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
-	TEST_SUITE=Utilization make e2etests
+	TEST_SUITE=Acr make e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --all
 
 az-perftest1: ## Test scaling out/in (1 VM)
@@ -330,3 +330,12 @@ az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot rele
 
 az-rmcrds: ## Delete Karpenter CRDs
 	kubectl delete crd nodepools.karpenter.sh nodeclaims.karpenter.sh aksnodeclasses.karpenter.azure.com
+
+az-cleanenv: 
+	kubectl delete nodepools --all
+	for nodeclaim in $$(kubectl get nodeclaims --output=jsonpath={.items..metadata.name}); do \
+		kubectl patch nodeclaim $$nodeclaim --type=json -p '[{"op": "remove", "path": "/metadata/finalizers"}]'; \
+	done
+	kubectl delete nodeclaims --all
+	kubectl delete aksnodeclasses --all
+	kubectl delete pods -n default --all 
