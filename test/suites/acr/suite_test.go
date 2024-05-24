@@ -21,14 +21,15 @@ import (
 var env *azure.Environment
 var nodeClass *v1alpha2.AKSNodeClass
 var nodePool *corev1beta1.NodePool
-var acrName string
+var pauseImage string
 
 func TestAcr(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func() {
 		env = azure.NewEnvironment(t)
-		acrName = os.Getenv("AZURE_ACR_NAME")
+		acrName := os.Getenv("AZURE_ACR_NAME")
 		Expect(acrName).NotTo(BeEmpty(), "AZURE_ACR_NAME must be set for the acr test suite")
+		pauseImage = fmt.Sprintf("%s.azurecr.io/pause:3.6",acrName)
 	})
 	RunSpecs(t, "Acr")
 }
@@ -52,7 +53,7 @@ var _ = Describe("Acr", func() {
 							v1.ResourceCPU: resource.MustParse("1.1"),
 						},
 					},
-					Image: fmt.Sprintf("%s.azurecr.io/pause:3.6",acrName),
+					Image: pauseImage, 
 				},
 			})
 			
