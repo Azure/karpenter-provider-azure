@@ -37,7 +37,7 @@ func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags 
 	}
 }
 
-func AssertDecodeCustomData(env *test.Environment) string {
+func ExpectDecodedCustomData(env *test.Environment) string {
 	Expect(env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
 	vm := env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM

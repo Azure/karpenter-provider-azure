@@ -151,7 +151,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			decodedString := AssertDecodeCustomData(azureEnv)
+			decodedString := ExpectDecodedCustomData(azureEnv)
 			Expect(decodedString).To(SatisfyAll(
 				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
@@ -463,7 +463,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			customData := AssertDecodeCustomData(azureEnv)
+			customData := ExpectDecodedCustomData(azureEnv)
 
 			expectedFlags := map[string]string{
 				"eviction-hard":              "memory.available<750Mi",
@@ -509,7 +509,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			customData := AssertDecodeCustomData(azureEnv)
+			customData := ExpectDecodedCustomData(azureEnv)
 			// Since the network plugin is not "azure" it should not include the following kubeletLabels
 			Expect(customData).To(Not(SatisfyAny(
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
@@ -537,7 +537,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			customData := AssertDecodeCustomData(azureEnv)
+			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
 				"eviction-hard":              "memory.available<750Mi",
 				"eviction-soft":              "memory.available<1Gi",
@@ -591,7 +591,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			customData := AssertDecodeCustomData(azureEnv)
+			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
 				"eviction-hard":              "memory.available<750Mi",
 				"eviction-soft":              "memory.available<1Gi",
