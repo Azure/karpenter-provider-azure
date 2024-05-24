@@ -450,11 +450,14 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
+
+	if semver.MustParse(a.KubernetesVersion).Minor < 30 {
+		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
+	}
+
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
-	if semver.MustParse(a.KubernetesVersion).Minor < 30 {
-		kubeletLabels["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
-	}
+	
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
 	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
