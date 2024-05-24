@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -78,12 +79,12 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	if version, ok := p.kubernetesVersionCache.Get(kubernetesVersionCacheKey); ok {
 		return version.(string), nil
 	}
-	_, err := p.kubernetesInterface.Discovery().ServerVersion()
+	serverVersion, err := p.kubernetesInterface.Discovery().ServerVersion()
 	if err != nil {
 		return "", err
 	}
-
-	version := "1.30.0" // v1.24.9 -> 1.24.9
+	version := strings.TrimPrefix(serverVersion.GitVersion, "v") // v1.24.9 -> 1.24.9
+	// version := "1.30.0" // v1.24.9 -> 1.24.9
 	p.kubernetesVersionCache.SetDefault(kubernetesVersionCacheKey, version)
 	if p.cm.HasChanged("kubernetes-version", version) {
 		logging.FromContext(ctx).With("kubernetes-version", version).Debugf("discovered kubernetes version")
