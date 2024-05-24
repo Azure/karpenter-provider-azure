@@ -43,6 +43,5 @@ runs:
   - name: import needed images 
     shell: bash 
     run: | 
-      AZURE_ACR_NAME=${{ inputs.acr_name }}
-      make az-acrimport 
+      AZURE_ACR_NAME=${{ inputs.acr_name }} make az-acrimport 
         
