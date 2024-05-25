@@ -116,7 +116,7 @@ var _ = Describe("Options", func() {
 	})
 
 	Context("Validation", func() {
-		It("should fail validation when networkPluginMode is invalid", func() {
+		It("should fail when network-plugin-mode is invalid", func() {
 			typo := "overlaay"
 			errMsg := fmt.Sprintf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay', 'none' or ''", typo)
 
