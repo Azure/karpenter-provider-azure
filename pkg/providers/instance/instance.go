@@ -239,7 +239,7 @@ func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, 
 	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode != consts.PodNetworkTypeOverlay {
 		// NOTE: We don't need to set LoadBalancerBackendAddressPools for secondary ip configs.
 		// AzureCNI without overlay as pod networking type requires we configure additional secondary ips
-		// NOTE: There are some pods that we see on every node for networking like kube-proxy, and ip-masq-agent). We could be subtracting ips for these pods, and we do for AKSEngine. In the case of AKS However, we have a dynamic number of host networking addon pods. So we are explicitly choosing to not subtract these IPs like AKS engine and some parts of AKS do. The AKS networking team regrets adding this behavior and karpenter is a chance to do better so we shall.
+		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
 		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
 		// ips from the nodeclass instead of using the default
 		for i := 1; i < utils.DefaultMaxPods(networkPlugin); i++ {
