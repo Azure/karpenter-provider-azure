@@ -237,8 +237,7 @@ func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, 
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode != consts.PodNetworkTypeOverlay {
-		// NOTE: We don't need to set LoadBalancerBackendAddressPools for secondary ip configs.
-		// AzureCNI without overlay as pod networking type requires we configure additional secondary ips
+		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
 		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
 		// ips from the nodeclass instead of using the default
