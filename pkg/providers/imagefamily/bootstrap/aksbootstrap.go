@@ -386,7 +386,7 @@ var (
 		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
 		ContainerdConfigContent:         "",                                                                  // kd
 		IsKata:                          false,                                                               // n
-
+		NeedsCgroupV2:                   true,                                                                // s only static for karpenter
 	}
 )
 
