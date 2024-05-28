@@ -1110,10 +1110,25 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).To(
 					ContainSubstring("--azure-container-registry-config"),
 				)
-			} else {
+				// The credential provider is not gated by k8s version in the vhd itself only by the flags which should only be passed in
+				// for 1.30+ so lets explicitly test for this
+				Expect(kubeletFlags).To(Not(
+					ContainSubstring("--image-credential-provider-config"),
+				))
+				Expect(kubeletFlags).To(Not(
+					ContainSubstring("--image-credential-provider-bin-dir"),
+				))
+			}
+
+			if env.Version.Minor() >= 30 {
 				Expect(kubeletFlags).To(Not(
 					ContainSubstring("--azure-container-registry-config"),
 				))
+				Expect(kubeletFlags).To(
+					ContainSubstring("--azure-container-registry-config"),
+					ContainSubstring("--image-credential-provider-config"),
+				)
+
 			}
 		})
 	})
