@@ -160,7 +160,7 @@ var _ = Describe("InstanceProvider", func() {
 				ctx,
 				test.Options(test.OptionsFields{
 					NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
-					NetworkPluginMode: lo.ToPtr(consts.PodNetworkTypeNone),
+					NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
 				}))
 		})
 

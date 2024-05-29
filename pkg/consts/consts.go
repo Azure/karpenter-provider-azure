@@ -20,8 +20,8 @@ const (
 	NetworkPluginAzure   = "azure"
 	NetworkPluginKubenet = "kubenet"
 
-	PodNetworkTypeOverlay = "overlay"
-	PodNetworkTypeNone    = ""
+	NetworkPluginModeOverlay = "overlay"
+	NetworkPluginModeNone    = ""
 
 	NetworkDataplaneCilium = "cilium"
 )

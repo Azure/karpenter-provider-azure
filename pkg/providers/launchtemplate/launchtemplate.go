@@ -112,7 +112,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		arch = corev1beta1.ArchitectureArm64
 	}
 
-	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.PodNetworkTypeOverlay {
+	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
 		// TODO: make conditional on pod subnet
 		vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
 		if err != nil {
@@ -186,7 +186,7 @@ func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeCla
 	vnetLabels := map[string]string{
 		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
 		vnetGUIDLabel:           p.vnetGUID,
-		vnetPodNetworkTypeLabel: consts.PodNetworkTypeOverlay,
+		vnetPodNetworkTypeLabel: consts.NetworkPluginModeOverlay,
 	}
 	return vnetLabels, nil
 }
