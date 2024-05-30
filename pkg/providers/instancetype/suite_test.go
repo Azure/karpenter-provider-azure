@@ -1105,6 +1105,13 @@ var _ = Describe("InstanceType Provider", func() {
 			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
 			Expect(err).To(Succeed())
 			decodedString := string(decodedBytes[:])
+
+			fmt.Println(env.Version)
+			Expect(decodedString).To(ContainSubstring("CREDENTIAL_PROVIDER_DOWNLOAD_URL"))
+			Expect(decodedString).To(ContainSubstring(
+				fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", env.Version.String(), env.Version.String()),
+			))
+
 			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
 			parseKubeletFlags := func(flags string) map[string]string {
 				flagMap := make(map[string]string)
@@ -1124,6 +1131,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(flagMap).To(HaveKey("--azure-container-registry-config"))
 				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-config"))
 				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-bin-dir"))
+
 			} else {
 				Expect(flagMap).ToNot(HaveKey("--azure-container-registry-config"))
 				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-config", "/var/lib/kubelet/credential-provider-config.yaml"))
