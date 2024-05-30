@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -1105,8 +1106,6 @@ var _ = Describe("InstanceType Provider", func() {
 			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
 			Expect(err).To(Succeed())
 			decodedString := string(decodedBytes[:])
-
-			fmt.Println(env.Version)
 			Expect(decodedString).To(ContainSubstring("CREDENTIAL_PROVIDER_DOWNLOAD_URL"))
 			Expect(decodedString).To(ContainSubstring(
 				fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", env.Version.String(), env.Version.String()),
@@ -1127,7 +1126,12 @@ var _ = Describe("InstanceType Provider", func() {
 
 			// TODO: (bsoghigian) leverage the helpers from the azure cni pr once they get in instead for testing kubelet flags
 			flagMap := parseKubeletFlags(kubeletFlags)
-			if env.Version.Minor() < 30 {
+			// NOTE: env.Version may differ from the version we get for the apiserver
+			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
+			Expect(err).To(BeNil())
+			parsed := semver.MustParse(k8sVersion)
+			if parsed.Minor < 30 {
+				fmt.Println("K8s Version for env client: ")
 				Expect(flagMap).To(HaveKey("--azure-container-registry-config"))
 				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-config"))
 				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-bin-dir"))
