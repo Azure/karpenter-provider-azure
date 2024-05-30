@@ -452,14 +452,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
 
-	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
-	if minorVersion < 30 {
-		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
-	}
-	if minorVersion >= 30 {
-		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
-		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
-	}
+	
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
@@ -472,7 +465,16 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), ",")
-
+	
+	// Assign Per K8s version kubelet flags
+	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
+	if minorVersion < 30 {
+		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
+	}
+	if minorVersion >= 30 {
+		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
+		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
+	}
 	// merge and stringify taints
 	kubeletFlags := lo.Assign(kubeletFlagsBase)
 	if len(a.Taints) > 0 {
@@ -480,13 +482,14 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlags = lo.Assign(kubeletFlags, map[string]string{"--register-with-taints": strings.Join(taintStrs, ",")})
 	}
 
-	machineKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
-	kubeletFlags = lo.Assign(kubeletFlags, machineKubeletConfig)
-
+	nodeclaimKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
+	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
+	
 	// striginify kubelet flags (including taints)
 	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), " ")
+	
 }
 
 func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {

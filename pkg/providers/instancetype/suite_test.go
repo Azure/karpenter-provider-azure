@@ -1106,29 +1106,28 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(err).To(Succeed())
 			decodedString := string(decodedBytes[:])
 			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
-			if env.Version.Minor() < 30 {
-				Expect(kubeletFlags).To(
-					ContainSubstring("--azure-container-registry-config"),
-				)
-				// The credential provider is not gated by k8s version in the vhd itself only by the flags which should only be passed in
-				// for 1.30+ so lets explicitly test for this
-				Expect(kubeletFlags).To(Not(
-					ContainSubstring("--image-credential-provider-config"),
-				))
-				Expect(kubeletFlags).To(Not(
-					ContainSubstring("--image-credential-provider-bin-dir"),
-				))
+			parseKubeletFlags := func(flags string) map[string]string {
+				flagMap := make(map[string]string)
+				flagList := strings.Split(flags, " --")
+				for _, flag := range flagList {
+					parts := strings.SplitN(flag, "=", 2)
+					if len(parts) == 2 {
+						flagMap["--"+parts[0]] = parts[1]
+					}
+				}
+				return flagMap
 			}
-
-			if env.Version.Minor() >= 30 {
-				Expect(kubeletFlags).To(Not(
-					ContainSubstring("--azure-container-registry-config"),
-				))
-				Expect(kubeletFlags).To(
-					ContainSubstring("--azure-container-registry-config"),
-					ContainSubstring("--image-credential-provider-config"),
-				)
-
+			
+			// TODO: (bsoghigian) leverage the helpers from the azure cni pr once they get in instead for testing kubelet flags
+			flagMap := parseKubeletFlags(kubeletFlags)
+			if env.Version.Minor() < 30 {
+				Expect(flagMap).To(HaveKey("--azure-container-registry-config"))
+				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-config"))
+				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-bin-dir"))
+			} else {
+				Expect(flagMap).ToNot(HaveKey("--azure-container-registry-config"))
+				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-config", "/var/lib/kubelet/credential-provider-config.yaml"))
+				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-bin-dir", "/var/lib/kubelet/credential-provider"))
 			}
 		})
 	})
