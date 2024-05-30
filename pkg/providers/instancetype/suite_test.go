@@ -1117,7 +1117,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 				return flagMap
 			}
-			
+
 			// TODO: (bsoghigian) leverage the helpers from the azure cni pr once they get in instead for testing kubelet flags
 			flagMap := parseKubeletFlags(kubeletFlags)
 			if env.Version.Minor() < 30 {

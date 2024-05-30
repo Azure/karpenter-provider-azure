@@ -452,7 +452,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
 
-	
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
@@ -465,7 +464,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), ",")
-	
+
 	// Assign Per K8s version kubelet flags
 	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
 	if minorVersion < 30 {
@@ -484,12 +483,12 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	nodeclaimKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
-	
+
 	// striginify kubelet flags (including taints)
 	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), " ")
-	
+
 }
 
 func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
