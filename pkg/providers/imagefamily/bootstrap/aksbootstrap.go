@@ -468,8 +468,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
 	if minorVersion < 30 {
 		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
-	}
-	if minorVersion >= 30 {
+	} else { // minorVersion >= 30
 		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
 		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
 	}
