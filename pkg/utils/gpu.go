@@ -24,9 +24,9 @@ import (
 const (
 	Nvidia470CudaDriverVersion = "cuda-470.82.01"
 	Nvidia535CudaDriverVersion = "cuda-535.54.03"
-	Nvidia535GridDriverVersion = "grid-535.54.03"
+	Nvidia535GridDriverVersion = "grid-535.161.08"
 
-	AKSGPUGridSHA = "sha-20ffa2"
+	AKSGPUGridSHA = "sha-d1f0ca"
 	AKSGPUCudaSHA = "sha-ff213d"
 )
 
