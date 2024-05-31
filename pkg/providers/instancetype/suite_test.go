@@ -1127,14 +1127,14 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(err).To(BeNil())
 			parsed := semver.MustParse(k8sVersion)
 
-			Expect(decodedString).To(ContainSubstring(
-				fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", parsed.String(), parsed.String()),
-			))
-
 			if utils.UseOOTCredential(parsed.Minor) {
 				Expect(flagMap).ToNot(HaveKey("--azure-container-registry-config"))
 				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-config", "/var/lib/kubelet/credential-provider-config.yaml"))
 				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-bin-dir", "/var/lib/kubelet/credential-provider"))
+				Expect(decodedString).To(ContainSubstring(
+					fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", parsed.String(), parsed.String()),
+				))
+
 			} else {
 				Expect(flagMap).To(HaveKey("--azure-container-registry-config"))
 				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-config"))
