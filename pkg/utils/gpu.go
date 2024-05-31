@@ -27,7 +27,7 @@ const (
 	Nvidia535GridDriverVersion = "grid-535.161.08"
 
 	AKSGPUGridSHA = "sha-d1f0ca"
-	AKSGPUCudaSHA = "sha-ff213d"
+	AKSGPUCudaSHA = "sha-2d4c96"
 )
 
 func GetAKSGPUImageSHA(size string) string {
