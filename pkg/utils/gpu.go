@@ -23,7 +23,7 @@ import (
 // TODO: Get these from agentbaker
 const (
 	Nvidia470CudaDriverVersion = "cuda-470.82.01"
-	Nvidia550CudaDriverVersion = "cuda-535.54.03"
+	Nvidia550CudaDriverVersion = "cuda-535.54.15"
 	Nvidia535GridDriverVersion = "grid-535.161.08"
 
 	AKSGPUGridSHA = "sha-d1f0ca"
