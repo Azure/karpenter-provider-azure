@@ -40,7 +40,7 @@ func (o Options) Validate() error {
 
 func (o Options) validateNetworkPluginMode() error {
 	if o.NetworkPluginMode != consts.NetworkPluginModeOverlay && o.NetworkPluginMode != consts.NetworkPluginModeNone {
-		return fmt.Errorf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay', or ''", o.NetworkPluginMode)
+		return fmt.Errorf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay' or ''", o.NetworkPluginMode)
 	}
 	return nil
 }
