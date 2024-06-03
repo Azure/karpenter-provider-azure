@@ -25,7 +25,6 @@ const (
 	Nvidia470CudaDriverVersion = "cuda-470.82.01"
 	Nvidia550CudaDriverVersion = "cuda-550.54.15"
 	Nvidia535GridDriverVersion = "grid-535.161.08"
-	
 
 	// These SHAs will change once we update aks-gpu images in aks-gpu repository. We do that fairly rarely at this time.
 	// So for now these will be kept here like this and periodically bump them
