@@ -245,7 +245,7 @@ func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, 
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
 				&armnetwork.InterfaceIPConfiguration{
-					Name: lo.ToPtr(fmt.Sprintf("ipconfig-%d", i)),
+					Name: lo.ToPtr(fmt.Sprintf("ipconfig%d", i)),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Primary:                   lo.ToPtr(false),
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
