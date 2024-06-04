@@ -198,9 +198,9 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	return nil
 }
 
-func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
+func (p *Provider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
-	for _, poolID := range backendPools.IPv4PoolIDs {
+	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
 		poolID := poolID
 		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
 			ID: &poolID,
@@ -210,7 +210,7 @@ func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, 
 	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
 
 	enableAcceleratedNetworking := false
-	if err := instanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
+	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
 		enableAcceleratedNetworking = true
 	}
 
@@ -219,7 +219,7 @@ func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, 
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
-					Name: &vmName,
+					Name: &opts.NICName,
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Primary:                   lo.ToPtr(true),
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
@@ -234,14 +234,12 @@ func (p *Provider) newNetworkInterfaceForVM(ctx context.Context, vmName string, 
 			EnableIPForwarding:          lo.ToPtr(true),
 		},
 	}
-	networkPlugin := options.FromContext(ctx).NetworkPlugin
-	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
-	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode != consts.NetworkPluginModeOverlay {
+	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
 		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
 		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
 		// ips from the nodeclass instead of using the default
-		for i := 1; i < utils.DefaultMaxPods(networkPlugin); i++ {
+		for i := 1; i < utils.DefaultMaxPods(opts.NetworkPlugin); i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
 				&armnetwork.InterfaceIPConfiguration{
@@ -264,16 +262,25 @@ func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
 
-func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, launchTemplateConfig *launchtemplate.Template, instanceType *corecloudprovider.InstanceType) (string, error) {
+type createNICOptions struct {
+	NICName           string
+	BackendPools      *loadbalancer.BackendAddressPools
+	InstanceType      *corecloudprovider.InstanceType
+	LaunchTemplate    *launchtemplate.Template
+	NetworkPlugin     string
+	NetworkPluginMode string
+}
+
+func (p *Provider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
 	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 	if err != nil {
 		return "", err
 	}
-
-	nic := p.newNetworkInterfaceForVM(ctx, nicName, backendPools, instanceType)
-	p.applyTemplateToNic(&nic, launchTemplateConfig)
-	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
-	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)
+	opts.BackendPools = backendPools
+	nic := p.newNetworkInterfaceForVM(opts)
+	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
+	logging.FromContext(ctx).Debugf("Creating network interface %s", opts.NICName)
+	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
 	if err != nil {
 		return "", err
 	}
@@ -414,7 +421,15 @@ func (p *Provider) launchInstance(
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
 	// create network interface
-	nicReference, err := p.createNetworkInterface(ctx, resourceName, launchTemplate, instanceType)
+	nicReference, err := p.createNetworkInterface(ctx,
+		&createNICOptions{
+			NICName:           resourceName,
+			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
+			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
+			LaunchTemplate:    launchTemplate,
+			InstanceType:      instanceType,
+		},
+	)
 	if err != nil {
 		return nil, nil, err
 	}
