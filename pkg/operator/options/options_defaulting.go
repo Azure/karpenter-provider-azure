@@ -49,11 +49,6 @@ func (o *Options) Default(ctx context.Context) error {
 		return fmt.Errorf("failed to get ClusterID: %w", err)
 	}
 
-	// if nodeIdentities not contains kubeletIdentityClientID, add it
-	if o.KubeletIdentityClientID != "" && !contains(o.NodeIdentities, o.KubeletIdentityClientID) {
-		o.NodeIdentities = append(o.NodeIdentities, o.KubeletIdentityClientID)
-	}
-
 	if o.VnetGUID, err = getVnetGUID(ctx, o.SubscriptionID, o.SubnetID, authManager); err != nil {
 		return fmt.Errorf("failed to get VnetGUID: %w", err)
 
