@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 	"github.com/samber/lo"
 	"knative.dev/pkg/logging"
@@ -64,7 +65,9 @@ func NewAPI() client.PricingAPI {
 	return client.New()
 }
 
-func NewProvider(ctx context.Context, pricing client.PricingAPI, region string, startAsync <-chan struct{}) *Provider {
+func NewProvider(ctx context.Context, opts *options.Options, pricing client.PricingAPI, startAsync <-chan struct{}) *Provider {
+	region := opts.Location
+
 	// see if we've got region specific pricing data
 	staticPricing, ok := initialOnDemandPrices[region]
 	if !ok {

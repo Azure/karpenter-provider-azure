@@ -25,6 +25,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
@@ -51,11 +52,11 @@ const (
 	imageIDFormat = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
-func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location string) *Provider {
+func NewProvider(opts *options.Options, kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI) *Provider {
 	return &Provider{
 		kubernetesVersionCache: kubernetesVersionCache,
 		imageCache:             cache.New(imageExpirationInterval, imageCacheCleaningInterval),
-		location:               location,
+		location:               opts.Location,
 		imageVersionsClient:    versionsClient,
 		cm:                     pretty.NewChangeMonitor(),
 		kubernetesInterface:    kubernetesInterface,

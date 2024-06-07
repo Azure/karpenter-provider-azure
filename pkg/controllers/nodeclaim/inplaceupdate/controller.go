@@ -44,6 +44,9 @@ import (
 type Controller struct {
 	kubeClient       client.Client
 	instanceProvider *instance.Provider
+
+	// Will be used to calculate the goal state
+	opts *options.Options
 }
 
 var _ corecontroller.TypedController[*v1beta1.NodeClaim] = &Controller{}
@@ -51,6 +54,7 @@ var _ corecontroller.TypedController[*v1beta1.NodeClaim] = &Controller{}
 func NewController(
 	kubeClient client.Client,
 	instanceProvider *instance.Provider,
+	opts *options.Options,
 ) corecontroller.Controller {
 	controller := &Controller{
 		kubeClient:       kubeClient,
@@ -81,8 +85,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 	// TODO: To look it up and use that as input to calculate the goal state as well
 
 	// Compare the expected hash with the actual hash
-	options := options.FromContext(ctx)
-	goalHash, err := HashFromNodeClaim(options, nodeClaim)
+	goalHash, err := HashFromNodeClaim(c.opts, nodeClaim)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -105,7 +108,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 		return reconcile.Result{}, fmt.Errorf("getting azure VM for machine, %w", err)
 	}
 
-	update := calculateVMPatch(options, vm)
+	update := calculateVMPatch(c.opts, vm)
 	// This is safe only as long as we're not updating fields which we consider secret.
 	// If we do/are, we need to redact them.
 	logVMPatch(ctx, update)
@@ -133,12 +136,12 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 }
 
 func calculateVMPatch(
-	options *options.Options,
+	opts *options.Options,
 	// TODO: Can pass and consider NodeClaim and/or NodePool here if we need to in the future
 	currentVM *armcompute.VirtualMachine,
 ) *armcompute.VirtualMachineUpdate {
 	// Determine the differences between the current state and the goal state
-	expectedIdentities := options.NodeIdentities
+	expectedIdentities := opts.NodeIdentities
 	var currentIdentities []string
 	if currentVM.Identity != nil {
 		currentIdentities = lo.Keys(currentVM.Identity.UserAssignedIdentities)

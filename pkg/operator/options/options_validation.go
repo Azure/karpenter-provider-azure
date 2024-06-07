@@ -29,22 +29,45 @@ func (o Options) Validate() error {
 	validate := validator.New()
 	return multierr.Combine(
 		o.validateRequiredFields(),
-		o.validateEndpoint(),
+		o.validateClusterEndpoint(),
+		o.validateArmAuthMethod(),
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
 		validate.Struct(o),
 	)
 }
 
-func (o Options) validateVnetSubnetID() error {
-	_, err := utils.GetVnetSubnetIDComponents(o.SubnetID)
-	if err != nil {
-		return fmt.Errorf("vnet-subnet-id is invalid: %w", err)
+func (o Options) validateRequiredFields() error {
+	if o.Location == "" {
+		return fmt.Errorf("missing field, location")
 	}
+	if o.SubscriptionID == "" {
+		return fmt.Errorf("missing field, subscription-id")
+	}
+	if o.ClusterEndpoint == "" {
+		return fmt.Errorf("missing field, cluster-endpoint")
+	}
+	if o.ClusterName == "" {
+		return fmt.Errorf("missing field, cluster-name")
+	}
+
+	if o.NodeResourceGroup == "" {
+		return fmt.Errorf("missing field, node-resource-group")
+	}
+	if o.KubeletClientTLSBootstrapToken == "" {
+		return fmt.Errorf("missing field, kubelet-bootstrap-token")
+	}
+	if o.SSHPublicKey == "" {
+		return fmt.Errorf("missing field, ssh-public-key")
+	}
+	if o.SubnetID == "" {
+		return fmt.Errorf("missing field, vnet-subnet-id")
+	}
+
 	return nil
 }
 
-func (o Options) validateEndpoint() error {
+func (o Options) validateClusterEndpoint() error {
 	if o.ClusterEndpoint == "" {
 		return nil
 	}
@@ -57,6 +80,13 @@ func (o Options) validateEndpoint() error {
 	return nil
 }
 
+func (o Options) validateArmAuthMethod() error {
+	if o.ArmAuthMethod != "system-assigned-msi" && o.ArmAuthMethod != "workload-identity" {
+		return fmt.Errorf("unsupported authorization method: %s", o.ArmAuthMethod)
+	}
+	return nil
+}
+
 func (o Options) validateVMMemoryOverheadPercent() error {
 	if o.VMMemoryOverheadPercent < 0 {
 		return fmt.Errorf("vm-memory-overhead-percent cannot be negative")
@@ -64,21 +94,10 @@ func (o Options) validateVMMemoryOverheadPercent() error {
 	return nil
 }
 
-func (o Options) validateRequiredFields() error {
-	if o.ClusterEndpoint == "" {
-		return fmt.Errorf("missing field, cluster-endpoint")
-	}
-	if o.ClusterName == "" {
-		return fmt.Errorf("missing field, cluster-name")
-	}
-	if o.KubeletClientTLSBootstrapToken == "" {
-		return fmt.Errorf("missing field, kubelet-bootstrap-token")
-	}
-	if o.SSHPublicKey == "" {
-		return fmt.Errorf("missing field, ssh-public-key")
-	}
-	if o.SubnetID == "" {
-		return fmt.Errorf("missing field, vnet-subnet-id")
+func (o Options) validateVnetSubnetID() error {
+	_, err := utils.GetVnetSubnetIDComponents(o.SubnetID)
+	if err != nil {
+		return fmt.Errorf("vnet-subnet-id is invalid: %w", err)
 	}
 	return nil
 }

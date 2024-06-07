@@ -24,7 +24,6 @@ import (
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
@@ -88,61 +87,44 @@ func NewAZClientFromAPI(
 	}
 }
 
-func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
-	// Defaulting env to Azure Public Cloud.
-	env := azure.PublicCloud
-	var err error
-	if cfg.Cloud != "" {
-		env, err = azure.EnvironmentFromName(cfg.Cloud)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	azClient, err := NewAZClient(ctx, cfg, &env)
+func CreateAZClient(ctx context.Context, subscriptionID string, authManager *auth.AuthManager) (*AZClient, error) {
+	cred, err := authManager.NewCredential()
 	if err != nil {
 		return nil, err
 	}
+	armOpts := armopts.DefaultArmOpts()
 
-	return azClient, nil
-}
-
-func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) (*AZClient, error) {
-	cred, err := auth.NewCredential(cfg)
+	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(subscriptionID, cred, armOpts)
 	if err != nil {
 		return nil, err
 	}
+	klog.V(5).Infof("Created virtual machine extensions client %v, using a token credential", extensionsClient)
 
-	opts := armopts.DefaultArmOpts()
-	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
+	interfacesClient, err := armnetwork.NewInterfacesClient(subscriptionID, cred, armOpts)
 	if err != nil {
 		return nil, err
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
 
-	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, opts)
+	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(subscriptionID, cred, armOpts)
 	if err != nil {
 		return nil, err
 	}
 	klog.V(5).Infof("Created virtual machines client %v, using a token credential", virtualMachinesClient)
-	azureResourceGraphClient, err := armresourcegraph.NewClient(cred, opts)
+
+	azureResourceGraphClient, err := armresourcegraph.NewClient(cred, armOpts)
 	if err != nil {
 		return nil, err
 	}
 	klog.V(5).Infof("Created azure resource graph client %v, using a token credential", azureResourceGraphClient)
 
-	imageVersionsClient, err := armcomputev5.NewCommunityGalleryImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	imageVersionsClient, err := armcomputev5.NewCommunityGalleryImageVersionsClient(subscriptionID, cred, armOpts)
 	if err != nil {
 		return nil, err
 	}
 	klog.V(5).Infof("Created image versions client %v, using a token credential", imageVersionsClient)
 
-	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(cfg.SubscriptionID, cred, opts)
+	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(subscriptionID, cred, armOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +132,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
-	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
+	skuClient, err := skuclient.NewSkuClient(ctx, subscriptionID, authManager)
+	if err != nil {
+		return nil, err
+	}
+	klog.V(5).Infof("Created sku client %v, using a token credential", skuClient)
 
 	return NewAZClientFromAPI(virtualMachinesClient,
 		azureResourceGraphClient,

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"knative.dev/pkg/logging"
@@ -69,11 +70,11 @@ type BackendAddressPools struct {
 }
 
 // NewProvider creates a new LoadBalancer provider
-func NewProvider(loadBalancersAPI LoadBalancersAPI, cache *cache.Cache, resourceGroup string) *Provider {
+func NewProvider(opts *options.Options, loadBalancersAPI LoadBalancersAPI, cache *cache.Cache) *Provider {
 	return &Provider{
 		loadBalancersAPI: loadBalancersAPI,
 		cache:            cache,
-		resourceGroup:    resourceGroup,
+		resourceGroup:    opts.NodeResourceGroup,
 	}
 }
 

@@ -89,30 +89,31 @@ type Provider struct {
 	subnetID               string
 	subscriptionID         string
 	unavailableOfferings   *cache.UnavailableOfferings
+	sshPublicKey           string
+	nodeIdentities         []string
 }
 
 func NewProvider(
+	opts *options.Options,
 	azClient *AZClient,
 	instanceTypeProvider *instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,
 	offeringsCache *cache.UnavailableOfferings,
-	location string,
-	resourceGroup string,
-	subnetID string,
-	subscriptionID string,
 ) *Provider {
-	listQuery = GetListQueryBuilder(resourceGroup).String()
+	listQuery = GetListQueryBuilder(opts.NodeResourceGroup).String()
 	return &Provider{
 		azClient:               azClient,
 		instanceTypeProvider:   instanceTypeProvider,
 		launchTemplateProvider: launchTemplateProvider,
 		loadBalancerProvider:   loadBalancerProvider,
-		location:               location,
-		resourceGroup:          resourceGroup,
-		subnetID:               subnetID,
-		subscriptionID:         subscriptionID,
+		location:               opts.Location,
+		resourceGroup:          opts.NodeResourceGroup,
+		subnetID:               opts.SubnetID,
+		subscriptionID:         opts.SubscriptionID,
 		unavailableOfferings:   offeringsCache,
+		sshPublicKey:           opts.SSHPublicKey,
+		nodeIdentities:         opts.NodeIdentities,
 	}
 }
 
@@ -393,9 +394,7 @@ func (p *Provider) launchInstance(
 		return nil, nil, err
 	}
 
-	sshPublicKey := options.FromContext(ctx).SSHPublicKey
-	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType)
+	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, p.sshPublicKey, p.nodeIdentities, nodeClass, launchTemplate, instanceType)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
