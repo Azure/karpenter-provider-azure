@@ -86,7 +86,7 @@ func (am AuthManager) NewAutorestAuthorizer() (autorest.Authorizer, error) {
 		return azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope}), nil
 	}
 
-	if am.authMethod == AuthMethodWorkloadIdentity {
+	if am.authMethod == AuthMethodSysMSI {
 		klog.V(2).Infoln("auth: using system assigned MSI to retrieve access token")
 		msiEndpoint, err := adal.GetMSIVMEndpoint()
 		if err != nil {
