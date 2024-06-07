@@ -30,7 +30,7 @@ import (
 
 func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer, error) {
 	// TODO (charliedmcb): need to get track 2 support for the skewer API, and align all auth under workload identity in the same way within cred.go
-	if config.AuthMethod == authMethodWorkloadIdentity {
+	if config.ArmAuthMethod == authMethodWorkloadIdentity {
 		klog.V(2).Infoln("auth: using workload identity for new authorizer")
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
@@ -39,7 +39,7 @@ func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer,
 		return azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope}), nil
 	}
 
-	if config.AuthMethod == authMethodSysMSI {
+	if config.ArmAuthMethod == authMethodSysMSI {
 		klog.V(2).Infoln("auth: using system assigned MSI to retrieve access token")
 		msiEndpoint, err := adal.GetMSIVMEndpoint()
 		if err != nil {
@@ -55,5 +55,5 @@ func NewAuthorizer(config *Config, env *azure.Environment) (autorest.Authorizer,
 		return autorest.NewBearerAuthorizer(token), nil
 	}
 
-	return nil, fmt.Errorf("auth: unsupported auth method %s", config.AuthMethod)
+	return nil, fmt.Errorf("auth: unsupported auth method %s", config.ArmAuthMethod)
 }

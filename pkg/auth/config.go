@@ -60,10 +60,10 @@ type Config struct {
 	ResourceGroup  string `json:"resourceGroup" yaml:"resourceGroup"`
 	VMType         string `json:"vmType" yaml:"vmType"`
 
-	// AuthMethod determines how to authorize requests for the Azure cloud.
+	// ArmAuthMethod determines how to authorize requests for the Azure cloud.
 	// Valid options are "system-assigned-msi" and "workload-identity"
 	// The default is "workload-identity".
-	AuthMethod string `json:"authMethod" yaml:"authMethod"`
+	ArmAuthMethod string `json:"armAuthMethod" yaml:"armAuthMethod"`
 
 	// Managed identity for Kubelet (not to be confused with Azure cloud authorization)
 	KubeletIdentityClientID string `json:"kubeletIdentityClientID" yaml:"kubeletIdentityClientID"`
@@ -110,7 +110,7 @@ func (cfg *Config) Build() error {
 	cfg.VMType = strings.ToLower(os.Getenv("ARM_VM_TYPE"))
 	cfg.ClusterName = strings.TrimSpace(os.Getenv("AZURE_CLUSTER_NAME"))
 	cfg.NodeResourceGroup = strings.TrimSpace(os.Getenv("AZURE_NODE_RESOURCE_GROUP"))
-	cfg.AuthMethod = strings.TrimSpace(os.Getenv("ARM_AUTH_METHOD"))
+	cfg.ArmAuthMethod = strings.TrimSpace(os.Getenv("ARM_AUTH_METHOD"))
 	cfg.KubeletIdentityClientID = strings.TrimSpace(os.Getenv("ARM_KUBELET_IDENTITY_CLIENT_ID"))
 
 	return nil
@@ -122,8 +122,8 @@ func (cfg *Config) Default() error {
 		cfg.VMType = vmTypeVMSS
 	}
 
-	if cfg.AuthMethod == "" {
-		cfg.AuthMethod = authMethodWorkloadIdentity
+	if cfg.ArmAuthMethod == "" {
+		cfg.ArmAuthMethod = authMethodWorkloadIdentity
 	}
 
 	return nil
@@ -145,8 +145,8 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
-	if cfg.AuthMethod != authMethodSysMSI && cfg.AuthMethod != authMethodWorkloadIdentity {
-		return fmt.Errorf("unsupported authorization method: %s", cfg.AuthMethod)
+	if cfg.ArmAuthMethod != authMethodSysMSI && cfg.ArmAuthMethod != authMethodWorkloadIdentity {
+		return fmt.Errorf("unsupported authorization method: %s", cfg.ArmAuthMethod)
 	}
 
 	return nil
