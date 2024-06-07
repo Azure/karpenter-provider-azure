@@ -112,7 +112,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	if err != nil {
 		return nil, err
 	}
-
+	cred = auth.NewTokenWrapper(cred)
 	opts := armopts.DefaultArmOpts()
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
@@ -124,14 +124,14 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		return nil, err
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
-
+	
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
 	klog.V(5).Infof("Created virtual machines client %v, using a token credential", virtualMachinesClient)
 	azureResourceGraphClient, err := armresourcegraph.NewClient(cred, opts)
-	if err != nil {
+	if err != nil { 
 		return nil, err
 	}
 	klog.V(5).Infof("Created azure resource graph client %v, using a token credential", azureResourceGraphClient)

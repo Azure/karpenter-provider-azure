@@ -17,24 +17,48 @@ limitations under the License.
 package auth
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"k8s.io/klog/v2"
+	"knative.dev/pkg/logging"
 )
+
+
+type TokenWrapper struct {
+	cred azcore.TokenCredential
+}
+
+func NewTokenWrapper(cred azcore.TokenCredential) *TokenWrapper {
+	return &TokenWrapper{
+	cred: cred,
+	}
+}
+
+func (w *TokenWrapper) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	token, err := w.cred.GetToken(ctx, options) 
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+	logging.FromContext(ctx).Info("refreshing MDAL Token")		
+	token.ExpiresOn = time.Now().Add(1 * time.Hour)
+	return token, nil 
+}
 
 // NewCredential provides a token credential for msi and service principal auth
 func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("failed to create credential, nil config provided")
 	}
-
 	if cfg.UseCredentialFromEnvironment {
 		klog.V(2).Infoln("cred: using workload identity for new credential")
 		return azidentity.NewDefaultAzureCredential(nil)
 	}
-
+		
 	if cfg.UseManagedIdentityExtension || cfg.AADClientID == "msi" {
 		klog.V(2).Infoln("cred: using msi for new credential")
 		msiCred, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
