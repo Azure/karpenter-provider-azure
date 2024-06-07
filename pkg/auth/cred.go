@@ -67,12 +67,12 @@ func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
 		return nil, fmt.Errorf("failed to create credential, nil config provided")
 	}
 
-	if cfg.AuthMethod == authMethodWorkloadIdentity {
+	if cfg.ArmAuthMethod == authMethodWorkloadIdentity {
 		klog.V(2).Infoln("cred: using workload identity for new credential")
 		return azidentity.NewDefaultAzureCredential(nil)
 	}
 
-	if cfg.AuthMethod == authMethodSysMSI {
+	if cfg.ArmAuthMethod == authMethodSysMSI {
 		klog.V(2).Infoln("cred: using system assigned MSI for new credential")
 		msiCred, err := azidentity.NewManagedIdentityCredential(nil)
 		if err != nil {
@@ -81,5 +81,5 @@ func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
 		return msiCred, nil
 	}
 
-	return nil, fmt.Errorf("cred: unsupported auth method: %s", cfg.AuthMethod)
+	return nil, fmt.Errorf("cred: unsupported auth method: %s", cfg.ArmAuthMethod)
 }

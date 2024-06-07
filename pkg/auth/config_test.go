@@ -41,7 +41,7 @@ func TestBuildAzureConfig(t *testing.T) {
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
 				VMType:            "vmss",
-				AuthMethod:        "workload-identity",
+				ArmAuthMethod:     "workload-identity",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -60,7 +60,7 @@ func TestBuildAzureConfig(t *testing.T) {
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
 				VMType:            "vm",
-				AuthMethod:        "workload-identity",
+				ArmAuthMethod:     "workload-identity",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -94,7 +94,7 @@ func TestBuildAzureConfig(t *testing.T) {
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
 				VMType:            "vmss",
-				AuthMethod:        "system-assigned-msi",
+				ArmAuthMethod:     "system-assigned-msi",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -114,7 +114,7 @@ func TestBuildAzureConfig(t *testing.T) {
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
 				VMType:            "vmss",
-				AuthMethod:        "workload-identity",
+				ArmAuthMethod:     "workload-identity",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -134,7 +134,7 @@ func TestBuildAzureConfig(t *testing.T) {
 				ResourceGroup:           "my-rg",
 				NodeResourceGroup:       "my-node-rg",
 				VMType:                  "vmss",
-				AuthMethod:              "system-assigned-msi",
+				ArmAuthMethod:           "system-assigned-msi",
 				KubeletIdentityClientID: "11111111-2222-3333-4444-555555555555",
 			},
 			wantErr: false,

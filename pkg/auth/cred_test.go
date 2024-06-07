@@ -41,7 +41,7 @@ func TestNewCredential(t *testing.T) {
 		{
 			name: "unsupported auth method",
 			cfg: &Config{
-				AuthMethod: "unsupported",
+				ArmAuthMethod: "unsupported",
 			},
 			want:       nil,
 			wantErr:    true,
@@ -57,7 +57,7 @@ func TestNewCredential(t *testing.T) {
 		{
 			name: "auth method system-assigned-msi",
 			cfg: &Config{
-				AuthMethod: authMethodSysMSI,
+				ArmAuthMethod: authMethodSysMSI,
 			},
 			want:    reflect.TypeOf(&azidentity.ManagedIdentityCredential{}),
 			wantErr: false,
@@ -65,7 +65,7 @@ func TestNewCredential(t *testing.T) {
 		{
 			name: "auth method workload-identity",
 			cfg: &Config{
-				AuthMethod: authMethodWorkloadIdentity,
+				ArmAuthMethod: authMethodWorkloadIdentity,
 			},
 			want:    reflect.TypeOf(&azidentity.DefaultAzureCredential{}),
 			wantErr: false,
