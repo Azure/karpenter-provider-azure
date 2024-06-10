@@ -45,7 +45,7 @@ func (w *TokenWrapper) GetToken(ctx context.Context, options policy.TokenRequest
 		return azcore.AccessToken{}, err
 	}
 	logging.FromContext(ctx).Info("refreshing MDAL Token")		
-	token.ExpiresOn = time.Now().Add(1 * time.Hour)
+	token.ExpiresOn = time.Now().Add(2 * time.Hour)
 	return token, nil 
 }
 
