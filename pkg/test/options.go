@@ -31,7 +31,6 @@ type OptionsFields struct {
 	ClusterID                      *string
 	KubeletClientTLSBootstrapToken *string
 	SSHPublicKey                   *string
-	NetworkPlugin                  *string
 	NetworkPluginMode              *string
 	NetworkPolicy                  *string
 	VMMemoryOverheadPercent        *float64
@@ -52,7 +51,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		ClusterID:                      lo.FromPtrOr(options.ClusterID, "00000000"),
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
-		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
 		NetworkPluginMode:              lo.FromPtrOr(options.NetworkPluginMode, "overlay"),
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, "cilium"),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),

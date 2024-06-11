@@ -17,11 +17,13 @@ limitations under the License.
 package consts
 
 const (
-	NetworkPluginAzure   = "azure"
-	NetworkPluginKubenet = "kubenet"
+	NetworkPluginAzure = "azure"
 
 	NetworkPluginModeOverlay = "overlay"
 	NetworkPluginModeNone    = ""
 
 	NetworkDataplaneCilium = "cilium"
+
+	// DefaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI.
+	DefaultKubernetesMaxPodsAzure = 250
 )

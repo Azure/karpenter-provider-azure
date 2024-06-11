@@ -24,12 +24,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -75,12 +74,10 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	}
 
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
-
-	kc := prepareKubeletConfiguration(ctx, instanceType, nodeClaim)
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		UserData: imageFamily.UserData(
-			kc,
+			prepareKubeletConfiguration(instanceType, nodeClaim),
 			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
 			staticParameters.Labels,
 			staticParameters.CABundle,
@@ -92,12 +89,12 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	return template, nil
 }
 
-func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nc *corev1beta1.NodeClaim) *corev1beta1.KubeletConfiguration {
+func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nc *corev1beta1.NodeClaim) *corev1beta1.KubeletConfiguration {
 	kubeletConfig := nc.Spec.Kubelet
 	if kubeletConfig == nil {
 		kubeletConfig = &corev1beta1.KubeletConfiguration{}
 	}
-	kubeletConfig.MaxPods = lo.ToPtr(int32(utils.DefaultMaxPods(options.FromContext(ctx).NetworkPlugin)))
+	kubeletConfig.MaxPods = lo.ToPtr(int32(consts.DefaultKubernetesMaxPodsAzure))
 	// TODO: revisit computeResources and maxPods implementation
 	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)

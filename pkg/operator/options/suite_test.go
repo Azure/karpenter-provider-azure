@@ -50,7 +50,6 @@ var _ = Describe("Options", func() {
 		"CLUSTER_ID",
 		"KUBELET_BOOTSTRAP_TOKEN",
 		"SSH_PUBLIC_KEY",
-		"NETWORK_PLUGIN",
 		"NETWORK_POLICY",
 		"NODE_IDENTITIES",
 	}
@@ -90,7 +89,6 @@ var _ = Describe("Options", func() {
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
-			os.Setenv("NETWORK_PLUGIN", "env-network-plugin")
 			os.Setenv("NETWORK_POLICY", "env-network-policy")
 			os.Setenv("NODE_IDENTITIES", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2")
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
@@ -107,7 +105,6 @@ var _ = Describe("Options", func() {
 				ClusterID:                      lo.ToPtr("46593302"),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
-				NetworkPlugin:                  lo.ToPtr("env-network-plugin"),
 				NetworkPolicy:                  lo.ToPtr("env-network-policy"),
 				SubnetID:                       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
@@ -221,7 +218,6 @@ func expectOptionsEqual(optsA *options.Options, optsB *options.Options) {
 	Expect(optsA.ClusterID).To(Equal(optsB.ClusterID))
 	Expect(optsA.KubeletClientTLSBootstrapToken).To(Equal(optsB.KubeletClientTLSBootstrapToken))
 	Expect(optsA.SSHPublicKey).To(Equal(optsB.SSHPublicKey))
-	Expect(optsA.NetworkPlugin).To(Equal(optsB.NetworkPlugin))
 	Expect(optsA.NetworkPolicy).To(Equal(optsB.NetworkPolicy))
 	Expect(optsA.NodeIdentities).To(Equal(optsB.NodeIdentities))
 }
