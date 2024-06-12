@@ -24,6 +24,7 @@ KUBERNETES_VERSION={{.KubernetesVersion}}
 HYPERKUBE_URL={{.HyperkubeURL}}
 KUBE_BINARY_URL={{.KubeBinaryURL}}
 CUSTOM_KUBE_BINARY_URL={{.CustomKubeBinaryURL}}
+CREDENTIAL_PROVIDER_DOWNLOAD_URL={{.CredentialProviderDownloadURL}}
 KUBEPROXY_URL={{.KubeproxyURL}}
 APISERVER_PUBLIC_KEY={{.APIServerPublicKey}}
 SUBSCRIPTION_ID={{.SubscriptionID}}
