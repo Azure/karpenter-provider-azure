@@ -28,25 +28,24 @@ import (
 	"knative.dev/pkg/logging"
 )
 
-
 type TokenWrapper struct {
 	cred azcore.TokenCredential
 }
 
 func NewTokenWrapper(cred azcore.TokenCredential) *TokenWrapper {
 	return &TokenWrapper{
-	cred: cred,
+		cred: cred,
 	}
 }
 
 func (w *TokenWrapper) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	token, err := w.cred.GetToken(ctx, options) 
+	token, err := w.cred.GetToken(ctx, options)
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}
-	logging.FromContext(ctx).Info("refreshing MDAL Token")		
+	logging.FromContext(ctx).Info("refreshing MDAL Token")
 	token.ExpiresOn = time.Now().Add(2 * time.Hour)
-	return token, nil 
+	return token, nil
 }
 
 // NewCredential provides a token credential for msi and service principal auth
@@ -58,7 +57,7 @@ func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
 		klog.V(2).Infoln("cred: using workload identity for new credential")
 		return azidentity.NewDefaultAzureCredential(nil)
 	}
-		
+
 	if cfg.UseManagedIdentityExtension || cfg.AADClientID == "msi" {
 		klog.V(2).Infoln("cred: using msi for new credential")
 		msiCred, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
