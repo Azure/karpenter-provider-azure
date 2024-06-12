@@ -216,7 +216,6 @@ type NodeBootstrapVariables struct {
 	KubeletNodeLabels                 string   // pk  node-pool specific. user-specified.
 	AzureEnvironmentFilepath          string   // s   can be made static [usually "/etc/kubernetes/azure.json", but my examples use ""?]
 	KubeCACrt                         string   // x   unique per cluster
-	KubenetTemplate                   string   // s   static
 	ContainerdConfigContent           string   // k   determined by GPU VM size, WASM support, Kata support
 	IsKata                            bool     // n   user-specified
 }
@@ -232,8 +231,6 @@ var (
 
 	//go:embed sysctl.conf
 	sysctlContent []byte
-	//go:embed kubenet-cni.json.gtpl
-	kubenetTemplate []byte
 
 	// source note: unique per nodepool. partially user-specified, static, and RP-generated
 	// removed --image-pull-progress-deadline=30m  (not in 1.24?)
@@ -381,10 +378,10 @@ var (
 		SysctlContent:                   base64.StdEncoding.EncodeToString(sysctlContent),                    // td
 		KubeletFlags:                    "",                                                                  // psX
 		AzureEnvironmentFilepath:        "",                                                                  // s
-		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
 		ContainerdConfigContent:         "",                                                                  // kd
 		IsKata:                          false,                                                               // n
 		NeedsCgroupV2:                   true,                                                                // s only static for karpenter
+		EnsureNoDupePromiscuousBridge:   false,                                                               // We never use kubenet
 
 	}
 )
@@ -439,7 +436,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.CNIPluginsURL = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
 
 	// calculated values
-	nbv.EnsureNoDupePromiscuousBridge = nbv.NeedsContainerd && nbv.NetworkPlugin == "kubenet" && nbv.NetworkPolicy != "calico"
 	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
 	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
