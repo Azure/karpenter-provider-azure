@@ -37,12 +37,9 @@ type StaticParameters struct {
 	ClusterID                      string
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
-	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
-
-	// VNET
-	SubnetID string
+	SubnetID                       string
 
 	Tags   map[string]string
 	Labels map[string]string

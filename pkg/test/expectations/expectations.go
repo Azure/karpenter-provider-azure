@@ -17,7 +17,9 @@ limitations under the License.
 package expectations
 
 import (
+	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -26,4 +28,25 @@ import (
 
 func ExpectUnavailable(env *test.Environment, instanceType string, zone string, capacityType string) {
 	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, fmt.Sprintf("%s-%s", fake.Region, zone), capacityType)).To(BeTrue())
+}
+
+func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {
+	kubeletFlags := customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+	for flag, value := range expectedFlags {
+		Expect(kubeletFlags).To(ContainSubstring(fmt.Sprintf("--%s=%s", flag, value)))
+	}
+}
+
+func ExpectDecodedCustomData(env *test.Environment) string {
+	Expect(env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+	vm := env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+	customData := *vm.Properties.OSProfile.CustomData
+	Expect(customData).ToNot(BeNil())
+
+	decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+	Expect(err).To(Succeed())
+	decodedString := string(decodedBytes[:])
+
+	return decodedString
 }

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/go-playground/validator/v10"
 	"go.uber.org/multierr"
@@ -31,9 +32,17 @@ func (o Options) Validate() error {
 		o.validateRequiredFields(),
 		o.validateEndpoint(),
 		o.validateVMMemoryOverheadPercent(),
+		o.validateNetworkPluginMode(),
 		o.validateVnetSubnetID(),
 		validate.Struct(o),
 	)
+}
+
+func (o Options) validateNetworkPluginMode() error {
+	if o.NetworkPluginMode != consts.NetworkPluginModeOverlay && o.NetworkPluginMode != consts.NetworkPluginModeNone {
+		return fmt.Errorf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay' or ''", o.NetworkPluginMode)
+	}
+	return nil
 }
 
 func (o Options) validateVnetSubnetID() error {
