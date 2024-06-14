@@ -1108,37 +1108,24 @@ var _ = Describe("InstanceType Provider", func() {
 			decodedString := string(decodedBytes[:])
 			Expect(decodedString).To(ContainSubstring("CREDENTIAL_PROVIDER_DOWNLOAD_URL"))
 			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
-			parseKubeletFlags := func(flags string) map[string]string {
-				flagMap := make(map[string]string)
-				flagList := strings.Split(flags, " --")
-				for _, flag := range flagList {
-					parts := strings.SplitN(flag, "=", 2)
-					if len(parts) == 2 {
-						flagMap["--"+parts[0]] = parts[1]
-					}
-				}
-				return flagMap
-			}
 
 			// TODO: (bsoghigian) leverage the helpers from the azure cni pr once they get in instead for testing kubelet flags
-			flagMap := parseKubeletFlags(kubeletFlags)
 			// NOTE: env.Version may differ from the version we get for the apiserver
 			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
 			Expect(err).To(BeNil())
 			parsed := semver.MustParse(k8sVersion)
-
 			if utils.UseOOTCredential(parsed.Minor) {
-				Expect(flagMap).ToNot(HaveKey("--azure-container-registry-config"))
-				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-config", "/var/lib/kubelet/credential-provider-config.yaml"))
-				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-bin-dir", "/var/lib/kubelet/credential-provider"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
+				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
+				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
 				Expect(decodedString).To(ContainSubstring(
 					fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", parsed.String(), parsed.String()),
 				))
 
 			} else {
-				Expect(flagMap).To(HaveKey("--azure-container-registry-config"))
-				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-config"))
-				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-bin-dir"))
+				Expect(kubeletFlags).To(ContainSubstring("--azure-container-registry-config"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
 			}
 		})
 	})
