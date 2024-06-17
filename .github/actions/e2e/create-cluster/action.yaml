@@ -44,6 +44,9 @@ runs:
   - name: az set sub
     shell: bash
     run: az account set --subscription ${{ inputs.subscription-id }}
+  - name: sleep rest is good for the brain 
+    shell: bash 
+    run: sleep 1m
   - name: create workload msi
     shell: bash
     run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-msi
