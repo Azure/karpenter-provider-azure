@@ -44,12 +44,14 @@ runs:
   - name: az set sub
     shell: bash
     run: az account set --subscription ${{ inputs.subscription-id }}
-  - name: sleep rest is good for the brain 
-    shell: bash 
-    run: sleep 1m
   - name: create workload msi
     shell: bash
     run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-msi
+  - name: create  acr
+    run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkacr 
+  - name: sleep to avoid acr + AKS create race 
+    shell: bash 
+    run: sleep 1m
   - name: create cluster
     shell: bash
     run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
