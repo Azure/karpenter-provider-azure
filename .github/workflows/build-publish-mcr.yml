@@ -3,11 +3,6 @@
 
 name: Build and publish to MCR
 on:
-  workflow_dispatch:
-    inputs:
-      releaseTag:
-        description: 'Release tag to publish, defaults to the latest one'
-        type: string
   push:
     # Only release on supported semantic version tagging e.g. v0.0.1-rc.0
     tags:
