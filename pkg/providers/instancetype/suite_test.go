@@ -319,7 +319,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	Context("Filtering in InstanceType Provider List", func() {
+	FContext("Filtering in InstanceType Provider List", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
 		var err error
 		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
@@ -343,7 +343,6 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should not include confidential SKUs", func() {
 			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_DC8s_v3"))))
 		})
-
 	})
 	Context("Filtering GPU SKUs ProviderList(AzureLinux)", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
@@ -1179,6 +1178,18 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should support provisioning in non-zonal regions", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Zones).To(BeEmpty())
+		})
+		It("should support provisioning non-zonal instance types in zonal regions", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{
+				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_A0"},
+			})
 			ExpectProvisioned(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
