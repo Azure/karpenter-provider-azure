@@ -39,45 +39,35 @@ func TestNewCredential(t *testing.T) {
 			wantErrStr: "failed to create credential, nil config provided",
 		},
 		{
-			name: "AAD client ID is MSI",
+			name: "unsupported auth method",
 			cfg: &Config{
-				AADClientID:            "msi",
-				TenantID:               "00000000-0000-0000-0000-000000000000",
-				UserAssignedIdentityID: "12345678-1234-1234-1234-123456789012",
+				ArmAuthMethod: "unsupported",
+			},
+			want:       nil,
+			wantErr:    true,
+			wantErrStr: "cred: unsupported auth method: unsupported",
+		},
+		{
+			name:       "empty auth method",
+			cfg:        &Config{},
+			want:       nil,
+			wantErr:    true,
+			wantErrStr: "cred: unsupported auth method: ",
+		},
+		{
+			name: "auth method system-assigned-msi",
+			cfg: &Config{
+				ArmAuthMethod: authMethodSysMSI,
 			},
 			want:    reflect.TypeOf(&azidentity.ManagedIdentityCredential{}),
 			wantErr: false,
 		},
 		{
-			name: "AAD client ID is using MSI extension",
+			name: "auth method workload-identity",
 			cfg: &Config{
-				UseManagedIdentityExtension: true,
-				AADClientID:                 "msi",
-				TenantID:                    "00000000-0000-0000-0000-000000000000",
-				UserAssignedIdentityID:      "12345678-1234-1234-1234-123456789012",
+				ArmAuthMethod: authMethodWorkloadIdentity,
 			},
-			want:    reflect.TypeOf(&azidentity.ManagedIdentityCredential{}),
-			wantErr: false,
-		},
-		{
-			name: "AADClientID is not MSI",
-			cfg: &Config{
-				AADClientID:     "test-client-id",
-				AADClientSecret: "test-client-secret",
-				TenantID:        "00000000-0000-0000-0000-000000000000",
-			},
-			want:    reflect.TypeOf(&azidentity.ClientSecretCredential{}),
-			wantErr: false,
-		},
-		{
-			name: "AADClientID is not MSI and UserAssignedIdentityID is set",
-			cfg: &Config{
-				AADClientID:            "test-client-id",
-				AADClientSecret:        "test-client-secret",
-				TenantID:               "00000000-0000-0000-0000-000000000000",
-				UserAssignedIdentityID: "12345678-1234-1234-1234-123456789012",
-			},
-			want:    reflect.TypeOf(&azidentity.ClientSecretCredential{}),
+			want:    reflect.TypeOf(&azidentity.DefaultAzureCredential{}),
 			wantErr: false,
 		},
 	}

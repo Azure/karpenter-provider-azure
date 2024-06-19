@@ -34,15 +34,12 @@ controller:
       value: ${AZURE_SUBSCRIPTION_ID}
     - name: LOCATION
       value: ${AZURE_LOCATION}
-    # settings for managed workload ideneity
-    - name: ARM_USE_CREDENTIAL_FROM_ENVIRONMENT
-      value: "true"
-    - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
-      value: "false"
-    - name: ARM_USER_ASSIGNED_IDENTITY_ID
+    - name: ARM_KUBELET_IDENTITY_CLIENT_ID
       value: ""
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}
+    - name: ARM_AUTH_METHOD
+      value: "workload-identity"
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:

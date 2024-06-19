@@ -19,7 +19,6 @@ package auth
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/Azure/go-autorest/autorest"
@@ -28,8 +27,8 @@ import (
 
 const (
 	// auth methods
-	authMethodPrincipal = "principal"
-	authMethodCLI       = "cli"
+	authMethodSysMSI           = "system-assigned-msi"
+	authMethodWorkloadIdentity = "workload-identity"
 )
 
 const (
@@ -61,97 +60,34 @@ type Config struct {
 	ResourceGroup  string `json:"resourceGroup" yaml:"resourceGroup"`
 	VMType         string `json:"vmType" yaml:"vmType"`
 
-	// AuthMethod determines how to authorize requests for the Azure
-	// cloud. Valid options are "principal" (= the traditional
-	// service principle approach) and "cli" (= load az command line
-	// config file). The default is "principal".
-	AuthMethod string `json:"authMethod" yaml:"authMethod"`
+	// ArmAuthMethod determines how to authorize requests for the Azure cloud.
+	// Valid options are "system-assigned-msi" and "workload-identity"
+	// The default is "workload-identity".
+	ArmAuthMethod string `json:"armAuthMethod" yaml:"armAuthMethod"`
 
-	// Settings for a service principal.
-	AADClientID                  string `json:"aadClientId" yaml:"aadClientId"`
-	AADClientSecret              string `json:"aadClientSecret" yaml:"aadClientSecret"`
-	AADClientCertPath            string `json:"aadClientCertPath" yaml:"aadClientCertPath"`
-	AADClientCertPassword        string `json:"aadClientCertPassword" yaml:"aadClientCertPassword"`
-	UseCredentialFromEnvironment bool   `json:"useCredentialFromEnvironment" yaml:"useCredentialFromEnvironment"`
-	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension" yaml:"useManagedIdentityExtension"`
-	UserAssignedIdentityID       string `json:"userAssignedIdentityID" yaml:"userAssignedIdentityID"`
+	// Managed identity for Kubelet (not to be confused with Azure cloud authorization)
+	KubeletIdentityClientID string `json:"kubeletIdentityClientID" yaml:"kubeletIdentityClientID"`
 
-	//Configs only for AKS
-	ClusterName string `json:"clusterName" yaml:"clusterName"`
-	//Config only for AKS
+	// Configs only for AKS
+	ClusterName       string `json:"clusterName" yaml:"clusterName"`
 	NodeResourceGroup string `json:"nodeResourceGroup" yaml:"nodeResourceGroup"`
-}
-
-func (cfg *Config) PrepareConfig() error {
-	cfg.BaseVars()
-	err := cfg.prepareID()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (cfg *Config) BaseVars() {
-	cfg.Cloud = os.Getenv("ARM_CLOUD")
-	cfg.Location = os.Getenv("LOCATION")
-	cfg.ResourceGroup = os.Getenv("ARM_RESOURCE_GROUP")
-	cfg.TenantID = os.Getenv("ARM_TENANT_ID")
-	cfg.SubscriptionID = os.Getenv("ARM_SUBSCRIPTION_ID")
-	cfg.AADClientID = os.Getenv("ARM_CLIENT_ID")
-	cfg.AADClientSecret = os.Getenv("ARM_CLIENT_SECRET")
-	cfg.VMType = strings.ToLower(os.Getenv("ARM_VM_TYPE"))
-	cfg.AADClientCertPath = os.Getenv("ARM_CLIENT_CERT_PATH")
-	cfg.AADClientCertPassword = os.Getenv("ARM_CLIENT_CERT_PASSWORD")
-	cfg.ClusterName = os.Getenv("AZURE_CLUSTER_NAME")
-	cfg.NodeResourceGroup = os.Getenv("AZURE_NODE_RESOURCE_GROUP")
-}
-
-func (cfg *Config) prepareID() error {
-	useCredentialFromEnvironmentFromEnv := os.Getenv("ARM_USE_CREDENTIAL_FROM_ENVIRONMENT")
-	if len(useCredentialFromEnvironmentFromEnv) > 0 {
-		shouldUse, err := strconv.ParseBool(useCredentialFromEnvironmentFromEnv)
-		if err != nil {
-			return err
-		}
-		cfg.UseCredentialFromEnvironment = shouldUse
-	}
-	useManagedIdentityExtensionFromEnv := os.Getenv("ARM_USE_MANAGED_IDENTITY_EXTENSION")
-	if len(useManagedIdentityExtensionFromEnv) > 0 {
-		shouldUse, err := strconv.ParseBool(useManagedIdentityExtensionFromEnv)
-		if err != nil {
-			return err
-		}
-		cfg.UseManagedIdentityExtension = shouldUse
-	}
-	userAssignedIdentityIDFromEnv := os.Getenv("ARM_USER_ASSIGNED_IDENTITY_ID")
-	if userAssignedIdentityIDFromEnv != "" {
-		cfg.UserAssignedIdentityID = userAssignedIdentityIDFromEnv
-	}
-	return nil
 }
 
 // BuildAzureConfig returns a Config object for the Azure clients
 func BuildAzureConfig() (*Config, error) {
-	var err error
 	cfg := &Config{}
-	err = cfg.PrepareConfig()
-	if err != nil {
-		return nil, err
-	}
-	cfg.TrimSpace()
-	setVMType(cfg)
 
-	if err := cfg.validate(); err != nil {
+	if err := cfg.Build(); err != nil {
 		return nil, err
 	}
+	if err := cfg.Default(); err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
-}
-
-func setVMType(cfg *Config) {
-	// Defaulting vmType to vmss.
-	if cfg.VMType == "" {
-		cfg.VMType = vmTypeVMSS
-	}
 }
 
 func (cfg *Config) GetAzureClientConfig(authorizer autorest.Authorizer, env *azure.Environment) *ClientConfig {
@@ -165,22 +101,35 @@ func (cfg *Config) GetAzureClientConfig(authorizer autorest.Authorizer, env *azu
 	return azClientConfig
 }
 
-// TrimSpace removes all leading and trailing white spaces.
-func (cfg *Config) TrimSpace() {
-	cfg.Cloud = strings.TrimSpace(cfg.Cloud)
-	cfg.TenantID = strings.TrimSpace(cfg.TenantID)
-	cfg.SubscriptionID = strings.TrimSpace(cfg.SubscriptionID)
-	cfg.ResourceGroup = strings.TrimSpace(cfg.ResourceGroup)
-	cfg.VMType = strings.TrimSpace(cfg.VMType)
-	cfg.AADClientID = strings.TrimSpace(cfg.AADClientID)
-	cfg.AADClientSecret = strings.TrimSpace(cfg.AADClientSecret)
-	cfg.AADClientCertPath = strings.TrimSpace(cfg.AADClientCertPath)
-	cfg.AADClientCertPassword = strings.TrimSpace(cfg.AADClientCertPassword)
-	cfg.ClusterName = strings.TrimSpace(cfg.ClusterName)
-	cfg.NodeResourceGroup = strings.TrimSpace(cfg.NodeResourceGroup)
+func (cfg *Config) Build() error {
+	cfg.Cloud = strings.TrimSpace(os.Getenv("ARM_CLOUD"))
+	cfg.Location = strings.TrimSpace(os.Getenv("LOCATION"))
+	cfg.ResourceGroup = strings.TrimSpace(os.Getenv("ARM_RESOURCE_GROUP"))
+	cfg.TenantID = strings.TrimSpace(os.Getenv("ARM_TENANT_ID"))
+	cfg.SubscriptionID = strings.TrimSpace(os.Getenv("ARM_SUBSCRIPTION_ID"))
+	cfg.VMType = strings.ToLower(os.Getenv("ARM_VM_TYPE"))
+	cfg.ClusterName = strings.TrimSpace(os.Getenv("AZURE_CLUSTER_NAME"))
+	cfg.NodeResourceGroup = strings.TrimSpace(os.Getenv("AZURE_NODE_RESOURCE_GROUP"))
+	cfg.ArmAuthMethod = strings.TrimSpace(os.Getenv("ARM_AUTH_METHOD"))
+	cfg.KubeletIdentityClientID = strings.TrimSpace(os.Getenv("ARM_KUBELET_IDENTITY_CLIENT_ID"))
+
+	return nil
 }
 
-func (cfg *Config) validate() error {
+func (cfg *Config) Default() error {
+	// Defaulting vmType to vmss.
+	if cfg.VMType == "" {
+		cfg.VMType = vmTypeVMSS
+	}
+
+	if cfg.ArmAuthMethod == "" {
+		cfg.ArmAuthMethod = authMethodWorkloadIdentity
+	}
+
+	return nil
+}
+
+func (cfg *Config) Validate() error {
 	// Setup fields and validate all of them are not empty
 	fields := []cfgField{
 		{cfg.SubscriptionID, "subscription ID"},
@@ -196,12 +145,8 @@ func (cfg *Config) validate() error {
 		}
 	}
 
-	if cfg.UseManagedIdentityExtension {
-		return nil
-	}
-
-	if cfg.AuthMethod != "" && cfg.AuthMethod != authMethodPrincipal && cfg.AuthMethod != authMethodCLI {
-		return fmt.Errorf("unsupported authorization method: %s", cfg.AuthMethod)
+	if cfg.ArmAuthMethod != authMethodSysMSI && cfg.ArmAuthMethod != authMethodWorkloadIdentity {
+		return fmt.Errorf("unsupported authorization method: %s", cfg.ArmAuthMethod)
 	}
 
 	return nil

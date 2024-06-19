@@ -31,7 +31,7 @@ type StaticParameters struct {
 	GPUImageSHA                    string
 	TenantID                       string
 	SubscriptionID                 string
-	UserAssignedIdentityID         string
+	KubeletIdentityClientID        string
 	Location                       string
 	ResourceGroup                  string
 	ClusterID                      string
