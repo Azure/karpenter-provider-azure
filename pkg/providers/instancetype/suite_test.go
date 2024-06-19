@@ -319,7 +319,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	FContext("Filtering in InstanceType Provider List", func() {
+	Context("Filtering in InstanceType Provider List", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
 		var err error
 		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
@@ -1186,15 +1186,19 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(vm.Zones).To(BeEmpty())
 		})
 		It("should support provisioning non-zonal instance types in zonal regions", func() {
+			nonZonalInstanceType := "Standard_NC6s_v3"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			pod := coretest.UnschedulablePod(coretest.PodOptions{
-				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: "Standard_A0"},
-			})
-			ExpectProvisioned(ctx, env.Client, clusterNonZonal, cloudProviderNonZonal, coreProvisionerNonZonal, pod)
-			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			pod := coretest.UnschedulablePod(coretest.PodOptions{
+				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: nonZonalInstanceType},
+			})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels["node.kubernetes.io/instance-type"]).To(Equal(nonZonalInstanceType))
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Zones).To(BeEmpty())
 		})
 	})
