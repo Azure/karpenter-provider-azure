@@ -147,9 +147,9 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
 	// If an offering is non-zonal, the availability zones will be empty.
 	if hasZonalSupport(region) {
-		keys := lo.Keys(sku.AvailabilityZones(region))
-		if len(keys) > 0 {
-			return sets.New(lo.Map(keys, func(zone string, _ int) string {
+		skuZones := lo.Keys(sku.AvailabilityZones(region))
+		if len(skuZones) > 0 {
+			return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
 				return fmt.Sprintf("%s-%s", region, zone)
 			})...)
 		}
