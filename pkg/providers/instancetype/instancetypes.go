@@ -32,6 +32,7 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -68,18 +69,21 @@ type Provider struct {
 	cm *pretty.ChangeMonitor
 	// instanceTypesSeqNum is a monotonically increasing change counter used to avoid the expensive hashing operation on instance types
 	instanceTypesSeqNum uint64
+
+	vmMemoryOverheadPercent float64
 }
 
-func NewProvider(region string, cache *cache.Cache, skuClient skuclient.SkuClient, pricingProvider *pricing.Provider, offeringsCache *kcache.UnavailableOfferings) *Provider {
+func NewProvider(opts *options.Options, cache *cache.Cache, skuClient skuclient.SkuClient, pricingProvider *pricing.Provider, offeringsCache *kcache.UnavailableOfferings) *Provider {
 	return &Provider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
-		region:               region,
-		skuClient:            skuClient,
-		pricingProvider:      pricingProvider,
-		unavailableOfferings: offeringsCache,
-		cache:                cache,
-		cm:                   pretty.NewChangeMonitor(),
-		instanceTypesSeqNum:  0,
+		region:                  opts.Location,
+		skuClient:               skuClient,
+		pricingProvider:         pricingProvider,
+		unavailableOfferings:    offeringsCache,
+		cache:                   cache,
+		cm:                      pretty.NewChangeMonitor(),
+		instanceTypesSeqNum:     0,
+		vmMemoryOverheadPercent: opts.VMMemoryOverheadPercent,
 	}
 }
 
@@ -120,7 +124,7 @@ func (p *Provider) List(
 			continue
 		}
 		instanceTypeZones := instanceTypeZones(sku, p.region)
-		instanceType := NewInstanceType(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
+		instanceType := NewInstanceType(sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture, p.vmMemoryOverheadPercent)
 		if len(instanceType.Offerings) == 0 {
 			continue
 		}

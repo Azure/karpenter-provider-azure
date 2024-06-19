@@ -64,9 +64,9 @@ func HashFromVM(vm *armcompute.VirtualMachine) (string, error) {
 }
 
 // HashFromNodeClaim calculates an inplace update hash from the specified machine and options
-func HashFromNodeClaim(options *options.Options, _ *v1beta1.NodeClaim) (string, error) {
+func HashFromNodeClaim(opts *options.Options, _ *v1beta1.NodeClaim) (string, error) {
 	hashStruct := &inPlaceUpdateFields{
-		Identities: sets.New(options.NodeIdentities...),
+		Identities: sets.New(opts.NodeIdentities...),
 	}
 
 	return hashStruct.CalculateHash()

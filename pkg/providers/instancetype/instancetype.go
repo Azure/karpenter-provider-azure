@@ -17,7 +17,6 @@ limitations under the License.
 package instancetype
 
 import (
-	"context"
 	"fmt"
 	"math"
 
@@ -32,8 +31,6 @@ import (
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
@@ -118,13 +115,13 @@ func (t TaxBrackets) Calculate(amount float64) float64 {
 	return tax
 }
 
-func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSizeType, kc *corev1beta1.KubeletConfiguration, region string,
-	offerings cloudprovider.Offerings, nodeClass *v1alpha2.AKSNodeClass, architecture string) *cloudprovider.InstanceType {
+func NewInstanceType(sku *skewer.SKU, vmsize *skewer.VMSizeType, kc *corev1beta1.KubeletConfiguration, region string,
+	offerings cloudprovider.Offerings, nodeClass *v1alpha2.AKSNodeClass, architecture string, vmMemoryOverheadPercent float64) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(sku, vmsize, architecture, offerings, region),
 		Offerings:    offerings,
-		Capacity:     computeCapacity(ctx, sku, kc, nodeClass),
+		Capacity:     computeCapacity(sku, kc, nodeClass, vmMemoryOverheadPercent),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
 			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
 			SystemReserved:    SystemReservedResources(),
@@ -263,10 +260,10 @@ func getArchitecture(architecture string) string {
 	return architecture // unrecognized
 }
 
-func computeCapacity(ctx context.Context, sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration, nodeClass *v1alpha2.AKSNodeClass) v1.ResourceList {
+func computeCapacity(sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration, nodeClass *v1alpha2.AKSNodeClass, vmMemoryOverheadPercent float64) v1.ResourceList {
 	return v1.ResourceList{
 		v1.ResourceCPU:                    *cpu(sku),
-		v1.ResourceMemory:                 *memory(ctx, sku),
+		v1.ResourceMemory:                 *memory(sku, vmMemoryOverheadPercent),
 		v1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
 		v1.ResourcePods:                   *pods(sku, kc),
 		v1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
@@ -298,11 +295,11 @@ func memoryMiB(sku *skewer.SKU) int64 {
 	return int64(memoryGiB(sku) * 1024)
 }
 
-func memory(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
+func memory(sku *skewer.SKU, vmMemoryOverheadPercent float64) *resource.Quantity {
 	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(memoryGiB(sku))))
 	// Account for VM overhead in calculation
 	memory.Sub(resource.MustParse(fmt.Sprintf("%dMi", int64(math.Ceil(
-		float64(memory.Value())*options.FromContext(ctx).VMMemoryOverheadPercent/1024/1024)))))
+		float64(memory.Value())*vmMemoryOverheadPercent/1024/1024)))))
 	return memory
 }
 

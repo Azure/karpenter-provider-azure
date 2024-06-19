@@ -53,34 +53,20 @@ type Template struct {
 }
 
 type Provider struct {
-	imageFamily            *imagefamily.Resolver
-	imageProvider          *imagefamily.Provider
-	caBundle               *string
-	clusterEndpoint        string
-	tenantID               string
-	subscriptionID         string
-	userAssignedIdentityID string
-	resourceGroup          string
-	location               string
-	vnetGUID               string
+	opts          *options.Options
+	imageFamily   *imagefamily.Resolver
+	imageProvider *imagefamily.Provider
+	caBundle      *string
 }
 
 // TODO: add caching of launch templates
 
-func NewProvider(_ context.Context, imageFamily *imagefamily.Resolver, imageProvider *imagefamily.Provider, caBundle *string, clusterEndpoint string,
-	tenantID, subscriptionID, userAssignedIdentityID, resourceGroup, location, vnetGUID string,
-) *Provider {
+func NewProvider(_ context.Context, opts *options.Options, imageFamily *imagefamily.Resolver, imageProvider *imagefamily.Provider, caBundle *string) *Provider {
 	return &Provider{
-		imageFamily:            imageFamily,
-		imageProvider:          imageProvider,
-		caBundle:               caBundle,
-		clusterEndpoint:        clusterEndpoint,
-		tenantID:               tenantID,
-		subscriptionID:         subscriptionID,
-		userAssignedIdentityID: userAssignedIdentityID,
-		resourceGroup:          resourceGroup,
-		location:               location,
-		vnetGUID:               vnetGUID,
+		opts:          opts,
+		imageFamily:   imageFamily,
+		imageProvider: imageProvider,
+		caBundle:      caBundle,
 	}
 }
 
@@ -108,13 +94,13 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	return launchTemplate, nil
 }
 
-func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass, labels map[string]string) (*parameters.StaticParameters, error) {
+func (p *Provider) getStaticParameters(_ context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass, labels map[string]string) (*parameters.StaticParameters, error) {
 	var arch string = corev1beta1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
 		arch = corev1beta1.ArchitectureArm64
 	}
 	// TODO: make conditional on either Azure CNI Overlay or pod subnet
-	vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
+	vnetLabels, err := p.getVnetInfoLabels(nodeClass)
 	if err != nil {
 		return nil, err
 	}
@@ -130,8 +116,8 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	labels[vnetDataPlaneLabel] = networkDataplaneCilium
 
 	return &parameters.StaticParameters{
-		ClusterName:                    options.FromContext(ctx).ClusterName,
-		ClusterEndpoint:                p.clusterEndpoint,
+		ClusterName:                    p.opts.ClusterName,
+		ClusterEndpoint:                p.opts.ClusterEndpoint,
 		Tags:                           nodeClass.Spec.Tags,
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
@@ -139,17 +125,17 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		GPUNode:                        utils.IsNvidiaEnabledSKU(instanceType.Name),
 		GPUDriverVersion:               utils.GetGPUDriverVersion(instanceType.Name),
 		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),
-		TenantID:                       p.tenantID,
-		SubscriptionID:                 p.subscriptionID,
-		UserAssignedIdentityID:         p.userAssignedIdentityID,
-		ResourceGroup:                  p.resourceGroup,
-		Location:                       p.location,
-		ClusterID:                      options.FromContext(ctx).ClusterID,
-		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
-		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
-		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
-		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
-		SubnetID:                       options.FromContext(ctx).SubnetID,
+		TenantID:                       p.opts.TenantID,
+		SubscriptionID:                 p.opts.SubscriptionID,
+		KubeletIdentityClientID:        p.opts.KubeletIdentityClientID,
+		ResourceGroup:                  p.opts.ResourceGroup,
+		Location:                       p.opts.Location,
+		ClusterID:                      p.opts.ClusterID,
+		APIServerName:                  p.opts.APIServerName,
+		KubeletClientTLSBootstrapToken: p.opts.KubeletClientTLSBootstrapToken,
+		NetworkPlugin:                  p.opts.NetworkPlugin,
+		NetworkPolicy:                  p.opts.NetworkPolicy,
+		SubnetID:                       p.opts.SubnetID,
 	}, nil
 }
 
@@ -178,15 +164,15 @@ func mergeTags(tags ...map[string]string) (result map[string]*string) {
 	})
 }
 
-func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeClass) (map[string]string, error) {
-	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
-	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(options.FromContext(ctx).SubnetID)
+func (p *Provider) getVnetInfoLabels(_ *v1alpha2.AKSNodeClass) (map[string]string, error) {
+	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.SubnetID != nil, lo.FromPtr(nodeClass.Spec.SubnetID), p.opts.SubnetID) when we add VnetSubnetID to the nodeclass
+	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(p.opts.SubnetID)
 	if err != nil {
 		return nil, err
 	}
 	vnetLabels := map[string]string{
 		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
-		vnetGUIDLabel:           p.vnetGUID,
+		vnetGUIDLabel:           p.opts.VnetGUID,
 		vnetPodNetworkTypeLabel: networkModeOverlay,
 	}
 	return vnetLabels, nil

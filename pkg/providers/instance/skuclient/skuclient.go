@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/skewer"
 	klog "k8s.io/klog/v2"
@@ -37,40 +36,20 @@ type SkuClient interface {
 }
 
 type skuClient struct {
-	cfg *auth.Config
-	env *azure.Environment
+	subscriptionID string
+	authManager    *auth.AuthManager
 
 	mu       sync.RWMutex
 	instance compute.ResourceSkusClient
 }
 
-func (sc *skuClient) updateInstance() {
-	sc.mu.RLock()
-	defer sc.mu.RUnlock()
-
-	authorizer, err := auth.NewAuthorizer(sc.cfg, sc.env)
-	if err != nil {
-		klog.V(5).Infof("Error creating authorizer for sku client: %s", err)
-		return
-	}
-
-	azClientConfig := sc.cfg.GetAzureClientConfig(authorizer, sc.env)
-	azClientConfig.UserAgent = auth.GetUserAgentExtension()
-
-	skuClient := compute.NewResourceSkusClient(sc.cfg.SubscriptionID)
-	skuClient.Authorizer = azClientConfig.Authorizer
-	klog.V(5).Infof("Created sku client with authorizer: %v", skuClient)
-
-	sc.instance = skuClient
-}
-
-func NewSkuClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) SkuClient {
+func NewSkuClient(ctx context.Context, subscriptionID string, authManager *auth.AuthManager) (SkuClient, error) {
 	sc := &skuClient{
-		cfg: cfg,
-		env: env,
+		subscriptionID: subscriptionID,
+		authManager:    authManager,
 	}
-	sc.updateInstance()
 
+	sc.updateInstance()
 	go func() {
 		for {
 			select {
@@ -81,7 +60,25 @@ func NewSkuClient(ctx context.Context, cfg *auth.Config, env *azure.Environment)
 			}
 		}
 	}()
-	return sc
+
+	return sc, nil
+}
+
+func (sc *skuClient) updateInstance() {
+	sc.mu.RLock()
+	defer sc.mu.RUnlock()
+
+	updatedSkuClient := compute.NewResourceSkusClient(sc.subscriptionID)
+
+	authorizer, err := sc.authManager.NewAutorestAuthorizer()
+	if err != nil {
+		klog.V(5).Infof("Error creating authorizer for sku client: %s", err)
+		return
+	}
+	updatedSkuClient.Authorizer = authorizer
+
+	klog.V(5).Infof("Created sku client with authorizer: %v", updatedSkuClient)
+	sc.instance = updatedSkuClient
 }
 
 func (sc *skuClient) GetInstance() skewer.ResourceClient {

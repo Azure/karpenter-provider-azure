@@ -26,15 +26,18 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/project"
 )
 
 func NewControllers(ctx context.Context, kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider, instanceProvider *instance.Provider) []controller.Controller {
 	logging.FromContext(ctx).With("version", project.Version).Debugf("discovered version")
+	opts := options.FromContext(ctx)
+
 	controllers := []controller.Controller{
 		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider),
-		inplaceupdate.NewController(kubeClient, instanceProvider),
+		inplaceupdate.NewController(kubeClient, instanceProvider, opts),
 	}
 	return controllers
 }
