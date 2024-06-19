@@ -1,0 +1,23 @@
+apiVersion: karpenter.sh/v1beta1
+kind: NodeClaim
+metadata:
+  name: manual-kaito
+  labels:
+    karpenter.sh/nodepool: kaito
+  annotations:
+    karpenter.sh/do-not-disrupt: "true"
+spec:
+  nodeClassRef:
+    name: default
+    kind: AKSNodeClass
+  taints:
+    - key: "sku"
+      value: "gpu"
+      effect: NoSchedule
+  requirements:
+    - key: "karpenter.sh/nodepool"
+      operator: In
+      values: ["kaito"]
+    - key:  karpenter.azure.com/sku-name
+      operator: In
+      values: ["Standard_NC12s_v3"]
