@@ -11,28 +11,51 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+'
       - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
 
-permissions:
-  contents: read
-
 jobs:
-  publish-images:
+  prepare-variables:
     permissions:
       contents: read
+    runs-on:
+      labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
+    outputs:
+      prerelease: ${{ steps.vars.outputs.prerelease }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        with:
+          fetch-depth: 0
+      - name: 'Set output variables'
+        id: vars
+        run: |
+          PRERELEASE=false
+          if [[ ${{ github.ref }} =~ refs/tags/v[0-9]+.[0-9]+.[0-9]+- ]]; then
+            PRERELEASE=true
+          fi
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+  release:
+    permissions:
+      contents: write # marvinpinto/action-automatic-releases@v1.2.1
       id-token: write # This is required for requesting the JWT
     runs-on:
       labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
+    needs: prepare-variables
     steps:
     - name: Harden Runner
       uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
       with:
         egress-policy: audit
-
     - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       with:
         fetch-depth: 0
-        
+    - name: Create GitHub Release
+      uses: marvinpinto/action-automatic-releases@919008cf3f741b179569b7a6fb4d8860689ab7f0 # v1.2.1
+      with:
+        repo_token: '${{ secrets.GITHUB_TOKEN }}'
+        prerelease: ${{ needs.prepare-variables.outputs.prerelease }}
     - uses: ./.github/actions/install-deps
-  
     - name: Build and publish image
       run: |
         az login --identity
