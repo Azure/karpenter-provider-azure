@@ -146,10 +146,13 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
 	// If an offering is non-zonal, the availability zones will be empty.
-	if hasZonalSupport(region) && sku.AvailabilityZones(region) != nil {
-		return sets.New(lo.Map(lo.Keys(sku.AvailabilityZones(region)), func(zone string, _ int) string {
-			return fmt.Sprintf("%s-%s", region, zone)
-		})...)
+	if hasZonalSupport(region) {
+		keys := lo.Keys(sku.AvailabilityZones(region))
+		if len(keys) > 0 {
+			return sets.New(lo.Map(keys, func(zone string, _ int) string {
+				return fmt.Sprintf("%s-%s", region, zone)
+			})...)
+		}
 	}
 
 	return sets.New("") // empty string means non-zonal offering
