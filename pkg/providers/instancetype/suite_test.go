@@ -1199,6 +1199,10 @@ var _ = Describe("InstanceType Provider", func() {
 
 			node := ExpectScheduled(ctx, env.Client, pod)
 			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, ""))
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Zones).To(BeEmpty())
 		})
 	})
 })
