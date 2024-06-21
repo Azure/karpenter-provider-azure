@@ -34,7 +34,7 @@ controller:
       value: ${AZURE_SUBSCRIPTION_ID}
     - name: LOCATION
       value: ${AZURE_LOCATION}
-    # settings for managed workload ideneity
+    # settings for managed workload identity
     - name: ARM_USE_CREDENTIAL_FROM_ENVIRONMENT
       value: "true"
     - name: ARM_USE_MANAGED_IDENTITY_EXTENSION

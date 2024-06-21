@@ -25,6 +25,7 @@ import (
 	"text/template"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
@@ -103,6 +104,7 @@ type NodeBootstrapVariables struct {
 	KubernetesVersion                 string   // ?   cluster/node pool specific, derived from user input
 	HyperkubeURL                      string   // -   should be unnecessary
 	KubeBinaryURL                     string   // -   necessary only for non-cached versions / static-ish
+	CredentialProviderDownloadURL     string   // -	  necessary only for non-cached versions / static-ish
 	CustomKubeBinaryURL               string   // -   unnecessary
 	KubeproxyURL                      string   // -   should be unnecessary or bug
 	APIServerPublicKey                string   // -   unique per cluster, actually not sure best way to extract? [should not be needed on agent nodes]
@@ -238,12 +240,12 @@ var (
 	// source note: unique per nodepool. partially user-specified, static, and RP-generated
 	// removed --image-pull-progress-deadline=30m  (not in 1.24?)
 	// removed --network-plugin=cni (not in 1.24?)
+	// removed --azure-container-registry-config (not in 1.30)
 	kubeletFlagsBase = map[string]string{
 		"--address":                           "0.0.0.0",
 		"--anonymous-auth":                    "false",
 		"--authentication-token-webhook":      "true",
 		"--authorization-mode":                "Webhook",
-		"--azure-container-registry-config":   "/etc/kubernetes/azure.json",
 		"--cgroups-per-qos":                   "true",
 		"--client-ca-file":                    "/etc/kubernetes/certs/ca.crt",
 		"--cloud-config":                      "/etc/kubernetes/azure.json",
@@ -384,7 +386,7 @@ var (
 		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
 		ContainerdConfigContent:         "",                                                                  // kd
 		IsKata:                          false,                                                               // n
-
+		NeedsCgroupV2:                   true,                                                                // s only static for karpenter
 	}
 )
 
@@ -436,7 +438,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeBinaryURL = kubeBinaryURL(a.KubernetesVersion, a.Arch)
 	nbv.VNETCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
 	nbv.CNIPluginsURL = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
-
 	// calculated values
 	nbv.EnsureNoDupePromiscuousBridge = nbv.NeedsContainerd && nbv.NetworkPlugin == "kubenet" && nbv.NetworkPolicy != "calico"
 	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
@@ -448,7 +449,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
-	nbv.NeedsCgroupV2 = true
+
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
@@ -462,6 +463,15 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), ",")
 
+	// Assign Per K8s version kubelet flags
+	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
+	if utils.UseOOTCredential(minorVersion) {
+		nbv.CredentialProviderDownloadURL = fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", nbv.KubernetesVersion, nbv.KubernetesVersion)
+		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
+		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
+	} else { // Versions Less than 1.30
+		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
+	}
 	// merge and stringify taints
 	kubeletFlags := lo.Assign(kubeletFlagsBase)
 	if len(a.Taints) > 0 {
@@ -469,8 +479,8 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlags = lo.Assign(kubeletFlags, map[string]string{"--register-with-taints": strings.Join(taintStrs, ",")})
 	}
 
-	machineKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
-	kubeletFlags = lo.Assign(kubeletFlags, machineKubeletConfig)
+	nodeclaimKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
+	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
 
 	// striginify kubelet flags (including taints)
 	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
