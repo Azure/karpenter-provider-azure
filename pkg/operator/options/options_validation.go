@@ -31,6 +31,7 @@ func (o Options) Validate() error {
 		o.validateRequiredFields(),
 		o.validateEndpoint(),
 		o.validateVMMemoryOverheadPercent(),
+		o.validateNetworkDataplane(),
 		o.validateVnetSubnetID(),
 		validate.Struct(o),
 	)
@@ -44,6 +45,12 @@ func (o Options) validateVnetSubnetID() error {
 	return nil
 }
 
+func (o Options) validateNetworkDataplane() error {
+	if o.NetworkDataplane != "azure" && o.NetworkDataplane != "cilium" {
+		return fmt.Errorf("network dataplane %s is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')", o.NetworkDataplane)
+	}
+	return nil
+}
 func (o Options) validateEndpoint() error {
 	if o.ClusterEndpoint == "" {
 		return nil
