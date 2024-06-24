@@ -37,7 +37,7 @@ jobs:
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
   release:
     permissions:
-      contents: write # marvinpinto/action-automatic-releases@v1.2.1
+      contents: write # softprops/action-gh-release@v2
       id-token: write # This is required for requesting the JWT
     runs-on:
       labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
@@ -51,9 +51,9 @@ jobs:
       with:
         fetch-depth: 0
     - name: Create GitHub Release
-      uses: marvinpinto/action-automatic-releases@919008cf3f741b179569b7a6fb4d8860689ab7f0 # v1.2.1
+      uses: softprops/action-gh-release@v2
       with:
-        repo_token: '${{ secrets.GITHUB_TOKEN }}'
+        token: '${{ secrets.GITHUB_TOKEN }}'
         prerelease: ${{ needs.prepare-variables.outputs.prerelease }}
     - uses: ./.github/actions/install-deps
     - name: Build and publish image
