@@ -37,7 +37,7 @@ type expireEarlyTokenCredential struct {
 	cred azcore.TokenCredential
 }
 
-func NewTokenWrapper(cred azcore.TokenCredential) *expireEarlyTokenCredential {
+func NewTokenWrapper(cred azcore.TokenCredential) azcore.TokenCredential {
 	return &expireEarlyTokenCredential{
 		cred: cred,
 	}
