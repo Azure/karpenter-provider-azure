@@ -28,22 +28,27 @@ import (
 	"knative.dev/pkg/logging"
 )
 
-type TokenWrapper struct {
+
+// expireEarlyTokenCredential is a wrapper around the azcore.TokenCredential that 
+// returns an earlier ExpiresOn timestamp to avoid conditions like clockSkew, or a race 
+// condition during polling. 
+// See: https://github.com/hashicorp/terraform-provider-azurerm/issues/20834 for more details
+type expireEarlyTokenCredential struct {
 	cred azcore.TokenCredential
 }
 
-func NewTokenWrapper(cred azcore.TokenCredential) *TokenWrapper {
-	return &TokenWrapper{
+func NewTokenWrapper(cred azcore.TokenCredential) *expireEarlyTokenCredential {
+	return &expireEarlyTokenCredential{
 		cred: cred,
 	}
 }
 
-func (w *TokenWrapper) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+func (w *expireEarlyTokenCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	token, err := w.cred.GetToken(ctx, options)
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}
-	logging.FromContext(ctx).Info("refreshing MDAL Token")
+	logging.FromContext(ctx).Debug("adjusting token ExpiresOn")
 	token.ExpiresOn = time.Now().Add(2 * time.Hour)
 	return token, nil
 }
