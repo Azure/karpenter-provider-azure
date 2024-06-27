@@ -1,0 +1,28 @@
+# This Github action is the release trigger for Azure/karpenter-provider-azure
+# It will auto-generate the next semantic release version and tag the git ref
+
+name: Release Trigger
+on:
+    workflow_dispatch:
+
+jobs:
+  generate-sem-ver:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x' # semantic-release requires Node version 20.8.1 or higher
+      - name: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx semantic-release@18
