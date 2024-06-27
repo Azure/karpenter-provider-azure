@@ -41,6 +41,7 @@ jobs:
       id-token: write # This is required for requesting the JWT
     runs-on:
       labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
+    environment: production
     needs: prepare-variables
     steps:
     - name: Harden Runner
