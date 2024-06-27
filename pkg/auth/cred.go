@@ -48,13 +48,13 @@ func (w *expireEarlyTokenCredential) GetToken(ctx context.Context, options polic
 		return azcore.AccessToken{}, err
 	}
 
-	logging.FromContext(ctx).Debug("adjusting token ExpiresOn")
 	twoHoursFromNow := time.Now().Add(2 * time.Hour)
 	// IMDS may have the MI token already, and have an expiration of less than 2h when we receive the token. We don't want to set that value beyond the ExpiresOn time and potentially miss a refresh
 	// So we just return earlier here. See discussion here: https://github.com/Azure/karpenter-provider-azure/pull/391/files#r1648633051
 	if token.ExpiresOn.Before(twoHoursFromNow) {
 		return token, nil
 	}
+	logging.FromContext(ctx).Debug("adjusting token ExpiresOn")
 	// If the token expires in more than 2 hours, this means we are taking in a new token with a fresh 24h expiration time or one already in the cache that hasn't been modified by us, so we want to set that to two hours so
 	// we can refresh it early to avoid the polling bugs mentioned in the above issue
 	token.ExpiresOn = twoHoursFromNow
