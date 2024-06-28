@@ -45,7 +45,7 @@ e2etests: ## Run the e2e suite against your local cluster
 	# -count 1: prevents caching
 	# -timeout: If a test binary runs longer than TEST_TIMEOUT, panic
 	# -v: verbose output
-	cd test && CLUSTER_NAME=${CLUSTER_NAME} go test \
+	cd test && CLUSTER_NAME=${CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} go test \
 		-p 1 \
 		-count 1 \
 		-timeout ${TEST_TIMEOUT} \
