@@ -46,5 +46,3 @@ else
     echo "Assigning AcrPull role to the managed identity of the node resource group ..."
     az role assignment create --assignee "$ASSIGNEE" --role AcrPull --scope "$ACR_ID"
 fi
-
-echo "Custom ACR configured for Karpenter managed nodes."
