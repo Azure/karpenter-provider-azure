@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-
 if [ "$#" -ne 3 ]; then
     echo "Usage: $0 <resource-group> <acr-name> <aks-cluster-name>"
     exit 1
