@@ -18,5 +18,3 @@ ACR_ID=$(az acr show --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP_NAME" 
 
 echo "Assigning AcrPull role to the managed identity of the node resource group ..."
 az role assignment create --assignee "$(az aks show --resource-group "$RESOURCE_GROUP_NAME" --name "$AKS_CLUSTER_NAME" --query identityProfile.kubeletidentity.clientId -o tsv)" --role AcrPull --scope "$ACR_ID"
-
-echo "Custom ACR configured for Karpenter managed nodes."
