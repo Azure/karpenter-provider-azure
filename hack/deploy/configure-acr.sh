@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOG_FILE="configure-acr.log"
-exec > >(tee -i $LOG_FILE)
-exec 2>&1
 
 if [ "$#" -ne 3 ]; then
     echo "Usage: $0 <resource-group> <acr-name> <aks-cluster-name>"
