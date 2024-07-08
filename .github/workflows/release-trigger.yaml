@@ -24,5 +24,7 @@ jobs:
         with:
           node-version: '20.x' # semantic-release requires Node version 20.8.1 or higher
       - name: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npx semantic-release@18
