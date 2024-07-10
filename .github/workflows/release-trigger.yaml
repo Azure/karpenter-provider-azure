@@ -28,5 +28,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm install conventional-changelog-conventionalcommits -D
-          npx semantic-release@18 || true
-          cat /home/runner/work/karpenter-provider-azure/karpenter-provider-azure/noop.js
+          npx semantic-release@18 --input-type=module
