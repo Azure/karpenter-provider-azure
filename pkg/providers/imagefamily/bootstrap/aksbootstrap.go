@@ -466,7 +466,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	// Assign Per K8s version kubelet flags
 	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
 	if utils.UseOOTCredential(minorVersion) {
-		nbv.CredentialProviderDownloadURL = fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", nbv.KubernetesVersion, nbv.KubernetesVersion)
+		nbv.CredentialProviderDownloadURL = fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/v%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", nbv.KubernetesVersion, nbv.KubernetesVersion)
 		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
 		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
 	} else { // Versions Less than 1.30
