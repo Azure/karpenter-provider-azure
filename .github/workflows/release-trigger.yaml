@@ -28,4 +28,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm install conventional-changelog-conventionalcommits -D
-          npx -- semantic-release@18 --input-type=module
+          npx semantic-release@18
