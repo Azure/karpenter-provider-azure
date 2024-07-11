@@ -1,6 +1,5 @@
 {
-  "branches": ["main", "charliedmcb/test-release-branch"],
-  "dryRun": true,
+  "branches": ["main"],
   "plugins": [
     [
       "@semantic-release/commit-analyzer",
@@ -45,10 +44,8 @@
     [
       "@semantic-release/github",
       {
+        "draftRelease": true,
         "successComment": false,
-        "failComment": false,
-        "failTitle": false,
-        "labels": false,
         "releasedLabels": false
       }
     ]
