@@ -8,7 +8,9 @@ on:
 jobs:
   generate-sem-ver:
     permissions:
-      contents: read
+      contents: write
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-latest
     steps:
       - name: Harden Runner
@@ -22,5 +24,11 @@ jobs:
         with:
           node-version: '20.x' # semantic-release requires Node version 20.8.1 or higher
       - name: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          npx semantic-release@18
+          npm install conventional-changelog-conventionalcommits -D
+          # Using the current latest major version of semantic-release v24, to
+          # prevent automated breaking changes, but still pickup features and patches ASAP.
+          # Will need to adopt new major versions as they are released.
+          npx semantic-release@24
