@@ -28,4 +28,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm install conventional-changelog-conventionalcommits -D
+          # Using the current latest major version of semantic-release v24, to
+          # prevent automated breaking changes, but still pickup features and patches ASAP.
+          # Will need to adopt new major versions as they are released.
           npx semantic-release@24
