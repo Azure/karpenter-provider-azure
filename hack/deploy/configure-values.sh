@@ -16,7 +16,7 @@ AZURE_RESOURCE_GROUP=$2
 KARPENTER_SERVICE_ACCOUNT_NAME=$3
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=$4
 
-AKS_JSON=$(az aks show --name "$CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP")
+AKS_JSON=$(az aks show --name "$CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP" -o json)
 AZURE_LOCATION=$(jq -r ".location" <<< "$AKS_JSON")
 AZURE_RESOURCE_GROUP_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
 
@@ -31,7 +31,7 @@ SSH_PUBLIC_KEY="$(cat ~/.ssh/id_rsa.pub) azureuser"
 
 if [[ ! -v VNET_SUBNET_ID ]]; then
     # first subnet of first VNet found
-    VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" | jq -r ".[0]")
+    VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" -o json | jq -r ".[0]")
     VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
 fi
 
