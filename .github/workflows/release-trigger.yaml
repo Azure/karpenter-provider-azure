@@ -1,0 +1,34 @@
+# This Github action is the release trigger for Azure/karpenter-provider-azure
+# It will auto-generate the next semantic release version and tag the git ref
+
+name: Release Trigger
+on:
+    workflow_dispatch:
+
+jobs:
+  generate-sem-ver:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: '20.x' # semantic-release requires Node version 20.8.1 or higher
+      - name: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm install conventional-changelog-conventionalcommits -D
+          # Using the current latest major version of semantic-release v24, to
+          # prevent automated breaking changes, but still pickup features and patches ASAP.
+          # Will need to adopt new major versions as they are released.
+          npx semantic-release@24
