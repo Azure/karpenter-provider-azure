@@ -58,7 +58,3 @@ func MkVMID(resourceGroupName string, vmName string) string {
 	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s"
 	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
 }
-
-func UseOOTCredential(minorK8sVersion uint64) bool {
-	return minorK8sVersion >= 30
-}
