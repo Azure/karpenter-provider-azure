@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -342,7 +343,6 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should not include confidential SKUs", func() {
 			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_DC8s_v3"))))
 		})
-
 	})
 	Context("Filtering GPU SKUs ProviderList(AzureLinux)", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
@@ -1091,6 +1091,44 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("Bootstrap", func() {
+		It("should gate kubelet flags that are dependent on kubelet version", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			customData := *vm.Properties.OSProfile.CustomData
+			Expect(customData).ToNot(BeNil())
+			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+			Expect(err).To(Succeed())
+			decodedString := string(decodedBytes[:])
+			Expect(decodedString).To(ContainSubstring("CREDENTIAL_PROVIDER_DOWNLOAD_URL"))
+			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+
+			// TODO: (bsoghigian) leverage the helpers from the azure cni pr once they get in instead for testing kubelet flags
+			// NOTE: env.Version may differ from the version we get for the apiserver
+			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
+			Expect(err).To(BeNil())
+			parsed := semver.MustParse(k8sVersion)
+			if utils.UseOOTCredential(parsed.Minor) {
+				Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
+				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
+				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
+				Expect(decodedString).To(ContainSubstring(
+					fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", parsed.String(), parsed.String()),
+				))
+
+			} else {
+				Expect(kubeletFlags).To(ContainSubstring("--azure-container-registry-config"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
+			}
+		})
+	})
+
 	Context("LoadBalancer", func() {
 		resourceGroup := "test-resourceGroup"
 
@@ -1145,6 +1183,25 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Zones).To(BeEmpty())
+		})
+		It("should support provisioning non-zonal instance types in zonal regions", func() {
+			coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_NC6s_v3"},
+				}})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, ""))
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Zones).To(BeEmpty())
 		})
 	})

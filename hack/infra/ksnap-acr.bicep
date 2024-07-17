@@ -15,10 +15,11 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
 
 var schedule = '0 1 * * Tue' // 1am UTC every Tuesday
 
+// --untagged appears to be broken: https://github.com/Azure/acr-cli/issues/131
 var purgeOldArtifacts = '''
 version: v1.1.0
 steps:
-- cmd: acr purge --filter 'karpenter/snapshot/.*:.*' --ago 30d --untagged
+- cmd: acr purge --filter 'karpenter/snapshot/.*:.*' --ago 30d
   disableWorkingDirectoryOverride: true
   timeout: 3600
 '''

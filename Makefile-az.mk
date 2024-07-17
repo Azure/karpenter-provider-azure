@@ -34,7 +34,8 @@ az-mkrg: ## Create resource group
 	fi
 
 az-mkacr: az-mkrg ## Create test ACR
-	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --sku Basic --admin-enabled -o none
+	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) \
+		--sku Basic --admin-enabled -o none
 	az acr login  --name $(AZURE_ACR_NAME)
 
 az-acrimport: ## Imports an image to an acr registry
