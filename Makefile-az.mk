@@ -24,6 +24,16 @@ az-all-user:	    az-login                        az-mkaks-user                  
 # TODO: az-all-savm case is not currently built to support workload identity, need to re-evaluate
 az-all-savm:        az-login                        az-mkaks-savm                                 az-perm-savm                      az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
+install-tools: az-tool ## install tools to create a local developer environment
+	./hack/devlocalenv.sh
+
+az-tool: az-login
+	if test -z "$(shell which az)"; then \
+		curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash; \
+	fi
+	az extension add --name aks-preview; \
+	az feature register --namespace "Microsoft.ContainerService" --name "NodeAutoProvisioningPreview"; \
+
 az-login: ## Login into Azure
 	az account show -o none || az login
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
