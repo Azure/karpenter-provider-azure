@@ -17,7 +17,7 @@ data:
       "level": "{{ .Values.logConfig.logLevel.global }}",
       "development": false,
       "disableStacktrace": true,
-      "disableCaller": true,
+      "disableCaller": {{ .Values.logConfig.disableCaller }},
       "sampling": {
         "initial": 100,
         "thereafter": 100
@@ -33,7 +33,8 @@ data:
         "messageKey": "message",
         "stacktraceKey": "stacktrace",
         "levelEncoder": "capital",
-        "timeEncoder": "iso8601"
+        "timeEncoder": "iso8601",
+        "callerEncoder": "full"
       }
     }
   loglevel.controller: {{ or .Values.controller.logLevel .Values.logConfig.logLevel.controller }}
