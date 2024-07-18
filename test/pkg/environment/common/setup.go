@@ -55,6 +55,10 @@ var (
 		&schedulingv1.PriorityClass{},
 		&v1.Node{},
 		&corev1beta1.NodeClaim{},
+
+		// AKSNodeClass here breaks provider separation
+		// but may help with cascading foreground cleanup
+		&v1alpha2.AKSNodeClass{},
 	}
 )
 
@@ -128,7 +132,9 @@ func (env *Environment) CleanupObjects(cleanableObjects ...client.Object) {
 				// are deleting so that we avoid getting client-side throttled
 				workqueue.ParallelizeUntil(env, 50, len(metaList.Items), func(i int) {
 					defer GinkgoRecover()
-					g.Expect(client.IgnoreNotFound(env.Client.Delete(env, &metaList.Items[i], client.PropagationPolicy(metav1.DeletePropagationForeground)))).To(Succeed())
+					g.Expect(client.IgnoreNotFound(env.Client.Delete(env, &metaList.Items[i],
+						client.PropagationPolicy(metav1.DeletePropagationForeground),
+						&client.DeleteOptions{GracePeriodSeconds: lo.ToPtr(int64(0))}))).To(Succeed())
 				})
 				// If the deletes eventually succeed, we should have no elements here at the end of the test
 				g.Expect(env.Client.List(env, metaList, client.HasLabels([]string{test.DiscoveryLabel}), client.Limit(1))).To(Succeed())
