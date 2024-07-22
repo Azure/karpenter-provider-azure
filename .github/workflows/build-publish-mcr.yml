@@ -3,56 +3,33 @@
 
 name: Build and publish to MCR
 on:
-  workflow_dispatch:
-    inputs:
-      releaseTag:
-        description: 'Release tag to publish, defaults to the latest one'
-        type: string
+  push:
+    # Only release on supported semantic version tagging e.g. v0.0.1-rc.0
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
 
 permissions:
   contents: read
 
 jobs:
-  prepare-variables:
-    runs-on:
-      labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
-    outputs:
-      release_tag: ${{ steps.vars.outputs.release_tag }}
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
-        with:
-          egress-policy: audit
-
-      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
-        with:
-          fetch-depth: 0
-      - name: 'Set output variables'
-        id: vars
-        run: |
-          RELEASE_TAG=${{ inputs.releaseTag }}
-          if [ -z "$RELEASE_TAG" ]; then
-            RELEASE_TAG="$(git describe --tags "$(git rev-list --tags --max-count=1)")"
-            echo "The user input release tag is empty, will use the latest tag $RELEASE_TAG."
-          fi
-          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-
   publish-images:
     permissions:
       contents: read
       id-token: write # This is required for requesting the JWT
     runs-on:
       labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
-    needs: prepare-variables
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+      uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # v2.8.1
       with:
         egress-policy: audit
 
-    - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
-        ref: ${{ needs.prepare-variables.outputs.release_tag }}
+        fetch-depth: 0
         
     - uses: ./.github/actions/install-deps
   
