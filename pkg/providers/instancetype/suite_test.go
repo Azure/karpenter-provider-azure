@@ -27,7 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -53,6 +52,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -343,7 +343,6 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should not include confidential SKUs", func() {
 			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_DC8s_v3"))))
 		})
-
 	})
 	Context("Filtering GPU SKUs ProviderList(AzureLinux)", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
@@ -1108,37 +1107,21 @@ var _ = Describe("InstanceType Provider", func() {
 			decodedString := string(decodedBytes[:])
 			Expect(decodedString).To(ContainSubstring("CREDENTIAL_PROVIDER_DOWNLOAD_URL"))
 			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
-			parseKubeletFlags := func(flags string) map[string]string {
-				flagMap := make(map[string]string)
-				flagList := strings.Split(flags, " --")
-				for _, flag := range flagList {
-					parts := strings.SplitN(flag, "=", 2)
-					if len(parts) == 2 {
-						flagMap["--"+parts[0]] = parts[1]
-					}
-				}
-				return flagMap
-			}
 
 			// TODO: (bsoghigian) leverage the helpers from the azure cni pr once they get in instead for testing kubelet flags
-			flagMap := parseKubeletFlags(kubeletFlags)
 			// NOTE: env.Version may differ from the version we get for the apiserver
 			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
 			Expect(err).To(BeNil())
-			parsed := semver.MustParse(k8sVersion)
-
-			if utils.UseOOTCredential(parsed.Minor) {
-				Expect(flagMap).ToNot(HaveKey("--azure-container-registry-config"))
-				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-config", "/var/lib/kubelet/credential-provider-config.yaml"))
-				Expect(flagMap).To(HaveKeyWithValue("--image-credential-provider-bin-dir", "/var/lib/kubelet/credential-provider"))
-				Expect(decodedString).To(ContainSubstring(
-					fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", parsed.String(), parsed.String()),
-				))
-
+			crendetialProviderURL := bootstrap.CredentialProviderURL(k8sVersion, "amd64")
+			if crendetialProviderURL != "" {
+				Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
+				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
+				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
+				Expect(decodedString).To(ContainSubstring(crendetialProviderURL))
 			} else {
-				Expect(flagMap).To(HaveKey("--azure-container-registry-config"))
-				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-config"))
-				Expect(flagMap).ToNot(HaveKey("--image-credential-provider-bin-dir"))
+				Expect(kubeletFlags).To(ContainSubstring("--azure-container-registry-config"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
 			}
 		})
 	})
@@ -1197,6 +1180,25 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Expect(azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Zones).To(BeEmpty())
+		})
+		It("should support provisioning non-zonal instance types in zonal regions", func() {
+			coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_NC6s_v3"},
+				}})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, ""))
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Zones).To(BeEmpty())
 		})
 	})

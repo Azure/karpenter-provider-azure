@@ -112,7 +112,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	if err != nil {
 		return nil, err
 	}
-
+	cred = auth.NewTokenWrapper(cred)
 	opts := armopts.DefaultArmOpts()
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
