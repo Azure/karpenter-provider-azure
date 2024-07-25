@@ -420,6 +420,28 @@ func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
 	return fmt.Sprintf("%s/kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
 }
 
+// CredentialProviderURL returns the URL for OOT credential provider,
+// or an empty string if OOT provider is not to be used
+func CredentialProviderURL(kubernetesVersion, arch string) string {
+	minorVersion := semver.MustParse(kubernetesVersion).Minor
+	if minorVersion < 30 { // use from 1.30; 1.29 supports it too, but we have not fully tested it with Karpenter
+		return ""
+	}
+
+	// credential provider has its own release outside of k8s version, and there'll be one credential provider binary for each k8s release,
+	// as credential provider release goes with cloud-provider-azure, not every credential provider release will be picked up unless
+	// there are CVE or bug fixes.
+	credentialProviderVersion := "1.29.2"
+	switch minorVersion {
+	case 29:
+		credentialProviderVersion = "1.29.2"
+	case 30:
+		credentialProviderVersion = "1.30.0"
+	}
+
+	return fmt.Sprintf("%s/cloud-provider-azure/v%s/binaries/azure-acr-credential-provider-linux-%s-v%s.tar.gz", globalAKSMirror, credentialProviderVersion, arch, credentialProviderVersion)
+}
+
 func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeCACrt = *a.CABundle
 	nbv.APIServerName = a.APIServerName
@@ -464,9 +486,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	}), ",")
 
 	// Assign Per K8s version kubelet flags
-	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
-	if utils.UseOOTCredential(minorVersion) {
-		nbv.CredentialProviderDownloadURL = fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", nbv.KubernetesVersion, nbv.KubernetesVersion)
+	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
+	if credentialProviderURL != "" { // use OOT credential provider
+		nbv.CredentialProviderDownloadURL = credentialProviderURL
 		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
 		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
 	} else { // Versions Less than 1.30

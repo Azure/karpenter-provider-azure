@@ -27,7 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -53,6 +52,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -1112,15 +1112,12 @@ var _ = Describe("InstanceType Provider", func() {
 			// NOTE: env.Version may differ from the version we get for the apiserver
 			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
 			Expect(err).To(BeNil())
-			parsed := semver.MustParse(k8sVersion)
-			if utils.UseOOTCredential(parsed.Minor) {
+			crendetialProviderURL := bootstrap.CredentialProviderURL(k8sVersion, "amd64")
+			if crendetialProviderURL != "" {
 				Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
 				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
 				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
-				Expect(decodedString).To(ContainSubstring(
-					fmt.Sprintf("https://acs-mirror.azureedge.net/cloud-provider-azure/%s/binaries/azure-acr-credential-provider-linux-amd64-v%s.tar.gz", parsed.String(), parsed.String()),
-				))
-
+				Expect(decodedString).To(ContainSubstring(crendetialProviderURL))
 			} else {
 				Expect(kubeletFlags).To(ContainSubstring("--azure-container-registry-config"))
 				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
