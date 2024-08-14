@@ -1121,7 +1121,6 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		It("should include or exclude --keep-terminated-pod-volumes based on kubelet version", func() {
-			fmt.Println("henlo", minorVersion)
 			if minorVersion < 31 {
 				Expect(kubeletFlags).To(ContainSubstring("--keep-terminated-pod-volumes"))
 			} else {
