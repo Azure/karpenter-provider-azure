@@ -67,7 +67,7 @@ func TestGetCredentialProviderURL(t *testing.T) {
 	}{
 		{
 			version: "1.31.0",
-			arch:	 "amd64",
+			arch:    "amd64",
 			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.31.0/binaries/azure-acr-credential-provider-linux-amd64-v1.31.0.tar.gz", globalAKSMirror),
 		},
 		{
