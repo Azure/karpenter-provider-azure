@@ -1092,59 +1092,60 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-Context("Bootstrap", func() {
-	var (
-		kubeletFlags         string
-		decodedString        string
-		minorVersion         uint64
-		credentialProviderURL string
-	)
-	BeforeEach(func() {
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-		pod := coretest.UnschedulablePod()
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-		ExpectScheduled(ctx, env.Client, pod)
+	Context("Bootstrap", func() {
+		var (
+			kubeletFlags          string
+			decodedString         string
+			minorVersion          uint64
+			credentialProviderURL string
+		)
+		BeforeEach(func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
 
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-		vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-		customData := *vm.Properties.OSProfile.CustomData
-		Expect(customData).ToNot(BeNil())
-		decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-		Expect(err).To(Succeed())
-		decodedString := string(decodedBytes[:])
-		kubeletFlags = decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			customData := *vm.Properties.OSProfile.CustomData
+			Expect(customData).ToNot(BeNil())
+			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+			Expect(err).To(Succeed())
+			decodedString = string(decodedBytes[:])
+			kubeletFlags = decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
 
-		k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
-		Expect(err).To(BeNil())
-		minorVersion = semver.MustParse(k8sVersion).Minor
-		credentialProviderURL = bootstrap.CredentialProviderURL(k8sVersion, "amd64")
+			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
+			Expect(err).To(BeNil())
+			minorVersion = semver.MustParse(k8sVersion).Minor
+			credentialProviderURL = bootstrap.CredentialProviderURL(k8sVersion, "amd64")
+		})
+
+		It("should include or exclude --keep-terminated-pod-volumes based on kubelet version", func() {
+			fmt.Println("henlo", minorVersion)
+			if minorVersion < 31 {
+				Expect(kubeletFlags).To(ContainSubstring("--keep-terminated-pod-volumes"))
+			} else {
+				Expect(kubeletFlags).ToNot(ContainSubstring("--keep-terminated-pod-volumes"))
+			}
+		})
+
+		It("should include correct flags and credential provider URL when CredentialProviderURL is not empty", func() {
+			if credentialProviderURL != "" {
+				Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
+				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
+				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
+				Expect(decodedString).To(ContainSubstring(credentialProviderURL))
+			}
+		})
+
+		It("should include correct flags when CredentialProviderURL is empty", func() {
+			if credentialProviderURL == "" {
+				Expect(kubeletFlags).To(ContainSubstring("--azure-container-registry-config"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
+				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
+			}
+		})
 	})
-
-	It("should include or exclude --keep-terminated-pod-volumes based on kubelet version", func() {
-		if minorVersion < 31 {
-			Expect(kubeletFlags).To(ContainSubstring("--keep-terminated-pod-volumes"))
-		} else {
-			Expect(kubeletFlags).ToNot(ContainSubstring("--keep-terminated-pod-volumes"))
-		}
-	})
-
-	It("should include correct flags and credential provider URL when CredentialProviderURL is not empty", func() {
-		if credentialProviderURL != "" {
-			Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
-			Expect(decodedString).To(ContainSubstring(credentialProviderURL))
-		}
-	})
-
-	It("should include correct flags when CredentialProviderURL is empty", func() {
-		if credentialProviderURL == "" {
-			Expect(kubeletFlags).To(ContainSubstring("--azure-container-registry-config"))
-			Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
-			Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
-		}
-	})
-})	
 	Context("LoadBalancer", func() {
 		resourceGroup := "test-resourceGroup"
 

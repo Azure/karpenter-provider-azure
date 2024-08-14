@@ -487,7 +487,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	// Assign Per K8s version kubelet flags
 	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
-	if minorVersion > 31 {
+	if minorVersion < 31 {
 		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
 	}
 
