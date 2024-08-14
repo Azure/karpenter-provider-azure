@@ -484,7 +484,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), ",")
-
+		
 	// Assign Per K8s version kubelet flags
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
 	if credentialProviderURL != "" { // use OOT credential provider
@@ -492,6 +492,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
 		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
 	} else { // Versions Less than 1.30
+		// we can make this logic smarter later when we have more than one 
+		// for now just adding here. 
+		kubeletFlagsBase["--feature-gates"] = "DisableKubeletCloudCredentialProviders=false"
 		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
 	}
 	// merge and stringify taints
