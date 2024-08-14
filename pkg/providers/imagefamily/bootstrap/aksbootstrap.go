@@ -437,6 +437,9 @@ func CredentialProviderURL(kubernetesVersion, arch string) string {
 		credentialProviderVersion = "1.29.2"
 	case 30:
 		credentialProviderVersion = "1.30.0"
+
+	case 31: 
+		credentialProviderVersion = "1.31.0"
 	}
 
 	return fmt.Sprintf("%s/cloud-provider-azure/v%s/binaries/azure-acr-credential-provider-linux-%s-v%s.tar.gz", globalAKSMirror, credentialProviderVersion, arch, credentialProviderVersion)
