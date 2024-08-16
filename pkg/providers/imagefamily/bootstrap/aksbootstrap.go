@@ -241,6 +241,7 @@ var (
 	// removed --image-pull-progress-deadline=30m  (not in 1.24?)
 	// removed --network-plugin=cni (not in 1.24?)
 	// removed --azure-container-registry-config (not in 1.30)
+	// removed --keep-terminated-pod-volumes (not in 1.31)
 	kubeletFlagsBase = map[string]string{
 		"--address":                           "0.0.0.0",
 		"--anonymous-auth":                    "false",
@@ -257,7 +258,6 @@ var (
 		"--eviction-hard":                     "memory.available<750Mi,nodefs.available<10%,nodefs.inodesFree<5%",
 		"--image-gc-high-threshold":           "85",
 		"--image-gc-low-threshold":            "80",
-		"--keep-terminated-pod-volumes":       "false",
 		"--kubeconfig":                        "/var/lib/kubelet/kubeconfig",
 		"--max-pods":                          "110",
 		"--node-status-update-frequency":      "10s",
@@ -489,6 +489,11 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	}), ",")
 
 	// Assign Per K8s version kubelet flags
+	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
+	if minorVersion < 31 {
+		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
+	}
+
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
 	if credentialProviderURL != "" { // use OOT credential provider
 		nbv.CredentialProviderDownloadURL = credentialProviderURL
