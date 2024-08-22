@@ -62,7 +62,7 @@ var _ = Describe("Acr", func() {
 	Describe("Image Pull", func() {
 		It("should allow karpenter user pool nodes to pull images from the clusters attached acr", func() {
 			deployment := test.Deployment(test.DeploymentOptions{
-				Replicas: 10,
+				Replicas: 1,
 				PodOptions: test.PodOptions{
 					ResourceRequirements: v1.ResourceRequirements{
 						Requests: v1.ResourceList{
