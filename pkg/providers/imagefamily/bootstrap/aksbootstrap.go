@@ -437,6 +437,9 @@ func CredentialProviderURL(kubernetesVersion, arch string) string {
 		credentialProviderVersion = "1.29.2"
 	case 30:
 		credentialProviderVersion = "1.30.0"
+
+	case 31:
+		credentialProviderVersion = "1.31.0"
 	}
 
 	return fmt.Sprintf("%s/cloud-provider-azure/v%s/binaries/azure-acr-credential-provider-linux-%s-v%s.tar.gz", globalAKSMirror, credentialProviderVersion, arch, credentialProviderVersion)
@@ -497,6 +500,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
 		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
 	} else { // Versions Less than 1.30
+		// we can make this logic smarter later when we have more than one
+		// for now just adding here.
+		kubeletFlagsBase["--feature-gates"] = "DisableKubeletCloudCredentialProviders=false"
 		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
 	}
 	// merge and stringify taints
