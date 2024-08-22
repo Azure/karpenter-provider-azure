@@ -40,3 +40,7 @@ runs:
   - name: create ACR
     shell: bash
     run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkacr
+  - name: import needed images 
+    shell: bash 
+    run: | 
+      AZURE_ACR_NAME=${{ inputs.acr_name }} make az-acrimport
