@@ -1,4 +1,4 @@
-
+FFFFF
 [![GitHub License](https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg)](https://github.com/Azure/karpenter-provider-azure/blob/main/LICENSE.txt)
 [![CI](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml)
 ![GitHub stars](https://img.shields.io/github/stars/Azure/karpenter-provider-azure)
@@ -135,7 +135,7 @@ chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} ka
 Usinge the generated `karpenter-values.yaml` file, install Karpenter using Helm:
 
 ```bash
-export KARPENTER_VERSION=0.5.1
+export KARPENTER_VERSION=0.5.3
 
 helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
   --version "${KARPENTER_VERSION}" \

@@ -1144,6 +1144,9 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
 			}
 		})
+		It("should include in contract each time", func(){
+			Expect(decodedString).To(ContainSubstring("ENABLE_KUBELET_SERVING_CERTIFICATE_ROTATION=\"false\""))
+		})
 	})
 	Context("LoadBalancer", func() {
 		resourceGroup := "test-resourceGroup"
