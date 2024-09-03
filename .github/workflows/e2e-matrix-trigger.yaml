@@ -6,7 +6,7 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "westus3"
-  push:
+  push: 
     branches: [main]
 
 permissions:
