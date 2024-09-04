@@ -5,6 +5,9 @@ name: Release Trigger
 on:
     workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   generate-sem-ver:
     permissions:
