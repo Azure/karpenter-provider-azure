@@ -47,7 +47,36 @@ jobs:
       - name: Harden Runner
         uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
         with:
-          egress-policy: audit
+          disable-telemetry: true
+          egress-policy: block
+          # - wildcards to allow for variation in targeted clusters
+          # - clients3.google.com:80 and firebaselogging-pa.googleapis.com:443 - confirmed Skaffold,
+          #   likely telemetry, likely can be avoided/blocked with/after "skaffold config set --global collect-metrics false"
+          allowed-endpoints: >
+            *.azmk8s.io:443
+            *.azurecr.io:443
+            *.data.mcr.microsoft.com:443
+            aka.ms:443
+            api.github.com:443
+            app.aladdin.microsoft.com:443
+            auth.docker.io:443
+            azcliextensionsync.blob.core.windows.net:443
+            clients3.google.com:80
+            dc.services.visualstudio.com:443
+            distroless.dev:443
+            firebaselogging-pa.googleapis.com:443
+            gist.githubusercontent.com:443
+            github.com:443
+            graph.microsoft.com:443
+            index.docker.io:443
+            login.microsoftonline.com:443
+            management.azure.com:443
+            mcr.microsoft.com:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            raw.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
 
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
