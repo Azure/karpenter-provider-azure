@@ -49,6 +49,9 @@ jobs:
         with:
           disable-telemetry: true
           egress-policy: block
+          # - wildcards to allow for variation in targeted clusters
+          # - clients3.google.com:80 and firebaselogging-pa.googleapis.com:443 - confirmed Skaffol
+          #   likely telemetry, likely can be avoided/blocked with/after "skaffold config set --global collect-metrics false"
           allowed-endpoints: >
             *.azmk8s.io:443
             *.azurecr.io:443

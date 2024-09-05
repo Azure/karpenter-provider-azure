@@ -34,6 +34,7 @@ jobs:
           disable-telemetry: true
           disable-sudo: true
           egress-policy: block
+          # no allowed endpoints
           allowed-endpoints: >
 
       - id: generate-e2e-run-hash
