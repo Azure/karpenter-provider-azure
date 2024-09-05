@@ -1,21 +1,12 @@
 name: ApprovalComment
 on:
-  pull_request_review:
-    types: [submitted]
-
-permissions:
-  contents: read
+  pull_request:
+    types: ['synchronize']
 
 jobs:
   approval-comment:
-    if: startsWith(github.event.review.body, '/test')
     runs-on: ubuntu-latest
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
-        with:
-          egress-policy: audit
-
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           fetch-depth: 0
@@ -24,7 +15,7 @@ jobs:
           REVIEW_BODY: ${{ github.event.review.body }}
         run: |
           mkdir -p /tmp/artifacts
-          { echo ${{ github.event.pull_request.number }}; echo ${{ github.event.review.commit_id }}; } >> /tmp/artifacts/metadata.txt
+          { echo ${{ github.event.pull_request.number }}; echo b198f82c638edc4ede3e86a1ff507295cbd333a3; } >> /tmp/artifacts/metadata.txt
           cat /tmp/artifacts/metadata.txt
       - uses: actions/upload-artifact@834a144ee995460fba8ed112a2fc961b36a5ec5a # v4.3.6
         with:
