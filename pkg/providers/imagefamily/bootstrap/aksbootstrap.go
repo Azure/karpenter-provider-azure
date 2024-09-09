@@ -241,6 +241,7 @@ var (
 	// removed --image-pull-progress-deadline=30m  (not in 1.24?)
 	// removed --network-plugin=cni (not in 1.24?)
 	// removed --azure-container-registry-config (not in 1.30)
+	// removed --keep-terminated-pod-volumes (not in 1.31)
 	kubeletFlagsBase = map[string]string{
 		"--address":                           "0.0.0.0",
 		"--anonymous-auth":                    "false",
@@ -257,7 +258,6 @@ var (
 		"--eviction-hard":                     "memory.available<750Mi,nodefs.available<10%,nodefs.inodesFree<5%",
 		"--image-gc-high-threshold":           "85",
 		"--image-gc-low-threshold":            "80",
-		"--keep-terminated-pod-volumes":       "false",
 		"--kubeconfig":                        "/var/lib/kubelet/kubeconfig",
 		"--max-pods":                          "110",
 		"--node-status-update-frequency":      "10s",
@@ -437,6 +437,9 @@ func CredentialProviderURL(kubernetesVersion, arch string) string {
 		credentialProviderVersion = "1.29.2"
 	case 30:
 		credentialProviderVersion = "1.30.0"
+
+	case 31:
+		credentialProviderVersion = "1.31.0"
 	}
 
 	return fmt.Sprintf("%s/cloud-provider-azure/v%s/binaries/azure-acr-credential-provider-linux-%s-v%s.tar.gz", globalAKSMirror, credentialProviderVersion, arch, credentialProviderVersion)
@@ -486,12 +489,20 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	}), ",")
 
 	// Assign Per K8s version kubelet flags
+	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
+	if minorVersion < 31 {
+		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
+	}
+
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
 	if credentialProviderURL != "" { // use OOT credential provider
 		nbv.CredentialProviderDownloadURL = credentialProviderURL
 		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
 		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
 	} else { // Versions Less than 1.30
+		// we can make this logic smarter later when we have more than one
+		// for now just adding here.
+		kubeletFlagsBase["--feature-gates"] = "DisableKubeletCloudCredentialProviders=false"
 		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
 	}
 	// merge and stringify taints

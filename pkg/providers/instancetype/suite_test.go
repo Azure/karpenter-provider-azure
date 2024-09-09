@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -1092,7 +1093,13 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("Bootstrap", func() {
-		It("should gate kubelet flags that are dependent on kubelet version", func() {
+		var (
+			kubeletFlags          string
+			decodedString         string
+			minorVersion          uint64
+			credentialProviderURL string
+		)
+		BeforeEach(func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -1104,28 +1111,40 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(customData).ToNot(BeNil())
 			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
 			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			Expect(decodedString).To(ContainSubstring("CREDENTIAL_PROVIDER_DOWNLOAD_URL"))
-			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+			decodedString = string(decodedBytes[:])
+			kubeletFlags = decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
 
-			// TODO: (bsoghigian) leverage the helpers from the azure cni pr once they get in instead for testing kubelet flags
-			// NOTE: env.Version may differ from the version we get for the apiserver
 			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
 			Expect(err).To(BeNil())
-			crendetialProviderURL := bootstrap.CredentialProviderURL(k8sVersion, "amd64")
-			if crendetialProviderURL != "" {
+			minorVersion = semver.MustParse(k8sVersion).Minor
+			credentialProviderURL = bootstrap.CredentialProviderURL(k8sVersion, "amd64")
+		})
+
+		It("should include or exclude --keep-terminated-pod-volumes based on kubelet version", func() {
+			if minorVersion < 31 {
+				Expect(kubeletFlags).To(ContainSubstring("--keep-terminated-pod-volumes"))
+			} else {
+				Expect(kubeletFlags).ToNot(ContainSubstring("--keep-terminated-pod-volumes"))
+			}
+		})
+
+		It("should include correct flags and credential provider URL when CredentialProviderURL is not empty", func() {
+			if credentialProviderURL != "" {
 				Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
 				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
 				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
-				Expect(decodedString).To(ContainSubstring(crendetialProviderURL))
-			} else {
+				Expect(decodedString).To(ContainSubstring(credentialProviderURL))
+			}
+		})
+
+		It("should include correct flags when CredentialProviderURL is empty", func() {
+			if credentialProviderURL == "" {
 				Expect(kubeletFlags).To(ContainSubstring("--azure-container-registry-config"))
 				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
 				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
 			}
 		})
 	})
-
 	Context("LoadBalancer", func() {
 		resourceGroup := "test-resourceGroup"
 
