@@ -19,6 +19,7 @@ package instancetype_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -714,6 +715,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Provisions 2 smaller instances since larger was ICE'd
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
+
 			nodeNames := sets.New[string]()
 			for _, pod := range pods {
 				node := ExpectScheduled(ctx, env.Client, pod)
