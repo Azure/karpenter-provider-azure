@@ -179,7 +179,7 @@ func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, erro
 }
 
 func (p *Provider) Delete(ctx context.Context, resourceName string) error {
-	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources")
+	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", resourceName)
 	return p.cleanupAzureResources(ctx, resourceName)
 }
 

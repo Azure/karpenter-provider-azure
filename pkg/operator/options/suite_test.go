@@ -111,7 +111,6 @@ var _ = Describe("Options", func() {
 			}))
 		})
 	})
-
 	Context("Validation", func() {
 		It("should fail when network-plugin-mode is invalid", func() {
 			typo := "overlaay"
@@ -127,6 +126,16 @@ var _ = Describe("Options", func() {
 				"--network-plugin-mode", typo,
 			)
 			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+		It("should fail validation when networkDataplane is not valid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--network-dataplane", "ciluum",
+			)
+			Expect(err).To(MatchError(ContainSubstring("network dataplane ciluum is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')")))
 		})
 		It("should fail validation when clusterName not included", func() {
 			err := opts.Parse(

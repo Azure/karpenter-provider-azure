@@ -121,7 +121,7 @@ done
 
 ### Configure Helm chart values
 
-Karpeter Helm chart requires some configuration via values to work with a specific AKS cluster. The values are documented in the Helm chart itself, but you can use `configure-values.sh` to generate `karpenter-values.yaml` with the required configuration. The script interrogates the AKS cluster and generates the values file, using `karpenter-values-template.yaml` as a template. (The script fetches the template automatically.)
+Karpenter Helm chart requires some configuration via values to work with a specific AKS cluster. The values are documented in the Helm chart itself, but you can use `configure-values.sh` to generate `karpenter-values.yaml` with the required configuration. The script interrogates the AKS cluster and generates the values file, using `karpenter-values-template.yaml` as a template. (The script fetches the template automatically.)
 
 ```bash
 # use configure-values.sh to generate karpenter-values.yaml
@@ -135,7 +135,7 @@ chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} ka
 Usinge the generated `karpenter-values.yaml` file, install Karpenter using Helm:
 
 ```bash
-export KARPENTER_VERSION=0.4.0
+export KARPENTER_VERSION=0.5.1
 
 helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
   --version "${KARPENTER_VERSION}" \

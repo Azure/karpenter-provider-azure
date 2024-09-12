@@ -39,8 +39,18 @@ az-mkrg: ## Create resource group
 	fi
 
 az-mkacr: az-mkrg ## Create test ACR
-	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --sku Basic --admin-enabled -o none
+	az acr create --name $(AZURE_ACR_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) \
+		--sku Basic --admin-enabled -o none
 	az acr login  --name $(AZURE_ACR_NAME)
+
+az-acrimport: ## Imports an image to an acr registry
+	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6"
+
+az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses) 
+	kubectl delete pods -n default --all
+	kubectl delete nodeclaims --all 
+	kubectl delete nodepools --all
+	kubectl delete aksnodeclasses --all
 
 az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySet for compatibility with standalone VMs)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
