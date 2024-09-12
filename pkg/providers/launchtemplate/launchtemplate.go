@@ -120,7 +120,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		}
 		labels = lo.Assign(labels, vnetLabels)
 	}
-	
+
 	if options.FromContext(ctx).NetworkDataplane == consts.NetworkDataplaneCilium {
 		// This label is required for the cilium agent daemonset because
 		// we select the nodes for the daemonset based on this label
