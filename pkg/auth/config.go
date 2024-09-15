@@ -26,12 +26,6 @@ import (
 )
 
 const (
-	// auth methods
-	authMethodSysMSI           = "system-assigned-msi"
-	authMethodWorkloadIdentity = "workload-identity"
-)
-
-const (
 	// from azure_manager
 	vmTypeVMSS = "vmss"
 )
@@ -59,11 +53,6 @@ type Config struct {
 	SubscriptionID string `json:"subscriptionId" yaml:"subscriptionId"`
 	ResourceGroup  string `json:"resourceGroup" yaml:"resourceGroup"`
 	VMType         string `json:"vmType" yaml:"vmType"`
-
-	// ArmAuthMethod determines how to authorize requests for the Azure cloud.
-	// Valid options are "system-assigned-msi" and "workload-identity"
-	// The default is "workload-identity".
-	ArmAuthMethod string `json:"armAuthMethod" yaml:"armAuthMethod"`
 
 	// Managed identity for Kubelet (not to be confused with Azure cloud authorization)
 	KubeletIdentityClientID string `json:"kubeletIdentityClientID" yaml:"kubeletIdentityClientID"`
@@ -102,6 +91,7 @@ func (cfg *Config) GetAzureClientConfig(authorizer autorest.Authorizer, env *azu
 }
 
 func (cfg *Config) Build() error {
+	// May require more than this behind the scenes: https://github.com/Azure/azure-sdk-for-go/blob/main/sdk/azidentity/README.md#defaultazurecredential
 	cfg.Cloud = strings.TrimSpace(os.Getenv("ARM_CLOUD"))
 	cfg.Location = strings.TrimSpace(os.Getenv("LOCATION"))
 	cfg.ResourceGroup = strings.TrimSpace(os.Getenv("ARM_RESOURCE_GROUP"))
@@ -110,7 +100,6 @@ func (cfg *Config) Build() error {
 	cfg.VMType = strings.ToLower(os.Getenv("ARM_VM_TYPE"))
 	cfg.ClusterName = strings.TrimSpace(os.Getenv("AZURE_CLUSTER_NAME"))
 	cfg.NodeResourceGroup = strings.TrimSpace(os.Getenv("AZURE_NODE_RESOURCE_GROUP"))
-	cfg.ArmAuthMethod = strings.TrimSpace(os.Getenv("ARM_AUTH_METHOD"))
 	cfg.KubeletIdentityClientID = strings.TrimSpace(os.Getenv("ARM_KUBELET_IDENTITY_CLIENT_ID"))
 
 	return nil
@@ -121,11 +110,6 @@ func (cfg *Config) Default() error {
 	if cfg.VMType == "" {
 		cfg.VMType = vmTypeVMSS
 	}
-
-	if cfg.ArmAuthMethod == "" {
-		cfg.ArmAuthMethod = authMethodWorkloadIdentity
-	}
-
 	return nil
 }
 
@@ -143,10 +127,6 @@ func (cfg *Config) Validate() error {
 		if field.val == "" {
 			return fmt.Errorf("%s not set", field.name)
 		}
-	}
-
-	if cfg.ArmAuthMethod != authMethodSysMSI && cfg.ArmAuthMethod != authMethodWorkloadIdentity {
-		return fmt.Errorf("unsupported authorization method: %s", cfg.ArmAuthMethod)
 	}
 
 	return nil

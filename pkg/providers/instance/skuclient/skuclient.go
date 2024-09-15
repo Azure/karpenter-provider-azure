@@ -22,9 +22,11 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/skewer"
+	"github.com/jongio/azidext/go/azidext"
 	klog "k8s.io/klog/v2"
 )
 
@@ -48,11 +50,14 @@ func (sc *skuClient) updateInstance() {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
 
-	authorizer, err := auth.NewAuthorizer(sc.cfg, sc.env)
+	// Create a new authorizer for the sku client
+	// TODO (charliedmcb): need to get track 2 support for the skewer API
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		klog.V(5).Infof("Error creating authorizer for sku client: %s", err)
+		klog.V(5).Infof("Error creating authorizer for sku client: default cred: %s", err)
 		return
 	}
+	authorizer := azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope})
 
 	azClientConfig := sc.cfg.GetAzureClientConfig(authorizer, sc.env)
 	azClientConfig.UserAgent = auth.GetUserAgentExtension()

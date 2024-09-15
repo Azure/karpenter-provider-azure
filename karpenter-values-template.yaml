@@ -38,8 +38,6 @@ controller:
       value: ""
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}
-    - name: ARM_AUTH_METHOD
-      value: "workload-identity"
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:
