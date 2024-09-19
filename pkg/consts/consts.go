@@ -17,14 +17,14 @@ limitations under the License.
 package consts
 
 const (
-	NetworkPluginAzure   = "azure"
-	NetworkPluginNone = "none"
+	NetworkPluginAzure = "azure"
+	NetworkPluginNone  = "none"
 
 	NetworkPluginModeOverlay = "overlay"
 	NetworkPluginModeNone    = ""
-	
+
 	NetworkDataplaneCilium = "cilium"
-	NetworkDataplaneAzure = "azure"	
+	NetworkDataplaneAzure  = "azure"
 
 	DefaultKubernetesMaxPodsAzure = 250
 )

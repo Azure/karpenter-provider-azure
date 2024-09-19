@@ -95,7 +95,7 @@ func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nc *c
 	if kubeletConfig == nil {
 		kubeletConfig = &corev1beta1.KubeletConfiguration{}
 	}
-	kubeletConfig.MaxPods = lo.ToPtr[int32](consts.DefaultKubernetesMaxPodsAzure) 
+	kubeletConfig.MaxPods = lo.ToPtr[int32](consts.DefaultKubernetesMaxPodsAzure)
 	// TODO: revisit computeResources and maxPods implementation
 	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)

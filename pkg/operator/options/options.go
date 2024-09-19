@@ -63,11 +63,11 @@ type Options struct {
 	ClusterEndpoint                string // => APIServerName in bootstrap, except needs to be w/o https/port
 	VMMemoryOverheadPercent        float64
 	ClusterID                      string
-	KubeletClientTLSBootstrapToken string   // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
-	SSHPublicKey                   string   // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1alpha2.AKSNodeClass?
-	NetworkPlugin                  string   // => NetworkPlugin in bootstrap
-	NetworkPolicy                  string   // => NetworkPolicy in bootstrap
-	NetworkPluginMode              string   // => Network Plugin is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
+	KubeletClientTLSBootstrapToken string // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
+	SSHPublicKey                   string // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1alpha2.AKSNodeClass?
+	NetworkPlugin                  string // => NetworkPlugin in bootstrap
+	NetworkPolicy                  string // => NetworkPolicy in bootstrap
+	NetworkPluginMode              string // => Network Plugin is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
 	NetworkDataplane               string
 	NodeIdentities                 []string // => Applied onto each VM
 

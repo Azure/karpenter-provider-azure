@@ -598,7 +598,7 @@ var _ = Describe("InstanceType Provider", func() {
 				"eviction-hard":              "memory.available<750Mi",
 				"eviction-soft":              "memory.available<1Gi",
 				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250", // max pods should always default to 250 
+				"max-pods":                   "250", // max pods should always default to 250
 				"pods-per-core":              "110",
 				"image-gc-low-threshold":     "20",
 				"image-gc-high-threshold":    "30",
