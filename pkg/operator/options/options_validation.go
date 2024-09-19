@@ -34,6 +34,7 @@ func (o Options) Validate() error {
 		o.validateVMMemoryOverheadPercent(),
 		o.validateNetworkPluginMode(),
 		o.validateNetworkDataplane(),
+		o.validateNetworkPlugin(),
 		o.validateVnetSubnetID(),
 		validate.Struct(o),
 	)
@@ -42,6 +43,13 @@ func (o Options) Validate() error {
 func (o Options) validateNetworkPluginMode() error {
 	if o.NetworkPluginMode != consts.NetworkPluginModeOverlay && o.NetworkPluginMode != consts.NetworkPluginModeNone {
 		return fmt.Errorf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay' or ''", o.NetworkPluginMode)
+	}
+	return nil
+}
+
+func (o Options) validateNetworkPlugin() error {
+	if o.NetworkPlugin != consts.NetworkPluginAzure && o.NetworkPlugin != consts.NetworkPluginNone {
+		return fmt.Errorf("network-plugin %v is invalid. network-plugin must equal 'azure' or 'none'", o.NetworkPlugin)
 	}
 	return nil
 }
@@ -55,7 +63,7 @@ func (o Options) validateVnetSubnetID() error {
 }
 
 func (o Options) validateNetworkDataplane() error {
-	if o.NetworkDataplane != "azure" && o.NetworkDataplane != "cilium" {
+	if o.NetworkDataplane != consts.NetworkDataplaneAzure && o.NetworkDataplane != consts.NetworkDataplaneCilium {
 		return fmt.Errorf("network dataplane %s is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')", o.NetworkDataplane)
 	}
 	return nil

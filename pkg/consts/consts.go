@@ -18,11 +18,13 @@ package consts
 
 const (
 	NetworkPluginAzure   = "azure"
+	NetworkPluginNone = "none"
 
 	NetworkPluginModeOverlay = "overlay"
 	NetworkPluginModeNone    = ""
-
-	NetworkDataplaneCilium = "cilium"
 	
+	NetworkDataplaneCilium = "cilium"
+	NetworkDataplaneAzure = "azure"	
+
 	DefaultKubernetesMaxPodsAzure = 250
 )
