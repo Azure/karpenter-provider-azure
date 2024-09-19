@@ -240,11 +240,11 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "azure",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
-
 		It("should succeed when network-plugin is set to 'none'", func() {
 			err := opts.Parse(
 				fs,
@@ -252,6 +252,7 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "none",
 			)
 			Expect(err).ToNot(HaveOccurred())
