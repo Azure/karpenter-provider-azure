@@ -24,6 +24,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -46,7 +47,6 @@ type AKS struct {
 	ClusterID                      string
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
-	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
 }
@@ -453,7 +453,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.ResourceGroup = a.ResourceGroup
 	nbv.UserAssignedIdentityID = a.UserAssignedIdentityID
 
-	nbv.NetworkPlugin = a.NetworkPlugin
+	nbv.NetworkPlugin = consts.NetworkPluginAzure 
 	nbv.NetworkPolicy = a.NetworkPolicy
 	nbv.KubernetesVersion = a.KubernetesVersion
 
