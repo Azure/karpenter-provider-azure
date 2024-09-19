@@ -26,9 +26,11 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -74,6 +76,7 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	}
 
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
+
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		UserData: imageFamily.UserData(
@@ -94,7 +97,7 @@ func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nc *c
 	if kubeletConfig == nil {
 		kubeletConfig = &corev1beta1.KubeletConfiguration{}
 	}
-	kubeletConfig.MaxPods = lo.ToPtr(int32(consts.DefaultKubernetesMaxPodsAzure))
+	kubeletConfig.MaxPods = lo.ToPtr[int32](consts.DefaultKubernetesMaxPodsAzure) 
 	// TODO: revisit computeResources and maxPods implementation
 	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)

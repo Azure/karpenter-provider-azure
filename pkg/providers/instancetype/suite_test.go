@@ -490,7 +490,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	Context("NetworkPluginMode none", func() {
+	Context("Nodepool with KubeletConfig on a kubenet Cluster", func() {
 		var originalOptions *options.Options
 
 		BeforeEach(func() {
@@ -498,7 +498,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ctx = options.ToContext(
 				ctx,
 				test.Options(test.OptionsFields{
-					NetworkPluginMode: lo.ToPtr(""),
+					NetworkPlugin: lo.ToPtr("kubenet"),
 				}))
 		})
 
@@ -544,7 +544,7 @@ var _ = Describe("InstanceType Provider", func() {
 				"eviction-hard":              "memory.available<750Mi",
 				"eviction-soft":              "memory.available<1Gi",
 				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250",
+				"max-pods":                   "100",
 				"pods-per-core":              "110",
 				"image-gc-low-threshold":     "20",
 				"image-gc-high-threshold":    "30",
@@ -598,7 +598,7 @@ var _ = Describe("InstanceType Provider", func() {
 				"eviction-hard":              "memory.available<750Mi",
 				"eviction-soft":              "memory.available<1Gi",
 				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250",
+				"max-pods":                   "100", // Karpenter should use the default max pods for kubenet which is 100
 				"pods-per-core":              "110",
 				"image-gc-low-threshold":     "20",
 				"image-gc-high-threshold":    "30",

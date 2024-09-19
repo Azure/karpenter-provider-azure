@@ -38,6 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -233,7 +234,7 @@ func (p *Provider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.I
 			EnableIPForwarding:          lo.ToPtr(true),
 		},
 	}
-	if opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
+	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
 		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
 		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
@@ -266,6 +267,7 @@ type createNICOptions struct {
 	BackendPools      *loadbalancer.BackendAddressPools
 	InstanceType      *corecloudprovider.InstanceType
 	LaunchTemplate    *launchtemplate.Template
+	NetworkPlugin     string
 	NetworkPluginMode string
 }
 
@@ -422,6 +424,7 @@ func (p *Provider) launchInstance(
 	nicReference, err := p.createNetworkInterface(ctx,
 		&createNICOptions{
 			NICName:           resourceName,
+			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
 			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
 			LaunchTemplate:    launchTemplate,
 			InstanceType:      instanceType,

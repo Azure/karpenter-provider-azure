@@ -112,7 +112,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		arch = corev1beta1.ArchitectureArm64
 	}
 
-	if options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
 		// TODO: make conditional on pod subnet
 		vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
 		if err != nil {
@@ -150,6 +150,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		ClusterID:                      options.FromContext(ctx).ClusterID,
 		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
+		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       options.FromContext(ctx).SubnetID,
 	}, nil
