@@ -143,4 +143,6 @@ AZURE_ENVIRONMENT_FILEPATH="{{.AzureEnvironmentFilepath}}"
 KUBE_CA_CRT="{{.KubeCACrt}}"
 CONTAINERD_CONFIG_CONTENT="{{.ContainerdConfigContent}}"
 IS_KATA="{{.IsKata}}"
+ENABLE_IMDS_RESTRICTION=false
+INSERT_IMDS_RESTRICTION_RULE_TO_MANGLE_TABLE=false
 /usr/bin/nohup /bin/bash -c "/bin/bash /opt/azure/containers/provision_start.sh"
