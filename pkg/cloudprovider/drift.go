@@ -19,7 +19,6 @@ package cloudprovider
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"knative.dev/pkg/logging"
@@ -131,12 +130,12 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1be
 	expectedSubnet := lo.Ternary(nodeClass.Spec.VnetSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VnetSubnetID))
 	nicName := instance.GenerateResourceName(nodeClaim.Name)
 
-	// TODO: Refactor AzConfig to be part of options
-	nic, err := instance.GetNic(ctx, c.instanceProvider.AZClient.NetworkInterfacesClient, os.Getenv("AZURE_NODE_RESOURCE_GROUP"), nicName)
+	// TODO: Refactor all of AzConfig to be part of options
+	nic, err := instance.GetNic(ctx, c.instanceProvider.AZClient.NetworkInterfacesClient, options.FromContext(ctx).NodeResourceGroup, nicName)
 	if err != nil {
 		return "", err
 	}
-	nicSubnet := getSubnetFromNic(nic)
+	nicSubnet := getFirstSubnetFromNic(nic)
 	if nicSubnet == "" {
 		return "", fmt.Errorf("no subnet found for nic: %s", nicName)
 	}
@@ -146,7 +145,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1be
 	return "", nil
 }
 
-func getSubnetFromNic(nic *armnetwork.Interface) string {
+func getFirstSubnetFromNic(nic *armnetwork.Interface) string {
 	for _, ipConfig := range nic.Properties.IPConfigurations {
 		if ipConfig.Properties.Subnet != nil {
 			return lo.FromPtr(ipConfig.Properties.Subnet.ID)
