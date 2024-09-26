@@ -127,7 +127,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	loadBalancerProvider := loadbalancer.NewProvider(
 		loadBalancersAPI,
 		loadBalancerCache,
-		testOptions.NodeResourceGroup,	
+		testOptions.NodeResourceGroup,
 	)
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
@@ -145,7 +145,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		loadBalancerProvider,
 		unavailableOfferingsCache,
 		region,
-		testOptions.NodeResourceGroup,	
+		testOptions.NodeResourceGroup,
 		"", // subscriptionID
 	)
 

@@ -37,7 +37,7 @@ type OptionsFields struct {
 	VMMemoryOverheadPercent        *float64
 	NodeIdentities                 []string
 	SubnetID                       *string
-	NodeResourceGroup			   *string
+	NodeResourceGroup              *string
 }
 
 func Options(overrides ...OptionsFields) *azoptions.Options {
@@ -59,7 +59,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
-		NodeResourceGroup: lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
-
+		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 	}
 }

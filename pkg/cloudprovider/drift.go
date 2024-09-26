@@ -21,8 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"knative.dev/pkg/logging"
-
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -30,6 +29,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
+	"knative.dev/pkg/logging"
 
 	v1 "k8s.io/api/core/v1"
 
@@ -133,6 +133,9 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1be
 	// TODO: Refactor all of AzConfig to be part of options
 	nic, err := instance.GetNic(ctx, c.instanceProvider.AZClient.NetworkInterfacesClient, options.FromContext(ctx).NodeResourceGroup, nicName)
 	if err != nil {
+		if sdkerrors.IsNotFoundErr(err) {
+			return "", nil
+		}
 		return "", err
 	}
 	nicSubnet := getFirstSubnetFromNic(nic)
