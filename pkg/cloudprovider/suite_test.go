@@ -19,7 +19,6 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
-	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -91,7 +90,6 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	os.Setenv("AZURE_NODE_RESOURCE_GROUP", "MC_RG")
 	// TODO v1beta1 options
 	// ctx = options.ToContext(ctx, test.Options())
 	ctx = options.ToContext(ctx, test.Options())
