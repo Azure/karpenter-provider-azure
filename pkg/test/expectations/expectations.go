@@ -21,23 +21,28 @@ import (
 	"fmt"
 	"strings"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	. "github.com/onsi/gomega"
 )
 
 func ExpectUnavailable(env *test.Environment, instanceType string, zone string, capacityType string) {
+	GinkgoHelper()
 	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, fmt.Sprintf("%s-%s", fake.Region, zone), capacityType)).To(BeTrue())
 }
 
 func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {
-	kubeletFlags := customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+	GinkgoHelper()
+	kubeletFlags := customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 	for flag, value := range expectedFlags {
 		Expect(kubeletFlags).To(ContainSubstring(fmt.Sprintf("--%s=%s", flag, value)))
 	}
 }
 
 func ExpectDecodedCustomData(env *test.Environment) string {
+	GinkgoHelper()
 	Expect(env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
 	vm := env.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
