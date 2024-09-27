@@ -25,11 +25,6 @@ import (
 	"github.com/Azure/go-autorest/autorest/azure"
 )
 
-const (
-	// from azure_manager
-	vmTypeVMSS = "vmss"
-)
-
 type cfgField struct {
 	val  string
 	name string
