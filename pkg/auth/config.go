@@ -100,7 +100,7 @@ func (cfg *Config) Build() error {
 	cfg.VMType = strings.ToLower(os.Getenv("ARM_VM_TYPE"))
 	cfg.ClusterName = strings.TrimSpace(os.Getenv("AZURE_CLUSTER_NAME"))
 	cfg.NodeResourceGroup = strings.TrimSpace(os.Getenv("AZURE_NODE_RESOURCE_GROUP"))
-	cfg.KubeletIdentityClientID = strings.TrimSpace(os.Getenv("ARM_KUBELET_IDENTITY_CLIENT_ID"))
+	cfg.KubeletIdentityClientID = strings.TrimSpace(os.Getenv("KUBELET_IDENTITY_CLIENT_ID"))
 
 	return nil
 }
