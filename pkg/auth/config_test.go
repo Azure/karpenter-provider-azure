@@ -40,7 +40,6 @@ func TestBuildAzureConfig(t *testing.T) {
 				SubscriptionID:    "12345",
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
-				VMType:            "vmss",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -58,7 +57,6 @@ func TestBuildAzureConfig(t *testing.T) {
 				SubscriptionID:    "12345",
 				ResourceGroup:     "my-rg",
 				NodeResourceGroup: "my-node-rg",
-				VMType:            "vm",
 			},
 			wantErr: false,
 			env: map[string]string{
@@ -77,7 +75,6 @@ func TestBuildAzureConfig(t *testing.T) {
 				SubscriptionID:          "12345",
 				ResourceGroup:           "my-rg",
 				NodeResourceGroup:       "my-node-rg",
-				VMType:                  "vmss",
 				KubeletIdentityClientID: "11111111-2222-3333-4444-555555555555",
 			},
 			wantErr: false,

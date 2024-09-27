@@ -52,13 +52,11 @@ type Config struct {
 	TenantID       string `json:"tenantId" yaml:"tenantId"`
 	SubscriptionID string `json:"subscriptionId" yaml:"subscriptionId"`
 	ResourceGroup  string `json:"resourceGroup" yaml:"resourceGroup"`
-	VMType         string `json:"vmType" yaml:"vmType"`
 
 	// Managed identity for Kubelet (not to be confused with Azure cloud authorization)
 	KubeletIdentityClientID string `json:"kubeletIdentityClientID" yaml:"kubeletIdentityClientID"`
 
 	// Configs only for AKS
-	ClusterName       string `json:"clusterName" yaml:"clusterName"`
 	NodeResourceGroup string `json:"nodeResourceGroup" yaml:"nodeResourceGroup"`
 }
 
@@ -97,8 +95,6 @@ func (cfg *Config) Build() error {
 	cfg.ResourceGroup = strings.TrimSpace(os.Getenv("ARM_RESOURCE_GROUP"))
 	cfg.TenantID = strings.TrimSpace(os.Getenv("ARM_TENANT_ID"))
 	cfg.SubscriptionID = strings.TrimSpace(os.Getenv("ARM_SUBSCRIPTION_ID"))
-	cfg.VMType = strings.ToLower(os.Getenv("ARM_VM_TYPE"))
-	cfg.ClusterName = strings.TrimSpace(os.Getenv("AZURE_CLUSTER_NAME"))
 	cfg.NodeResourceGroup = strings.TrimSpace(os.Getenv("AZURE_NODE_RESOURCE_GROUP"))
 	cfg.KubeletIdentityClientID = strings.TrimSpace(os.Getenv("KUBELET_IDENTITY_CLIENT_ID"))
 
@@ -106,10 +102,7 @@ func (cfg *Config) Build() error {
 }
 
 func (cfg *Config) Default() error {
-	// Defaulting vmType to vmss.
-	if cfg.VMType == "" {
-		cfg.VMType = vmTypeVMSS
-	}
+	// Nothing to default, for now.
 	return nil
 }
 
@@ -118,7 +111,6 @@ func (cfg *Config) Validate() error {
 	fields := []cfgField{
 		{cfg.SubscriptionID, "subscription ID"},
 		{cfg.NodeResourceGroup, "node resource group"},
-		{cfg.VMType, "VM type"},
 		// Even though the config doesnt use some of these,
 		// its good to validate they were set in the environment
 	}
