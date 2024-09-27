@@ -271,7 +271,6 @@ type createNICOptions struct {
 }
 
 func (p *Provider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
-
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
 	logging.FromContext(ctx).Debugf("Creating network interface %s", opts.NICName)
