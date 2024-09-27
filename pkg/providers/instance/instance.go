@@ -271,11 +271,7 @@ type createNICOptions struct {
 }
 
 func (p *Provider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
-	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
-	if err != nil {
-		return "", err
-	}
-	opts.BackendPools = backendPools
+
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
 	logging.FromContext(ctx).Debugf("Creating network interface %s", opts.NICName)
@@ -420,12 +416,17 @@ func (p *Provider) launchInstance(
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
 	// create network interface
+	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting backend pools: %w", err)
+	}
 	nicReference, err := p.createNetworkInterface(ctx,
 		&createNICOptions{
 			NICName:           resourceName,
 			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
 			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
 			LaunchTemplate:    launchTemplate,
+			BackendPools:      backendPools,
 			InstanceType:      instanceType,
 		},
 	)
