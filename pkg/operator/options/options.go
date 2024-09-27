@@ -67,7 +67,7 @@ type Options struct {
 	SSHPublicKey                   string // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1alpha2.AKSNodeClass?
 	NetworkPlugin                  string // => NetworkPlugin in bootstrap
 	NetworkPolicy                  string // => NetworkPolicy in bootstrap
-	NetworkPluginMode              string // => Network Plugin is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
+	NetworkPluginMode              string // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
 	NetworkDataplane               string
 	NodeIdentities                 []string // => Applied onto each VM
 
