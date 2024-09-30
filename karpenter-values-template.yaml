@@ -34,12 +34,7 @@ controller:
       value: ${AZURE_SUBSCRIPTION_ID}
     - name: LOCATION
       value: ${AZURE_LOCATION}
-    # settings for managed workload identity
-    - name: ARM_USE_CREDENTIAL_FROM_ENVIRONMENT
-      value: "true"
-    - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
-      value: "false"
-    - name: ARM_USER_ASSIGNED_IDENTITY_ID
+    - name: KUBELET_IDENTITY_CLIENT_ID
       value: ""
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}

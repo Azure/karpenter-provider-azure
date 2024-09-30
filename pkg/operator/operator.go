@@ -32,6 +32,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -102,7 +103,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ClusterEndpoint,
 		azConfig.TenantID,
 		azConfig.SubscriptionID,
-		azConfig.UserAssignedIdentityID,
+		azConfig.KubeletIdentityClientID,
 		azConfig.NodeResourceGroup,
 		azConfig.Location,
 		vnetGUID,
@@ -168,7 +169,7 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 }
 
 func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {
-	creds, err := auth.NewCredential(cfg)
+	creds, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return "", err
 	}
