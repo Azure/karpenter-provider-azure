@@ -686,3 +686,13 @@ func (env *Environment) GetDaemonSetCount(np *corev1beta1.NodePool) int {
 		return true
 	})
 }
+
+func (env *Environment) EventuallyExpectDrifted(nodeClaims ...*corev1beta1.NodeClaim) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		for _, nc := range nodeClaims {
+			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(nc), nc)).To(Succeed())
+			g.Expect(nc.StatusConditions().GetCondition(corev1beta1.Drifted).IsTrue()).To(BeTrue())
+		}
+	}).Should(Succeed())
+}
