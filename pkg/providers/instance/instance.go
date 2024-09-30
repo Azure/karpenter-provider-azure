@@ -196,7 +196,7 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	return nil
 }
 
-func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
+func (p *Provider) newNetworkInterfaceForVM(backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
 	for _, poolID := range backendPools.IPv4PoolIDs {
 		poolID := poolID
@@ -217,7 +217,7 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
-					Name: &vmName,
+					Name: to.Ptr("ipconfig1"),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Primary:                   to.Ptr(true),
 						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
@@ -244,7 +244,7 @@ func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, l
 		return "", err
 	}
 
-	nic := p.newNetworkInterfaceForVM(nicName, backendPools, instanceType)
+	nic := p.newNetworkInterfaceForVM(backendPools, instanceType)
 	p.applyTemplateToNic(&nic, launchTemplateConfig)
 	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
 	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)
@@ -388,7 +388,7 @@ func (p *Provider) launchInstance(
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
 	// create network interface
-	nicReference, err := p.createNetworkInterface(ctx, resourceName, launchTemplate, instanceType)
+	nicReference, err := p.createNetworkInterface(ctx, getNetworkInterfaceName(resourceName), launchTemplate, instanceType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -410,6 +410,11 @@ func (p *Provider) launchInstance(
 		return nil, nil, err
 	}
 	return resp, instanceType, nil
+}
+
+func getNetworkInterfaceName(vmName string) string {
+	// cloud-provider-azure has certain optimizations (can avoid extra API calls) if this pattern is followed
+	return vmName + "-nic"
 }
 
 // nolint:gocyclo
@@ -562,9 +567,10 @@ func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName strin
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
-	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
+	nicName := getNetworkInterfaceName(resourceName)
+	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName)
 	if nicErr != nil {
-		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
+		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", nicName, nicErr)
 	}
 
 	return errors.Join(vmErr, nicErr)
