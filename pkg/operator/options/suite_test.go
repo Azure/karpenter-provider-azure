@@ -269,6 +269,7 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "none",
+				"--network-plugin-mode", "",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
