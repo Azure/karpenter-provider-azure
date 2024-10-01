@@ -141,7 +141,6 @@ KUBELET_FLAGS="{{.KubeletFlags}}"
 KUBELET_NODE_LABELS="{{.KubeletNodeLabels}}"
 AZURE_ENVIRONMENT_FILEPATH="{{.AzureEnvironmentFilepath}}"
 KUBE_CA_CRT="{{.KubeCACrt}}"
-KUBENET_TEMPLATE="{{.KubenetTemplate}}"
 CONTAINERD_CONFIG_CONTENT="{{.ContainerdConfigContent}}"
 IS_KATA="{{.IsKata}}"
 ENABLE_IMDS_RESTRICTION=false
