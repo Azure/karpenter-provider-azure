@@ -28,7 +28,7 @@ import (
 // This will contain configuration necessary to launch instances in AKS.
 type AKSNodeClassSpec struct {
 	// VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
-	// If not specified, we will use the default --vnet-subnet-id specified on the managed cluster
+	// If not specified, we will use the default --vnet-subnet-id specified in karpenters' options config
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\/resourceGroups\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]\/providers\/Microsoft\.Network\/virtualNetworks\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]\/subnets\/[a-zA-Z0-9][a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9]$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
