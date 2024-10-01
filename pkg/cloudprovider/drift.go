@@ -138,7 +138,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1be
 		}
 		return "", err
 	}
-	nicSubnet := getFirstSubnetFromNic(nic)
+	nicSubnet := getSubnetFromPrimaryIPConfig(nic)
 	if nicSubnet == "" {
 		return "", fmt.Errorf("no subnet found for nic: %s", nicName)
 	}
@@ -148,7 +148,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1be
 	return "", nil
 }
 
-func getFirstSubnetFromNic(nic *armnetwork.Interface) string {
+func getSubnetFromPrimaryIPConfig(nic *armnetwork.Interface) string {
 	for _, ipConfig := range nic.Properties.IPConfigurations {
 		if ipConfig.Properties.Subnet != nil && lo.FromPtr(ipConfig.Properties.Primary) {
 			return lo.FromPtr(ipConfig.Properties.Subnet.ID)
