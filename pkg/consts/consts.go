@@ -22,8 +22,8 @@ const (
 
 	NetworkPluginModeOverlay = "overlay"
 	NetworkPluginModeNone    = ""
-		
-	NetworkDataplaneNone = ""	
+
+	NetworkDataplaneNone   = ""
 	NetworkDataplaneCilium = "cilium"
 	NetworkDataplaneAzure  = "azure"
 

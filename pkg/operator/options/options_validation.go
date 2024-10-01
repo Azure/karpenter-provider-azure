@@ -48,9 +48,9 @@ func (o Options) validateNetworkingOptions() error {
 	if o.NetworkDataplane != consts.NetworkDataplaneAzure && o.NetworkDataplane != consts.NetworkDataplaneCilium && o.NetworkDataplane != consts.NetworkDataplaneNone {
 		return fmt.Errorf("network dataplane %s is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')", o.NetworkDataplane)
 	}
-	
+
 	if o.NetworkPlugin == consts.NetworkPluginNone && o.NetworkPluginMode != consts.NetworkPluginModeNone {
-    return fmt.Errorf("network-plugin-mode '%s' is invalid when network-plugin is 'none'. network-plugin-mode must be empty", o.NetworkPluginMode)
+		return fmt.Errorf("network-plugin-mode '%s' is invalid when network-plugin is 'none'. network-plugin-mode must be empty", o.NetworkPluginMode)
 	}
 	return nil
 }
@@ -62,7 +62,6 @@ func (o Options) validateVnetSubnetID() error {
 	}
 	return nil
 }
-
 
 func (o Options) validateEndpoint() error {
 	if o.ClusterEndpoint == "" {

@@ -233,8 +233,8 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring(errMsg)))
 		})
-		
-		It("should fail when networkPluginMode is specified on a networkPluginMode none cluster", func(){
+
+		It("should fail when networkPluginMode is specified on a networkPluginMode none cluster", func() {
 			errMsg := "network-plugin-mode 'overlay' is invalid when network-plugin is 'none'. network-plugin-mode must be empty"
 			err := opts.Parse(
 				fs,
