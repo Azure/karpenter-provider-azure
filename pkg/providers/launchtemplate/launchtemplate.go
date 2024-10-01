@@ -115,7 +115,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		arch = corev1beta1.ArchitectureArm64
 	}
 
-	subnetID := lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), options.FromContext(ctx).SubnetID)
+	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
 
 	// TODO: make conditional on either Azure CNI Overlay or pod subnet
 	vnetLabels, err := p.getVnetInfoLabels(subnetID)

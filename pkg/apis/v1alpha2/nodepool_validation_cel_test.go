@@ -64,7 +64,7 @@ var _ = Describe("CEL/Validation", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					VnetSubnetID: &vnetSubnetID,
+					VNETSubnetID: &vnetSubnetID,
 				},
 			}
 			if expected {

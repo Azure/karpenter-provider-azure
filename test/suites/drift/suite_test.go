@@ -161,7 +161,7 @@ var _ = Describe("Drift", func() {
 		By("triggering subnet drift")
 		// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
 		// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
-		nodeClass.Spec.VnetSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
+		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
 		env.ExpectCreatedOrUpdated(nodeClass)
 
 		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
