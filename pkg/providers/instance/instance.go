@@ -494,8 +494,8 @@ func cpuLimitIsZero(err error) bool {
 
 func (p *Provider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
 	nic.Tags = template.Tags
-	for i := range nic.Properties.IPConfigurations {
-		nic.Properties.IPConfigurations[i].Properties.Subnet = &armnetwork.Subnet{ID: &template.SubnetID}
+	for _, ipConfig := range nic.Properties.IPConfigurations {
+		ipConfig.Properties.Subnet = &armnetwork.Subnet{ID: &template.SubnetID}
 	}
 }
 

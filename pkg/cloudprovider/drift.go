@@ -150,7 +150,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1be
 
 func getFirstSubnetFromNic(nic *armnetwork.Interface) string {
 	for _, ipConfig := range nic.Properties.IPConfigurations {
-		if ipConfig.Properties.Subnet != nil {
+		if ipConfig.Properties.Subnet != nil && lo.FromPtr(ipConfig.Properties.Primary) {
 			return lo.FromPtr(ipConfig.Properties.Subnet.ID)
 		}
 	}
