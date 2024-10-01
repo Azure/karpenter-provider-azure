@@ -216,12 +216,8 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 				{
 					Name: &vmName,
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   to.Ptr(true),
-						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
-						// Subnet is set in p.applyTemplateToNic
-						//Subnet: &armnetwork.Subnet{
-						//	ID: launchTemplate.SubnetID
-						//},
+						Primary:                         to.Ptr(true),
+						PrivateIPAllocationMethod:       to.Ptr(armnetwork.IPAllocationMethodDynamic),
 						LoadBalancerBackendAddressPools: ipv4BackendPools,
 					},
 				},
