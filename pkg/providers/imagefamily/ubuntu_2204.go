@@ -91,7 +91,7 @@ func (u Ubuntu2204) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 		TenantID:                       u.Options.TenantID,
 		SubscriptionID:                 u.Options.SubscriptionID,
 		Location:                       u.Options.Location,
-		UserAssignedIdentityID:         u.Options.UserAssignedIdentityID,
+		KubeletIdentityClientID:        u.Options.KubeletIdentityClientID,
 		ResourceGroup:                  u.Options.ResourceGroup,
 		ClusterID:                      u.Options.ClusterID,
 		APIServerName:                  u.Options.APIServerName,
