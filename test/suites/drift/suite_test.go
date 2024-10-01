@@ -164,8 +164,5 @@ var _ = Describe("Drift", func() {
 
 		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
 		env.EventuallyExpectDrifted(nodeClaim)
-		By(fmt.Sprintf("waiting for pod %s to to update", pod.Name))
-		delete(pod.Annotations, corev1beta1.DoNotDisruptAnnotationKey)
-		env.ExpectUpdated(pod)
 	})
 })
