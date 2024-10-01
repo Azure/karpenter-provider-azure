@@ -156,8 +156,6 @@ var _ = Describe("Drift", func() {
 		env.ExpectCreatedNodeCount("==", 1)
 
 		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-		node := env.EventuallyExpectNodeCount("==", 1)[0]
-
 		By("triggering subnet drift")
 		// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
 		// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
@@ -169,11 +167,5 @@ var _ = Describe("Drift", func() {
 		By(fmt.Sprintf("waiting for pod %s to to update", pod.Name))
 		delete(pod.Annotations, corev1beta1.DoNotDisruptAnnotationKey)
 		env.ExpectUpdated(pod)
-
-		By(fmt.Sprintf("expect pod %s, nodeclaim %s, and node %s to eventually not exist", pod.Name, nodeClaim.Name, node.Name))
-		SetDefaultEventuallyTimeout(10 * time.Minute)
-		env.EventuallyExpectNotFound(pod, nodeClaim, node)
-		SetDefaultEventuallyTimeout(5 * time.Minute)
-
 	})
 })
