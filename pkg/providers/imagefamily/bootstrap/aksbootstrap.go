@@ -21,15 +21,15 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"strings"
 	"text/template"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -40,7 +40,7 @@ type AKS struct {
 	Arch                           string
 	TenantID                       string
 	SubscriptionID                 string
-	UserAssignedIdentityID         string
+	KubeletIdentityClientID        string
 	Location                       string
 	ResourceGroup                  string
 	ClusterID                      string
@@ -73,8 +73,8 @@ func (a AKS) Script() (string, error) {
 // x : unique per cluster,  extracted or specified. (Candidates for exposure/accessibility via API)
 // X : unique per nodepool, extracted or specified. (Candidates for exposure/accessibility via API)
 // c : user input, Options (provider-specific), e.g., could be from environment variables
-// p : user input, part of standard Provisioner (NodePool) CR spec. Example: custom labels, kubelet config
-// t : user input, NodeTemplate (potentially per node)
+// p : user input, part of standard Nodepool CR spec. Example: custom labels, kubelet config
+// t : user input, AKSNodeClass (potentially per node)
 // k : computed (at runtime) by Karpenter (e.g. based on VM SKU, extra labels, etc.)
 //     (xk - computed from per cluster data, such as cluster id)
 //
@@ -89,8 +89,8 @@ func (a AKS) Script() (string, error) {
 // Options (provider-specific) : cluster-level user input (c) - ALL DEFAULTED FOR NOW
 //                             : as well as unique per cluster (x) - until we have a better place for these
 // (TBD)                       : unique per nodepool. extracted or specified (X)
-// NodeTemplate                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
-// Provisioner spec            : selected nodepool-level user input (p)
+// AKSNodeClass                : user input that could be per-node (t) - ALL DEFAULTED FOR NOW
+// Nodepool spec            : selected nodepool-level user input (p)
 
 // NodeBootstrapVariables carries all variables needed to bootstrap a node
 // It is used as input rendering the bootstrap script Go template (customDataTemplate)
@@ -104,6 +104,7 @@ type NodeBootstrapVariables struct {
 	KubernetesVersion                 string   // ?   cluster/node pool specific, derived from user input
 	HyperkubeURL                      string   // -   should be unnecessary
 	KubeBinaryURL                     string   // -   necessary only for non-cached versions / static-ish
+	CredentialProviderDownloadURL     string   // -	  necessary only for non-cached versions / static-ish
 	CustomKubeBinaryURL               string   // -   unnecessary
 	KubeproxyURL                      string   // -   should be unnecessary or bug
 	APIServerPublicKey                string   // -   unique per cluster, actually not sure best way to extract? [should not be needed on agent nodes]
@@ -217,7 +218,6 @@ type NodeBootstrapVariables struct {
 	KubeletNodeLabels                 string   // pk  node-pool specific. user-specified.
 	AzureEnvironmentFilepath          string   // s   can be made static [usually "/etc/kubernetes/azure.json", but my examples use ""?]
 	KubeCACrt                         string   // x   unique per cluster
-	KubenetTemplate                   string   // s   static
 	ContainerdConfigContent           string   // k   determined by GPU VM size, WASM support, Kata support
 	IsKata                            bool     // n   user-specified
 }
@@ -233,18 +233,17 @@ var (
 
 	//go:embed sysctl.conf
 	sysctlContent []byte
-	//go:embed kubenet-cni.json.gtpl
-	kubenetTemplate []byte
 
 	// source note: unique per nodepool. partially user-specified, static, and RP-generated
 	// removed --image-pull-progress-deadline=30m  (not in 1.24?)
 	// removed --network-plugin=cni (not in 1.24?)
+	// removed --azure-container-registry-config (not in 1.30)
+	// removed --keep-terminated-pod-volumes (not in 1.31)
 	kubeletFlagsBase = map[string]string{
 		"--address":                           "0.0.0.0",
 		"--anonymous-auth":                    "false",
 		"--authentication-token-webhook":      "true",
 		"--authorization-mode":                "Webhook",
-		"--azure-container-registry-config":   "/etc/kubernetes/azure.json",
 		"--cgroups-per-qos":                   "true",
 		"--client-ca-file":                    "/etc/kubernetes/certs/ca.crt",
 		"--cloud-config":                      "/etc/kubernetes/azure.json",
@@ -256,7 +255,6 @@ var (
 		"--eviction-hard":                     "memory.available<750Mi,nodefs.available<10%,nodefs.inodesFree<5%",
 		"--image-gc-high-threshold":           "85",
 		"--image-gc-low-threshold":            "80",
-		"--keep-terminated-pod-volumes":       "false",
 		"--kubeconfig":                        "/var/lib/kubelet/kubeconfig",
 		"--max-pods":                          "110",
 		"--node-status-update-frequency":      "10s",
@@ -382,24 +380,15 @@ var (
 		SysctlContent:                   base64.StdEncoding.EncodeToString(sysctlContent),                    // td
 		KubeletFlags:                    "",                                                                  // psX
 		AzureEnvironmentFilepath:        "",                                                                  // s
-		KubenetTemplate:                 base64.StdEncoding.EncodeToString(kubenetTemplate),                  // s
 		ContainerdConfigContent:         "",                                                                  // kd
 		IsKata:                          false,                                                               // n
-
+		NeedsCgroupV2:                   true,                                                                // s only static for karpenter
+		EnsureNoDupePromiscuousBridge:   false,                                                               // s karpenter does not support kubenet
 	}
 )
 
-// Node Labels for Vnet
 const (
-	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
-	vnetNetworkNameLabel    = "kubernetes.azure.com/network-name"
-	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
-	vnetSubscriptionIDLabel = "kubernetes.azure.com/network-subscription"
-	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
-	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-	ciliumDataPlane         = "cilium"
-	overlayNetworkType      = "overlay"
-	globalAKSMirror         = "https://acs-mirror.azureedge.net"
+	globalAKSMirror = "https://acs-mirror.azureedge.net"
 )
 
 func (a AKS) aksBootstrapScript() (string, error) {
@@ -428,6 +417,31 @@ func kubeBinaryURL(kubernetesVersion, cpuArch string) string {
 	return fmt.Sprintf("%s/kubernetes/v%s/binaries/kubernetes-node-linux-%s.tar.gz", globalAKSMirror, kubernetesVersion, cpuArch)
 }
 
+// CredentialProviderURL returns the URL for OOT credential provider,
+// or an empty string if OOT provider is not to be used
+func CredentialProviderURL(kubernetesVersion, arch string) string {
+	minorVersion := semver.MustParse(kubernetesVersion).Minor
+	if minorVersion < 30 { // use from 1.30; 1.29 supports it too, but we have not fully tested it with Karpenter
+		return ""
+	}
+
+	// credential provider has its own release outside of k8s version, and there'll be one credential provider binary for each k8s release,
+	// as credential provider release goes with cloud-provider-azure, not every credential provider release will be picked up unless
+	// there are CVE or bug fixes.
+	credentialProviderVersion := "1.29.2"
+	switch minorVersion {
+	case 29:
+		credentialProviderVersion = "1.29.2"
+	case 30:
+		credentialProviderVersion = "1.30.0"
+
+	case 31:
+		credentialProviderVersion = "1.31.0"
+	}
+
+	return fmt.Sprintf("%s/cloud-provider-azure/v%s/binaries/azure-acr-credential-provider-linux-%s-v%s.tar.gz", globalAKSMirror, credentialProviderVersion, arch, credentialProviderVersion)
+}
+
 func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeCACrt = *a.CABundle
 	nbv.APIServerName = a.APIServerName
@@ -437,7 +451,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.SubscriptionID = a.SubscriptionID
 	nbv.Location = a.Location
 	nbv.ResourceGroup = a.ResourceGroup
-	nbv.UserAssignedIdentityID = a.UserAssignedIdentityID
+	nbv.UserAssignedIdentityID = a.KubeletIdentityClientID
 
 	nbv.NetworkPlugin = a.NetworkPlugin
 	nbv.NetworkPolicy = a.NetworkPolicy
@@ -446,11 +460,8 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeBinaryURL = kubeBinaryURL(a.KubernetesVersion, a.Arch)
 	nbv.VNETCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
 	nbv.CNIPluginsURL = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
-
 	// calculated values
-	nbv.EnsureNoDupePromiscuousBridge = nbv.NeedsContainerd && nbv.NetworkPlugin == "kubenet" && nbv.NetworkPolicy != "calico"
 	nbv.NetworkSecurityGroup = fmt.Sprintf("aks-agentpool-%s-nsg", a.ClusterID)
-	nbv.VirtualNetwork = fmt.Sprintf("aks-vnet-%s", a.ClusterID)
 	nbv.RouteTable = fmt.Sprintf("aks-agentpool-%s-routetable", a.ClusterID)
 
 	if a.GPUNode {
@@ -459,30 +470,37 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
-	nbv.NeedsCgroupV2 = true
+
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
-	//Adding vnet-related labels to the nodeLabels.
-	azureVnetGUID := os.Getenv("AZURE_VNET_GUID")
-	azureVnetName := os.Getenv("AZURE_VNET_NAME")
-	azureSubnetName := os.Getenv("AZURE_SUBNET_NAME")
+	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
+	nbv.Subnet = subnetParts.SubnetName
+	nbv.VirtualNetworkResourceGroup = subnetParts.ResourceGroupName
+	nbv.VirtualNetwork = subnetParts.VNetName
 
-	vnetLabels := map[string]string{
-		vnetDataPlaneLabel:      ciliumDataPlane,
-		vnetNetworkNameLabel:    azureVnetName,
-		vnetSubnetNameLabel:     azureSubnetName,
-		vnetSubscriptionIDLabel: a.SubscriptionID,
-		vnetGUIDLabel:           azureVnetGUID,
-		vnetPodNetworkTypeLabel: overlayNetworkType,
-	}
-
-	kubeletLabels = lo.Assign(kubeletLabels, vnetLabels)
 	nbv.KubeletNodeLabels = strings.Join(lo.MapToSlice(kubeletLabels, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), ",")
 
+	// Assign Per K8s version kubelet flags
+	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
+	if minorVersion < 31 {
+		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
+	}
+
+	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)
+	if credentialProviderURL != "" { // use OOT credential provider
+		nbv.CredentialProviderDownloadURL = credentialProviderURL
+		kubeletFlagsBase["--image-credential-provider-config"] = "/var/lib/kubelet/credential-provider-config.yaml"
+		kubeletFlagsBase["--image-credential-provider-bin-dir"] = "/var/lib/kubelet/credential-provider"
+	} else { // Versions Less than 1.30
+		// we can make this logic smarter later when we have more than one
+		// for now just adding here.
+		kubeletFlagsBase["--feature-gates"] = "DisableKubeletCloudCredentialProviders=false"
+		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
+	}
 	// merge and stringify taints
 	kubeletFlags := lo.Assign(kubeletFlagsBase)
 	if len(a.Taints) > 0 {
@@ -490,8 +508,8 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlags = lo.Assign(kubeletFlags, map[string]string{"--register-with-taints": strings.Join(taintStrs, ",")})
 	}
 
-	machineKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
-	kubeletFlags = lo.Assign(kubeletFlags, machineKubeletConfig)
+	nodeclaimKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
+	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
 
 	// striginify kubelet flags (including taints)
 	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
@@ -552,8 +570,8 @@ func KubeletConfigToMap(kubeletConfig *corev1beta1.KubeletConfiguration) map[str
 	if kubeletConfig.PodsPerCore != nil {
 		args["--pods-per-core"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.PodsPerCore))
 	}
-	JoinParameterArgsToMap(args, "--system-reserved", resources.StringMap(kubeletConfig.SystemReserved), "=")
-	JoinParameterArgsToMap(args, "--kube-reserved", resources.StringMap(kubeletConfig.KubeReserved), "=")
+	JoinParameterArgsToMap(args, "--system-reserved", kubeletConfig.SystemReserved, "=")
+	JoinParameterArgsToMap(args, "--kube-reserved", kubeletConfig.KubeReserved, "=")
 	JoinParameterArgsToMap(args, "--eviction-hard", kubeletConfig.EvictionHard, "<")
 	JoinParameterArgsToMap(args, "--eviction-soft", kubeletConfig.EvictionSoft, "<")
 	JoinParameterArgsToMap(args, "--eviction-soft-grace-period", lo.MapValues(kubeletConfig.EvictionSoftGracePeriod, func(v metav1.Duration, _ string) string {

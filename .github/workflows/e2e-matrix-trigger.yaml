@@ -5,12 +5,9 @@ on:
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "eastus"
+        default: "westus3"
   push:
     branches: [main]
-  workflow_run:
-    workflows: [ApprovalComment]
-    types: [completed]
 
 permissions:
   contents: read
@@ -23,12 +20,12 @@ jobs:
     permissions:
       contents: read
       id-token: write # This is required for requesting the JWT
-      statuses: write # ./.github/actions/commit-status/*          
+      statuses: write # ./.github/actions/commit-status/*
     needs: [resolve]
     uses: ./.github/workflows/e2e-matrix.yaml
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
-      location: ${{ inputs.location || 'eastus' }}
+      location: ${{ inputs.location || 'westus3' }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}

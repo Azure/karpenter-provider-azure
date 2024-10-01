@@ -21,7 +21,7 @@ on:
 
 permissions:
   contents: read
-        
+
 jobs:
   initialize-generative-params:
     runs-on: ubuntu-latest
@@ -29,9 +29,13 @@ jobs:
       E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
         with:
-          egress-policy: audit
+          disable-telemetry: true
+          disable-sudo: true
+          egress-policy: block
+          # no allowed endpoints
+          allowed-endpoints: >
 
       - id: generate-e2e-run-hash
         run: |
@@ -43,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim, Chaos]
+        suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim, Chaos, ACR]
     permissions:
       contents: read
       id-token: write

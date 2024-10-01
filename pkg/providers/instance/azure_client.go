@@ -18,14 +18,9 @@ package instance
 
 import (
 	"context"
-	"fmt"
-	"os"
-
-	// nolint SA1019 - deprecated package
-
-	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -114,24 +109,12 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	return azClient, nil
 }
 
-func handleVNET(cfg *auth.Config, vnetClient *armnetwork.VirtualNetworksClient) error {
-	vnet, err := vnetClient.Get(context.Background(), cfg.NodeResourceGroup, cfg.VnetName, nil)
-	if err != nil {
-		return err
-	}
-	if vnet.Properties == nil || vnet.Properties.ResourceGUID == nil {
-		return fmt.Errorf("vnet %s does not have a resource GUID", cfg.VnetName)
-	}
-	os.Setenv("AZURE_VNET_GUID", lo.FromPtr(vnet.Properties.ResourceGUID))
-	return nil
-}
-
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) (*AZClient, error) {
-	cred, err := auth.NewCredential(cfg)
+	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
 	}
-
+	cred := auth.NewTokenWrapper(defaultAzureCred)
 	opts := armopts.DefaultArmOpts()
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
@@ -144,14 +127,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
 
-	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, cred, opts)
-	if err != nil {
-		return nil, err
-	}
-	err = handleVNET(cfg, vnetClient)
-	if err != nil {
-		return nil, err
-	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err

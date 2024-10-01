@@ -9,7 +9,7 @@ FROM mcr.microsoft.com/vscode/devcontainers/go:1-${VARIANT}
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends graphviz
 
-RUN curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/v2.3.1/skaffold-linux-amd64 && \
+RUN curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/v2.13.0/skaffold-linux-amd64 && \
     install skaffold /usr/local/bin/
 
 # [Optional] Uncomment the next lines to use go get to install anything else you need

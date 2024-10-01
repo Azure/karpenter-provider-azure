@@ -14,19 +14,29 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        k8sVersion: ["1.25.x", "1.26.x", "1.27.x", "1.28.x", "1.29.x"]
+        k8sVersion: ["1.25.x", "1.26.x", "1.27.x", "1.28.x", "1.29.x", "1.30.x", "1.31.x"]
     env:
       K8S_VERSION: ${{ matrix.k8sVersion }}
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@63c24ba6bd7ba022e95695ff85de572c04a18142 # v2.7.0
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
       with:
-        egress-policy: audit
+        disable-telemetry: true
+        egress-policy: block
+        allowed-endpoints: >
+          api.github.com:443
+          coveralls.io:443
+          github.com:443
+          objects.githubusercontent.com:443
+          proxy.golang.org:443
+          raw.githubusercontent.com:443
+          storage.googleapis.com:443
+          sum.golang.org:443
 
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
     - uses: ./.github/actions/install-deps
       with:
-        k8sVersion: ${{ matrix.k8sVersion }}    
+        k8sVersion: ${{ matrix.k8sVersion }}
     - run: K8S_VERSION=${{ matrix.k8sVersion }} make ci-test
     - name: Send coverage
       # should only send coverage once https://docs.coveralls.io/parallel-builds

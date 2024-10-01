@@ -33,17 +33,17 @@ var _ = Describe("StandaloneNodeClaim", func() {
 	It("should create a standard NodeClaim within the 'D' sku family", func() {
 		nodeClaim := test.NodeClaim(corev1beta1.NodeClaim{
 			Spec: corev1beta1.NodeClaimSpec{
-				Requirements: []v1.NodeSelectorRequirement{
-					{
+				Requirements: []corev1beta1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
 						Key:      v1alpha2.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"D"},
-					},
-					{
+					}},
+					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
 						Key:      corev1beta1.CapacityTypeLabelKey,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{corev1beta1.CapacityTypeOnDemand},
-					},
+					}},
 				},
 				NodeClassRef: &corev1beta1.NodeClassReference{
 					Name: nodeClass.Name,
@@ -126,17 +126,17 @@ var _ = Describe("StandaloneNodeClaim", func() {
 	It("should remove the cloudProvider NodeClaim when the cluster NodeClaim is deleted", func() {
 		nodeClaim := test.NodeClaim(corev1beta1.NodeClaim{
 			Spec: corev1beta1.NodeClaimSpec{
-				Requirements: []v1.NodeSelectorRequirement{
-					{
+				Requirements: []corev1beta1.NodeSelectorRequirementWithMinValues{
+					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
 						Key:      v1alpha2.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"D"},
-					},
-					{
+					}},
+					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
 						Key:      corev1beta1.CapacityTypeLabelKey,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{corev1beta1.CapacityTypeOnDemand},
-					},
+					}},
 				},
 				NodeClassRef: &corev1beta1.NodeClassReference{
 					Name: nodeClass.Name,

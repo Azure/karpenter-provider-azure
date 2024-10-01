@@ -30,6 +30,9 @@ import (
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -40,6 +43,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 	"sigs.k8s.io/karpenter/pkg/operator"
 )
 
@@ -64,10 +69,13 @@ type Operator struct {
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
 	azConfig, err := GetAZConfig()
-	lo.Must0(err, "creating Azure config") // TODO: I assume we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as this has a helpful error message?
+	lo.Must0(err, "creating Azure config") // NOTE: we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as when initializing the client there are helpful error messages in initializing clients and the azure config
 
 	azClient, err := instance.CreateAZClient(ctx, azConfig)
 	lo.Must0(err, "creating Azure client")
+
+	vnetGUID, err := getVnetGUID(azConfig, options.FromContext(ctx).SubnetID)
+	lo.Must0(err, "getting VNET GUID")
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
@@ -83,7 +91,10 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.ImageVersionsClient,
 		azConfig.Location,
 	)
-	imageResolver := imagefamily.New(operator.GetClient(), imageProvider)
+	imageResolver := imagefamily.New(
+		operator.GetClient(),
+		imageProvider,
+	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageResolver,
@@ -92,9 +103,10 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ClusterEndpoint,
 		azConfig.TenantID,
 		azConfig.SubscriptionID,
-		azConfig.UserAssignedIdentityID,
+		azConfig.KubeletIdentityClientID,
 		azConfig.NodeResourceGroup,
 		azConfig.Location,
+		vnetGUID,
 	)
 	instanceTypeProvider := instancetype.NewProvider(
 		azConfig.Location,
@@ -116,7 +128,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		unavailableOfferingsCache,
 		azConfig.Location,
 		azConfig.NodeResourceGroup,
-		azConfig.SubnetID,
+		options.FromContext(ctx).SubnetID,
 		azConfig.SubscriptionID,
 	)
 
@@ -155,4 +167,29 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 		return nil, fmt.Errorf("discovering caBundle, loading TLS config, %w", err)
 	}
 	return ptr.String(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
+}
+
+func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {
+	creds, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return "", err
+	}
+	opts := armopts.DefaultArmOpts()
+	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, creds, opts)
+	if err != nil {
+		return "", err
+	}
+
+	subnetParts, err := utils.GetVnetSubnetIDComponents(subnetID)
+	if err != nil {
+		return "", err
+	}
+	vnet, err := vnetClient.Get(context.Background(), subnetParts.ResourceGroupName, subnetParts.VNetName, nil)
+	if err != nil {
+		return "", err
+	}
+	if vnet.Properties == nil || vnet.Properties.ResourceGUID == nil {
+		return "", fmt.Errorf("vnet %s does not have a resource GUID", subnetParts.VNetName)
+	}
+	return *vnet.Properties.ResourceGUID, nil
 }

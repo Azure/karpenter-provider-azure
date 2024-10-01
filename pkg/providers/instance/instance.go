@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
@@ -119,7 +120,7 @@ func NewProvider(
 // Create an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
 func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, error) {
-	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...))
+	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
@@ -178,7 +179,7 @@ func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, erro
 }
 
 func (p *Provider) Delete(ctx context.Context, resourceName string) error {
-	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources")
+	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", resourceName)
 	return p.cleanupAzureResources(ctx, resourceName)
 }
 
@@ -196,9 +197,9 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	return nil
 }
 
-func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
+func (p *Provider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
-	for _, poolID := range backendPools.IPv4PoolIDs {
+	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
 		poolID := poolID
 		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
 			ID: &poolID,
@@ -208,19 +209,19 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
 
 	enableAcceleratedNetworking := false
-	if err := instanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
+	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
 		enableAcceleratedNetworking = true
 	}
 
-	return armnetwork.Interface{
+	nic := armnetwork.Interface{
 		Location: to.Ptr(p.location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
-					Name: &vmName,
+					Name: &opts.NICName,
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   to.Ptr(true),
-						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
+						Primary:                   lo.ToPtr(true),
+						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
 						Subnet: &armnetwork.Subnet{
 							ID: &p.subnetID,
 						},
@@ -228,26 +229,52 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 					},
 				},
 			},
-			EnableAcceleratedNetworking: to.Ptr(enableAcceleratedNetworking),
-			EnableIPForwarding:          to.Ptr(true),
+			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
+			EnableIPForwarding:          lo.ToPtr(true),
 		},
 	}
+	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
+		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
+		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
+		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
+		// ips from the nodeclass instead of using the default
+		for i := 1; i < consts.DefaultKubernetesMaxPods; i++ {
+			nic.Properties.IPConfigurations = append(
+				nic.Properties.IPConfigurations,
+				&armnetwork.InterfaceIPConfiguration{
+					Name: lo.ToPtr(fmt.Sprintf("ipconfig%d", i)),
+					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+						Primary:                   lo.ToPtr(false),
+						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+						Subnet: &armnetwork.Subnet{
+							ID: &p.subnetID,
+						},
+					},
+				},
+			)
+		}
+	}
+	return nic
 }
 
 func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
 
-func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, launchTemplateConfig *launchtemplate.Template, instanceType *corecloudprovider.InstanceType) (string, error) {
-	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
-	if err != nil {
-		return "", err
-	}
+type createNICOptions struct {
+	NICName           string
+	BackendPools      *loadbalancer.BackendAddressPools
+	InstanceType      *corecloudprovider.InstanceType
+	LaunchTemplate    *launchtemplate.Template
+	NetworkPlugin     string
+	NetworkPluginMode string
+}
 
-	nic := p.newNetworkInterfaceForVM(nicName, backendPools, instanceType)
-	p.applyTemplateToNic(&nic, launchTemplateConfig)
-	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
-	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)
+func (p *Provider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
+	nic := p.newNetworkInterfaceForVM(opts)
+	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
+	logging.FromContext(ctx).Debugf("Creating network interface %s", opts.NICName)
+	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
 	if err != nil {
 		return "", err
 	}
@@ -266,7 +293,6 @@ func newVMObject(
 	sshPublicKey string,
 	nodeIdentities []string,
 	nodeClass *v1alpha2.AKSNodeClass,
-	nodeClaim *corev1beta1.NodeClaim,
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
 	// Build the image reference from template
@@ -328,7 +354,6 @@ func newVMObject(
 	}
 	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
-	setVMTagsProvisionerName(vm.Tags, nodeClaim)
 
 	return vm
 }
@@ -355,8 +380,8 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	}
 }
 
-// setVMTagsProvisionerName sets "karpenter.sh/provisioner-name" tag
-func setVMTagsProvisionerName(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
+// setNodePoolNameTag sets "karpenter.sh/nodepool" tag
+func setNodePoolNameTag(tags map[string]*string, nodeClaim *corev1beta1.NodeClaim) {
 	nodePoolLabel := nodeClaim.Labels[corev1beta1.NodePoolLabelKey]
 	tags[NodePoolTagKey] = &nodePoolLabel
 }
@@ -381,18 +406,35 @@ func (p *Provider) launchInstance(
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting launch template: %w", err)
 	}
+
+	// set provisioner tag for NIC, VM, and Disk
+	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
+
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
 	// create network interface
-	nicReference, err := p.createNetworkInterface(ctx, resourceName, launchTemplate, instanceType)
+	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting backend pools: %w", err)
+	}
+	nicReference, err := p.createNetworkInterface(ctx,
+		&createNICOptions{
+			NICName:           resourceName,
+			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
+			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
+			LaunchTemplate:    launchTemplate,
+			BackendPools:      backendPools,
+			InstanceType:      instanceType,
+		},
+	)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	sshPublicKey := options.FromContext(ctx).SSHPublicKey
 	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, nodeClaim, launchTemplate, instanceType)
+	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
@@ -532,10 +574,10 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	// InstanceType/VM SKU - just pick the first one for now. They are presorted by cheapest offering price (taking node requirements into account)
 	instanceType := instanceTypes[0]
 	logging.FromContext(ctx).Infof("Selected instance type %s", instanceType.Name)
-	// Priority - Provisioner defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
+	// Priority - Nodepool defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
 	// Zone - ideally random/spread from requested zones that support given Priority
-	requestedZones := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
+	requestedZones := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
 	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool {
 		return o.CapacityType == priority && requestedZones.Has(o.Zone)
 	})
@@ -573,8 +615,7 @@ func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName strin
 // This returns from a single pre-selected InstanceType, rather than all InstanceType options in nodeRequest,
 // because Azure Cloud Provider does client-side selection of particular InstanceType from options
 func (p *Provider) getPriorityForInstanceType(nodeClaim *corev1beta1.NodeClaim, instanceType *corecloudprovider.InstanceType) string {
-	requirements := scheduling.NewNodeSelectorRequirements(nodeClaim.
-		Spec.Requirements...)
+	requirements := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 
 	if requirements.Get(corev1beta1.CapacityTypeLabelKey).Has(corev1beta1.CapacityTypeSpot) {
 		for _, offering := range instanceType.Offerings.Available() {

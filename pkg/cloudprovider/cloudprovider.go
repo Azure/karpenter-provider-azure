@@ -99,7 +99,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *corev1beta1.NodeC
 		return nil, fmt.Errorf("creating instance, %w", err)
 	}
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
-		return i.Name == string(*instance.Properties.HardwareProfile.VMSize)
+		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
 
 	return c.instanceToNodeClaim(ctx, instance, instanceType)
@@ -214,6 +214,16 @@ func (c *CloudProvider) Name() string {
 	return "azure"
 }
 
+func (c *CloudProvider) GetSupportedNodeClasses() []schema.GroupVersionKind {
+	return []schema.GroupVersionKind{
+		{
+			Group:   v1alpha2.SchemeGroupVersion.Group,
+			Version: v1alpha2.SchemeGroupVersion.Version,
+			Kind:    "AKSNodeClass",
+		},
+	}
+}
+
 func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (*v1alpha2.AKSNodeClass, error) {
 	nodeClass := &v1alpha2.AKSNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
@@ -243,7 +253,7 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *cor
 		return nil, fmt.Errorf("getting instance types, %w", err)
 	}
 
-	reqs := scheduling.NewNodeSelectorRequirements(nodeClaim.Spec.Requirements...)
+	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
 		return reqs.Compatible(i.Requirements, v1alpha2.AllowUndefinedLabels) == nil &&
 			len(i.Offerings.Compatible(reqs).Available()) > 0 &&
@@ -269,7 +279,7 @@ func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, ins
 		return nil, client.IgnoreNotFound(fmt.Errorf("resolving node template, %w", err))
 	}
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
-		return i.Name == string(*instance.Properties.HardwareProfile.VMSize)
+		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
 	return instanceType, nil
 }

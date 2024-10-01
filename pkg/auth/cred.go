@@ -17,39 +17,43 @@ limitations under the License.
 package auth
 
 import (
-	"fmt"
+	"context"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"k8s.io/klog/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"knative.dev/pkg/logging"
 )
 
-// NewCredential provides a token credential for msi and service principal auth
-func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("failed to create credential, nil config provided")
-	}
+// expireEarlyTokenCredential is a wrapper around the azcore.TokenCredential that
+// returns an earlier ExpiresOn timestamp to avoid conditions like clockSkew, or a race
+// condition during polling.
+// See: https://github.com/hashicorp/terraform-provider-azurerm/issues/20834 for more details
+type expireEarlyTokenCredential struct {
+	cred azcore.TokenCredential
+}
 
-	if cfg.UseCredentialFromEnvironment {
-		klog.V(2).Infoln("cred: using workload identity for new credential")
-		return azidentity.NewDefaultAzureCredential(nil)
+func NewTokenWrapper(cred azcore.TokenCredential) azcore.TokenCredential {
+	return &expireEarlyTokenCredential{
+		cred: cred,
 	}
+}
 
-	if cfg.UseManagedIdentityExtension || cfg.AADClientID == "msi" {
-		klog.V(2).Infoln("cred: using msi for new credential")
-		msiCred, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
-			ID: azidentity.ClientID(cfg.UserAssignedIdentityID),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return msiCred, nil
-	}
-	// service principal case
-	klog.V(2).Infoln("cred: using sp for new credential")
-	cred, err := azidentity.NewClientSecretCredential(cfg.TenantID, cfg.AADClientID, cfg.AADClientSecret, nil)
+func (w *expireEarlyTokenCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	token, err := w.cred.GetToken(ctx, options)
 	if err != nil {
-		return nil, err
+		return azcore.AccessToken{}, err
 	}
-	return cred, nil
+
+	twoHoursFromNow := time.Now().Add(2 * time.Hour)
+	// IMDS may have the MI token already, and have an expiration of less than 2h when we receive the token. We don't want to set that value beyond the ExpiresOn time and potentially miss a refresh
+	// So we just return earlier here. See discussion here: https://github.com/Azure/karpenter-provider-azure/pull/391/files#r1648633051
+	if token.ExpiresOn.Before(twoHoursFromNow) {
+		return token, nil
+	}
+	logging.FromContext(ctx).Debug("adjusting token ExpiresOn")
+	// If the token expires in more than 2 hours, this means we are taking in a new token with a fresh 24h expiration time or one already in the cache that hasn't been modified by us, so we want to set that to two hours so
+	// we can refresh it early to avoid the polling bugs mentioned in the above issue
+	token.ExpiresOn = twoHoursFromNow
+	return token, nil
 }

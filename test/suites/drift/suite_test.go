@@ -63,11 +63,12 @@ var _ = Describe("Drift", func() {
 	BeforeEach(func() {
 		env.ExpectSettingsOverridden(v1.EnvVar{Name: "FEATURE_GATES", Value: "Drift=true"})
 
-		test.ReplaceRequirements(nodePool, v1.NodeSelectorRequirement{
-			Key:      v1.LabelInstanceTypeStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{"Standard_DS2_v2"},
-		})
+		test.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				Key:      v1.LabelInstanceTypeStable,
+				Operator: v1.NodeSelectorOpIn,
+				Values:   []string{"Standard_DS2_v2"},
+			}})
 
 		// Add a do-not-disrupt pod so that we can check node metadata before we disrupt
 		pod = test.Pod(test.PodOptions{
@@ -115,8 +116,9 @@ var _ = Describe("Drift", func() {
 		SetDefaultEventuallyTimeout(5 * time.Minute)
 	})
 	It("should upgrade nodes using drift based on node image version change", func() {
-		startingImageVersion := "202309.29.0"
-		upgradedImageVersion := "202310.01.0"
+		// TODO: Get these dynamically
+		startingImageVersion := "202404.09.0"
+		upgradedImageVersion := "202404.16.0"
 
 		nodeClass.Spec.ImageVersion = &startingImageVersion
 

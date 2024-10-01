@@ -45,7 +45,6 @@ import (
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
-	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 const (
@@ -95,21 +94,12 @@ func (p *Provider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	// TODO: remove kubeReservedHash and systemReservedHash once v1.ResourceList objects are hashed as strings in KubeletConfiguration
-	// For more information on the v1.ResourceList hash issue: https://github.com/kubernetes-sigs/karpenter/issues/1080
-	kubeReservedHash, systemReservedHash := uint64(0), uint64(0)
-	if kc != nil {
-		kubeReservedHash, _ = hashstructure.Hash(resources.StringMap(kc.KubeReserved), hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-		systemReservedHash, _ = hashstructure.Hash(resources.StringMap(kc.SystemReserved), hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	}
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%016x-%016x",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
 		to.String(nodeClass.Spec.ImageFamily),
 		to.Int32(nodeClass.Spec.OSDiskSizeGB),
-		kubeReservedHash,
-		systemReservedHash,
 	)
 	if item, ok := p.cache.Get(key); ok {
 		return item.([]*cloudprovider.InstanceType), nil
@@ -155,12 +145,13 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
-	if hasZonalSupport(region) {
-		return sets.New(lo.Map(lo.Keys(sku.AvailabilityZones(region)), func(zone string, _ int) string {
+	// If an offering is non-zonal, the availability zones will be empty.
+	skuZones := lo.Keys(sku.AvailabilityZones(region))
+	if hasZonalSupport(region) && len(skuZones) > 0 {
+		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
 			return fmt.Sprintf("%s-%s", region, zone)
 		})...)
 	}
-
 	return sets.New("") // empty string means non-zonal offering
 }
 
