@@ -51,7 +51,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 )
@@ -212,9 +211,8 @@ func (p *Provider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.I
 	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
 		enableAcceleratedNetworking = true
 	}
-
 	nic := armnetwork.Interface{
-		Location: to.Ptr(p.location),
+		Location: lo.ToPtr(p.location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
@@ -230,7 +228,7 @@ func (p *Provider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.I
 				},
 			},
 			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
-			EnableIPForwarding:          lo.ToPtr(true),
+			EnableIPForwarding:          lo.ToPtr(false),
 		},
 	}
 	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
@@ -300,19 +298,19 @@ func newVMObject(
 		CommunityGalleryImageID: &launchTemplate.ImageID,
 	}
 	vm := armcompute.VirtualMachine{
-		Location: to.Ptr(location),
+		Location: lo.ToPtr(location),
 		Identity: ConvertToVirtualMachineIdentity(nodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: to.Ptr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
+				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
 			},
 
 			StorageProfile: &armcompute.StorageProfile{
 				OSDisk: &armcompute.OSDisk{
-					Name:         to.Ptr(vmName),
+					Name:         lo.ToPtr(vmName),
 					DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
-					CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
-					DeleteOption: to.Ptr(armcompute.DiskDeleteOptionTypesDelete),
+					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
+					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},
 				ImageReference: &imageReference,
 			},
@@ -322,30 +320,30 @@ func newVMObject(
 					{
 						ID: &nicReference,
 						Properties: &armcompute.NetworkInterfaceReferenceProperties{
-							Primary:      to.Ptr(true),
-							DeleteOption: to.Ptr(armcompute.DeleteOptionsDelete),
+							Primary:      lo.ToPtr(true),
+							DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
 						},
 					},
 				},
 			},
 
 			OSProfile: &armcompute.OSProfile{
-				AdminUsername: to.Ptr("azureuser"),
+				AdminUsername: lo.ToPtr("azureuser"),
 				ComputerName:  &vmName,
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
-					DisablePasswordAuthentication: to.Ptr(true),
+					DisablePasswordAuthentication: lo.ToPtr(true),
 					SSH: &armcompute.SSHConfiguration{
 						PublicKeys: []*armcompute.SSHPublicKey{
 							{
-								KeyData: to.Ptr(sshPublicKey),
-								Path:    to.Ptr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
+								KeyData: lo.ToPtr(sshPublicKey),
+								Path:    lo.ToPtr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
 							},
 						},
 					},
 				},
-				CustomData: to.Ptr(launchTemplate.UserData),
+				CustomData: lo.ToPtr(launchTemplate.UserData),
 			},
-			Priority: to.Ptr(armcompute.VirtualMachinePriorityTypes(
+			Priority: lo.ToPtr(armcompute.VirtualMachinePriorityTypes(
 				CapacityTypeToPriority[capacityType]),
 			),
 		},
@@ -363,19 +361,19 @@ func setVMPropertiesStorageProfile(vmProperties *armcompute.VirtualMachineProper
 	// use ephemeral disk if it is large enough
 	if *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType) {
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
-			Option: to.Ptr(armcompute.DiffDiskOptionsLocal),
+			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
 			// placement (cache/resource) is left to CRP
 		}
-		vmProperties.StorageProfile.OSDisk.Caching = to.Ptr(armcompute.CachingTypesReadOnly)
+		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
 	}
 }
 
 // setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
 func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string) {
 	if capacityType == corev1beta1.CapacityTypeSpot {
-		vmProperties.EvictionPolicy = to.Ptr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
+		vmProperties.EvictionPolicy = lo.ToPtr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
-			MaxPrice: to.Ptr(float64(-1)),
+			MaxPrice: lo.ToPtr(float64(-1)),
 		}
 	}
 }
@@ -663,16 +661,16 @@ func (p *Provider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtens
 	)
 
 	vmExtension := &armcompute.VirtualMachineExtension{
-		Location: to.Ptr(p.location),
-		Name:     to.Ptr(aksIdentifyingExtensionName),
+		Location: lo.ToPtr(p.location),
+		Name:     lo.ToPtr(aksIdentifyingExtensionName),
 		Properties: &armcompute.VirtualMachineExtensionProperties{
-			Publisher:               to.Ptr(aksIdentifyingExtensionPublisher),
-			TypeHandlerVersion:      to.Ptr("1.0"),
-			AutoUpgradeMinorVersion: to.Ptr(true),
+			Publisher:               lo.ToPtr(aksIdentifyingExtensionPublisher),
+			TypeHandlerVersion:      lo.ToPtr("1.0"),
+			AutoUpgradeMinorVersion: lo.ToPtr(true),
 			Settings:                &map[string]interface{}{},
-			Type:                    to.Ptr(aksIdentifyingExtensionTypeLinux),
+			Type:                    lo.ToPtr(aksIdentifyingExtensionTypeLinux),
 		},
-		Type: to.Ptr(vmExtensionType),
+		Type: lo.ToPtr(vmExtensionType),
 	}
 
 	return vmExtension
