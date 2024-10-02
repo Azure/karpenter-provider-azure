@@ -12,7 +12,7 @@ spec:
   template:
     spec:
       startupTaints:
-        - key: node.kubernetes.io/network-unavailable
+        - key: node.cilium.io/agent-not-ready
           effect: NoSchedule
       requirements:
         - key: kubernetes.io/arch

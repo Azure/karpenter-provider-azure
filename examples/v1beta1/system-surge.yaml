@@ -15,7 +15,7 @@ spec:
         kubernetes.azure.com/mode: "system"
     spec:
       startupTaints:
-        - key: node.kubernetes.io/network-unavailable
+        - key: node.cilium.io/agent-not-ready
           effect: NoSchedule
       taints: 
         - key: "CriticalAddonsOnly"
