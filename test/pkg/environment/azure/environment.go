@@ -38,8 +38,8 @@ func init() {
 }
 
 const (
-	WindowsDefaultImage      = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
-	CiliumAgentNotReadyTaint = "node.cilium.io/agent-not-ready"
+	WindowsDefaultImage               = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+	KubernetesNetworkUnavailableTaint = "node.kubernetes.io/network-unavailable"
 )
 
 type Environment struct {
@@ -93,7 +93,7 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 		v1.ResourceMemory: resource.MustParse("1000Gi"),
 	})
 	nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, v1.Taint{
-		Key:    CiliumAgentNotReadyTaint,
+		Key:    KubernetesNetworkUnavailableTaint,
 		Effect: v1.TaintEffectNoSchedule,
 	})
 	return nodePool
