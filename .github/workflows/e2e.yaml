@@ -45,9 +45,38 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
+        uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
         with:
-          egress-policy: audit
+          disable-telemetry: true
+          egress-policy: block
+          # - wildcards to allow for variation in targeted clusters
+          # - clients3.google.com:80 and firebaselogging-pa.googleapis.com:443 - confirmed Skaffold,
+          #   likely telemetry, likely can be avoided/blocked with/after "skaffold config set --global collect-metrics false"
+          allowed-endpoints: >
+            *.azmk8s.io:443
+            *.azurecr.io:443
+            *.data.mcr.microsoft.com:443
+            aka.ms:443
+            api.github.com:443
+            app.aladdin.microsoft.com:443
+            auth.docker.io:443
+            azcliextensionsync.blob.core.windows.net:443
+            clients3.google.com:80
+            dc.services.visualstudio.com:443
+            distroless.dev:443
+            firebaselogging-pa.googleapis.com:443
+            gist.githubusercontent.com:443
+            github.com:443
+            graph.microsoft.com:443
+            index.docker.io:443
+            login.microsoftonline.com:443
+            management.azure.com:443
+            mcr.microsoft.com:443
+            objects.githubusercontent.com:443
+            proxy.golang.org:443
+            raw.githubusercontent.com:443
+            storage.googleapis.com:443
+            sum.golang.org:443
 
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
         with:
@@ -59,7 +88,7 @@ jobs:
           git_ref: ${{ inputs.git_ref }}
       - uses: ./.github/actions/install-deps
       - name: az login
-        uses: azure/login@6c251865b4e6290e7b78be643ea2d005bc51f69a # v2.1.1
+        uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0
         with:
           client-id: ${{ secrets.E2E_CLIENT_ID }}
           tenant-id: ${{ secrets.E2E_TENANT_ID }}

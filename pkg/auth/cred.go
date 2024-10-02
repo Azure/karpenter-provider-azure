@@ -18,13 +18,10 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"k8s.io/klog/v2"
 	"knative.dev/pkg/logging"
 )
 
@@ -59,33 +56,4 @@ func (w *expireEarlyTokenCredential) GetToken(ctx context.Context, options polic
 	// we can refresh it early to avoid the polling bugs mentioned in the above issue
 	token.ExpiresOn = twoHoursFromNow
 	return token, nil
-}
-
-// NewCredential provides a token credential for msi and service principal auth
-func NewCredential(cfg *Config) (azcore.TokenCredential, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("failed to create credential, nil config provided")
-	}
-	if cfg.UseCredentialFromEnvironment {
-		klog.V(2).Infoln("cred: using workload identity for new credential")
-		return azidentity.NewDefaultAzureCredential(nil)
-	}
-
-	if cfg.UseManagedIdentityExtension || cfg.AADClientID == "msi" {
-		klog.V(2).Infoln("cred: using msi for new credential")
-		msiCred, err := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
-			ID: azidentity.ClientID(cfg.UserAssignedIdentityID),
-		})
-		if err != nil {
-			return nil, err
-		}
-		return msiCred, nil
-	}
-	// service principal case
-	klog.V(2).Infoln("cred: using sp for new credential")
-	cred, err := azidentity.NewClientSecretCredential(cfg.TenantID, cfg.AADClientID, cfg.AADClientSecret, nil)
-	if err != nil {
-		return nil, err
-	}
-	return cred, nil
 }
