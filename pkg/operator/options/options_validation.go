@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/go-playground/validator/v10"
 	"go.uber.org/multierr"
@@ -30,11 +31,28 @@ func (o Options) Validate() error {
 	return multierr.Combine(
 		o.validateRequiredFields(),
 		o.validateEndpoint(),
+		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
-		o.validateNetworkDataplane(),
 		o.validateVnetSubnetID(),
 		validate.Struct(o),
 	)
+}
+
+func (o Options) validateNetworkingOptions() error {
+	if o.NetworkPlugin != consts.NetworkPluginAzure && o.NetworkPlugin != consts.NetworkPluginNone {
+		return fmt.Errorf("network-plugin %v is invalid. network-plugin must equal 'azure' or 'none'", o.NetworkPlugin)
+	}
+	if o.NetworkPluginMode != consts.NetworkPluginModeOverlay && o.NetworkPluginMode != consts.NetworkPluginModeNone {
+		return fmt.Errorf("network-plugin-mode %s is invalid. network-plugin-mode must equal 'overlay' or ''", o.NetworkPluginMode)
+	}
+	if o.NetworkDataplane != consts.NetworkDataplaneAzure && o.NetworkDataplane != consts.NetworkDataplaneCilium && o.NetworkDataplane != consts.NetworkDataplaneNone {
+		return fmt.Errorf("network dataplane %s is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')", o.NetworkDataplane)
+	}
+
+	if o.NetworkPlugin == consts.NetworkPluginNone && o.NetworkPluginMode != consts.NetworkPluginModeNone {
+		return fmt.Errorf("network-plugin-mode '%s' is invalid when network-plugin is 'none'. network-plugin-mode must be empty", o.NetworkPluginMode)
+	}
+	return nil
 }
 
 func (o Options) validateVnetSubnetID() error {
@@ -45,12 +63,6 @@ func (o Options) validateVnetSubnetID() error {
 	return nil
 }
 
-func (o Options) validateNetworkDataplane() error {
-	if o.NetworkDataplane != "azure" && o.NetworkDataplane != "cilium" {
-		return fmt.Errorf("network dataplane %s is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')", o.NetworkDataplane)
-	}
-	return nil
-}
 func (o Options) validateEndpoint() error {
 	if o.ClusterEndpoint == "" {
 		return nil

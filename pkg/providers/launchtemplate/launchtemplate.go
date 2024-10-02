@@ -28,6 +28,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -37,13 +38,10 @@ import (
 const (
 	karpenterManagedTagKey = "karpenter.azure.com/cluster"
 
-	networkDataplaneCilium  = "cilium"
 	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
 	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
 	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
 	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-
-	networkModeOverlay = "overlay"
 )
 
 type Template struct {
@@ -100,7 +98,7 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	if err != nil {
 		return nil, err
 	}
-	launchTemplate, err := p.createLaunchTemplate(ctx, templateParameters)
+	launchTemplate, err := p.createLaunchTemplate(templateParameters)
 	if err != nil {
 		return nil, err
 	}
@@ -113,15 +111,17 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64))); err == nil {
 		arch = corev1beta1.ArchitectureArm64
 	}
-	// TODO: make conditional on either Azure CNI Overlay or pod subnet
-	vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
-	if err != nil {
-		return nil, err
-	}
-	labels = lo.Assign(labels, vnetLabels)
 
-	// TODO: Make conditional on epbf dataplane
-	if options.FromContext(ctx).NetworkDataplane == networkDataplaneCilium {
+	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+		// TODO: make conditional on pod subnet
+		vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
+		if err != nil {
+			return nil, err
+		}
+		labels = lo.Assign(labels, vnetLabels)
+	}
+
+	if options.FromContext(ctx).NetworkDataplane == consts.NetworkDataplaneCilium {
 		// This label is required for the cilium agent daemonset because
 		// we select the nodes for the daemonset based on this label
 		//              - key: kubernetes.azure.com/ebpf-dataplane
@@ -129,7 +129,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		//            values:
 		//              - cilium
 
-		labels[vnetDataPlaneLabel] = networkDataplaneCilium
+		labels[vnetDataPlaneLabel] = consts.NetworkDataplaneCilium
 	}
 
 	return &parameters.StaticParameters{
@@ -156,7 +156,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	}, nil
 }
 
-func (p *Provider) createLaunchTemplate(_ context.Context, options *parameters.Parameters) (*Template, error) {
+func (p *Provider) createLaunchTemplate(options *parameters.Parameters) (*Template, error) {
 	// render user data
 	userData, err := options.UserData.Script()
 	if err != nil {
@@ -190,7 +190,7 @@ func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeCla
 	vnetLabels := map[string]string{
 		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
 		vnetGUIDLabel:           p.vnetGUID,
-		vnetPodNetworkTypeLabel: networkModeOverlay,
+		vnetPodNetworkTypeLabel: consts.NetworkPluginModeOverlay,
 	}
 	return vnetLabels, nil
 }
