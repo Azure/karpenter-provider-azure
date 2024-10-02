@@ -11,6 +11,9 @@ spec:
     expireAfter: Never
   template:
     spec:
+      startupTaints:
+        - key: node.kubernetes.io/network-unavailable
+          effect: NoSchedule
       requirements:
         - key: kubernetes.io/arch
           operator: In

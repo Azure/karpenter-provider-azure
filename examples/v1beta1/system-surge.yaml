@@ -14,6 +14,9 @@ spec:
       labels: 
         kubernetes.azure.com/mode: "system"
     spec:
+      startupTaints:
+        - key: node.kubernetes.io/network-unavailable
+          effect: NoSchedule
       taints: 
         - key: "CriticalAddonsOnly"
           value: "true"
