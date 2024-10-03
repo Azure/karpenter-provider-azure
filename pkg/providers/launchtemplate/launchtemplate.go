@@ -117,7 +117,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 
 	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
 		// TODO: make conditional on pod subnet
-		vnetLabels, err := p.getVnetInfoLabels(ctx, subnetID)
+		vnetLabels, err := p.getVnetInfoLabels(subnetID)
 		if err != nil {
 			return nil, err
 		}

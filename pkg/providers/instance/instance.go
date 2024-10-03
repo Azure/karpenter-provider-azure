@@ -217,7 +217,7 @@ func (p *Provider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.I
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Primary:                   lo.ToPtr(true),
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-	
+
 						LoadBalancerBackendAddressPools: ipv4BackendPools,
 					},
 				},
@@ -239,9 +239,6 @@ func (p *Provider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.I
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						Primary:                   lo.ToPtr(false),
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-						Subnet: &armnetwork.Subnet{
-							ID: &p.subnetID,
-						},
 					},
 				},
 			)
@@ -263,12 +260,11 @@ type createNICOptions struct {
 	NetworkPluginMode string
 }
 
-
 func (p *Provider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
 	logging.FromContext(ctx).Debugf("Creating network interface %s", opts.NICName)
-	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
+	res, err := createNic(ctx, p.AZClient.NetworkInterfacesClient, p.resourceGroup, opts.NICName, nic)
 	if err != nil {
 		return "", err
 	}
