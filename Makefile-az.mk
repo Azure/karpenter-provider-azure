@@ -174,6 +174,9 @@ az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be
 	kubectl apply -f examples/v1beta1/general-purpose.yaml
 	kubectl apply -f examples/workloads/inflate.yaml
 
+az-enable-logging-caller: ## Enable logging the caller field (file path, name, and line number)
+	yq -i  '.manifests.helm.releases[0].overrides.logConfig ."disableCaller" = false' skaffold.yaml
+
 az-mc-show: ## show managed cluster
 	az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP)
 
