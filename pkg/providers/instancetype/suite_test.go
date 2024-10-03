@@ -154,13 +154,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
+			decodedString := ExpectDecodedCustomData(azureEnv)
 			Expect(decodedString).To(SatisfyAll(
 				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
@@ -481,31 +475,28 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+			customData := ExpectDecodedCustomData(azureEnv)
 
-			Expect(kubeletFlags).To(SatisfyAny( // AKS default
+			expectedFlags := map[string]string{
+				"eviction-hard":              "memory.available<750Mi",
+				"eviction-soft":              "memory.available<1Gi",
+				"eviction-soft-grace-period": "memory.available=10s",
+				"max-pods":                   "250",
+				"pods-per-core":              "110",
+				"image-gc-low-threshold":     "20",
+				"image-gc-high-threshold":    "30",
+				"cpu-cfs-quota":              "true",
+			}
+
+			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+			Expect(customData).To(SatisfyAny( // AKS default
 				ContainSubstring("--system-reserved=cpu=0,memory=0"),
 				ContainSubstring("--system-reserved=memory=0,cpu=0"),
 			))
-			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
+			Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
 				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
 				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
 			))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=250")) // networkPlugin=azure
-			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
-			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
 		})
 	})
 
@@ -524,7 +515,20 @@ var _ = Describe("InstanceType Provider", func() {
 		AfterEach(func() {
 			ctx = options.ToContext(ctx, originalOptions)
 		})
+		It("should not include cilium or azure cni vnet labels", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
 
+			customData := ExpectDecodedCustomData(azureEnv)
+			// Since the network plugin is not "azure" it should not include the following kubeletLabels
+			Expect(customData).To(Not(SatisfyAny(
+				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
+				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
+				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
+			)))
+		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
 				PodsPerCore: lo.ToPtr(int32(110)),
@@ -545,31 +549,26 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
-
-			Expect(kubeletFlags).To(SatisfyAny( // AKS default
+			customData := ExpectDecodedCustomData(azureEnv)
+			expectedFlags := map[string]string{
+				"eviction-hard":              "memory.available<750Mi",
+				"eviction-soft":              "memory.available<1Gi",
+				"eviction-soft-grace-period": "memory.available=10s",
+				"max-pods":                   "250",
+				"pods-per-core":              "110",
+				"image-gc-low-threshold":     "20",
+				"image-gc-high-threshold":    "30",
+				"cpu-cfs-quota":              "true",
+			}
+			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+			Expect(customData).To(SatisfyAny( // AKS default
 				ContainSubstring("--system-reserved=cpu=0,memory=0"),
 				ContainSubstring("--system-reserved=memory=0,cpu=0"),
 			))
-			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
+			Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
 				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
 				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
 			))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // networkPlugin=kubenet
-			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
-			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
@@ -604,31 +603,27 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString := string(decodedBytes[:])
-			kubeletFlags := decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+			customData := ExpectDecodedCustomData(azureEnv)
+			expectedFlags := map[string]string{
+				"eviction-hard":              "memory.available<750Mi",
+				"eviction-soft":              "memory.available<1Gi",
+				"eviction-soft-grace-period": "memory.available=10s",
+				"max-pods":                   "250", // max pods should always default to 250
+				"pods-per-core":              "110",
+				"image-gc-low-threshold":     "20",
+				"image-gc-high-threshold":    "30",
+				"cpu-cfs-quota":              "true",
+			}
 
-			Expect(kubeletFlags).To(SatisfyAny( // AKS default
+			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+			Expect(customData).To(SatisfyAny( // AKS default
 				ContainSubstring("--system-reserved=cpu=0,memory=0"),
 				ContainSubstring("--system-reserved=memory=0,cpu=0"),
 			))
-			Expect(kubeletFlags).To(SatisfyAny( // AKS calculation based on cpu and memory
+			Expect(customData).To(SatisfyAny( // AKS calculation based on cpu and memory
 				ContainSubstring("--kube-reserved=cpu=100m,memory=1843Mi"),
 				ContainSubstring("--kube-reserved=memory=1843Mi,cpu=100m"),
 			))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-hard=memory.available<750Mi")) // AKS default
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft=memory.available<1Gi"))
-			Expect(kubeletFlags).To(ContainSubstring("--eviction-soft-grace-period=memory.available=10s"))
-			Expect(kubeletFlags).To(ContainSubstring("--max-pods=100")) // networkPlugin=kubenet
-			Expect(kubeletFlags).To(ContainSubstring("--pods-per-core=110"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-low-threshold=20"))
-			Expect(kubeletFlags).To(ContainSubstring("--image-gc-high-threshold=30"))
-			Expect(kubeletFlags).To(ContainSubstring("--cpu-cfs-quota=true"))
 		})
 	})
 
@@ -730,6 +725,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Provisions 2 smaller instances since larger was ICE'd
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
+
 			nodeNames := sets.New[string]()
 			for _, pod := range pods {
 				node := ExpectScheduled(ctx, env.Client, pod)
@@ -1030,6 +1026,26 @@ var _ = Describe("InstanceType Provider", func() {
 					Expect(nicDeleteOption).To(Not(BeNil()))
 					Expect(lo.FromPtr(nicDeleteOption)).To(Equal(armcompute.DeleteOptionsDelete))
 				}
+			})
+			It("should not create unneeded secondary ips for azure cni with overlay", func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm.Properties).ToNot(BeNil())
+
+				Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+				Expect(len(vm.Properties.NetworkProfile.NetworkInterfaces)).To(Equal(1))
+				Expect(lo.FromPtr(vm.Properties.NetworkProfile.NetworkInterfaces[0].Properties.Primary)).To(BeTrue())
+
+				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+				Expect(nic.Properties).ToNot(BeNil())
+
+				Expect(len(nic.Properties.IPConfigurations)).To(Equal(1))
 			})
 		})
 	})
