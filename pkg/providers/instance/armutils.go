@@ -20,20 +20,53 @@ import (
 	"context"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 )
 
-func CreateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string, vm armcompute.VirtualMachine) (*armcompute.VirtualMachine, error) {
-	_, err := client.BeginCreateOrUpdate(ctx, rg, vmName, vm, nil)
+type ErrorRetriever interface {
+	GetFrontendErr() error
+	WaitForAsyncErr(ctx context.Context) error
+}
+
+type errorRetriever struct {
+	frontendErr    error
+	asyncErrPoller func(ctx context.Context) error
+}
+
+// T is the type of the arm response object
+func NewErrorRetriever[T any](frontendErr error, asyncPoller *runtime.Poller[T]) ErrorRetriever {
+	return &errorRetriever{
+		frontendErr: frontendErr,
+		asyncErrPoller: func(ctx context.Context) error {
+			if asyncPoller == nil {
+				return nil
+			}
+			_, err := asyncPoller.PollUntilDone(ctx, nil)
+			return err
+		},
+	}
+}
+
+func (er *errorRetriever) GetFrontendErr() error {
+	return er.frontendErr
+}
+
+func (er *errorRetriever) WaitForAsyncErr(ctx context.Context) error {
+	return er.asyncErrPoller(ctx)
+}
+
+func CreateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string, vm armcompute.VirtualMachine) (*armcompute.VirtualMachine, ErrorRetriever) {
+	poller, err := client.BeginCreateOrUpdate(ctx, rg, vmName, vm, nil)
 	if err != nil {
-		return nil, err
+		return nil, NewErrorRetriever[armcompute.VirtualMachinesClientCreateOrUpdateResponse](err, poller)
 	}
 	vmget, err := client.Get(ctx, rg, vmName, nil)
 	if err != nil {
-		return nil, err
+		return nil, NewErrorRetriever[armcompute.VirtualMachinesClientCreateOrUpdateResponse](err, poller)
 	}
-	return &vmget.VirtualMachine, nil
+	return &vmget.VirtualMachine, NewErrorRetriever[armcompute.VirtualMachinesClientCreateOrUpdateResponse](nil, poller)
 }
 
 func UpdateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string, updates armcompute.VirtualMachineUpdate) error {
@@ -63,28 +96,28 @@ func deleteVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vm
 	return nil
 }
 
-func createVirtualMachineExtension(ctx context.Context, client VirtualMachineExtensionsAPI, rg, vmName, extensionName string, vmExt armcompute.VirtualMachineExtension) (*armcompute.VirtualMachineExtension, error) {
-	_, err := client.BeginCreateOrUpdate(ctx, rg, vmName, extensionName, vmExt, nil)
+func createVirtualMachineExtension(ctx context.Context, client VirtualMachineExtensionsAPI, rg, vmName, extensionName string, vmExt armcompute.VirtualMachineExtension) (*armcompute.VirtualMachineExtension, ErrorRetriever) {
+	poller, err := client.BeginCreateOrUpdate(ctx, rg, vmName, extensionName, vmExt, nil)
 	if err != nil {
-		return nil, err
+		return nil, NewErrorRetriever[armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse](err, poller)
 	}
 	getExt, err := client.Get(ctx, rg, vmName, extensionName, nil)
 	if err != nil {
-		return nil, err
+		return nil, NewErrorRetriever[armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse](err, poller)
 	}
-	return &getExt.VirtualMachineExtension, nil
+	return &getExt.VirtualMachineExtension, NewErrorRetriever[armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse](nil, poller)
 }
 
-func createNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string, nic armnetwork.Interface) (*armnetwork.Interface, error) {
-	_, err := client.BeginCreateOrUpdate(ctx, rg, nicName, nic, nil)
+func createNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string, nic armnetwork.Interface) (*armnetwork.Interface, ErrorRetriever) {
+	poller, err := client.BeginCreateOrUpdate(ctx, rg, nicName, nic, nil)
 	if err != nil {
-		return nil, err
+		return nil, NewErrorRetriever[armnetwork.InterfacesClientCreateOrUpdateResponse](err, poller)
 	}
 	getNic, err := client.Get(ctx, rg, nicName, nil)
 	if err != nil {
-		return nil, err
+		return nil, NewErrorRetriever[armnetwork.InterfacesClientCreateOrUpdateResponse](err, poller)
 	}
-	return &getNic.Interface, nil
+	return &getNic.Interface, NewErrorRetriever[armnetwork.InterfacesClientCreateOrUpdateResponse](nil, poller)
 }
 
 func deleteNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string) error {

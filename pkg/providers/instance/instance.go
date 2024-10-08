@@ -187,12 +187,12 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	vmExt := p.getAKSIdentifyingExtension()
 	vmExtName := *vmExt.Name
 	logging.FromContext(ctx).Debugf("Creating virtual machine AKS identifying extension for %s", vmName)
-	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
-	if err != nil {
-		logging.FromContext(ctx).Errorf("Creating VM AKS identifying extension for VM %q failed, %w", vmName, err)
-		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
+	v, errRetriever := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
+	if errRetriever.GetFrontendErr() != nil {
+		logging.FromContext(ctx).Errorf("Creating VM AKS identifying extension for VM %q failed on frontend request, %w", vmName, errRetriever.GetFrontendErr())
+		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed on frontend request", vmName, errRetriever.GetFrontendErr())
 	}
-	logging.FromContext(ctx).Debugf("Created  virtual machine AKS identifying extension for %s, with an id of %s", vmName, *v.ID)
+	logging.FromContext(ctx).Debugf("Created virtual machine AKS identifying extension for %s, with an id of %s", vmName, *v.ID)
 	return nil
 }
 
@@ -272,9 +272,9 @@ func (p *Provider) createNetworkInterface(ctx context.Context, opts *createNICOp
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
 	logging.FromContext(ctx).Debugf("Creating network interface %s", opts.NICName)
-	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
-	if err != nil {
-		return "", err
+	res, errRetriever := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
+	if errRetriever.GetFrontendErr() != nil {
+		return "", errRetriever.GetFrontendErr()
 	}
 	logging.FromContext(ctx).Debugf("Successfully created network interface: %v", *res.ID)
 	return *res.ID, nil
@@ -384,14 +384,14 @@ func setNodePoolNameTag(tags map[string]*string, nodeClaim *corev1beta1.NodeClai
 	tags[NodePoolTagKey] = &nodePoolLabel
 }
 
-func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName string) (*armcompute.VirtualMachine, error) {
-	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
-	if err != nil {
-		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed: %v", vmName, err)
-		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
+func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName string) (*armcompute.VirtualMachine, ErrorRetriever) {
+	result, errRetriever := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
+	if errRetriever.GetFrontendErr() != nil {
+		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed on frontend request: %v", vmName, errRetriever.GetFrontendErr())
+		return result, errRetriever
 	}
 	logging.FromContext(ctx).Debugf("Created virtual machine %s", *result.ID)
-	return result, nil
+	return result, errRetriever
 }
 
 func (p *Provider) launchInstance(
@@ -436,11 +436,18 @@ func (p *Provider) launchInstance(
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
-	resp, err := p.createVirtualMachine(ctx, vm, resourceName)
-	if err != nil {
-		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+	resp, errRetriever := p.createVirtualMachine(ctx, vm, resourceName)
+	if errRetriever.GetFrontendErr() != nil {
+		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, errRetriever.GetFrontendErr())
 		return nil, nil, azErr
 	}
+	go func() {
+		asyncRrr := errRetriever.WaitForAsyncErr(ctx)
+		if asyncRrr != nil {
+			azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, asyncRrr)
+			logging.FromContext(ctx).Errorf("Creating virtual machine %q had async failure: %v", resourceName, azErr)
+		}
+	}()
 
 	err = p.createAKSIdentifyingExtension(ctx, resourceName)
 	if err != nil {
