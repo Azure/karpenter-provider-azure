@@ -32,10 +32,16 @@ func TestComputeAPI_BeginCreateOrUpdate(t *testing.T) {
 	//	return nil, nil
 	//})
 	// test
-	vm, err := instance.CreateVirtualMachine(context.Background(), computeAPI, "resourceGroupName", "vmName", armcompute.VirtualMachine{})
+	ctx := context.Background()
+	vm, errRetriever := instance.CreateVirtualMachine(ctx, computeAPI, "resourceGroupName", "vmName", armcompute.VirtualMachine{})
 	// verify
-	if err != nil {
-		t.Errorf("Unexpected error %v", err)
+	if errRetriever.GetFrontendErr() != nil {
+		t.Errorf("Unexpected frontend error %v", errRetriever.GetFrontendErr())
+		return
+	}
+	asyncErr := errRetriever.WaitForAsyncErr(ctx)
+	if asyncErr != nil {
+		t.Errorf("Unexpected async error %v", asyncErr)
 		return
 	}
 	if vm == nil {
