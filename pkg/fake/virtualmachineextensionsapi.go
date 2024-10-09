@@ -19,7 +19,10 @@ package fake
 import (
 	"context"
 	"fmt"
+	"sync"
 
+	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/go-autorest/autorest/to"
@@ -36,7 +39,7 @@ type VirtualMachineExtensionCreateOrUpdateInput struct {
 
 type VirtualMachineExtensionsBehavior struct {
 	VirtualMachineExtensionsCreateOrUpdateBehavior MockedLRO[VirtualMachineExtensionCreateOrUpdateInput, armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse]
-	// not keeping track of extensions
+	VMExtensions                                   sync.Map
 }
 
 // assert that ComputeAPI implements ARMComputeAPI
@@ -62,16 +65,25 @@ func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(_ context.Context, res
 	}
 
 	return c.VirtualMachineExtensionsCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineExtensionCreateOrUpdateInput) (*armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse, error) {
-		result := input.VirtualMachineExtension
-		result.ID = to.StringPtr(mkVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName))
+		vmExtension := input.VirtualMachineExtension
+		id := mkVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName)
+		vmExtension.ID = to.StringPtr(id)
+		c.VMExtensions.Store(id, vmExtension)
 		return &armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse{
-			VirtualMachineExtension: result,
+			VirtualMachineExtension: vmExtension,
 		}, nil
 	})
 }
 
 func (c *VirtualMachineExtensionsAPI) Get(ctx context.Context, resourceGroupName string, vmName string, vmExtensionName string, options *armcompute.VirtualMachineExtensionsClientGetOptions) (armcompute.VirtualMachineExtensionsClientGetResponse, error) {
-	return armcompute.VirtualMachineExtensionsClientGetResponse{}, nil
+	id := mkVMExtensionID(resourceGroupName, vmName, vmExtensionName)
+	vmExtension, ok := c.VMExtensions.Load(id)
+	if !ok {
+		return armcompute.VirtualMachineExtensionsClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+	}
+	return armcompute.VirtualMachineExtensionsClientGetResponse{
+		VirtualMachineExtension: vmExtension.(armcompute.VirtualMachineExtension),
+	}, nil
 }
 
 func mkVMExtensionID(resourceGroupName, vmName, extensionName string) string {
