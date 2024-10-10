@@ -2,8 +2,6 @@
 replicas: 1 # for better debugging experience
 controller:
   env:
-    - name: FEATURE_GATES
-      value: Drift=true
     - name: LEADER_ELECT # disable leader election for better debugging / troubleshooting experience
       value: "false"
     # disable HTTP/2 to reduce ARM throttling on large-scale tests;
