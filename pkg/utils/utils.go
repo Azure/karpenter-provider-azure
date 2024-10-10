@@ -19,8 +19,12 @@ package utils
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
 )
@@ -57,4 +61,63 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 func MkVMID(resourceGroupName string, vmName string) string {
 	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s"
 	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
+}
+
+// WithDefaultFloat64 returns the float64 value of the supplied environment variable or, if not present,
+// the supplied default value. If the float64 conversion fails, returns the default
+func WithDefaultFloat64(key string, def float64) float64 {
+	val, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return def
+	}
+	return f
+}
+
+func ImageReferenceToString(imageRef armcompute.ImageReference) string {
+	// Check for Custom Image
+	if imageRef.ID != nil && *imageRef.ID != "" {
+		return *imageRef.ID
+	}
+
+	// Check for Community Image
+	if imageRef.CommunityGalleryImageID != nil && *imageRef.CommunityGalleryImageID != "" {
+		return *imageRef.CommunityGalleryImageID
+	}
+
+	// Check for Shared Gallery Image
+	if imageRef.SharedGalleryImageID != nil && *imageRef.SharedGalleryImageID != "" {
+		return *imageRef.SharedGalleryImageID
+	}
+
+	// Check for Platform Image and use standard string representation
+	if imageRef.Publisher != nil && imageRef.Offer != nil && imageRef.SKU != nil && imageRef.Version != nil {
+		// Use the standard format: Publisher:Offer:Sku:Version
+		return fmt.Sprintf("%s:%s:%s:%s",
+			*imageRef.Publisher, *imageRef.Offer, *imageRef.SKU, *imageRef.Version)
+	}
+
+	return ""
+}
+
+func IsVMDeleting(vm armcompute.VirtualMachine) bool {
+	if vm.Properties != nil && vm.Properties.ProvisioningState != nil {
+		return *vm.Properties.ProvisioningState == "Deleting"
+	}
+	return false
+}
+
+// StringMap returns the string map representation of the resource list
+func StringMap(list v1.ResourceList) map[string]string {
+	if list == nil {
+		return nil
+	}
+	m := make(map[string]string)
+	for k, v := range list {
+		m[k.String()] = v.String()
+	}
+	return m
 }
