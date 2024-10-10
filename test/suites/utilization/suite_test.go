@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 
-	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -53,8 +53,8 @@ var _ = Describe("Utilization", func() {
 	ubuntuNodeClassArm := env.DefaultAKSNodeClass()
 
 	DescribeTable("should provision one pod per node",
-		func(nodeClass *v1alpha2.AKSNodeClass, nodePool *v1beta1.NodePool) {
-			test.ReplaceRequirements(nodePool, v1beta1.NodeSelectorRequirementWithMinValues{
+		func(nodeClass *v1alpha2.AKSNodeClass, nodePool *karpv1.NodePool) {
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1alpha2.LabelSKUCPU,
 					Operator: v1.NodeSelectorOpLt,

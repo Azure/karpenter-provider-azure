@@ -28,7 +28,6 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
@@ -39,8 +38,6 @@ var _ = Describe("DaemonSet", func() {
 	var dep *appsv1.Deployment
 
 	BeforeEach(func() {
-		nodePool.Spec.Disruption.ConsolidationPolicy = corev1beta1.ConsolidationPolicyWhenUnderutilized
-		nodePool.Spec.Disruption.ConsolidateAfter = nil
 		nodePool.Spec.Template.Labels = map[string]string{"testing/cluster": "test"}
 
 		priorityclass = &schedulingv1.PriorityClass{
