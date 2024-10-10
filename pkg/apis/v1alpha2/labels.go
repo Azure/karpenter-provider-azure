@@ -18,13 +18,15 @@ package v1alpha2
 
 import (
 	"k8s.io/apimachinery/pkg/util/sets"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 )
 
 func init() {
-	corev1beta1.RestrictedLabelDomains = corev1beta1.RestrictedLabelDomains.Insert(RestrictedLabelDomains...)
-	corev1beta1.WellKnownLabels = corev1beta1.WellKnownLabels.Insert(
+	karpv1.RestrictedLabelDomains = karpv1.RestrictedLabelDomains.Insert(RestrictedLabelDomains...)
+	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Insert(
 		LabelSKUName,
 		LabelSKUFamily,
 		LabelSKUVersion,
@@ -49,10 +51,11 @@ func init() {
 }
 
 var (
+	TerminationFinalizer     = apis.Group + "/termination"
 	AzureToKubeArchitectures = map[string]string{
 		// TODO: consider using constants like compute.ArchitectureArm64
-		"x64":   corev1beta1.ArchitectureAmd64,
-		"Arm64": corev1beta1.ArchitectureArm64,
+		"x64":   karpv1.ArchitectureAmd64,
+		"Arm64": karpv1.ArchitectureArm64,
 	}
 	RestrictedLabelDomains = []string{
 		Group,
@@ -62,9 +65,8 @@ var (
 		LabelSKUHyperVGeneration,
 	)
 
-	AllowUndefinedLabels = func(options scheduling.CompatibilityOptions) scheduling.CompatibilityOptions {
-		options.AllowUndefined = corev1beta1.WellKnownLabels.Union(RestrictedLabels)
-		return options
+	AllowUndefinedWellKnownAndRestrictedLabels = func(options *scheduling.CompatibilityOptions) {
+		options.AllowUndefined = karpv1.WellKnownLabels.Union(RestrictedLabels)
 	}
 
 	// alternative zone label for Machine (the standard one is protected for AKS nodes)
