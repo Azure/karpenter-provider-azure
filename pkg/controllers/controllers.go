@@ -19,22 +19,23 @@ package controllers
 import (
 	"context"
 
-	"knative.dev/pkg/logging"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/karpenter/pkg/operator/controller"
+	"github.com/awslabs/operatorpkg/controller"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
+	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/project"
 )
 
-func NewControllers(ctx context.Context, kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider, instanceProvider *instance.Provider) []controller.Controller {
-	logging.FromContext(ctx).With("version", project.Version).Debugf("discovered version")
+func NewControllers(ctx context.Context, kubeClient client.Client, cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider),
 		inplaceupdate.NewController(kubeClient, instanceProvider),
+		nodeclassstatus.NewController(kubeClient),
 	}
 	return controllers
 }
