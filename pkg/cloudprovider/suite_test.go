@@ -20,10 +20,13 @@ package cloudprovider
 import (
 	"context"
 	"testing"
+	"time"
 
+	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
+
+	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -31,14 +34,14 @@ import (
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	opstatus "github.com/awslabs/operatorpkg/status"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
-	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	. "knative.dev/pkg/logging/testing"
@@ -55,32 +58,33 @@ var ctx context.Context
 var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv *test.Environment
-var fakeClock *clock.FakeClock
-var coreProvisioner *provisioning.Provisioner
-
-var nodePool *corev1beta1.NodePool
-var nodeClass *v1alpha2.AKSNodeClass
-var nodeClaim *corev1beta1.NodeClaim
-var cluster *state.Cluster
+var prov *provisioning.Provisioner
 var cloudProvider *CloudProvider
+var cluster *state.Cluster
+var fakeClock *clock.FakeClock
+var recorder events.Recorder
+
+var nodePool *karpv1.NodePool
+var nodeClass *v1alpha2.AKSNodeClass
+var nodeClaim *karpv1.NodeClaim
 
 func TestCloudProvider(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "CloudProvider")
+	RunSpecs(t, "cloudProvider/Azure")
 }
 
 var _ = BeforeSuite(func() {
-	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
-	ctx = coreoptions.ToContext(ctx, coretest.Options(coretest.OptionsFields{FeatureGates: coretest.FeatureGates{Drift: lo.ToPtr(true)}}))
+	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
-
-	fakeClock = &clock.FakeClock{}
-	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	fakeClock = clock.NewFakeClock(time.Now())
+	recorder = events.NewRecorder(&record.FakeRecorder{})
+	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
+	cluster = state.NewCluster(fakeClock, env.Client)
+	prov = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster)
 })
 
 var _ = AfterSuite(func() {
@@ -90,28 +94,32 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	// TODO v1beta1 options
-	// ctx = options.ToContext(ctx, test.Options())
 	ctx = options.ToContext(ctx, test.Options())
+
 	nodeClass = test.AKSNodeClass()
-	nodePool = coretest.NodePool(corev1beta1.NodePool{
-		Spec: corev1beta1.NodePoolSpec{
-			Template: corev1beta1.NodeClaimTemplate{
-				Spec: corev1beta1.NodeClaimSpec{
-					NodeClassRef: &corev1beta1.NodeClassReference{
-						Name: nodeClass.Name,
+	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	nodePool = coretest.NodePool(karpv1.NodePool{
+		Spec: karpv1.NodePoolSpec{
+			Template: karpv1.NodeClaimTemplate{
+				Spec: karpv1.NodeClaimTemplateSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+						Name:  nodeClass.Name,
 					},
 				},
 			},
 		},
 	})
-	nodeClaim = coretest.NodeClaim(corev1beta1.NodeClaim{
+	nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: map[string]string{corev1beta1.NodePoolLabelKey: nodePool.Name},
+			Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 		},
-		Spec: corev1beta1.NodeClaimSpec{
-			NodeClassRef: &corev1beta1.NodeClassReference{
-				Name: nodeClass.Name,
+		Spec: karpv1.NodeClaimSpec{
+			NodeClassRef: &karpv1.NodeClassReference{
+				Group: object.GVK(nodeClass).Group,
+				Kind:  object.GVK(nodeClass).Kind,
+				Name:  nodeClass.Name,
 			},
 		},
 	})
@@ -127,8 +135,8 @@ var _ = AfterEach(func() {
 var _ = Describe("CloudProvider", func() {
 	It("should list nodeclaim created by the CloudProvider", func() {
 		ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		pod := coretest.UnschedulablePod()
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
@@ -143,7 +151,7 @@ var _ = Describe("CloudProvider", func() {
 	})
 	It("should return an ICE error when there are no instance types to launch", func() {
 		// Specify no instance types and expect to receive a capacity error
-		nodeClaim.Spec.Requirements = []corev1beta1.NodeSelectorRequirementWithMinValues{
+		nodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 			{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
@@ -159,7 +167,7 @@ var _ = Describe("CloudProvider", func() {
 		Expect(cloudProviderMachine).To(BeNil())
 	})
 	Context("Drift", func() {
-		var nodeClaim *corev1beta1.NodeClaim
+		var nodeClaim *karpv1.NodeClaim
 		var pod *v1.Pod
 		BeforeEach(func() {
 			instanceType := "Standard_D2_v2"
@@ -167,7 +175,7 @@ var _ = Describe("CloudProvider", func() {
 			pod = coretest.UnschedulablePod(coretest.PodOptions{
 				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 			})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -176,18 +184,18 @@ var _ = Describe("CloudProvider", func() {
 			vmName := input.VMName
 
 			// Corresponding NodeClaim
-			nodeClaim = coretest.NodeClaim(corev1beta1.NodeClaim{
-				Status: corev1beta1.NodeClaimStatus{
+			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+				Status: karpv1.NodeClaimStatus{
 					ProviderID: utils.ResourceIDToProviderID(ctx, utils.MkVMID(rg, vmName)),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						corev1beta1.NodePoolLabelKey: nodePool.Name,
-						v1.LabelInstanceTypeStable:   instanceType,
+						karpv1.NodePoolLabelKey:    nodePool.Name,
+						v1.LabelInstanceTypeStable: instanceType,
 					},
 				},
-				Spec: corev1beta1.NodeClaimSpec{
-					NodeClassRef: &corev1beta1.NodeClassReference{
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
 						Name: nodeClass.Name,
 					},
 				},
@@ -211,7 +219,7 @@ var _ = Describe("CloudProvider", func() {
 			Expect(drifted).To(BeEmpty())
 		})
 		It("should error drift if NodeClaim doesn't have provider id", func() {
-			nodeClaim.Status = corev1beta1.NodeClaimStatus{}
+			nodeClaim.Status = karpv1.NodeClaimStatus{}
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).To(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
