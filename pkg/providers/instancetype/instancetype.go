@@ -23,13 +23,13 @@ import (
 
 	"github.com/Azure/skewer"
 	"github.com/samber/lo"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"knative.dev/pkg/ptr"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
@@ -118,7 +118,7 @@ func (t TaxBrackets) Calculate(amount float64) float64 {
 	return tax
 }
 
-func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSizeType, kc *corev1beta1.KubeletConfiguration, region string,
+func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSizeType, kc *v1alpha2.KubeletConfiguration, region string,
 	offerings cloudprovider.Offerings, nodeClass *v1alpha2.AKSNodeClass, architecture string) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
@@ -137,43 +137,41 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	offerings cloudprovider.Offerings, region string) scheduling.Requirements {
 	requirements := scheduling.NewRequirements(
 		// Well Known Upstream
-		scheduling.NewRequirement(v1.LabelInstanceTypeStable, v1.NodeSelectorOpIn, sku.GetName()),
-		scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, getArchitecture(architecture)),
-		scheduling.NewRequirement(v1.LabelOSStable, v1.NodeSelectorOpIn, string(v1.Linux)),
-		scheduling.NewRequirement(
-			v1.LabelTopologyZone,
-			v1.NodeSelectorOpIn,
-			lo.Map(offerings.Available(),
-				func(o cloudprovider.Offering, _ int) string { return o.Zone })...),
-		scheduling.NewRequirement(v1.LabelTopologyRegion, v1.NodeSelectorOpIn, region),
+		scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, sku.GetName()),
+		scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, getArchitecture(architecture)),
+		scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(corev1.Linux)),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o cloudprovider.Offering, _ int) string {
+			return o.Requirements.Get(corev1.LabelTopologyZone).Any()
+		})...),
+
+		scheduling.NewRequirement(corev1.LabelTopologyRegion, corev1.NodeSelectorOpIn, region),
 
 		// Well Known to Karpenter
-		scheduling.NewRequirement(
-			corev1beta1.CapacityTypeLabelKey,
-			v1.NodeSelectorOpIn,
-			lo.Map(offerings.Available(), func(o cloudprovider.Offering, _ int) string { return o.CapacityType })...),
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o cloudprovider.Offering, _ int) string {
+			return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Any()
+		})...),
 
 		// Well Known to Azure
-		scheduling.NewRequirement(v1alpha2.LabelSKUCPU, v1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),
-		scheduling.NewRequirement(v1alpha2.LabelSKUMemory, v1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
-		scheduling.NewRequirement(v1alpha2.LabelSKUGPUCount, v1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
-		scheduling.NewRequirement(v1alpha2.LabelSKUGPUManufacturer, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUGPUName, v1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),
+		scheduling.NewRequirement(v1alpha2.LabelSKUMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
+		scheduling.NewRequirement(v1alpha2.LabelSKUGPUCount, corev1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
+		scheduling.NewRequirement(v1alpha2.LabelSKUGPUManufacturer, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUGPUName, corev1.NodeSelectorOpDoesNotExist),
 
 		// composites
-		scheduling.NewRequirement(v1alpha2.LabelSKUName, v1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
 
 		// size parts
-		scheduling.NewRequirement(v1alpha2.LabelSKUFamily, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUAccelerator, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUVersion, v1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUFamily, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUAccelerator, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUVersion, corev1.NodeSelectorOpDoesNotExist),
 
 		// SKU capabilities
-		scheduling.NewRequirement(v1alpha2.LabelSKUStorageEphemeralOSMaxSize, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUStoragePremiumCapable, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUEncryptionAtHostSupported, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUStorageEphemeralOSMaxSize, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUEncryptionAtHostSupported, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, corev1.NodeSelectorOpDoesNotExist),
 		// all additive feature initialized elsewhere
 	)
 
@@ -263,13 +261,13 @@ func getArchitecture(architecture string) string {
 	return architecture // unrecognized
 }
 
-func computeCapacity(ctx context.Context, sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration, nodeClass *v1alpha2.AKSNodeClass) v1.ResourceList {
-	return v1.ResourceList{
-		v1.ResourceCPU:                    *cpu(sku),
-		v1.ResourceMemory:                 *memory(ctx, sku),
-		v1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
-		v1.ResourcePods:                   *pods(sku, kc),
-		v1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
+func computeCapacity(ctx context.Context, sku *skewer.SKU, kc *v1alpha2.KubeletConfiguration, nodeClass *v1alpha2.AKSNodeClass) corev1.ResourceList {
+	return corev1.ResourceList{
+		corev1.ResourceCPU:                    *cpu(sku),
+		corev1.ResourceMemory:                 *memory(ctx, sku),
+		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
+		corev1.ResourcePods:                   *pods(sku, kc),
+		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 	}
 }
 
@@ -310,7 +308,7 @@ func ephemeralStorage(nodeClass *v1alpha2.AKSNodeClass) *resource.Quantity {
 	return resource.NewScaledQuantity(int64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)), resource.Giga)
 }
 
-func pods(sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration) *resource.Quantity {
+func pods(sku *skewer.SKU, kc *v1alpha2.KubeletConfiguration) *resource.Quantity {
 	// TODO: fine-tune pods calc
 	var count int64
 	switch {
@@ -325,29 +323,29 @@ func pods(sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration) *resource.Quant
 	return resources.Quantity(fmt.Sprint(count))
 }
 
-func SystemReservedResources() v1.ResourceList {
+func SystemReservedResources() corev1.ResourceList {
 	// AKS does not set system-reserved values and only CPU and memory are considered
 	// https://learn.microsoft.com/en-us/azure/aks/concepts-clusters-workloads#resource-reservations
-	return v1.ResourceList{
-		v1.ResourceCPU:    resource.Quantity{},
-		v1.ResourceMemory: resource.Quantity{},
+	return corev1.ResourceList{
+		corev1.ResourceCPU:    resource.Quantity{},
+		corev1.ResourceMemory: resource.Quantity{},
 	}
 }
 
-func KubeReservedResources(vcpus int64, memoryGib float64) v1.ResourceList {
+func KubeReservedResources(vcpus int64, memoryGib float64) corev1.ResourceList {
 	reservedMemoryMi := int64(1024 * reservedMemoryTaxGi.Calculate(memoryGib))
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
 
-	resources := v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
-		v1.ResourceMemory: *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
+	resources := corev1.ResourceList{
+		corev1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
+		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
 	}
 
 	return resources
 }
 
-func EvictionThreshold() v1.ResourceList {
-	return v1.ResourceList{
-		v1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
+func EvictionThreshold() corev1.ResourceList {
+	return corev1.ResourceList{
+		corev1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
 	}
 }

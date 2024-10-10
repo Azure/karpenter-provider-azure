@@ -24,12 +24,12 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -562,7 +562,7 @@ func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
 	return truncated
 }
 
-func KubeletConfigToMap(kubeletConfig *corev1beta1.KubeletConfiguration) map[string]string {
+func KubeletConfigToMap(kubeletConfig *v1alpha2.KubeletConfiguration) map[string]string {
 	args := make(map[string]string)
 
 	if kubeletConfig == nil {

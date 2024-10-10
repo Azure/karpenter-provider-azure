@@ -17,15 +17,15 @@ limitations under the License.
 package bootstrap
 
 import (
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	core "k8s.io/api/core/v1"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 )
 
 // Options is the node bootstrapping parameters passed from Karpenter to the provisioning node
 type Options struct {
 	ClusterName      string
 	ClusterEndpoint  string
-	KubeletConfig    *corev1beta1.KubeletConfiguration
+	KubeletConfig    *v1alpha2.KubeletConfiguration
 	Taints           []core.Taint      `hash:"set"`
 	Labels           map[string]string `hash:"set"`
 	CABundle         *string
