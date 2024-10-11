@@ -206,6 +206,13 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.No
 	if imageVersionDrifted != "" {
 		return imageVersionDrifted, nil
 	}
+	subnetDrifted, err := c.isSubnetDrifted(ctx, nodeClaim, nodeClass)
+	if err != nil {
+		return "", err
+	}
+	if subnetDrifted != "" {
+		return subnetDrifted, nil
+	}
 	return "", nil
 }
 

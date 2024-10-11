@@ -67,6 +67,12 @@ spec:
                   type: string
                 description: Tags to be applied on Azure resources like instances.
                 type: object
+              vnetSubnetID:
+                description: |-
+                  VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
+                  If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
+                pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
+                type: string
             type: object
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
