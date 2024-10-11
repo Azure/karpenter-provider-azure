@@ -33,7 +33,7 @@ Some of the mechanisms described below are specific to AKS. However, the overall
 
 ## Node bootstrapping
 
-The most common current way of bootstrapping an AKS node it by providing a highly structured [NodeBootstrappingConfiguration](https://github.com/Azure/AgentBaker/blob/3a5c5f2f2c3acd7ebcb82d73352ad6119e1522d6/pkg/agent/datamodel/types.go#L1480) to AgentBaker library to generate [Custom Script Extension](https://learn.microsoft.com/en-us/azure/virtual-machines/extensions/custom-script-linux) (CSE) and Azure [Custom Data](https://learn.microsoft.com/en-us/azure/virtual-machines/custom-data) for the VM. 
+The most common current way of bootstrapping an AKS node it by providing a highly structured [NodeBootstrappingConfiguration](https://github.com/Azure/AgentBaker/blob/3a5c5f2f2c3acd7ebcb82d73352ad6119e1522d6/pkg/agent/datamodel/types.go#L1480) to AgentBaker library to generate [Custom Script Extension](https://learn.microsoft.com/en-us/azure/virtual-machines/extensions/custom-script-linux) (CSE) and Azure [Custom Data](https://learn.microsoft.com/en-us/azure/virtual-machines/custom-data) for the VM.
 
 A newer, emerging, approach - possible with the latest AKS VM images - is to populate Custom Data with a more streamlined set of parameters, in a well-defined format, without using CSE (one less call, and faster) and without having to use AgentBaker library. This both simplifies the bootstrapping contract, and speeds up the VM bootstrap process. Note that the set of fields and the bootstrapping contract are evolving together with corresponding support in AKS node images.
 
@@ -61,7 +61,7 @@ The following sources of bootstrap configuration are available to Karpenter:
 
 The source of each parameter is documented in comments to `NodeBootstrapVariables` fields in [aksbootstrap.go](/pkg/providers/imagefamily/bootstrap/aksbootstrap.go). Note that some source assignments are still subject to change, and some are not implemented yet.
 
-Of theses sources, Karpenter global configuration, Provisioner CR and NodeTemplate CR represent part of the external configuration surface / API, and should be treated accordingly.
+Of these sources, Karpenter global configuration, Provisioner CR and NodeTemplate CR represent part of the external configuration surface / API, and should be treated accordingly.
 
 The following sections describe each category in more detail.
 
@@ -156,4 +156,3 @@ Image family abstracts everything related to a particular image family - such as
 AKS bootstrapper is the one implementing the generation of Custom Data for the new "Node Bootstrap Variables" bootstrap process, described in the beginning of this document.
 
 <!-- TODO: cover selected data flows: node labels, kubelet config, etc. -->
- 
