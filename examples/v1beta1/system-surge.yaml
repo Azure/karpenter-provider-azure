@@ -11,13 +11,17 @@ spec:
     expireAfter: Never
   template:
     metadata:
-      labels: 
+      labels:
         kubernetes.azure.com/mode: "system"
+        # required for Karpenter to predict overhead from cilium DaemonSet
+        kubernetes.azure.com/ebpf-dataplane: cilium
     spec:
       startupTaints:
+        # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
         - key: node.cilium.io/agent-not-ready
-          effect: NoSchedule
-      taints: 
+          effect: NoExecute
+          value: "true"
+      taints:
         - key: "CriticalAddonsOnly"
           value: "true"
           effect: "NoSchedule"
