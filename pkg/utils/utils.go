@@ -22,6 +22,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	v1 "k8s.io/api/core/v1"
@@ -120,4 +121,20 @@ func StringMap(list v1.ResourceList) map[string]string {
 		m[k.String()] = v.String()
 	}
 	return m
+}
+
+// PrettySlice truncates a slice after a certain number of max items to ensure
+// that the Slice isn't too long
+func PrettySlice[T any](s []T, maxItems int) string {
+	var sb strings.Builder
+	for i, elem := range s {
+		if i > maxItems-1 {
+			fmt.Fprintf(&sb, " and %d other(s)", len(s)-i)
+			break
+		} else if i > 0 {
+			fmt.Fprint(&sb, ", ")
+		}
+		fmt.Fprint(&sb, elem)
+	}
+	return sb.String()
 }
