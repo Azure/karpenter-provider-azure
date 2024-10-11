@@ -80,3 +80,5 @@ issues:
     - hack
     - charts
     - designs
+  exclude-files:
+    - pkg/alt/karpenter-core/pkg/operator/logger.go # copy
