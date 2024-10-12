@@ -104,6 +104,9 @@ var (
 	AKSLabelDomain = "kubernetes.azure.com"
 
 	AKSLabelCluster = AKSLabelDomain + "/cluster"
+
+	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
+	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
 )
 
 const (
