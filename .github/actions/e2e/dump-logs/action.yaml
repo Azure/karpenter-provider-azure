@@ -34,7 +34,7 @@ runs:
   - name: update cluster context
     shell: bash
     run: |
-      az aks get-credentials --name ${{ inputs.cluster_name }} --resource-group $${{ inputs.resource_group }}
+      az aks get-credentials --name ${{ inputs.cluster_name }} --resource-group ${{ inputs.resource_group }}
   - name: controller-logs
     shell: bash
     run: |
