@@ -59,7 +59,9 @@ func main() {
 		// WithWebhooks(ctx, corewebhooks.NewWebhooks()...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
+			op.Manager,
 			op.GetClient(),
+			op.EventRecorder,
 			aksCloudProvider,
 			op.InstanceProvider,
 		)...).
