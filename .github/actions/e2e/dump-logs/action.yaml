@@ -31,26 +31,23 @@ runs:
       client-id: ${{ inputs.client-id }}
       tenant-id: ${{ inputs.tenant-id }}
       subscription-id: ${{ inputs.subscription-id }}
-  - name: az set sub
+  - name: update cluster context
     shell: bash
-    run: az account set --subscription ${{ inputs.subscription-id }}
+    run: |
+      az aks get-credentials --name ${{ inputs.cluster_name }} --resource-group $${{ inputs.resource_group }}
   - name: controller-logs
     shell: bash
     run: |
-      echo "step: controller-logs"
-      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
-      POD_NAME=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=karpenter -o jsonpath='{.items[*].metadata.name}')
-      echo "logs from pod ${POD_NAME}"
-      kubectl logs "${POD_NAME}" -n kube-system -c controller
+      kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter --all-containers --ignore-errors
   - name: describe-karpenter-pods
     shell: bash
     run: |
-      echo "step: describe-karpenter-pods"
-      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
       kubectl describe pods -n kube-system -l app.kubernetes.io/name=karpenter
   - name: describe-nodes
     shell: bash
     run: |
-      echo "step: describe-nodes"
-      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-creds
       kubectl describe nodes
+  - name: get-karpenter-events
+    shell: bash
+    run: |
+      kubectl get events -A --field-selector source=karpenter
