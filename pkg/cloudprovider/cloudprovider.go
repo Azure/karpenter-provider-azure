@@ -37,6 +37,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
 	cloudproviderevents "github.com/Azure/karpenter-provider-azure/pkg/cloudprovider/events"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -291,6 +292,16 @@ func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, ins
 	return instanceType, nil
 }
 
+func (c *CloudProvider) resolveSubnetFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) string {
+	// Lookup the drift annotation on the nodeclaim
+	if subnetID, ok := instance.Tags[SubnetDriftAnnotationKey]; ok {
+		return lo.FromPtr(subnetID)
+	}
+	// If the drift annotation is not found, return the default subnet ID
+	// This is a fallback for older VMs that were created before the drift annotation was added
+	return options.FromContext(ctx).SubnetID
+}
+
 func (c *CloudProvider) resolveNodePoolFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) (*corev1beta1.NodePool, error) {
 	nodePoolName, ok := instance.Tags[corev1beta1.NodePoolLabelKey]
 	if ok && *nodePoolName != "" {
@@ -325,7 +336,7 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 	labels[corev1beta1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
 
-	// TODO: v1beta1 new kes/labels
+	// TODO: v1beta1 new keys/labels
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
 		labels[corev1beta1.NodePoolLabelKey] = *tag
 	}
@@ -335,6 +346,7 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 		return nil, fmt.Errorf("failed to calculate in place update hash, %w", err)
 	}
 	annotations[v1alpha2.AnnotationInPlaceUpdateHash] = inPlaceUpdateHash
+	annotations[SubnetDriftAnnotationKey] = c.resolveSubnetFromInstance(ctx, vm)
 
 	nodeClaim.Name = GenerateNodeClaimName(*vm.Name)
 	nodeClaim.Labels = labels

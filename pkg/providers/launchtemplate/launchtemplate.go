@@ -168,7 +168,7 @@ func (p *Provider) createLaunchTemplate(_ context.Context, options *parameters.P
 	}
 
 	// merge and convert to ARM tags
-	azureTags := mergeTags(options.Tags, map[string]string{karpenterManagedTagKey: options.ClusterName})
+	azureTags := mergeTags(options.Tags, map[string]string{karpenterManagedTagKey: options.ClusterName, v1alpha2.AnnotationSubnet: options.SubnetID})
 	template := &Template{
 		UserData: userData,
 		ImageID:  options.ImageID,

@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -215,6 +216,22 @@ var _ = Describe("CloudProvider", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).To(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
+		})
+		It("should return ImageDrift if the AKSNodeClass imageVersion changes", func() {
+			nodeClass.Spec.ImageVersion = lo.ToPtr("0913.24.0")
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+			Expect(err).NotTo(HaveOccurred())
+			// expect drifted to not be empty
+			Expect(drifted).To(Equal(ImageVersionDrift))
+		})
+		It("should return SubnetDrift if the AKSNodeClass vnetSubnetID changes", func() {
+			nodeClass.Spec.VnetSubnetID = lo.ToPtr(fake.SubnetID(options.FromContext(ctx)))
+			ExpectApplied(ctx, env.Client, nodeClass)
+			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(drifted).To(Equal(SubnetDrift))
+
 		})
 	})
 })

@@ -23,11 +23,9 @@ import (
 
 	"knative.dev/pkg/logging"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 
@@ -43,6 +41,8 @@ const (
 	K8sVersionDrift   cloudprovider.DriftReason = "K8sVersionDrift"
 	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift"
 	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
+
+	SubnetDriftAnnotationKey = "karpenter.sh/subnet"
 )
 
 func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
@@ -128,28 +128,9 @@ func (c *CloudProvider) isImageVersionDrifted(
 // isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
 func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	expectedSubnet := lo.Ternary(nodeClass.Spec.VnetSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VnetSubnetID))
-	nicName := instance.GenerateResourceName(nodeClaim.Name)
-
-	// TODO: Refactor all of AzConfig to be part of options
-	nic, err := instance.GetNic(ctx, c.instanceProvider.AZClient.NetworkInterfacesClient, options.FromContext(ctx).NodeResourceGroup, nicName)
-	if err != nil {
-		return "", err
-	}
-	nicSubnet := getFirstSubnetFromNic(nic)
-	if nicSubnet == "" {
-		return "", fmt.Errorf("no subnet found for nic: %s", nicName)
-	}
-	if nicSubnet != expectedSubnet {
+	actualSubnet := nodeClaim.Annotations[SubnetDriftAnnotationKey]
+	if actualSubnet != expectedSubnet {
 		return SubnetDrift, nil
 	}
 	return "", nil
-}
-
-func getFirstSubnetFromNic(nic *armnetwork.Interface) string {
-	for _, ipConfig := range nic.Properties.IPConfigurations {
-		if ipConfig.Properties.Subnet != nil {
-			return lo.FromPtr(ipConfig.Properties.Subnet.ID)
-		}
-	}
-	return ""
 }

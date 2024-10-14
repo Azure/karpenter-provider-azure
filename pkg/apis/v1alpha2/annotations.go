@@ -19,4 +19,6 @@ package v1alpha2
 // Annotations
 var (
 	AnnotationInPlaceUpdateHash = Group + "/in-place-update-hash"
+
+	AnnotationSubnet = Group + "/subnet"
 )
