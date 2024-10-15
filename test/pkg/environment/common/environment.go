@@ -178,6 +178,18 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 		corev1.ResourceCPU:    resource.MustParse("1000"), // TODO: do we need that much?
 		corev1.ResourceMemory: resource.MustParse("1000Gi"),
 	})
+
+	// TODO: make this conditional on Cilium
+	// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+	nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
+		Key:    "node.cilium.io/agent-not-ready",
+		Effect: corev1.TaintEffectNoExecute,
+		Value:  "true",
+	})
+	// # required for Karpenter to predict overhead from cilium DaemonSet
+	nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+		"kubernetes.azure.com/ebpf-dataplane": "cilium",
+	})
 	return nodePool
 }
 
