@@ -27,12 +27,17 @@ const (
 	AKSAzureLinuxPublicGalleryURL = "AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b"
 )
 
-// DefaultImageOutput is the Stub of an Image we return from an ImageFamily De
+// DefaultImageOutput is a stub describing our desired image with an image's name and requirements to run that image
 type DefaultImageOutput struct {
-	CommunityImage   string
+	// Community Image Gallery
 	PublicGalleryURL string
-	Requirements     scheduling.Requirements
+	// Shared Image Gallery
+	GalleryResourceGroup string
+	GalleryName          string
+	// Common
+	ImageDefinition string
 	Distro           string
+	Requirements    scheduling.Requirements
 }
 
 // CommunityGalleryImageVersionsAPI is used for listing community gallery image versions.

@@ -75,9 +75,13 @@ type Options struct {
 	SubnetID string // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 	setFlags map[string]bool
 
-	NodeResourceGroup          string
 	ProvisionMode              string
 	NodeBootstrappingServerURL string
+	ManagedKarpenter           bool // => ManagedKarpenter is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+
+	SharedImageGallerySubscriptionID string
+
+	NodeResourceGroup string
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -95,6 +99,8 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
+	fs.BoolVar(&o.ManagedKarpenter, "managed-karpenter", env.WithDefaultBool("MANAGED_KARPENTER", false), "Whether Karpenter is managed by AKS or not.")
+	fs.StringVar(&o.SharedImageGallerySubscriptionID, "shared-image-gallery-subscription-id", env.WithDefaultString("SHARED_IMAGE_GALLERY_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery. Only required alongside managed-karpenter.")
 }
 
 func (o Options) GetAPIServerName() string {

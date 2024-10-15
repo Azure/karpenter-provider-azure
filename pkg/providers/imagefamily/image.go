@@ -25,6 +25,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
@@ -48,7 +49,8 @@ const (
 	imageExpirationInterval    = time.Hour * 24 * 3
 	imageCacheCleaningInterval = time.Hour * 1
 
-	imageIDFormat = "/CommunityGalleries/%s/images/%s/versions/%s"
+	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
+	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
 func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location string) *Provider {
@@ -67,12 +69,14 @@ func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, in
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
 		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
-			communityImageName, publicGalleryURL := defaultImage.CommunityImage, defaultImage.PublicGalleryURL
-			imageID, err := p.GetImageID(ctx, communityImageName, publicGalleryURL)
-			if err != nil {
-				return "", "", err
+			// Managed Karpenter will use the AKS Managed Shared Image Galleries
+			if options.FromContext(ctx).ManagedKarpenter {
+				imgID, imageRetrievalErr := p.getImageIDSIG(ctx, defaultImage)
+				return defaultImage.Distro, imgID, imageRetrievalErr 
 			}
-			return defaultImage.Distro, imageID, nil
+			// Self Hosted Karpenter will use the Community Image Galleries, which are public and have lower scaling limits
+			imgID, imageRetrievalErr := p.getImageIDCIG(ctx, defaultImage.PublicGalleryURL, defaultImage.ImageDefinition)
+			return defaultImage.Distro, imgID, imageRetrievalErr 
 		}
 	}
 
@@ -95,14 +99,50 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	return version, nil
 }
 
-// Input versionName == "" to get the latest version
-func (p *Provider) GetImageID(ctx context.Context, communityImageName, publicGalleryURL string) (string, error) {
-	key := fmt.Sprintf("%s/%s", publicGalleryURL, communityImageName)
-	imageID, found := p.imageCache.Get(key)
-	if found {
+// getImageIDSig will return a string of the shape /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/galleries/{galleryName}/images/{imageDefinition}/versions/{imageVersion}
+// for a given imageDefinition and imageVersion. If the imageVersion is set to "", then it will return the latest version of the image.
+// If the imageVersion is set to "", then we will cache the latest version of the image for imageExpirationInterval days(3d) for all imageDefinitions
+// and reuse that get of the latest version of the image for 3d.
+func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput) (string, error) {
+	key := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SharedImageGallerySubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition)
+	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
 	}
+		versions, err := p.ListNodeImageVersions(ctx)
+		if err != nil {
+			return "", err
+		}
+		for _, version := range versions.Values {
+			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SharedImageGallerySubscriptionID, imgStub.ImageDefinition, version.Version)
+			p.imageCache.Set(key, imageID, imageExpirationInterval)
+		}
+		// return the latest version of the image from the cache after we have caached all of the imageDefinitions
+		if imageID, ok := p.imageCache.Get(key); ok {
+			return imageID.(string), nil
+		}
+		return "", fmt.Errorf("failed to get the latest version of the image %s", imgStub.ImageDefinition)
+}
 
+// getImageCIG will return a community image gallery image url that has the shape of
+// /CommunityGalleries/{publicGalleryURL}/images/{communityImageName}/versions/{imageVersion}
+// The imageVersion can be set to "" to get the latest version of the image, and after a image version "" has been encountered
+// we cache the latest version of the image for imageExpirationInterval days(3d)
+func (p *Provider) getImageIDCIG(ctx context.Context, publicGalleryURL, communityImageName string) (string, error) {
+	key := fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName)
+	if imageID, ok := p.imageCache.Get(key); ok {
+		return imageID.(string), nil
+	}
+	// if the image is not found in the cache, we will refresh the lookup for it 
+	imageVersion, err := p.latestNodeImageVersionCommmunity(ctx, publicGalleryURL, communityImageName)
+	if err != nil {
+		return "", err
+	}
+	imageID := BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion)
+	p.imageCache.Set(key, imageID, imageExpirationInterval)
+	return imageID, nil
+}
+
+func (p *Provider) latestNodeImageVersionCommmunity(ctx context.Context, publicGalleryURL, communityImageName string) (string, error) {
 	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
 	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
 	for pager.More() {
@@ -116,24 +156,17 @@ func (p *Provider) GetImageID(ctx context.Context, communityImageName, publicGal
 			}
 		}
 	}
-	versionName := lo.FromPtr(topImageVersionCandidate.Name)
-
-	selectedImageID := BuildImageID(publicGalleryURL, communityImageName, versionName)
-	if p.cm.HasChanged(key, selectedImageID) {
-		logging.FromContext(ctx).With("image-id", selectedImageID).Info("discovered new image id")
-	}
-	p.imageCache.Set(key, selectedImageID, imageExpirationInterval)
-	return selectedImageID, nil
+	return lo.FromPtr(topImageVersionCandidate.Name), nil
 }
 
-func BuildImageID(publicGalleryURL, communityImageName, imageVersion string) string {
-	return fmt.Sprintf(imageIDFormat, publicGalleryURL, communityImageName, imageVersion)
+func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
+	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
 }
 
 // ParseImageIDInfo parses the publicGalleryURL, communityImageName, and imageVersion out of an imageID
 func ParseCommunityImageIDInfo(imageID string) (string, string, string, error) {
 	// TODO (charliedmcb): assess if doing validation on splitting the string and validating the results is better? Mostly is regex too expensive?
-	regexStr := fmt.Sprintf(imageIDFormat, "(?P<publicGalleryURL>.*)", "(?P<communityImageName>.*)", "(?P<imageVersion>.*)")
+	regexStr := fmt.Sprintf(communityImageIDFormat, "(?P<publicGalleryURL>.*)", "(?P<communityImageName>.*)", "(?P<imageVersion>.*)")
 	if imageID == "" {
 		return "", "", "", fmt.Errorf("can not parse empty string. Expect it of the form \"%s\"", regexStr)
 	}
@@ -146,4 +179,20 @@ func ParseCommunityImageIDInfo(imageID string) (string, string, string, error) {
 		return "", "", "", fmt.Errorf("failed to find sub expressions in %s, for imageID: %s", regexStr, imageID)
 	}
 	return matches[r.SubexpIndex("publicGalleryURL")], matches[r.SubexpIndex("communityImageName")], matches[r.SubexpIndex("imageVersion")], nil
+}
+
+type NodeImageVersion struct {
+	FullName string `json:"fullName"`
+	OS       string `json:"os"`
+	SKU      string `json:"sku"`
+	Version  string `json:"version"`
+}
+
+type NodeImageVersionsResponse struct {
+	Values []NodeImageVersion `json:"values"`
+}
+
+func (p *Provider) ListNodeImageVersions(ctx context.Context) (NodeImageVersionsResponse, error) {
+	// call the Azure API to get the latest image versions
+	return NodeImageVersionsResponse{}, nil
 }
