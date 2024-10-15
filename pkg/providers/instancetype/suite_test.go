@@ -926,7 +926,6 @@ var _ = Describe("InstanceType Provider", func() {
 				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 		)
 	})
-	Context("ImageReference")
 	Context("Instance Types", func() {
 		It("should support provisioning with no labels", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)

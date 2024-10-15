@@ -50,12 +50,9 @@ type DefaultImageOutput struct {
 	Requirements    scheduling.Requirements
 }
 
-func (d DefaultImageOutput) PopulateImageTraitsFromID(imageID string) {
+func (d *DefaultImageOutput) PopulateImageTraitsFromID(imageID string) {
 	// We want to take a community image gallery image id or a shared image gallery id and populate the contents of DefaultImageOutput
 	imageIDParts := strings.Split(imageID, "/")
-	if len(imageIDParts) < 8 { // not enough parts to be a valid image id
-		return
-	}
 	if imageIDParts[1] == "subscriptions" { // Shared Image Gallery
 		d.GalleryResourceGroup = imageIDParts[4]
 		d.GalleryName = imageIDParts[8]
@@ -63,8 +60,7 @@ func (d DefaultImageOutput) PopulateImageTraitsFromID(imageID string) {
 	}
 	if imageIDParts[1] == "CommunityGalleries" { // Community Image Gallery
 		d.PublicGalleryURL = imageIDParts[2]
-		d.GalleryName = imageIDParts[4]
-		d.ImageDefinition = imageIDParts[6]
+		d.ImageDefinition = imageIDParts[4]
 	}
 }
 

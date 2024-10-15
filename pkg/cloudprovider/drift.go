@@ -145,20 +145,17 @@ func (c *CloudProvider) isImageVersionDrifted(
 
 	if vm.Properties == nil ||
 		vm.Properties.StorageProfile == nil ||
-		vm.Properties.StorageProfile.ImageReference == nil ||
-		vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID == nil ||
-		*vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID == "" {
-		logger.Debug("not using a CommunityGalleryImageID for nodeClaim %s", nodeClaim.Name)
+		vm.Properties.StorageProfile.ImageReference == nil { 
 		return "", nil
 	}
-	
-	communityImageID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
-	sharedImageGalleryID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
-	vmImageID := lo.Ternary(communityImageID == "", sharedImageGalleryID, communityImageID)
-	var imageStub *imagefamily.DefaultImageOutput
+	CIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
+	SIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
+	vmImageID := lo.Ternary(SIGID != "", SIGID, CIGID)
+
+	var imageStub imagefamily.DefaultImageOutput
 	imageStub.PopulateImageTraitsFromID(vmImageID)
 
-	expectedImageID, err := c.imageProvider.GetLatestImageID(ctx, *imageStub)
+	expectedImageID, err := c.imageProvider.GetLatestImageID(ctx, imageStub)
 	if err != nil {
 		return "", err
 	}
