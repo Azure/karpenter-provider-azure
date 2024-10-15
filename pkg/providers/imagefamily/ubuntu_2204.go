@@ -47,7 +47,10 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
 	return []DefaultImageOutput{
 		{
-			ImageDefinition: Ubuntu2204Gen2CommunityImage,
+			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+			GalleryResourceGroup: AKSUbuntuResourceGroup,
+			GalleryName:          AKSUbuntuGalleryName,
+			ImageDefinition:      Ubuntu2204Gen2CommunityImage,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
@@ -55,7 +58,10 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 			Distro: "aks-ubuntu-containerd-22.04-gen2",
 		},
 		{
-			ImageDefinition: Ubuntu2204Gen1CommunityImage,
+			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+			GalleryResourceGroup: AKSUbuntuResourceGroup,
+			GalleryName:          AKSUbuntuGalleryName,
+			ImageDefinition:      Ubuntu2204Gen1CommunityImage,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
@@ -63,7 +69,10 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 			Distro: "aks-ubuntu-containerd-22.04",
 		},
 		{
-			ImageDefinition: Ubuntu2204Gen2ArmCommunityImage,
+			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+			GalleryResourceGroup: AKSUbuntuResourceGroup,
+			GalleryName:          AKSUbuntuGalleryName,
+			ImageDefinition:      Ubuntu2204Gen2ArmCommunityImage,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),

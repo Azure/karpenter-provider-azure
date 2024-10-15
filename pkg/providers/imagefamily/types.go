@@ -25,6 +25,14 @@ import (
 const (
 	AKSUbuntuPublicGalleryURL     = "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"
 	AKSAzureLinuxPublicGalleryURL = "AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b"
+
+	AKSUbuntuResourceGroup     = "AKS-Ubuntu"
+	AKSAzureLinuxResourceGroup = "AKS-Azure-Linux"
+	AKSWindowsResourceGroup    = "AKS-Windows"
+
+	AKSUbuntuGalleryName     = "AKSUbuntu"
+	AKSAzureLinuxGalleryName = "AKSAzureLinux"
+	AKSWindowsGalleryName    = "AKSWindows"
 )
 
 // DefaultImageOutput is a stub describing our desired image with an image's name and requirements to run that image
