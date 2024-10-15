@@ -913,19 +913,20 @@ var _ = Describe("InstanceType Provider", func() {
 				azureEnv.Reset()
 			},
 			Entry("Gen2, Gen1 instance type with AKSUbuntu image family",
-				"Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen1 instance type with AKSUbuntu image family",
-				"Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("ARM instance type with AKSUbuntu image family",
-				"Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmCommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen2 instance type with AzureLinux image family",
-				"Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2CommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("Gen1 instance type with AzureLinux image family",
-				"Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1CommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("ARM instance type with AzureLinux image family",
-				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmCommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 		)
 	})
+	Context("ImageReference")
 	Context("Instance Types", func() {
 		It("should support provisioning with no labels", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)

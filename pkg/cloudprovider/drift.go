@@ -151,15 +151,14 @@ func (c *CloudProvider) isImageVersionDrifted(
 		logger.Debug("not using a CommunityGalleryImageID for nodeClaim %s", nodeClaim.Name)
 		return "", nil
 	}
+	
+	communityImageID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
+	sharedImageGalleryID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
+	vmImageID := lo.Ternary(communityImageID == "", sharedImageGalleryID, communityImageID)
+	var imageStub *imagefamily.DefaultImageOutput
+	imageStub.PopulateImageTraitsFromID(vmImageID)
 
-	vmImageID := *vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID
-
-	publicGalleryURL, communityImageName, _, err := imagefamily.ParseCommunityImageIDInfo(vmImageID)
-	if err != nil {
-		return "", err
-	}
-
-	expectedImageID, err := c.imageProvider.GetImageID(ctx, communityImageName, publicGalleryURL)
+	expectedImageID, err := c.imageProvider.GetLatestImageID(ctx, *imageStub)
 	if err != nil {
 		return "", err
 	}

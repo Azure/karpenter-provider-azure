@@ -50,7 +50,7 @@ var _ = Describe("Image ID Parsing", func() {
 			Expect(communityImageName).To(Equal(expectedCommunityImageName))
 			Expect(imageVersion).To(Equal(expectedImageVersion))
 		},
-		Entry("Valid image id should parse", fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion), imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2CommunityImage, olderImageVersion, nil),
+		Entry("Valid image id should parse", fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2ImageDefinition, olderImageVersion), imagefamily.AKSUbuntuPublicGalleryURL, imagefamily.Ubuntu2204Gen2ImageDefinition, olderImageVersion, nil),
 		Entry("invalid image id should not parse", "badimageid", "", "", "", true),
 		Entry("empty image id should not parse", "badimageid", "", "", "", true),
 	)

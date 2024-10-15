@@ -17,6 +17,8 @@ limitations under the License.
 package imagefamily
 
 import (
+	"strings"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -46,6 +48,24 @@ type DefaultImageOutput struct {
 	ImageDefinition string
 	Distro           string
 	Requirements    scheduling.Requirements
+}
+
+func (d DefaultImageOutput) PopulateImageTraitsFromID(imageID string) {
+	// We want to take a community image gallery image id or a shared image gallery id and populate the contents of DefaultImageOutput
+	imageIDParts := strings.Split(imageID, "/")
+	if len(imageIDParts) < 8 { // not enough parts to be a valid image id
+		return
+	}
+	if imageIDParts[1] == "subscriptions" { // Shared Image Gallery
+		d.GalleryResourceGroup = imageIDParts[4]
+		d.GalleryName = imageIDParts[8]
+		d.ImageDefinition = imageIDParts[10]
+	}
+	if imageIDParts[1] == "CommunityGalleries" { // Community Image Gallery
+		d.PublicGalleryURL = imageIDParts[2]
+		d.GalleryName = imageIDParts[4]
+		d.ImageDefinition = imageIDParts[6]
+	}
 }
 
 // CommunityGalleryImageVersionsAPI is used for listing community gallery image versions.
