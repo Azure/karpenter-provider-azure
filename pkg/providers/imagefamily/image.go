@@ -105,10 +105,6 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	return version, nil
 }
 
-// getImageIDSig will return a string of the shape /subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Compute/galleries/{galleryName}/images/{imageDefinition}/versions/{imageVersion}
-// for a given imageDefinition and imageVersion. If the imageVersion is set to "", then it will return the latest version of the image.
-// If the imageVersion is set to "", then we will cache the latest version of the image for imageExpirationInterval days(3d) for all imageDefinitions
-// and reuse that get of the latest version of the image for 3d.
 func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput) (string, error) {
 	key := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition)
 	if imageID, ok := p.imageCache.Get(key); ok {
@@ -129,10 +125,6 @@ func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput
 	return "", fmt.Errorf("failed to get the latest version of the image %s", imgStub.ImageDefinition)
 }
 
-// getImageCIG will return a community image gallery image url that has the shape of
-// /CommunityGalleries/{publicGalleryURL}/images/{communityImageName}/versions/{imageVersion}
-// The imageVersion can be set to "" to get the latest version of the image, and after a image version "" has been encountered
-// we cache the latest version of the image for imageExpirationInterval days(3d)
 func (p *Provider) getImageIDCIG(ctx context.Context, publicGalleryURL, communityImageName string) (string, error) {
 	key := fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName)
 	if imageID, ok := p.imageCache.Get(key); ok {
