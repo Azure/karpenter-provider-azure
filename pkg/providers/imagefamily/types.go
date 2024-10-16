@@ -68,6 +68,7 @@ func (d *DefaultImageOutput) PopulateImageTraitsFromID(imageID string) {
 // CommunityGalleryImageVersionsAPI is used for listing community gallery image versions.
 type CommunityGalleryImageVersionsAPI interface {
 	NewListPager(location string, publicGalleryName string, galleryImageName string, options *armcomputev5.CommunityGalleryImageVersionsClientListOptions) *runtime.Pager[armcomputev5.CommunityGalleryImageVersionsClientListResponse]
+	Get(ctx context.Context, location string, publicGalleryName string, galleryImageName string, galleryImageVersionName string, options *armcomputev5.CommunityGalleryImageVersionsClientGetOptions) (armcomputev5.CommunityGalleryImageVersionsClientGetResponse, error)
 }
 
 type NodeImageVersion struct {

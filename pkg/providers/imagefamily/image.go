@@ -72,8 +72,8 @@ func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, in
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
 		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
-			imageID, imageRetrievalErr := p.GetLatestImageID(ctx, defaultImage) 
-			return defaultImage.Distro, imageID, imageRetrievalErr 
+			imageID, imageRetrievalErr := p.GetLatestImageID(ctx, defaultImage)
+			return defaultImage.Distro, imageID, imageRetrievalErr
 		}
 	}
 
@@ -130,7 +130,7 @@ func (p *Provider) getImageIDCIG(ctx context.Context, publicGalleryURL, communit
 	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
 	}
-	// if the image is not found in the cache, we will refresh the lookup for it 
+	// if the image is not found in the cache, we will refresh the lookup for it
 	imageVersion, err := p.latestNodeImageVersionCommmunity(publicGalleryURL, communityImageName)
 	if err != nil {
 		return "", err

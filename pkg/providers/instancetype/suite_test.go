@@ -928,6 +928,45 @@ var _ = Describe("InstanceType Provider", func() {
 
 	})
 	Context("ImageProvider + Image Family", func() {
+		DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
+			options := test.Options(test.OptionsFields{
+				ManagedKarpenter: lo.ToPtr(true),
+			})
+			ctx = options.ToContext(ctx)
+			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+			coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{instanceType},
+				}})
+			nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{Name: nodeClass.Name}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+
+			expectedPrefix := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s", options.SIGSubscriptionID, expectedGalleryRG, expectedGalleryURL, expectedImageDefinition)
+			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(expectedPrefix))
+
+			// reset options back to the default
+			options = test.Options(test.OptionsFields{
+				ManagedKarpenter: lo.ToPtr(false),
+			})
+			ctx = options.ToContext(ctx)
+		},
+
+			Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
