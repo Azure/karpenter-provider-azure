@@ -30,12 +30,12 @@ func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscripti
 		Scopes: []string{"https://management.azure.com/.default"},
 	})
 	if err != nil {
-		panic(err)
+		return NodeImageVersionsResponse{}, err
 	}
 
 	req, err := http.NewRequestWithContext(context.Background(), "GET", resourceURL, nil)
 	if err != nil {
-		panic(err)
+		return NodeImageVersionsResponse{}, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token.Token)
@@ -44,7 +44,7 @@ func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscripti
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		panic(err)
+		return NodeImageVersionsResponse{}, err
 	}
 	defer resp.Body.Close()
 
@@ -52,7 +52,7 @@ func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscripti
 	decoder := json.NewDecoder(resp.Body)
 	err = decoder.Decode(&response)
 	if err != nil {
-		panic(err)
+		return NodeImageVersionsResponse{}, err
 	}
 	return response, nil
 }
