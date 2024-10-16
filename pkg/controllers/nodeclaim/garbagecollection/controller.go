@@ -56,7 +56,7 @@ func NewController(kubeClient client.Client, cloudProvider corecloudprovider.Clo
 }
 
 func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
-	ctx = injection.WithControllerName(ctx, "nodeclaim.garbagecollection")
+	ctx = injection.WithControllerName(ctx, "instance.garbagecollection")
 
 	// We LIST VMs on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
 	// LISTing instances takes a long time, our information is more updated by the time we get to nodeclaim and Node LIST
@@ -114,7 +114,7 @@ func (c *Controller) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeC
 
 func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
-		Named("nodeclaim.garbagecollection").
+		Named("instance.garbagecollection").
 		WatchesRawSource(singleton.Source()).
 		Complete(singleton.AsReconciler(c))
 }
