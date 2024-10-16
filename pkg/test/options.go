@@ -32,11 +32,13 @@ type OptionsFields struct {
 	KubeletClientTLSBootstrapToken *string
 	SSHPublicKey                   *string
 	NetworkPlugin                  *string
+	NetworkPluginMode              *string
 	NetworkPolicy                  *string
 	NetworkDataplane               *string
 	VMMemoryOverheadPercent        *float64
 	NodeIdentities                 []string
 	SubnetID                       *string
+	NodeResourceGroup              *string
 }
 
 func Options(overrides ...OptionsFields) *azoptions.Options {
@@ -53,10 +55,12 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
 		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
+		NetworkPluginMode:              lo.FromPtrOr(options.NetworkPluginMode, "overlay"),
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, "cilium"),
 		NetworkDataplane:               lo.FromPtrOr(options.NetworkDataplane, "cilium"),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
+		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 	}
 }

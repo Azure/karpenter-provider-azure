@@ -21,11 +21,15 @@ import (
 	"fmt"
 	"strings"
 
-	"knative.dev/pkg/logging"
-
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/samber/lo"
+	"knative.dev/pkg/logging"
 
 	v1 "k8s.io/api/core/v1"
 
@@ -38,6 +42,7 @@ import (
 const (
 	K8sVersionDrift   cloudprovider.DriftReason = "K8sVersionDrift"
 	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift"
+	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
 )
 
 func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
@@ -118,4 +123,36 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return ImageVersionDrift, nil
 	}
 	return "", nil
+}
+
+// isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
+func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	expectedSubnet := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
+	nicName := instance.GenerateResourceName(nodeClaim.Name)
+
+	// TODO: Refactor all of AzConfig to be part of options
+	nic, err := c.instanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
+	if err != nil {
+		if sdkerrors.IsNotFoundErr(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	nicSubnet := getSubnetFromPrimaryIPConfig(nic)
+	if nicSubnet == "" {
+		return "", fmt.Errorf("no subnet found for nic: %s", nicName)
+	}
+	if nicSubnet != expectedSubnet {
+		return SubnetDrift, nil
+	}
+	return "", nil
+}
+
+func getSubnetFromPrimaryIPConfig(nic *armnetwork.Interface) string {
+	for _, ipConfig := range nic.Properties.IPConfigurations {
+		if ipConfig.Properties.Subnet != nil && lo.FromPtr(ipConfig.Properties.Primary) {
+			return lo.FromPtr(ipConfig.Properties.Subnet.ID)
+		}
+	}
+	return ""
 }

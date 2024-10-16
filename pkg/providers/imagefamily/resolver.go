@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -32,18 +33,6 @@ import (
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-)
-
-const (
-	networkPluginAzure   = "azure"
-	networkPluginKubenet = "kubenet"
-
-	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI Overlay.
-	defaultKubernetesMaxPodsAzure = 250
-	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
-	defaultKubernetesMaxPodsKubenet = 100
-	// defaultKubernetesMaxPods is the maximum number of pods on a node.
-	defaultKubernetesMaxPods = 110
 )
 
 // Resolver is able to fill-in dynamic launch template parameters
@@ -84,11 +73,6 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		return nil, err
 	}
 
-	kubeletConfig := nodeClass.Spec.Kubelet
-	if kubeletConfig == nil {
-		kubeletConfig = &v1alpha2.KubeletConfiguration{}
-	}
-
 	taints := lo.Flatten([][]corev1.Taint{
 		nodeClaim.Spec.Taints,
 		nodeClaim.Spec.StartupTaints,
@@ -99,17 +83,12 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		taints = append(taints, karpv1.UnregisteredNoExecuteTaint)
 	}
 
-	// TODO: revisit computeResources and maxPods implementation
-	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
-	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
-	kubeletConfig.EvictionHard = map[string]string{
-		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
-	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
+
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		UserData: imageFamily.UserData(
-			kubeletConfig,
+			prepareKubeletConfiguration(instanceType, nodeClass),
 			taints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
@@ -121,6 +100,20 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	return template, nil
 }
 
+func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *v1alpha2.KubeletConfiguration {
+	kubeletConfig := nodeClass.Spec.Kubelet
+	if kubeletConfig == nil {
+		kubeletConfig = &v1alpha2.KubeletConfiguration{}
+	}
+
+	kubeletConfig.MaxPods = lo.ToPtr[int32](consts.DefaultKubernetesMaxPods)
+	// TODO: revisit computeResources and maxPods implementation
+	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
+	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
+	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
+	return kubeletConfig
+}
+
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1alpha2.Ubuntu2204ImageFamily:
@@ -130,13 +123,4 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}
-}
-
-func getMaxPods(networkPlugin string) int32 {
-	if networkPlugin == networkPluginAzure {
-		return defaultKubernetesMaxPodsAzure
-	} else if networkPlugin == networkPluginKubenet {
-		return defaultKubernetesMaxPodsKubenet
-	}
-	return defaultKubernetesMaxPods
 }

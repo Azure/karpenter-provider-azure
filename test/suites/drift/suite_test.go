@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -102,7 +103,6 @@ var _ = Describe("Drift", func() {
 		env.ExpectCreatedOrUpdated(nodePool)
 
 		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
-
 		env.EventuallyExpectDrifted(nodeClaim)
 
 		By(fmt.Sprintf("waiting for pod %s to to update", pod.Name))
@@ -148,5 +148,24 @@ var _ = Describe("Drift", func() {
 		SetDefaultEventuallyTimeout(10 * time.Minute)
 		env.EventuallyExpectNotFound(pod, nodeClaim, node)
 		SetDefaultEventuallyTimeout(5 * time.Minute)
+	})
+	It("should mark the nodeclaim as drifted for SubnetDrift if AKSNodeClass subnet id changes", func() {
+		env.ExpectCreated(pod, nodeClass, nodePool)
+
+		By(fmt.Sprintf("expect pod %s to be healthy", pod.Name))
+		env.EventuallyExpectHealthy(pod)
+
+		By("expect created node count to be 1")
+		env.ExpectCreatedNodeCount("==", 1)
+
+		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+		By("triggering subnet drift")
+		// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
+		// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
+		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
+		env.ExpectCreatedOrUpdated(nodeClass)
+
+		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
+		env.EventuallyExpectDrifted(nodeClaim)
 	})
 })

@@ -33,7 +33,10 @@ func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": v1.LabelTopologyZone})
 }
 
-const WindowsDefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+const (
+	WindowsDefaultImage      = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+	CiliumAgentNotReadyTaint = "node.cilium.io/agent-not-ready"
+)
 
 type Environment struct {
 	*common.Environment

@@ -92,7 +92,7 @@ func (u AzureLinux) UserData(kubeletConfig *v1alpha2.KubeletConfiguration, taint
 		TenantID:                       u.Options.TenantID,
 		SubscriptionID:                 u.Options.SubscriptionID,
 		Location:                       u.Options.Location,
-		UserAssignedIdentityID:         u.Options.UserAssignedIdentityID,
+		KubeletIdentityClientID:        u.Options.KubeletIdentityClientID,
 		ResourceGroup:                  u.Options.ResourceGroup,
 		ClusterID:                      u.Options.ClusterID,
 		APIServerName:                  u.Options.APIServerName,

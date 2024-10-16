@@ -28,6 +28,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -37,50 +38,48 @@ import (
 const (
 	karpenterManagedTagKey = "karpenter.azure.com/cluster"
 
-	networkDataplaneCilium  = "cilium"
 	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
 	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
 	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
 	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
-
-	networkModeOverlay = "overlay"
 )
 
 type Template struct {
 	UserData string
 	ImageID  string
+	SubnetID string
 	Tags     map[string]*string
 }
 
 type Provider struct {
-	imageFamily            *imagefamily.Resolver
-	imageProvider          *imagefamily.Provider
-	caBundle               *string
-	clusterEndpoint        string
-	tenantID               string
-	subscriptionID         string
-	userAssignedIdentityID string
-	resourceGroup          string
-	location               string
-	vnetGUID               string
+	imageFamily             *imagefamily.Resolver
+	imageProvider           *imagefamily.Provider
+	caBundle                *string
+	clusterEndpoint         string
+	tenantID                string
+	subscriptionID          string
+	kubeletIdentityClientID string
+	resourceGroup           string
+	location                string
+	vnetGUID                string
 }
 
 // TODO: add caching of launch templates
 
 func NewProvider(_ context.Context, imageFamily *imagefamily.Resolver, imageProvider *imagefamily.Provider, caBundle *string, clusterEndpoint string,
-	tenantID, subscriptionID, userAssignedIdentityID, resourceGroup, location, vnetGUID string,
+	tenantID, subscriptionID, kubeletIdentityClientID, resourceGroup, location, vnetGUID string,
 ) *Provider {
 	return &Provider{
-		imageFamily:            imageFamily,
-		imageProvider:          imageProvider,
-		caBundle:               caBundle,
-		clusterEndpoint:        clusterEndpoint,
-		tenantID:               tenantID,
-		subscriptionID:         subscriptionID,
-		userAssignedIdentityID: userAssignedIdentityID,
-		resourceGroup:          resourceGroup,
-		location:               location,
-		vnetGUID:               vnetGUID,
+		imageFamily:             imageFamily,
+		imageProvider:           imageProvider,
+		caBundle:                caBundle,
+		clusterEndpoint:         clusterEndpoint,
+		tenantID:                tenantID,
+		subscriptionID:          subscriptionID,
+		kubeletIdentityClientID: kubeletIdentityClientID,
+		resourceGroup:           resourceGroup,
+		location:                location,
+		vnetGUID:                vnetGUID,
 	}
 }
 
@@ -100,7 +99,7 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	if err != nil {
 		return nil, err
 	}
-	launchTemplate, err := p.createLaunchTemplate(ctx, templateParameters)
+	launchTemplate, err := p.createLaunchTemplate(templateParameters)
 	if err != nil {
 		return nil, err
 	}
@@ -113,15 +112,19 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
 		arch = karpv1.ArchitectureArm64
 	}
-	// TODO: make conditional on either Azure CNI Overlay or pod subnet
-	vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
-	if err != nil {
-		return nil, err
-	}
-	labels = lo.Assign(labels, vnetLabels)
 
-	// TODO: Make conditional on epbf dataplane
-	if options.FromContext(ctx).NetworkDataplane == networkDataplaneCilium {
+	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
+
+	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+		// TODO: make conditional on pod subnet
+		vnetLabels, err := p.getVnetInfoLabels(subnetID)
+		if err != nil {
+			return nil, err
+		}
+		labels = lo.Assign(labels, vnetLabels)
+	}
+
+	if options.FromContext(ctx).NetworkDataplane == consts.NetworkDataplaneCilium {
 		// This label is required for the cilium agent daemonset because
 		// we select the nodes for the daemonset based on this label
 		//              - key: kubernetes.azure.com/ebpf-dataplane
@@ -129,7 +132,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		//            values:
 		//              - cilium
 
-		labels[vnetDataPlaneLabel] = networkDataplaneCilium
+		labels[vnetDataPlaneLabel] = consts.NetworkDataplaneCilium
 	}
 
 	return &parameters.StaticParameters{
@@ -144,7 +147,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),
 		TenantID:                       p.tenantID,
 		SubscriptionID:                 p.subscriptionID,
-		UserAssignedIdentityID:         p.userAssignedIdentityID,
+		KubeletIdentityClientID:        p.kubeletIdentityClientID,
 		ResourceGroup:                  p.resourceGroup,
 		Location:                       p.location,
 		ClusterID:                      options.FromContext(ctx).ClusterID,
@@ -152,11 +155,11 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
 		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
-		SubnetID:                       options.FromContext(ctx).SubnetID,
+		SubnetID:                       subnetID,
 	}, nil
 }
 
-func (p *Provider) createLaunchTemplate(_ context.Context, options *parameters.Parameters) (*Template, error) {
+func (p *Provider) createLaunchTemplate(options *parameters.Parameters) (*Template, error) {
 	// render user data
 	userData, err := options.UserData.Script()
 	if err != nil {
@@ -169,6 +172,7 @@ func (p *Provider) createLaunchTemplate(_ context.Context, options *parameters.P
 		UserData: userData,
 		ImageID:  options.ImageID,
 		Tags:     azureTags,
+		SubnetID: options.SubnetID,
 	}
 	return template, nil
 }
@@ -181,16 +185,15 @@ func mergeTags(tags ...map[string]string) (result map[string]*string) {
 	})
 }
 
-func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeClass) (map[string]string, error) {
-	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
-	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(options.FromContext(ctx).SubnetID)
+func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error) {
+	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		return nil, err
 	}
 	vnetLabels := map[string]string{
 		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
 		vnetGUIDLabel:           p.vnetGUID,
-		vnetPodNetworkTypeLabel: networkModeOverlay,
+		vnetPodNetworkTypeLabel: consts.NetworkPluginModeOverlay,
 	}
 	return vnetLabels, nil
 }

@@ -177,12 +177,11 @@ var _ = Describe("CloudProvider", func() {
 			})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			rg := input.ResourceGroupName
 			vmName := input.VMName
-
 			// Corresponding NodeClaim
 			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{

@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -124,6 +125,7 @@ var _ = Describe("InstanceProvider", func() {
 		})
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
+		cluster.Reset()
 	})
 
 	var _ = AfterEach(func() {
@@ -155,7 +157,38 @@ var _ = Describe("InstanceProvider", func() {
 		},
 		ZonalAndNonZonalRegions,
 	)
+	Context("AzureCNI V1", func() {
+		var originalOptions *options.Options
 
+		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
+					NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeNone),
+				}))
+		})
+
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, originalOptions)
+		})
+		It("should include 250 secondary ips by default", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic).ToNot(BeNil())
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// AzureCNI V1 has a DefaultMaxPods of 250 so we should set 250 ip configurations
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(250))
+		})
+	})
 	It("should create VM and NIC with valid ARM tags", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
