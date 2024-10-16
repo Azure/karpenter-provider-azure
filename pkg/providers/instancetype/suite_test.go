@@ -904,6 +904,9 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(options.SIGSubscriptionID))
 			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring("AKSUbuntu"))
+
+			cluster.Reset()
+			azureEnv.Reset()
 		})
 		It("should use Community Images when options are set to ManagedKarpenter=false", func() {
 			options := test.Options(test.OptionsFields{
@@ -918,6 +921,9 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).Should(Not(BeNil()))
+
+			cluster.Reset()
+			azureEnv.Reset()
 		})
 
 	})
