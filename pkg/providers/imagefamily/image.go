@@ -114,12 +114,12 @@ func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput
 	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
 	}
-	versions, err := p.ListNodeImageVersions(ctx)
+	versions, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
 	if err != nil {
 		return "", err
 	}
 	for _, version := range versions.Values {
-		imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SharedImageGallerySubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition, version.Version)
+		imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition, version.Version)
 		p.imageCache.Set(key, imageID, imageExpirationInterval)
 	}
 	// return the latest version of the image from the cache after we have caached all of the imageDefinitions
