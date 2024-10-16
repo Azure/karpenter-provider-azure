@@ -54,5 +54,53 @@ func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscripti
 	if err != nil {
 		return NodeImageVersionsResponse{}, err
 	}
+
+	response.Values = FilteredNodeImages(response.Values)
 	return response, nil
+}
+
+// FilteredNodeImages filters on two conditions
+// 1. The image is the latest version for the given OS and SKU
+// 2. the image belongs to a supported gallery(AKS Ubuntu or Azure Linux)
+func FilteredNodeImages(nodeImageVersions []NodeImageVersion) []NodeImageVersion {
+	latestImages := make(map[string]NodeImageVersion)
+
+	for _, image := range nodeImageVersions {
+		// Skip the galleries that Karpenter does not support
+		if image.OS != AKSUbuntuGalleryName && image.OS != AKSAzureLinuxGalleryName {
+			continue
+		}
+
+		key := image.OS + "-" + image.SKU
+
+		currentLatest, exists := latestImages[key]
+		if !exists || isNewerVersion(image.Version, currentLatest.Version) {
+			latestImages[key] = image
+		}
+	}
+
+	var filteredImages []NodeImageVersion
+	for _, image := range latestImages {
+		filteredImages = append(filteredImages, image)
+	}
+	return filteredImages
+}
+
+func isNewerVersion(version1, version2 string) bool {
+	// Assuming version is in the format: "year.month.day.build"
+	// Split by dots and compare each segment as an integer
+
+	var v1, v2 [4]int
+	fmt.Sscanf(version1, "%d.%d.%d.%d", &v1[0], &v1[1], &v1[2], &v1[3])
+	fmt.Sscanf(version2, "%d.%d.%d.%d", &v2[0], &v2[1], &v2[2], &v2[3])
+
+	for i := 0; i < 4; i++ {
+		if v1[i] > v2[i] {
+			return true
+		} else if v1[i] < v2[i] {
+			return false
+		}
+	}
+
+	return false
 }
