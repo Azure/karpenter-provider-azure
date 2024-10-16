@@ -20,6 +20,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/agentbakerbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 
@@ -52,6 +53,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
 			),
+			Distro: "aks-azurelinux-v2-gen2",
 		},
 		{
 			CommunityImage:   AzureLinuxGen1CommunityImage,
@@ -60,6 +62,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
 			),
+			Distro: "aks-azurelinux-v2",
 		},
 		{
 			CommunityImage:   AzureLinuxGen2ArmCommunityImage,
@@ -68,12 +71,13 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
 			),
+			Distro: "aks-azurelinux-v2-arm64-gen2",
 		},
 	}
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u AzureLinux) SelfContainedUserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -100,5 +104,26 @@ func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 		NetworkPlugin:                  u.Options.NetworkPlugin,
 		NetworkPolicy:                  u.Options.NetworkPolicy,
 		KubernetesVersion:              u.Options.KubernetesVersion,
+	}
+}
+
+// UserData returns the default userdata script for the image Family
+func (u AzureLinux) AgentBakerNodeBootstrapping(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string) agentbakerbootstrap.Bootstrapper {
+	return agentbakerbootstrap.ProvisionClientBootstrap{
+		ClusterName:                    u.Options.ClusterName,
+		KubeletConfig:                  kubeletConfig,
+		Taints:                         taints,
+		StartupTaints:                  startupTaints,
+		Labels:                         labels,
+		SubnetID:                       u.Options.SubnetID,
+		Arch:                           u.Options.Arch,
+		SubscriptionID:                 u.Options.SubscriptionID,
+		ResourceGroup:                  u.Options.ResourceGroup,
+		KubeletClientTLSBootstrapToken: u.Options.KubeletClientTLSBootstrapToken,
+		KubernetesVersion:              u.Options.KubernetesVersion,
+		ImageDistro:                    imageDistro,
+		InstanceType:                   instanceType,
+		StorageProfile:                 storageProfile,
+		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 	}
 }

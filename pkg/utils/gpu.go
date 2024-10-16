@@ -33,7 +33,7 @@ const (
 )
 
 func GetAKSGPUImageSHA(size string) string {
-	if useGridDrivers(size) {
+	if UseGridDrivers(size) {
 		return AKSGPUGridSHA
 	}
 	return AKSGPUCudaSHA
@@ -142,7 +142,7 @@ func IsMarinerEnabledGPUSKU(vmSize string) bool {
 // NVv1 seems to run with CUDA, NVv5 requires GRID.
 // NVv3 is untested on AKS, NVv4 is AMD so n/a, and NVv2 no longer seems to exist (?).
 func GetGPUDriverVersion(size string) string {
-	if useGridDrivers(size) {
+	if UseGridDrivers(size) {
 		return Nvidia535GridDriverVersion
 	}
 	if isStandardNCv1(size) {
@@ -156,7 +156,7 @@ func isStandardNCv1(size string) bool {
 	return strings.HasPrefix(tmp, "standard_nc") && !strings.Contains(tmp, "_v")
 }
 
-func useGridDrivers(size string) bool {
+func UseGridDrivers(size string) bool {
 	return ConvergedGPUDriverSizes[strings.ToLower(size)]
 }
 
