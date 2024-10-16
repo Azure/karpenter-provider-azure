@@ -18,6 +18,7 @@ package imagefamily
 
 import (
 	"context"
+	"strconv"
 
 	core "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
@@ -26,12 +27,14 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/agentbakerbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
@@ -42,13 +45,22 @@ type Resolver struct {
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
 type ImageFamily interface {
-	UserData(
+	SelfContainedUserData(
 		kubeletConfig *corev1beta1.KubeletConfiguration,
 		taints []core.Taint,
 		labels map[string]string,
 		caBundle *string,
 		instanceType *cloudprovider.InstanceType,
 	) bootstrap.Bootstrapper
+	AgentBakerNodeBootstrapping(
+		kubeletConfig *corev1beta1.KubeletConfiguration,
+		taints []core.Taint,
+		startupTaints []core.Taint,
+		labels map[string]string,
+		instanceType *cloudprovider.InstanceType,
+		imageDistro string,
+		storageProfile string,
+	) agentbakerbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
@@ -67,7 +79,7 @@ func New(_ client.Client, imageProvider *Provider) *Resolver {
 func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
-	imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
+	imageDistro, imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
@@ -75,16 +87,32 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 
+	storageProfile := "ManagedDisks"
+	if useEphemeralDisk(instanceType, nodeClass) {
+		storageProfile = "Ephemeral"
+	}
+
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
-		UserData: imageFamily.UserData(
+		SelfContainedUserData: imageFamily.SelfContainedUserData(
 			prepareKubeletConfiguration(instanceType, nodeClaim),
 			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
-		ImageID: imageID,
+		AgentBakerNodeBootstrapping: imageFamily.AgentBakerNodeBootstrapping(
+			prepareKubeletConfiguration(instanceType, nodeClaim),
+			nodeClaim.Spec.Taints,
+			nodeClaim.Spec.StartupTaints,
+			staticParameters.Labels,
+			instanceType,
+			imageDistro,
+			storageProfile,
+		),
+		ImageID:        imageID,
+		StorageProfile: storageProfile,
+		IsWindows:      false, // TODO(Windows)
 	}
 
 	return template, nil
@@ -112,4 +140,23 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}
+}
+
+func getEphemeralMaxSizeGB(instanceType *corecloudprovider.InstanceType) int32 {
+	reqs := instanceType.Requirements.Get(v1alpha2.LabelSKUStorageEphemeralOSMaxSize).Values()
+	if len(reqs) == 0 || len(reqs) > 1 {
+		return 0
+	}
+	maxSize, err := strconv.ParseFloat(reqs[0], 32)
+	if err != nil {
+		return 0
+	}
+	// decimal places are truncated, so we round down
+	return int32(maxSize)
+}
+
+// setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
+func useEphemeralDisk(instanceType *corecloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) bool {
+	// use ephemeral disk if it is large enough
+	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
 }

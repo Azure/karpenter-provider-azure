@@ -17,6 +17,7 @@ limitations under the License.
 package parameters
 
 import (
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/agentbakerbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 )
 
@@ -41,6 +42,7 @@ type StaticParameters struct {
 	NetworkPolicy                  string
 	KubernetesVersion              string
 	SubnetID                       string
+	ClusterResourceGroup           string
 
 	Tags   map[string]string
 	Labels map[string]string
@@ -49,6 +51,9 @@ type StaticParameters struct {
 // Parameters adds the dynamically generated launch template parameters
 type Parameters struct {
 	*StaticParameters
-	UserData bootstrap.Bootstrapper
-	ImageID  string
+	SelfContainedUserData       bootstrap.Bootstrapper
+	AgentBakerNodeBootstrapping agentbakerbootstrap.Bootstrapper
+	ImageID                     string
+	StorageProfile              string
+	IsWindows                   bool
 }
