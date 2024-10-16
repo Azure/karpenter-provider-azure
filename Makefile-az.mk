@@ -48,6 +48,7 @@ az-acrimport: ## Imports an image to an acr registry
 	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6"
 
 az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses) 
+	kubectl delete deployments -n default --all
 	kubectl delete pods -n default --all
 	kubectl delete nodeclaims --all 
 	kubectl delete nodepools --all
