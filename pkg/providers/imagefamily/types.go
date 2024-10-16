@@ -17,6 +17,7 @@ limitations under the License.
 package imagefamily
 
 import (
+	"context"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -67,4 +68,19 @@ func (d *DefaultImageOutput) PopulateImageTraitsFromID(imageID string) {
 // CommunityGalleryImageVersionsAPI is used for listing community gallery image versions.
 type CommunityGalleryImageVersionsAPI interface {
 	NewListPager(location string, publicGalleryName string, galleryImageName string, options *armcomputev5.CommunityGalleryImageVersionsClientListOptions) *runtime.Pager[armcomputev5.CommunityGalleryImageVersionsClientListResponse]
+}
+
+type NodeImageVersion struct {
+	FullName string `json:"fullName"`
+	OS       string `json:"os"`
+	SKU      string `json:"sku"`
+	Version  string `json:"version"`
+}
+
+type NodeImageVersionsResponse struct {
+	Values []NodeImageVersion `json:"values"`
+}
+
+type NodeImageVersionsAPI interface {
+	List(ctx context.Context, location, subscription string) (NodeImageVersionsResponse, error)
 }

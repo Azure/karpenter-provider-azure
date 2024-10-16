@@ -100,7 +100,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
 	fs.BoolVar(&o.ManagedKarpenter, "managed-karpenter", env.WithDefaultBool("MANAGED_KARPENTER", false), "Whether Karpenter is managed by AKS or not.")
-	fs.StringVar(&o.SharedImageGallerySubscriptionID, "shared-image-gallery-subscription-id", env.WithDefaultString("SHARED_IMAGE_GALLERY_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery. Only required alongside managed-karpenter.")
+	fs.StringVar(&o.SharedImageGallerySubscriptionID, "shared-image-gallery-subscription-id", env.WithDefaultString("SHARED_IMAGE_GALLERY_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 }
 
 func (o Options) GetAPIServerName() string {

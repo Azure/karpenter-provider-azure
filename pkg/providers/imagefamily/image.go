@@ -19,7 +19,6 @@ package imagefamily
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -41,6 +40,8 @@ type Provider struct {
 	kubernetesInterface    kubernetes.Interface
 	imageCache             *cache.Cache
 	imageVersionsClient    CommunityGalleryImageVersionsAPI
+	subscription           string
+	NodeImageVersions      NodeImageVersionsAPI
 }
 
 const (
@@ -53,7 +54,7 @@ const (
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
-func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location string) *Provider {
+func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient NodeImageVersionsAPI) *Provider {
 	return &Provider{
 		kubernetesVersionCache: kubernetesVersionCache,
 		imageCache:             cache.New(imageExpirationInterval, imageCacheCleaningInterval),
@@ -61,6 +62,8 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 		imageVersionsClient:    versionsClient,
 		cm:                     pretty.NewChangeMonitor(),
 		kubernetesInterface:    kubernetesInterface,
+		subscription:           subscription,
+		NodeImageVersions:      nodeImageVersionsClient,
 	}
 }
 
@@ -164,38 +167,4 @@ func (p *Provider) latestNodeImageVersionCommmunity(publicGalleryURL, communityI
 
 func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
 	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
-}
-
-// ParseImageIDInfo parses the publicGalleryURL, communityImageName, and imageVersion out of an imageID
-func ParseCommunityImageIDInfo(imageID string) (string, string, string, error) {
-	// TODO (charliedmcb): assess if doing validation on splitting the string and validating the results is better? Mostly is regex too expensive?
-	regexStr := fmt.Sprintf(communityImageIDFormat, "(?P<publicGalleryURL>.*)", "(?P<communityImageName>.*)", "(?P<imageVersion>.*)")
-	if imageID == "" {
-		return "", "", "", fmt.Errorf("can not parse empty string. Expect it of the form \"%s\"", regexStr)
-	}
-	r := regexp.MustCompile(regexStr)
-	matches := r.FindStringSubmatch(imageID)
-	if matches == nil {
-		return "", "", "", fmt.Errorf("no matches while parsing image id %s", imageID)
-	}
-	if r.SubexpIndex("publicGalleryURL") == -1 || r.SubexpIndex("communityImageName") == -1 || r.SubexpIndex("imageVersion") == -1 {
-		return "", "", "", fmt.Errorf("failed to find sub expressions in %s, for imageID: %s", regexStr, imageID)
-	}
-	return matches[r.SubexpIndex("publicGalleryURL")], matches[r.SubexpIndex("communityImageName")], matches[r.SubexpIndex("imageVersion")], nil
-}
-
-type NodeImageVersion struct {
-	FullName string `json:"fullName"`
-	OS       string `json:"os"`
-	SKU      string `json:"sku"`
-	Version  string `json:"version"`
-}
-
-type NodeImageVersionsResponse struct {
-	Values []NodeImageVersion `json:"values"`
-}
-
-func (p *Provider) ListNodeImageVersions(ctx context.Context) (NodeImageVersionsResponse, error) {
-	// call the Azure API to get the latest image versions
-	return NodeImageVersionsResponse{}, nil
 }
