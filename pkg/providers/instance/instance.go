@@ -275,6 +275,7 @@ func (p *Provider) createNetworkInterface(ctx context.Context, opts *createNICOp
 // newVMObject is a helper func that creates a new armcompute.VirtualMachine
 // from key input.
 func newVMObject(
+	ctx context.Context,
 	vmName,
 	nicReference,
 	zone,
@@ -285,10 +286,7 @@ func newVMObject(
 	nodeClass *v1alpha2.AKSNodeClass,
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
-	// Build the image reference from template
-	imageReference := armcompute.ImageReference{
-		CommunityGalleryImageID: &launchTemplate.ImageID,
-	}
+
 	vm := armcompute.VirtualMachine{
 		Location: lo.ToPtr(location),
 		Identity: ConvertToVirtualMachineIdentity(nodeIdentities),
@@ -304,7 +302,6 @@ func newVMObject(
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},
-				ImageReference: &imageReference,
 			},
 
 			NetworkProfile: &armcompute.NetworkProfile{
@@ -342,10 +339,25 @@ func newVMObject(
 		Zones: lo.Ternary(len(zone) > 0, []*string{&zone}, []*string{}),
 		Tags:  launchTemplate.Tags,
 	}
+	setImageReference(ctx, vm.Properties, launchTemplate.ImageID)
 	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
 
 	return vm
+}
+
+// setImageReference sets the image reference for the VM based on if we are using self hosted karpenter or the node auto provisioning addon
+func setImageReference(ctx context.Context, vmProperties *armcompute.VirtualMachineProperties, imageID string) {
+	if options.FromContext(ctx).ManagedKarpenter {
+		vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
+			ID: lo.ToPtr(imageID),
+		}
+		return
+	}
+	vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
+		CommunityGalleryImageID: lo.ToPtr(imageID),
+	}
+	return
 }
 
 // setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
@@ -425,7 +437,7 @@ func (p *Provider) launchInstance(
 
 	sshPublicKey := options.FromContext(ctx).SSHPublicKey
 	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType)
+	vm := newVMObject(ctx, resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier

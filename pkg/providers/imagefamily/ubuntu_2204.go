@@ -29,9 +29,9 @@ import (
 )
 
 const (
-	Ubuntu2204Gen2CommunityImage    = "2204gen2containerd"
-	Ubuntu2204Gen1CommunityImage    = "2204containerd"
-	Ubuntu2204Gen2ArmCommunityImage = "2204gen2arm64containerd"
+	Ubuntu2204Gen2ImageDefinition    = "2204gen2containerd"
+	Ubuntu2204Gen1ImageDefinition    = "2204containerd"
+	Ubuntu2204Gen2ArmImageDefinition = "2204gen2arm64containerd"
 )
 
 type Ubuntu2204 struct {
@@ -46,24 +46,30 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
 	return []DefaultImageOutput{
 		{
-			CommunityImage:   Ubuntu2204Gen2CommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+			GalleryResourceGroup: AKSUbuntuResourceGroup,
+			GalleryName:          AKSUbuntuGalleryName,
+			ImageDefinition:      Ubuntu2204Gen2ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
 			),
 		},
 		{
-			CommunityImage:   Ubuntu2204Gen1CommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+			GalleryResourceGroup: AKSUbuntuResourceGroup,
+			GalleryName:          AKSUbuntuGalleryName,
+			ImageDefinition:      Ubuntu2204Gen1ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
 			),
 		},
 		{
-			CommunityImage:   Ubuntu2204Gen2ArmCommunityImage,
-			PublicGalleryURL: AKSUbuntuPublicGalleryURL,
+			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+			GalleryResourceGroup: AKSUbuntuResourceGroup,
+			GalleryName:          AKSUbuntuGalleryName,
+			ImageDefinition:      Ubuntu2204Gen2ArmImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),

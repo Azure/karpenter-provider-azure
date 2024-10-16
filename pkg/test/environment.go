@@ -47,6 +47,7 @@ func init() {
 
 var (
 	resourceGroup = "test-resourceGroup"
+	subscription  = "12345678-1234-1234-1234-123456789012"
 )
 
 type Environment struct {
@@ -99,6 +100,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
 	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
+	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 
 	// Cache
 	kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
@@ -108,7 +110,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
-	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region)
+	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI)
 	imageFamilyResolver := imagefamily.New(env.Client, imageFamilyProvider)
 	instanceTypesProvider := instancetype.NewProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
@@ -118,7 +120,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		ptr.String("ca-bundle"),
 		testOptions.ClusterEndpoint,
 		"test-tenant",
-		"test-subscription",
+		subscription,
 		"test-userAssignedIdentity",
 		testOptions.NodeResourceGroup,
 		region,
@@ -136,6 +138,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		networkInterfacesAPI,
 		loadBalancersAPI,
 		communityImageVersionsAPI,
+		nodeImageVersionsAPI,
 		skuClientSingleton,
 	)
 	instanceProvider := instance.NewProvider(
@@ -146,7 +149,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		unavailableOfferingsCache,
 		region,
 		testOptions.NodeResourceGroup,
-		"", // subscriptionID
+		subscription,
 	)
 
 	return &Environment{
