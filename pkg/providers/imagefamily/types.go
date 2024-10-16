@@ -30,7 +30,7 @@ const (
 	AKSAzureLinuxPublicGalleryURL = "AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b"
 
 	AKSUbuntuResourceGroup     = "AKS-Ubuntu"
-	AKSAzureLinuxResourceGroup = "AKS-Azure-Linux"
+	AKSAzureLinuxResourceGroup = "AKS-AzureLinux"
 	AKSWindowsResourceGroup    = "AKS-Windows"
 
 	AKSUbuntuGalleryName     = "AKSUbuntu"
