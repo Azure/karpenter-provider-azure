@@ -46,7 +46,7 @@ func init() {
 
 var (
 	resourceGroup = "test-resourceGroup"
-	subscription = "12345678-1234-1234-1234-123456789012"
+	subscription  = "12345678-1234-1234-1234-123456789012"
 )
 
 type Environment struct {

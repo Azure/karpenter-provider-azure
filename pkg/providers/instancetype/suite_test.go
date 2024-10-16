@@ -884,6 +884,43 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("ImageReference", func() {
+		It("should use shared image gallery images when options are set to ManagedKarpenter", func() {
+			options := test.Options(test.OptionsFields{
+				ManagedKarpenter: lo.ToPtr(true),
+			})
+			ctx = options.ToContext(ctx)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			// Expect virtual machine to have a shared image gallery id set on it
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+			Expect(vm.Properties.StorageProfile.ImageReference.ID).ShouldNot(BeNil())
+			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).Should(BeNil())
+
+			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(options.SIGSubscriptionID))
+			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring("AKSUbuntu"))
+		})
+		It("should use Community Images when options are set to ManagedKarpenter=false", func() {
+			options := test.Options(test.OptionsFields{
+				ManagedKarpenter: lo.ToPtr(false),
+			})
+			ctx = options.ToContext(ctx)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).Should(Not(BeNil()))
+		})
+
+	})
 	Context("ImageProvider + Image Family", func() {
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
