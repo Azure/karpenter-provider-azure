@@ -19,13 +19,34 @@ package bootstrap
 import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	core "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+type KubeletConfiguration struct {
+	v1alpha2.KubeletConfiguration
+
+	// MaxPods is the maximum number of pods that can run on a worker node instance.
+	MaxPods int32
+
+	SystemReserved map[string]string
+	// KubeReserved contains resources reserved for Kubernetes system components.
+	KubeReserved map[string]string
+	// EvictionHard is the map of signal names to quantities that define hard eviction thresholds
+	EvictionHard map[string]string
+	// EvictionSoft is the map of signal names to quantities that define soft eviction thresholds
+	EvictionSoft map[string]string
+	// EvictionSoftGracePeriod is the map of signal names to quantities that define grace periods for each eviction signal
+	EvictionSoftGracePeriod map[string]metav1.Duration
+	// EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use when terminating pods in
+	// response to soft eviction thresholds being met.
+	EvictionMaxPodGracePeriod *int32
+}
 
 // Options is the node bootstrapping parameters passed from Karpenter to the provisioning node
 type Options struct {
 	ClusterName      string
 	ClusterEndpoint  string
-	KubeletConfig    *v1alpha2.KubeletConfiguration
+	KubeletConfig    *KubeletConfiguration
 	Taints           []core.Taint      `hash:"set"`
 	Labels           map[string]string `hash:"set"`
 	CABundle         *string

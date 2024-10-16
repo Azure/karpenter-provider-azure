@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
@@ -460,14 +459,6 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("Nodepool with KubeletConfig", func() {
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
-				PodsPerCore: lo.ToPtr(int32(110)),
-				EvictionSoft: map[string]string{
-					instancetype.MemoryAvailable: "1Gi",
-				},
-				EvictionSoftGracePeriod: map[string]metav1.Duration{
-					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
-				},
-				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
@@ -481,14 +472,11 @@ var _ = Describe("InstanceType Provider", func() {
 			customData := ExpectDecodedCustomData(azureEnv)
 
 			expectedFlags := map[string]string{
-				"eviction-hard":              "memory.available<750Mi",
-				"eviction-soft":              "memory.available<1Gi",
-				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250",
-				"pods-per-core":              "110",
-				"image-gc-low-threshold":     "20",
-				"image-gc-high-threshold":    "30",
-				"cpu-cfs-quota":              "true",
+				"eviction-hard":           "memory.available<750Mi",
+				"image-gc-high-threshold": "30",
+				"image-gc-low-threshold":  "20",
+				"cpu-cfs-quota":           "true",
+				"max-pods":                "250",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
@@ -534,14 +522,6 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
-				PodsPerCore: lo.ToPtr(int32(110)),
-				EvictionSoft: map[string]string{
-					instancetype.MemoryAvailable: "1Gi",
-				},
-				EvictionSoftGracePeriod: map[string]metav1.Duration{
-					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
-				},
-				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
@@ -554,14 +534,11 @@ var _ = Describe("InstanceType Provider", func() {
 
 			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
-				"eviction-hard":              "memory.available<750Mi",
-				"eviction-soft":              "memory.available<1Gi",
-				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250",
-				"pods-per-core":              "110",
-				"image-gc-low-threshold":     "20",
-				"image-gc-high-threshold":    "30",
-				"cpu-cfs-quota":              "true",
+				"eviction-hard":           "memory.available<750Mi",
+				"max-pods":                "250",
+				"image-gc-low-threshold":  "20",
+				"image-gc-high-threshold": "30",
+				"cpu-cfs-quota":           "true",
 			}
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
 			Expect(customData).To(SatisfyAny( // AKS default
@@ -575,31 +552,11 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
-				PodsPerCore: lo.ToPtr(int32(110)),
-				EvictionSoft: map[string]string{
-					instancetype.MemoryAvailable: "1Gi",
-				},
-				EvictionSoftGracePeriod: map[string]metav1.Duration{
-					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
-				},
-				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
-
-				SystemReserved: map[string]string{
-					string(v1.ResourceCPU):    "200m",
-					string(v1.ResourceMemory): "1Gi",
-				},
-				KubeReserved: map[string]string{
-					string(v1.ResourceCPU):    "100m",
-					string(v1.ResourceMemory): "500Mi",
-				},
-				EvictionHard: map[string]string{
-					instancetype.MemoryAvailable: "10Mi",
-				},
-				MaxPods: lo.ToPtr(int32(15)),
 			}
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(15))
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
@@ -608,14 +565,11 @@ var _ = Describe("InstanceType Provider", func() {
 
 			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
-				"eviction-hard":              "memory.available<750Mi",
-				"eviction-soft":              "memory.available<1Gi",
-				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250", // max pods should always default to 250
-				"pods-per-core":              "110",
-				"image-gc-low-threshold":     "20",
-				"image-gc-high-threshold":    "30",
-				"cpu-cfs-quota":              "true",
+				"eviction-hard":           "memory.available<750Mi",
+				"max-pods":                "15",
+				"image-gc-low-threshold":  "20",
+				"image-gc-high-threshold": "30",
+				"cpu-cfs-quota":           "true",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)

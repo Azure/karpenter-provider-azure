@@ -24,7 +24,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -558,18 +557,13 @@ func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
 	return truncated
 }
 
-func KubeletConfigToMap(kubeletConfig *v1alpha2.KubeletConfiguration) map[string]string {
+func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	args := make(map[string]string)
 
 	if kubeletConfig == nil {
 		return args
 	}
-	if kubeletConfig.MaxPods != nil {
-		args["--max-pods"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.MaxPods))
-	}
-	if kubeletConfig.PodsPerCore != nil {
-		args["--pods-per-core"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.PodsPerCore))
-	}
+	args["--max-pods"] = fmt.Sprintf("%d", kubeletConfig.MaxPods)
 	JoinParameterArgsToMap(args, "--system-reserved", kubeletConfig.SystemReserved, "=")
 	JoinParameterArgsToMap(args, "--kube-reserved", kubeletConfig.KubeReserved, "=")
 	JoinParameterArgsToMap(args, "--eviction-hard", kubeletConfig.EvictionHard, "<")

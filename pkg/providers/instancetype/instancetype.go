@@ -124,7 +124,7 @@ func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSize
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(sku, vmsize, architecture, offerings, region),
 		Offerings:    offerings,
-		Capacity:     computeCapacity(ctx, sku, kc, nodeClass),
+		Capacity:     computeCapacity(ctx, sku, nodeClass),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
 			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
 			SystemReserved:    SystemReservedResources(),
@@ -261,12 +261,12 @@ func getArchitecture(architecture string) string {
 	return architecture // unrecognized
 }
 
-func computeCapacity(ctx context.Context, sku *skewer.SKU, kc *v1alpha2.KubeletConfiguration, nodeClass *v1alpha2.AKSNodeClass) corev1.ResourceList {
+func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1alpha2.AKSNodeClass) corev1.ResourceList {
 	return corev1.ResourceList{
 		corev1.ResourceCPU:                    *cpu(sku),
 		corev1.ResourceMemory:                 *memory(ctx, sku),
 		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
-		corev1.ResourcePods:                   *pods(sku, kc),
+		corev1.ResourcePods:                   *pods(nodeClass),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 	}
 }
@@ -308,17 +308,14 @@ func ephemeralStorage(nodeClass *v1alpha2.AKSNodeClass) *resource.Quantity {
 	return resource.NewScaledQuantity(int64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)), resource.Giga)
 }
 
-func pods(sku *skewer.SKU, kc *v1alpha2.KubeletConfiguration) *resource.Quantity {
+func pods(nc *v1alpha2.AKSNodeClass) *resource.Quantity {
 	// TODO: fine-tune pods calc
 	var count int64
 	switch {
-	case kc != nil && kc.MaxPods != nil:
-		count = int64(ptr.Int32Value(kc.MaxPods))
+	case nc.Spec.MaxPods != nil:
+		count = int64(ptr.Int32Value(nc.Spec.MaxPods))
 	default:
 		count = 110
-	}
-	if kc != nil && ptr.Int32Value(kc.PodsPerCore) > 0 {
-		count = lo.Min([]int64{int64(ptr.Int32Value(kc.PodsPerCore)) * cpu(sku).Value(), count})
 	}
 	return resources.Quantity(fmt.Sprint(count))
 }

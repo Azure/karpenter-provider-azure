@@ -53,10 +53,12 @@ type AKSNodeClassSpec struct {
 	// They are a subset of the upstream types, recognizing not all options may be supported.
 	// Wherever possible, the types and names should reflect the upstream kubelet types.
 	// +kubebuilder:validation:XValidation:message="imageGCHighThresholdPercent must be greater than imageGCLowThresholdPercent",rule="has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent) ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  : true"
-	// +kubebuilder:validation:XValidation:message="evictionSoft OwnerKey does not have a matching evictionSoftGracePeriod",rule="has(self.evictionSoft) ? self.evictionSoft.all(e, (e in self.evictionSoftGracePeriod)):true"
-	// +kubebuilder:validation:XValidation:message="evictionSoftGracePeriod OwnerKey does not have a matching evictionSoft",rule="has(self.evictionSoftGracePeriod) ? self.evictionSoftGracePeriod.all(e, (e in self.evictionSoft)):true"
 	// +optional
 	Kubelet *KubeletConfiguration `json:"kubelet,omitempty" hash:"ignore"`
+	// MaxPods is an override for the maximum number of pods that can run on a worker node instance.
+	// +kubebuilder:validation:Minimum:=0
+	// +optional
+	MaxPods *int32 `json:"maxPods,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
@@ -64,52 +66,32 @@ type AKSNodeClassSpec struct {
 // Wherever possible, the types and names should reflect the upstream kubelet types.
 // https://pkg.go.dev/k8s.io/kubelet/config/v1beta1#KubeletConfiguration
 // https://github.com/kubernetes/kubernetes/blob/9f82d81e55cafdedab619ea25cabf5d42736dacf/cmd/kubelet/app/options/options.go#L53
+//
+// AKS CustomKubeletConfig w/o CPUReserved,MemoryReserved,SeccompDefault
+// https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration?tabs=linux-node-pools
 type KubeletConfiguration struct {
-	// clusterDNS is a list of IP addresses for the cluster DNS server.
-	// Note that not all providers may use all addresses.
-	//+optional
-	ClusterDNS []string `json:"clusterDNS,omitempty"`
-	// MaxPods is an override for the maximum number of pods that can run on
-	// a worker node instance.
-	// +kubebuilder:validation:Minimum:=0
+	// cpuManagerPolicy is the name of the policy to use.
+	// +kubebuilder:validation:Enum:={none,static}
+	// +kubebuilder:default="none"
 	// +optional
-	MaxPods *int32 `json:"maxPods,omitempty"`
-	// PodsPerCore is an override for the number of pods that can run on a worker node
-	// instance based on the number of cpu cores. This value cannot exceed MaxPods, so, if
-	// MaxPods is a lower value, that value will be used.
-	// +kubebuilder:validation:Minimum:=0
+	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+	// CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+	// Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
+	// +kubebuilder:default=true
 	// +optional
-	PodsPerCore *int32 `json:"podsPerCore,omitempty"`
-	// SystemReserved contains resources reserved for OS system daemons and kernel memory.
-	// +kubebuilder:validation:XValidation:message="valid keys for systemReserved are ['cpu','memory','ephemeral-storage','pid']",rule="self.all(x, x=='cpu' || x=='memory' || x=='ephemeral-storage' || x=='pid')"
-	// +kubebuilder:validation:XValidation:message="systemReserved value cannot be a negative resource quantity",rule="self.all(x, !self[x].startsWith('-'))"
+	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
+	// cpuCfsQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
+	// The value must be between 1 ms and 1 second, inclusive.
+	// Default: "100ms"
 	// +optional
-	SystemReserved map[string]string `json:"systemReserved,omitempty"`
-	// KubeReserved contains resources reserved for Kubernetes system components.
-	// +kubebuilder:validation:XValidation:message="valid keys for kubeReserved are ['cpu','memory','ephemeral-storage','pid']",rule="self.all(x, x=='cpu' || x=='memory' || x=='ephemeral-storage' || x=='pid')"
-	// +kubebuilder:validation:XValidation:message="kubeReserved value cannot be a negative resource quantity",rule="self.all(x, !self[x].startsWith('-'))"
-	// +optional
-	KubeReserved map[string]string `json:"kubeReserved,omitempty"`
-	// EvictionHard is the map of signal names to quantities that define hard eviction thresholds
-	// +kubebuilder:validation:XValidation:message="valid keys for evictionHard are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']",rule="self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])"
-	// +optional
-	EvictionHard map[string]string `json:"evictionHard,omitempty"`
-	// EvictionSoft is the map of signal names to quantities that define soft eviction thresholds
-	// +kubebuilder:validation:XValidation:message="valid keys for evictionSoft are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']",rule="self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])"
-	// +optional
-	EvictionSoft map[string]string `json:"evictionSoft,omitempty"`
-	// EvictionSoftGracePeriod is the map of signal names to quantities that define grace periods for each eviction signal
-	// +kubebuilder:validation:XValidation:message="valid keys for evictionSoftGracePeriod are ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available']",rule="self.all(x, x in ['memory.available','nodefs.available','nodefs.inodesFree','imagefs.available','imagefs.inodesFree','pid.available'])"
-	// +optional
-	EvictionSoftGracePeriod map[string]metav1.Duration `json:"evictionSoftGracePeriod,omitempty"`
-	// EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use when terminating pods in
-	// response to soft eviction thresholds being met.
-	// +optional
-	EvictionMaxPodGracePeriod *int32 `json:"evictionMaxPodGracePeriod,omitempty"`
+	// +kubebuilder:default="100ms"
+	// TODO: validation
+	CPUCFSQuotaPeriod metav1.Duration `json:"cpuCFSQuotaPeriod,omitempty"`
 	// ImageGCHighThresholdPercent is the percent of disk usage after which image
 	// garbage collection is always run. The percent is calculated by dividing this
 	// field value by 100, so this field must be between 0 and 100, inclusive.
 	// When specified, the value must be greater than ImageGCLowThresholdPercent.
+	// Note: AKS AKS CustomKubeletConfig does not have "Percent" in the field name
 	// +kubebuilder:validation:Minimum:=0
 	// +kubebuilder:validation:Maximum:=100
 	// +optional
@@ -119,13 +101,55 @@ type KubeletConfiguration struct {
 	// The percent is calculated by dividing this field value by 100,
 	// so the field value must be between 0 and 100, inclusive.
 	// When specified, the value must be less than imageGCHighThresholdPercent
+	// Note: AKS CustomKubeletConfig does not have "Percent" in the field name
 	// +kubebuilder:validation:Minimum:=0
 	// +kubebuilder:validation:Maximum:=100
 	// +optional
 	ImageGCLowThresholdPercent *int32 `json:"imageGCLowThresholdPercent,omitempty"`
-	// CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+	// topologyManagerPolicy is the name of the topology manager policy to use.
+	// Valid values include:
+	//
+	// - `restricted`: kubelet only allows pods with optimal NUMA node alignment for requested resources;
+	// - `best-effort`: kubelet will favor pods with NUMA alignment of CPU and device resources;
+	// - `none`: kubelet has no knowledge of NUMA alignment of a pod's CPU and device resources.
+	// - `single-numa-node`: kubelet only allows pods with a single NUMA alignment
+	//   of CPU and device resources.
+	//
+	// +kubebuilder:validation:Enum:={restricted,best-effort,none,single-numa-node}
+	// +kubebuilder:default="none"
 	// +optional
-	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
+	TopologyManagerPolicy string `json:"topologyManagerPolicy,omitempty"`
+	// A comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
+	// and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
+	// Default: []
+	// TODO: validation
+	// +optional
+	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
+	// failSwapOn tells the Kubelet to fail to start if swap is enabled on the node.
+	// Default: true
+	// kubebuilder:default:=true
+	// +optional
+	FailSwapOn *bool `json:"failSwapOn,omitempty"`
+	// containerLogMaxSize is a quantity defining the maximum size of the container log
+	// file before it is rotated. For example: "5Mi" or "256Ki".
+	// Default: "10Mi"
+	// AKS CustomKubeletConfig has containerLogMaxSizeMB (with units), defaults to 50
+	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
+	// +kubebuilder:default="50Mi"
+	// +optional
+	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
+	// containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
+	// Default: 5
+	// +kubebuilder:validation:Minimum:=2
+	// +kubebuilder:default=5
+	// +optional
+	ContainerLogMaxFiles *int32 `json:"containerLogMaxFiles,omitempty"`
+	// podPidsLimit is the maximum number of PIDs in any pod.
+	// AKS CustomKubeletConfig uses PodMaxPids, int32 (!)
+	// Default: -1
+	// +optional
+	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
 }
 
 // TODO: add hashing support

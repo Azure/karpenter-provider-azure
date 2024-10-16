@@ -43,7 +43,7 @@ type Resolver struct {
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
 type ImageFamily interface {
 	UserData(
-		kubeletConfig *v1alpha2.KubeletConfiguration,
+		kubeletConfig *bootstrap.KubeletConfiguration,
 		taints []corev1.Taint,
 		labels map[string]string,
 		caBundle *string,
@@ -100,14 +100,21 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	return template, nil
 }
 
-func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *v1alpha2.KubeletConfiguration {
-	kubeletConfig := nodeClass.Spec.Kubelet
-	if kubeletConfig == nil {
-		kubeletConfig = &v1alpha2.KubeletConfiguration{}
+func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *bootstrap.KubeletConfiguration {
+	kubeletConfig := &bootstrap.KubeletConfiguration{}
+
+	if nodeClass.Spec.Kubelet != nil {
+		kubeletConfig.KubeletConfiguration = *nodeClass.Spec.Kubelet
 	}
 
-	kubeletConfig.MaxPods = lo.ToPtr[int32](consts.DefaultKubernetesMaxPods)
-	// TODO: revisit computeResources and maxPods implementation
+	// TODO: make default maxpods dependent on CNI
+	if nodeClass.Spec.MaxPods != nil {
+		kubeletConfig.MaxPods = *nodeClass.Spec.MaxPods
+	} else {
+		kubeletConfig.MaxPods = consts.DefaultKubernetesMaxPods
+	}
+
+	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
