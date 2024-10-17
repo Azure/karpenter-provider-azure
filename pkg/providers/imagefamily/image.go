@@ -93,29 +93,26 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 
 // Input versionName == "" to get the latest version
 func (p *Provider) GetImageID(ctx context.Context, communityImageName, publicGalleryURL string) (string, error) {
-	versionName := ""
-	key := fmt.Sprintf("%s/%s/%s", publicGalleryURL, communityImageName, versionName)
+	key := fmt.Sprintf("%s/%s", publicGalleryURL, communityImageName)
 	imageID, found := p.imageCache.Get(key)
 	if found {
 		return imageID.(string), nil
 	}
 
-	if versionName == "" {
-		pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
-		topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
-		for pager.More() {
-			page, err := pager.NextPage(context.Background())
-			if err != nil {
-				return "", err
-			}
-			for _, imageVersion := range page.CommunityGalleryImageVersionList.Value {
-				if lo.IsEmpty(topImageVersionCandidate) || imageVersion.Properties.PublishedDate.After(*topImageVersionCandidate.Properties.PublishedDate) {
-					topImageVersionCandidate = *imageVersion
-				}
+	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
+	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
+	for pager.More() {
+		page, err := pager.NextPage(context.Background())
+		if err != nil {
+			return "", err
+		}
+		for _, imageVersion := range page.CommunityGalleryImageVersionList.Value {
+			if lo.IsEmpty(topImageVersionCandidate) || imageVersion.Properties.PublishedDate.After(*topImageVersionCandidate.Properties.PublishedDate) {
+				topImageVersionCandidate = *imageVersion
 			}
 		}
-		versionName = lo.FromPtr(topImageVersionCandidate.Name)
 	}
+	versionName := lo.FromPtr(topImageVersionCandidate.Name)
 
 	selectedImageID := BuildImageID(publicGalleryURL, communityImageName, versionName)
 	if p.cm.HasChanged(key, selectedImageID) {
