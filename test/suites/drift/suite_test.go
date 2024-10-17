@@ -111,41 +111,6 @@ var _ = Describe("Drift", func() {
 		env.EventuallyExpectNotFound(pod, nodeClaim, node)
 		SetDefaultEventuallyTimeout(5 * time.Minute)
 	})
-	It("should upgrade nodes using drift based on node image version change", func() {
-		// TODO: Get these dynamically
-		startingImageVersion := "202404.09.0"
-		upgradedImageVersion := "202404.16.0"
-
-		nodeClass.Spec.ImageVersion = &startingImageVersion
-
-		By(fmt.Sprintf("creating pod %s, nodepool %s, and nodeclass %s", pod.Name, nodePool.Name, nodeClass.Name))
-		env.ExpectCreated(pod, nodeClass, nodePool)
-
-		By(fmt.Sprintf("expect pod %s to be healthy", pod.Name))
-		env.EventuallyExpectHealthy(pod)
-
-		By("expect created node count to be 1")
-		env.ExpectCreatedNodeCount("==", 1)
-
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-		node := env.EventuallyExpectNodeCount("==", 1)[0]
-
-		By(fmt.Sprintf("waiting for nodeClass %s update", nodeClass.Name))
-		nodeClass.Spec.ImageVersion = &upgradedImageVersion
-		env.ExpectCreatedOrUpdated(nodeClass)
-
-		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
-		env.EventuallyExpectDrifted(nodeClaim)
-
-		By(fmt.Sprintf("waiting for pod %s to to update", pod.Name))
-		delete(pod.Annotations, corev1beta1.DoNotDisruptAnnotationKey)
-		env.ExpectUpdated(pod)
-
-		By(fmt.Sprintf("expect pod %s, nodeclaim %s, and node %s to eventually not exist", pod.Name, nodeClaim.Name, node.Name))
-		SetDefaultEventuallyTimeout(10 * time.Minute)
-		env.EventuallyExpectNotFound(pod, nodeClaim, node)
-		SetDefaultEventuallyTimeout(5 * time.Minute)
-	})
 	It("should mark the nodeclaim as drifted for SubnetDrift if AKSNodeClass subnet id changes", func() {
 		env.ExpectCreated(pod, nodeClass, nodePool)
 

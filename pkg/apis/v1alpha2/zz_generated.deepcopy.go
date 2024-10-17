@@ -100,11 +100,6 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.ImageVersion != nil {
-		in, out := &in.ImageVersion, &out.ImageVersion
-		*out = new(string)
-		**out = **in
-	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
 		*out = make(map[string]string, len(*in))

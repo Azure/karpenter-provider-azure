@@ -78,7 +78,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *core
 // Feel reassessing this within the future with a potential minor refactor would be best to fix the gocyclo.
 // nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
-	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
@@ -113,7 +113,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", err
 	}
 
-	expectedImageID, err := c.imageProvider.GetImageID(ctx, communityImageName, publicGalleryURL, nodeClass.Spec.GetImageVersion())
+	expectedImageID, err := c.imageProvider.GetImageID(ctx, communityImageName, publicGalleryURL)
 	if err != nil {
 		return "", err
 	}
