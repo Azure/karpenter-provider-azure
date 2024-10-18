@@ -364,20 +364,20 @@ func newVMObject(
 		Zones: lo.Ternary(len(zone) > 0, []*string{&zone}, []*string{}),
 		Tags:  launchTemplate.Tags,
 	}
-	setVMPropertiesStorageProfile(vm.Properties, launchTemplate.StorageProfile)
+	setVMPropertiesOSDiskType(vm.Properties, launchTemplate.StorageProfile)
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
 
 	if provisionMode == options.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.AgentBakerCustomData)
 	} else {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.SelfContainedUserData)
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.SelfContainedCustomData)
 	}
 
 	return vm
 }
 
-// setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
-func setVMPropertiesStorageProfile(vmProperties *armcompute.VirtualMachineProperties, storageProfile string) {
+// setVMPropertiesOSDiskType enables ephemeral os disk for instance types that support it
+func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, storageProfile string) {
 	if storageProfile == "Ephemeral" {
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
 			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
@@ -718,38 +718,20 @@ func (p *Provider) getCSExtension(cse string, isWindows bool) *armcompute.Virtua
 		cseVersionLinux     = "2.0"
 	)
 
-	if isWindows { // TODO(Windows)
-		return &armcompute.VirtualMachineExtension{
-			Location: lo.ToPtr(p.location),
-			Name:     lo.ToPtr(cseNameWindows),
-			Type:     lo.ToPtr(vmExtensionType),
-			Properties: &armcompute.VirtualMachineExtensionProperties{
-				AutoUpgradeMinorVersion: lo.ToPtr(true),
-				Type:                    lo.ToPtr(cseTypeWindows),
-				Publisher:               lo.ToPtr(csePublisherWindows),
-				TypeHandlerVersion:      lo.ToPtr(cseVersionWindows),
-				Settings:                &map[string]interface{}{},
-				ProtectedSettings: &map[string]interface{}{
-					"commandToExecute": cse,
-				},
+	return &armcompute.VirtualMachineExtension{
+		Location: lo.ToPtr(p.location),
+		Name:     lo.ToPtr(lo.Ternary(isWindows, cseNameWindows, cseNameLinux)),
+		Type:     lo.ToPtr(vmExtensionType),
+		Properties: &armcompute.VirtualMachineExtensionProperties{
+			AutoUpgradeMinorVersion: lo.ToPtr(true),
+			Type:                    lo.ToPtr(lo.Ternary(isWindows, cseTypeWindows, cseTypeLinux)),
+			Publisher:               lo.ToPtr(lo.Ternary(isWindows, csePublisherWindows, csePublisherLinux)),
+			TypeHandlerVersion:      lo.ToPtr(lo.Ternary(isWindows, cseVersionWindows, cseVersionLinux)),
+			Settings:                &map[string]interface{}{},
+			ProtectedSettings: &map[string]interface{}{
+				"commandToExecute": cse,
 			},
-		}
-	} else {
-		return &armcompute.VirtualMachineExtension{
-			Location: lo.ToPtr(p.location),
-			Name:     lo.ToPtr(cseNameLinux),
-			Type:     lo.ToPtr(vmExtensionType),
-			Properties: &armcompute.VirtualMachineExtensionProperties{
-				AutoUpgradeMinorVersion: lo.ToPtr(true),
-				Type:                    lo.ToPtr(cseTypeLinux),
-				Publisher:               lo.ToPtr(csePublisherLinux),
-				TypeHandlerVersion:      lo.ToPtr(cseVersionLinux),
-				Settings:                &map[string]interface{}{},
-				ProtectedSettings: &map[string]interface{}{
-					"commandToExecute": cse,
-				},
-			},
-		}
+		},
 	}
 }
 

@@ -77,7 +77,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux) SelfContainedUserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u AzureLinux) SelfContainedCustomData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,

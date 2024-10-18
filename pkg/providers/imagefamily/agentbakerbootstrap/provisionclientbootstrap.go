@@ -75,6 +75,8 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 	provisionProfile := &models.ProvisionProfile{
 		Name:                     lo.ToPtr(""),
+		Architecture:             lo.ToPtr(lo.Ternary(p.Arch == corev1beta1.ArchitectureAmd64, "x64", "Arm64")),
+		OsType:                   lo.ToPtr(lo.Ternary(p.IsWindows, models.OSType_Windows, models.OSType_Linux)),
 		VMSize:                   lo.ToPtr(p.InstanceType.Name),
 		Distro:                   lo.ToPtr(p.ImageDistro),
 		CustomNodeLabels:         labels,
@@ -100,12 +102,6 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		// ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 		// Enabled: lo.ToPtr(false), // Unsupported as of now
 		// },
-	}
-
-	if p.Arch == "amd64" {
-		provisionProfile.Architecture = lo.ToPtr("x64")
-	} else {
-		provisionProfile.Architecture = lo.ToPtr(p.Arch)
 	}
 
 	switch p.ImageFamily {
@@ -137,24 +133,10 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	}
 
 	if utils.IsNvidiaEnabledSKU(p.InstanceType.Name) {
-		if utils.UseGridDrivers(p.InstanceType.Name) {
-			provisionProfile.GpuProfile = &models.GPUProfile{
-				DriverType:       lo.ToPtr(models.DriverType_GRID),
-				InstallGPUDriver: lo.ToPtr(true),
-			}
-		} else {
-			provisionProfile.GpuProfile = &models.GPUProfile{
-				DriverType:       lo.ToPtr(models.DriverType_CUDA),
-				InstallGPUDriver: lo.ToPtr(true),
-			}
+		provisionProfile.GpuProfile = &models.GPUProfile{
+			DriverType:       lo.ToPtr(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverType_GRID, models.DriverType_CUDA)),
+			InstallGPUDriver: lo.ToPtr(true),
 		}
-
-	}
-
-	if p.IsWindows {
-		provisionProfile.OsType = lo.ToPtr(models.OSType_Windows)
-	} else {
-		provisionProfile.OsType = lo.ToPtr(models.OSType_Linux)
 	}
 
 	provisionHelperValues := &models.ProvisionHelperValues{
@@ -184,6 +166,7 @@ func (p *ProvisionClientBootstrap) getNodeBootstrappingFromClient(ctx context.Co
 
 	resp, err := client.Operations.NodeBootstrappingGet(params)
 	if err != nil {
+		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisted along with retriable status on the server side.
 		return "", "", err
 	}
 

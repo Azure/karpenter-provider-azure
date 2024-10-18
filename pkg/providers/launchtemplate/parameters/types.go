@@ -51,7 +51,7 @@ type StaticParameters struct {
 // Parameters adds the dynamically generated launch template parameters
 type Parameters struct {
 	*StaticParameters
-	SelfContainedUserData       bootstrap.Bootstrapper
+	SelfContainedCustomData     bootstrap.Bootstrapper
 	AgentBakerNodeBootstrapping agentbakerbootstrap.Bootstrapper
 	ImageID                     string
 	StorageProfile              string
