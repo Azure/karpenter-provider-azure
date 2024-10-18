@@ -20,28 +20,18 @@ package apis
 import (
 	_ "embed"
 
-	v1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	"github.com/awslabs/operatorpkg/object"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
-	"github.com/samber/lo"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"sigs.k8s.io/karpenter/pkg/apis"
-	"sigs.k8s.io/karpenter/pkg/utils/functional"
-)
-
-var (
-	// Builder includes all types within the apis package
-	Builder = runtime.NewSchemeBuilder(
-		v1alpha2.SchemeBuilder.AddToScheme,
-	)
-	// AddToScheme may be used to add all resources defined in the project to a Scheme
-	AddToScheme = Builder.AddToScheme
 )
 
 //go:generate controller-gen crd object:headerFile="../../hack/boilerplate.go.txt" paths="./..." output:crd:artifacts:config=crds
 var (
+	Group = "karpenter.azure.com"
+	//CompatibilityGroup = "compatibility." + Group
 	//go:embed crds/karpenter.azure.com_aksnodeclasses.yaml
 	AKSNodeClassCRD []byte
-	CRDs            = append(apis.CRDs, lo.Must(functional.Unmarshal[v1.CustomResourceDefinition](AKSNodeClassCRD)))
+	CRDs            = append(apis.CRDs,
+		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](AKSNodeClassCRD))
 )

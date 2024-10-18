@@ -20,4 +20,18 @@ limitations under the License.
 // +groupName=karpenter.azure.com
 package v1alpha2 // doc.go is discovered by codegen
 
-// TODO: tests
+import (
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	corev1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes/scheme"
+)
+
+func init() {
+	gv := schema.GroupVersion{Group: apis.Group, Version: "v1alpha2"}
+	corev1.AddToGroupVersion(scheme.Scheme, gv)
+	scheme.Scheme.AddKnownTypes(gv,
+		&AKSNodeClass{},
+		&AKSNodeClassList{},
+	)
+}

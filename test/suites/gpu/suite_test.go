@@ -29,7 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -57,13 +57,13 @@ var _ = Describe("GPU", func() {
 			nodePool := env.DefaultNodePool(nodeClass)
 
 			// Relax default SKU family selector to allow for GPU nodes
-			test.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1alpha2.LabelSKUFamily,
 					Operator: v1.NodeSelectorOpExists,
 				}})
 			// Exclude some of the more expensive GPU SKUs
-			nodePool.Spec.Limits = corev1beta1.Limits{
+			nodePool.Spec.Limits = karpv1.Limits{
 				v1.ResourceCPU:                    resource.MustParse("25"),
 				v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
 			}

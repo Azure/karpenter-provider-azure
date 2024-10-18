@@ -24,15 +24,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/stretchr/testify/assert"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	corev1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 	cases := []struct {
 		name                 string
 		instanceTypes        []*cloudprovider.InstanceType
-		nodeClaim            *corev1beta1.NodeClaim
+		nodeClaim            *karpv1.NodeClaim
 		expectedInstanceType string
 		expectedPriority     string
 		expectedZone         string
@@ -40,7 +42,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 		{
 			name:                 "No instance types in the list",
 			instanceTypes:        []*cloudprovider.InstanceType{},
-			nodeClaim:            &corev1beta1.NodeClaim{},
+			nodeClaim:            &karpv1.NodeClaim{},
 			expectedInstanceType: "",
 			expectedPriority:     "",
 			expectedZone:         "",
@@ -52,10 +54,12 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 					Name: "Standard_D2s_v3",
 					Offerings: []cloudprovider.Offering{
 						{
-							Price:        0.1,
-							Zone:         "westus-2",
-							CapacityType: corev1beta1.CapacityTypeOnDemand,
-							Available:    true,
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-2"),
+							),
+							Available: true,
 						},
 					},
 				},
@@ -63,21 +67,23 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 					Name: "Standard_NV16as_v4",
 					Offerings: []cloudprovider.Offering{
 						{
-							Price:        0.1,
-							Zone:         "westus-2",
-							CapacityType: corev1beta1.CapacityTypeOnDemand,
-							Available:    true,
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-2"),
+							),
+							Available: true,
 						},
 					},
 				},
 			},
-			nodeClaim:            &corev1beta1.NodeClaim{},
+			nodeClaim:            &karpv1.NodeClaim{},
 			expectedInstanceType: "Standard_D2s_v3",
 			expectedZone:         "2",
-			expectedPriority:     corev1beta1.CapacityTypeOnDemand,
+			expectedPriority:     karpv1.CapacityTypeOnDemand,
 		},
 	}
-	provider := NewProvider(nil, nil, nil, nil, cache.NewUnavailableOfferings(),
+	provider := NewDefaultProvider(nil, nil, nil, nil, cache.NewUnavailableOfferings(),
 		"westus-2",
 		"MC_xxxxx_yyyy-region",
 		"0000000-0000-0000-0000-0000000000",

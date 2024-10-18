@@ -27,34 +27,39 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive,stylecheck
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/utils/pod"
 )
 
+const TestingFinalizer = "testing/finalizer"
+
 var (
 	CleanableObjects = []client.Object{
-		&v1.Pod{},
+		&corev1.Pod{},
 		&appsv1.Deployment{},
+		&appsv1.StatefulSet{},
 		&appsv1.DaemonSet{},
 		&policyv1.PodDisruptionBudget{},
-		&v1.PersistentVolumeClaim{},
-		&v1.PersistentVolume{},
+		&corev1.PersistentVolumeClaim{},
+		&corev1.PersistentVolume{},
 		&storagev1.StorageClass{},
-		&corev1beta1.NodePool{},
-		&v1.LimitRange{},
+		&karpv1.NodePool{},
+		&corev1.LimitRange{},
 		&schedulingv1.PriorityClass{},
-		&v1.Node{},
-		&corev1beta1.NodeClaim{},
+		&corev1.Node{},
+		&karpv1.NodeClaim{},
+		&v1alpha2.AKSNodeClass{},
 	}
 )
 
@@ -70,28 +75,28 @@ func (env *Environment) BeforeEach() {
 }
 
 func (env *Environment) ExpectCleanCluster() {
-	var nodes v1.NodeList
+	var nodes corev1.NodeList
 	Expect(env.Client.List(env.Context, &nodes)).To(Succeed())
 	for _, node := range nodes.Items {
 		if len(node.Spec.Taints) == 0 && !node.Spec.Unschedulable {
 			Fail(fmt.Sprintf("expected system pool node %s to be tainted", node.Name))
 		}
 	}
-	var pods v1.PodList
+	var pods corev1.PodList
 	Expect(env.Client.List(env.Context, &pods)).To(Succeed())
 	for i := range pods.Items {
 		Expect(pods.Items[i].Namespace).ToNot(Equal("default"),
 			fmt.Sprintf("expected no pods in the `default` namespace, found %s/%s", pods.Items[i].Namespace, pods.Items[i].Name))
 	}
 	Eventually(func(g Gomega) {
-		var pods v1.PodList
+		var pods corev1.PodList
 		g.Expect(env.Client.List(env.Context, &pods)).To(Succeed())
 		for i := range pods.Items {
 			g.Expect(pod.IsProvisionable(&pods.Items[i])).To(BeFalse(),
 				fmt.Sprintf("expected to have no provisionable pods, found %s/%s", pods.Items[i].Namespace, pods.Items[i].Name))
 		}
 	}).WithPolling(10 * time.Second).WithTimeout(5 * time.Minute).Should(Succeed())
-	for _, obj := range []client.Object{&corev1beta1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
+	for _, obj := range []client.Object{&karpv1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
 		metaList := &metav1.PartialObjectMetadataList{}
 		gvk := lo.Must(apiutil.GVKForObject(obj, env.Client.Scheme()))
 		metaList.SetGroupVersionKind(gvk)
@@ -108,7 +113,7 @@ func (env *Environment) Cleanup() {
 
 func (env *Environment) AfterEach() {
 	debug.AfterEach(env.Context)
-	env.printControllerLogs(&v1.PodLogOptions{Container: "controller"})
+	env.printControllerLogs(&corev1.PodLogOptions{Container: "controller"})
 }
 
 func (env *Environment) CleanupObjects(cleanableObjects ...client.Object) {
@@ -128,7 +133,10 @@ func (env *Environment) CleanupObjects(cleanableObjects ...client.Object) {
 				// are deleting so that we avoid getting client-side throttled
 				workqueue.ParallelizeUntil(env, 50, len(metaList.Items), func(i int) {
 					defer GinkgoRecover()
-					g.Expect(client.IgnoreNotFound(env.Client.Delete(env, &metaList.Items[i], client.PropagationPolicy(metav1.DeletePropagationForeground)))).To(Succeed())
+					g.Expect(env.ExpectTestingFinalizerRemoved(&metaList.Items[i])).To(Succeed())
+					g.Expect(client.IgnoreNotFound(env.Client.Delete(env, &metaList.Items[i],
+						client.PropagationPolicy(metav1.DeletePropagationForeground),
+						&client.DeleteOptions{GracePeriodSeconds: lo.ToPtr(int64(0))}))).To(Succeed())
 				})
 				// If the deletes eventually succeed, we should have no elements here at the end of the test
 				g.Expect(env.Client.List(env, metaList, client.HasLabels([]string{test.DiscoveryLabel}), client.Limit(1))).To(Succeed())
@@ -137,4 +145,27 @@ func (env *Environment) CleanupObjects(cleanableObjects ...client.Object) {
 		}(obj)
 	}
 	wg.Wait()
+}
+
+func (env *Environment) ExpectTestingFinalizerRemoved(obj client.Object) error {
+	metaObj := &metav1.PartialObjectMetadata{}
+	metaObj.SetGroupVersionKind(lo.Must(apiutil.GVKForObject(obj, env.Client.Scheme())))
+	if err := env.Client.Get(env, client.ObjectKeyFromObject(obj), metaObj); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	deepCopy := metaObj.DeepCopy()
+	metaObj.Finalizers = lo.Reject(metaObj.Finalizers, func(finalizer string, _ int) bool {
+		return finalizer == TestingFinalizer
+	})
+
+	if !equality.Semantic.DeepEqual(metaObj, deepCopy) {
+		// If the Group is the "core" APIs, then we can strategic merge patch
+		// CRDs do not currently have support for strategic merge patching, so we can't blindly do it
+		// https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/#advanced-features-and-flexibility:~:text=Yes-,strategic%2Dmerge%2Dpatch,-The%20new%20endpoints
+		if metaObj.GroupVersionKind().Group == "" {
+			return client.IgnoreNotFound(env.Client.Patch(env, metaObj, client.StrategicMergeFrom(deepCopy)))
+		}
+		return client.IgnoreNotFound(env.Client.Patch(env, metaObj, client.MergeFrom(deepCopy)))
+	}
+	return nil
 }

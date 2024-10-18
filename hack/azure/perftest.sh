@@ -28,7 +28,7 @@ exec 2>&1
 logk="logs/az-perftest-${START}-${replicas}-karpenter.log"
 
 # prep
-kubectl apply -f hack/azure/general-purpose-small-nodes.yaml 
+kubectl apply -f hack/azure/general-purpose-small-nodes.yaml
 kubectl apply -f examples/workloads/inflate.yaml
 
 # scale up
@@ -37,7 +37,7 @@ kubectl scale --replicas="${replicas}" deployment/inflate
 time kubectl rollout status deployment/inflate --watch --timeout=2h
 date
 ENDUP=$(date ${FMT})
-echo Scale up: ${START} ${ENDUP} ${replicas} 
+echo Scale up: "${START}" "${ENDUP}" "${replicas}"
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS, use BSD date syntax
     ENDUPKUBECTL=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -45,7 +45,7 @@ else
     # Linux, use GNU date syntax
     ENDUPKUBECTL=$(date --iso-8601=seconds)
 fi
-kubectl logs deployment/karpenter -n karpenter --since-time="${STARTKUBECTL}" > "${logk}"
+kubectl logs deployment/karpenter -n kube-system --since-time="${STARTKUBECTL}" > "${logk}"
 
 # scale down
 sleep 30
@@ -53,10 +53,9 @@ kubectl scale --replicas=0 deployment/inflate
 date
 kubectl delete --wait=false nodes -l karpenter.sh/nodepool
 time kubectl wait --for=delete nodes -l karpenter.sh/nodepool --timeout=2h
-ENDDOWN=$(date ${FMT})
+# ENDDOWN=$(date ${FMT})
 date
 
 # review
-kubectl logs deployment/karpenter -n karpenter --since-time="${ENDUPKUBECTL}" >> "${logk}"
+kubectl logs deployment/karpenter -n kube-system --since-time="${ENDUPKUBECTL}" >> "${logk}"
 az resource list -o table --tag=karpenter.sh_nodepool=sm-general-purpose
-

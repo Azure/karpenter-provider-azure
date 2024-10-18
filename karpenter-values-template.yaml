@@ -2,8 +2,6 @@
 replicas: 1 # for better debugging experience
 controller:
   env:
-    - name: FEATURE_GATES
-      value: Drift=true
     - name: LEADER_ELECT # disable leader election for better debugging / troubleshooting experience
       value: "false"
     # disable HTTP/2 to reduce ARM throttling on large-scale tests;
@@ -20,7 +18,7 @@ controller:
     - name: SSH_PUBLIC_KEY
       value: "${SSH_PUBLIC_KEY}"
     - name: NETWORK_PLUGIN
-      value: ${NETWORK_PLUGIN} 
+      value: ${NETWORK_PLUGIN}
     - name: NETWORK_PLUGIN_MODE
       value: ${NETWORK_PLUGIN_MODE}
     - name: NETWORK_POLICY

@@ -33,16 +33,6 @@ rules:
     resources: ["aksnodeclasses"]
     verbs: ["get", "list", "watch"]
   # Write
-  - apiGroups: ["karpenter.kubernetes.com"]
+  - apiGroups: ["karpenter.azure.com"]
     resources: ["aksnodeclasses", "aksnodeclasses/status"]
     verbs: ["patch", "update"]
-{{- if .Values.webhook.enabled }}
-  - apiGroups: ["admissionregistration.k8s.io"]
-    resources: ["validatingwebhookconfigurations"]
-    verbs: ["update"]
-    resourceNames: ["validation.webhook.karpenter.azure.com"]
-  - apiGroups: ["admissionregistration.k8s.io"]
-    resources: ["mutatingwebhookconfigurations"]
-    verbs: ["update"]
-    resourceNames: ["defaulting.webhook.karpenter.azure.com"]
-{{- end }}

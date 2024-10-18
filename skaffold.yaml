@@ -16,7 +16,7 @@ manifests:
       - name: karpenter
         chartPath: charts/karpenter
         skipBuildDependencies: true
-        namespace: karpenter
+        namespace: kube-system
         createNamespace: true
         setValueTemplates:
           controller.image.repository: "{{.IMAGE_REPO_controller}}"

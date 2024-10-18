@@ -21,6 +21,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/awslabs/operatorpkg/object"
+	opstatus "github.com/awslabs/operatorpkg/status"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -40,12 +43,12 @@ import (
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 
 	. "knative.dev/pkg/logging/testing"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -68,7 +71,7 @@ func TestAzure(t *testing.T) {
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
-	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
+	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
@@ -76,7 +79,7 @@ func TestAzure(t *testing.T) {
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 	fakeClock = &clock.FakeClock{}
-	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	cluster = state.NewCluster(fakeClock, env.Client)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
 	RunSpecs(t, "Provider/Azure")
 }
@@ -89,30 +92,33 @@ var _ = AfterSuite(func() {
 var _ = Describe("InstanceProvider", func() {
 
 	var nodeClass *v1alpha2.AKSNodeClass
-	var nodePool *corev1beta1.NodePool
-	var nodeClaim *corev1beta1.NodeClaim
+	var nodePool *karpv1.NodePool
+	var nodeClaim *karpv1.NodeClaim
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		nodePool = coretest.NodePool(corev1beta1.NodePool{
-			Spec: corev1beta1.NodePoolSpec{
-				Template: corev1beta1.NodeClaimTemplate{
-					Spec: corev1beta1.NodeClaimSpec{
-						NodeClassRef: &corev1beta1.NodeClassReference{
-							Name: nodeClass.Name,
+		nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+		nodePool = coretest.NodePool(karpv1.NodePool{
+			Spec: karpv1.NodePoolSpec{
+				Template: karpv1.NodeClaimTemplate{
+					Spec: karpv1.NodeClaimTemplateSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClass).Group,
+							Kind:  object.GVK(nodeClass).Kind,
+							Name:  nodeClass.Name,
 						},
 					},
 				},
 			},
 		})
-		nodeClaim = coretest.NodeClaim(corev1beta1.NodeClaim{
+		nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					corev1beta1.NodePoolLabelKey: nodePool.Name,
+					karpv1.NodePoolLabelKey: nodePool.Name,
 				},
 			},
-			Spec: corev1beta1.NodeClaimSpec{
-				NodeClassRef: &corev1beta1.NodeClassReference{
+			Spec: karpv1.NodeClaimSpec{
+				NodeClassRef: &karpv1.NodeClassReference{
 					Name: nodeClass.Name,
 				},
 			},
@@ -135,8 +141,8 @@ var _ = Describe("InstanceProvider", func() {
 		func(azEnv *test.Environment, cp *cloudprovider.CloudProvider) {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 			for _, zone := range azEnv.Zones() {
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeSpot)
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeOnDemand)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)
 			}
 			instanceTypes, err := cp.GetInstanceTypes(ctx, nodePool)
 			Expect(err).ToNot(HaveOccurred())
