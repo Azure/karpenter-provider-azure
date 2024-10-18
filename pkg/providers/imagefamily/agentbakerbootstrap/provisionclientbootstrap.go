@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -141,7 +142,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 	provisionHelperValues := &models.ProvisionHelperValues{
 		SkuCPU:    lo.ToPtr(p.InstanceType.Capacity.Cpu().AsApproximateFloat64()),
-		SkuMemory: lo.ToPtr(p.InstanceType.Capacity.Memory().AsApproximateFloat64()),
+		SkuMemory: lo.ToPtr(math.Ceil(reverseVMMemoryOverhead(ctx, p.InstanceType.Capacity.Memory().AsApproximateFloat64()) / 1024 / 1024 / 1024)),
 	}
 
 	return p.getNodeBootstrappingFromClient(ctx, provisionProfile, provisionHelperValues, p.KubeletClientTLSBootstrapToken)
@@ -219,4 +220,10 @@ func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
 		return truncated + "z"
 	}
 	return truncated
+}
+
+func reverseVMMemoryOverhead(ctx context.Context, adjustedMemory float64) float64 {
+	// This is not the best way to do it... But will be refactored later, given that retreiving the original memory properly might involves some restructure.
+	// Due to the fact that it is abstracted behind the cloudprovider interface.
+	return adjustedMemory / (1 - options.FromContext(ctx).VMMemoryOverheadPercent)
 }
