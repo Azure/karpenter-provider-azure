@@ -142,43 +142,11 @@ This works because Helm treats dictionaries as mutable objects and allows passin
 {{- end }}
 
 {{/*
-Flatten Settings Map using "." syntax
-*/}}
-{{- define "flattenSettings" -}}
-{{- $map := first . -}}
-{{- $label := last . -}}
-{{- range $key := (keys $map | uniq | sortAlpha) }}
-  {{- $sublabel := $key -}}
-  {{- $val := (get $map $key) -}}
-  {{- if $label -}}
-    {{- $sublabel = list $label $key | join "." -}}
-  {{- end -}}
-  {{/* Special-case "tags" since we want this to be a JSON object */}}
-  {{- if eq $key "tags" -}}
-    {{- if not (kindIs "invalid" $val) -}}
-      {{- $sublabel | quote | nindent 2 }}: {{ $val | toJson | quote }}
-    {{- end -}}
-  {{- else if kindOf $val | eq "map" -}}
-    {{- list $val $sublabel | include "flattenSettings" -}}
-  {{- else -}}
-  {{- if not (kindIs "invalid" $val) -}}
-    {{- $sublabel | quote | nindent 2 -}}: {{ $val | quote }}
-  {{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
 Flatten the stdout logging outputs from args provided
 */}}
 {{- define "karpenter.outputPathsList" -}}
 {{ $paths := list -}}
-{{- range .Values.controller.outputPaths -}}
-    {{- if not (has (printf "%s" . | quote) $paths) -}}
-        {{- $paths = printf "%s" . | quote  | append $paths -}}
-    {{- end -}}
-{{- end -}}
-{{- range .Values.logConfig.outputPaths -}}
+{{- range .Values.logOutputPaths -}}
     {{- if not (has (printf "%s" . | quote) $paths) -}}
         {{- $paths = printf "%s" . | quote  | append $paths -}}
     {{- end -}}
@@ -191,12 +159,7 @@ Flatten the stderr logging outputs from args provided
 */}}
 {{- define "karpenter.errorOutputPathsList" -}}
 {{ $paths := list -}}
-{{- range .Values.controller.errorOutputPaths -}}
-    {{- if not (has (printf "%s" . | quote) $paths) -}}
-        {{- $paths = printf "%s" . | quote  | append $paths -}}
-    {{- end -}}
-{{- end -}}
-{{- range .Values.logConfig.errorOutputPaths -}}
+{{- range .Values.logErrorOutputPaths -}}
     {{- if not (has (printf "%s" . | quote) $paths) -}}
         {{- $paths = printf "%s" . | quote  | append $paths -}}
     {{- end -}}

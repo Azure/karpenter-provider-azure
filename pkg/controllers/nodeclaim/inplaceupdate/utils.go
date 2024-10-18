@@ -22,7 +22,7 @@ import (
 	"strconv"
 
 	"k8s.io/apimachinery/pkg/util/sets"
-	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -64,7 +64,7 @@ func HashFromVM(vm *armcompute.VirtualMachine) (string, error) {
 }
 
 // HashFromNodeClaim calculates an inplace update hash from the specified machine and options
-func HashFromNodeClaim(options *options.Options, _ *v1beta1.NodeClaim) (string, error) {
+func HashFromNodeClaim(options *options.Options, _ *karpv1.NodeClaim) (string, error) {
 	hashStruct := &inPlaceUpdateFields{
 		Identities: sets.New(options.NodeIdentities...),
 	}

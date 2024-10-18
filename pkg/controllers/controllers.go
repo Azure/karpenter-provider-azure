@@ -19,22 +19,35 @@ package controllers
 import (
 	"context"
 
-	"knative.dev/pkg/logging"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/karpenter/pkg/operator/controller"
+	"github.com/awslabs/operatorpkg/controller"
+	"github.com/awslabs/operatorpkg/status"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/events"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
+	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
+	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	nodeclasstermination "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/termination"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/project"
 )
 
-func NewControllers(ctx context.Context, kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider, instanceProvider *instance.Provider) []controller.Controller {
-	logging.FromContext(ctx).With("version", project.Version).Debugf("discovered version")
+func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.Client, recorder events.Recorder,
+	cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider) []controller.Controller {
 	controllers := []controller.Controller{
+		nodeclasshash.NewController(kubeClient),
+		nodeclassstatus.NewController(kubeClient),
+		nodeclasstermination.NewController(kubeClient, recorder),
 		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider),
+		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),
+		status.NewController[*v1alpha2.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 	}
 	return controllers
 }

@@ -27,13 +27,12 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	"knative.dev/pkg/ptr"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/operator/scheme"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -49,8 +48,8 @@ import (
 )
 
 func init() {
-	lo.Must0(apis.AddToScheme(scheme.Scheme))
-	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+	karpv1beta1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
 type Operator struct {
@@ -62,8 +61,8 @@ type Operator struct {
 	ImageResolver          *imagefamily.Resolver
 	LaunchTemplateProvider *launchtemplate.Provider
 	PricingProvider        *pricing.Provider
-	InstanceTypesProvider  *instancetype.Provider
-	InstanceProvider       *instance.Provider
+	InstanceTypesProvider  instancetype.Provider
+	InstanceProvider       *instance.DefaultProvider
 	LoadBalancerProvider   *loadbalancer.Provider
 }
 
@@ -108,7 +107,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		vnetGUID,
 	)
-	instanceTypeProvider := instancetype.NewProvider(
+	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
 		azClient.SKUClient,
@@ -120,7 +119,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
 		azConfig.NodeResourceGroup,
 	)
-	instanceProvider := instance.NewProvider(
+	instanceProvider := instance.NewDefaultProvider(
 		azClient,
 		instanceTypeProvider,
 		launchTemplateProvider,

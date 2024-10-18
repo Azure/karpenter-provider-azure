@@ -61,7 +61,7 @@ type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
-	NetworkInterfacesClient        NetworkInterfacesAPI
+	networkInterfacesClient        NetworkInterfacesAPI
 
 	ImageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
@@ -82,7 +82,7 @@ func NewAZClientFromAPI(
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
-		NetworkInterfacesClient:        interfacesClient,
+		networkInterfacesClient:        interfacesClient,
 		ImageVersionsClient:            imageVersionsClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,

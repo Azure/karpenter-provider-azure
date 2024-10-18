@@ -20,8 +20,11 @@ import (
 	"context"
 
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -31,18 +34,14 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/patrickmn/go-cache"
-	corev1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/ptr"
-
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 func init() {
-	lo.Must0(apis.AddToScheme(scheme.Scheme))
-	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+	karpv1beta1.NormalizedLabels = lo.Assign(karpv1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
 var (
@@ -67,8 +66,8 @@ type Environment struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	// Providers
-	InstanceTypesProvider  *instancetype.Provider
-	InstanceProvider       *instance.Provider
+	InstanceTypesProvider  instancetype.Provider
+	InstanceProvider       instance.Provider
 	PricingProvider        *pricing.Provider
 	ImageProvider          *imagefamily.Provider
 	ImageResolver          *imagefamily.Resolver
@@ -110,7 +109,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region)
 	imageFamilyResolver := imagefamily.New(env.Client, imageFamilyProvider)
-	instanceTypesProvider := instancetype.NewProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
+	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageFamilyResolver,
@@ -138,7 +137,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		communityImageVersionsAPI,
 		skuClientSingleton,
 	)
-	instanceProvider := instance.NewProvider(
+	instanceProvider := instance.NewDefaultProvider(
 		azClient,
 		instanceTypesProvider,
 		launchTemplateProvider,

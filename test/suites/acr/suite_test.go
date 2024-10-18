@@ -30,13 +30,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
 var env *azure.Environment
 var nodeClass *v1alpha2.AKSNodeClass
-var nodePool *corev1beta1.NodePool
+var nodePool *karpv1.NodePool
 var pauseImage string
 
 func TestAcr(t *testing.T) {

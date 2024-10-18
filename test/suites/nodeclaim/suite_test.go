@@ -24,12 +24,12 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 var env *azure.Environment
 var nodeClass *v1alpha2.AKSNodeClass
-var nodePool *corev1beta1.NodePool
+var nodePool *karpv1.NodePool
 
 func TestNodeClaim(t *testing.T) {
 	RegisterFailHandler(Fail)
