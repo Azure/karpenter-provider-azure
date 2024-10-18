@@ -50,7 +50,7 @@
           "default": {
             "description": "Error response describing why the operation failed.",
             "schema": {
-              "$ref": "#/definitions/Error"
+              "type": "string"
             }
           }
         }
@@ -628,24 +628,6 @@
         "osImageConfig",
         "sigImageConfig"
       ]
-    },
-    "Error": {
-      "type": "object",
-      "properties": {
-        "category": {
-          "type": "string"
-        },
-        "code": {
-          "type": "integer",
-          "format": "int32"
-        },
-        "subcode": {
-          "type": "string"
-        },
-        "message": {
-          "type": "string"
-        }
-      }
     }
   },
   "parameters": {
