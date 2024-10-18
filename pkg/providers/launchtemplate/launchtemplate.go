@@ -45,14 +45,14 @@ const (
 )
 
 type Template struct {
-	SelfContainedUserData string
-	ImageID               string
-	SubnetID              string
-	Tags                  map[string]*string
-	AgentBakerCustomData  string
-	AgentBakerCSE         string
-	IsWindows             bool
-	StorageProfile        string
+	SelfContainedCustomData string
+	ImageID                 string
+	SubnetID                string
+	Tags                    map[string]*string
+	AgentBakerCustomData    string
+	AgentBakerCSE           string
+	IsWindows               bool
+	StorageProfile          string
 }
 
 type Provider struct {
@@ -188,11 +188,11 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 		template.AgentBakerCSE = cse
 	} else {
 		// render user data
-		userData, err := params.SelfContainedUserData.Script()
+		userData, err := params.SelfContainedCustomData.Script()
 		if err != nil {
 			return nil, err
 		}
-		template.SelfContainedUserData = userData
+		template.SelfContainedCustomData = userData
 	}
 
 	return template, nil
