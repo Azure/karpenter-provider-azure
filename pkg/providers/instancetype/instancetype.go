@@ -299,10 +299,14 @@ func memoryMiB(sku *skewer.SKU) int64 {
 }
 
 func memoryWithoutOverhead(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
-	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(memoryGiB(sku))))
-	// Account for VM overhead in calculation
+	return CalculateMemoryWithoutOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, memoryGiB(sku))
+}
+
+func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGiB float64) *resource.Quantity {
+	// Consistency in abstractions could be improved here (e.g., units, returning types)
+	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(skuMemoryGiB)))
 	memory.Sub(*resource.NewQuantity(int64(math.Ceil(
-		float64(memory.Value())*options.FromContext(ctx).VMMemoryOverheadPercent)), resource.DecimalSI))
+		float64(memory.Value())*vmMemoryOverheadPercent)), resource.DecimalSI))
 	return memory
 }
 
