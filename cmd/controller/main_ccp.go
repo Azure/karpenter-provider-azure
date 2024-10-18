@@ -29,9 +29,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
 	corewebhooks "sigs.k8s.io/karpenter/pkg/webhooks"
-	// Note the absence of corewebhooks: these pull in knative webhook-related packages and informers in init()
-	// We don't give cluster-level roles when running in AKS managed mode, so their informers will produce errors and halt all other operations
-	// corewebhooks "sigs.k8s.io/karpenter/pkg/webhooks"
 )
 
 func main() {
@@ -66,6 +63,5 @@ func main() {
 			aksCloudProvider,
 			op.InstanceProvider,
 		)...).
-		// WithWebhooks(ctx, corewebhooks.NewWebhooks()...).
 		Start(ctx, cloudProvider)
 }
