@@ -266,7 +266,7 @@ func getArchitecture(architecture string) string {
 func computeCapacity(ctx context.Context, sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration, nodeClass *v1alpha2.AKSNodeClass) v1.ResourceList {
 	return v1.ResourceList{
 		v1.ResourceCPU:                    *cpu(sku),
-		v1.ResourceMemory:                 *memory(ctx, sku),
+		v1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
 		v1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
 		v1.ResourcePods:                   *pods(sku, kc),
 		v1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
@@ -298,11 +298,11 @@ func memoryMiB(sku *skewer.SKU) int64 {
 	return int64(memoryGiB(sku) * 1024)
 }
 
-func memory(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
+func memoryWithoutOverhead(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
 	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(memoryGiB(sku))))
 	// Account for VM overhead in calculation
-	memory.Sub(resource.MustParse(fmt.Sprintf("%dMi", int64(math.Ceil(
-		float64(memory.Value())*options.FromContext(ctx).VMMemoryOverheadPercent/1024/1024)))))
+	memory.Sub(*resource.NewQuantity(int64(math.Ceil(
+		float64(memory.Value())*options.FromContext(ctx).VMMemoryOverheadPercent)), resource.DecimalSI))
 	return memory
 }
 
