@@ -76,7 +76,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	provisionProfile := &models.ProvisionProfile{
 		Name:                     lo.ToPtr(""),
 		Architecture:             lo.ToPtr(lo.Ternary(p.Arch == corev1beta1.ArchitectureAmd64, "x64", "Arm64")),
-		OsType:                   lo.ToPtr(lo.Ternary(p.IsWindows, models.OSType_Windows, models.OSType_Linux)),
+		OsType:                   lo.ToPtr(lo.Ternary(p.IsWindows, models.OSTypeWindows, models.OSTypeLinux)),
 		VMSize:                   lo.ToPtr(p.InstanceType.Name),
 		Distro:                   lo.ToPtr(p.ImageDistro),
 		CustomNodeLabels:         labels,
@@ -86,7 +86,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		NodeInitializationTaints: lo.Map(p.StartupTaints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		NodeTaints:               lo.Map(p.Taints, func(taint v1.Taint, _ int) string { return taint.ToString() }),
 		SecurityProfile: &models.AgentPoolSecurityProfile{
-			SSHAccess: lo.ToPtr(models.SSHAccess_LocalUser),
+			SSHAccess: lo.ToPtr(models.SSHAccessLocalUser),
 			// EnableVTPM:       lo.ToPtr(false), // Unsupported as of now (Trusted launch)
 			// EnableSecureBoot: lo.ToPtr(false), // Unsupported as of now (Trusted launch)
 		},
@@ -94,11 +94,11 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		VnetCidrs: []string{}, // Unsupported as of now; TODO(Windows)
 		// MessageOfTheDay:         lo.ToPtr(""),                                    // Unsupported as of now
 		// AgentPoolWindowsProfile: &models.AgentPoolWindowsProfile{},               // Unsupported as of now; TODO(Windows)
-		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskType_Unspecified),    // Unsupported as of now
+		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
 		// EnableFIPS:              lo.ToPtr(false),                                 // Unsupported as of now
-		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfile_Unspecified), // Unsupported as of now (MIG)
-		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntime_Unspecified),    // Unsupported as of now (Kata)
+		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
+		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
 		// ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 		// Enabled: lo.ToPtr(false), // Unsupported as of now
 		// },
@@ -106,11 +106,11 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 	switch p.ImageFamily {
 	case v1alpha2.Ubuntu2204ImageFamily:
-		provisionProfile.OsSku = to.Ptr(models.OSSKU_Ubuntu)
+		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	case v1alpha2.AzureLinuxImageFamily:
-		provisionProfile.OsSku = to.Ptr(models.OSSKU_AzureLinux)
+		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	default:
-		provisionProfile.OsSku = to.Ptr(models.OSSKU_Ubuntu)
+		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	}
 
 	if p.KubeletConfig != nil {
@@ -127,14 +127,14 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	}
 
 	if modeString, ok := p.Labels["kubernetes.azure.com/mode"]; ok && modeString == "system" {
-		provisionProfile.Mode = lo.ToPtr(models.AgentPoolMode_System)
+		provisionProfile.Mode = lo.ToPtr(models.AgentPoolModeSystem)
 	} else {
-		provisionProfile.Mode = lo.ToPtr(models.AgentPoolMode_User)
+		provisionProfile.Mode = lo.ToPtr(models.AgentPoolModeUser)
 	}
 
 	if utils.IsNvidiaEnabledSKU(p.InstanceType.Name) {
 		provisionProfile.GpuProfile = &models.GPUProfile{
-			DriverType:       lo.ToPtr(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverType_GRID, models.DriverType_CUDA)),
+			DriverType:       lo.ToPtr(lo.Ternary(utils.UseGridDrivers(p.InstanceType.Name), models.DriverTypeGRID, models.DriverTypeCUDA)),
 			InstallGPUDriver: lo.ToPtr(true),
 		}
 	}

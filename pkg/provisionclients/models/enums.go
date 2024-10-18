@@ -14,50 +14,52 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// This is NOT auto-generated.
+
 package models
 
 const (
-	OSType_Unspecified int32 = 0
-	OSType_Windows     int32 = 1
-	OSType_Linux       int32 = 2
+	OSTypeUnspecified int32 = 0
+	OSTypeWindows     int32 = 1
+	OSTypeLinux       int32 = 2
 )
 
 const (
-	OSSKU_Unspecified   int32 = 0
-	OSSKU_Ubuntu        int32 = 1
-	OSSKU_AzureLinux    int32 = 7
-	OSSKU_Windows2019   int32 = 3
-	OSSKU_Windows2022   int32 = 4
-	OSSKU_WindowsAnnual int32 = 8
+	OSSKUUnspecified   int32 = 0
+	OSSKUUbuntu        int32 = 1
+	OSSKUAzureLinux    int32 = 7
+	OSSKUWindows2019   int32 = 3
+	OSSKUWindows2022   int32 = 4
+	OSSKUWindowsAnnual int32 = 8
 )
 
 const (
-	KubeletDiskType_Unspecified int32 = 0
-	KubeletDiskType_OS          int32 = 1
-	KubeletDiskType_Temporary   int32 = 2
+	KubeletDiskTypeUnspecified int32 = 0
+	KubeletDiskTypeOS          int32 = 1
+	KubeletDiskTypeTemporary   int32 = 2
 )
 
 const (
-	AgentPoolMode_Unspecified int32 = 0
-	AgentPoolMode_System      int32 = 1
-	AgentPoolMode_User        int32 = 2
+	AgentPoolModeUnspecified int32 = 0
+	AgentPoolModeSystem      int32 = 1
+	AgentPoolModeUser        int32 = 2
 )
 
 const (
-	GPUInstanceProfile_Unspecified int32 = 0
+	GPUInstanceProfileUnspecified int32 = 0
 )
 
 const (
-	WorkloadRuntime_Unspecified int32 = 0
+	WorkloadRuntimeUnspecified int32 = 0
 )
 
 const (
-	SSHAccess_LocalUser int32 = 0
-	SSHAccess_Disabled  int32 = 1
+	SSHAccessLocalUser int32 = 0
+	SSHAccessDisabled  int32 = 1
 )
 
 const (
-	DriverType_Unspecified int32 = 0
-	DriverType_GRID        int32 = 2
-	DriverType_CUDA        int32 = 3
+	DriverTypeUnspecified int32 = 0
+	DriverTypeGRID        int32 = 2
+	DriverTypeCUDA        int32 = 3
 )
