@@ -45,7 +45,7 @@ type Resolver struct {
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
 type ImageFamily interface {
-	SelfContainedUserData(
+	SelfContainedCustomData(
 		kubeletConfig *corev1beta1.KubeletConfiguration,
 		taints []core.Taint,
 		labels map[string]string,
@@ -94,7 +94,7 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
-		SelfContainedUserData: imageFamily.SelfContainedUserData(
+		SelfContainedCustomData: imageFamily.SelfContainedCustomData(
 			prepareKubeletConfiguration(instanceType, nodeClaim),
 			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
 			staticParameters.Labels,
