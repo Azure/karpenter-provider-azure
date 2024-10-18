@@ -91,7 +91,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 			// EnableSecureBoot: lo.ToPtr(false), // Unsupported as of now (Trusted launch)
 		},
 
-		// VnetCidrs:               []string{},                                      // Unsupported as of now; TODO(Windows)
+		VnetCidrs: []string{}, // Unsupported as of now; TODO(Windows)
 		// MessageOfTheDay:         lo.ToPtr(""),                                    // Unsupported as of now
 		// AgentPoolWindowsProfile: &models.AgentPoolWindowsProfile{},               // Unsupported as of now; TODO(Windows)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskType_Unspecified),    // Unsupported as of now
