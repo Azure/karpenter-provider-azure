@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Source: https://github.com/kubernetes-sigs/karpenter/blob/v0.30.0/pkg/operator/operator.go
+// Source: https://github.com/kubernetes-sigs/karpenter/blob/v1.0.4/pkg/operator/operator.go
 
 package operator
 
@@ -51,6 +51,8 @@ import (
 	knativeinjection "knative.dev/pkg/injection"
 	"knative.dev/pkg/signals"
 	"knative.dev/pkg/system"
+	"knative.dev/pkg/webhook"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,11 +76,9 @@ const (
 // Source: NewOperator()
 // Modified behavior:
 // - Allow Karpenter and most components to exist on control plane, but can reach the CRs on overlay
-// - Webhooks not supported
 // - Karpenter will not crash if CRDs are not found, but goes into a retry loop for a while
 // Modified implementations:
 // - Split the context into two: control plane and overlay
-// - Remove webhooks-related code
 // - Retry loop for getting CRDs
 // - Introduce and retrieve overlay namespace from env
 // - No profiling
@@ -112,7 +112,12 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 	klog.SetLogger(logger)
 
 	// Webhook
-	// Unsupported -- skipping
+	overlayCtx = webhook.WithOptions(overlayCtx, webhook.Options{
+		Port:        options.FromContext(overlayCtx).WebhookPort,
+		ServiceName: options.FromContext(overlayCtx).ServiceName,
+		SecretName:  fmt.Sprintf("%s-cert", options.FromContext(overlayCtx).ServiceName),
+		GracePeriod: 5 * time.Second,
+	})
 
 	// Client Config
 	ccPlaneConfig := lo.Must(rest.InClusterConfig())
