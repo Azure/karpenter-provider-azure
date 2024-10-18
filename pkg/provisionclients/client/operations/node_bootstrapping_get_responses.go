@@ -127,7 +127,7 @@ Error response describing why the operation failed.
 type NodeBootstrappingGetDefault struct {
 	_statusCode int
 
-	Payload *models.Error
+	Payload string
 }
 
 // IsSuccess returns true when this node bootstrapping get default response has a 2xx status code
@@ -170,16 +170,14 @@ func (o *NodeBootstrappingGetDefault) String() string {
 	return fmt.Sprintf("[GET /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ContainerService/managedclusters/{resourceName}/nodeBootstrapping][%d] NodeBootstrapping_Get default %s", o._statusCode, payload)
 }
 
-func (o *NodeBootstrappingGetDefault) GetPayload() *models.Error {
+func (o *NodeBootstrappingGetDefault) GetPayload() string {
 	return o.Payload
 }
 
 func (o *NodeBootstrappingGetDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
-	o.Payload = new(models.Error)
-
 	// response payload
-	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
 		return err
 	}
 
