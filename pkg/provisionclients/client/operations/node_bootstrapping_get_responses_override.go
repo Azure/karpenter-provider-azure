@@ -23,8 +23,7 @@ import (
 	"github.com/go-openapi/strfmt"
 )
 
-func (o *NodeBootstrappingGetDefault) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
-
+func (o *NodeBootstrappingGetDefault) readResponse(response runtime.ClientResponse, _ runtime.Consumer, _ strfmt.Registry) error {
 	// response payload
 
 	// THIS IS MODIFIED FROM AUTO-GENERATED.
