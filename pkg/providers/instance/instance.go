@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -540,19 +539,6 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 		return corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests", capacityType))
 	}
 	return err
-}
-
-func getEphemeralMaxSizeGB(instanceType *corecloudprovider.InstanceType) int32 {
-	reqs := instanceType.Requirements.Get(v1alpha2.LabelSKUStorageEphemeralOSMaxSize).Values()
-	if len(reqs) == 0 || len(reqs) > 1 {
-		return 0
-	}
-	maxSize, err := strconv.ParseFloat(reqs[0], 32)
-	if err != nil {
-		return 0
-	}
-	// decimal places are truncated, so we round down
-	return int32(maxSize)
 }
 
 func cpuLimitIsZero(err error) bool {

@@ -85,8 +85,13 @@ func (o Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o Options) validateProvisionMode() error {
-	if o.ProvisionMode != "" && o.ProvisionMode != "bootstrappingclient" {
+	if o.ProvisionMode != ProvisionModeAKSSelfContained && o.ProvisionMode != ProvisionModeBootstrappingClient {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
+	}
+	if o.ProvisionMode == ProvisionModeBootstrappingClient {
+		if o.NodeBootstrappingServerURL == "" {
+			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
+		}
 	}
 	return nil
 }

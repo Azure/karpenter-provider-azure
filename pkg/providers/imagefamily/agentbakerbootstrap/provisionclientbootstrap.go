@@ -32,7 +32,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
-	core "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
@@ -46,8 +45,8 @@ import (
 type ProvisionClientBootstrap struct {
 	ClusterName                    string
 	KubeletConfig                  *corev1beta1.KubeletConfiguration
-	Taints                         []core.Taint      `hash:"set"`
-	StartupTaints                  []core.Taint      `hash:"set"`
+	Taints                         []v1.Taint        `hash:"set"`
+	StartupTaints                  []v1.Taint        `hash:"set"`
 	Labels                         map[string]string `hash:"set"`
 	SubnetID                       string
 	Arch                           string
@@ -142,7 +141,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 	provisionHelperValues := &models.ProvisionHelperValues{
 		SkuCPU:    lo.ToPtr(p.InstanceType.Capacity.Cpu().AsApproximateFloat64()),
-		SkuMemory: lo.ToPtr(math.Ceil(reverseVMMemoryOverhead(ctx, p.InstanceType.Capacity.Memory().AsApproximateFloat64()) / 1024 / 1024 / 1024)),
+		SkuMemory: lo.ToPtr(math.Ceil(reverseVMMemoryOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, p.InstanceType.Capacity.Memory().AsApproximateFloat64()) / 1024 / 1024 / 1024)),
 	}
 
 	return p.getNodeBootstrappingFromClient(ctx, provisionProfile, provisionHelperValues, p.KubeletClientTLSBootstrapToken)
@@ -222,8 +221,8 @@ func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
 	return truncated
 }
 
-func reverseVMMemoryOverhead(ctx context.Context, adjustedMemory float64) float64 {
+func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory float64) float64 {
 	// This is not the best way to do it... But will be refactored later, given that retreiving the original memory properly might involves some restructure.
 	// Due to the fact that it is abstracted behind the cloudprovider interface.
-	return adjustedMemory / (1 - options.FromContext(ctx).VMMemoryOverheadPercent)
+	return adjustedMemory / (1 - vmMemoryOverheadPercent)
 }

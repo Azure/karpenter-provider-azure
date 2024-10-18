@@ -34,7 +34,6 @@ import (
 	"github.com/samber/lo"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
@@ -142,7 +141,7 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	}
 }
 
-func getEphemeralMaxSizeGB(instanceType *corecloudprovider.InstanceType) int32 {
+func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
 	reqs := instanceType.Requirements.Get(v1alpha2.LabelSKUStorageEphemeralOSMaxSize).Values()
 	if len(reqs) == 0 || len(reqs) > 1 {
 		return 0
@@ -156,7 +155,7 @@ func getEphemeralMaxSizeGB(instanceType *corecloudprovider.InstanceType) int32 {
 }
 
 // setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
-func useEphemeralDisk(instanceType *corecloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) bool {
+func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) bool {
 	// use ephemeral disk if it is large enough
 	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
 }
