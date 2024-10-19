@@ -26,6 +26,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
@@ -123,7 +124,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	if p.KubeletConfig != nil && p.KubeletConfig.MaxPods != nil {
 		provisionProfile.MaxPods = p.KubeletConfig.MaxPods
 	} else {
-		provisionProfile.MaxPods = lo.ToPtr(int32(250)) // Delegatable defaulting?
+		provisionProfile.MaxPods = lo.ToPtr(int32(consts.DefaultKubernetesMaxPods)) // Delegatable defaulting?
 	}
 
 	if modeString, ok := p.Labels["kubernetes.azure.com/mode"]; ok && modeString == "system" {

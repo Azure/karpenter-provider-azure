@@ -179,7 +179,7 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 		StorageProfile: params.StorageProfile,
 	}
 
-	if p.provisionMode == options.ProvisionModeBootstrappingClient {
+	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
 		customData, cse, err := params.AgentBakerNodeBootstrapping.GetCustomDataAndCSE(ctx)
 		if err != nil {
 			return nil, err

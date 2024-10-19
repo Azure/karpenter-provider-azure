@@ -28,4 +28,7 @@ const (
 	NetworkDataplaneAzure  = "azure"
 
 	DefaultKubernetesMaxPods = 250
+
+	ProvisionModeAKSSelfContained    = "aksselfcontained"
+	ProvisionModeBootstrappingClient = "bootstrappingclient"
 )
