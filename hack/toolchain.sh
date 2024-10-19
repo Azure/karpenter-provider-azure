@@ -41,7 +41,7 @@ kubebuilder() {
     if [[ "${K8S_VERSION}" = "1.25.x" ]] && [[ "$OSTYPE" == "linux"* ]]; then
         for binary in 'kube-apiserver' 'kubectl'; do
             rm $KUBEBUILDER_ASSETS/$binary
-            wget -P $KUBEBUILDER_ASSETS dl.k8s.io/v1.25.16/bin/linux/"${arch}"/${binary}
+            wget -P $KUBEBUILDER_ASSETS https://dl.k8s.io/v1.25.16/bin/linux/"${arch}"/${binary}
             chmod +x $KUBEBUILDER_ASSETS/$binary
         done
     fi
