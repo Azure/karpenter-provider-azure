@@ -15,8 +15,9 @@ jobs:
       with:
         disable-telemetry: true
         egress-policy: block
-        allowed-endpoints: >
+        allowed-endpoints: > # dl.k8s.io is for 1.25 CI only
           api.github.com:443
+          dl.k8s.io:443
           github.com:443
           objects.githubusercontent.com:443
           proxy.golang.org:443
