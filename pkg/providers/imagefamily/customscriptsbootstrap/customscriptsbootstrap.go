@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package agentbakerbootstrap
+package customscriptsbootstrap
 
 import (
 	"context"
@@ -23,7 +23,6 @@ import (
 // Bootstrapper can be implemented to generate a bootstrap script
 // that uses the params from the Bootstrap type for a specific
 // bootstrapping method.
-// The only one implemented right now is AKS bootstrap script
 type Bootstrapper interface {
 	GetCustomDataAndCSE(ctx context.Context) (string, string, error)
 }

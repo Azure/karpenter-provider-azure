@@ -17,8 +17,8 @@ limitations under the License.
 package parameters
 
 import (
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/agentbakerbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 )
 
 // StaticParameters define the static launch template parameters
@@ -51,9 +51,9 @@ type StaticParameters struct {
 // Parameters adds the dynamically generated launch template parameters
 type Parameters struct {
 	*StaticParameters
-	SelfContainedCustomData     bootstrap.Bootstrapper
-	AgentBakerNodeBootstrapping agentbakerbootstrap.Bootstrapper
-	ImageID                     string
-	StorageProfile              string
-	IsWindows                   bool
+	ScriptlessCustomData           bootstrap.Bootstrapper
+	CustomScriptsNodeBootstrapping customscriptsbootstrap.Bootstrapper
+	ImageID                        string
+	StorageProfile                 string
+	IsWindows                      bool
 }

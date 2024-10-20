@@ -27,8 +27,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/agentbakerbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/samber/lo"
@@ -44,14 +44,14 @@ type Resolver struct {
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
 type ImageFamily interface {
-	SelfContainedCustomData(
+	ScriptlessCustomData(
 		kubeletConfig *corev1beta1.KubeletConfiguration,
 		taints []core.Taint,
 		labels map[string]string,
 		caBundle *string,
 		instanceType *cloudprovider.InstanceType,
 	) bootstrap.Bootstrapper
-	AgentBakerNodeBootstrapping(
+	CustomScriptsNodeBootstrapping(
 		kubeletConfig *corev1beta1.KubeletConfiguration,
 		taints []core.Taint,
 		startupTaints []core.Taint,
@@ -59,7 +59,7 @@ type ImageFamily interface {
 		instanceType *cloudprovider.InstanceType,
 		imageDistro string,
 		storageProfile string,
-	) agentbakerbootstrap.Bootstrapper
+	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
@@ -93,14 +93,14 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
-		SelfContainedCustomData: imageFamily.SelfContainedCustomData(
+		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
 			prepareKubeletConfiguration(instanceType, nodeClaim),
 			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
-		AgentBakerNodeBootstrapping: imageFamily.AgentBakerNodeBootstrapping(
+		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
 			prepareKubeletConfiguration(instanceType, nodeClaim),
 			nodeClaim.Spec.Taints,
 			nodeClaim.Spec.StartupTaints,

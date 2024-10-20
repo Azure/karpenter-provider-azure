@@ -85,7 +85,7 @@ func (o Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSSelfContained && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {

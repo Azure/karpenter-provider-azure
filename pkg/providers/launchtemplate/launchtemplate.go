@@ -45,12 +45,12 @@ const (
 )
 
 type Template struct {
-	SelfContainedCustomData string
+	ScriptlessCustomData    string
 	ImageID                 string
 	SubnetID                string
 	Tags                    map[string]*string
-	AgentBakerCustomData    string
-	AgentBakerCSE           string
+	CustomScriptsCustomData string
+	CustomScriptsCSE        string
 	IsWindows               bool
 	StorageProfile          string
 }
@@ -180,19 +180,19 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 	}
 
 	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-		customData, cse, err := params.AgentBakerNodeBootstrapping.GetCustomDataAndCSE(ctx)
+		customData, cse, err := params.CustomScriptsNodeBootstrapping.GetCustomDataAndCSE(ctx)
 		if err != nil {
 			return nil, err
 		}
-		template.AgentBakerCustomData = customData
-		template.AgentBakerCSE = cse
+		template.CustomScriptsCustomData = customData
+		template.CustomScriptsCSE = cse
 	} else {
 		// render user data
-		userData, err := params.SelfContainedCustomData.Script()
+		userData, err := params.ScriptlessCustomData.Script()
 		if err != nil {
 			return nil, err
 		}
-		template.SelfContainedCustomData = userData
+		template.ScriptlessCustomData = userData
 	}
 
 	return template, nil

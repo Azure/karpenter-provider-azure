@@ -367,9 +367,9 @@ func newVMObject(
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
 
 	if provisionMode == consts.ProvisionModeBootstrappingClient {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.AgentBakerCustomData)
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.CustomScriptsCustomData)
 	} else {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.SelfContainedCustomData)
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.ScriptlessCustomData)
 	}
 
 	return vm
@@ -462,7 +462,7 @@ func (p *Provider) launchInstance(
 	}
 
 	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-		err = p.createCSExtension(ctx, resourceName, launchTemplate.AgentBakerCSE, launchTemplate.IsWindows)
+		err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
 		if err != nil {
 			// This should fall back to cleanupAzureResources
 			return nil, nil, err

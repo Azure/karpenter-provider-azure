@@ -20,8 +20,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/agentbakerbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
@@ -77,7 +77,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) SelfContainedCustomData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -107,8 +107,8 @@ func (u Ubuntu2204) SelfContainedCustomData(kubeletConfig *corev1beta1.KubeletCo
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) AgentBakerNodeBootstrapping(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string) agentbakerbootstrap.Bootstrapper {
-	return agentbakerbootstrap.ProvisionClientBootstrap{
+func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string) customscriptsbootstrap.Bootstrapper {
+	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,
 		Taints:                         taints,

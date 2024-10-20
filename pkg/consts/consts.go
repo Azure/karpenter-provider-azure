@@ -29,6 +29,6 @@ const (
 
 	DefaultKubernetesMaxPods = 250
 
-	ProvisionModeAKSSelfContained    = "aksselfcontained"
+	ProvisionModeAKSScriptless       = "aksscriptless"
 	ProvisionModeBootstrappingClient = "bootstrappingclient"
 )

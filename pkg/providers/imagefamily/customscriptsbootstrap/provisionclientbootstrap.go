@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package agentbakerbootstrap
+package customscriptsbootstrap
 
 import (
 	"context"
@@ -63,7 +63,7 @@ type ProvisionClientBootstrap struct {
 	ImageFamily                    string
 }
 
-var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements AgentBakerBootstrapper
+var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
 
 func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (string, string, error) {
 	if p.IsWindows {
