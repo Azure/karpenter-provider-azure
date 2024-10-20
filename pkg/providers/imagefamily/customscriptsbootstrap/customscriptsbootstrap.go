@@ -14,21 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package consts
+package customscriptsbootstrap
 
-const (
-	NetworkPluginAzure = "azure"
-	NetworkPluginNone  = "none"
-
-	NetworkPluginModeOverlay = "overlay"
-	NetworkPluginModeNone    = ""
-
-	NetworkDataplaneNone   = ""
-	NetworkDataplaneCilium = "cilium"
-	NetworkDataplaneAzure  = "azure"
-
-	DefaultKubernetesMaxPods = 250
-
-	ProvisionModeAKSScriptless       = "aksscriptless"
-	ProvisionModeBootstrappingClient = "bootstrappingclient"
+import (
+	"context"
 )
+
+// Bootstrapper can be implemented to generate a bootstrap script
+// that uses the params from the Bootstrap type for a specific
+// bootstrapping method.
+type Bootstrapper interface {
+	GetCustomDataAndCSE(ctx context.Context) (string, string, error)
+}

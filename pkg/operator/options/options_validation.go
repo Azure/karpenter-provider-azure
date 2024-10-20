@@ -34,6 +34,7 @@ func (o Options) Validate() error {
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
+		o.validateProvisionMode(),
 		validate.Struct(o),
 	)
 }
@@ -79,6 +80,18 @@ func (o Options) validateEndpoint() error {
 func (o Options) validateVMMemoryOverheadPercent() error {
 	if o.VMMemoryOverheadPercent < 0 {
 		return fmt.Errorf("vm-memory-overhead-percent cannot be negative")
+	}
+	return nil
+}
+
+func (o Options) validateProvisionMode() error {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
+		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
+	}
+	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+		if o.NodeBootstrappingServerURL == "" {
+			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
+		}
 	}
 	return nil
 }

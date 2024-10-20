@@ -45,10 +45,14 @@ const (
 )
 
 type Template struct {
-	UserData string
-	ImageID  string
-	SubnetID string
-	Tags     map[string]*string
+	ScriptlessCustomData    string
+	ImageID                 string
+	SubnetID                string
+	Tags                    map[string]*string
+	CustomScriptsCustomData string
+	CustomScriptsCSE        string
+	IsWindows               bool
+	StorageProfile          string
 }
 
 type Provider struct {
@@ -60,14 +64,16 @@ type Provider struct {
 	subscriptionID          string
 	kubeletIdentityClientID string
 	resourceGroup           string
+	clusterResourceGroup    string
 	location                string
 	vnetGUID                string
+	provisionMode           string
 }
 
 // TODO: add caching of launch templates
 
 func NewProvider(_ context.Context, imageFamily *imagefamily.Resolver, imageProvider *imagefamily.Provider, caBundle *string, clusterEndpoint string,
-	tenantID, subscriptionID, kubeletIdentityClientID, resourceGroup, location, vnetGUID string,
+	tenantID, subscriptionID, clusterResourceGroup string, kubeletIdentityClientID, resourceGroup, location, vnetGUID, provisionMode string,
 ) *Provider {
 	return &Provider{
 		imageFamily:             imageFamily,
@@ -78,8 +84,10 @@ func NewProvider(_ context.Context, imageFamily *imagefamily.Resolver, imageProv
 		subscriptionID:          subscriptionID,
 		kubeletIdentityClientID: kubeletIdentityClientID,
 		resourceGroup:           resourceGroup,
+		clusterResourceGroup:    clusterResourceGroup,
 		location:                location,
 		vnetGUID:                vnetGUID,
+		provisionMode:           provisionMode,
 	}
 }
 
@@ -99,7 +107,7 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	if err != nil {
 		return nil, err
 	}
-	launchTemplate, err := p.createLaunchTemplate(templateParameters)
+	launchTemplate, err := p.createLaunchTemplate(ctx, templateParameters)
 	if err != nil {
 		return nil, err
 	}
@@ -156,24 +164,37 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       subnetID,
+		ClusterResourceGroup:           p.clusterResourceGroup,
 	}, nil
 }
 
-func (p *Provider) createLaunchTemplate(options *parameters.Parameters) (*Template, error) {
-	// render user data
-	userData, err := options.UserData.Script()
-	if err != nil {
-		return nil, err
+func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
+	// merge and convert to ARM tags
+	azureTags := mergeTags(params.Tags, map[string]string{karpenterManagedTagKey: params.ClusterName})
+	template := &Template{
+		ImageID:        params.ImageID,
+		Tags:           azureTags,
+		SubnetID:       params.SubnetID,
+		IsWindows:      params.IsWindows,
+		StorageProfile: params.StorageProfile,
 	}
 
-	// merge and convert to ARM tags
-	azureTags := mergeTags(options.Tags, map[string]string{karpenterManagedTagKey: options.ClusterName})
-	template := &Template{
-		UserData: userData,
-		ImageID:  options.ImageID,
-		Tags:     azureTags,
-		SubnetID: options.SubnetID,
+	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+		customData, cse, err := params.CustomScriptsNodeBootstrapping.GetCustomDataAndCSE(ctx)
+		if err != nil {
+			return nil, err
+		}
+		template.CustomScriptsCustomData = customData
+		template.CustomScriptsCSE = cse
+	} else {
+		// render user data
+		userData, err := params.ScriptlessCustomData.Script()
+		if err != nil {
+			return nil, err
+		}
+		template.ScriptlessCustomData = userData
 	}
+
 	return template, nil
 }
 

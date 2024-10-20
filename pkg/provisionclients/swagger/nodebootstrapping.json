@@ -1,0 +1,653 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "NodeBootstrapping",
+    "description": "A swagger spec that defines the get NodeBootstrapping operation.",
+    "version": "2024-10-01"
+  },
+  "schemes": [
+    "https"
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ContainerService/managedclusters/{resourceName}/nodeBootstrapping": {
+      "get": {
+        "operationId": "NodeBootstrapping_Get",
+        "summary": "Gets NodeBootstrapping values for a specified provisioning configuration, with secrets redacted.",
+        "description": "Gets NodeBootstrapping values for a specified provisioning configuration, with secrets redacted.",
+        "parameters": [
+          {
+            "$ref": "#/parameters/SubscriptionIdParameter"
+          },
+          {
+            "$ref": "#/parameters/ResourceGroupNameParameter"
+          },
+          {
+            "$ref": "#/parameters/ResourceNameParameter"
+          },
+          {
+            "name": "parameters",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ProvisionValues"
+            },
+            "description": "Values required to determine NodeBootstrapping values."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/NodeBootstrapping"
+            }
+          },
+          "default": {
+            "description": "Error response describing why the operation failed.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "ProvisionValues": {
+      "type": "object",
+      "properties": {
+        "provisionProfile": {
+          "$ref": "#/definitions/ProvisionProfile",
+          "x-nullable": true
+        },
+        "provisionHelperValues": {
+          "$ref": "#/definitions/ProvisionHelperValues",
+          "x-nullable": true
+        }
+      },
+      "required": [
+        "provisionProfile",
+        "provisionHelperValues"
+      ]
+    },
+    "ProvisionProfile": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "vmSize": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "osType": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "osSku": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "storageProfile": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "distro": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "customNodeLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "x-nullable": true
+        },
+        "orchestratorVersion": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "vnetCidrs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-nullable": true
+        },
+        "kubeletDiskType": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "vnetSubnetID": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "customKubeletConfig": {
+          "$ref": "#/definitions/CustomKubeletConfig",
+          "x-nullable": true
+        },
+        "customLinuxOSConfig": {
+          "$ref": "#/definitions/CustomLinuxOSConfig",
+          "x-nullable": true
+        },
+        "enableFIPS": {
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "mode": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "gpuInstanceProfile": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "workloadRuntime": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "messageOfTheDay": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "architecture": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "agentPoolWindowsProfile": {
+          "$ref": "#/definitions/AgentPoolWindowsProfile",
+          "x-nullable": true
+        },
+        "securityProfile": {
+          "$ref": "#/definitions/AgentPoolSecurityProfile",
+          "x-nullable": true
+        },
+        "gpuProfile": {
+          "$ref": "#/definitions/GPUProfile",
+          "x-nullable": true
+        },
+        "artifactStreamingProfile": {
+          "$ref": "#/definitions/ArtifactStreamingProfile",
+          "x-nullable": true
+        },
+        "nodeInitializationTaints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-nullable": true
+        },
+        "nodeTaints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-nullable": true
+        },
+        "maxPods": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        }
+      },
+      "required": [
+        "name",
+        "vmSize",
+        "osType",
+        "osSku",
+        "storageProfile",
+        "distro",
+        "orchestratorVersion",
+        "vnetCidrs",
+        "vnetSubnetID",
+        "mode",
+        "architecture",
+        "maxPods"
+      ]
+    },
+    "CustomKubeletConfig": {
+      "type": "object",
+      "properties": {
+        "cpuManagerPolicy": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "cpuCfsQuota": {
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "cpuCfsQuotaPeriod": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "imageGcHighThreshold": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "imageGcLowThreshold": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "topologyManagerPolicy": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "allowedUnsafeSysctls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-nullable": true
+        },
+        "failSwapOn": {
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "containerLogMaxSizeMB": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "containerLogMaxFiles": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "podMaxPids": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "cpuReserved": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "memoryReserved": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "seccompDefault": {
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
+    "CustomLinuxOSConfig": {
+      "type": "object",
+      "properties": {
+        "sysctls": {
+          "$ref": "#/definitions/SysctlConfig",
+          "x-nullable": true
+        },
+        "transparentHugePageEnabled": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "transparentHugePageDefrag": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "swapFileSizeMB": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "ulimits": {
+          "$ref": "#/definitions/UlimitConfig",
+          "x-nullable": true
+        }
+      }
+    },
+    "SysctlConfig": {
+      "type": "object",
+      "properties": {
+        "netCoreSomaxconn": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netCoreNetdevMaxBacklog": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netCoreRmemDefault": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netCoreRmemMax": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netCoreWmemDefault": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netCoreWmemMax": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netCoreOptmemMax": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4TcpMaxSynBacklog": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4TcpMaxTwBuckets": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4TcpFinTimeout": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4TcpKeepaliveTime": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4TcpKeepaliveProbes": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4TcpkeepaliveIntvl": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4TcpTwReuse": {
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "netIpv4IpLocalPortRange": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "netIpv4NeighDefaultGcThresh1": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4NeighDefaultGcThresh2": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netIpv4NeighDefaultGcThresh3": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netNetfilterNfConntrackMax": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "netNetfilterNfConntrackBuckets": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "fsInotifyMaxUserWatches": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "fsFileMax": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "fsAioMaxNr": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "fsNrOpen": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "kernelThreadsMax": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "vmMaxMapCount": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "vmSwappiness": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "vmVfsCachePressure": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        }
+      }
+    },
+    "UlimitConfig": {
+      "type": "object",
+      "properties": {
+        "noFile": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "maxLockedMemory": {
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
+    "AgentPoolWindowsProfile": {
+      "type": "object",
+      "properties": {
+        "disableOutboundNat": {
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "containerdPackage": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "enableNextGenNetworking": {
+          "type": "boolean",
+          "x-nullable": true
+        }
+      }
+    },
+    "AgentPoolSecurityProfile": {
+      "type": "object",
+      "properties": {
+        "sshAccess": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        },
+        "enableVTPM": {
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "enableSecureBoot": {
+          "type": "boolean",
+          "x-nullable": true
+        }
+      }
+    },
+    "GPUProfile": {
+      "type": "object",
+      "properties": {
+        "installGPUDriver": {
+          "type": "boolean",
+          "x-nullable": true
+        },
+        "driverType": {
+          "type": "integer",
+          "format": "int32",
+          "x-nullable": true
+        }
+      }
+    },
+    "ArtifactStreamingProfile": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "x-nullable": true
+        }
+      }
+    },
+    "ProvisionHelperValues": {
+      "type": "object",
+      "properties": {
+        "skuCPU": {
+          "type": "number",
+          "format": "double",
+          "x-nullable": true
+        },
+        "skuMemory": {
+          "type": "number",
+          "format": "double",
+          "x-nullable": true
+        }
+      },
+      "required": [
+        "skuCPU",
+        "skuMemory"
+      ]
+    },
+    "SigImageConfigTemplate": {
+      "type": "object",
+      "properties": {
+        "resourceGroup": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "gallery": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "definition": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "version": {
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
+    "SigImageConfig": {
+      "type": "object",
+      "properties": {
+        "sigImageConfigTemplate": {
+          "$ref": "#/definitions/SigImageConfigTemplate",
+          "x-nullable": true
+        },
+        "subscriptionID": {
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
+    "AzureOSImageConfig": {
+      "type": "object",
+      "properties": {
+        "imageOffer": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "imageSku": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "imagePublisher": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "imageVersion": {
+          "type": "string",
+          "x-nullable": true
+        }
+      }
+    },
+    "NodeBootstrapping": {
+      "type": "object",
+      "properties": {
+        "customData": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "cse": {
+          "type": "string",
+          "x-nullable": true
+        },
+        "osImageConfig": {
+          "$ref": "#/definitions/AzureOSImageConfig",
+          "x-nullable": true
+        },
+        "sigImageConfig": {
+          "$ref": "#/definitions/SigImageConfig",
+          "x-nullable": true
+        }
+      },
+      "required": [
+        "customData",
+        "cse",
+        "osImageConfig",
+        "sigImageConfig"
+      ]
+    }
+  },
+  "parameters": {
+    "SubscriptionIdParameter": {
+      "name": "subscriptionId",
+      "in": "path",
+      "required": true,
+      "type": "string"
+    },
+    "ResourceGroupNameParameter": {
+      "name": "resourceGroupName",
+      "in": "path",
+      "required": true,
+      "type": "string"
+    },
+    "ResourceNameParameter": {
+      "name": "resourceName",
+      "in": "path",
+      "required": true,
+      "type": "string"
+    }
+  }
+}
