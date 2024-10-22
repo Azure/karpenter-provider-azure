@@ -222,7 +222,7 @@ func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeCla
 	if k8sVersionDrifted != "" {
 		return k8sVersionDrifted, nil
 	}
-	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim, nodeClass)
+	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim)
 	if err != nil {
 		return "", err
 	}

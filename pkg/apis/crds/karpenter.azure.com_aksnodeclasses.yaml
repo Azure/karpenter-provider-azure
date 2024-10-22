@@ -53,9 +53,6 @@ spec:
                 - Ubuntu2204
                 - AzureLinux
                 type: string
-              imageVersion:
-                description: ImageVersion is the image version that instances use.
-                type: string
               kubelet:
                 description: |-
                   Kubelet defines args to be used when configuring kubelet on provisioned nodes.

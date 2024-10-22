@@ -43,9 +43,6 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:default=Ubuntu2204
 	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux}
 	ImageFamily *string `json:"imageFamily,omitempty"`
-	// ImageVersion is the image version that instances use.
-	// +optional
-	ImageVersion *string `json:"imageVersion,omitempty"`
 	// Tags to be applied on Azure resources like instances.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
