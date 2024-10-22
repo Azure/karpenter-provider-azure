@@ -53,9 +53,6 @@ spec:
                 - Ubuntu2204
                 - AzureLinux
                 type: string
-              imageVersion:
-                description: ImageVersion is the image version that instances use.
-                type: string
               osDiskSizeGB:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
