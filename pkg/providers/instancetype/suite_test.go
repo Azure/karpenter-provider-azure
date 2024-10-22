@@ -19,7 +19,6 @@ package instancetype_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -1078,7 +1077,7 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("Bootstrap", func() {
 		var (
 			kubeletFlags          string
-			decodedString         string
+			customData            string
 			minorVersion          uint64
 			credentialProviderURL string
 		)
@@ -1087,7 +1086,8 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-			kubeletFlags = ExpectKubeletFlagsPassed()
+			customData = ExpectDecodedCustomData(azureEnv)
+			kubeletFlags = ExpectKubeletFlagsPassed(customData)
 
 			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
 			Expect(err).To(BeNil())
@@ -1108,7 +1108,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
 				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
 				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
-				Expect(decodedString).To(ContainSubstring(credentialProviderURL))
+				Expect(customData).To(ContainSubstring(credentialProviderURL))
 			}
 		})
 
@@ -1252,14 +1252,8 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }
 
-func ExpectKubeletFlagsPassed() string {
+func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
-	Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-	vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-	customData := *vm.Properties.OSProfile.CustomData
-	Expect(customData).ToNot(BeNil())
-	decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-	Expect(err).To(Succeed())
-	decodedString := string(decodedBytes[:])
-	return decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(decodedString, "KUBELET_NODE_LABELS")]
+
+	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 }
