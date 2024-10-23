@@ -27,6 +27,11 @@ import (
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 type AKSNodeClassSpec struct {
+	// VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
+	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
+	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
+	// +optional
+	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
 	// +kubebuilder:default=128
 	// +kubebuilder:validation:Minimum=100
 	// osDiskSizeGB is the size of the OS disk in GB.
@@ -38,9 +43,6 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:default=Ubuntu2204
 	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux}
 	ImageFamily *string `json:"imageFamily,omitempty"`
-	// ImageVersion is the image version that instances use.
-	// +optional
-	ImageVersion *string `json:"imageVersion,omitempty"`
 	// Tags to be applied on Azure resources like instances.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`

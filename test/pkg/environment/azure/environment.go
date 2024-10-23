@@ -28,6 +28,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
@@ -92,9 +93,17 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev
 		v1.ResourceCPU:    resource.MustParse("100"),
 		v1.ResourceMemory: resource.MustParse("1000Gi"),
 	})
+
+	// TODO: make this conditional on Cilium
+	// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
 	nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, v1.Taint{
 		Key:    CiliumAgentNotReadyTaint,
-		Effect: v1.TaintEffectNoSchedule,
+		Effect: v1.TaintEffectNoExecute,
+		Value:  "true",
+	})
+	// # required for Karpenter to predict overhead from cilium DaemonSet
+	nodePool.Spec.Template.ObjectMeta.Labels = lo.Assign(nodePool.Spec.Template.ObjectMeta.Labels, map[string]string{
+		"kubernetes.azure.com/ebpf-dataplane": consts.NetworkDataplaneCilium,
 	})
 	return nodePool
 }

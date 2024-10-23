@@ -47,6 +47,7 @@ const (
 type Template struct {
 	UserData string
 	ImageID  string
+	SubnetID string
 	Tags     map[string]*string
 }
 
@@ -112,9 +113,11 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		arch = corev1beta1.ArchitectureArm64
 	}
 
+	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
+
 	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
 		// TODO: make conditional on pod subnet
-		vnetLabels, err := p.getVnetInfoLabels(ctx, nodeClass)
+		vnetLabels, err := p.getVnetInfoLabels(subnetID)
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +155,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
 		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
-		SubnetID:                       options.FromContext(ctx).SubnetID,
+		SubnetID:                       subnetID,
 	}, nil
 }
 
@@ -169,6 +172,7 @@ func (p *Provider) createLaunchTemplate(options *parameters.Parameters) (*Templa
 		UserData: userData,
 		ImageID:  options.ImageID,
 		Tags:     azureTags,
+		SubnetID: options.SubnetID,
 	}
 	return template, nil
 }
@@ -181,9 +185,8 @@ func mergeTags(tags ...map[string]string) (result map[string]*string) {
 	})
 }
 
-func (p *Provider) getVnetInfoLabels(ctx context.Context, _ *v1alpha2.AKSNodeClass) (map[string]string, error) {
-	// TODO(bsoghigian): this should be refactored to lo.Ternary(nodeClass.Spec.VnetSubnetID != nil, lo.FromPtr(nodeClass.Spec.VnetSubnetID), os.Getenv("AZURE_SUBNET_ID")) when we add VnetSubnetID to the nodeclass
-	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(options.FromContext(ctx).SubnetID)
+func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error) {
+	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		return nil, err
 	}

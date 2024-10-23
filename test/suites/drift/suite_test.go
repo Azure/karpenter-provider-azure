@@ -23,10 +23,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
@@ -100,11 +100,7 @@ var _ = Describe("Drift", func() {
 		env.ExpectCreatedOrUpdated(nodePool)
 
 		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
-		Eventually(func(g Gomega) {
-			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(nodeClaim), nodeClaim)).To(Succeed())
-			g.Expect(nodeClaim.StatusConditions().GetCondition(corev1beta1.Drifted)).ToNot(BeNil())
-			g.Expect(nodeClaim.StatusConditions().GetCondition(corev1beta1.Drifted).IsTrue()).To(BeTrue())
-		}).Should(Succeed())
+		env.EventuallyExpectDrifted(nodeClaim)
 
 		By(fmt.Sprintf("waiting for pod %s to to update", pod.Name))
 		delete(pod.Annotations, corev1beta1.DoNotDisruptAnnotationKey)
@@ -115,14 +111,7 @@ var _ = Describe("Drift", func() {
 		env.EventuallyExpectNotFound(pod, nodeClaim, node)
 		SetDefaultEventuallyTimeout(5 * time.Minute)
 	})
-	It("should upgrade nodes using drift based on node image version change", func() {
-		// TODO: Get these dynamically
-		startingImageVersion := "202404.09.0"
-		upgradedImageVersion := "202404.16.0"
-
-		nodeClass.Spec.ImageVersion = &startingImageVersion
-
-		By(fmt.Sprintf("creating pod %s, nodepool %s, and nodeclass %s", pod.Name, nodePool.Name, nodeClass.Name))
+	It("should mark the nodeclaim as drifted for SubnetDrift if AKSNodeClass subnet id changes", func() {
 		env.ExpectCreated(pod, nodeClass, nodePool)
 
 		By(fmt.Sprintf("expect pod %s to be healthy", pod.Name))
@@ -132,26 +121,13 @@ var _ = Describe("Drift", func() {
 		env.ExpectCreatedNodeCount("==", 1)
 
 		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-		node := env.EventuallyExpectNodeCount("==", 1)[0]
-
-		By(fmt.Sprintf("waiting for nodeClass %s update", nodeClass.Name))
-		nodeClass.Spec.ImageVersion = &upgradedImageVersion
+		By("triggering subnet drift")
+		// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
+		// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
+		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
 		env.ExpectCreatedOrUpdated(nodeClass)
 
 		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
-		Eventually(func(g Gomega) {
-			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(nodeClaim), nodeClaim)).To(Succeed())
-			g.Expect(nodeClaim.StatusConditions().GetCondition(corev1beta1.Drifted)).ToNot(BeNil())
-			g.Expect(nodeClaim.StatusConditions().GetCondition(corev1beta1.Drifted).IsTrue()).To(BeTrue())
-		}).Should(Succeed())
-
-		By(fmt.Sprintf("waiting for pod %s to to update", pod.Name))
-		delete(pod.Annotations, corev1beta1.DoNotDisruptAnnotationKey)
-		env.ExpectUpdated(pod)
-
-		By(fmt.Sprintf("expect pod %s, nodeclaim %s, and node %s to eventually not exist", pod.Name, nodeClaim.Name, node.Name))
-		SetDefaultEventuallyTimeout(10 * time.Minute)
-		env.EventuallyExpectNotFound(pod, nodeClaim, node)
-		SetDefaultEventuallyTimeout(5 * time.Minute)
+		env.EventuallyExpectDrifted(nodeClaim)
 	})
 })
