@@ -14,11 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package consts
 
-func (in *AKSNodeClassSpec) GetImageVersion() string {
-	if in.ImageVersion == nil {
-		return ""
-	}
-	return *in.ImageVersion
-}
+const (
+	NetworkPluginAzure = "azure"
+	NetworkPluginNone  = "none"
+
+	NetworkPluginModeOverlay = "overlay"
+	NetworkPluginModeNone    = ""
+
+	NetworkDataplaneNone   = ""
+	NetworkDataplaneCilium = "cilium"
+	NetworkDataplaneAzure  = "azure"
+
+	DefaultKubernetesMaxPods = 250
+)

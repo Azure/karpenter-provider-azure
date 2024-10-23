@@ -31,7 +31,7 @@ type StaticParameters struct {
 	GPUImageSHA                    string
 	TenantID                       string
 	SubscriptionID                 string
-	UserAssignedIdentityID         string
+	KubeletIdentityClientID        string
 	Location                       string
 	ResourceGroup                  string
 	ClusterID                      string
@@ -40,9 +40,7 @@ type StaticParameters struct {
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
-
-	// VNET
-	SubnetID string
+	SubnetID                       string
 
 	Tags   map[string]string
 	Labels map[string]string

@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
@@ -50,7 +51,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 )
@@ -81,36 +81,33 @@ type Resource = map[string]interface{}
 
 type Provider struct {
 	location               string
-	azClient               *AZClient
+	AZClient               *AZClient
 	instanceTypeProvider   *instancetype.Provider
 	launchTemplateProvider *launchtemplate.Provider
 	loadBalancerProvider   *loadbalancer.Provider
 	resourceGroup          string
-	subnetID               string
 	subscriptionID         string
 	unavailableOfferings   *cache.UnavailableOfferings
 }
 
 func NewProvider(
-	azClient *AZClient,
+	AZClient *AZClient,
 	instanceTypeProvider *instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,
 	offeringsCache *cache.UnavailableOfferings,
 	location string,
 	resourceGroup string,
-	subnetID string,
 	subscriptionID string,
 ) *Provider {
 	listQuery = GetListQueryBuilder(resourceGroup).String()
 	return &Provider{
-		azClient:               azClient,
+		AZClient:               AZClient,
 		instanceTypeProvider:   instanceTypeProvider,
 		launchTemplateProvider: launchTemplateProvider,
 		loadBalancerProvider:   loadBalancerProvider,
 		location:               location,
 		resourceGroup:          resourceGroup,
-		subnetID:               subnetID,
 		subscriptionID:         subscriptionID,
 		unavailableOfferings:   offeringsCache,
 	}
@@ -142,14 +139,14 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 }
 
 func (p *Provider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
-	return UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, update)
+	return UpdateVirtualMachine(ctx, p.AZClient.virtualMachinesClient, p.resourceGroup, vmName, update)
 }
 
 func (p *Provider) Get(ctx context.Context, vmName string) (*armcompute.VirtualMachine, error) {
 	var vm armcompute.VirtualMachinesClientGetResponse
 	var err error
 
-	if vm, err = p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
+	if vm, err = p.AZClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
@@ -161,7 +158,7 @@ func (p *Provider) Get(ctx context.Context, vmName string) (*armcompute.VirtualM
 
 func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
 	req := NewQueryRequest(&(p.subscriptionID), listQuery)
-	client := p.azClient.azureResourceGraphClient
+	client := p.AZClient.azureResourceGraphClient
 	data, err := GetResourceData(ctx, client, *req)
 	if err != nil {
 		return nil, fmt.Errorf("querying azure resource graph, %w", err)
@@ -187,7 +184,7 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	vmExt := p.getAKSIdentifyingExtension()
 	vmExtName := *vmExt.Name
 	logging.FromContext(ctx).Debugf("Creating virtual machine AKS identifying extension for %s", vmName)
-	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
+	v, err := createVirtualMachineExtension(ctx, p.AZClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
 		logging.FromContext(ctx).Errorf("Creating VM AKS identifying extension for VM %q failed, %w", vmName, err)
 		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
@@ -196,9 +193,9 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 	return nil
 }
 
-func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbalancer.BackendAddressPools, instanceType *corecloudprovider.InstanceType) armnetwork.Interface {
+func (p *Provider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
-	for _, poolID := range backendPools.IPv4PoolIDs {
+	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
 		poolID := poolID
 		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
 			ID: &poolID,
@@ -208,46 +205,66 @@ func (p *Provider) newNetworkInterfaceForVM(vmName string, backendPools *loadbal
 	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
 
 	enableAcceleratedNetworking := false
-	if err := instanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
+	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
 		enableAcceleratedNetworking = true
 	}
-
-	return armnetwork.Interface{
-		Location: to.Ptr(p.location),
+	nic := armnetwork.Interface{
+		Location: lo.ToPtr(p.location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
-					Name: &vmName,
+					Name: &opts.NICName,
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   to.Ptr(true),
-						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
-						Subnet: &armnetwork.Subnet{
-							ID: &p.subnetID,
-						},
+						Primary:                   lo.ToPtr(true),
+						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+
 						LoadBalancerBackendAddressPools: ipv4BackendPools,
 					},
 				},
 			},
-			EnableAcceleratedNetworking: to.Ptr(enableAcceleratedNetworking),
-			EnableIPForwarding:          to.Ptr(true),
+			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
+			EnableIPForwarding:          lo.ToPtr(false),
 		},
 	}
+	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
+		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
+		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
+		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
+		// ips from the nodeclass instead of using the default
+		for i := 1; i < consts.DefaultKubernetesMaxPods; i++ {
+			nic.Properties.IPConfigurations = append(
+				nic.Properties.IPConfigurations,
+				&armnetwork.InterfaceIPConfiguration{
+					Name: lo.ToPtr(fmt.Sprintf("ipconfig%d", i)),
+					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+						Primary:                   lo.ToPtr(false),
+						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+					},
+				},
+			)
+		}
+	}
+	return nic
 }
 
 func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
 
-func (p *Provider) createNetworkInterface(ctx context.Context, nicName string, launchTemplateConfig *launchtemplate.Template, instanceType *corecloudprovider.InstanceType) (string, error) {
-	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
-	if err != nil {
-		return "", err
-	}
+type createNICOptions struct {
+	NICName           string
+	BackendPools      *loadbalancer.BackendAddressPools
+	InstanceType      *corecloudprovider.InstanceType
+	LaunchTemplate    *launchtemplate.Template
+	NetworkPlugin     string
+	NetworkPluginMode string
+}
 
-	nic := p.newNetworkInterfaceForVM(nicName, backendPools, instanceType)
-	p.applyTemplateToNic(&nic, launchTemplateConfig)
-	logging.FromContext(ctx).Debugf("Creating network interface %s", nicName)
-	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName, nic)
+func (p *Provider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
+	nic := p.newNetworkInterfaceForVM(opts)
+	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
+	logging.FromContext(ctx).Debugf("Creating network interface %s", opts.NICName)
+	res, err := createNic(ctx, p.AZClient.NetworkInterfacesClient, p.resourceGroup, opts.NICName, nic)
 	if err != nil {
 		return "", err
 	}
@@ -273,19 +290,19 @@ func newVMObject(
 		CommunityGalleryImageID: &launchTemplate.ImageID,
 	}
 	vm := armcompute.VirtualMachine{
-		Location: to.Ptr(location),
+		Location: lo.ToPtr(location),
 		Identity: ConvertToVirtualMachineIdentity(nodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: to.Ptr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
+				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
 			},
 
 			StorageProfile: &armcompute.StorageProfile{
 				OSDisk: &armcompute.OSDisk{
-					Name:         to.Ptr(vmName),
+					Name:         lo.ToPtr(vmName),
 					DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
-					CreateOption: to.Ptr(armcompute.DiskCreateOptionTypesFromImage),
-					DeleteOption: to.Ptr(armcompute.DiskDeleteOptionTypesDelete),
+					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
+					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},
 				ImageReference: &imageReference,
 			},
@@ -295,30 +312,30 @@ func newVMObject(
 					{
 						ID: &nicReference,
 						Properties: &armcompute.NetworkInterfaceReferenceProperties{
-							Primary:      to.Ptr(true),
-							DeleteOption: to.Ptr(armcompute.DeleteOptionsDelete),
+							Primary:      lo.ToPtr(true),
+							DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
 						},
 					},
 				},
 			},
 
 			OSProfile: &armcompute.OSProfile{
-				AdminUsername: to.Ptr("azureuser"),
+				AdminUsername: lo.ToPtr("azureuser"),
 				ComputerName:  &vmName,
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
-					DisablePasswordAuthentication: to.Ptr(true),
+					DisablePasswordAuthentication: lo.ToPtr(true),
 					SSH: &armcompute.SSHConfiguration{
 						PublicKeys: []*armcompute.SSHPublicKey{
 							{
-								KeyData: to.Ptr(sshPublicKey),
-								Path:    to.Ptr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
+								KeyData: lo.ToPtr(sshPublicKey),
+								Path:    lo.ToPtr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
 							},
 						},
 					},
 				},
-				CustomData: to.Ptr(launchTemplate.UserData),
+				CustomData: lo.ToPtr(launchTemplate.UserData),
 			},
-			Priority: to.Ptr(armcompute.VirtualMachinePriorityTypes(
+			Priority: lo.ToPtr(armcompute.VirtualMachinePriorityTypes(
 				CapacityTypeToPriority[capacityType]),
 			),
 		},
@@ -336,19 +353,19 @@ func setVMPropertiesStorageProfile(vmProperties *armcompute.VirtualMachineProper
 	// use ephemeral disk if it is large enough
 	if *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType) {
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
-			Option: to.Ptr(armcompute.DiffDiskOptionsLocal),
+			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
 			// placement (cache/resource) is left to CRP
 		}
-		vmProperties.StorageProfile.OSDisk.Caching = to.Ptr(armcompute.CachingTypesReadOnly)
+		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
 	}
 }
 
 // setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
 func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProperties, capacityType string) {
 	if capacityType == corev1beta1.CapacityTypeSpot {
-		vmProperties.EvictionPolicy = to.Ptr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
+		vmProperties.EvictionPolicy = lo.ToPtr(armcompute.VirtualMachineEvictionPolicyTypesDelete)
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
-			MaxPrice: to.Ptr(float64(-1)),
+			MaxPrice: lo.ToPtr(float64(-1)),
 		}
 	}
 }
@@ -361,7 +378,7 @@ func setNodePoolNameTag(tags map[string]*string, nodeClaim *corev1beta1.NodeClai
 }
 
 func (p *Provider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName string) (*armcompute.VirtualMachine, error) {
-	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
+	result, err := CreateVirtualMachine(ctx, p.AZClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
 	if err != nil {
 		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed: %v", vmName, err)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
@@ -388,7 +405,20 @@ func (p *Provider) launchInstance(
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
 	// create network interface
-	nicReference, err := p.createNetworkInterface(ctx, resourceName, launchTemplate, instanceType)
+	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting backend pools: %w", err)
+	}
+	nicReference, err := p.createNetworkInterface(ctx,
+		&createNICOptions{
+			NICName:           resourceName,
+			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
+			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
+			LaunchTemplate:    launchTemplate,
+			BackendPools:      backendPools,
+			InstanceType:      instanceType,
+		},
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -495,8 +525,10 @@ func cpuLimitIsZero(err error) bool {
 }
 
 func (p *Provider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
-	// set tags
 	nic.Tags = template.Tags
+	for _, ipConfig := range nic.Properties.IPConfigurations {
+		ipConfig.Properties.Subnet = &armnetwork.Subnet{ID: &template.SubnetID}
+	}
 }
 
 func (p *Provider) getLaunchTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim,
@@ -555,14 +587,14 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 }
 
 func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName string) (err error) {
-	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
+	vmErr := deleteVirtualMachineIfExists(ctx, p.AZClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
 	}
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
-	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
+	nicErr := deleteNicIfExists(ctx, p.AZClient.NetworkInterfacesClient, p.resourceGroup, resourceName)
 	if nicErr != nil {
 		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
 	}
@@ -623,16 +655,16 @@ func (p *Provider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtens
 	)
 
 	vmExtension := &armcompute.VirtualMachineExtension{
-		Location: to.Ptr(p.location),
-		Name:     to.Ptr(aksIdentifyingExtensionName),
+		Location: lo.ToPtr(p.location),
+		Name:     lo.ToPtr(aksIdentifyingExtensionName),
 		Properties: &armcompute.VirtualMachineExtensionProperties{
-			Publisher:               to.Ptr(aksIdentifyingExtensionPublisher),
-			TypeHandlerVersion:      to.Ptr("1.0"),
-			AutoUpgradeMinorVersion: to.Ptr(true),
+			Publisher:               lo.ToPtr(aksIdentifyingExtensionPublisher),
+			TypeHandlerVersion:      lo.ToPtr("1.0"),
+			AutoUpgradeMinorVersion: lo.ToPtr(true),
 			Settings:                &map[string]interface{}{},
-			Type:                    to.Ptr(aksIdentifyingExtensionTypeLinux),
+			Type:                    lo.ToPtr(aksIdentifyingExtensionTypeLinux),
 		},
-		Type: to.Ptr(vmExtensionType),
+		Type: lo.ToPtr(vmExtensionType),
 	}
 
 	return vmExtension

@@ -80,7 +80,6 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 	provider := NewProvider(nil, nil, nil, nil, cache.NewUnavailableOfferings(),
 		"westus-2",
 		"MC_xxxxx_yyyy-region",
-		"/subscriptions/0000000-0000-0000-0000-0000000000/resourceGroups/fake-resource-group-name/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodesubnet",
 		"0000000-0000-0000-0000-0000000000",
 	)
 	for _, c := range cases {

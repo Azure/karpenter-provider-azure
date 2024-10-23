@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -60,7 +61,7 @@ type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
-	networkInterfacesClient        NetworkInterfacesAPI
+	NetworkInterfacesClient        NetworkInterfacesAPI
 
 	ImageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
@@ -81,7 +82,7 @@ func NewAZClientFromAPI(
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
-		networkInterfacesClient:        interfacesClient,
+		NetworkInterfacesClient:        interfacesClient,
 		ImageVersionsClient:            imageVersionsClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
@@ -108,11 +109,11 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 }
 
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) (*AZClient, error) {
-	cred, err := auth.NewCredential(cfg)
+	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
 	}
-	cred = auth.NewTokenWrapper(cred)
+	cred := auth.NewTokenWrapper(defaultAzureCred)
 	opts := armopts.DefaultArmOpts()
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
