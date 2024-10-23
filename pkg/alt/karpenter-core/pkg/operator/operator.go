@@ -42,13 +42,16 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 	"sigs.k8s.io/karpenter/pkg/operator/options"
 
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/utils/clock"
+	"knative.dev/pkg/controller"
 	knativeinjection "knative.dev/pkg/injection"
+	kubeinformerfactory "knative.dev/pkg/injection/clients/namespacedkube/informers/factory"
 	"knative.dev/pkg/signals"
 	"knative.dev/pkg/system"
 	"knative.dev/pkg/webhook"
@@ -72,6 +75,20 @@ const (
 	appName   = "karpenter"
 	component = "controller"
 )
+
+type ccpClient struct{}
+
+func withCCPClient(ctx context.Context, client kubernetes.Interface) context.Context {
+	return context.WithValue(ctx, ccpClient{}, client)
+}
+
+func GetCCPClient(ctx context.Context) kubernetes.Interface {
+	v := ctx.Value(ccpClient{})
+	if v == nil {
+		return nil
+	}
+	return v.(kubernetes.Interface)
+}
 
 // Source: NewOperator()
 // Modified behavior:
@@ -112,7 +129,7 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 	klog.SetLogger(logger)
 
 	// Webhook
-	overlayCtx = webhook.WithOptions(overlayCtx, webhook.Options{
+	ccPlaneCtx = webhook.WithOptions(ccPlaneCtx, webhook.Options{
 		Port:        options.FromContext(overlayCtx).WebhookPort,
 		ServiceName: options.FromContext(overlayCtx).ServiceName,
 		SecretName:  fmt.Sprintf("%s-cert", options.FromContext(overlayCtx).ServiceName),
@@ -130,6 +147,17 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 
 	// Client
 	overlayKubernetesInterface := kubernetes.NewForConfigOrDie(overlayConfig)
+	ccpKubernetesInterface := kubernetes.NewForConfigOrDie(ccPlaneConfig)
+	ccPlaneCtx = withCCPClient(ccPlaneCtx, ccpKubernetesInterface)
+
+	ccpInformerFactory := informers.NewSharedInformerFactoryWithOptions(
+		ccpKubernetesInterface,
+		controller.GetResyncPeriod(ccPlaneCtx),
+		// This factory scopes things to the system namespace.
+		informers.WithNamespace(system.Namespace()))
+	// Also override the kubeinformerfactory because it's used by webhook.New() to construct
+	// a new secret client, see: https://github.com/knative/pkg/blob/main/webhook/webhook.go#L183
+	ccPlaneCtx = context.WithValue(ccPlaneCtx, kubeinformerfactory.Key{}, ccpInformerFactory)
 
 	// Manager
 	mgrOpts := ctrl.Options{
