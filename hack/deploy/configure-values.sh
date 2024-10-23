@@ -16,7 +16,7 @@ AZURE_RESOURCE_GROUP=$2
 KARPENTER_SERVICE_ACCOUNT_NAME=$3
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=$4
 
-AKS_JSON=$(az aks show --name "$CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP")
+AKS_JSON=$(az aks show --name "$CLUSTER_NAME" --resource-group "$AZURE_RESOURCE_GROUP" -o json)
 AZURE_LOCATION=$(jq -r ".location" <<< "$AKS_JSON")
 AZURE_RESOURCE_GROUP_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
 
