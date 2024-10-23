@@ -19,6 +19,7 @@ package options_test
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"testing"
 
@@ -89,7 +90,8 @@ var _ = Describe("Options", func() {
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
-			os.Setenv("NETWORK_PLUGIN", "env-network-plugin")
+			os.Setenv("NETWORK_PLUGIN", "none") // Testing with none to make sure the default isn't overriding or something like that with "azure"
+			os.Setenv("NETWORK_PLUGIN_MODE", "")
 			os.Setenv("NETWORK_POLICY", "env-network-policy")
 			os.Setenv("NODE_IDENTITIES", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2")
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
@@ -106,15 +108,39 @@ var _ = Describe("Options", func() {
 				ClusterID:                      lo.ToPtr("46593302"),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
-				NetworkPlugin:                  lo.ToPtr("env-network-plugin"),
+				NetworkPlugin:                  lo.ToPtr("none"),
 				NetworkPolicy:                  lo.ToPtr("env-network-policy"),
 				SubnetID:                       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
 			}))
 		})
 	})
-
 	Context("Validation", func() {
+		It("should fail when network-plugin-mode is invalid", func() {
+			typo := "overlaay"
+			errMsg := fmt.Sprintf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay' or ''", typo)
+
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vm-memory-overhead-percent", "-0.01",
+				"--network-plugin-mode", typo,
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+		It("should fail validation when networkDataplane is not valid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--network-dataplane", "ciluum",
+			)
+			Expect(err).To(MatchError(ContainSubstring("network dataplane ciluum is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')")))
+		})
 		It("should fail validation when clusterName not included", func() {
 			err := opts.Parse(
 				fs,
@@ -193,6 +219,59 @@ var _ = Describe("Options", func() {
 				"--vm-memory-overhead-percent", "-0.01",
 			)
 			Expect(err).To(MatchError(ContainSubstring("vm-memory-overhead-percent cannot be negative")))
+		})
+		It("should fail when network-plugin is empty", func() {
+			errMsg := "network-plugin  is invalid. network-plugin must equal 'azure' or 'none'"
+
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--network-plugin", "",
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+
+		It("should fail when networkPluginMode is specified on a networkPluginMode none cluster", func() {
+			errMsg := "network-plugin-mode 'overlay' is invalid when network-plugin is 'none'. network-plugin-mode must be empty"
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "none",
+				"--network-plugin-mode", "overlay",
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+		It("should succeed when network-plugin is set to 'azure'", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "azure",
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should succeed when network-plugin is set to 'none'", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "none",
+				"--network-plugin-mode", "",
+			)
+			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 })

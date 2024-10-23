@@ -121,12 +121,18 @@ done
 
 ### Configure Helm chart values
 
-Karpeter Helm chart requires some configuration via values to work with a specific AKS cluster. The values are documented in the Helm chart itself, but you can use `configure-values.sh` to generate `karpenter-values.yaml` with the required configuration. The script interrogates the AKS cluster and generates the values file, using `karpenter-values-template.yaml` as a template. (The script fetches the template automatically.)
+The Karpenter Helm chart requires specific configuration values to work with an AKS cluster. While these values are documented within the Helm chart, you can use the `configure-values.sh` script to generate the `karpenter-values.yaml` file with the necessary configuration. This script queries the AKS cluster and creates the values file using `karpenter-values-template.yaml` as a template. Although the script automatically fetches the template from the main branch, inconsistencies may arise between the installed version of Karpenter and the repository code. Therefore, it is advisable to download the specific version of the template before running the script.
 
 ```bash
+# Select version to install
+export KARPENTER_VERSION=0.5.4
+
+# Download the specific's version template
+curl -sO https://raw.githubusercontent.com/Azure/karpenter/v${KARPENTER_VERSION}/karpenter-values-template.yaml
+
 # use configure-values.sh to generate karpenter-values.yaml
 # (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
-curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/hack/deploy/configure-values.sh
+curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/hack/deploy/configure-values.sh
 chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
 ```
 
@@ -135,7 +141,6 @@ chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} ka
 Usinge the generated `karpenter-values.yaml` file, install Karpenter using Helm:
 
 ```bash
-export KARPENTER_VERSION=0.4.0
 
 helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
   --version "${KARPENTER_VERSION}" \

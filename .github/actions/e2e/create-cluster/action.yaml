@@ -1,10 +1,10 @@
 name: CreateCluster
 description: 'Installs Go Downloads and installs Karpenter Dependencies'
 inputs:
-#   k8s_version:
-#     description: 'Version of Kubernetes to use for the launched cluster'
-#     required: false
-#     default: "1.27"
+  # k8s_version:
+  #   description: 'Version of Kubernetes to use for the launched cluster'
+  #   required: false
+  #   default: "1.27"
   client-id:
     description: 
     required: true
@@ -32,35 +32,51 @@ inputs:
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
-    with:
-      ref: ${{ inputs.git_ref }}
-  - name: az login
-    uses: azure/login@6b2456866fc08b011acb422a92a4aa20e2c4de32 # v2.1.0
-    with:
-      client-id: ${{ inputs.client-id }}
-      tenant-id: ${{ inputs.tenant-id }}
-      subscription-id: ${{ inputs.subscription-id }}
-  - name: az set sub
-    shell: bash
-    run: az account set --subscription ${{ inputs.subscription-id }}
-  - name: create workload msi
-    shell: bash
-    run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-create-workload-msi
-  - name: create cluster
-    shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkaks-cilium
-  - name: az login 2
-    uses: azure/login@6b2456866fc08b011acb422a92a4aa20e2c4de32 # v2.1.0
-    with:
-      client-id: ${{ inputs.client-id }}
-      tenant-id: ${{ inputs.tenant-id }}
-      subscription-id: ${{ inputs.subscription-id }}
-  - name: create federated cred
-    shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} make az-create-federated-cred
-  - name: update azure perms
-    shell: bash
-    run: |
-      AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-perm
-      AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} make az-perm-acr
+    - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
+      with:
+        ref: ${{ inputs.git_ref }}
+    - name: az login
+      uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0 
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        subscription-id: ${{ inputs.subscription-id }}
+    - name: az set sub
+      shell: bash
+      run: az account set --subscription ${{ inputs.subscription-id }}
+    - name: create workload msi
+      shell: bash
+      env:
+        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
+        AZURE_LOCATION: ${{ inputs.location }}
+      run: make az-create-workload-msi
+    - name: create cluster
+      shell: bash
+      env:
+        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
+        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
+        AZURE_ACR_NAME: ${{ inputs.acr_name }} 
+        AZURE_LOCATION: ${{ inputs.location }}
+      run: make az-mkaks-cilium
+    - name: az login 2
+      uses: azure/login@a65d910e8af852a8061c627c456678983e180302 # v2.2.0 
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        subscription-id: ${{ inputs.subscription-id }}
+    - name: create federated cred
+      shell: bash
+      env:
+        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
+        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: make az-create-federated-cred
+    - name: update azure perms
+      shell: bash
+      env:
+        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
+        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
+        AZURE_LOCATION: ${{ inputs.location }}
+        AZURE_ACR_NAME: ${{ inputs.acr_name }}
+      run: |
+        make az-perm
+        make az-perm-acr

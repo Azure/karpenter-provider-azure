@@ -23,11 +23,13 @@ import (
 // TODO: Get these from agentbaker
 const (
 	Nvidia470CudaDriverVersion = "cuda-470.82.01"
-	Nvidia535CudaDriverVersion = "cuda-535.54.03"
-	Nvidia535GridDriverVersion = "grid-535.54.03"
+	Nvidia550CudaDriverVersion = "cuda-550.54.15"
+	Nvidia535GridDriverVersion = "grid-535.161.08"
 
-	AKSGPUGridSHA = "sha-20ffa2"
-	AKSGPUCudaSHA = "sha-ff213d"
+	// These SHAs will change once we update aks-gpu images in aks-gpu repository. We do that fairly rarely at this time.
+	// So for now these will be kept here like this and periodically bump them
+	AKSGPUGridSHA = "sha-d1f0ca"
+	AKSGPUCudaSHA = "sha-2d4c96"
 )
 
 func GetAKSGPUImageSHA(size string) string {
@@ -146,7 +148,7 @@ func GetGPUDriverVersion(size string) string {
 	if isStandardNCv1(size) {
 		return Nvidia470CudaDriverVersion
 	}
-	return Nvidia535CudaDriverVersion
+	return Nvidia550CudaDriverVersion
 }
 
 func isStandardNCv1(size string) bool {

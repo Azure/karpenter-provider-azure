@@ -10,7 +10,16 @@ spec:
   disruption:
     expireAfter: Never
   template:
+    metadata:
+      labels:
+        # required for Karpenter to predict overhead from cilium DaemonSet
+        kubernetes.azure.com/ebpf-dataplane: cilium
     spec:
+      startupTaints:
+        # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+        - key: node.cilium.io/agent-not-ready
+          effect: NoExecute
+          value: "true"
       requirements:
         - key: kubernetes.io/arch
           operator: In
