@@ -18,7 +18,10 @@ package instance
 
 import (
 	"context"
+	"fmt"
 
+	armpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
@@ -128,8 +131,12 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		return nil, err
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
-
-	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, opts)
+	// TODO: Once ListImageVersions work is merged, gate this behind ManagedKarpenter
+	clientOptions, err := getVirtualMachinesClientOptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, clientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -166,4 +173,19 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
 		skuClient), nil
+}
+
+func getVirtualMachinesClientOptions(ctx context.Context) (*armpolicy.ClientOptions, error) {
+	// TODO: pass in custom scope based on cloud env
+	token, err := auth.GetAuxiliaryToken(ctx, "https://management.azure.com/.default")
+	if err != nil {
+		return &armpolicy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
+	}
+	auxPolicy := auth.NewAuxiliaryTokenPolicy(token)
+
+	return &armpolicy.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			PerRetryPolicies: []policy.Policy{&auxPolicy},
+		},
+	}, nil
 }
