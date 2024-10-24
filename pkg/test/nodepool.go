@@ -19,11 +19,11 @@ package test
 import (
 	"context"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
-func NodePool(options corev1beta1.NodePool) *corev1beta1.NodePool {
+func NodePool(options karpv1.NodePool) *karpv1.NodePool {
 	nodePool := test.NodePool(options)
 	nodePool.SetDefaults(context.Background())
 	return nodePool
