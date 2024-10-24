@@ -19,14 +19,13 @@ package instancetype_test
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -41,14 +40,14 @@ import (
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
-	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -84,7 +83,7 @@ func TestAzure(t *testing.T) {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
 
-	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
+	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
@@ -94,8 +93,8 @@ func TestAzure(t *testing.T) {
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 
-	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
+	cluster = state.NewCluster(fakeClock, env.Client)
+	clusterNonZonal = state.NewCluster(fakeClock, env.Client)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
 	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal)
 
@@ -112,15 +111,16 @@ var _ = AfterSuite(func() {
 
 var _ = Describe("InstanceType Provider", func() {
 	var nodeClass *v1alpha2.AKSNodeClass
-	var nodePool *corev1beta1.NodePool
+	var nodePool *karpv1.NodePool
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		nodePool = coretest.NodePool(corev1beta1.NodePool{
-			Spec: corev1beta1.NodePoolSpec{
-				Template: corev1beta1.NodeClaimTemplate{
-					Spec: corev1beta1.NodeClaimSpec{
-						NodeClassRef: &corev1beta1.NodeClassReference{
+		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
+		nodePool = coretest.NodePool(karpv1.NodePool{
+			Spec: karpv1.NodePoolSpec{
+				Template: karpv1.NodeClaimTemplate{
+					Spec: karpv1.NodeClaimTemplateSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
 							Name: nodeClass.Name,
 						},
 					},
@@ -206,11 +206,11 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
 			LowPriorityCoresQuotaErrorMessage := "Operation could not be completed as it results in exceeding approved Low Priority Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22LowPriorityCores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:32,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22LowPriorityCores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
 			// Create nodepool that has both ondemand and spot capacity types enabled
-			coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      corev1beta1.CapacityTypeLabelKey,
+					Key:      karpv1.CapacityTypeLabelKey,
 					Operator: v1.NodeSelectorOpIn,
-					Values:   []string{corev1beta1.CapacityTypeOnDemand, corev1beta1.CapacityTypeSpot},
+					Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot},
 				}})
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			// Set the LowPriorityCoresQuota error to be returned when creating the vm
@@ -234,7 +234,7 @@ var _ = Describe("InstanceType Provider", func() {
 			nodes, err := env.KubernetesInterface.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(nodes.Items)).To(Equal(1))
-			Expect(nodes.Items[0].Labels[corev1beta1.CapacityTypeLabelKey]).To(Equal(corev1beta1.CapacityTypeOnDemand))
+			Expect(nodes.Items[0].Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 		})
 
 		It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
@@ -305,14 +305,14 @@ var _ = Describe("InstanceType Provider", func() {
 			)
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			nodeClaim := coretest.NodeClaim(corev1beta1.NodeClaim{
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						corev1beta1.NodePoolLabelKey: nodePool.Name,
+						karpv1.NodePoolLabelKey: nodePool.Name,
 					},
 				},
-				Spec: corev1beta1.NodeClaimSpec{
-					NodeClassRef: &corev1beta1.NodeClassReference{
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
 						Name: nodeClass.Name,
 					},
 				},
@@ -330,7 +330,7 @@ var _ = Describe("InstanceType Provider", func() {
 		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
 
 		BeforeEach(func() {
-			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -358,7 +358,7 @@ var _ = Describe("InstanceType Provider", func() {
 			nodeClassAZLinux := test.AKSNodeClass()
 			nodeClassAZLinux.Spec.ImageFamily = lo.ToPtr("AzureLinux")
 			ExpectApplied(ctx, env.Client, nodeClassAZLinux)
-			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClassAZLinux)
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassAZLinux)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -375,13 +375,13 @@ var _ = Describe("InstanceType Provider", func() {
 			// Create a Provisioner that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
 			np := coretest.NodePool()
-			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, corev1beta1.NodeSelectorRequirementWithMinValues{
+			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      "node.kubernetes.io/instance-type",
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D64s_v3"},
 				}})
-			np.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{
+			np.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
 				Name: nodeClass.Name,
 			}
 
@@ -402,20 +402,21 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class", func() {
 			// Create a Nodepool that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 256GB
-			provider := test.AKSNodeClass()
-			provider.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
+			nodeClass = test.AKSNodeClass()
+			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
+			nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 			np := coretest.NodePool()
-			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, corev1beta1.NodeSelectorRequirementWithMinValues{
+			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      "node.kubernetes.io/instance-type",
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D64s_v3"},
 				}})
-			np.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{
-				Name: provider.Name,
+			np.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
+				Name: nodeClass.Name,
 			}
 
-			ExpectApplied(ctx, env.Client, np, provider)
+			ExpectApplied(ctx, env.Client, np, nodeClass)
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
@@ -432,13 +433,13 @@ var _ = Describe("InstanceType Provider", func() {
 			// and has 16GB of Temp Disk Space.
 			// With our rule of 100GB being the minimum OSDiskSize, this VM should be created without local disk
 			np := coretest.NodePool()
-			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, corev1beta1.NodeSelectorRequirementWithMinValues{
+			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      "node.kubernetes.io/instance-type",
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D2s_v3"},
 				}})
-			np.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{
+			np.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
 				Name: nodeClass.Name,
 			}
 
@@ -456,15 +457,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("Nodepool with KubeletConfig", func() {
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
-			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
-				PodsPerCore: lo.ToPtr(int32(110)),
-				EvictionSoft: map[string]string{
-					instancetype.MemoryAvailable: "1Gi",
-				},
-				EvictionSoftGracePeriod: map[string]metav1.Duration{
-					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
-				},
-				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
+			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
@@ -478,14 +471,11 @@ var _ = Describe("InstanceType Provider", func() {
 			customData := ExpectDecodedCustomData(azureEnv)
 
 			expectedFlags := map[string]string{
-				"eviction-hard":              "memory.available<750Mi",
-				"eviction-soft":              "memory.available<1Gi",
-				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250",
-				"pods-per-core":              "110",
-				"image-gc-low-threshold":     "20",
-				"image-gc-high-threshold":    "30",
-				"cpu-cfs-quota":              "true",
+				"eviction-hard":           "memory.available<750Mi",
+				"image-gc-high-threshold": "30",
+				"image-gc-low-threshold":  "20",
+				"cpu-cfs-quota":           "true",
+				"max-pods":                "250",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
@@ -530,15 +520,7 @@ var _ = Describe("InstanceType Provider", func() {
 			)))
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
-			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
-				PodsPerCore: lo.ToPtr(int32(110)),
-				EvictionSoft: map[string]string{
-					instancetype.MemoryAvailable: "1Gi",
-				},
-				EvictionSoftGracePeriod: map[string]metav1.Duration{
-					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
-				},
-				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
+			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
@@ -551,14 +533,11 @@ var _ = Describe("InstanceType Provider", func() {
 
 			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
-				"eviction-hard":              "memory.available<750Mi",
-				"eviction-soft":              "memory.available<1Gi",
-				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250",
-				"pods-per-core":              "110",
-				"image-gc-low-threshold":     "20",
-				"image-gc-high-threshold":    "30",
-				"cpu-cfs-quota":              "true",
+				"eviction-hard":           "memory.available<750Mi",
+				"max-pods":                "250",
+				"image-gc-low-threshold":  "20",
+				"image-gc-high-threshold": "30",
+				"cpu-cfs-quota":           "true",
 			}
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
 			Expect(customData).To(SatisfyAny( // AKS default
@@ -571,32 +550,12 @@ var _ = Describe("InstanceType Provider", func() {
 			))
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
-			nodePool.Spec.Template.Spec.Kubelet = &corev1beta1.KubeletConfiguration{
-				PodsPerCore: lo.ToPtr(int32(110)),
-				EvictionSoft: map[string]string{
-					instancetype.MemoryAvailable: "1Gi",
-				},
-				EvictionSoftGracePeriod: map[string]metav1.Duration{
-					instancetype.MemoryAvailable: {Duration: 10 * time.Second},
-				},
-				EvictionMaxPodGracePeriod:   lo.ToPtr(int32(15)),
+			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
-
-				SystemReserved: map[string]string{
-					string(v1.ResourceCPU):    "200m",
-					string(v1.ResourceMemory): "1Gi",
-				},
-				KubeReserved: map[string]string{
-					string(v1.ResourceCPU):    "100m",
-					string(v1.ResourceMemory): "500Mi",
-				},
-				EvictionHard: map[string]string{
-					instancetype.MemoryAvailable: "10Mi",
-				},
-				MaxPods: lo.ToPtr(int32(15)),
 			}
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(15))
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
@@ -605,14 +564,11 @@ var _ = Describe("InstanceType Provider", func() {
 
 			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
-				"eviction-hard":              "memory.available<750Mi",
-				"eviction-soft":              "memory.available<1Gi",
-				"eviction-soft-grace-period": "memory.available=10s",
-				"max-pods":                   "250", // max pods should always default to 250
-				"pods-per-core":              "110",
-				"image-gc-low-threshold":     "20",
-				"image-gc-high-threshold":    "30",
-				"cpu-cfs-quota":              "true",
+				"eviction-hard":           "memory.available<750Mi",
+				"max-pods":                "15",
+				"image-gc-low-threshold":  "20",
+				"image-gc-high-threshold": "30",
+				"cpu-cfs-quota":           "true",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
@@ -629,9 +585,9 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("Unavailable Offerings", func() {
 		It("should not allocate a vm in a zone marked as unavailable", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), corev1beta1.CapacityTypeSpot)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), corev1beta1.CapacityTypeOnDemand)
-			coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -658,10 +614,10 @@ var _ = Describe("InstanceType Provider", func() {
 
 		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
 			for _, zone := range azEnv.Zones() {
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeSpot)
-				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeOnDemand)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeSpot)
+				azEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)
 			}
-			instanceTypes, err := azEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
+			instanceTypes, err := azEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			seeUnavailable := false
@@ -683,8 +639,8 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 
 		It("should launch instances in a different zone than preferred", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), corev1beta1.CapacityTypeOnDemand)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), corev1beta1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{
@@ -703,9 +659,9 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(node.Labels["node.kubernetes.io/instance-type"]).To(Equal("Standard_D2_v2"))
 		})
 		It("should launch smaller instances than optimal if larger instance launch results in Insufficient Capacity Error", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fmt.Sprintf("%s-1", fake.Region), corev1beta1.CapacityTypeOnDemand)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fmt.Sprintf("%s-1", fake.Region), corev1beta1.CapacityTypeSpot)
-			coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -737,8 +693,8 @@ var _ = Describe("InstanceType Provider", func() {
 		DescribeTable("should launch instances on later reconciliation attempt with Insufficient Capacity Error Cache expiry",
 			func(azureEnv *test.Environment, cluster *state.Cluster, cloudProvider *cloudprovider.CloudProvider, coreProvisioner *provisioning.Provisioner) {
 				for _, zone := range azureEnv.Zones() {
-					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeSpot)
-					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, corev1beta1.CapacityTypeOnDemand)
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeSpot)
+					azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)
 				}
 
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
@@ -764,10 +720,10 @@ var _ = Describe("InstanceType Provider", func() {
 					&azcore.ResponseError{ErrorCode: sdkerrors.SKUNotAvailableErrorCode},
 				)
 				coretest.ReplaceRequirements(nodePool,
-					corev1beta1.NodeSelectorRequirementWithMinValues{
+					karpv1.NodeSelectorRequirementWithMinValues{
 						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku}}},
-					corev1beta1.NodeSelectorRequirementWithMinValues{
-						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: corev1beta1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{capacityType}}},
+					karpv1.NodeSelectorRequirementWithMinValues{
+						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{capacityType}}},
 				)
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 				pod := coretest.UnschedulablePod()
@@ -779,11 +735,11 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 
 			It("should mark SKU as unavailable in all zones for Spot", func() {
-				AssertUnavailable("Standard_D2_v2", corev1beta1.CapacityTypeSpot)
+				AssertUnavailable("Standard_D2_v2", karpv1.CapacityTypeSpot)
 			})
 
 			It("should mark SKU as unavailable in all zones for OnDemand", func() {
-				AssertUnavailable("Standard_D2_v2", corev1beta1.CapacityTypeOnDemand)
+				AssertUnavailable("Standard_D2_v2", karpv1.CapacityTypeOnDemand)
 			})
 		})
 	})
@@ -796,7 +752,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
 				VMMemoryOverheadPercent: lo.ToPtr[float64](0),
 			}))
-			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, nodeClass)
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -833,13 +789,13 @@ var _ = Describe("InstanceType Provider", func() {
 
 			nodeSelector := map[string]string{
 				// Well known
-				v1.LabelTopologyRegion:           fake.Region,
-				corev1beta1.NodePoolLabelKey:     nodePool.Name,
-				v1.LabelTopologyZone:             fmt.Sprintf("%s-1", fake.Region),
-				v1.LabelInstanceTypeStable:       "Standard_NC24ads_A100_v4",
-				v1.LabelOSStable:                 "linux",
-				v1.LabelArchStable:               "amd64",
-				corev1beta1.CapacityTypeLabelKey: "on-demand",
+				v1.LabelTopologyRegion:      fake.Region,
+				karpv1.NodePoolLabelKey:     nodePool.Name,
+				v1.LabelTopologyZone:        fmt.Sprintf("%s-1", fake.Region),
+				v1.LabelInstanceTypeStable:  "Standard_NC24ads_A100_v4",
+				v1.LabelOSStable:            "linux",
+				v1.LabelArchStable:          "amd64",
+				karpv1.CapacityTypeLabelKey: "on-demand",
 				// Well Known to AKS
 				v1alpha2.LabelSKUName:                      "Standard_NC24ads_A100_v4",
 				v1alpha2.LabelSKUFamily:                    "N",
@@ -867,7 +823,7 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 
 			// Ensure that we're exercising all well known labels
-			Expect(lo.Keys(nodeSelector)).To(ContainElements(append(corev1beta1.WellKnownLabels.UnsortedList(), lo.Keys(corev1beta1.NormalizedLabels)...)))
+			Expect(lo.Keys(nodeSelector)).To(ContainElements(append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)))
 
 			var pods []*v1.Pod
 			for key, value := range nodeSelector {
@@ -932,13 +888,13 @@ var _ = Describe("InstanceType Provider", func() {
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-				coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
 						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{instanceType},
 					}})
-				nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{Name: nodeClass.Name}
+				nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{Name: nodeClass.Name}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -1121,7 +1077,7 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("Bootstrap", func() {
 		var (
 			kubeletFlags          string
-			decodedString         string
+			customData            string
 			minorVersion          uint64
 			credentialProviderURL string
 		)
@@ -1130,15 +1086,8 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			customData := *vm.Properties.OSProfile.CustomData
-			Expect(customData).ToNot(BeNil())
-			decodedBytes, err := base64.StdEncoding.DecodeString(customData)
-			Expect(err).To(Succeed())
-			decodedString = string(decodedBytes[:])
-			kubeletFlags = decodedString[strings.Index(decodedString, "KUBELET_FLAGS=")+len("KUBELET_FLAGS="):]
+			customData = ExpectDecodedCustomData(azureEnv)
+			kubeletFlags = ExpectKubeletFlagsPassed(customData)
 
 			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
 			Expect(err).To(BeNil())
@@ -1159,7 +1108,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).ToNot(ContainSubstring("--azure-container-registry-config"))
 				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-config=/var/lib/kubelet/credential-provider-config.yaml"))
 				Expect(kubeletFlags).To(ContainSubstring("--image-credential-provider-bin-dir=/var/lib/kubelet/credential-provider"))
-				Expect(decodedString).To(ContainSubstring(credentialProviderURL))
+				Expect(customData).To(ContainSubstring(credentialProviderURL))
 			}
 		})
 
@@ -1169,6 +1118,10 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-config"))
 				Expect(kubeletFlags).ToNot(ContainSubstring("--image-credential-provider-bin-dir"))
 			}
+		})
+
+		It("should include karpenter.sh/unregistered taint", func() {
+			Expect(kubeletFlags).To(ContainSubstring("--register-with-taints=" + karpv1.UnregisteredNoExecuteTaint.ToString()))
 		})
 	})
 	Context("LoadBalancer", func() {
@@ -1203,8 +1156,8 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("Zone-aware provisioning", func() {
 		It("should launch in the NodePool-requested zone", func() {
 			zone, vmZone := "eastus-3", "3"
-			nodePool.Spec.Template.Spec.Requirements = []corev1beta1.NodeSelectorRequirementWithMinValues{
-				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: corev1beta1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{corev1beta1.CapacityTypeSpot, corev1beta1.CapacityTypeOnDemand}}},
+			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot, karpv1.CapacityTypeOnDemand}}},
 				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}}},
 			}
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1228,7 +1181,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(vm.Zones).To(BeEmpty())
 		})
 		It("should support provisioning non-zonal instance types in zonal regions", func() {
-			coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -1297,4 +1250,10 @@ var _ = Describe("Tax Calculator", func() {
 
 func createSDKErrorBody(code, message string) io.ReadCloser {
 	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
+}
+
+func ExpectKubeletFlagsPassed(customData string) string {
+	GinkgoHelper()
+
+	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 }

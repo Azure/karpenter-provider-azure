@@ -24,28 +24,28 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 var _ = Describe("StandaloneNodeClaim", func() {
 	It("should create a standard NodeClaim within the 'D' sku family", func() {
-		nodeClaim := test.NodeClaim(corev1beta1.NodeClaim{
-			Spec: corev1beta1.NodeClaimSpec{
-				Requirements: []corev1beta1.NodeSelectorRequirementWithMinValues{
+		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
+			Spec: karpv1.NodeClaimSpec{
+				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
 						Key:      v1alpha2.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"D"},
 					}},
 					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      corev1beta1.CapacityTypeLabelKey,
+						Key:      karpv1.CapacityTypeLabelKey,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{corev1beta1.CapacityTypeOnDemand},
+						Values:   []string{karpv1.CapacityTypeOnDemand},
 					}},
 				},
-				NodeClassRef: &corev1beta1.NodeClassReference{
+				NodeClassRef: &karpv1.NodeClassReference{
 					Name: nodeClass.Name,
 				},
 			},
@@ -57,15 +57,15 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 	It("should create a standard NodeClaim based on resource requests", func() {
-		nodeClaim := test.NodeClaim(corev1beta1.NodeClaim{
-			Spec: corev1beta1.NodeClaimSpec{
-				Resources: corev1beta1.ResourceRequirements{
+		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
+			Spec: karpv1.NodeClaimSpec{
+				Resources: karpv1.ResourceRequirements{
 					Requests: v1.ResourceList{
 						v1.ResourceCPU:    resource.MustParse("1"),
 						v1.ResourceMemory: resource.MustParse("16Gi"),
 					},
 				},
-				NodeClassRef: &corev1beta1.NodeClassReference{
+				NodeClassRef: &karpv1.NodeClassReference{
 					Name: nodeClass.Name,
 				},
 			},
@@ -77,7 +77,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 	It("should create a NodeClaim propagating all the NodeClaim spec details", func() {
-		nodeClaim := test.NodeClaim(corev1beta1.NodeClaim{
+		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
 					"custom-annotation": "custom-value",
@@ -86,7 +86,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 					"custom-label": "custom-value",
 				},
 			},
-			Spec: corev1beta1.NodeClaimSpec{
+			Spec: karpv1.NodeClaimSpec{
 				Taints: []v1.Taint{
 					{
 						Key:    "custom-taint",
@@ -99,7 +99,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 						Value:  "other-custom-value",
 					},
 				},
-				NodeClassRef: &corev1beta1.NodeClassReference{
+				NodeClassRef: &karpv1.NodeClassReference{
 					Name: nodeClass.Name,
 				},
 			},
@@ -124,21 +124,21 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 	It("should remove the cloudProvider NodeClaim when the cluster NodeClaim is deleted", func() {
-		nodeClaim := test.NodeClaim(corev1beta1.NodeClaim{
-			Spec: corev1beta1.NodeClaimSpec{
-				Requirements: []corev1beta1.NodeSelectorRequirementWithMinValues{
+		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
+			Spec: karpv1.NodeClaimSpec{
+				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
 						Key:      v1alpha2.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"D"},
 					}},
 					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      corev1beta1.CapacityTypeLabelKey,
+						Key:      karpv1.CapacityTypeLabelKey,
 						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{corev1beta1.CapacityTypeOnDemand},
+						Values:   []string{karpv1.CapacityTypeOnDemand},
 					}},
 				},
-				NodeClassRef: &corev1beta1.NodeClassReference{
+				NodeClassRef: &karpv1.NodeClassReference{
 					Name: nodeClass.Name,
 				},
 			},

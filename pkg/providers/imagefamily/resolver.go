@@ -19,7 +19,7 @@ package imagefamily
 import (
 	"context"
 
-	core "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -29,10 +29,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 // Resolver is able to fill-in dynamic launch template parameters
@@ -43,8 +43,8 @@ type Resolver struct {
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
 type ImageFamily interface {
 	UserData(
-		kubeletConfig *corev1beta1.KubeletConfiguration,
-		taints []core.Taint,
+		kubeletConfig *bootstrap.KubeletConfiguration,
+		taints []corev1.Taint,
 		labels map[string]string,
 		caBundle *string,
 		instanceType *cloudprovider.InstanceType,
@@ -64,7 +64,7 @@ func New(_ client.Client, imageProvider *Provider) *Resolver {
 }
 
 // Resolve fills in dynamic launch template parameters
-func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceType *cloudprovider.InstanceType,
+func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
 	imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
@@ -73,13 +73,23 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		return nil, err
 	}
 
+	taints := lo.Flatten([][]corev1.Taint{
+		nodeClaim.Spec.Taints,
+		nodeClaim.Spec.StartupTaints,
+	})
+	if _, found := lo.Find(taints, func(t corev1.Taint) bool {
+		return t.MatchTaint(&karpv1.UnregisteredNoExecuteTaint)
+	}); !found {
+		taints = append(taints, karpv1.UnregisteredNoExecuteTaint)
+	}
+
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		UserData: imageFamily.UserData(
-			prepareKubeletConfiguration(instanceType, nodeClaim),
-			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
+			prepareKubeletConfiguration(instanceType, nodeClass),
+			taints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
@@ -90,15 +100,23 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	return template, nil
 }
 
-func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nc *corev1beta1.NodeClaim) *corev1beta1.KubeletConfiguration {
-	kubeletConfig := nc.Spec.Kubelet
-	if kubeletConfig == nil {
-		kubeletConfig = &corev1beta1.KubeletConfiguration{}
+func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *bootstrap.KubeletConfiguration {
+	kubeletConfig := &bootstrap.KubeletConfiguration{}
+
+	if nodeClass.Spec.Kubelet != nil {
+		kubeletConfig.KubeletConfiguration = *nodeClass.Spec.Kubelet
 	}
-	kubeletConfig.MaxPods = lo.ToPtr[int32](consts.DefaultKubernetesMaxPods)
-	// TODO: revisit computeResources and maxPods implementation
-	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
-	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
+
+	// TODO: make default maxpods dependent on CNI
+	if nodeClass.Spec.MaxPods != nil {
+		kubeletConfig.MaxPods = *nodeClass.Spec.MaxPods
+	} else {
+		kubeletConfig.MaxPods = consts.DefaultKubernetesMaxPods
+	}
+
+	// TODO: revisit computeResources implementation
+	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
+	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	return kubeletConfig
 }
