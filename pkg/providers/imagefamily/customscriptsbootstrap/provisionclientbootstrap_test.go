@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/samber/lo"
 )
 
 func TestReverseVMMemoryOverhead(t *testing.T) {
@@ -52,4 +53,103 @@ func TestReverseVMMemoryOverhead(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestConvertContainerLogMaxSizeToMB(t *testing.T) {
+	tests := []struct {
+		name                string
+		containerLogMaxSize string
+		expected            *int32
+	}{
+		{
+			name:                "Default",
+			containerLogMaxSize: "50Mi",
+			expected:            lo.ToPtr(int32(50)),
+		},
+		{
+			name:                "Valid size in Mi",
+			containerLogMaxSize: "1024Mi",
+			expected:            lo.ToPtr(int32(1024)),
+		},
+		{
+			name:                "Valid size in Gi",
+			containerLogMaxSize: "1Gi",
+			expected:            lo.ToPtr(int32(1024)),
+		},
+		{
+			name:                "Valid size in Ki",
+			containerLogMaxSize: "1048576Ki",
+			expected:            lo.ToPtr(int32(1024)),
+		},
+		{
+			name:                "Invalid size",
+			containerLogMaxSize: "invalid",
+			expected:            nil,
+		},
+		{
+			name:                "Empty size",
+			containerLogMaxSize: "",
+			expected:            nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertContainerLogMaxSizeToMB(tt.containerLogMaxSize)
+			if tt.expected == nil && result != nil {
+				t.Errorf("Expected nil but got %v", *result)
+			} else if tt.expected != nil && result == nil {
+				t.Errorf("Expected %v but got nil", *tt.expected)
+			} else if tt.expected != nil && result != nil && *tt.expected != *result {
+				t.Errorf("Expected %v but got %v", *tt.expected, *result)
+			}
+		})
+	}
+}
+
+func TestConvertPodMaxPids(t *testing.T) {
+	tests := []struct {
+		name         string
+		podPidsLimit *int64
+		expected     *int32
+	}{
+		{
+			name:         "Valid PIDs limit within int32 range",
+			podPidsLimit: lo.ToPtr(int64(1000)),
+			expected:     lo.ToPtr(int32(1000)),
+		},
+		{
+			name:         "PIDs limit exceeding int32 range",
+			podPidsLimit: lo.ToPtr(int64(math.MaxInt32) + int64(1)),
+			expected:     lo.ToPtr(int32(math.MaxInt32)),
+		},
+		{
+			name:         "PIDs limit at int32 max value",
+			podPidsLimit: lo.ToPtr(int64(math.MaxInt32)),
+			expected:     lo.ToPtr(int32(math.MaxInt32)),
+		},
+		{
+			name:         "PIDs limit almost at int32 max value",
+			podPidsLimit: lo.ToPtr(int64(math.MaxInt32 - 1)),
+			expected:     lo.ToPtr(int32(math.MaxInt32 - 1)),
+		},
+		{
+			name:         "Nil PIDs limit",
+			podPidsLimit: nil,
+			expected:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertPodMaxPids(tt.podPidsLimit)
+			if tt.expected == nil && result != nil {
+				t.Errorf("Expected nil but got %v", *result)
+			} else if tt.expected != nil && result == nil {
+				t.Errorf("Expected %v but got nil", *tt.expected)
+			} else if tt.expected != nil && result != nil && *tt.expected != *result {
+				t.Errorf("Expected %v but got %v", *tt.expected, *result)
+			}
+		})
+	}
 }

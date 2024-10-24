@@ -41,6 +41,8 @@ import (
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
 	"github.com/samber/lo"
+
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 type ProvisionClientBootstrap struct {
@@ -117,8 +119,16 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 	if p.KubeletConfig != nil {
 		provisionProfile.CustomKubeletConfig = &models.CustomKubeletConfig{
-			// AllowedUnsafeSysctls: ..., // Unsupported as of now
-			CPUCfsQuota: p.KubeletConfig.CPUCFSQuota,
+			CPUManagerPolicy:      lo.ToPtr(p.KubeletConfig.CPUManagerPolicy),
+			CPUCfsQuota:           p.KubeletConfig.CPUCFSQuota,
+			CPUCfsQuotaPeriod:     lo.ToPtr(p.KubeletConfig.CPUCFSQuotaPeriod.String()),
+			ImageGcHighThreshold:  p.KubeletConfig.ImageGCHighThresholdPercent,
+			ImageGcLowThreshold:   p.KubeletConfig.ImageGCLowThresholdPercent,
+			TopologyManagerPolicy: lo.ToPtr(p.KubeletConfig.TopologyManagerPolicy),
+			AllowedUnsafeSysctls:  p.KubeletConfig.AllowedUnsafeSysctls,
+			ContainerLogMaxSizeMB: convertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
+			ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
+			PodMaxPids:            convertPodMaxPids(p.KubeletConfig.PodPidsLimit),
 		}
 	}
 
@@ -221,4 +231,25 @@ func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory flo
 	// This is not the best way to do it... But will be refactored later, given that retreiving the original memory properly might involves some restructure.
 	// Due to the fact that it is abstracted behind the cloudprovider interface.
 	return adjustedMemory / (1 - vmMemoryOverheadPercent)
+}
+
+func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
+	q, err := resource.ParseQuantity(containerLogMaxSize)
+	if err == nil {
+		// This could be improved later
+		return lo.ToPtr(int32(math.Round(q.AsApproximateFloat64() / 1024 / 1024)))
+	}
+	return nil
+}
+
+func convertPodMaxPids(podPidsLimit *int64) *int32 {
+	if podPidsLimit != nil {
+		if *podPidsLimit > int64(math.MaxInt32) {
+			// This could be improved later
+			return lo.ToPtr(int32(math.MaxInt32))
+		} else {
+			return lo.ToPtr(int32(*podPidsLimit))
+		}
+	}
+	return nil
 }
