@@ -88,7 +88,7 @@ type KubeletConfiguration struct {
 	// garbage collection is always run. The percent is calculated by dividing this
 	// field value by 100, so this field must be between 0 and 100, inclusive.
 	// When specified, the value must be greater than ImageGCLowThresholdPercent.
-	// Note: AKS AKS CustomKubeletConfig does not have "Percent" in the field name
+	// Note: AKS CustomKubeletConfig does not have "Percent" in the field name
 	// +kubebuilder:validation:Minimum:=0
 	// +kubebuilder:validation:Maximum:=100
 	// +optional
@@ -123,11 +123,6 @@ type KubeletConfiguration struct {
 	// TODO: validation
 	// +optional
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
-	// failSwapOn tells the Kubelet to fail to start if swap is enabled on the node.
-	// Default: true
-	// kubebuilder:default:=true
-	// +optional
-	FailSwapOn *bool `json:"failSwapOn,omitempty"`
 	// containerLogMaxSize is a quantity defining the maximum size of the container log
 	// file before it is rotated. For example: "5Mi" or "256Ki".
 	// Default: "10Mi"
@@ -149,7 +144,6 @@ type KubeletConfiguration struct {
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
 }
 
-// TODO: add hashing support
 // AKSNodeClass is the Schema for the AKSNodeClass API
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories=karpenter,shortName={aksnc,aksncs}

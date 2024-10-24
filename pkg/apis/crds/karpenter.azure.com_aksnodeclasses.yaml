@@ -105,19 +105,13 @@ spec:
                     - none
                     - static
                     type: string
-                  failSwapOn:
-                    description: |-
-                      failSwapOn tells the Kubelet to fail to start if swap is enabled on the node.
-                      Default: true
-                      kubebuilder:default:=true
-                    type: boolean
                   imageGCHighThresholdPercent:
                     description: |-
                       ImageGCHighThresholdPercent is the percent of disk usage after which image
                       garbage collection is always run. The percent is calculated by dividing this
                       field value by 100, so this field must be between 0 and 100, inclusive.
                       When specified, the value must be greater than ImageGCLowThresholdPercent.
-                      Note: AKS AKS CustomKubeletConfig does not have "Percent" in the field name
+                      Note: AKS CustomKubeletConfig does not have "Percent" in the field name
                     format: int32
                     maximum: 100
                     minimum: 0
