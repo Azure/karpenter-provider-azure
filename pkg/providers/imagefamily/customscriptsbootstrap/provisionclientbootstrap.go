@@ -244,11 +244,15 @@ func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 
 func convertPodMaxPids(podPidsLimit *int64) *int32 {
 	if podPidsLimit != nil {
-		if *podPidsLimit > int64(math.MaxInt32) {
+		podPidsLimitInt64 := *podPidsLimit
+		if podPidsLimitInt64 > int64(math.MaxInt32) {
 			// This could be improved later
 			return lo.ToPtr(int32(math.MaxInt32))
+		} else if podPidsLimitInt64 < 0 {
+			// This as well
+			return lo.ToPtr(int32(-1))
 		} else {
-			return lo.ToPtr(int32(*podPidsLimit))
+			return lo.ToPtr(int32(podPidsLimitInt64)) // golint:ignore G115 already check overflow
 		}
 	}
 	return nil
