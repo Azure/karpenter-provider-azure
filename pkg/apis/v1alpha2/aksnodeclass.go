@@ -123,11 +123,6 @@ type KubeletConfiguration struct {
 	// TODO: validation
 	// +optional
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
-	// failSwapOn tells the Kubelet to fail to start if swap is enabled on the node.
-	// Default: true
-	// kubebuilder:default:=true
-	// +optional
-	FailSwapOn *bool `json:"failSwapOn,omitempty"`
 	// containerLogMaxSize is a quantity defining the maximum size of the container log
 	// file before it is rotated. For example: "5Mi" or "256Ki".
 	// Default: "10Mi"
