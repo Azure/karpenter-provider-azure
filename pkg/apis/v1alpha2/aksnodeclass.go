@@ -144,7 +144,6 @@ type KubeletConfiguration struct {
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
 }
 
-// TODO: add hashing support
 // AKSNodeClass is the Schema for the AKSNodeClass API
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories=karpenter,shortName={aksnc,aksncs}
