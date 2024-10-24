@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
@@ -50,7 +50,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			CommunityImage:   AzureLinuxGen2CommunityImage,
 			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
 			),
 			Distro: "aks-azurelinux-v2-gen2",
@@ -59,7 +59,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			CommunityImage:   AzureLinuxGen1CommunityImage,
 			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
 			),
 			Distro: "aks-azurelinux-v2",
@@ -68,7 +68,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			CommunityImage:   AzureLinuxGen2ArmCommunityImage,
 			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64),
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
 			),
 			Distro: "aks-azurelinux-v2-arm64-gen2",
@@ -77,7 +77,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux) ScriptlessCustomData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u AzureLinux) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -108,7 +108,7 @@ func (u AzureLinux) ScriptlessCustomData(kubeletConfig *corev1beta1.KubeletConfi
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux) CustomScriptsNodeBootstrapping(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string) customscriptsbootstrap.Bootstrapper {
+func (u AzureLinux) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,

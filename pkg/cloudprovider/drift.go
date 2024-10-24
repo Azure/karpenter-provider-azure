@@ -35,7 +35,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
@@ -45,7 +45,7 @@ const (
 	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
 )
 
-func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
 	nodeName := nodeClaim.Status.NodeName
@@ -78,7 +78,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *core
 // Feel reassessing this within the future with a potential minor refactor would be best to fix the gocyclo.
 // nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
-	ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
+	ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
@@ -126,12 +126,12 @@ func (c *CloudProvider) isImageVersionDrifted(
 }
 
 // isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
-func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	expectedSubnet := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
 	nicName := instance.GenerateResourceName(nodeClaim.Name)
 
 	// TODO: Refactor all of AzConfig to be part of options
-	nic, err := instance.GetNic(ctx, c.instanceProvider.AZClient.NetworkInterfacesClient, options.FromContext(ctx).NodeResourceGroup, nicName)
+	nic, err := c.instanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return "", nil

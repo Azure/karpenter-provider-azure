@@ -28,14 +28,15 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	v1 "k8s.io/api/core/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	httptransport "github.com/go-openapi/runtime/client"
@@ -45,7 +46,7 @@ import (
 
 type ProvisionClientBootstrap struct {
 	ClusterName                    string
-	KubeletConfig                  *corev1beta1.KubeletConfiguration
+	KubeletConfig                  *bootstrap.KubeletConfiguration
 	Taints                         []v1.Taint        `hash:"set"`
 	StartupTaints                  []v1.Taint        `hash:"set"`
 	Labels                         map[string]string `hash:"set"`
@@ -76,7 +77,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 	provisionProfile := &models.ProvisionProfile{
 		Name:                     lo.ToPtr(""),
-		Architecture:             lo.ToPtr(lo.Ternary(p.Arch == corev1beta1.ArchitectureAmd64, "x64", "Arm64")),
+		Architecture:             lo.ToPtr(lo.Ternary(p.Arch == karpv1.ArchitectureAmd64, "x64", "Arm64")),
 		OsType:                   lo.ToPtr(lo.Ternary(p.IsWindows, models.OSTypeWindows, models.OSTypeLinux)),
 		VMSize:                   lo.ToPtr(p.InstanceType.Name),
 		Distro:                   lo.ToPtr(p.ImageDistro),
@@ -121,8 +122,8 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		}
 	}
 
-	if p.KubeletConfig != nil && p.KubeletConfig.MaxPods != nil {
-		provisionProfile.MaxPods = p.KubeletConfig.MaxPods
+	if p.KubeletConfig != nil && p.KubeletConfig.MaxPods != 0 {
+		provisionProfile.MaxPods = lo.ToPtr(p.KubeletConfig.MaxPods)
 	} else {
 		provisionProfile.MaxPods = lo.ToPtr(int32(consts.DefaultKubernetesMaxPods)) // Delegatable defaulting?
 	}

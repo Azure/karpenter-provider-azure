@@ -66,7 +66,7 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily ImageFamily) (string, string, error) {
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
-		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedLabels); err == nil {
+		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
 			communityImageName, publicGalleryURL := defaultImage.CommunityImage, defaultImage.PublicGalleryURL
 			imageID, err := p.GetImageID(ctx, communityImageName, publicGalleryURL)
 			if err != nil {
