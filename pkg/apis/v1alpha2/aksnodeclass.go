@@ -88,7 +88,7 @@ type KubeletConfiguration struct {
 	// garbage collection is always run. The percent is calculated by dividing this
 	// field value by 100, so this field must be between 0 and 100, inclusive.
 	// When specified, the value must be greater than ImageGCLowThresholdPercent.
-	// Note: AKS AKS CustomKubeletConfig does not have "Percent" in the field name
+	// Note: AKS CustomKubeletConfig does not have "Percent" in the field name
 	// +kubebuilder:validation:Minimum:=0
 	// +kubebuilder:validation:Maximum:=100
 	// +optional
