@@ -367,7 +367,9 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 		nodeClaim.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	}
 	nodeClaim.Status.ProviderID = utils.ResourceIDToProviderID(ctx, *vm.ID)
-	//TOFIX (could be nil, at least when faked) nodeClaim.Status.ImageID = utils.ImageReferenceToString(*vm.Properties.StorageProfile.ImageReference)
+	if vm.Properties != nil && vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
+		nodeClaim.Status.ImageID = utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)
+	}
 	return nodeClaim, nil
 }
 

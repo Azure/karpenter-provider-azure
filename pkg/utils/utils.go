@@ -78,7 +78,7 @@ func WithDefaultFloat64(key string, def float64) float64 {
 	return f
 }
 
-func ImageReferenceToString(imageRef armcompute.ImageReference) string {
+func ImageReferenceToString(imageRef *armcompute.ImageReference) string {
 	// Check for Custom Image
 	if imageRef.ID != nil && *imageRef.ID != "" {
 		return *imageRef.ID
