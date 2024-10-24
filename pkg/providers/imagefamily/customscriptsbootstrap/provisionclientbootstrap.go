@@ -26,7 +26,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
@@ -92,6 +91,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 			// EnableVTPM:       lo.ToPtr(false), // Unsupported as of now (Trusted launch)
 			// EnableSecureBoot: lo.ToPtr(false), // Unsupported as of now (Trusted launch)
 		},
+		MaxPods: lo.ToPtr(p.KubeletConfig.MaxPods),
 
 		VnetCidrs: []string{}, // Unsupported as of now; TODO(Windows)
 		// MessageOfTheDay:         lo.ToPtr(""),                                    // Unsupported as of now
@@ -120,12 +120,6 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 			// AllowedUnsafeSysctls: ..., // Unsupported as of now
 			CPUCfsQuota: p.KubeletConfig.CPUCFSQuota,
 		}
-	}
-
-	if p.KubeletConfig != nil && p.KubeletConfig.MaxPods != 0 {
-		provisionProfile.MaxPods = lo.ToPtr(p.KubeletConfig.MaxPods)
-	} else {
-		provisionProfile.MaxPods = lo.ToPtr(int32(consts.DefaultKubernetesMaxPods)) // Delegatable defaulting?
 	}
 
 	if modeString, ok := p.Labels["kubernetes.azure.com/mode"]; ok && modeString == "system" {
