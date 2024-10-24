@@ -40,10 +40,56 @@ import (
 )
 
 const (
+	NodeClassDrift    cloudprovider.DriftReason = "NodeClassDrift"
 	K8sVersionDrift   cloudprovider.DriftReason = "K8sVersionDrift"
 	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift"
 	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
 )
+
+func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	// First check if the node class is statically drifted to save on API calls.
+	if drifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); drifted != "" {
+		return drifted, nil
+	}
+	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
+	if err != nil {
+		return "", err
+	}
+	if k8sVersionDrifted != "" {
+		return k8sVersionDrifted, nil
+	}
+	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim)
+	if err != nil {
+		return "", err
+	}
+	if imageVersionDrifted != "" {
+		return imageVersionDrifted, nil
+	}
+	subnetDrifted, err := c.isSubnetDrifted(ctx, nodeClaim, nodeClass)
+	if err != nil {
+		return "", err
+	}
+	if subnetDrifted != "" {
+		return subnetDrifted, nil
+	}
+	return "", nil
+}
+
+func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) cloudprovider.DriftReason {
+	nodeClassHash, foundNodeClassHash := nodeClass.Annotations[v1alpha2.AnnotationAKSNodeClassHash]
+	nodeClassHashVersion, foundNodeClassHashVersion := nodeClass.Annotations[v1alpha2.AnnotationAKSNodeClassHashVersion]
+	nodeClaimHash, foundNodeClaimHash := nodeClaim.Annotations[v1alpha2.AnnotationAKSNodeClassHash]
+	nodeClaimHashVersion, foundNodeClaimHashVersion := nodeClaim.Annotations[v1alpha2.AnnotationAKSNodeClassHashVersion]
+
+	if !foundNodeClassHash || !foundNodeClaimHash || !foundNodeClassHashVersion || !foundNodeClaimHashVersion {
+		return ""
+	}
+	// validate that the hash version for the AKSNodeClass is the same as the NodeClaim before evaluating for static drift
+	if nodeClassHashVersion != nodeClaimHashVersion {
+		return ""
+	}
+	return lo.Ternary(nodeClassHash != nodeClaimHash, NodeClassDrift, "")
+}
 
 func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)

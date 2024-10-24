@@ -125,10 +125,11 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
-
 	nc, err := c.instanceToNodeClaim(ctx, instance, instanceType)
-
-	// TODO: record nodeclass hash & version
+	nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
+		v1alpha2.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
+		v1alpha2.AnnotationAKSNodeClassHashVersion: v1alpha2.AKSNodeClassHashVersion,
+	})
 	return nc, err
 }
 
@@ -204,39 +205,30 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 }
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
-	if nodeClaim.Spec.NodeClassRef == nil {
+	// Not needed when GetInstanceTypes removes nodepool dependency
+	nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]
+	if !ok {
 		return "", nil
 	}
-	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
+	nodePool := &karpv1.NodePool{}
+	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePoolName}, nodePool); err != nil {
+		return "", client.IgnoreNotFound(err)
+	}
+	if nodePool.Spec.Template.Spec.NodeClassRef == nil {
+		return "", nil
+	}
+	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
+			c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
 		}
 		return "", client.IgnoreNotFound(fmt.Errorf("resolving node class, %w", err))
 	}
-
-	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
+	driftReason, err := c.isNodeClassDrifted(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return "", err
 	}
-	if k8sVersionDrifted != "" {
-		return k8sVersionDrifted, nil
-	}
-	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim)
-	if err != nil {
-		return "", err
-	}
-	if imageVersionDrifted != "" {
-		return imageVersionDrifted, nil
-	}
-	subnetDrifted, err := c.isSubnetDrifted(ctx, nodeClaim, nodeClass)
-	if err != nil {
-		return "", err
-	}
-	if subnetDrifted != "" {
-		return subnetDrifted, nil
-	}
-	return "", nil
+	return driftReason, nil
 }
 
 // Name returns the CloudProvider implementation name.
