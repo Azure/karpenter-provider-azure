@@ -47,9 +47,9 @@ const (
 )
 
 func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
-	// First check if the node class is statically drifted to save on API calls.
-	if drifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); drifted != "" {
-		return drifted, nil
+	// First check if the node class is statically staticFieldsDrifted to save on API calls.
+	if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
+		return staticFieldsDrifted, nil
 	}
 	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
 	if err != nil {
