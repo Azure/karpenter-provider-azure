@@ -94,6 +94,9 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 			// EnableSecureBoot: lo.ToPtr(false), // Unsupported as of now (Trusted launch)
 		},
 		MaxPods: lo.ToPtr(p.KubeletConfig.MaxPods),
+		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
+			Enabled: lo.ToPtr(true),
+		},
 
 		VnetCidrs: []string{}, // Unsupported as of now; TODO(Windows)
 		// MessageOfTheDay:         lo.ToPtr(""),                                    // Unsupported as of now
@@ -103,9 +106,6 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		// EnableFIPS:              lo.ToPtr(false),                                 // Unsupported as of now
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
-		// ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
-		// Enabled: lo.ToPtr(false), // Unsupported as of now
-		// },
 	}
 
 	switch p.ImageFamily {
