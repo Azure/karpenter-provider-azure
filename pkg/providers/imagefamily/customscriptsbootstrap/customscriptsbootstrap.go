@@ -14,36 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package bootstrap
+package customscriptsbootstrap
 
 import (
-	core "k8s.io/api/core/v1"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"context"
 )
-
-type KubeletConfiguration struct {
-	corev1beta1.KubeletConfiguration
-}
-
-// Options is the node bootstrapping parameters passed from Karpenter to the provisioning node
-type Options struct {
-	ClusterName      string
-	ClusterEndpoint  string
-	KubeletConfig    *KubeletConfiguration
-	Taints           []core.Taint      `hash:"set"`
-	Labels           map[string]string `hash:"set"`
-	CABundle         *string
-	GPUNode          bool
-	GPUDriverVersion string
-	GPUDriverType    string
-	GPUImageSHA      string
-	SubnetID         string
-}
 
 // Bootstrapper can be implemented to generate a bootstrap script
 // that uses the params from the Bootstrap type for a specific
 // bootstrapping method.
-// The only one implemented right now is AKS bootstrap script
 type Bootstrapper interface {
-	Script() (string, error)
+	GetCustomDataAndCSE(ctx context.Context) (string, string, error)
 }

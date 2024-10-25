@@ -119,10 +119,12 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.ClusterEndpoint,
 		"test-tenant",
 		"test-subscription",
-		"test-userAssignedIdentity",
+		"test-cluster-resource-group",
+		"test-kubelet-identity-client-id",
 		testOptions.NodeResourceGroup,
 		region,
 		"test-vnet-guid",
+		testOptions.ProvisionMode,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		loadBalancersAPI,
@@ -147,6 +149,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		region,
 		testOptions.NodeResourceGroup,
 		"", // subscriptionID
+		testOptions.ProvisionMode,
 	)
 
 	return &Environment{
