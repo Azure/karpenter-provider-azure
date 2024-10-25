@@ -117,10 +117,12 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).ClusterEndpoint,
 		azConfig.TenantID,
 		azConfig.SubscriptionID,
+		azConfig.ResourceGroup,
 		azConfig.KubeletIdentityClientID,
 		azConfig.NodeResourceGroup,
 		azConfig.Location,
 		vnetGUID,
+		options.FromContext(ctx).ProvisionMode,
 	)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
@@ -143,6 +145,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		azConfig.NodeResourceGroup,
 		azConfig.SubscriptionID,
+		options.FromContext(ctx).ProvisionMode,
 	)
 
 	return ctx, &Operator{

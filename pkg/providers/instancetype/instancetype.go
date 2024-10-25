@@ -264,7 +264,7 @@ func getArchitecture(architecture string) string {
 func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1alpha2.AKSNodeClass) corev1.ResourceList {
 	return corev1.ResourceList{
 		corev1.ResourceCPU:                    *cpu(sku),
-		corev1.ResourceMemory:                 *memory(ctx, sku),
+		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
 		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
 		corev1.ResourcePods:                   *pods(nodeClass),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
@@ -296,11 +296,15 @@ func memoryMiB(sku *skewer.SKU) int64 {
 	return int64(memoryGiB(sku) * 1024)
 }
 
-func memory(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
-	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(memoryGiB(sku))))
-	// Account for VM overhead in calculation
-	memory.Sub(resource.MustParse(fmt.Sprintf("%dMi", int64(math.Ceil(
-		float64(memory.Value())*options.FromContext(ctx).VMMemoryOverheadPercent/1024/1024)))))
+func memoryWithoutOverhead(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
+	return CalculateMemoryWithoutOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, memoryGiB(sku))
+}
+
+func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGiB float64) *resource.Quantity {
+	// Consistency in abstractions could be improved here (e.g., units, returning types)
+	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(skuMemoryGiB)))
+	memory.Sub(*resource.NewQuantity(int64(math.Ceil(
+		float64(memory.Value())*vmMemoryOverheadPercent)), resource.DecimalSI))
 	return memory
 }
 

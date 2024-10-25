@@ -32,6 +32,7 @@ type DefaultImageOutput struct {
 	CommunityImage   string
 	PublicGalleryURL string
 	Requirements     scheduling.Requirements
+	Distro           string
 }
 
 // CommunityGalleryImageVersionsAPI is used for listing community gallery image versions.
