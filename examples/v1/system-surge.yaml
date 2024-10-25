@@ -10,7 +10,7 @@ spec:
   disruption:
     consolidateAfter: 0s
     budgets:
-    - nodes: 100%
+    - nodes: 30%
   template:
     metadata:
       labels:
