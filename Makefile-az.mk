@@ -358,3 +358,11 @@ az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot rele
 
 az-rmcrds: ## Delete Karpenter CRDs
 	kubectl delete crd nodepools.karpenter.sh nodeclaims.karpenter.sh aksnodeclasses.karpenter.azure.com
+
+az-swagger-generate-clients-raw:
+	cd pkg/provisionclients && swagger generate client -f swagger/*.json
+	hack/azure/temp_fix_get_bootstrapping_resp_error.sh
+
+az-swagger-generate-clients: az-swagger-generate-clients-raw
+	hack/boilerplate.sh
+	make tidy

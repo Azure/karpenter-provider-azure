@@ -87,6 +87,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 		"westus-2",
 		"MC_xxxxx_yyyy-region",
 		"0000000-0000-0000-0000-0000000000",
+		"",
 	)
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
