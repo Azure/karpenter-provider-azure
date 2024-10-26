@@ -86,14 +86,19 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 
-	taints := lo.Flatten([][]corev1.Taint{
-		nodeClaim.Spec.Taints,
-		nodeClaim.Spec.StartupTaints,
+	generalTaints := nodeClaim.Spec.Taints
+	startupTaints := nodeClaim.Spec.StartupTaints
+	allTaints := lo.Flatten([][]corev1.Taint{
+		generalTaints,
+		startupTaints,
 	})
-	if _, found := lo.Find(taints, func(t corev1.Taint) bool {
+
+	// Ensure UnregisteredNoExecuteTaint is present
+	if _, found := lo.Find(allTaints, func(t corev1.Taint) bool { // Allow UnregisteredNoExecuteTaint to be in non-startup taints(?)
 		return t.MatchTaint(&karpv1.UnregisteredNoExecuteTaint)
 	}); !found {
-		taints = append(taints, karpv1.UnregisteredNoExecuteTaint)
+		startupTaints = append(startupTaints, karpv1.UnregisteredNoExecuteTaint)
+		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
 	}
 
 	storageProfile := "ManagedDisks"
@@ -105,15 +110,15 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
 			prepareKubeletConfiguration(instanceType, nodeClass),
-			taints,
+			allTaints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
 		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
 			prepareKubeletConfiguration(instanceType, nodeClass),
-			nodeClaim.Spec.Taints,
-			nodeClaim.Spec.StartupTaints,
+			generalTaints,
+			startupTaints,
 			staticParameters.Labels,
 			instanceType,
 			imageDistro,
