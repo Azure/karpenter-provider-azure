@@ -31,12 +31,17 @@ BOOTSTRAP_TOKEN=$TOKEN_ID.$TOKEN_SECRET
 SSH_PUBLIC_KEY="$(cat ~/.ssh/id_rsa.pub) azureuser"
 
 if [[ ! -v VNET_SUBNET_ID ]]; then
-    # first subnet of first VNet found
-    VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" | jq -r ".[0]")
-    VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
+    # Getting the subnet id from the first AgentPoolProfile in the cluster (Managed network)
+    VNET_SUBNET_ID=$(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$AKS_JSON")
+
+    if [[ ! -z VNET_SUBNET_ID ]]; then
+        # If is still empty, look for the first subnet of first VNet found (self-managed network)
+        VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" -o json | jq -r ".[0]")
+        VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
+    fi
 fi
 
-# The // empty ensures that if the files is 'null' or not prsent jq will output nothing
+# The // empty ensures that if the files is 'null' or not present jq will output nothing
 # If the value returned is none, its from jq and not the aks api in this case we return ""
 NETWORK_PLUGIN=$(jq -r ".networkProfile.networkPlugin // empty | if . == \"none\" then \"\" else . end" <<< "$AKS_JSON")
 NETWORK_PLUGIN_MODE=$(jq -r ".networkProfile.networkPluginMode // empty | if . == \"none\" then \"\" else . end" <<< "$AKS_JSON")
