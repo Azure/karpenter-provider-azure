@@ -67,6 +67,7 @@ type ProvisionClientBootstrap struct {
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
 
+// nolint gocyclo - will be refactored later
 func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (string, string, error) {
 	if p.IsWindows {
 		// TODO(Windows)
@@ -120,16 +121,9 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 	if p.KubeletConfig != nil {
 		provisionProfile.CustomKubeletConfig = &models.CustomKubeletConfig{
-			// CPUManagerPolicy:      lo.ToPtr(p.KubeletConfig.CPUManagerPolicy),
-			CPUCfsQuota: p.KubeletConfig.CPUCFSQuota,
-			// CPUCfsQuotaPeriod:     lo.ToPtr(p.KubeletConfig.CPUCFSQuotaPeriod.String()),
+			CPUCfsQuota:          p.KubeletConfig.CPUCFSQuota,
 			ImageGcHighThreshold: p.KubeletConfig.ImageGCHighThresholdPercent,
 			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
-			// TopologyManagerPolicy: lo.ToPtr(p.KubeletConfig.TopologyManagerPolicy),
-			// AllowedUnsafeSysctls:  p.KubeletConfig.AllowedUnsafeSysctls,
-			// ContainerLogMaxSizeMB: convertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
-			// ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
-			// PodMaxPids:            convertPodMaxPids(p.KubeletConfig.PodPidsLimit),
 		}
 	}
 

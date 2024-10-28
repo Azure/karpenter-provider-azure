@@ -86,9 +86,11 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 
-	taints := lo.Flatten([][]corev1.Taint{
-		nodeClaim.Spec.Taints,
-		nodeClaim.Spec.StartupTaints,
+	generalTaints := nodeClaim.Spec.Taints
+	startupTaints := nodeClaim.Spec.StartupTaints
+	allTaints := lo.Flatten([][]corev1.Taint{
+		generalTaints,
+		startupTaints,
 	})
 
 	storageProfile := "ManagedDisks"
@@ -100,15 +102,15 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
 			prepareKubeletConfiguration(instanceType, nodeClaim),
-			taints,
+			allTaints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
 		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
 			prepareKubeletConfiguration(instanceType, nodeClaim),
-			nodeClaim.Spec.Taints,
-			nodeClaim.Spec.StartupTaints,
+			generalTaints,
+			startupTaints,
 			staticParameters.Labels,
 			instanceType,
 			imageDistro,
