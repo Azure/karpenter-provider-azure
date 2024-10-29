@@ -77,6 +77,7 @@ func TestIsNvidiaEnabledSKU(t *testing.T) {
 		output bool
 	}{
 		{"Valid SKU - NC Series", "standard_nc6s_v3", true},
+		{"Valid SKU - NCads H100 v5-series", "standard_nc40ads_h100_v5", true},
 		{"Valid SKU with Promo", "standard_nc6s_v2_promo", true},
 		{"Non-Existent SKU", "non_existent_sku", false},
 		{"Valid SKU - NV Series", "standard_nv6", true},
