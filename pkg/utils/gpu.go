@@ -103,6 +103,7 @@ var (
 		"standard_nd96ams_a100_v4": true,
 		// H100
 		"standard_nc40ads_h100_v5": true,
+		"standard_nc80adis_h100_v5": true,
 	}
 
 	// List of GPU SKUs currently enabled and validated for Mariner. Will expand the support
