@@ -39,7 +39,7 @@ controller:
       value: ${AZURE_RESOURCE_GROUP_MC}
     
     # managed karpenter settings 
-    - name: MANAGED_KARPENTER
+    - name: USE_SIG
       value: "false"
     - name: SIG_SUBSCRIPTION_ID
       value: ${SIG_SUBSCRIPTION_ID}
