@@ -75,7 +75,7 @@ export KARPENTER_NAMESPACE=kube-system
 
 ```
 
-Login and select a subscription to use
+Login and select a subscription to use:
 
 ```bash
 az login
@@ -165,7 +165,7 @@ helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter
 Check karpenter deployed successfully:
 
 ```bash
-kubectl get pods --namespace $KARPENTER_NAMESPACE -l app.kubernetes.io/name=karpenter
+kubectl get pods --namespace "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter
 ```
 
 Check its logs:
