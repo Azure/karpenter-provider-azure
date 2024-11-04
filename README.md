@@ -15,10 +15,12 @@ Table of contents:
   - [Create a cluster](#create-a-cluster)
   - [Configure Helm chart values](#configure-helm-chart-values)
   - [Install Karpenter](#install-karpenter)
+- [Using Karpenter (self-hosted)](#using-karpenter-self-hosted)
   - [Create NodePool](#create-nodepool)
   - [Scale up deployment](#scale-up-deployment)
   - [Scale down deployment](#scale-down-deployment)
   - [Delete Karpenter nodes manually](#delete-karpenter-nodes-manually)
+- [Cleanup (self-hosted)](#cleanup-self-hosted)
   - [Delete the cluster](#delete-the-cluster)
 - [Source Attribution](#source-attribution)
 - [Community, discussion, contribution, and support](#community-discussion-contribution-and-support)
@@ -191,6 +193,8 @@ helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpe
   --wait
 ```
 
+## Using Karpenter (self-hosted)
+
 ### Create NodePool
 
 A single Karpenter NodePool is capable of handling many different pod shapes. Karpenter makes scheduling and provisioning decisions based on pod attributes such as labels and affinity. In other words, Karpenter eliminates the need to manage many different node groups.
@@ -293,6 +297,8 @@ If you delete a node with kubectl, Karpenter will gracefully cordon, drain, and 
 ```bash
 kubectl delete node $NODE_NAME
 ```
+
+## Cleanup (self-hosted)
 
 ### Delete the cluster
 
