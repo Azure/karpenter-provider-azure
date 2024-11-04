@@ -162,7 +162,19 @@ helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter
   --wait
 ```
 
-Snapshot versions can be installed in a similar way for development:
+Check karpenter deployed successfully:
+
+```bash
+kubectl get pods --namespace $KARPENTER_NAMESPACE -l app.kubernetes.io/name=karpenter
+```
+
+Check its logs:
+
+```bash
+kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
+```
+
+Note: Snapshot versions can be installed in a similar way for development:
 
 ```bash
 export KARPENTER_NAMESPACE=kube-system
@@ -177,18 +189,6 @@ helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpe
   --set controller.resources.limits.cpu=1 \
   --set controller.resources.limits.memory=1Gi \
   --wait
-```
-
-Check karpenter deployed successfully
-
-```bash
-kubectl get pods --namespace $KARPENTER_NAMESPACE -l app.kubernetes.io/name=karpenter
-```
-
-Check its logs
-
-```bash
-kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
 ### Create NodePool
