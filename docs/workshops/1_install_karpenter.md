@@ -16,7 +16,7 @@ Create directory, and add it to the path for installed tooling.
 
 ```bash
 mkdir -p ~/environment/karpenter/bin
-export PATH=$PATH:~/workshop/karpenter/bin
+export PATH=$PATH:~/environment/karpenter/bin
 ```
 
 ### Install utilities
@@ -24,7 +24,7 @@ export PATH=$PATH:~/workshop/karpenter/bin
 yq (required) - used by some of the scripts below
 ```bash
 wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O ~/environment/karpenter/bin/yq
-chmod +x ~/workshop/karpenter/bin/yq
+chmod +x ~/environment/karpenter/bin/yq
 ```
 
 Optional Tools:
@@ -39,8 +39,6 @@ This guide shows how to get started with Karpenter by creating an AKS cluster an
 
 Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
 
-> Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group> <namespace>` to automate the following steps.
-
 Set environment variables:
 
 ```bash
@@ -53,7 +51,7 @@ export KARPENTER_NAMESPACE=kube-system
 Select the subscription to use:
 
 ```bash
-export AZURE_SUBSCRIPTION_ID=<replace-with-sub-id>
+export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>
 az account set --subscription ${AZURE_SUBSCRIPTION_ID}
 ```
 
