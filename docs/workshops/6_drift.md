@@ -80,7 +80,7 @@ kubectl apply -f new-nodeclass.yaml
 ### Patch the nodeClassRef
 
 ```bash
-kubectl patch nodepool default --type='json' -p '[{"op": "replace", "path": "/spec/template/spec/nodeClassref/name", "value":"newnodeclass"}]
+kubectl patch nodepool default --type='json' -p '[{"op": "replace", "path": "/spec/template/spec/nodeClassref/name", "value":"newnodeclass"}]'
 ```
 
 ### Check the Nodes
