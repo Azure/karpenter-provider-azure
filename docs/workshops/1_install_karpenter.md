@@ -12,6 +12,9 @@ Table of contents:
 
 Open [https://shell.azure.com/](https://shell.azure.com/) in a new tab.
 
+> Note: <br>
+> \- If you do get disconnected from the Cloud Shell, and find the setup is missing, you can use the following document's quick and easy steps to reestablish it: [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md). (this will only work if you have already completed all the steps of the installtion in this current doc)
+
 ### Create a Directory for the Workshop 
 
 Create the workshop's directory hierarchy, and add it's tooling bin to the path.

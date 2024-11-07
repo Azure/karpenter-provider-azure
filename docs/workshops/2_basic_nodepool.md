@@ -31,8 +31,8 @@ metadata:
         kubernetes.io/description: "Basic NodePool for generic workloads"
 spec:
     disruption:
-        consolidationPolicy: WhenEmptyOrUnderutilized
-        consolidateAfter: 1m
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 30s
     limits:
         cpu: "10"
     template:

@@ -41,18 +41,24 @@ When you see one of these terms replace it with the following:
 
 ### Step: [Scaling Application](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/scaling)
 
+- Notes:
+    - The creation of the node and nodeclaim by karpenter might take ~90s. However, you can confirm the node claims creation in the `k8s` api beforehand using the command:
+        ```bash
+        kubectl get nodeclaims -A
+        ```
+
 - Adjustments:
-    - Only requires [Basic Cheet Sheet](#basic-cheet-sheet)
+    - Only `aws-node-viewer` -> `aks-node-viewer`
 
 ### Step: [Limit Resources](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/limit)
 
 - Adjustments:
-    - Only requires [Basic Cheet Sheet](#basic-cheet-sheet)
+    - Only `aws-node-viewer` -> `aks-node-viewer`
 
 ### Step: [Disruption](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/ttlsecondsafterempty)
 
 - Adjustments:
-    - Only requires [Basic Cheet Sheet](#basic-cheet-sheet)
+    - Only `aws-node-viewer` -> `aks-node-viewer`
 
 ### Step: [Drift](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/drift)
 

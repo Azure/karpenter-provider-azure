@@ -47,7 +47,7 @@ spec:
             requests:
               cpu: "1"
       nodeSelector:
-        aks-workshop: karpenter
+        eks-immersion-team: my-team
 EOF
 
 kubectl apply -f drift-deploy.yaml
