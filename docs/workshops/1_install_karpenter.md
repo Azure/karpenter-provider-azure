@@ -4,7 +4,7 @@ Table of contents:
   - [Create a cluster](#create-a-cluster)
   - [Configure Helm chart values](#configure-helm-chart-values)
   - [Install Karpenter](#install-karpenter)
-  - [Setup a workshop namespace](#setup-a-workshop-namespace)
+  - [Create workshop namespace](#create-a-workshop-namespace)
 
 ## Envrionment Setup
 
@@ -150,7 +150,9 @@ Check its logs:
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
-## Setup a workshop namespace
+## Create workshop namespace
+
+We will use this namespace for all our work in this workshop.
 
 ```bash
 kubectl create namespace workshop
