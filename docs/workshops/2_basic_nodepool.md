@@ -40,7 +40,7 @@ spec:
             labels:
                 # required for Karpenter to predict overhead from cilium DaemonSet
                 kubernetes.azure.com/ebpf-dataplane: cilium
-                aks-workshop: karpenter
+                eks-immersion-team: my-team
         spec:
             expireAfter: Never
             startupTaints:
@@ -77,4 +77,11 @@ spec:
 EOF
 
 kubectl apply -f basic.yaml
+```
+
+You should see the following output:
+
+```
+nodepool.karpenter.sh/default created
+aksnodeclass.karpenter.azure.com/default created
 ```

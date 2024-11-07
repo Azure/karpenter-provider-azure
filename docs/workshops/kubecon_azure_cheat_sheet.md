@@ -21,7 +21,6 @@ This document highlights all the required adjustments within the kubecon worksho
 
 When you see one of these terms replace it with the following:
 - `aws-node-viewer` -> `aks-node-viewer`
-- `~/environment/karpenter` -> `~/workshop/karpenter`
 - `eks-immersion-team: my-team` -> `aks-workshop: karpenter`
     - Note: just `eks-immersion-team` -> `aks-workshop`
 - `public.ecr.aws/eks-distro/kubernetes/pause:3.7` -> `mcr.microsoft.com/oss/kubernetes/pause:3.6`
