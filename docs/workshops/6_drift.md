@@ -167,10 +167,14 @@ Switch the NodePool `nodeClassRef` back to the default AKSNodeClass
 kubectl patch nodepool default --type='json' -p '[{"op": "replace", "path": "/spec/template/spec/nodeClassRef/name", "value":"default"}]'
 ```
 
+```
+nodepool.karpenter.sh/default patched
+```
+
 Delete the new AKSNodeClass
 
 ```bash
-kubectl apply -f new-nodeclass.yaml
+kubectl delete -f new-nodeclass.yaml
 ```
 
 Remove the extra files created for this test
