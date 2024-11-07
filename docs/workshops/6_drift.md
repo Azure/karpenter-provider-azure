@@ -80,7 +80,7 @@ kubectl apply -f new-nodeclass.yaml
 ### Patch the nodeClassRef
 
 ```bash
-kubectl patch nodepool default --type='json' -p '[{"op": "replace", "path": "/spec/template/spec/nodeClassref/name", "value":"newnodeclass"}]'
+kubectl patch nodepool default --type='json' -p '[{"op": "replace", "path": "/spec/template/spec/nodeClassRef/name", "value":"newnodeclass"}]'
 ```
 
 ### Check the Nodes
@@ -116,7 +116,7 @@ kubectl delete -f drift-deploy.yaml
 Switch the NodePool `nodeClassRef` back to the default AKSNodeClass
 
 ```bash
-kubectl patch nodepool default --type='json' -p '[{"op": "replace", "path": "/spec/template/spec/nodeClassref/name", "value":"default"}]
+kubectl patch nodepool default --type='json' -p '[{"op": "replace", "path": "/spec/template/spec/nodeClassRef/name", "value":"default"}]
 ```
 
 Delete the new AKSNodeClass
