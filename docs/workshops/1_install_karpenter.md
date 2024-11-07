@@ -4,7 +4,7 @@ Table of contents:
   - [Create a cluster](#create-a-cluster)
   - [Configure Helm chart values](#configure-helm-chart-values)
   - [Install Karpenter](#install-karpenter)
-- [Setup Workshop Env](#setup-workshop-env)
+  - [Setup a workshop namespace](#setup-a-workshop-namespace)
 
 ## Envrionment Setup
 
@@ -79,6 +79,9 @@ AKS_JSON=$(az aks create \
 az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overwrite-existing
 ```
 
+> Note: <br>
+> \- If you see a warning for "WARNING: SSH key files", and/or "WARNING: docker_bridge_cidr" these are not a concern, and can be disregarded. 
+
 Create federated credential linked to the karpenter service account for auth usage:
 
 ```bash
@@ -99,13 +102,9 @@ for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identit
 done
 ```
 
-> Note: If you experience any issues creating the role assignments, but should have the given ownership to do so, try going through the Azure portal:
-> 1. Navigate to your MSI.
-> 2. Give it the following roles "Virtual Machine Contributor", "Network Contributor", and "Managed Identity Operator" at the scope of the node resource group.
-
 ### Configure Helm chart values
 
-The Karpenter Helm chart requires specific configuration values to work with an AKS cluster. While these values are documented within the Helm chart, you can use the `configure-values.sh` script to generate the `karpenter-values.yaml` file with the necessary configuration. This script queries the AKS cluster and creates `karpenter-values.yaml` using `karpenter-values-template.yaml` as the configuration template. Although the script automatically fetches the template from the main branch, inconsistencies may arise between the installed version of Karpenter and the repository code. Therefore, it is advisable to download the specific version of the template before running the script.
+The Karpenter Helm chart requires specific configuration values to work with an AKS cluster. While these values are documented within the Helm chart, you can use the `configure-values.sh` script to generate the `karpenter-values.yaml` file with the necessary configuration. This script queries the AKS cluster and creates `karpenter-values.yaml` using `karpenter-values-template.yaml` as the configuration template.
 
 ```bash
 # Select version to install
@@ -151,9 +150,7 @@ Check its logs:
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
-## Setup Workshop Env
-
-### Setup a workshop namespace
+## Setup a workshop namespace
 
 ```bash
 kubectl create namespace workshop
