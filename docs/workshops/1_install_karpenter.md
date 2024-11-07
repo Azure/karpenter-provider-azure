@@ -111,6 +111,9 @@ The Karpenter Helm chart requires specific configuration values to work with an 
 # Select version to install
 export KARPENTER_VERSION=0.7.0
 
+# move to the workshop folder as we are creating a few files
+cd ~/environment/karpenter/
+
 # Download the specific's version template
 curl -sO https://raw.githubusercontent.com/Azure/karpenter/v${KARPENTER_VERSION}/karpenter-values-template.yaml
 
