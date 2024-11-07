@@ -56,7 +56,7 @@ kubectl apply -f drift-deploy.yaml
 ### Check for Nodes
 
 ```bash
-kubectl get nodes -l aks-workshop=karpenter
+kubectl get nodes -l eks-immersion-team=my-team
 ```
 
 ### Create a new NodeClass
@@ -94,7 +94,7 @@ You should see a new nodeclaim has been created.
 After a little while you should see the new node show up, and the old instance be removed.
 
 ```bash
-kubectl get nodes -l aks-workshop=karpenter
+kubectl get nodes -l eks-immersion-team=my-team
 ```
 
 ### Check the Logs
