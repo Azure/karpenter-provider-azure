@@ -1,5 +1,5 @@
 Table of contents:
-- [Installation (self-hosted)](#installation-self-hosted)
+- [Installation](#installation)
   - [Install utilities](#install-utilities)
   - [Create a cluster](#create-a-cluster)
   - [Configure Helm chart values](#configure-helm-chart-values)
@@ -8,9 +8,11 @@ Table of contents:
 
 ## Envrionment Setup
 
-Use cloud shell at azure
+### Launch the Cloud Shell Terminal
 
-### Create a directory for the workshop 
+Open [https://shell.azure.com/](https://shell.azure.com/) in a new tab.
+
+### Create a Directory for the Workshop 
 
 Create directory, and add it to the path for installed tooling.
 
@@ -19,7 +21,7 @@ mkdir -p ~/environment/karpenter/bin
 export PATH=$PATH:~/environment/karpenter/bin
 ```
 
-### Install utilities
+### Install Utilities
 
 yq (required) - used by some of the scripts below
 ```bash
@@ -31,9 +33,11 @@ Optional Tools:
 * [aks-node-viewer](https://github.com/azure/aks-node-viewer) - used for tracking price, and other metrics of nodes
 * [k9s](https://github.com/derailed/k9s?tab=readme-ov-file#installation) - terminal UI to interact with the Kubernetes clusters
 
-## Installation (self-hosted)
+## Installation
 
-This guide shows how to get started with Karpenter by creating an AKS cluster and installing Karpenter.
+This guide shows how to get started with Karpenter by creating an AKS cluster and installing self-hosted Karpenter on it.
+
+> Note: there is a managed version of Karpenter within AKS, called NAP (Node Autoprovisioning), with some more opinionated defaults and base scaling configurations. However, we'll be exploring the self-hosted approach today.
 
 ### Create a cluster
 
@@ -80,7 +84,7 @@ az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overw
 ```
 
 > Note: <br>
-> \- If you see a warning for "WARNING: SSH key files", and/or "WARNING: docker_bridge_cidr" these are not a concern, and can be disregarded. 
+> \- If you see a warning for "CryptographyDeprecationWarning", "WARNING: SSH key files", and/or "WARNING: docker_bridge_cidr" these are not a concern, and can be disregarded. 
 
 Create federated credential linked to the karpenter service account for auth usage:
 
@@ -122,6 +126,16 @@ curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KAR
 chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
 ```
 
+Check the `karpenter-values.yaml` file was created:
+
+```bash
+ls
+```
+
+```
+bin  configure-values.sh  karpenter-values-template.yaml  karpenter-values.yaml
+```
+
 ### Install Karpenter
 
 Using the generated `karpenter-values.yaml` file, install Karpenter using Helm:
@@ -138,21 +152,39 @@ helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter
   --wait
 ```
 
-Check karpenter deployed successfully:
+Check karpenter version by using `helm list` command.
+
+```bash
+helm list -n "${KARPENTER_NAMESPACE}"
+```
+
+Expected to see `aks-managed-workload-identity` and `cilium` here as well, but if things worked correctly you should see a karpenter line like the following:
+
+```
+NAME       NAMESPACE       REVISION  UPDATED                                 STATUS    CHART
+karpenter  kube-system     1         2024-11-07 19:17:08.982543921 +0000 UTC deployed  karpenter-0.7.0
+```
+
+To check the running pods, use the following command, which should return 1 pod:
 
 ```bash
 kubectl get pods --namespace "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter
 ```
 
-Check its logs:
+```
+NAME                         READY   STATUS    RESTARTS   AGE
+karpenter-5878b8bbd9-46cnm   1/1     Running   0          27s
+```
+
+You can also check the karpenter pod logs with the following:
 
 ```bash
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
-## Create workshop namespace
+### Create workshop namespace
 
-We will use this namespace for all our work in this workshop.
+Lastly, we need to create a namespace which we'll use for all our work in this workshop:
 
 ```bash
 kubectl create namespace workshop
