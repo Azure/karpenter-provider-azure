@@ -39,7 +39,7 @@ spec:
       labels:
         app: inflate
     spec:
-      terminationGradePeriodSeconds: 0
+      terminationGracePeriodSeconds: 0
       containers:
         - image: mcr.microsoft.com/oss/kubernetes/pause:3.6
           name: inflate
