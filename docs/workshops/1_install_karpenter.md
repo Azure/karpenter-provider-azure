@@ -25,8 +25,15 @@ export PATH=$PATH:~/environment/karpenter/bin
 
 yq (required) - used by some of the scripts below
 ```bash
+cd ~/environment/karpenter/bin
+
+# yq - used by some of the scripts below
 wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O ~/environment/karpenter/bin/yq
 chmod +x ~/environment/karpenter/bin/yq
+
+# k9s - terminal UI to interact with the Kubernetes clusters
+wget https://github.com/derailed/k9s/releases/download/v0.32.5/k9s_Linux_amd64.tar.gz -O ~/environment/karpenter/bin/k9s.tar.gz
+tar -xf k9s.tar.gz
 ```
 
 Optional Tools:
@@ -184,9 +191,18 @@ kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter 
 
 ### Create workshop namespace
 
-Lastly, we need to create a namespace which we'll use for all our work in this workshop:
+Now let's create a namespace which we'll be using for all our work in this workshop moving forward:
 
 ```bash
 kubectl create namespace workshop
 ```
 
+### K9s
+
+You can also try using k9s to inspect the cluster. We'll be using it throughout certain chapers of the workshop to check on the status of the pods deployed to the AKS cluster. To do so, use the command below:
+
+```bash
+k9s -n all
+```
+
+You can press `?` to learn more about the options and press `:q` to exit from `k9s`.
