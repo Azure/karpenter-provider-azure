@@ -14,7 +14,7 @@ Open [https://shell.azure.com/](https://shell.azure.com/) in a new tab.
 
 ### Create a Directory for the Workshop 
 
-Create directory, and add it to the path for installed tooling.
+Create the workshop's directory hierarchy, and add it's tooling bin to the path.
 
 ```bash
 mkdir -p ~/environment/karpenter/bin
@@ -23,7 +23,8 @@ export PATH=$PATH:~/environment/karpenter/bin
 
 ### Install Utilities
 
-yq (required) - used by some of the scripts below
+Use the below command to install `yq` and `k9s`, both used for this workshop:
+
 ```bash
 cd ~/environment/karpenter/bin
 
