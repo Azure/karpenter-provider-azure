@@ -38,7 +38,6 @@ tar -xf k9s.tar.gz
 
 Optional Tools:
 * [aks-node-viewer](https://github.com/azure/aks-node-viewer) - used for tracking price, and other metrics of nodes
-* [k9s](https://github.com/derailed/k9s?tab=readme-ov-file#installation) - terminal UI to interact with the Kubernetes clusters
 
 ## Installation
 
