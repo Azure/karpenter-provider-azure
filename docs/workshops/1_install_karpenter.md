@@ -39,6 +39,13 @@ This guide shows how to get started with Karpenter by creating an AKS cluster an
 
 Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
 
+Select the subscription to use:
+
+```bash
+export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>
+az account set --subscription ${AZURE_SUBSCRIPTION_ID}
+```
+
 Set environment variables:
 
 ```bash
@@ -46,13 +53,6 @@ export CLUSTER_NAME=karpenter
 export RG=karpenter
 export LOCATION=westus3
 export KARPENTER_NAMESPACE=kube-system
-```
-
-Select the subscription to use:
-
-```bash
-export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>
-az account set --subscription ${AZURE_SUBSCRIPTION_ID}
 ```
 
 Create the resource group:
