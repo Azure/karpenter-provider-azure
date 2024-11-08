@@ -47,11 +47,11 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
 
 ### Step: [Limit Resources](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/limit)
 
-Concepts translate to Azure.
+> Concepts translate to Azure.
 
 ### Step: [Disruption](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/ttlsecondsafterempty)
 
-Concepts translate to Azure.
+> Concepts translate to Azure.
 
 ### Step: [Drift](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/drift)
 
