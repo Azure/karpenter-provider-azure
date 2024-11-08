@@ -173,8 +173,14 @@ nodepool.karpenter.sh/default patched
 
 Delete the new AKSNodeClass
 
+> Note: it might pause for a few seconds on this command
+
 ```bash
 kubectl delete -f new-nodeclass.yaml
+```
+
+```
+aksnodeclass.karpenter.azure.com "newnodeclass" deleted
 ```
 
 Remove the extra files created for this test
