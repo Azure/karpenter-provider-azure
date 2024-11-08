@@ -37,10 +37,9 @@ spec:
                 - key: karpenter.azure.com/sku-family
                   operator: In
                   values: [D]
-                - key: karpenter.azure.com/instance-cpu
+                - key: karpenter.azure.com/sku-cpu
                   operator: Lt
-                  values:
-                  - "5"
+                  values: ["5"]
                 - key: kubernetes.io/arch
                   operator: In
                   values: ["amd64"]
