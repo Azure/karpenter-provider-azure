@@ -110,4 +110,4 @@ When you see one of these terms replace it with the following:
         ```bash
         kubectl delete aksnodeclass default
         ```
-    - The same concepts within the workshop generally translate to AKS, with different instances/pricing. However, for the deployment step of the NodePool, use the command found in [10_multi_node_consolidation.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/10_multi_node_consolidation.md)
+    - The same concepts within the workshop generally translate to AKS, but with different instances/pricing. However, for the deployment step of the NodePool, use a new deployment command with consolidation enabled. Found in [10_multi_node_consolidation.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/10_multi_node_consolidation.md)
