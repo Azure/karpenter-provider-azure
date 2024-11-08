@@ -96,13 +96,18 @@ When you see one of these terms replace it with the following:
 
 - Adjustments:
     - In initial cleanup, replace the command to cleanup the `ec2nodeclass`, with:
+        > Note: it might pause for a few seconds on this command
         ```bash
         kubectl delete aksnodeclass default
         ```
-    - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use the same deployment command as earlier, found in [9_single_node_consolidation.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/9_single_node_consolidation.md) 
+    - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use a new deployment command with consolidation enabled. Found in [9_single_node_consolidation.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/9_single_node_consolidation.md) 
 
 ### Step: [Multi Node Consolidation](https://catalog.workshops.aws/karpenter/en-US/cost-optimization/consolidation/multi-node)
 
 - Adjustments:
-    - In initial cleanup, replace the command to cleanup the 
+    - In initial cleanup, replace the command to cleanup the `ec2nodeclass`, with:
+        > Note: it might pause for a few seconds on this command
+        ```bash
+        kubectl delete aksnodeclass default
+        ```
     - The same concepts within the workshop generally translate to AKS, with different instances/pricing. However, for the deployment step of the NodePool, use the command found in [10_multi_node_consolidation.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/10_multi_node_consolidation.md)

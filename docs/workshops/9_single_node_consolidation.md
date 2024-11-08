@@ -1,7 +1,7 @@
 
 ## Deploy NodePool:
 
-Use the following command to deploy a `NodePool`, and `AKSNodeClass` for Single Node Consolidation, with the given config:
+Use the following command to deploy a `NodePool`, and `AKSNodeClass` for Single Node Consolidation, where we've enabled consolidation for when nodes are empty or underutilized, but only after `1m`.
 
 ```bash
 cd ~/environment/karpenter
@@ -62,4 +62,9 @@ spec:
 EOF
 
 kubectl apply -f singlenode.yaml
+```
+
+```
+nodepool.karpenter.sh/default created
+aksnodeclass.karpenter.azure.com/default created
 ```
