@@ -62,6 +62,7 @@ export RG=karpenter
 export LOCATION=westus3
 export KARPENTER_NAMESPACE=kube-system
 
+
 # Get kubeconfig again
 az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overwrite-existing
 ```
