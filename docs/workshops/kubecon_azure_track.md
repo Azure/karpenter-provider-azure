@@ -1,7 +1,7 @@
 Table of contents:
 - [Overview](#overview)
 - [Basic Cheet Sheet](#basic-cheet-sheet)
-- [Adjustments](#adjustments)
+- [Main Topics](#main-topics)
     - [Step: Install Karpenter](#step-install-karpenter)
     - [Step: Basic NodePool](#step-basic-nodepool)
         - [Step: Scaling Application](#step-scaling-application)
@@ -12,6 +12,10 @@ Table of contents:
     - [Step: Consolidation](#step-consolidation)
         - [Step: Single Node Consolidation](#step-single-node-consolidation)
         - [Step: Multi Node Consolidation](#step-multi-node-consolidation)
+- [Bonus Content (optional)](#bonus-content-optional)
+    - [Step: Scheduling Constraints](#step-scheduling-constraints)
+    - [Step: Disruption Control](#step-disruption-control)
+    
 
 ## Overview
 
@@ -23,7 +27,7 @@ To follow along using this workshop, simply go through the steps detailed in thi
 
 When you see `eks-node-viewer` use `aks-node-viewer` instead.
 
-## Adjusted Instructions
+## Main Topics
 
 ### Step: [Install Karpenter](https://catalog.workshops.aws/karpenter/en-US/install-karpenter)
 
@@ -107,3 +111,31 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
         kubectl delete aksnodeclass default
         ```
     - The same concepts within the workshop generally translate to AKS, but with different instances/pricing. However, for the deployment step of the NodePool, use a new deployment command with consolidation enabled. Found in [10_multi_node_consolidation.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/10_multi_node_consolidation.md)
+
+## Bonus Content (optional)
+
+Everything beyond this point is optional
+
+### Step: [Scheduling Constraints](https://catalog.workshops.aws/karpenter/en-US/scheduling-constraints#how-does-it-work)
+
+> Concepts translate to Azure.
+
+### Step: [NodePool Disruption Budgets](https://catalog.workshops.aws/karpenter/en-US/scheduling-constraints/nodepool-disruption-budgets)
+
+- Adjustments:
+    - In initial cleanup, replace the command to cleanup the `ec2nodeclass`, with:
+        > Note: it might pause for a few seconds on this command
+        ```bash
+        kubectl delete aksnodeclass default
+        ```
+    - The same concepts within the workshop generally translate to AKS. However, for the 3 NodePool deployment commands, use the replacement deployment commands listed in [12_scheduling_constraints.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/12_scheduling_constraints.md)
+
+### Step: [Disruption Control](https://catalog.workshops.aws/karpenter/en-US/scheduling-constraints/disable-eviction)
+
+- Adjustments:
+    - In initial cleanup, replace the command to cleanup the `ec2nodeclass`, with:
+        > Note: it might pause for a few seconds on this command
+        ```bash
+        kubectl delete aksnodeclass default
+        ```
+    - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use the deployment command found in [13_disruption_controls.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/13_disruption_controls.md) 
