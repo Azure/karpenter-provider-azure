@@ -15,15 +15,13 @@ Table of contents:
 
 ## Overview
 
-This document highlights all the required adjustments within the kubecon workshop for using an AKS cluster in Azure.
+This document highlights all the required adjustments within the KubeCon workshop for using an AKS cluster in Azure.
+
+To follow along using this workshop, simply go through the steps detailed in this document. For each step of the workshop, since Karpenter is built in the open source, and has a lot of cloud agnostic elements, there is a link to the AWS version (in the step's header), as much of the AWS workshop will translate directly over to Azure. However, for any steps where it diviates, there will be a few important notes, and adjustments detailed under those steps.
 
 ## Basic Cheet Sheet
 
-When you see one of these terms replace it with the following:
-- `aws-node-viewer` -> `aks-node-viewer`
-- `eks-immersion-team: my-team` -> `aks-workshop: karpenter`
-    - Note: just `eks-immersion-team` -> `aks-workshop`
-- `public.ecr.aws/eks-distro/kubernetes/pause:3.7` -> `mcr.microsoft.com/oss/kubernetes/pause:3.6`
+When you see `aws-node-viewer` use `aks-node-viewer` instead.
 
 ## Adjusted Instructions
 

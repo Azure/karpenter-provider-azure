@@ -6,9 +6,9 @@ Use the following command to deploy a basic `NodePool`, and `AKSNodeClass` to yo
 - `requirements`: used to restrict the set of node configurations.
     - We've chosen to restrict provisioning to only nodes within the azure sku family [D], that are amd64, linux, and on-demand.
 - `disruption`: this can be used to configure how, and when we want disruptions to occur.
-    - We've chosen to disrupt under consolidation when nodes are empty or underutilized, but only after `30s`.
+    - We've chosen to disrupt under consolidation when nodes are empty, but only after `30s`.
 - `labels`: these are labels that will be applyed to all of the nodes created by Karpenter in association with the NodePool.
-    - We've added the label `aks-workshop: karpenter`, which will be used throughout the rest of the workshop. (For context on the cilium label see the note below.)*
+    - We've added the label `eks-immersion-team: my-team`, which will be used throughout the rest of the workshop. (For context on the cilium label see the note below.)*
 - `limits`: limits can be used to restrict the total resource limits the NodePool is able to provision.
     - We've chosen a `cpu` limit of `10` here. 
 - `nodeClassRef`: each NodePool requires a reference to a NodeClass.
