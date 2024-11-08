@@ -21,7 +21,7 @@ To follow along using this workshop, simply go through the steps detailed in thi
 
 ## Basic Cheet Sheet
 
-When you see `aws-node-viewer` use `aks-node-viewer` instead.
+When you see `eks-node-viewer` use `aks-node-viewer` instead.
 
 ## Adjusted Instructions
 
