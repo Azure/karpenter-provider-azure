@@ -48,17 +48,17 @@ When you see one of these terms replace it with the following:
         ```
 
 - Adjustments:
-    - Only `aws-node-viewer` -> `aks-node-viewer`
+    - Just use `aks-node-viewer` instead of `aws-node-viewer`.
 
 ### Step: [Limit Resources](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/limit)
 
 - Adjustments:
-    - Only `aws-node-viewer` -> `aks-node-viewer`
+    - Just use `aks-node-viewer` instead of `aws-node-viewer`.
 
 ### Step: [Disruption](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/ttlsecondsafterempty)
 
 - Adjustments:
-    - Only `aws-node-viewer` -> `aks-node-viewer`
+    - Just use `aks-node-viewer` instead of `aws-node-viewer`.
 
 ### Step: [Drift](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/drift)
 
@@ -66,14 +66,26 @@ When you see one of these terms replace it with the following:
 
 ### Step: [RightSizing](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/rightsizing)
 
-- Notes:
-    - Things generally align here. However, the logs you see for instance selection will be slightly different, closer to the following:
-        ```
-
-        ```
-
 - Adjustments:
-    - Only requires [Basic Cheet Sheet](#basic-cheet-sheet)
+    - Just use `aks-node-viewer` instead of `aws-node-viewer`. However, there are some important notes below on understanding the AKS Karpetner logs, since they differ slightly from the AWS ones, as the instance types being considered are different.
+
+- Notes:
+    - In the logs below you can see it considered the following set of instance types for the requests of `"cpu":"7350m","memory":"7738Mi","pods":"13"},"instance-types":"Standard_D13_v2, Standard_D4_v2, Standard_D8_v3, Standard_D8_v4, Standard_D8_v5 and 14 other(s)"}`.
+    - It then chose `Standard_D8_v3`, and `Standard_D2_v3` as the final two instance types.
+    - The following karpenter log output came from the command `kubectl -n $KARPENTER_NAMESPACE logs -l app.kubernetes.io/name=karpenter`. (note: a few logs have been replaced with `...` for focus and simplicity.)
+        ```
+        {"level":"INFO","time":"2024-11-08T00:02:15.039Z","logger":"controller","message":"found provisionable pod(s)","commit":"d83a94c","controller":"provisioner","namespace":"","name":"","reconcileID":"68c92eeb-f714-4ac6-9653-7b1862722022","Pods":"workshop/inflate-759cbbb648-ws6pt, workshop/inflate-759cbbb648-56nlh, workshop/inflate-759cbbb648-f2lgq, workshop/inflate-759cbbb648-ltp2t, workshop/inflate-759cbbb648-x7kql and 3 other(s)","duration":"14.389408ms"}
+        {"level":"INFO","time":"2024-11-08T00:02:15.039Z","logger":"controller","message":"computed new nodeclaim(s) to fit pod(s)","commit":"d83a94c","controller":"provisioner","namespace":"","name":"","reconcileID":"68c92eeb-f714-4ac6-9653-7b1862722022","nodeclaims":2,"pods":8}
+        {"level":"INFO","time":"2024-11-08T00:02:15.048Z","logger":"controller","message":"created nodeclaim","commit":"d83a94c","controller":"provisioner","namespace":"","name":"","reconcileID":"68c92eeb-f714-4ac6-9653-7b1862722022","NodePool":{"name":"default"},"NodeClaim":{"name":"default-pbfc5"},"requests":{"cpu":"7350m","memory":"7738Mi","pods":"13"},"instance-types":"Standard_D13_v2, Standard_D4_v2, Standard_D8_v3, Standard_D8_v4, Standard_D8_v5 and 14 other(s)"}
+        {"level":"INFO","time":"2024-11-08T00:02:15.048Z","logger":"controller","message":"created nodeclaim","commit":"d83a94c","controller":"provisioner","namespace":"","name":"","reconcileID":"68c92eeb-f714-4ac6-9653-7b1862722022","NodePool":{"name":"default"},"NodeClaim":{"name":"default-m9h2r"},"requests":{"cpu":"1350m","memory":"1594Mi","pods":"7"},"instance-types":"Standard_D11_v2, Standard_D2_v2, Standard_D2_v3, Standard_D2_v4, Standard_D2_v5 and 14 other(s)"}
+        {"level":"info","ts":1731024135.0687907,"logger":"fallback","caller":"instance/instance.go:611","msg":"Selected instance type Standard_D8_v3"}
+        ...
+        {"level":"info","ts":1731024136.088467,"logger":"fallback","caller":"instance/instance.go:611","msg":"Selected instance type Standard_D2_v3"}
+        ...
+        {"level":"INFO","time":"2024-11-08T00:03:39.061Z","logger":"controller","message":"launched nodeclaim", ... "instance-type":"Standard_D8_v3","zone":"","capacity-type":"on-demand","allocatable":{"cpu":"7820m","ephemeral-storage":"128G","memory":"27174266470","pods":"110"}}
+        ...
+        {"level":"INFO","time":"2024-11-08T00:03:39.686Z","logger":"controller","message":"launched nodeclaim", ... "instance-type":"Standard_D2_v3","zone":"","capacity-type":"on-demand","allocatable":{"cpu":"1900m","ephemeral-storage":"128G","memory":"5226731929","pods":"110"}}
+        ```
 
 ### Step: [Consolidation](https://catalog.workshops.aws/karpenter/en-US/cost-optimization/consolidation)
 
