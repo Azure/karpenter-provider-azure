@@ -8,6 +8,12 @@ Table of contents:
 
 ## Envrionment Setup
 
+### Pre-requisite
+
+You must have an Azure account, and personal Azure subscription. 
+
+> Note: this will use your chosen subscription for any pricing/costs associated with the workshop. See step [Cleanup](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/workshops/kubecon_azure_track.md#cleanup) within the workshop to ensure all the resources are properly cleaned up to eliminate any additional costs.
+
 ### Launch the Cloud Shell Terminal
 
 Open [https://shell.azure.com/](https://shell.azure.com/) in a new tab.
@@ -53,7 +59,7 @@ This guide shows how to get started with Karpenter by creating an AKS cluster an
 
 Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
 
-Select the subscription to use (replace `<personal-azure-sub>`):
+Select the subscription to use (replace `<personal-azure-sub>` with your azure subscription guid):
 
 ```bash
 export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>

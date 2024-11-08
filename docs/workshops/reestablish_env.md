@@ -29,7 +29,7 @@ Otherwise, continue the steps in this doc.
 
 ## Scripts
 
-Re-select your subscription to use (replace `<personal-azure-sub>`):
+Re-select your subscription to use (replace `<personal-azure-sub>` with your azure subscription guid):
 
 ```bash
 export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>

@@ -15,7 +15,7 @@ Table of contents:
 - [Bonus Content (optional)](#bonus-content-optional)
     - [Step: Scheduling Constraints](#step-scheduling-constraints)
     - [Step: Disruption Control](#step-disruption-control)
-    
+- [Cleanup](#cleanup)
 
 ## Overview
 
@@ -31,7 +31,7 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
 
 ### Step: [Install Karpenter](https://catalog.workshops.aws/karpenter/en-US/install-karpenter)
 
-- Instead follow [1_install_karpenter.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/1_install_karpenter.md)
+- Instead follow [1_aks_cluster_creation_and_install_karpenter.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/1_aks_cluster_creation_and_install_karpenter.md)
 
 ### Step: [Basic NodePool](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool)
 
@@ -138,4 +138,33 @@ Everything beyond this point is optional
         ```bash
         kubectl delete aksnodeclass default
         ```
-    - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use the deployment command found in [13_disruption_controls.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/13_disruption_controls.md) 
+    - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use the deployment command found in [13_disruption_controls.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/13_disruption_controls.md)
+
+## Cleanup
+
+Once you're completed with the workshop, ensure you cleanup all the resources to prevent any additional costs.
+
+> Note: if you've had any disconnects from the Cloud Shell, ensure your subscription is set
+> ```bash
+> env | grep AZURE_SUBSCRIPTION_ID
+> ```
+> If you see no output from the above command, than re-select your subscription to use (replace `<personal-azure-sub>` with your azure subscription guid):
+> 
+> ```bash
+> export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>
+> az account set --subscription ${AZURE_SUBSCRIPTION_ID}
+> ```
+
+To cleanup all the azure resources, simply delete the resource group:
+
+> Confirm `y` to deleting the resource group, and all its content
+
+```bash
+az group delete --name ${AZURE_RESOURCE_GROUP}
+```
+
+The Cloud Shell should automatically cleanup itself. However, if you want to pre-emptively remove all the files we created with the workshop, simply delete them with the following command:
+
+```bash
+rm -rf ~/environment
+```
