@@ -15,7 +15,7 @@ Table of contents:
 
 ## Overview
 
-This document highlights all the required adjustments within the KubeCon workshop for using an AKS cluster in Azure.
+This document details the steps to follow the KubeCon workshop using an AKS cluster in Azure.
 
 To follow along using this workshop, simply go through the steps detailed in this document. For each step of the workshop, since Karpenter is built in the open source, and has a lot of cloud agnostic elements, there is a link to the AWS version (in the step's header), as much of the AWS workshop will translate directly over to Azure. However, for any steps where it diviates, there will be a few important notes, and adjustments detailed under those steps.
 
