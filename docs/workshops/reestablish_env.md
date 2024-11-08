@@ -2,6 +2,31 @@
 
 This document details a quick and easy way to reestablish the workshop env, if you've been disconnected from the Cloud Shell and find the setup is missing.
 
+## Determine Impact
+
+If its just a simple disconnect the only thing missing will be the environment variables that were set.
+
+You can test this with a simple `ls` command:
+```bash
+ls
+```
+
+If you see the `environment` folder as the output than its been a simple disconnect:
+```
+environment
+```
+
+In that case, all that's needed are reexporting the environment variables as follows, and you're done:
+```bash
+export PATH=$PATH:~/environment/karpenter/bin
+export CLUSTER_NAME=karpenter
+export RG=karpenter
+export LOCATION=westus3
+export KARPENTER_NAMESPACE=kube-system
+```
+
+Otherwise, continue the steps in this doc.
+
 ## Scripts
 
 Re-select your subscription to use:

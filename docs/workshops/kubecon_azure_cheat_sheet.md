@@ -37,7 +37,7 @@ When you see one of these terms replace it with the following:
     - AKSNodeClass is Azure’s equivalence to EC2NodeClass for Azure specific settings. Each Karpenter NodePool must contain a reference to an AKSNodeClass via the spec.template.spec.nodeClassRef.
 
 - Adjustments:
-    - The same concepts within the workshop generally translate to AKS. However, for the actual deployment step, we need a `AKSNodeClass`, and a few additional Azure specific adjustmetns. So, instead of the given deployment command follow [2_basic_noodpool.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/2_basic_noodpool.md) 
+    - The same concepts within the workshop generally translate to AKS. However, for the actual deployment step, we need a `AKSNodeClass`, and a few additional Azure specific adjustments. So, instead of the given deployment command follow [2_basic_noodpool.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/2_basic_noodpool.md) 
 
 ### Step: [Scaling Application](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/scaling)
 
