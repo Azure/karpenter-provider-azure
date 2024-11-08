@@ -104,6 +104,9 @@ When you see one of these terms replace it with the following:
 
 ### Step: [Multi Node Consolidation](https://catalog.workshops.aws/karpenter/en-US/cost-optimization/consolidation/multi-node)
 
+- Notes:
+    - The consolidation might take a solid amount of time, especially when going down to only 2 nodes.
+
 - Adjustments:
     - In initial cleanup, replace the command to cleanup the `ec2nodeclass`, with:
         > Note: it might pause for a few seconds on this command
