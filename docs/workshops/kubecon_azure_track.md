@@ -45,18 +45,13 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
         kubectl get nodeclaims -A
         ```
 
-- Adjustments:
-    - Just use `aks-node-viewer` instead of `aws-node-viewer`.
-
 ### Step: [Limit Resources](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/limit)
 
-- Adjustments:
-    - Just use `aks-node-viewer` instead of `aws-node-viewer`.
+Concepts translate to Azure.
 
 ### Step: [Disruption](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/ttlsecondsafterempty)
 
-- Adjustments:
-    - Just use `aks-node-viewer` instead of `aws-node-viewer`.
+Concepts translate to Azure.
 
 ### Step: [Drift](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/drift)
 
@@ -65,7 +60,7 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
 ### Step: [RightSizing](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/rightsizing)
 
 - Adjustments:
-    - Just use `aks-node-viewer` instead of `aws-node-viewer`. However, there are some important notes below on understanding the AKS Karpetner logs, since they differ slightly from the AWS ones, as the instance types being considered are different.
+    - Just use `aks-node-viewer` instead of `eks-node-viewer`. However, there are some important notes below on understanding the AKS Karpetner logs, since they differ slightly from the AWS ones, as the instance types being considered are different.
 
 - Notes:
     - In the logs below you can see it considered the following set of instance types for the requests of `"cpu":"7350m","memory":"7738Mi","pods":"13"},"instance-types":"Standard_D13_v2, Standard_D4_v2, Standard_D8_v3, Standard_D8_v4, Standard_D8_v5 and 14 other(s)"}`.
