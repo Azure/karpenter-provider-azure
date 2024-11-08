@@ -37,6 +37,10 @@ spec:
                 - key: karpenter.azure.com/sku-family
                   operator: In
                   values: [D]
+                - key: karpenter.azure.com/instance-cpu
+                  operator: Lt
+                  values:
+                  - "5"
                 - key: kubernetes.io/arch
                   operator: In
                   values: ["amd64"]
@@ -62,4 +66,9 @@ spec:
 EOF
 
 kubectl apply -f multinode.yaml
+```
+
+```
+nodepool.karpenter.sh/default created
+aksnodeclass.karpenter.azure.com/default created
 ```
