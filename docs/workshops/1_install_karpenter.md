@@ -53,7 +53,7 @@ This guide shows how to get started with Karpenter by creating an AKS cluster an
 
 Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
 
-Select the subscription to use:
+Select the subscription to use (replace `<personal-azure-sub>`):
 
 ```bash
 export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>
