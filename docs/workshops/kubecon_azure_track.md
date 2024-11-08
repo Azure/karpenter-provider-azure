@@ -42,7 +42,7 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
 - Notes:
     - The creation of the node and nodeclaim by karpenter might take ~90s. However, you can confirm the node claims creation in the `k8s` api beforehand using the command:
         ```bash
-        kubectl get nodeclaims -A
+        kubectl get nodeclaims
         ```
 
 ### Step: [Limit Resources](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/limit)
