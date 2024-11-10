@@ -175,7 +175,7 @@ Check karpenter version by using `helm list` command.
 helm list -n "${KARPENTER_NAMESPACE}"
 ```
 
-Expected to see `aks-managed-workload-identity` and `cilium` here as well, but if things worked correctly you should see a karpenter line like the following:
+It's expected to see `aks-managed-workload-identity` and `cilium` here as well, but if things worked correctly you should see a karpenter line like the following:
 
 ```
 NAME       NAMESPACE       REVISION  UPDATED                                 STATUS    CHART
