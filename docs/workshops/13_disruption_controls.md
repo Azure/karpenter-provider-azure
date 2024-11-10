@@ -2,7 +2,7 @@
 
 Use the following command to deploy a `NodePool`, and `AKSNodeClass` for `Disruption Controls`, where we've made the nodes `expireAfter` 2 minutes, which will make the NodePool try to remove the nodes after 2 minutes.
 
-> Note: We've set `terminationGracePeriod` in addition to `expireAfter` here. This is a good way to help define an absolute maximum on the lifetime of a node. The node should be deleted at `expireAfter` and finishes draining within the `terminationGracePeriod` thereafter. Pods blocking eviction like PDBs and `do-not-disrupt` will block full draining until the `terminationGracePeriod` is reached. 
+> Note: setting `terminationGracePeriod` in addition to `expireAfter` is a good way to help define an absolute maximum on the lifetime of a node. The node would be deleted at `expireAfter` and finishes draining within the `terminationGracePeriod` thereafter. However, setting `terminationGracePeriod` will ignore `karpenter.sh/do-not-disrupt: "true"`, and take precedence of a pods blocking eviction like PDBs and `do-not-disrupt` or its `terminationGracePeriod`, so be careful using it. 
 
 ```bash
 cd ~/environment/karpenter
@@ -29,7 +29,6 @@ spec:
                 eks-immersion-team: my-team
         spec:
             expireAfter: 2m0s
-            terminationGracePeriod: 2m0s
             startupTaints:
                 # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
                 - key: node.cilium.io/agent-not-ready

@@ -145,6 +145,7 @@ Everything beyond this point is optional
         kubectl delete aksnodeclass default
         ```
     - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use the deployment command found in [13_disruption_controls.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/13_disruption_controls.md)
+    - > Note: you may see a log for selecting the instance type, and resolving the image.
 
 ## Cleanup
 
