@@ -1,6 +1,6 @@
 ## Deploy NodePool:
 
-Use the following command to deploy a `NodePool`, and `AKSNodeClass` for Disruption Controls, where we've made the nodes `expireAfter` 2 minutes, which will make the NodePool try to remove the nodes after 2 minutes.
+Use the following command to deploy a `NodePool`, and `AKSNodeClass` for `Disruption Controls`, where we've made the nodes `expireAfter` 2 minutes, which will make the NodePool try to remove the nodes after 2 minutes.
 
 > Note: We've set `terminationGracePeriod` in addition to `expireAfter` here. This is a good way to help define an absolute maximum on the lifetime of a node. The node should be deleted at `expireAfter` and finishes draining within the `terminationGracePeriod` thereafter. Pods blocking eviction like PDBs and `do-not-disrupt` will block full draining until the `terminationGracePeriod` is reached. 
 
