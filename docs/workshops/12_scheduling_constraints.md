@@ -78,9 +78,9 @@ aksnodeclass.karpenter.azure.com/default created
 
 ### 3. Multiple Budget Policies
 
-Use the following command, instead of the first NodePool deployment listed under `3. Multiple Budget Policies` of `Scheduling Constraints`. This will update the `NodePool` deployment to add a max disruption budget of `2`, and define a schedule of when to not allow for any disruption.
+Use the following command, instead of the first NodePool deployment listed under `3. Multiple Budget Policies` of `Scheduling Constraints`. This will update the `NodePool` deployment to add a max disruption budget of `2`, and define a schedule for 3 hours currently set to start at 21:00 UTC (2:00PM PT) of `0` which when active will not allow for any disruption.
 
-> Note: modify the schedule to the current UTC time 
+> Note: modify the schedule to the current UTC time, to see it take effect while completing this workshop
 
 ```bash
 cd ~/environment/karpenter
@@ -156,8 +156,8 @@ kubectl apply -f ndb-nodepool.yaml
 ```
 
 ```
-nodepool.karpenter.sh/default created
-aksnodeclass.karpenter.azure.com/default created
+nodepool.karpenter.sh/default configured
+aksnodeclass.karpenter.azure.com/default unchanged
 ```
 
 Use the following command, instead of the second NodePool deployment listed under `3. Multiple Budget Policies` of `Scheduling Constraints`. This will remove the disruption schedule which is not allowing for any disruptions to occur.
@@ -233,6 +233,6 @@ kubectl apply -f ndb-nodepool.yaml
 ```
 
 ```
-nodepool.karpenter.sh/default created
-aksnodeclass.karpenter.azure.com/default created
+nodepool.karpenter.sh/default configured
+aksnodeclass.karpenter.azure.com/default unchanged
 ```
