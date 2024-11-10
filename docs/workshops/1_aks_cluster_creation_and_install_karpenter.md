@@ -46,7 +46,7 @@ wget https://github.com/derailed/k9s/releases/download/v0.32.5/k9s_Linux_amd64.t
 tar -xf k9s.tar.gz
 
 # aks-node-viewer - used for tracking price, and other metrics of nodes
-wget https://github.com/Azure/aks-node-viewer/releases/download/latest/aks-node-viewer_Linux_x86_64 -O ~/environment/karpenter/bin/aks-node-viewer
+wget https://github.com/Azure/aks-node-viewer/releases/download/v0.0.2-alpha/aks-node-viewer_Linux_x86_64 -O ~/environment/karpenter/bin/aks-node-viewer
 chmod +x ~/environment/karpenter/bin/aks-node-viewer
 ```
 
