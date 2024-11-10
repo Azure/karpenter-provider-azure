@@ -58,7 +58,7 @@ In these next steps, we'll create an AKS cluster and install self-hosted Karpent
 
 ### Create a cluster
 
-Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
+Create a new AKS cluster with the required configuration, and ready to run Karpenter using a workload identity.
 
 Select the subscription to use (replace `<personal-azure-sub>` with your azure subscription guid):
 
