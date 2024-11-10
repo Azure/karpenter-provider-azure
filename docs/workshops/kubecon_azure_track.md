@@ -166,7 +166,7 @@ Once you've completed the workshop, ensure you cleanup all the resources to prev
 
 To cleanup all the azure resources, simply delete the resource group:
 
-> Confirm `y` to deleting the resource group, and all its content
+> Confirm `y` to deleting the resource group, and proceeding with the operation.
 
 ```bash
 az group delete --name ${RG}
