@@ -19,7 +19,7 @@ You must have an Azure account, and personal Azure subscription.
 Open [https://shell.azure.com/](https://shell.azure.com/) in a new tab.
 
 > Note: <br>
-> \- If you do get disconnected from the Cloud Shell, and find your setup is not working, you can use the following document's quick and easy steps to reestablish it: [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md). (this will only work if you have already completed all the steps of the installtion in this current doc)
+> \- If you do get disconnected from the Cloud Shell, and find your setup is not working, you can use the following document's quick and easy steps to reestablish it: [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md). (this will only work if you have already completed all the steps of installtion in this current doc)
 
 ### Create a Directory for the Workshop 
 
