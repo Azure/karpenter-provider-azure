@@ -32,7 +32,7 @@ export PATH=$PATH:~/environment/karpenter/bin
 
 ### Install Utilities
 
-Use the below command to install `yq` and `k9s`, both used for this workshop:
+Use the below command to install `yq`, `k9s`, and `aks-node-viewer` all used for this workshop:
 
 ```bash
 cd ~/environment/karpenter/bin
