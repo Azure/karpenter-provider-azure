@@ -172,7 +172,7 @@ To cleanup all the azure resources, simply delete the resource group:
 az group delete --name ${RG}
 ```
 
-The Cloud Shell should automatically cleanup itself. However, if you want to pre-emptively remove all the files we created with the workshop, simply delete them with the following command:
+The Cloud Shell should automatically clean itself up. However, if you want to pre-emptively remove all the files we created within the workshop, simply delete them with the following command:
 
 ```bash
 rm -rf ~/environment
