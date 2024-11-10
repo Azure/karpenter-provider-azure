@@ -52,7 +52,7 @@ chmod +x ~/environment/karpenter/bin/aks-node-viewer
 
 ## Installation
 
-This guide shows how to get started with Karpenter by creating an AKS cluster and installing self-hosted Karpenter on it.
+In these next steps, we'll create an AKS cluster and install self-hosted Karpenter on it.
 
 > Note: there is a managed version of Karpenter within AKS, called NAP (Node Autoprovisioning), with some more opinionated defaults and base scaling configurations. However, we'll be exploring the self-hosted approach today.
 
