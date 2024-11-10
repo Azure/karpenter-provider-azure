@@ -145,7 +145,7 @@ Everything beyond this point is optional
         kubectl delete aksnodeclass default
         ```
     - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use the deployment command found in [13_disruption_controls.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/13_disruption_controls.md)
-    - > Note: don't be surprised if after the `expireAfter` of `2m` has occured, that there are new instances being created, and removed. This is expected. 
+    - > Note: don't be surprised if after the `expireAfter` of `2m` has occured that there are new instances being created, and removed. This is expected. 
     - > Note: you may see a log for selecting the instance type and resolving the image after nodeclaim creation.
     - > Note: `triggering termination for expired node after TTL`, and `deprovisioning via expiration` are not actually expected to show up within the logs. 
 
