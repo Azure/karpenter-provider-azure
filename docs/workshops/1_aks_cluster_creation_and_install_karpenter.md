@@ -88,7 +88,7 @@ Create the workload MSI that backs the karpenter pod auth:
 KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}")
 ```
 
-Create the AKS cluster compatible with Karpenter, with workload identity enabled:
+Create the AKS cluster compatible with Karpenter, where workload identity is enabled:
 
 ```bash
 AKS_JSON=$(az aks create \
