@@ -1,7 +1,7 @@
 
 ## Deploy NodePool:
 
-Use the following command to deploy a `NodePool`, and `AKSNodeClass` for Multi Node Consolidation, where we've enabled consolidation for when nodes are empty or underutilized, immediately after `0s`.
+Use the following command to deploy a `NodePool`, and `AKSNodeClass` for `Multi Node Consolidation`, where we've enabled consolidation for when nodes are empty or underutilized, immediately after `0s`.
 
 ```bash
 cd ~/environment/karpenter

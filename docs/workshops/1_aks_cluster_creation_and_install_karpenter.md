@@ -4,16 +4,22 @@ Table of contents:
   - [Create a cluster](#create-a-cluster)
   - [Configure Helm chart values](#configure-helm-chart-values)
   - [Install Karpenter](#install-karpenter)
-  - [Create workshop namespace](#create-a-workshop-namespace)
+  - [Create our workshop namespace](#create-our-workshop-namespace)
 
 ## Envrionment Setup
+
+### Pre-requisite
+
+You must have an Azure account, and personal Azure subscription. 
+
+> Note: this will use your chosen subscription for any pricing/costs associated with the workshop. At the end of the workshop, see step [Cleanup](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/workshops/kubecon_azure_track.md#cleanup) to ensure all the resources are properly cleaned up to eliminate any additional costs.
 
 ### Launch the Cloud Shell Terminal
 
 Open [https://shell.azure.com/](https://shell.azure.com/) in a new tab.
 
 > Note: <br>
-> \- If you do get disconnected from the Cloud Shell, and find your setup is not working, you can use the following document's quick and easy steps to reestablish it: [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md). (this will only work if you have already completed all the steps of the installtion in this current doc)
+> \- If you do get disconnected from the Cloud Shell, and find your setup is not working, you can use the following document's quick and easy steps to reestablish it: [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md). (this will only work if you have already completed all the steps of installtion in this current doc)
 
 ### Create a Directory for the Workshop 
 
@@ -26,7 +32,7 @@ export PATH=$PATH:~/environment/karpenter/bin
 
 ### Install Utilities
 
-Use the below command to install `yq` and `k9s`, both used for this workshop:
+Use the below command to install `yq`, `k9s`, and `aks-node-viewer` all used for this workshop:
 
 ```bash
 cd ~/environment/karpenter/bin
@@ -38,22 +44,23 @@ chmod +x ~/environment/karpenter/bin/yq
 # k9s - terminal UI to interact with the Kubernetes clusters
 wget https://github.com/derailed/k9s/releases/download/v0.32.5/k9s_Linux_amd64.tar.gz -O ~/environment/karpenter/bin/k9s.tar.gz
 tar -xf k9s.tar.gz
-```
 
-Optional Tools:
-* [aks-node-viewer](https://github.com/azure/aks-node-viewer) - used for tracking price, and other metrics of nodes
+# aks-node-viewer - used for tracking price, and other metrics of nodes
+wget https://github.com/Azure/aks-node-viewer/releases/download/v0.0.2-alpha/aks-node-viewer_Linux_x86_64 -O ~/environment/karpenter/bin/aks-node-viewer
+chmod +x ~/environment/karpenter/bin/aks-node-viewer
+```
 
 ## Installation
 
-This guide shows how to get started with Karpenter by creating an AKS cluster and installing self-hosted Karpenter on it.
+In these next steps, we'll create an AKS cluster and install self-hosted Karpenter on it.
 
 > Note: there is a managed version of Karpenter within AKS, called NAP (Node Autoprovisioning), with some more opinionated defaults and base scaling configurations. However, we'll be exploring the self-hosted approach today.
 
 ### Create a cluster
 
-Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
+Create a new AKS cluster with the required configuration, and ready to run Karpenter using a workload identity.
 
-Select the subscription to use (replace `<personal-azure-sub>`):
+Select the subscription to use (replace `<personal-azure-sub>` with your azure subscription guid):
 
 ```bash
 export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>
@@ -81,7 +88,7 @@ Create the workload MSI that backs the karpenter pod auth:
 KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}")
 ```
 
-Create the AKS cluster compatible with Karpenter, with workload identity enabled:
+Create the AKS cluster compatible with Karpenter, where workload identity is enabled:
 
 ```bash
 AKS_JSON=$(az aks create \
@@ -168,7 +175,7 @@ Check karpenter version by using `helm list` command.
 helm list -n "${KARPENTER_NAMESPACE}"
 ```
 
-Expected to see `aks-managed-workload-identity` and `cilium` here as well, but if things worked correctly you should see a karpenter line like the following:
+It's expected to see `aks-managed-workload-identity` and `cilium` here as well, but if things worked correctly you should see a karpenter line like the following:
 
 ```
 NAME       NAMESPACE       REVISION  UPDATED                                 STATUS    CHART
@@ -192,7 +199,7 @@ You can also check the karpenter pod logs with the following:
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
-### Create workshop namespace
+### Create our workshop namespace
 
 Now let's create a namespace which we'll be using for all our work in this workshop moving forward:
 

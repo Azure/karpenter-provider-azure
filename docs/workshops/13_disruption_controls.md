@@ -1,11 +1,12 @@
-
 ## Deploy NodePool:
 
-Use the following command to deploy a `NodePool`, and `AKSNodeClass` for `Single Node Consolidation`, where we've enabled consolidation for when nodes are empty or underutilized, but only after `1m`.
+Use the following command to deploy a `NodePool`, and `AKSNodeClass` for `Disruption Controls`, where we've made the nodes `expireAfter` 2 minutes, which will make the NodePool try to remove the nodes after 2 minutes.
+
+> Note: setting `terminationGracePeriod` in addition to `expireAfter` is a good way to help define an absolute maximum lifetime of a node. The node would be deleted at `expireAfter` and finishes draining within the `terminationGracePeriod` thereafter. However, setting `terminationGracePeriod` will ignore `karpenter.sh/do-not-disrupt: "true"`, and take precedence over a pod's own `terminationGracePeriod` or blocking eviction like PDBs, so be careful using it. 
 
 ```bash
 cd ~/environment/karpenter
-cat > singlenode.yaml << EOF
+cat > eviction.yaml << EOF
 # This example NodePool will provision general purpose instances
 ---
 apiVersion: karpenter.sh/v1
@@ -16,8 +17,8 @@ metadata:
         kubernetes.io/description: "Basic NodePool for generic workloads"
 spec:
     disruption:
-        consolidationPolicy: WhenEmptyOrUnderutilized
-        consolidateAfter: 1m
+        consolidationPolicy: WhenEmpty
+        consolidateAfter: 30s
     limits:
         cpu: "10"
     template:
@@ -27,7 +28,7 @@ spec:
                 kubernetes.azure.com/ebpf-dataplane: cilium
                 eks-immersion-team: my-team
         spec:
-            expireAfter: Never
+            expireAfter: 2m0s
             startupTaints:
                 # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
                 - key: node.cilium.io/agent-not-ready
@@ -61,7 +62,7 @@ spec:
     imageFamily: Ubuntu2204
 EOF
 
-kubectl apply -f singlenode.yaml
+kubectl apply -f eviction.yaml
 ```
 
 ```
