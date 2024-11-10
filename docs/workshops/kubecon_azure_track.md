@@ -120,7 +120,7 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
 
 ## Bonus Content (optional)
 
-Everything beyond this point is optional
+Everything beyond this point is optional. Although, if skipping these steps, you will still want to [Cleanup](#cleanup) your resources.
 
 ### Step: [Scheduling Constraints](https://catalog.workshops.aws/karpenter/en-US/scheduling-constraints#how-does-it-work)
 
