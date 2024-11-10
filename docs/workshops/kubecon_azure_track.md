@@ -168,6 +168,8 @@ To cleanup all the azure resources, simply delete the resource group:
 
 > Confirm `y` to deleting the resource group, and proceeding with the operation.
 
+> Note: this will take a couple minutes
+
 ```bash
 az group delete --name ${RG}
 ```
