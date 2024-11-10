@@ -12,7 +12,7 @@ Table of contents:
 
 You must have an Azure account, and personal Azure subscription. 
 
-> Note: this will use your chosen subscription for any pricing/costs associated with the workshop. See step [Cleanup](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/workshops/kubecon_azure_track.md#cleanup) within the workshop to ensure all the resources are properly cleaned up to eliminate any additional costs.
+> Note: this will use your chosen subscription for any pricing/costs associated with the workshop. At the end of the workshop, see step [Cleanup](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/workshops/kubecon_azure_track.md#cleanup) to ensure all the resources are properly cleaned up to eliminate any additional costs.
 
 ### Launch the Cloud Shell Terminal
 
