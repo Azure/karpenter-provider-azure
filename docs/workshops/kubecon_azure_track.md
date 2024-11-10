@@ -151,7 +151,7 @@ Everything beyond this point is optional
 
 ## Cleanup
 
-Once you're completed with the workshop, ensure you cleanup all the resources to prevent any additional costs.
+Once you've completed the workshop, ensure you cleanup all the resources to prevent any additional costs.
 
 > Note: if you've had any disconnects from the Cloud Shell, ensure your subscription is set
 > ```bash
