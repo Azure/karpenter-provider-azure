@@ -177,5 +177,6 @@ az group delete --name ${RG}
 The Cloud Shell should automatically clean itself up. However, if you want to pre-emptively remove all the files we created within the workshop, simply delete them with the following command:
 
 ```bash
+cd ~/
 rm -rf ~/environment
 ```
