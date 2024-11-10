@@ -44,10 +44,11 @@ chmod +x ~/environment/karpenter/bin/yq
 # k9s - terminal UI to interact with the Kubernetes clusters
 wget https://github.com/derailed/k9s/releases/download/v0.32.5/k9s_Linux_amd64.tar.gz -O ~/environment/karpenter/bin/k9s.tar.gz
 tar -xf k9s.tar.gz
-```
 
-Optional Tools:
-* [aks-node-viewer](https://github.com/azure/aks-node-viewer) - used for tracking price, and other metrics of nodes
+# aks-node-viewer - used for tracking price, and other metrics of nodes
+wget https://github.com/Azure/aks-node-viewer/releases/download/v0.0.1-alpha/aks-node-viewer -O ~/environment/karpenter/bin/aks-node-viewer
+chmod +x ~/environment/karpenter/bin/aks-node-viewer
+```
 
 ## Installation
 
