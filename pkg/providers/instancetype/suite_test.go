@@ -885,9 +885,9 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("ImageReference", func() {
-		It("should use shared image gallery images when options are set to ManagedKarpenter", func() {
+		It("should use shared image gallery images when options are set to UseSIG", func() {
 			options := test.Options(test.OptionsFields{
-				ManagedKarpenter: lo.ToPtr(true),
+				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -908,9 +908,9 @@ var _ = Describe("InstanceType Provider", func() {
 			cluster.Reset()
 			azureEnv.Reset()
 		})
-		It("should use Community Images when options are set to ManagedKarpenter=false", func() {
+		It("should use Community Images when options are set to UseSIG=false", func() {
 			options := test.Options(test.OptionsFields{
-				ManagedKarpenter: lo.ToPtr(false),
+				UseSIG: lo.ToPtr(false),
 			})
 			ctx = options.ToContext(ctx)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -930,7 +930,7 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("ImageProvider + Image Family", func() {
 		DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
 			options := test.Options(test.OptionsFields{
-				ManagedKarpenter: lo.ToPtr(true),
+				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
@@ -955,7 +955,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			// reset options back to the default
 			options = test.Options(test.OptionsFields{
-				ManagedKarpenter: lo.ToPtr(false),
+				UseSIG: lo.ToPtr(false),
 			})
 			ctx = options.ToContext(ctx)
 		},

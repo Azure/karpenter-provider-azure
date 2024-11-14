@@ -404,7 +404,7 @@ func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties
 
 // setImageReference sets the image reference for the VM based on if we are using self hosted karpenter or the node auto provisioning addon
 func setImageReference(ctx context.Context, vmProperties *armcompute.VirtualMachineProperties, imageID string) {
-	if options.FromContext(ctx).ManagedKarpenter {
+	if options.FromContext(ctx).UseSIG {
 		vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
 			ID: lo.ToPtr(imageID),
 		}
