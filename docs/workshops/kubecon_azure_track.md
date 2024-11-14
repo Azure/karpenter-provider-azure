@@ -29,7 +29,7 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
 
 > Note: if you ever end up needing to use the extended log command to look back over a longer period of time, make sure its using the `kube-system` namespace like follows:
 > ```bash
-> kubectl -n karpenter logs -f deployment/karpenter --all-containers=true --since=20m
+> kubectl -n kube-system logs -f deployment/karpenter --all-containers=true --since=20m
 > ```
 
 ## Main Topics
