@@ -143,6 +143,7 @@ Everything beyond this point is optional. Although, if skipping these steps, you
         ```bash
         kubectl delete aksnodeclass default
         ```
+        > Note: it's expected to see an error for the inflate-pdb cleanup, and this can be ignored.
     - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use the deployment command found in [13_disruption_controls.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/13_disruption_controls.md)
     - > Note: don't be surprised if after the `expireAfter` of `2m` has occurred that there are new instances being created, and removed. This is expected.
     - > Note: you may see a log for selecting the instance type and resolving the image after nodeclaim creation.
