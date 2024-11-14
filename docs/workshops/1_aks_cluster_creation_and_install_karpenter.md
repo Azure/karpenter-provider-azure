@@ -105,8 +105,8 @@ az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overw
 
 > Note: If you've been disconnected from Cloud Shell, the env vars may have been removed. If you experience this issue follow [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md), along with restoring AKS_JSON, and KMSI_JSON using the command below. AKS_JSON, and KMSI_JSON are only required for the next two bash scripts, and not required for any future env recovery.
 > ```bash
-> AKS_JSON=$(az aks get --name "${CLUSTER_NAME}" --resource-group "${RG}")
-> KMSI_JSON=$(az identity get --name karpentermsi --resource-group "${RG}")
+> AKS_JSON=$(az aks show --name "${CLUSTER_NAME}" --resource-group "${RG}")
+> KMSI_JSON=$(az identity show --name karpentermsi --resource-group "${RG}")
 > ```
 
 Create federated credential linked to the karpenter service account for auth usage:
