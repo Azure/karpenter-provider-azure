@@ -82,7 +82,7 @@ func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, in
 
 func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultImageOutput) (string, error) {
 	// Managed Karpenter will use the AKS Managed Shared Image Galleries
-	if options.FromContext(ctx).ManagedKarpenter {
+	if options.FromContext(ctx).UseSIG {
 		return p.getImageIDSIG(ctx, defaultImage)
 	}
 	// Self Hosted Karpenter will use the Community Image Galleries, which are public and have lower scaling limits
