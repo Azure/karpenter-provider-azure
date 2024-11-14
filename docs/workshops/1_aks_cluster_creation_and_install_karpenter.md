@@ -149,7 +149,7 @@ Check the `karpenter-values.yaml` file was created:
 ls
 ```
 
-Should see the file within the output:
+You should see the file within the output:
 
 ```
 bin  configure-values.sh  karpenter-values-template.yaml  karpenter-values.yaml
@@ -211,7 +211,7 @@ kubectl create namespace workshop
 
 ### K9s
 
-You can also try using k9s to inspect the cluster. We'll be using it throughout certain chapers of the workshop to check on the status of the pods deployed to the AKS cluster. To do so, use the command below:
+You can also try using k9s to inspect the cluster. We'll be using it throughout certain chapters of the workshop to check on the status of the pods deployed to the AKS cluster. To do so, use the command below:
 
 ```bash
 k9s -n all
