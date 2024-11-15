@@ -413,7 +413,6 @@ func setImageReference(ctx context.Context, vmProperties *armcompute.VirtualMach
 	vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
 		CommunityGalleryImageID: lo.ToPtr(imageID),
 	}
-	return
 }
 
 // setVMPropertiesBillingProfile sets a default MaxPrice of -1 for Spot
