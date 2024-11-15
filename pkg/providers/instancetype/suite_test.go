@@ -1,6 +1,6 @@
 /*
 Portions Copyright (c) Microsoft Corporation.
-
+/
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -934,13 +934,13 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			ctx = options.ToContext(ctx)
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
-			coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{instanceType},
 				}})
-			nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{Name: nodeClass.Name}
+			nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{Name: nodeClass.Name}
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
