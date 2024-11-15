@@ -91,8 +91,8 @@ func isNewerVersion(version1, version2 string) bool {
 	// Split by dots and compare each segment as an integer
 
 	var v1, v2 [4]int
-	fmt.Sscanf(version1, "%d.%d.%d.%d", &v1[0], &v1[1], &v1[2], &v1[3])
-	fmt.Sscanf(version2, "%d.%d.%d.%d", &v2[0], &v2[1], &v2[2], &v2[3])
+	fmt.Sscanf(version1, "%d.%d.%d.%d", &v1[0], &v1[1], &v1[2], &v1[3]) //nolint:errcheck
+	fmt.Sscanf(version2, "%d.%d.%d.%d", &v2[0], &v2[1], &v2[2], &v2[3]) //nolint:errcheck
 
 	for i := 0; i < 4; i++ {
 		if v1[i] > v2[i] {

@@ -50,8 +50,8 @@ const (
 	imageExpirationInterval    = time.Hour * 24 * 3
 	imageCacheCleaningInterval = time.Hour * 1
 
-	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
-	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
+	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s"
+	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s"
 )
 
 func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient NodeImageVersionsAPI) *Provider {
@@ -86,7 +86,7 @@ func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultIma
 		return p.getImageIDSIG(ctx, defaultImage)
 	}
 	// Self Hosted Karpenter will use the Community Image Galleries, which are public and have lower scaling limits
-	return p.getImageIDCIG(ctx, defaultImage.PublicGalleryURL, defaultImage.ImageDefinition)
+	return p.getImageIDCIG(defaultImage.PublicGalleryURL, defaultImage.ImageDefinition)
 }
 
 func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
@@ -125,7 +125,7 @@ func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput
 	return "", fmt.Errorf("failed to get the latest version of the image %s", imgStub.ImageDefinition)
 }
 
-func (p *Provider) getImageIDCIG(ctx context.Context, publicGalleryURL, communityImageName string) (string, error) {
+func (p *Provider) getImageIDCIG(publicGalleryURL, communityImageName string) (string, error) {
 	key := fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName)
 	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
