@@ -163,7 +163,7 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	case v1alpha2.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1alpha2.CustomImageFamily:
-		return &CustomImage{Options: parameters}
+		return &Ubuntu2204{Options: parameters}
 	case v1alpha2.AzureLinuxImageFamily:
 		return &AzureLinux{Options: parameters}
 	default:
