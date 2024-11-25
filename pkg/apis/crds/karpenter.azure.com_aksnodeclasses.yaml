@@ -52,6 +52,11 @@ spec:
                 enum:
                 - Ubuntu2204
                 - AzureLinux
+                - Custom
+                type: string
+              imageID:
+                default: ""
+                description: ImageID for custom image, only with Custom ImageFamily.
                 type: string
               kubelet:
                 description: |-

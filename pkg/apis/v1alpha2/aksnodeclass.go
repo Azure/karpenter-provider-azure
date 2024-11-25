@@ -38,10 +38,10 @@ type AKSNodeClassSpec struct {
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
-	ImageID *string `json:"-"`
+	ImageID *string `json:"imageID,omitempty"`
 	// ImageFamily is the image family that instances use.
 	// +kubebuilder:default=Ubuntu2204
-	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux,Custom}
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// Tags to be applied on Azure resources like instances.
 	// +optional
