@@ -79,17 +79,16 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
 	var imageID string
 
-	// Check if imageID is available in nodeClass.Spec
-	if *nodeClass.Spec.ImageID != "" {
-		imageID = *nodeClass.Spec.ImageID
-	}
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
 	imageDistro, imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
 	}
-
+	// Check if imageID is available in nodeClass.Spec
+	if *nodeClass.Spec.ImageID != "" {
+		imageID = *nodeClass.Spec.ImageID
+	}
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 
 	generalTaints := nodeClaim.Spec.Taints
