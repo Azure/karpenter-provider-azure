@@ -50,8 +50,10 @@ const (
 	imageExpirationInterval    = time.Hour * 24 * 3
 	imageCacheCleaningInterval = time.Hour * 1
 
-	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s"
-	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s"
+	sharedImageKey                  = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s"
+	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
+	communityImageKey               = "/CommunityGalleries/%s/images/%s"
+	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
 func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient NodeImageVersionsAPI) *Provider {
@@ -106,7 +108,7 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 }
 
 func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput) (string, error) {
-	key := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition)
+	key := fmt.Sprintf(sharedImageKey, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition)
 	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
 	}
@@ -118,7 +120,7 @@ func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput
 		imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition, version.Version)
 		p.imageCache.Set(key, imageID, imageExpirationInterval)
 	}
-	// return the latest version of the image from the cache after we have caached all of the imageDefinitions
+	// return the latest version of the image from the cache after we have cached all of the imageDefinitions
 	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
 	}
@@ -126,12 +128,12 @@ func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput
 }
 
 func (p *Provider) getImageIDCIG(publicGalleryURL, communityImageName string) (string, error) {
-	key := fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName)
+	key := fmt.Sprintf(communityImageKey, publicGalleryURL, communityImageName)
 	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
 	}
 	// if the image is not found in the cache, we will refresh the lookup for it
-	imageVersion, err := p.latestNodeImageVersionCommmunity(publicGalleryURL, communityImageName)
+	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +142,7 @@ func (p *Provider) getImageIDCIG(publicGalleryURL, communityImageName string) (s
 	return imageID, nil
 }
 
-func (p *Provider) latestNodeImageVersionCommmunity(publicGalleryURL, communityImageName string) (string, error) {
+func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
 	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
 	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
 	for pager.More() {
