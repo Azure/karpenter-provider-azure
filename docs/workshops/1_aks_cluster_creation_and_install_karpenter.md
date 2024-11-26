@@ -6,11 +6,11 @@ Table of contents:
   - [Install Karpenter](#install-karpenter)
   - [Create our workshop namespace](#create-our-workshop-namespace)
 
-## Envrionment Setup
+## Environment Setup
 
 ### Pre-requisite
 
-You must have an Azure account, and personal Azure subscription. 
+You must have an Azure account, and personal Azure subscription.
 
 > Note: this will use your chosen subscription for any pricing/costs associated with the workshop. At the end of the workshop, see step [Cleanup](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/workshops/kubecon_azure_track.md#cleanup) to ensure all the resources are properly cleaned up to eliminate any additional costs.
 
@@ -19,9 +19,9 @@ You must have an Azure account, and personal Azure subscription.
 Open [https://shell.azure.com/](https://shell.azure.com/) in a new tab.
 
 > Note: <br>
-> \- If you do get disconnected from the Cloud Shell, and find your setup is not working, you can use the following document's quick and easy steps to reestablish it: [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md). (this will only work if you have already completed all the steps of installtion in this current doc)
+> \- If you do get disconnected from the Cloud Shell, and find your setup is not working, you can use the following document's quick and easy steps to reestablish it: [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md). (this will only work if you have already completed all the steps of installation in this current doc)
 
-### Create a Directory for the Workshop 
+### Create a Directory for the Workshop
 
 Create the workshop's directory hierarchy, and add it's tooling bin to the path.
 
@@ -101,7 +101,13 @@ az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overw
 ```
 
 > Note: <br>
-> \- If you see a warning for "CryptographyDeprecationWarning", "WARNING: SSH key files", and/or "WARNING: docker_bridge_cidr" these are not a concern, and can be disregarded. 
+> \- If you see a warning for "CryptographyDeprecationWarning", "WARNING: SSH key files", and/or "WARNING: docker_bridge_cidr" these are not a concern, and can be disregarded.
+
+> Note: If you've been disconnected from Cloud Shell, the env vars may have been removed. If you experience this issue follow [reestablish_env.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/reestablish_env.md), along with restoring AKS_JSON, and KMSI_JSON using the command below. AKS_JSON, and KMSI_JSON are only required for the next two bash scripts, and not required for any future env recovery.
+> ```bash
+> AKS_JSON=$(az aks show --name "${CLUSTER_NAME}" --resource-group "${RG}")
+> KMSI_JSON=$(az identity show --name karpentermsi --resource-group "${RG}")
+> ```
 
 Create federated credential linked to the karpenter service account for auth usage:
 
@@ -148,6 +154,8 @@ Check the `karpenter-values.yaml` file was created:
 ```bash
 ls
 ```
+
+You should see the file within the output:
 
 ```
 bin  configure-values.sh  karpenter-values-template.yaml  karpenter-values.yaml
@@ -209,7 +217,7 @@ kubectl create namespace workshop
 
 ### K9s
 
-You can also try using k9s to inspect the cluster. We'll be using it throughout certain chapers of the workshop to check on the status of the pods deployed to the AKS cluster. To do so, use the command below:
+You can also try using k9s to inspect the cluster. We'll be using it throughout certain chapters of the workshop to check on the status of the pods deployed to the AKS cluster. To do so, use the command below:
 
 ```bash
 k9s -n all

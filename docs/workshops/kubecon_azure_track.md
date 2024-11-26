@@ -29,7 +29,7 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
 
 > Note: if you ever end up needing to use the extended log command to look back over a longer period of time, make sure its using the `kube-system` namespace like follows:
 > ```bash
-> kubectl -n karpenter logs -f deployment/karpenter --all-containers=true --since=20m
+> kubectl -n kube-system logs -f deployment/karpenter --all-containers=true --since=20m
 > ```
 
 ## Main Topics
@@ -44,7 +44,7 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
     - AKSNodeClass is Azure’s equivalence to EC2NodeClass for Azure specific settings. Each Karpenter NodePool must contain a reference to an AKSNodeClass via the spec.template.spec.nodeClassRef.
 
 - Adjustments:
-    - The same concepts within the workshop generally translate to AKS. However, for the actual deployment step, we need a `AKSNodeClass`, and a few additional Azure specific adjustments. So, instead of the given deployment command follow [2_basic_noodpool.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/2_basic_noodpool.md) 
+    - The same concepts within the workshop generally translate to AKS. However, for the actual deployment step, we need a `AKSNodeClass`, and a few additional Azure specific adjustments. So, instead of the given deployment command follow [2_basic_noodpool.md](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/workshops/2_basic_nodepool.md)
 
 ### Step: [Scaling Application](https://catalog.workshops.aws/karpenter/en-US/basic-nodepool/scaling)
 
@@ -102,7 +102,7 @@ When you see `eks-node-viewer` use `aks-node-viewer` instead.
         ```bash
         kubectl delete aksnodeclass default
         ```
-    - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use a new deployment command with consolidation enabled. Found in [9_single_node_consolidation.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/9_single_node_consolidation.md) 
+    - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use a new deployment command with consolidation enabled. Found in [9_single_node_consolidation.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/9_single_node_consolidation.md)
 
 ### Step: [Multi Node Consolidation](https://catalog.workshops.aws/karpenter/en-US/cost-optimization/consolidation/multi-node)
 
@@ -143,10 +143,11 @@ Everything beyond this point is optional. Although, if skipping these steps, you
         ```bash
         kubectl delete aksnodeclass default
         ```
+        > Note: it's expected to see an error for the inflate-pdb cleanup, and this can be ignored.
     - The same concepts within the workshop generally translate to AKS. However, for the deployment step of the NodePool, use the deployment command found in [13_disruption_controls.md](https://github.com/Azure/karpenter-provider-azure/tree/main/docs/workshops/13_disruption_controls.md)
-    - > Note: don't be surprised if after the `expireAfter` of `2m` has occured that there are new instances being created, and removed. This is expected. 
+    - > Note: don't be surprised if after the `expireAfter` of `2m` has occurred that there are new instances being created, and removed. This is expected.
     - > Note: you may see a log for selecting the instance type and resolving the image after nodeclaim creation.
-    - > Note: `triggering termination for expired node after TTL`, and `deprovisioning via expiration` are not actually expected to show up within the logs. 
+    - > Note: `triggering termination for expired node after TTL`, and `deprovisioning via expiration` are not actually expected to show up within the logs.
 
 ## Cleanup
 
@@ -157,7 +158,7 @@ Once you've completed the workshop, ensure you cleanup all the resources to prev
 > env | grep AZURE_SUBSCRIPTION_ID
 > ```
 > If you see no output from the above command, than re-select your subscription to use (replace `<personal-azure-sub>` with your azure subscription guid):
-> 
+>
 > ```bash
 > export AZURE_SUBSCRIPTION_ID=<personal-azure-sub>
 > az account set --subscription ${AZURE_SUBSCRIPTION_ID}
