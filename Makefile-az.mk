@@ -19,7 +19,7 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
 
-az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload 
+az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
 az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
@@ -50,7 +50,7 @@ az-acrimport: ## Imports an image to an acr registry
 az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses) 
 	kubectl delete deployments -n default --all
 	kubectl delete pods -n default --all
-	kubectl delete nodeclaims --all 
+	kubectl delete nodeclaims --all
 	kubectl delete nodepools --all
 	kubectl delete aksnodeclasses --all
 
@@ -326,9 +326,13 @@ az-kdebug: ## Inject ephemeral debug container (kubectl debug) into Karpenter po
 	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n "${KARPENTER_NAMESPACE}" -o name))
 	kubectl debug -n "${KARPENTER_NAMESPACE}" $(POD) --image wbitt/network-multitool -it -- sh
 
-az-klogs: ## Karpenter logs
+az-klogs-watch: ## Watch Karpenter logs
 	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n "${KARPENTER_NAMESPACE}" -o name))
 	kubectl logs -f -n "${KARPENTER_NAMESPACE}" $(POD)
+
+az-klogs-pretty: ## Pretty Print Karpenter logs
+	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n "${KARPENTER_NAMESPACE}" -o name))
+	kubectl logs -n "${KARPENTER_NAMESPACE}" $(POD) | jq "."
 
 az-kevents: ## Karpenter events
 	kubectl get events -A --field-selector source=karpenter
