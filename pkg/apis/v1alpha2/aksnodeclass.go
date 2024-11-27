@@ -36,9 +36,13 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Minimum=100
 	// osDiskSizeGB is the size of the OS disk in GB.
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
-	// ImageID is the ID of the image that instances use.
-	// Not exposed in the API yet
-	ImageID *string `json:"imageID,omitempty"`
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Optional
+	// OSDiskSizeDynamic is enable dynamic os disk size based on SKU max allowed disk
+	OSDiskSizeDynamic bool `json:"OSDiskSizeDynamic,omitempty"`
+	// CustomImageTerm is for user defined Azure Custom Images
+	// +optional
+	CustomImageTerm CustomImageTerm `json:"customImageTerm,omitempty" hash:"ignore"`
 	// ImageFamily is the image family that instances use.
 	// +kubebuilder:default=Ubuntu2204
 	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux,Custom}
@@ -58,6 +62,37 @@ type AKSNodeClassSpec struct {
 	MaxPods *int32 `json:"maxPods,omitempty"`
 }
 
+// CustomImageTerm defines selection logic for Custom Image used by Karpenter to launch nodes.
+// If multiple fields are used for selection, the requirements are ANDed.
+type CustomImageTerm struct {
+	// GallerySubscriptionID is Image Gallery Subscription ID.
+	// +kubebuilder:validation:Pattern="^\\w{8}-\\w{4}-\\w{4}-\\w{4}-\\w{12}$"
+	// +optional
+	GallerySubscriptionID string `json:"gallerySubscriptionID,omitempty"`
+	// GalleryResourceGroupName is Image Gallery Resource Group Name.
+	// This value is the name field, which is different from the name tag.
+	// +optional
+	GalleryResourceGroupName string `json:"galleryResourceGroupName,omitempty"`
+	// GalleryName is Image Gallery Name.
+	// This value is the name field, which is different from the name tag.
+	// +optional
+	GalleryName string `json:"galleryName,omitempty"`
+	// Name is the Image name in Azure Image Gallery.
+	// This value is the name field, which is different from the name tag.
+	// +optional
+	Name string `json:"name,omitempty"`
+	// DistroName is the aks container service agent pool distro name which need to be valid.
+	// Here are all distro https://github.com/Azure/AgentBaker/blob/dev/pkg/agent/datamodel/types.go#L144.
+	// +kubebuilder:validation:Enum:={aks-ubuntu-containerd-22.04-gen2}
+	// +kubebuilder:default="aks-ubuntu-containerd-22.04-gen2"
+	// +optional
+	DistroName string `json:"distroName,omitempty"`
+	// Version is Image version.
+	// You can leave it empty and get latest image version
+	// +optional
+	Version string `json:"version,omitempty"`
+}
+
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
 // They are a subset of the upstream types, recognizing not all options may be supported.
 // Wherever possible, the types and names should reflect the upstream kubelet types.
@@ -67,6 +102,10 @@ type AKSNodeClassSpec struct {
 // AKS CustomKubeletConfig w/o CPUReserved,MemoryReserved,SeccompDefault
 // https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration?tabs=linux-node-pools
 type KubeletConfiguration struct {
+	// clusterDNS is an IP addresses for the cluster DNS server.
+	// Note that not all providers may use all addresses.
+	//+optional
+	ClusterDNS string `json:"clusterDNS,omitempty"`
 	// cpuManagerPolicy is the name of the policy to use.
 	// +kubebuilder:validation:Enum:={none,static}
 	// +kubebuilder:default="none"

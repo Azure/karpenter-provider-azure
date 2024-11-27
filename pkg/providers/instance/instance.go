@@ -22,7 +22,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -322,22 +324,9 @@ func newVMObject(
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType,
 	provisionMode string) armcompute.VirtualMachine {
-	var imageReference armcompute.ImageReference
-
-	if launchTemplate.ImageID != "" {
-		imageReference = armcompute.ImageReference{
-			ID: &launchTemplate.ImageID,
-		}
-	} else {
-		imageReference = armcompute.ImageReference{
-			CommunityGalleryImageID: &launchTemplate.ImageID,
-		}
-	}
-
 	if launchTemplate.IsWindows {
 		return armcompute.VirtualMachine{} // TODO(Windows)
 	}
-
 	vm := armcompute.VirtualMachine{
 		Location: lo.ToPtr(location),
 		Identity: ConvertToVirtualMachineIdentity(nodeIdentities),
@@ -349,11 +338,11 @@ func newVMObject(
 			StorageProfile: &armcompute.StorageProfile{
 				OSDisk: &armcompute.OSDisk{
 					Name:         lo.ToPtr(vmName),
-					DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
+					DiskSizeGB:   ephemeralDiskSize(instanceType, nodeClass.Spec.OSDiskSizeGB, nodeClass.Spec.OSDiskSizeDynamic),
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},
-				ImageReference: &imageReference,
+				ImageReference: makeImageIDRef(&nodeClass.Spec.CustomImageTerm, launchTemplate.ImageID),
 			},
 
 			NetworkProfile: &armcompute.NetworkProfile{
@@ -828,4 +817,35 @@ func getOfferingCapacityType(offering corecloudprovider.Offering) string {
 
 func getOfferingZone(offering corecloudprovider.Offering) string {
 	return offering.Requirements.Get(v1.LabelTopologyZone).Any()
+}
+
+func ephemeralDiskSize(instanceType *corecloudprovider.InstanceType, userDiskSize *int32, dynamicDiskSize bool) *int32 {
+	if dynamicDiskSize {
+		reqs := instanceType.Requirements.Get(v1alpha2.LabelSKUStorageEphemeralOSMaxSize).Values()
+		if len(reqs) == 0 || len(reqs) > 1 {
+			return userDiskSize
+		}
+		maxSize, err := strconv.ParseFloat(reqs[0], 32)
+		if err != nil {
+			return userDiskSize
+		}
+		size := int32(math.Round(maxSize / 1.073741824))
+		// decimal places are truncated, so we round down
+		return &size
+
+	} else {
+		return userDiskSize
+	}
+}
+
+func makeImageIDRef(imageTerm *v1alpha2.CustomImageTerm, imageID string) *armcompute.ImageReference {
+	if reflect.DeepEqual(imageTerm, v1alpha2.CustomImageTerm{}) {
+		return &armcompute.ImageReference{
+			CommunityGalleryImageID: &imageID,
+		}
+	} else {
+		return &armcompute.ImageReference{
+			ID: &imageID,
+		}
+	}
 }

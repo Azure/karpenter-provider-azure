@@ -85,10 +85,6 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
 	}
-	// Check if imageID is available in nodeClass.Spec
-	if *nodeClass.Spec.ImageID != "" {
-		imageID = *nodeClass.Spec.ImageID
-	}
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 
 	generalTaints := nodeClaim.Spec.Taints
@@ -163,7 +159,7 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	case v1alpha2.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1alpha2.CustomImageFamily:
-		return &Ubuntu2204{Options: parameters}
+		return &CustomImages{Options: parameters}
 	case v1alpha2.AzureLinuxImageFamily:
 		return &AzureLinux{Options: parameters}
 	default:
