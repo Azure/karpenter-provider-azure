@@ -111,5 +111,6 @@ var (
 
 const (
 	Ubuntu2204ImageFamily = "Ubuntu2204"
+	CustomImageFamily     = "Custom"
 	AzureLinuxImageFamily = "AzureLinux"
 )
