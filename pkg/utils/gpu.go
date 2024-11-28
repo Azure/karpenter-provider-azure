@@ -23,20 +23,20 @@ import (
 // TODO: Get these from agentbaker
 const (
 	Nvidia470CudaDriverVersion = "cuda-470.82.01"
-	Nvidia550CudaDriverVersion = "cuda-550.54.15"
-	Nvidia535GridDriverVersion = "grid-535.161.08"
 
-	// These SHAs will change once we update aks-gpu images in aks-gpu repository. We do that fairly rarely at this time.
-	// So for now these will be kept here like this and periodically bump them
-	AKSGPUGridSHA = "sha-d1f0ca"
-	AKSGPUCudaSHA = "sha-2d4c96"
+	// https://github.com/Azure/AgentBaker/blob/ddf36a24eafd02ce0589657ff2dc799125f4ad37/parts/linux/cloud-init/artifacts/components.json#L562
+	NvidiaCudaDriverVersion = "550.90.12"
+	AKSGPUCudaVersionSuffix = "20241021235610"
+
+	NvidiaGridDriverVersion = "535.161.08"
+	AKSGPUGridVersionSuffix = "20241021235607"
 )
 
 func GetAKSGPUImageSHA(size string) string {
 	if UseGridDrivers(size) {
-		return AKSGPUGridSHA
+		return AKSGPUGridVersionSuffix
 	}
-	return AKSGPUCudaSHA
+	return AKSGPUCudaVersionSuffix
 }
 
 var (
@@ -143,12 +143,20 @@ func IsMarinerEnabledGPUSKU(vmSize string) bool {
 // NVv3 is untested on AKS, NVv4 is AMD so n/a, and NVv2 no longer seems to exist (?).
 func GetGPUDriverVersion(size string) string {
 	if UseGridDrivers(size) {
-		return Nvidia535GridDriverVersion
+		return NvidiaGridDriverVersion
 	}
 	if isStandardNCv1(size) {
 		return Nvidia470CudaDriverVersion
 	}
-	return Nvidia550CudaDriverVersion
+	return NvidiaCudaDriverVersion
+}
+
+// GetGPUDriverType returns the type of GPU driver for given VM SKU ("grid" or "cuda")
+func GetGPUDriverType(size string) string {
+	if UseGridDrivers(size) {
+		return "grid"
+	}
+	return "cuda"
 }
 
 func isStandardNCv1(size string) bool {
