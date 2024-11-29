@@ -77,7 +77,7 @@ type Options struct {
 
 	ProvisionMode              string
 	NodeBootstrappingServerURL string
-	UseSIG bool // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+	UseSIG                     bool // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
 
 	SIGSubscriptionID string
 	NodeResourceGroup string

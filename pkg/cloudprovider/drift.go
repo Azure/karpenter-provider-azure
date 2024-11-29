@@ -145,7 +145,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 
 	if vm.Properties == nil ||
 		vm.Properties.StorageProfile == nil ||
-		vm.Properties.StorageProfile.ImageReference == nil { 
+		vm.Properties.StorageProfile.ImageReference == nil {
 		return "", nil
 	}
 	CIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)

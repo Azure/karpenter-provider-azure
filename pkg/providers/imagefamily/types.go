@@ -47,7 +47,7 @@ type DefaultImageOutput struct {
 	GalleryName          string
 	// Common
 	ImageDefinition string
-	Distro           string
+	Distro          string
 	Requirements    scheduling.Requirements
 }
 
