@@ -80,17 +80,18 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 func (u AzureLinux) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
-			ClusterName:      u.Options.ClusterName,
-			ClusterEndpoint:  u.Options.ClusterEndpoint,
-			KubeletConfig:    kubeletConfig,
-			Taints:           taints,
-			Labels:           labels,
-			CABundle:         caBundle,
-			GPUNode:          u.Options.GPUNode,
-			GPUDriverVersion: u.Options.GPUDriverVersion,
-			// GPUImageSHA: u.Options.GPUImageSHA - GPU image SHA only applies to Ubuntu
-			// See: https://github.com/Azure/AgentBaker/blob/f393d6e4d689d9204d6000c85623ad9b764e2a29/vhdbuilder/packer/install-dependencies.sh#L201
-			SubnetID: u.Options.SubnetID,
+			ClusterName:           u.Options.ClusterName,
+			ClusterEndpoint:       u.Options.ClusterEndpoint,
+			KubeletConfig:         kubeletConfig,
+			Taints:                taints,
+			Labels:                labels,
+			CABundle:              caBundle,
+			GPUNode:               u.Options.GPUNode,
+			GPUDriverVersion:      u.Options.GPUDriverVersion,
+			GPUDriverType:         u.Options.GPUDriverType,
+			GPUNeedsFabricManager: u.Options.GPUNeedsFabricManager,
+			GPUImageSHA:           u.Options.GPUImageSHA,
+			SubnetID:              u.Options.SubnetID,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,
