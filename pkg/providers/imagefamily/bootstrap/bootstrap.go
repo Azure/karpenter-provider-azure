@@ -44,18 +44,17 @@ type KubeletConfiguration struct {
 
 // Options is the node bootstrapping parameters passed from Karpenter to the provisioning node
 type Options struct {
-	ClusterName           string
-	ClusterEndpoint       string
-	KubeletConfig         *KubeletConfiguration
-	Taints                []core.Taint      `hash:"set"`
-	Labels                map[string]string `hash:"set"`
-	CABundle              *string
-	GPUNode               bool
-	GPUDriverVersion      string
-	GPUDriverType         string
-	GPUImageSHA           string
-	GPUNeedsFabricManager bool
-	SubnetID              string
+	ClusterName      string
+	ClusterEndpoint  string
+	KubeletConfig    *KubeletConfiguration
+	Taints           []core.Taint      `hash:"set"`
+	Labels           map[string]string `hash:"set"`
+	CABundle         *string
+	GPUNode          bool
+	GPUDriverVersion string
+	GPUDriverType    string
+	GPUImageSHA      string
+	SubnetID         string
 }
 
 // Bootstrapper can be implemented to generate a bootstrap script
