@@ -154,6 +154,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		GPUDriverVersion:               utils.GetGPUDriverVersion(instanceType.Name),
 		GPUDriverType:                  utils.GetGPUDriverType(instanceType.Name),
 		GPUImageSHA:                    utils.GetAKSGPUImageSHA(instanceType.Name),
+		GPUNeedsFabricManager:          utils.GPUNeedsFabricManager(instanceType.Name),
 		TenantID:                       p.tenantID,
 		SubscriptionID:                 p.subscriptionID,
 		KubeletIdentityClientID:        p.kubeletIdentityClientID,

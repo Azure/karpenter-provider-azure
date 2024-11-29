@@ -22,7 +22,7 @@ import (
 
 // TODO: Get these from agentbaker
 const (
-	Nvidia470CudaDriverVersion = "cuda-470.82.01"
+	Nvidia470CudaDriverVersion = "470.82.01"
 
 	// https://github.com/Azure/AgentBaker/blob/ddf36a24eafd02ce0589657ff2dc799125f4ad37/parts/linux/cloud-init/artifacts/components.json#L562
 	NvidiaCudaDriverVersion = "550.90.12"
@@ -168,6 +168,11 @@ func UseGridDrivers(size string) bool {
 	return ConvergedGPUDriverSizes[strings.ToLower(size)]
 }
 
+// GPUNeedsFabricManager indicates whether this VM SKU needs fabric manager
+func GPUNeedsFabricManager(size string) bool {
+	return FabricManagerGPUSizes[strings.ToLower(size)]
+}
+
 /* ConvergedGPUDriverSizes : these sizes use a "converged" driver to support both cuda/grid workloads.
 how do you figure this out? ask HPC or find out by trial and error.
 installing vanilla cuda drivers will fail to install with opaque errors.
@@ -184,4 +189,41 @@ var ConvergedGPUDriverSizes = map[string]bool{
 	"standard_nc8ads_a10_v4":   true,
 	"standard_nc16ads_a10_v4":  true,
 	"standard_nc32ads_a10_v4":  true,
+}
+
+/* Fabric manager trains nvlink connections between multi instance gpus.
+it appears this is only necessary for systems with *multiple cards*.
+i.e., an A100 can be partitioned a maximum of 7 ways.
+An NC24ads_A100_v4 has one A100.
+An ND96asr_v4 has eight A100, for a maximum of 56 partitions.
+ND96 seems to require fabric manager *even when not using mig partitions*
+while it fails to install on NC24.
+*/
+//nolint:gochecknoglobals
+var FabricManagerGPUSizes = map[string]bool{
+	// A100
+	"standard_nd96asr_v4":        true,
+	"standard_nd112asr_a100_v4":  true,
+	"standard_nd120asr_a100_v4":  true,
+	"standard_nd96amsr_a100_v4":  true,
+	"standard_nd112amsr_a100_v4": true,
+	"standard_nd120amsr_a100_v4": true,
+	// TODO(ace): one of these is probably dupe...
+	// confirm with HPC/SKU owners.
+	"standard_nd96ams_a100_v4": true,
+	"standard_nd96ams_v4":      true,
+	// H100.
+	"standard_nd46s_h100_v5":    true,
+	"standard_nd48s_h100_v5":    true,
+	"standard_nd50s_h100_v5":    true,
+	"standard_nd92is_h100_v5":   true,
+	"standard_nd96is_h100_v5":   true,
+	"standard_nd100is_h100_v5":  true,
+	"standard_nd92isr_h100_v5":  true,
+	"standard_nd96isr_h100_v5":  true,
+	"standard_nd100isr_h100_v5": true,
+	// A100 oddballs.
+	"standard_nc24ads_a100_v4": false, // NCads_v4 will fail to start fabricmanager.
+	"standard_nc48ads_a100_v4": false,
+	"standard_nc96ads_a100_v4": false,
 }

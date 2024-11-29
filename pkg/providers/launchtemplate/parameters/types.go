@@ -31,6 +31,7 @@ type StaticParameters struct {
 	GPUDriverVersion               string
 	GPUDriverType                  string
 	GPUImageSHA                    string
+	GPUNeedsFabricManager          bool
 	TenantID                       string
 	SubscriptionID                 string
 	KubeletIdentityClientID        string

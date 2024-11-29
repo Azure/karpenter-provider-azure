@@ -470,6 +470,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUDriverVersion = a.GPUDriverVersion
 		nbv.GPUDriverType = a.GPUDriverType
 		nbv.GPUImageSHA = a.GPUImageSHA
+		nbv.GPUNeedsFabricManager = a.GPUNeedsFabricManager
 	}
 
 	// merge and stringify labels
