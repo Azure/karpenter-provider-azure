@@ -17,7 +17,10 @@ limitations under the License.
 package utils
 
 import (
+	_ "embed"
 	"strings"
+
+	"gopkg.in/yaml.v2"
 )
 
 // TODO: Get these from agentbaker
@@ -32,6 +35,42 @@ const (
 	AKSGPUGridVersionSuffix = "20241021235607"
 )
 
+type NvidiaSKUConfig struct {
+	NvidiaEnabledSKUFamilies        map[string][]string `yaml:"nvidiaEnabledSKUs"`
+	MarinerNvidiaEnabledSKUFamilies map[string][]string `yaml:"marinerNvidiaEnabledSKUs"`
+}
+
+var (
+	nvidiaEnabledSKUs        = make(map[string]bool)
+	marinerNvidiaEnabledSKUs = make(map[string]bool)
+)
+
+//go:embed supported-gpus.yaml
+var configFile []byte
+
+func init() {
+	readNvidiaSKUConfig()
+}
+
+func readNvidiaSKUConfig() {
+	var nvidiaSKUConfig NvidiaSKUConfig
+
+	err := yaml.Unmarshal(configFile, &nvidiaSKUConfig)
+	if err != nil {
+		panic(err)
+	}
+	for _, skus := range nvidiaSKUConfig.NvidiaEnabledSKUFamilies {
+		for _, sku := range skus {
+			nvidiaEnabledSKUs[sku] = true
+		}
+	}
+	for _, skus := range nvidiaSKUConfig.MarinerNvidiaEnabledSKUFamilies {
+		for _, sku := range skus {
+			marinerNvidiaEnabledSKUs[sku] = true
+		}
+	}
+}
+
 func GetAKSGPUImageSHA(size string) string {
 	if UseGridDrivers(size) {
 		return AKSGPUGridVersionSuffix
@@ -39,94 +78,12 @@ func GetAKSGPUImageSHA(size string) string {
 	return AKSGPUCudaVersionSuffix
 }
 
-var (
-	/* If a new GPU sku becomes available, add a key to this map, but only if you have a confirmation
-	   that we have an agreement with NVIDIA for this specific gpu.
-	*/
-	NvidiaEnabledSKUs = map[string]bool{
-		// M60
-		"standard_nv6":      true,
-		"standard_nv12":     true,
-		"standard_nv12s_v3": true,
-		"standard_nv24":     true,
-		"standard_nv24s_v3": true,
-		"standard_nv24r":    true,
-		"standard_nv48s_v3": true,
-		// P40
-		"standard_nd6s":   true,
-		"standard_nd12s":  true,
-		"standard_nd24s":  true,
-		"standard_nd24rs": true,
-		// P100
-		"standard_nc6s_v2":   true,
-		"standard_nc12s_v2":  true,
-		"standard_nc24s_v2":  true,
-		"standard_nc24rs_v2": true,
-		// V100
-		"standard_nc6s_v3":   true,
-		"standard_nc12s_v3":  true,
-		"standard_nc24s_v3":  true,
-		"standard_nc24rs_v3": true,
-		"standard_nd40s_v3":  true,
-		"standard_nd40rs_v2": true,
-		// T4
-		"standard_nc4as_t4_v3":  true,
-		"standard_nc8as_t4_v3":  true,
-		"standard_nc16as_t4_v3": true,
-		"standard_nc64as_t4_v3": true,
-		// A100 40GB
-		"standard_nd96asr_v4":       true,
-		"standard_nd112asr_a100_v4": true,
-		"standard_nd120asr_a100_v4": true,
-		// A100 80GB
-		"standard_nd96amsr_a100_v4":  true,
-		"standard_nd112amsr_a100_v4": true,
-		"standard_nd120amsr_a100_v4": true,
-		// A100 PCIE 80GB
-		"standard_nc24ads_a100_v4": true,
-		"standard_nc48ads_a100_v4": true,
-		"standard_nc96ads_a100_v4": true,
-		"standard_ncads_a100_v4":   true,
-		// A10
-		"standard_nc8ads_a10_v4":  true,
-		"standard_nc16ads_a10_v4": true,
-		"standard_nc32ads_a10_v4": true,
-		// A10, GRID only
-		"standard_nv6ads_a10_v5":   true,
-		"standard_nv12ads_a10_v5":  true,
-		"standard_nv18ads_a10_v5":  true,
-		"standard_nv36ads_a10_v5":  true,
-		"standard_nv36adms_a10_v5": true,
-		"standard_nv72ads_a10_v5":  true,
-		// A100
-		"standard_nd96ams_v4":      true,
-		"standard_nd96ams_a100_v4": true,
-	}
-
-	// List of GPU SKUs currently enabled and validated for Mariner. Will expand the support
-	// to cover other SKUs available in Azure
-	MarinerNvidiaEnabledSKUs = map[string]bool{
-		// V100
-		"standard_nc6s_v3":   true,
-		"standard_nc12s_v3":  true,
-		"standard_nc24s_v3":  true,
-		"standard_nc24rs_v3": true,
-		"standard_nd40s_v3":  true,
-		"standard_nd40rs_v2": true,
-		// T4
-		"standard_nc4as_t4_v3":  true,
-		"standard_nc8as_t4_v3":  true,
-		"standard_nc16as_t4_v3": true,
-		"standard_nc64as_t4_v3": true,
-	}
-)
-
 // IsNvidiaEnabledSKU determines if an VM SKU has nvidia driver support
 func IsNvidiaEnabledSKU(vmSize string) bool {
 	// Trim the optional _Promo suffix.
 	vmSize = strings.ToLower(vmSize)
 	vmSize = strings.TrimSuffix(vmSize, "_promo")
-	return NvidiaEnabledSKUs[vmSize]
+	return nvidiaEnabledSKUs[vmSize]
 }
 
 // IsNvidiaEnabledSKU determines if an VM SKU has nvidia driver support
@@ -134,7 +91,7 @@ func IsMarinerEnabledGPUSKU(vmSize string) bool {
 	// Trim the optional _Promo suffix.
 	vmSize = strings.ToLower(vmSize)
 	vmSize = strings.TrimSuffix(vmSize, "_promo")
-	return MarinerNvidiaEnabledSKUs[vmSize]
+	return marinerNvidiaEnabledSKUs[vmSize]
 }
 
 // NV series GPUs target graphics workloads vs NC which targets compute.
