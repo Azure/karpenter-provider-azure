@@ -89,6 +89,7 @@ func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 			GPUNode:          u.Options.GPUNode,
 			GPUDriverVersion: u.Options.GPUDriverVersion,
 			GPUImageSHA:      u.Options.GPUImageSHA,
+			GPUDriverType:    u.Options.GPUDriverType,
 			SubnetID:         u.Options.SubnetID,
 		},
 		Arch:                           u.Options.Arch,
