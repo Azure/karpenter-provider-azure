@@ -330,8 +330,8 @@ az-klogs-pretty: ## Pretty Print Karpenter logs
 az-kevents: ## Karpenter events
 	kubectl get events -A --field-selector source=karpenter
 
-az-node-viewer: ## Watch nodes using eks-node-viewer
-	eks-node-viewer --disable-pricing --node-selector "karpenter.sh/nodepool" # --resources cpu,memory
+az-node-viewer: ## Watch nodes using aks-node-viewer
+	aks-node-viewer # --node-selector "karpenter.sh/nodepool" --resources cpu,memory
 
 az-argvmlist: ## List current VMs owned by Karpenter
 	az graph query -q "Resources | where type =~ 'microsoft.compute/virtualmachines' | where resourceGroup == tolower('$(AZURE_RESOURCE_GROUP_MC)') | where tags has_cs 'karpenter.sh_nodepool'" \
