@@ -9,6 +9,8 @@ metadata:
 spec:
   disruption:
     expireAfter: Never
+    budgets:
+    - nodes: 30%
   # Optional: Uncomment if you want to put a cap on the max resources available for provisioning
   # limits:
   #   cpu: "30"
