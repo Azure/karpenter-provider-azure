@@ -171,7 +171,7 @@ az-run: ## Deploy the controller from the current state of your git repository i
 	skaffold run
 
 az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be scaled manually)
-	kubectl apply -f examples/v1beta1/general-purpose.yaml
+	kubectl apply -f examples/v1/general-purpose.yaml
 	kubectl apply -f examples/workloads/inflate.yaml
 
 az-mc-show: ## show managed cluster
