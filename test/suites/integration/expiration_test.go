@@ -51,7 +51,7 @@ var _ = Describe("Expiration", func() {
 		selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 	})
 	It("should expire the node after the expiration is reached", func() {
-		// Set expire after larger enough to make sure the new nodes is not expired before workloads are moved over.
+		// Set expire after large enough to make sure the new nodes are not expired before workloads are moved over.
 		nodePool.Spec.Template.Spec.ExpireAfter = karpv1.MustParseNillableDuration("3m")
 		env.ExpectCreated(nodeClass, nodePool, dep)
 
