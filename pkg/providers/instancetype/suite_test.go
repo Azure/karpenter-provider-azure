@@ -958,6 +958,8 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(false),
 			})
 			ctx = options.ToContext(ctx)
+			cluster.Reset()
+			azureEnv.Reset()
 		},
 
 			Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
