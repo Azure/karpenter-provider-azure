@@ -11,6 +11,9 @@ spec:
     consolidateAfter: 0s
     budgets:
     - nodes: 30%
+  # Optional: Uncomment if you want to put a cap on the max resources available for provisioning
+  # limits:
+  #   cpu: "30"
   template:
     metadata:
       labels:
@@ -40,6 +43,11 @@ spec:
       - key: karpenter.azure.com/sku-family
         operator: In
         values: [D]
+      # Optional: Uncomment if you want to add a restriction on max sku cpus.
+      #           Useful for ensuring karpneter provisions multiple nodes for feature testing.
+      # - key: karpenter.azure.com/sku-cpu
+      #   operator: Lt
+      #   values: ["3"]
 ---
 apiVersion: karpenter.azure.com/v1alpha2
 kind: AKSNodeClass
