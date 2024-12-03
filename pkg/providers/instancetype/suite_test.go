@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/awslabs/operatorpkg/object"
 	"github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
@@ -93,8 +94,8 @@ func TestAzure(t *testing.T) {
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 
-	cluster = state.NewCluster(fakeClock, env.Client)
-	clusterNonZonal = state.NewCluster(fakeClock, env.Client)
+	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal, fakeClock)
 
@@ -121,7 +122,9 @@ var _ = Describe("InstanceType Provider", func() {
 				Template: karpv1.NodeClaimTemplate{
 					Spec: karpv1.NodeClaimTemplateSpec{
 						NodeClassRef: &karpv1.NodeClassReference{
-							Name: nodeClass.Name,
+							Group: object.GVK(nodeClass).Group,
+							Kind:  object.GVK(nodeClass).Kind,
+							Name:  nodeClass.Name,
 						},
 					},
 				},
@@ -313,7 +316,9 @@ var _ = Describe("InstanceType Provider", func() {
 				},
 				Spec: karpv1.NodeClaimSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Name: nodeClass.Name,
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
 					},
 				},
 			})
@@ -382,7 +387,9 @@ var _ = Describe("InstanceType Provider", func() {
 					Values:   []string{"Standard_D64s_v3"},
 				}})
 			np.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
-				Name: nodeClass.Name,
+				Group: object.GVK(nodeClass).Group,
+				Kind:  object.GVK(nodeClass).Kind,
+				Name:  nodeClass.Name,
 			}
 
 			ExpectApplied(ctx, env.Client, np, nodeClass)
@@ -413,7 +420,9 @@ var _ = Describe("InstanceType Provider", func() {
 					Values:   []string{"Standard_D64s_v3"},
 				}})
 			np.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
-				Name: nodeClass.Name,
+				Group: object.GVK(nodeClass).Group,
+				Kind:  object.GVK(nodeClass).Kind,
+				Name:  nodeClass.Name,
 			}
 
 			ExpectApplied(ctx, env.Client, np, nodeClass)
@@ -440,7 +449,9 @@ var _ = Describe("InstanceType Provider", func() {
 					Values:   []string{"Standard_D2s_v3"},
 				}})
 			np.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
-				Name: nodeClass.Name,
+				Group: object.GVK(nodeClass).Group,
+				Kind:  object.GVK(nodeClass).Kind,
+				Name:  nodeClass.Name,
 			}
 
 			ExpectApplied(ctx, env.Client, np, nodeClass)
@@ -892,7 +903,11 @@ var _ = Describe("InstanceType Provider", func() {
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{instanceType},
 					}})
-				nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{Name: nodeClass.Name}
+				nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
+				}
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
