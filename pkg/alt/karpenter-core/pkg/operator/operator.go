@@ -42,24 +42,22 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 	"sigs.k8s.io/karpenter/pkg/operator/options"
 
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/utils/clock"
-	"knative.dev/pkg/controller"
 	knativeinjection "knative.dev/pkg/injection"
-	kubeinformerfactory "knative.dev/pkg/injection/clients/namespacedkube/informers/factory"
 	"knative.dev/pkg/signals"
 	"knative.dev/pkg/system"
-	"knative.dev/pkg/webhook"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"sigs.k8s.io/karpenter/pkg/operator/logging"
@@ -128,14 +126,6 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 	log.SetLogger(logger)
 	klog.SetLogger(logger)
 
-	// Webhook
-	ccPlaneCtx = webhook.WithOptions(ccPlaneCtx, webhook.Options{
-		Port:        options.FromContext(overlayCtx).WebhookPort,
-		ServiceName: options.FromContext(overlayCtx).ServiceName,
-		SecretName:  fmt.Sprintf("%s-cert", options.FromContext(overlayCtx).ServiceName),
-		GracePeriod: 5 * time.Second,
-	})
-
 	// Client Config
 	ccPlaneConfig := lo.Must(rest.InClusterConfig())
 	overlayConfig := ctrl.GetConfigOrDie()
@@ -150,24 +140,14 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 	ccpKubernetesInterface := kubernetes.NewForConfigOrDie(ccPlaneConfig)
 	ccPlaneCtx = withCCPClient(ccPlaneCtx, ccpKubernetesInterface)
 
-	ccpInformerFactory := informers.NewSharedInformerFactoryWithOptions(
-		ccpKubernetesInterface,
-		controller.GetResyncPeriod(ccPlaneCtx),
-		// This factory scopes things to the system namespace.
-		informers.WithNamespace(system.Namespace()))
-	// Also override the kubeinformerfactory because it's used by webhook.New() to construct
-	// a new secret client, see: https://github.com/knative/pkg/blob/main/webhook/webhook.go#L183
-	ccPlaneCtx = context.WithValue(ccPlaneCtx, kubeinformerfactory.Key{}, ccpInformerFactory)
-
 	// Manager
 	mgrOpts := ctrl.Options{
 		Logger:                        logging.IgnoreDebugEvents(logger),
 		LeaderElection:                !options.FromContext(overlayCtx).DisableLeaderElection,
-		LeaderElectionID:              "karpenter-leader-election",
-		LeaderElectionResourceLock:    resourcelock.LeasesResourceLock,
+		LeaderElectionID:              options.FromContext(overlayCtx).LeaderElectionName,
 		LeaderElectionNamespace:       system.Namespace(),
+		LeaderElectionResourceLock:    resourcelock.LeasesResourceLock,
 		LeaderElectionReleaseOnCancel: true,
-		Scheme:                        scheme.Scheme,
 		Metrics: server.Options{
 			BindAddress: fmt.Sprintf(":%d", options.FromContext(overlayCtx).MetricsPort),
 		},
@@ -202,15 +182,49 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 	mgr, err := ctrl.NewManager(overlayConfig, mgrOpts)
 	mgr = lo.Must(mgr, err, "failed to setup manager")
 
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &corev1.Pod{}, "spec.nodeName", func(o client.Object) []string {
+	setupIndexers(overlayCtx, ccPlaneCtx, mgr)
+
+	lo.Must0(mgr.AddReadyzCheck("manager", func(req *http.Request) error {
+		return lo.Ternary(mgr.GetCache().WaitForCacheSync(req.Context()), nil, fmt.Errorf("failed to sync caches"))
+	}))
+	lo.Must0(mgr.AddReadyzCheck("crd", func(_ *http.Request) error {
+		objects := []client.Object{&v1.NodePool{}, &v1.NodeClaim{}}
+		for _, obj := range objects {
+			gvk, err := apiutil.GVKForObject(obj, scheme.Scheme)
+			if err != nil {
+				return err
+			}
+			if _, err := mgr.GetRESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	lo.Must0(mgr.AddHealthzCheck("healthz", healthz.Ping))
+	lo.Must0(mgr.AddReadyzCheck("readyz", healthz.Ping))
+
+	return ccPlaneCtx, &coreoperator.Operator{
+		Manager:             mgr,
+		KubernetesInterface: overlayKubernetesInterface,
+		EventRecorder:       events.NewRecorder(mgr.GetEventRecorderFor(appName)),
+		Clock:               clock.RealClock{},
+	}
+}
+
+func setupIndexers(ctx context.Context, ccPlaneCtx context.Context, mgr manager.Manager) {
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &corev1.Pod{}, "spec.nodeName", func(o client.Object) []string {
 		return []string{o.(*corev1.Pod).Spec.NodeName}
 	}), "failed to setup pod indexer")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &corev1.Node{}, "spec.providerID", func(o client.Object) []string {
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &corev1.Node{}, "spec.providerID", func(o client.Object) []string {
 		return []string{o.(*corev1.Node).Spec.ProviderID}
 	}), "failed to setup node provider id indexer")
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &storagev1.VolumeAttachment{}, "spec.nodeName", func(o client.Object) []string {
+		return []string{o.(*storagev1.VolumeAttachment).Spec.NodeName}
+	}), "failed to setup volumeattachment indexer")
+
 	lo.Must0(func() error {
 		_, _, err := lo.AttemptWithDelay(42, 10*time.Second, func(index int, duration time.Duration) error {
-			err := mgr.GetFieldIndexer().IndexField(overlayCtx, &v1.NodeClaim{}, "status.providerID", func(o client.Object) []string {
+			err := mgr.GetFieldIndexer().IndexField(ctx, &v1.NodeClaim{}, "status.providerID", func(o client.Object) []string {
 				return []string{o.(*v1.NodeClaim).Status.ProviderID}
 			})
 			if err != nil {
@@ -221,35 +235,23 @@ func NewOperator() (context.Context, *coreoperator.Operator) {
 		return err
 	}(), "failed to setup nodeclaim provider id indexer, all attempts used")
 
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &v1.NodeClaim{}, "spec.nodeClassRef.group", func(o client.Object) []string {
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &v1.NodeClaim{}, "spec.nodeClassRef.group", func(o client.Object) []string {
 		return []string{o.(*v1.NodeClaim).Spec.NodeClassRef.Group}
 	}), "failed to setup nodeclaim nodeclassref apiversion indexer")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &v1.NodeClaim{}, "spec.nodeClassRef.kind", func(o client.Object) []string {
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &v1.NodeClaim{}, "spec.nodeClassRef.kind", func(o client.Object) []string {
 		return []string{o.(*v1.NodeClaim).Spec.NodeClassRef.Kind}
 	}), "failed to setup nodeclaim nodeclassref kind indexer")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &v1.NodeClaim{}, "spec.nodeClassRef.name", func(o client.Object) []string {
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &v1.NodeClaim{}, "spec.nodeClassRef.name", func(o client.Object) []string {
 		return []string{o.(*v1.NodeClaim).Spec.NodeClassRef.Name}
 	}), "failed to setup nodeclaim nodeclassref name indexer")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &v1.NodePool{}, "spec.template.spec.nodeClassRef.group", func(o client.Object) []string {
+
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &v1.NodePool{}, "spec.template.spec.nodeClassRef.group", func(o client.Object) []string {
 		return []string{o.(*v1.NodePool).Spec.Template.Spec.NodeClassRef.Group}
 	}), "failed to setup nodepool nodeclassref apiversion indexer")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &v1.NodePool{}, "spec.template.spec.nodeClassRef.kind", func(o client.Object) []string {
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &v1.NodePool{}, "spec.template.spec.nodeClassRef.kind", func(o client.Object) []string {
 		return []string{o.(*v1.NodePool).Spec.Template.Spec.NodeClassRef.Kind}
 	}), "failed to setup nodepool nodeclassref kind indexer")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &v1.NodePool{}, "spec.template.spec.nodeClassRef.name", func(o client.Object) []string {
+	lo.Must0(mgr.GetFieldIndexer().IndexField(ctx, &v1.NodePool{}, "spec.template.spec.nodeClassRef.name", func(o client.Object) []string {
 		return []string{o.(*v1.NodePool).Spec.Template.Spec.NodeClassRef.Name}
 	}), "failed to setup nodepool nodeclassref name indexer")
-	lo.Must0(mgr.GetFieldIndexer().IndexField(overlayCtx, &storagev1.VolumeAttachment{}, "spec.nodeName", func(o client.Object) []string {
-		return []string{o.(*storagev1.VolumeAttachment).Spec.NodeName}
-	}), "failed to setup volumeattachment indexer")
-
-	lo.Must0(mgr.AddHealthzCheck("healthz", healthz.Ping))
-	lo.Must0(mgr.AddReadyzCheck("readyz", healthz.Ping))
-
-	return ccPlaneCtx, &coreoperator.Operator{
-		Manager:             mgr,
-		KubernetesInterface: overlayKubernetesInterface,
-		EventRecorder:       events.NewRecorder(mgr.GetEventRecorderFor(appName)),
-		Clock:               clock.RealClock{},
-	}
 }
