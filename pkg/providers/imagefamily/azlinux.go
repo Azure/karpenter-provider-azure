@@ -94,9 +94,9 @@ func (u AzureLinux) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 			CABundle:         caBundle,
 			GPUNode:          u.Options.GPUNode,
 			GPUDriverVersion: u.Options.GPUDriverVersion,
-			// GPUImageSHA: u.Options.GPUImageSHA - GPU image SHA only applies to Ubuntu
-			// See: https://github.com/Azure/AgentBaker/blob/f393d6e4d689d9204d6000c85623ad9b764e2a29/vhdbuilder/packer/install-dependencies.sh#L201
-			SubnetID: u.Options.SubnetID,
+			GPUDriverType:    u.Options.GPUDriverType,
+			GPUImageSHA:      u.Options.GPUImageSHA,
+			SubnetID:         u.Options.SubnetID,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,

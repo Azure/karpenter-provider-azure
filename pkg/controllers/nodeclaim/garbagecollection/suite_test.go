@@ -83,7 +83,7 @@ var _ = BeforeSuite(func() {
 	garbageCollectionController = garbagecollection.NewController(env.Client, cloudProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client)
-	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 })
 
 var _ = AfterSuite(func() {

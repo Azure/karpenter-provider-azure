@@ -178,7 +178,7 @@ az-run: ## Deploy the controller from the current state of your git repository i
 	skaffold run
 
 az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be scaled manually)
-	kubectl apply -f examples/v1beta1/general-purpose.yaml
+	kubectl apply -f examples/v1/general-purpose.yaml
 	kubectl apply -f examples/workloads/inflate.yaml
 
 az-mc-show: ## show managed cluster
@@ -337,8 +337,8 @@ az-klogs-pretty: ## Pretty Print Karpenter logs
 az-kevents: ## Karpenter events
 	kubectl get events -A --field-selector source=karpenter
 
-az-node-viewer: ## Watch nodes using eks-node-viewer
-	eks-node-viewer --disable-pricing --node-selector "karpenter.sh/nodepool" # --resources cpu,memory
+az-node-viewer: ## Watch nodes using aks-node-viewer
+	aks-node-viewer # --node-selector "karpenter.sh/nodepool" --resources cpu,memory
 
 az-argvmlist: ## List current VMs owned by Karpenter
 	az graph query -q "Resources | where type =~ 'microsoft.compute/virtualmachines' | where resourceGroup == tolower('$(AZURE_RESOURCE_GROUP_MC)') | where tags has_cs 'karpenter.sh_nodepool'" \
