@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -102,21 +104,29 @@ func FilteredNodeImages(nodeImageVersions []NodeImageVersion) []NodeImageVersion
 	return filteredImages
 }
 
+// isNewerVersion will return if version1 is greater than version2, note the new versioning scheme is yearmm.dd.build, previously it was yy.mm.dd without the build id.
 func isNewerVersion(version1, version2 string) bool {
-	// Assuming version is in the format: "year.month.day.build"
-	// Split by dots and compare each segment as an integer
+	// Split by dots and compare each segment as an integer getting the largest vhd version
+	v1Segments := strings.Split(version1, ".")
+	v2Segments := strings.Split(version2, ".")
 
-	var v1, v2 [4]int
-	fmt.Sscanf(version1, "%d.%d.%d.%d", &v1[0], &v1[1], &v1[2], &v1[3]) //nolint:errcheck
-	fmt.Sscanf(version2, "%d.%d.%d.%d", &v2[0], &v2[1], &v2[2], &v2[3]) //nolint:errcheck
+	for i := 0; i < len(v1Segments) && i < len(v2Segments); i++ {
+		v1Segment, err1 := strconv.Atoi(v1Segments[i])
+		v2Segment, err2 := strconv.Atoi(v2Segments[i])
 
-	for i := 0; i < 4; i++ {
-		if v1[i] > v2[i] {
+		if err1 != nil || err2 != nil {
+			return false
+		}
+
+		if v1Segment > v2Segment {
 			return true
-		} else if v1[i] < v2[i] {
+		} else if v1Segment < v2Segment {
 			return false
 		}
 	}
 
-	return false
+	// If all segments are equal up to the length of the shorter version,
+	// the longer version is considered newer if it has additional segments
+	// the legacy linux versions use "yy.mm.dd" whereas new linux versions use "yymm.dd.build"
+	return len(v1Segments) > len(v2Segments)
 }
