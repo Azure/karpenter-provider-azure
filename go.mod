@@ -2,8 +2,6 @@ module github.com/Azure/karpenter-provider-azure
 
 go 1.23.2
 
-toolchain go1.23.3
-
 require (
 	github.com/Azure/azure-kusto-go v0.16.1
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
