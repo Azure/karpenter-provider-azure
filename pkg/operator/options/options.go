@@ -128,7 +128,7 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 	}
 
 	// ClusterID is generated from cluster endpoint
-	o.ClusterID = getAKSClusterID(o.GetAPIServerName())
+	o.ClusterID = getAKSClusterID(o.ClusterName)
 
 	return nil
 }
@@ -153,7 +153,7 @@ func FromContext(ctx context.Context) *Options {
 // The logic comes from AgentBaker and other places, originally from aks-engine
 // with the additional assumption of DNS prefix being the first 33 chars of FQDN
 func getAKSClusterID(apiServerFQDN string) string {
-	dnsPrefix := apiServerFQDN[:33]
+	dnsPrefix := apiServerFQDN
 	h := fnv.New64a()
 	h.Write([]byte(dnsPrefix))
 	r := rand.New(rand.NewSource(int64(h.Sum64()))) //nolint:gosec
