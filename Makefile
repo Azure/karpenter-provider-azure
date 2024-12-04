@@ -23,20 +23,16 @@ help: ## Display help
 
 presubmit: verify test ## Run all steps in the developer loop
 
-ci-test: battletest coverage ## Runs tests and submits coverage
+ci-test: test coverage ## Runs tests and submits coverage
 
 ci-non-test: verify vulncheck ## Runs checks other than tests
 
 test: ## Run tests
-	ginkgo -v --focus="${FOCUS}" ./pkg/$(shell echo $(TEST_SUITE) | tr A-Z a-z)
-
-battletest: ## Run randomized, racing, code-covered tests
-	ginkgo -v \
+	ginkgo -vv \
 		-race \
 		-cover -coverprofile=coverage.out -output-dir=. -coverpkg=./pkg/... \
 		--focus="${FOCUS}" \
 		--randomize-all \
-		-tags random_test_delay \
 		./pkg/...
 
 e2etests: ## Run the e2e suite against your local cluster
@@ -59,10 +55,7 @@ e2etests: ## Run the e2e suite against your local cluster
 benchmark:
 	go test -tags=test_performance -run=NoTests -bench=. ./...
 
-deflake: ## Run randomized, racing, code-covered tests to deflake failures
-	for i in $(shell seq 1 5); do make battletest || exit 1; done
-
-deflake-until-it-fails: ## Run randomized, racing tests until the test fails to catch flakes
+deflake: ## Run randomized, racing tests until the test fails to catch flakes
 	ginkgo \
 		--race \
 		--focus="${FOCUS}" \
