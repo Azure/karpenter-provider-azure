@@ -37,7 +37,7 @@ func TestNetworking(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func(){
 		env = azure.NewEnvironment(t)
-		ns = "default"	
+		ns = "default"
 	})
 	AfterSuite(func() {
 		By("Cleaning up Goldpinger resources")
@@ -61,8 +61,12 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Networking", func() {
 	Describe("GoldPinger", func(){
-	It("should ensure goldpinger resources are all deployed", func() {
-		By("Waiting for Goldpinger pods to be ready")
+	It("should ensure goldpinger resources are all deployed and are reachable", func() {
+		nodeClass := env.DefaultAKSNodeClass()
+		nodePool := env.DefaultNodePool(nodeClass)
+		env.ExpectCreated(nodeClass, nodePool)
+
+		By("should configure all k8s resources needed")
 		serviceAccount := createServiceAccount(ns)
 		clusterRole := createClusterRole()
 		clusterRoleBinding := createClusterRoleBinding(ns)
@@ -70,10 +74,8 @@ var _ = Describe("Networking", func() {
 		service := createService(ns)
 		deployment := createDeployment(ns)
 	
-		nodeClass := env.DefaultAKSNodeClass()
-		nodePool := env.DefaultNodePool(nodeClass)
-		By("Creating Goldpinger resources")
-		env.ExpectCreated(serviceAccount, clusterRole, clusterRoleBinding, daemonSet, service, deployment, nodePool)
+		env.ExpectCreated(serviceAccount, clusterRole, clusterRoleBinding, daemonSet, service, deployment)
+		By("should scale up the goldpinger-deploy pods for pod to pod connectivity testing and to scale up karp nodes")
 		Eventually(func() int {
 			pods := &corev1.PodList{}
 			err := env.Client.List(context.TODO(), pods, client.MatchingLabels{"app": "goldpinger"})
@@ -87,7 +89,8 @@ var _ = Describe("Networking", func() {
 				}
 			}
 			return readyCount
-		}, 5*time.Minute, 10*time.Second).Should(BeNumerically(">=", 10), "Not all Goldpinger pods are ready")
+		}, 15*time.Minute, 10*time.Second).Should(BeNumerically(">=", 10), "Not all Goldpinger pods are ready")
+		By("should ensure gold pinger service has clusterIP assigned")
 		Eventually(func() string {
 			svc := &corev1.Service{}
 			err := env.Client.Get(context.TODO(), client.ObjectKey{Name: "goldpinger", Namespace: ns}, svc)
@@ -96,10 +99,7 @@ var _ = Describe("Networking", func() {
 			}
 			return svc.Spec.ClusterIP
 	}, 2*time.Minute, 10*time.Second).ShouldNot(BeEmpty(), "Goldpinger service ClusterIP not assigned")
-	})
-
-	It("should verify node-to-node connectivity", func() {
-		By("Fetching node connectivity status from Goldpinger")
+	By("Fetching node connectivity status from Goldpinger")
 		resp, err := http.Get("http://goldpinger.default.svc.cluster.local:8080/check_all")
 		Expect(err).NotTo(HaveOccurred(), "Failed to reach Goldpinger service")
 		defer resp.Body.Close()
@@ -110,10 +110,12 @@ var _ = Describe("Networking", func() {
 		var checkAllResponse CheckAllResponse
 		err = json.Unmarshal(body, &checkAllResponse)
 		Expect(err).NotTo(HaveOccurred(), "Failed to parse Goldpinger response JSON")
-
+		
 		for node, status := range checkAllResponse.Nodes {
+			// This checks that all other nodes in the cluster can reach this node
 			Expect(status.Status).To(Equal("ok"), fmt.Sprintf("Node %s is not reachable", node))
 		}
+		// TODO: Check pod stats to see if pod to pod communciation works 
 		time.Sleep(time.Hour * 1)
 	})		
 	})
@@ -128,7 +130,9 @@ type NodeStatus struct {
 }
 
 type CheckAllResponse struct {
-	Nodes map[string]NodeStatus `json:"nodes"`
+    Nodes map[string]NodeStatus            `json:"nodes"`        // For node-to-node connectivity
+    Pods  map[string]map[string]NodeStatus `json:"pods"`         // For pod-to-pod reachability
+    PacketLoss map[string]float64          `json:"packet_loss"`  // For packet loss (if it occurred) 
 }
 
 func createServiceAccount(namespace string) *corev1.ServiceAccount {
@@ -259,6 +263,17 @@ func createDeployment(namespace string) *appsv1.Deployment {
 					Labels: map[string]string{"app": "goldpinger"},
 				},
 				Spec: corev1.PodSpec{
+					// We want to validate node to node communication so we need to spread the deployment between many karpenter nodes
+					TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+						{
+							MaxSkew: 1,
+							TopologyKey: "kubernetes.io/hostname",
+							WhenUnsatisfiable: corev1.DoNotSchedule,
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "goldpinger"},
+							},
+						},
+					},
 					ServiceAccountName: "goldpinger-serviceaccount",
 					Containers: []corev1.Container{
 						{
