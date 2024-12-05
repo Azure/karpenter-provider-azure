@@ -36,25 +36,44 @@ var ns string
 func TestNetworking(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func(){
-
 		env = azure.NewEnvironment(t)
 		ns = "default"	
-		// TODO: Migrate to karpenter test helpers
+	})
+	AfterSuite(func() {
+		By("Cleaning up Goldpinger resources")
+		env.ExpectDeleted(
+			&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "goldpinger-serviceaccount", Namespace: ns}},
+			&rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "goldpinger-clusterrole"}},
+			&rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "goldpinger-clusterrolebinding"}},
+			&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Name: "goldpinger-daemon", Namespace: ns}},
+			&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "goldpinger", Namespace: ns}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "goldpinger-deploy", Namespace: ns}},
+		)
+	})
+
+	RunSpecs(t, "Networking")
+}
+
+var _ = BeforeEach(func() { env.BeforeEach() })
+var _ = AfterEach(func() { env.Cleanup() })
+var _ = AfterEach(func() { env.AfterEach() })
+
+
+var _ = Describe("Networking", func() {
+	Describe("GoldPinger", func(){
+	It("should ensure goldpinger resources are all deployed", func() {
+		By("Waiting for Goldpinger pods to be ready")
 		serviceAccount := createServiceAccount(ns)
 		clusterRole := createClusterRole()
 		clusterRoleBinding := createClusterRoleBinding(ns)
 		daemonSet := createDaemonSet(ns)
 		service := createService(ns)
+		deployment := createDeployment(ns)
+	
+		nodeClass := env.DefaultAKSNodeClass()
+		nodePool := env.DefaultNodePool(nodeClass)
 		By("Creating Goldpinger resources")
-		env.ExpectCreated(serviceAccount, clusterRole, clusterRoleBinding, daemonSet, service)
-		RunSpecs(t, "Networking")
-	})
-}
-
-var _ = Describe("Networking", func() {
-	Describe("GoldPinger", func(){
-	It("should ensure Goldpinger pods are ready", func() {
-		By("Waiting for Goldpinger pods to be ready")
+		env.ExpectCreated(serviceAccount, clusterRole, clusterRoleBinding, daemonSet, service, deployment, nodePool)
 		Eventually(func() int {
 			pods := &corev1.PodList{}
 			err := env.Client.List(context.TODO(), pods, client.MatchingLabels{"app": "goldpinger"})
@@ -69,6 +88,14 @@ var _ = Describe("Networking", func() {
 			}
 			return readyCount
 		}, 5*time.Minute, 10*time.Second).Should(BeNumerically(">=", 10), "Not all Goldpinger pods are ready")
+		Eventually(func() string {
+			svc := &corev1.Service{}
+			err := env.Client.Get(context.TODO(), client.ObjectKey{Name: "goldpinger", Namespace: ns}, svc)
+			if err != nil {
+				return ""
+			}
+			return svc.Spec.ClusterIP
+	}, 2*time.Minute, 10*time.Second).ShouldNot(BeEmpty(), "Goldpinger service ClusterIP not assigned")
 	})
 
 	It("should verify node-to-node connectivity", func() {
@@ -87,8 +114,10 @@ var _ = Describe("Networking", func() {
 		for node, status := range checkAllResponse.Nodes {
 			Expect(status.Status).To(Equal("ok"), fmt.Sprintf("Node %s is not reachable", node))
 		}
+		time.Sleep(time.Hour * 1)
 	})		
 	})
+	
 })
 
 
@@ -191,26 +220,26 @@ func createDaemonSet(namespace string) *appsv1.DaemonSet {
 	}
 }
 
+
 func createService(namespace string) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "goldpinger",
-			Namespace: namespace,
-			Labels:    map[string]string{"app": "goldpinger"},
-		},
-		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeNodePort,
-			Ports: []corev1.ServicePort{
-				{
-					Port:       8080,
-					TargetPort: intstr.FromInt(8080),
-					NodePort:   30080,
-					Name:       "http",
-				},
-			},
-			Selector: map[string]string{"app": "goldpinger"},
-		},
-	}
+    return &corev1.Service{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      "goldpinger",
+            Namespace: namespace,
+            Labels:    map[string]string{"app": "goldpinger"},
+        },
+        Spec: corev1.ServiceSpec{
+            Type: corev1.ServiceTypeNodePort,
+            Ports: []corev1.ServicePort{
+                {
+                    Port:       8080,
+                    TargetPort: intstr.FromInt(8080),
+                    Name:       "http",
+                },
+            },
+            Selector: map[string]string{"app": "goldpinger"},
+        },
+    }
 }
 
 func createDeployment(namespace string) *appsv1.Deployment {
