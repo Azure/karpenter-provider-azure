@@ -62,17 +62,21 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 	}
 }
 
-// Get returns Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
-func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily ImageFamily) (string, error) {
+// Get returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
+func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily ImageFamily) (string, string, error) {
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
-		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedLabels); err == nil {
+		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
 			communityImageName, publicGalleryURL := defaultImage.CommunityImage, defaultImage.PublicGalleryURL
-			return p.GetImageID(ctx, communityImageName, publicGalleryURL, nodeClass.Spec.GetImageVersion())
+			imageID, err := p.GetImageID(ctx, communityImageName, publicGalleryURL)
+			if err != nil {
+				return "", "", err
+			}
+			return defaultImage.Distro, imageID, nil
 		}
 	}
 
-	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
+	return "", "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
 }
 
 func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
@@ -92,29 +96,27 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 }
 
 // Input versionName == "" to get the latest version
-func (p *Provider) GetImageID(ctx context.Context, communityImageName, publicGalleryURL, versionName string) (string, error) {
-	key := fmt.Sprintf("%s/%s/%s", publicGalleryURL, communityImageName, versionName)
+func (p *Provider) GetImageID(ctx context.Context, communityImageName, publicGalleryURL string) (string, error) {
+	key := fmt.Sprintf("%s/%s", publicGalleryURL, communityImageName)
 	imageID, found := p.imageCache.Get(key)
 	if found {
 		return imageID.(string), nil
 	}
 
-	if versionName == "" {
-		pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
-		topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
-		for pager.More() {
-			page, err := pager.NextPage(context.Background())
-			if err != nil {
-				return "", err
-			}
-			for _, imageVersion := range page.CommunityGalleryImageVersionList.Value {
-				if lo.IsEmpty(topImageVersionCandidate) || imageVersion.Properties.PublishedDate.After(*topImageVersionCandidate.Properties.PublishedDate) {
-					topImageVersionCandidate = *imageVersion
-				}
+	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
+	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
+	for pager.More() {
+		page, err := pager.NextPage(context.Background())
+		if err != nil {
+			return "", err
+		}
+		for _, imageVersion := range page.CommunityGalleryImageVersionList.Value {
+			if lo.IsEmpty(topImageVersionCandidate) || imageVersion.Properties.PublishedDate.After(*topImageVersionCandidate.Properties.PublishedDate) {
+				topImageVersionCandidate = *imageVersion
 			}
 		}
-		versionName = lo.FromPtr(topImageVersionCandidate.Name)
 	}
+	versionName := lo.FromPtr(topImageVersionCandidate.Name)
 
 	selectedImageID := BuildImageID(publicGalleryURL, communityImageName, versionName)
 	if p.cm.HasChanged(key, selectedImageID) {

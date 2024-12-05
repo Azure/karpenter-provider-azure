@@ -22,6 +22,11 @@ import (
 	"testing"
 	"time"
 
+	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
+
+	"github.com/awslabs/operatorpkg/object"
+	opstatus "github.com/awslabs/operatorpkg/status"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -38,67 +43,65 @@ import (
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 	. "knative.dev/pkg/logging/testing"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
-	"sigs.k8s.io/karpenter/pkg/operator/controller"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
-	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 var ctx context.Context
-var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv *test.Environment
 var fakeClock *clock.FakeClock
-var nodePool *corev1beta1.NodePool
+var nodePool *karpv1.NodePool
 var nodeClass *v1alpha2.AKSNodeClass
 var cluster *state.Cluster
 var cloudProvider *cloudprovider.CloudProvider
-var garbageCollectionController controller.Controller
-var coreProvisioner *provisioning.Provisioner
+var garbageCollectionController *garbagecollection.Controller
+var prov *provisioning.Provisioner
 
 func TestAPIs(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "NodeClaim")
+	RunSpecs(t, "GarbageCollection")
 }
 
 var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
-
-	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
-	ctx, stop = context.WithCancel(ctx)
+	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	garbageCollectionController = garbagecollection.NewController(env.Client, cloudProvider)
 	fakeClock = &clock.FakeClock{}
-	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
-	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster)
+	cluster = state.NewCluster(fakeClock, env.Client)
+	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 })
 
 var _ = AfterSuite(func() {
-	stop()
+	//	stop()
 	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
 })
 
 var _ = BeforeEach(func() {
 	nodeClass = test.AKSNodeClass()
-	nodePool = coretest.NodePool(corev1beta1.NodePool{
-		Spec: corev1beta1.NodePoolSpec{
-			Template: corev1beta1.NodeClaimTemplate{
-				Spec: corev1beta1.NodeClaimSpec{
-					NodeClassRef: &corev1beta1.NodeClassReference{
-						Name: nodeClass.Name,
+	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	nodePool = coretest.NodePool(karpv1.NodePool{
+		Spec: karpv1.NodePoolSpec{
+			Template: karpv1.NodeClaimTemplate{
+				Spec: karpv1.NodeClaimTemplateSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+						Name:  nodeClass.Name,
 					},
 				},
 			},
@@ -113,7 +116,10 @@ var _ = AfterEach(func() {
 	ExpectCleanedUp(ctx, env.Client)
 })
 
-var _ = Describe("NodeClaimGarbageCollection", func() {
+// TODO: move before/after each into the tests (see AWS)
+// review tests themselves (very different from AWS?)
+// (e.g. AWS has not a single ExpectPRovisioned? why?)
+var _ = Describe("GarbageCollection", func() {
 	var vm *armcompute.VirtualMachine
 	var providerID string
 	var err error
@@ -122,7 +128,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 		BeforeEach(func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
@@ -130,6 +136,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			Expect(err).To(BeNil())
 			providerID = utils.ResourceIDToProviderID(ctx, *vm.ID)
 		})
+
 		It("should not delete an instance if it was not launched by a NodeClaim", func() {
 			// Remove the "karpenter.sh/managed-by" tag (this isn't launched by a NodeClaim)
 			vm.Properties = &armcompute.VirtualMachineProperties{
@@ -140,7 +147,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-			ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+			ExpectSingletonReconciled(ctx, garbageCollectionController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -150,7 +157,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			var vmName string
 			for i := 0; i < 100; i++ {
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 				if azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len() == 1 {
 					vmName = azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
@@ -173,7 +180,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 					ids = append(ids, *vm.ID)
 				}
 			}
-			ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+			ExpectSingletonReconciled(ctx, garbageCollectionController)
 
 			wg := sync.WaitGroup{}
 			for _, id := range ids {
@@ -192,11 +199,11 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 		It("should not delete all instances if they all have NodeClaim owners", func() {
 			// Generate 100 instances that have different instanceIDs
 			var ids []string
-			var nodeClaims []*corev1beta1.NodeClaim
+			var nodeClaims []*karpv1.NodeClaim
 			var vmName string
 			for i := 0; i < 100; i++ {
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 				if azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len() == 1 {
 					vmName = azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
@@ -216,8 +223,8 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 								instance.NodePoolTagKey: lo.ToPtr("default"),
 							},
 						})
-					nodeClaim := coretest.NodeClaim(corev1beta1.NodeClaim{
-						Status: corev1beta1.NodeClaimStatus{
+					nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+						Status: karpv1.NodeClaimStatus{
 							ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
 						},
 					})
@@ -226,7 +233,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 					nodeClaims = append(nodeClaims, nodeClaim)
 				}
 			}
-			ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+			ExpectSingletonReconciled(ctx, garbageCollectionController)
 
 			wg := sync.WaitGroup{}
 			for _, id := range ids {
@@ -252,7 +259,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			}
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-			ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+			ExpectSingletonReconciled(ctx, garbageCollectionController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -263,8 +270,8 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			}
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-			nodeClaim := coretest.NodeClaim(corev1beta1.NodeClaim{
-				Status: corev1beta1.NodeClaimStatus{
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				Status: karpv1.NodeClaimStatus{
 					ProviderID: providerID,
 				},
 			})
@@ -273,7 +280,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			})
 			ExpectApplied(ctx, env.Client, nodeClaim, node)
 
-			ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+			ExpectSingletonReconciled(ctx, garbageCollectionController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectExists(ctx, env.Client, node)
@@ -300,7 +307,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			}
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-			ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+			ExpectSingletonReconciled(ctx, garbageCollectionController)
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -316,7 +323,7 @@ var _ = Describe("NodeClaimGarbageCollection", func() {
 			})
 			ExpectApplied(ctx, env.Client, node)
 
-			ExpectReconcileSucceeded(ctx, garbageCollectionController, client.ObjectKey{})
+			ExpectSingletonReconciled(ctx, garbageCollectionController)
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())

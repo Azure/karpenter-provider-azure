@@ -21,9 +21,10 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
@@ -49,31 +50,34 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			CommunityImage:   AzureLinuxGen2CommunityImage,
 			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
 			),
+			Distro: "aks-azurelinux-v2-gen2",
 		},
 		{
 			CommunityImage:   AzureLinuxGen1CommunityImage,
 			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
 			),
+			Distro: "aks-azurelinux-v2",
 		},
 		{
 			CommunityImage:   AzureLinuxGen2ArmCommunityImage,
 			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, corev1beta1.ArchitectureArm64),
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
 			),
+			Distro: "aks-azurelinux-v2-arm64-gen2",
 		},
 	}
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u AzureLinux) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -84,9 +88,9 @@ func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 			CABundle:         caBundle,
 			GPUNode:          u.Options.GPUNode,
 			GPUDriverVersion: u.Options.GPUDriverVersion,
-			// GPUImageSHA: u.Options.GPUImageSHA - GPU image SHA only applies to Ubuntu
-			// See: https://github.com/Azure/AgentBaker/blob/f393d6e4d689d9204d6000c85623ad9b764e2a29/vhdbuilder/packer/install-dependencies.sh#L201
-			SubnetID: u.Options.SubnetID,
+			GPUDriverType:    u.Options.GPUDriverType,
+			GPUImageSHA:      u.Options.GPUImageSHA,
+			SubnetID:         u.Options.SubnetID,
 		},
 		Arch:                           u.Options.Arch,
 		TenantID:                       u.Options.TenantID,
@@ -100,5 +104,26 @@ func (u AzureLinux) UserData(kubeletConfig *corev1beta1.KubeletConfiguration, ta
 		NetworkPlugin:                  u.Options.NetworkPlugin,
 		NetworkPolicy:                  u.Options.NetworkPolicy,
 		KubernetesVersion:              u.Options.KubernetesVersion,
+	}
+}
+
+// UserData returns the default userdata script for the image Family
+func (u AzureLinux) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string) customscriptsbootstrap.Bootstrapper {
+	return customscriptsbootstrap.ProvisionClientBootstrap{
+		ClusterName:                    u.Options.ClusterName,
+		KubeletConfig:                  kubeletConfig,
+		Taints:                         taints,
+		StartupTaints:                  startupTaints,
+		Labels:                         labels,
+		SubnetID:                       u.Options.SubnetID,
+		Arch:                           u.Options.Arch,
+		SubscriptionID:                 u.Options.SubscriptionID,
+		ResourceGroup:                  u.Options.ResourceGroup,
+		KubeletClientTLSBootstrapToken: u.Options.KubeletClientTLSBootstrapToken,
+		KubernetesVersion:              u.Options.KubernetesVersion,
+		ImageDistro:                    imageDistro,
+		InstanceType:                   instanceType,
+		StorageProfile:                 storageProfile,
+		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 	}
 }

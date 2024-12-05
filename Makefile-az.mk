@@ -18,7 +18,7 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
 
-az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload 
+az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
 az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
@@ -46,9 +46,9 @@ az-mkacr: az-mkrg ## Create test ACR
 az-acrimport: ## Imports an image to an acr registry
 	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6"
 
-az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses) 
+az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses)
 	kubectl delete pods -n default --all
-	kubectl delete nodeclaims --all 
+	kubectl delete nodeclaims --all
 	kubectl delete nodepools --all
 	kubectl delete aksnodeclasses --all
 
@@ -171,7 +171,7 @@ az-run: ## Deploy the controller from the current state of your git repository i
 	skaffold run
 
 az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be scaled manually)
-	kubectl apply -f examples/v1beta1/general-purpose.yaml
+	kubectl apply -f examples/v1/general-purpose.yaml
 	kubectl apply -f examples/workloads/inflate.yaml
 
 az-mc-show: ## show managed cluster
@@ -319,15 +319,19 @@ az-kdebug: ## Inject ephemeral debug container (kubectl debug) into Karpenter po
 	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n "${KARPENTER_NAMESPACE}" -o name))
 	kubectl debug -n "${KARPENTER_NAMESPACE}" $(POD) --image wbitt/network-multitool -it -- sh
 
-az-klogs: ## Karpenter logs
+az-klogs-watch: ## Watch Karpenter logs
 	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n "${KARPENTER_NAMESPACE}" -o name))
 	kubectl logs -f -n "${KARPENTER_NAMESPACE}" $(POD)
+
+az-klogs-pretty: ## Pretty Print Karpenter logs
+	$(eval POD=$(shell kubectl get pods -l app.kubernetes.io/name=karpenter -n "${KARPENTER_NAMESPACE}" -o name))
+	kubectl logs -n "${KARPENTER_NAMESPACE}" $(POD) | jq "."
 
 az-kevents: ## Karpenter events
 	kubectl get events -A --field-selector source=karpenter
 
-az-node-viewer: ## Watch nodes using eks-node-viewer
-	eks-node-viewer --disable-pricing --node-selector "karpenter.sh/nodepool" # --resources cpu,memory
+az-node-viewer: ## Watch nodes using aks-node-viewer
+	aks-node-viewer # --node-selector "karpenter.sh/nodepool" --resources cpu,memory
 
 az-argvmlist: ## List current VMs owned by Karpenter
 	az graph query -q "Resources | where type =~ 'microsoft.compute/virtualmachines' | where resourceGroup == tolower('$(AZURE_RESOURCE_GROUP_MC)') | where tags has_cs 'karpenter.sh_nodepool'" \
@@ -358,3 +362,11 @@ az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot rele
 
 az-rmcrds: ## Delete Karpenter CRDs
 	kubectl delete crd nodepools.karpenter.sh nodeclaims.karpenter.sh aksnodeclasses.karpenter.azure.com
+
+az-swagger-generate-clients-raw:
+	cd pkg/provisionclients && swagger generate client -f swagger/*.json
+	hack/azure/temp_fix_get_bootstrapping_resp_error.sh
+
+az-swagger-generate-clients: az-swagger-generate-clients-raw
+	hack/boilerplate.sh
+	make tidy

@@ -15,10 +15,12 @@ Table of contents:
   - [Create a cluster](#create-a-cluster)
   - [Configure Helm chart values](#configure-helm-chart-values)
   - [Install Karpenter](#install-karpenter)
+- [Using Karpenter (self-hosted)](#using-karpenter-self-hosted)
   - [Create NodePool](#create-nodepool)
   - [Scale up deployment](#scale-up-deployment)
   - [Scale down deployment](#scale-down-deployment)
   - [Delete Karpenter nodes manually](#delete-karpenter-nodes-manually)
+- [Cleanup (self-hosted)](#cleanup-self-hosted)
   - [Delete the cluster](#delete-the-cluster)
 - [Source Attribution](#source-attribution)
 - [Community, discussion, contribution, and support](#community-discussion-contribution-and-support)
@@ -70,9 +72,15 @@ Set environment variables:
 ```bash
 export CLUSTER_NAME=karpenter
 export RG=karpenter
-export LOCATION=eastus
+export LOCATION=westus3
 export KARPENTER_NAMESPACE=kube-system
 
+```
+
+Login and select a subscription to use:
+
+```bash
+az login
 ```
 
 Create the resource group:
@@ -81,13 +89,13 @@ Create the resource group:
 az group create --name ${RG} --location ${LOCATION}
 ```
 
-Create the workload MSI that is the backing for the karpenter pod auth:
+Create the workload MSI that backs the karpenter pod auth:
 
 ```bash
 KMSI_JSON=$(az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}")
 ```
 
-Create AKS cluster compatible with Karpenter, and with the workload identity enabled:
+Create the AKS cluster compatible with Karpenter, with workload identity enabled:
 
 ```bash
 AKS_JSON=$(az aks create \
@@ -119,24 +127,32 @@ for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identit
 done
 ```
 
+> Note: If you experience any issues creating the role assignments, but should have the given ownership to do so, try going through the Azure portal:
+> 1. Navigate to your MSI.
+> 2. Give it the following roles "Virtual Machine Contributor", "Network Contributor", and "Managed Identity Operator" at the scope of the node resource group.
+
 ### Configure Helm chart values
 
-Karpenter Helm chart requires some configuration via values to work with a specific AKS cluster. The values are documented in the Helm chart itself, but you can use `configure-values.sh` to generate `karpenter-values.yaml` with the required configuration. The script interrogates the AKS cluster and generates the values file, using `karpenter-values-template.yaml` as a template. (The script fetches the template automatically.)
+The Karpenter Helm chart requires specific configuration values to work with an AKS cluster. While these values are documented within the Helm chart, you can use the `configure-values.sh` script to generate the `karpenter-values.yaml` file with the necessary configuration. This script queries the AKS cluster and creates `karpenter-values.yaml` using `karpenter-values-template.yaml` as the configuration template. Although the script automatically fetches the template from the main branch, inconsistencies may arise between the installed version of Karpenter and the repository code. Therefore, it is advisable to download the specific version of the template before running the script.
 
 ```bash
+# Select version to install
+export KARPENTER_VERSION=0.7.0
+
+# Download the specific's version template
+curl -sO https://raw.githubusercontent.com/Azure/karpenter/v${KARPENTER_VERSION}/karpenter-values-template.yaml
+
 # use configure-values.sh to generate karpenter-values.yaml
 # (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
-curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/hack/deploy/configure-values.sh
+curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/hack/deploy/configure-values.sh
 chmod +x ./configure-values.sh && ./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
 ```
 
 ### Install Karpenter
 
-Usinge the generated `karpenter-values.yaml` file, install Karpenter using Helm:
+Using the generated `karpenter-values.yaml` file, install Karpenter using Helm:
 
 ```bash
-export KARPENTER_VERSION=0.5.1
-
 helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
   --version "${KARPENTER_VERSION}" \
   --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
@@ -146,11 +162,21 @@ helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter
   --set controller.resources.limits.cpu=1 \
   --set controller.resources.limits.memory=1Gi \
   --wait
+```
 
+Check karpenter deployed successfully:
+
+```bash
+kubectl get pods --namespace "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter
+```
+
+Check its logs:
+
+```bash
 kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
 
-Snapshot versions can be installed in a similar way for development:
+Note: Snapshot versions can be installed in a similar way for development:
 
 ```bash
 export KARPENTER_NAMESPACE=kube-system
@@ -165,9 +191,9 @@ helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpe
   --set controller.resources.limits.cpu=1 \
   --set controller.resources.limits.memory=1Gi \
   --wait
-
-kubectl logs -f -n "${KARPENTER_NAMESPACE}" -l app.kubernetes.io/name=karpenter -c controller
 ```
+
+## Using Karpenter (self-hosted)
 
 ### Create NodePool
 
@@ -271,6 +297,8 @@ If you delete a node with kubectl, Karpenter will gracefully cordon, drain, and 
 ```bash
 kubectl delete node $NODE_NAME
 ```
+
+## Cleanup (self-hosted)
 
 ### Delete the cluster
 

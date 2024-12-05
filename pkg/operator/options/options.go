@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"k8s.io/apimachinery/pkg/util/sets"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/utils/env"
@@ -74,22 +75,26 @@ type Options struct {
 	SubnetID string // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 	setFlags map[string]bool
 
-	NodeResourceGroup string
+	NodeResourceGroup          string
+	ProvisionMode              string
+	NodeBootstrappingServerURL string
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.ClusterName, "cluster-name", env.WithDefaultString("CLUSTER_NAME", ""), "[REQUIRED] The kubernetes cluster name for resource tags.")
 	fs.StringVar(&o.ClusterEndpoint, "cluster-endpoint", env.WithDefaultString("CLUSTER_ENDPOINT", ""), "[REQUIRED] The external kubernetes cluster endpoint for new nodes to connect with.")
-	fs.Float64Var(&o.VMMemoryOverheadPercent, "vm-memory-overhead-percent", env.WithDefaultFloat64("VM_MEMORY_OVERHEAD_PERCENT", 0.075), "The VM memory overhead as a percent that will be subtracted from the total memory for all instance types.")
+	fs.Float64Var(&o.VMMemoryOverheadPercent, "vm-memory-overhead-percent", utils.WithDefaultFloat64("VM_MEMORY_OVERHEAD_PERCENT", 0.075), "The VM memory overhead as a percent that will be subtracted from the total memory for all instance types.")
 	fs.StringVar(&o.KubeletClientTLSBootstrapToken, "kubelet-bootstrap-token", env.WithDefaultString("KUBELET_BOOTSTRAP_TOKEN", ""), "[REQUIRED] The bootstrap token for new nodes to join the cluster.")
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
 	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", consts.NetworkPluginAzure), "The network plugin used by the cluster.")
-	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", consts.NetworkPluginModeOverlay), "network plugin mode of the cluster")
+	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", consts.NetworkPluginModeOverlay), "network plugin mode of the cluster.")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
 	fs.StringVar(&o.NetworkDataplane, "network-dataplane", env.WithDefaultString("NETWORK_DATAPLANE", "cilium"), "The network dataplane used by the cluster.")
-	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR")
+	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
-	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live")
+	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live.")
+	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
+	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
 }
 
 func (o Options) GetAPIServerName() string {

@@ -39,6 +39,8 @@ type OptionsFields struct {
 	NodeIdentities                 []string
 	SubnetID                       *string
 	NodeResourceGroup              *string
+	ProvisionMode                  *string
+	NodeBootstrappingServerURL     *string
 }
 
 func Options(overrides ...OptionsFields) *azoptions.Options {
@@ -62,5 +64,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NodeIdentities:                 options.NodeIdentities,
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
+		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
 	}
 }

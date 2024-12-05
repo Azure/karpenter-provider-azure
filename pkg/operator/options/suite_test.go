@@ -53,6 +53,8 @@ var _ = Describe("Options", func() {
 		"NETWORK_PLUGIN",
 		"NETWORK_POLICY",
 		"NODE_IDENTITIES",
+		"PROVISION_MODE",
+		"NODEBOOTSTRAPPING_SERVER_URL",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -95,6 +97,8 @@ var _ = Describe("Options", func() {
 			os.Setenv("NETWORK_POLICY", "env-network-policy")
 			os.Setenv("NODE_IDENTITIES", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2")
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
+			os.Setenv("PROVISION_MODE", "bootstrappingclient")
+			os.Setenv("NODEBOOTSTRAPPING_SERVER_URL", "https://nodebootstrapping-server-url")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -112,6 +116,8 @@ var _ = Describe("Options", func() {
 				NetworkPolicy:                  lo.ToPtr("env-network-policy"),
 				SubnetID:                       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
+				ProvisionMode:                  lo.ToPtr("bootstrappingclient"),
+				NodeBootstrappingServerURL:     lo.ToPtr("https://nodebootstrapping-server-url"),
 			}))
 		})
 	})
@@ -272,6 +278,28 @@ var _ = Describe("Options", func() {
 				"--network-plugin-mode", "",
 			)
 			Expect(err).ToNot(HaveOccurred())
+		})
+		It("should fail validation when ProvisionMode is not valid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--provision-mode", "ekeselfexposed",
+			)
+			Expect(err).To(MatchError(ContainSubstring("provision-mode")))
+		})
+		It("should fail validation when ProvisionMode is bootstrappingclient but NodebootstrappingServerURL is not provided", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--provision-mode", "bootstrappingclient",
+			)
+			Expect(err).To(MatchError(ContainSubstring("nodebootstrapping-server-url")))
 		})
 	})
 })
