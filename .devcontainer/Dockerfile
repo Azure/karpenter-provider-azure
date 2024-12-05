@@ -1,8 +1,8 @@
 # See here for image contents: https://github.com/devcontainers/images/tree/main/src/go
 
 # [Choice] Go version (use -bullseye variants on local arm64/Apple Silicon): 1, 1.16, 1.17, 1-bullseye, 1.16-bullseye, 1.17-bullseye, 1-buster, 1.16-buster, 1.17-buster
-ARG VARIANT="1.18-bullseye"
-FROM mcr.microsoft.com/vscode/devcontainers/go:1-${VARIANT}
+ARG VARIANT="1.23-bullseye"
+FROM mcr.microsoft.com/vscode/devcontainers/go:dev-${VARIANT}
 
 # [Optional] Uncomment this section to install additional OS packages.
 # graphviz for pprof

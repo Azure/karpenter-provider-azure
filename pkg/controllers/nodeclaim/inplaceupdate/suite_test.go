@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package inplaceupdate
+package inplaceupdate_test
 
 import (
 	"context"
@@ -25,26 +25,24 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	. "knative.dev/pkg/logging/testing"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
-	"sigs.k8s.io/karpenter/pkg/operator/scheme"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 var ctx context.Context
-var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv *test.Environment
-var inPlaceUpdateController corecontroller.Controller
+var inPlaceUpdateController *inplaceupdate.Controller
 
 func TestInPlaceUpdate(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -54,17 +52,14 @@ func TestInPlaceUpdate(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-
-	env = coretest.NewEnvironment(scheme.Scheme, coretest.WithCRDs(apis.CRDs...))
-
-	ctx, stop = context.WithCancel(ctx)
+	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	// ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
-
-	inPlaceUpdateController = NewController(env.Client, azureEnv.InstanceProvider)
+	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.InstanceProvider)
 })
 
 var _ = AfterSuite(func() {
-	stop()
+	//stop()
 	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
 })
 
@@ -101,13 +96,13 @@ var _ = Describe("Unit tests", func() {
 				},
 			}
 
-			hash1, err := HashFromVM(vm1)
+			hash1, err := inplaceupdate.HashFromVM(vm1)
 			Expect(err).ToNot(HaveOccurred())
 
-			hash2, err := HashFromVM(vm2)
+			hash2, err := inplaceupdate.HashFromVM(vm2)
 			Expect(err).ToNot(HaveOccurred())
 
-			hash3, err := HashFromVM(vm3)
+			hash3, err := inplaceupdate.HashFromVM(vm3)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(hash1).To(Equal(hash2))
@@ -124,7 +119,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 			}
 
-			hash1, err := HashFromNodeClaim(options, nil)
+			hash1, err := inplaceupdate.HashFromNodeClaim(options, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			options.NodeIdentities = []string{
@@ -132,7 +127,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 			}
-			hash2, err := HashFromNodeClaim(options, nil)
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			options.NodeIdentities = []string{
@@ -140,7 +135,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			hash3, err := HashFromNodeClaim(options, nil)
+			hash3, err := inplaceupdate.HashFromNodeClaim(options, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(hash1).To(Equal(hash2))
@@ -156,7 +151,7 @@ var _ = Describe("Unit tests", func() {
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := calculateVMPatch(options, currentVM)
+			update := inplaceupdate.CalculateVMPatch(options, currentVM)
 
 			Expect(update).ToNot(BeNil())
 			Expect(update.Identity).ToNot(BeNil())
@@ -177,7 +172,7 @@ var _ = Describe("Unit tests", func() {
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 			}
-			update := calculateVMPatch(options, currentVM)
+			update := inplaceupdate.CalculateVMPatch(options, currentVM)
 
 			Expect(update).ToNot(BeNil())
 			Expect(update.Identity).ToNot(BeNil())
@@ -200,7 +195,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := calculateVMPatch(options, currentVM)
+			update := inplaceupdate.CalculateVMPatch(options, currentVM)
 
 			Expect(update).To(BeNil())
 		})
@@ -219,7 +214,7 @@ var _ = Describe("Unit tests", func() {
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := calculateVMPatch(options, currentVM)
+			update := inplaceupdate.CalculateVMPatch(options, currentVM)
 
 			Expect(update).To(BeNil())
 		})
@@ -229,7 +224,7 @@ var _ = Describe("Unit tests", func() {
 var _ = Describe("In Place Update Controller", func() {
 	var vmName string
 	var vm *armcompute.VirtualMachine
-	var nodeClaim *corev1beta1.NodeClaim
+	var nodeClaim *karpv1.NodeClaim
 
 	BeforeEach(func() {
 		vmName = "vm-a"
@@ -238,8 +233,8 @@ var _ = Describe("In Place Update Controller", func() {
 			Name: lo.ToPtr(vmName),
 		}
 
-		nodeClaim = coretest.NodeClaim(corev1beta1.NodeClaim{
-			Status: corev1beta1.NodeClaimStatus{
+		nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+			Status: karpv1.NodeClaimStatus{
 				ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
 			},
 		})
@@ -256,14 +251,14 @@ var _ = Describe("In Place Update Controller", func() {
 	Context("Basic tests", func() {
 		It("should not call Azure if the hash matches", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-			hash, err := HashFromNodeClaim(options.FromContext(ctx), nodeClaim)
+			hash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Force the goal hash into annotations here, which should prevent the reconciler from doing anything on Azure
 			nodeClaim.Annotations = map[string]string{v1alpha2.AnnotationInPlaceUpdateHash: hash}
 
 			ExpectApplied(ctx, env.Client, nodeClaim)
-			ExpectReconcileSucceeded(ctx, inPlaceUpdateController, client.ObjectKeyFromObject(nodeClaim))
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineUpdateBehavior.Calls()).To(Equal(0))
 
@@ -278,7 +273,7 @@ var _ = Describe("In Place Update Controller", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 			ExpectApplied(ctx, env.Client, nodeClaim)
-			ExpectReconcileSucceeded(ctx, inPlaceUpdateController, client.ObjectKeyFromObject(nodeClaim))
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
 			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())
@@ -304,7 +299,7 @@ var _ = Describe("In Place Update Controller", func() {
 					}))
 
 			ExpectApplied(ctx, env.Client, nodeClaim)
-			ExpectReconcileSucceeded(ctx, inPlaceUpdateController, client.ObjectKeyFromObject(nodeClaim))
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
 			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())
@@ -327,7 +322,7 @@ var _ = Describe("In Place Update Controller", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 			ExpectApplied(ctx, env.Client, nodeClaim)
-			ExpectReconcileSucceeded(ctx, inPlaceUpdateController, client.ObjectKeyFromObject(nodeClaim))
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineUpdateBehavior.Calls()).To(Equal(0))
 
@@ -355,7 +350,7 @@ var _ = Describe("In Place Update Controller", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 			ExpectApplied(ctx, env.Client, nodeClaim)
-			ExpectReconcileSucceeded(ctx, inPlaceUpdateController, client.ObjectKeyFromObject(nodeClaim))
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
 			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())

@@ -24,11 +24,11 @@ import (
 
 	"github.com/patrickmn/go-cache"
 	"knative.dev/pkg/logging"
-	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 var (
-	spotKey = key("", "", v1beta1.CapacityTypeSpot)
+	spotKey = key("", "", karpv1.CapacityTypeSpot)
 )
 
 // UnavailableOfferings stores any offerings that return ICE (insufficient capacity errors) when
@@ -58,7 +58,7 @@ func NewUnavailableOfferings() *UnavailableOfferings {
 
 // IsUnavailable returns true if the offering appears in the cache
 func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
-	if capacityType == v1beta1.CapacityTypeSpot {
+	if capacityType == karpv1.CapacityTypeSpot {
 		if _, found := u.cache.Get(spotKey); found {
 			return true
 		}
@@ -69,7 +69,7 @@ func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType st
 
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
 func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, ttl time.Duration) {
-	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", v1beta1.CapacityTypeSpot, UnavailableOfferingsTTL)
+	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", karpv1.CapacityTypeSpot, UnavailableOfferingsTTL)
 }
 
 // MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL

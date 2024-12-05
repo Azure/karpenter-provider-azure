@@ -17,11 +17,15 @@ limitations under the License.
 package test
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
 
@@ -43,4 +47,16 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 	nc.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 	nc.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2204ImageFamily)
 	return nc
+}
+
+func AKSNodeClassFieldIndexer(ctx context.Context) func(cache.Cache) error {
+	return func(c cache.Cache) error {
+		return c.IndexField(ctx, &karpv1.NodeClaim{}, "spec.nodeClassRef.name", func(obj client.Object) []string {
+			nc := obj.(*karpv1.NodeClaim)
+			if nc.Spec.NodeClassRef == nil {
+				return []string{""}
+			}
+			return []string{nc.Spec.NodeClassRef.Name}
+		})
+	}
 }

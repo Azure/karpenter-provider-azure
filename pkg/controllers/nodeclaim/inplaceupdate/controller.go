@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/samber/lo"
 	"go.uber.org/zap/zapcore"
 	"knative.dev/pkg/logging"
@@ -31,8 +32,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
+	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -43,28 +45,22 @@ import (
 
 type Controller struct {
 	kubeClient       client.Client
-	instanceProvider *instance.Provider
+	instanceProvider instance.Provider
 }
-
-var _ corecontroller.TypedController[*v1beta1.NodeClaim] = &Controller{}
 
 func NewController(
 	kubeClient client.Client,
-	instanceProvider *instance.Provider,
-) corecontroller.Controller {
-	controller := &Controller{
+	instanceProvider instance.Provider,
+) *Controller {
+	return &Controller{
 		kubeClient:       kubeClient,
 		instanceProvider: instanceProvider,
 	}
-
-	return corecontroller.Typed[*v1beta1.NodeClaim](kubeClient, controller)
 }
 
-func (c *Controller) Name() string {
-	return "nodeclaim.inplaceupdate"
-}
+func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim) (reconcile.Result, error) {
+	ctx = injection.WithControllerName(ctx, "nodeclaim.inplaceupdate")
 
-func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim) (reconcile.Result, error) {
 	if !nodeClaim.DeletionTimestamp.IsZero() {
 		return reconcile.Result{}, nil
 	}
@@ -105,7 +101,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 		return reconcile.Result{}, fmt.Errorf("getting azure VM for machine, %w", err)
 	}
 
-	update := calculateVMPatch(options, vm)
+	update := CalculateVMPatch(options, vm)
 	// This is safe only as long as we're not updating fields which we consider secret.
 	// If we do/are, we need to redact them.
 	logVMPatch(ctx, update)
@@ -132,7 +128,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *v1beta1.NodeClaim
 	return reconcile.Result{}, nil
 }
 
-func calculateVMPatch(
+func CalculateVMPatch(
 	options *options.Options,
 	// TODO: Can pass and consider NodeClaim and/or NodePool here if we need to in the future
 	currentVM *armcompute.VirtualMachine,
@@ -160,20 +156,25 @@ func calculateVMPatch(
 	}
 }
 
-func (c *Controller) Builder(_ context.Context, m manager.Manager) corecontroller.Builder {
-	return corecontroller.Adapt(controllerruntime.NewControllerManagedBy(m).For(
-		&v1beta1.NodeClaim{},
-		builder.WithPredicates(
-			predicate.Or(
-				predicate.GenerationChangedPredicate{}, // Note that this will trigger on pod restart for all Machines.
-			),
-		)).WithOptions(controller.Options{MaxConcurrentReconciles: 10}),
-	// TODO: Can add .Watches(&v1beta1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
-	// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
-	// TODO: if/when we need to monitor provisoner changes and flow updates on the NodePool down to the underlying VMs.
-	)
+func (c *Controller) Register(_ context.Context, m manager.Manager) error {
+	return controllerruntime.NewControllerManagedBy(m).
+		Named("nodeclaim.inplaceupdate").
+		For(
+			&karpv1.NodeClaim{},
+			builder.WithPredicates(
+				predicate.Or(
+					predicate.GenerationChangedPredicate{}, // Note that this will trigger on pod restart for all Machines.
+				),
+			)).
+		WithOptions(controller.Options{
+			RateLimiter:             reasonable.RateLimiter(),
+			MaxConcurrentReconciles: 10,
+		}).
+		// TODO: Can add .Watches(&karpv1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
+		// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
+		// TODO: if/when we need to monitor provisoner changes and flow updates on the NodePool down to the underlying VMs.
+		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }
-
 func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
 	if logging.FromContext(ctx).Level().Enabled(zapcore.DebugLevel) {
 		rawStr := "<nil>"
