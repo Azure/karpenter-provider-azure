@@ -108,9 +108,9 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 }
 
 func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput) (string, error) {
-	// Note: one could argue that we could narrow the key one level further to ImageDefinition since no two AKS ImageDefinitions that are supported 
-	// by karpenter have the same name, but for EdgeZone support this is not the case. 
-	key := fmt.Sprintf(sharedImageKey, imgStub.GalleryName, imgStub.ImageDefinition) 
+	// Note: one could argue that we could narrow the key one level further to ImageDefinition since no two AKS ImageDefinitions that are supported
+	// by karpenter have the same name, but for EdgeZone support this is not the case.
+	key := fmt.Sprintf(sharedImageKey, imgStub.GalleryName, imgStub.ImageDefinition)
 	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
 	}
@@ -130,7 +130,7 @@ func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput
 }
 
 func (p *Provider) getImageIDCIG(publicGalleryURL, communityImageName string) (string, error) {
-	key := fmt.Sprintf(communityImageName)
+	key := fmt.Sprintf(communityImageKey, publicGalleryURL, communityImageName)
 	if imageID, ok := p.imageCache.Get(key); ok {
 		return imageID.(string), nil
 	}
