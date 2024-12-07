@@ -903,9 +903,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(options.SIGSubscriptionID))
 			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring("AKSUbuntu"))
-
-			cluster.Reset()
-			azureEnv.Reset()
 		})
 		It("should use Community Images when options are set to UseSIG=false", func() {
 			options := test.Options(test.OptionsFields{
@@ -921,8 +918,6 @@ var _ = Describe("InstanceType Provider", func() {
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).Should(Not(BeNil()))
 
-			cluster.Reset()
-			azureEnv.Reset()
 		})
 
 	})
@@ -952,13 +947,6 @@ var _ = Describe("InstanceType Provider", func() {
 			expectedPrefix := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s", options.SIGSubscriptionID, expectedGalleryRG, expectedGalleryURL, expectedImageDefinition)
 			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(expectedPrefix))
 
-			// reset options back to the default
-			options = test.Options(test.OptionsFields{
-				UseSIG: lo.ToPtr(false),
-			})
-			ctx = options.ToContext(ctx)
-			cluster.Reset()
-			azureEnv.Reset()
 		},
 
 			Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
