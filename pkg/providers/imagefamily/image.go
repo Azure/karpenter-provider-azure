@@ -83,12 +83,23 @@ func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, in
 }
 
 func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultImageOutput) (string, error) {
-	// Managed Karpenter will use the AKS Managed Shared Image Galleries
-	if options.FromContext(ctx).UseSIG {
-		return p.getImageIDSIG(ctx, defaultImage)
+	// Note: one could argue that we could narrow the key one level further to ImageDefinition since no two AKS ImageDefinitions that are supported
+	// by karpenter have the same name, but for EdgeZone support this is not the case.
+	key := lo.Ternary(options.FromContext(ctx).UseSIG,
+		fmt.Sprintf(sharedImageKey, defaultImage.GalleryName, defaultImage.ImageDefinition),
+		fmt.Sprintf(communityImageKey, defaultImage.PublicGalleryURL, defaultImage.ImageDefinition),
+	)
+	if imageID, ok := p.imageCache.Get(key); ok {
+		return imageID.(string), nil
 	}
-	// Self Hosted Karpenter will use the Community Image Galleries, which are public and have lower scaling limits
-	return p.getImageIDCIG(defaultImage.PublicGalleryURL, defaultImage.ImageDefinition)
+
+	// retrieve ARM Resource ID for the image and write it to the cache
+	imageID, err := p.resolveImageID(ctx, defaultImage, options.FromContext(ctx).UseSIG)
+	if err != nil {
+		return "", err
+	}
+	p.imageCache.Set(key, imageID, imageExpirationInterval)
+	return imageID, nil
 }
 
 func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
@@ -107,41 +118,33 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	return version, nil
 }
 
-func (p *Provider) getImageIDSIG(ctx context.Context, imgStub DefaultImageOutput) (string, error) {
-	// Note: one could argue that we could narrow the key one level further to ImageDefinition since no two AKS ImageDefinitions that are supported
-	// by karpenter have the same name, but for EdgeZone support this is not the case.
-	key := fmt.Sprintf(sharedImageKey, imgStub.GalleryName, imgStub.ImageDefinition)
-	if imageID, ok := p.imageCache.Get(key); ok {
-		return imageID.(string), nil
+func (p *Provider) resolveImageID(ctx context.Context, defaultImage DefaultImageOutput, useSIG bool) (string, error) {
+	if useSIG {
+		return p.getSIGImageID(ctx, defaultImage)
 	}
+	return p.getCIGImageID(defaultImage.PublicGalleryURL, defaultImage.ImageDefinition)
+}
+
+func (p *Provider) getSIGImageID(ctx context.Context, imgStub DefaultImageOutput) (string, error) {
 	versions, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
 	if err != nil {
 		return "", err
 	}
 	for _, version := range versions.Values {
-		imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition, version.Version)
-		p.imageCache.Set(key, imageID, imageExpirationInterval)
-	}
-	// return the latest version of the image from the cache after we have cached all of the imageDefinitions
-	if imageID, ok := p.imageCache.Get(key); ok {
-		return imageID.(string), nil
+		if imgStub.ImageDefinition == version.SKU {
+			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition, version.Version)
+			return imageID, nil
+		}
 	}
 	return "", fmt.Errorf("failed to get the latest version of the image %s", imgStub.ImageDefinition)
 }
 
-func (p *Provider) getImageIDCIG(publicGalleryURL, communityImageName string) (string, error) {
-	key := fmt.Sprintf(communityImageKey, publicGalleryURL, communityImageName)
-	if imageID, ok := p.imageCache.Get(key); ok {
-		return imageID.(string), nil
-	}
-	// if the image is not found in the cache, we will refresh the lookup for it
+func (p *Provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
 	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
 	if err != nil {
 		return "", err
 	}
-	imageID := BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion)
-	p.imageCache.Set(key, imageID, imageExpirationInterval)
-	return imageID, nil
+	return BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
 }
 
 func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
