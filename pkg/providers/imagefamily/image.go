@@ -99,6 +99,7 @@ func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultIma
 		return "", err
 	}
 	p.imageCache.Set(key, imageID, imageExpirationInterval)
+	logging.FromContext(ctx).With("image-id", imageID).Info("discovered new image id")
 	return imageID, nil
 }
 
