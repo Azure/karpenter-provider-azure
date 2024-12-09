@@ -19,12 +19,12 @@ package imagefamily
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
@@ -40,6 +40,8 @@ type Provider struct {
 	kubernetesInterface    kubernetes.Interface
 	imageCache             *cache.Cache
 	imageVersionsClient    CommunityGalleryImageVersionsAPI
+	subscription           string
+	NodeImageVersions      NodeImageVersionsAPI
 }
 
 const (
@@ -48,10 +50,13 @@ const (
 	imageExpirationInterval    = time.Hour * 24 * 3
 	imageCacheCleaningInterval = time.Hour * 1
 
-	imageIDFormat = "/CommunityGalleries/%s/images/%s/versions/%s"
+	sharedImageKey                  = "%s/%s" // imageGallery + imageDefinition
+	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
+	communityImageKey               = "%s/%s" // PublicGalleryURL + communityImageName
+	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
-func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location string) *Provider {
+func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient NodeImageVersionsAPI) *Provider {
 	return &Provider{
 		kubernetesVersionCache: kubernetesVersionCache,
 		imageCache:             cache.New(imageExpirationInterval, imageCacheCleaningInterval),
@@ -59,6 +64,8 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 		imageVersionsClient:    versionsClient,
 		cm:                     pretty.NewChangeMonitor(),
 		kubernetesInterface:    kubernetesInterface,
+		subscription:           subscription,
+		NodeImageVersions:      nodeImageVersionsClient,
 	}
 }
 
@@ -67,16 +74,33 @@ func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, in
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
 		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
-			communityImageName, publicGalleryURL := defaultImage.CommunityImage, defaultImage.PublicGalleryURL
-			imageID, err := p.GetImageID(ctx, communityImageName, publicGalleryURL)
-			if err != nil {
-				return "", "", err
-			}
-			return defaultImage.Distro, imageID, nil
+			imageID, imageRetrievalErr := p.GetLatestImageID(ctx, defaultImage)
+			return defaultImage.Distro, imageID, imageRetrievalErr
 		}
 	}
 
 	return "", "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
+}
+
+func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultImageOutput) (string, error) {
+	// Note: one could argue that we could narrow the key one level further to ImageDefinition since no two AKS ImageDefinitions that are supported
+	// by karpenter have the same name, but for EdgeZone support this is not the case.
+	key := lo.Ternary(options.FromContext(ctx).UseSIG,
+		fmt.Sprintf(sharedImageKey, defaultImage.GalleryName, defaultImage.ImageDefinition),
+		fmt.Sprintf(communityImageKey, defaultImage.PublicGalleryURL, defaultImage.ImageDefinition),
+	)
+	if imageID, ok := p.imageCache.Get(key); ok {
+		return imageID.(string), nil
+	}
+
+	// retrieve ARM Resource ID for the image and write it to the cache
+	imageID, err := p.resolveImageID(ctx, defaultImage, options.FromContext(ctx).UseSIG)
+	if err != nil {
+		return "", err
+	}
+	p.imageCache.Set(key, imageID, imageExpirationInterval)
+	logging.FromContext(ctx).With("image-id", imageID).Info("discovered new image id")
+	return imageID, nil
 }
 
 func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
@@ -95,14 +119,36 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	return version, nil
 }
 
-// Input versionName == "" to get the latest version
-func (p *Provider) GetImageID(ctx context.Context, communityImageName, publicGalleryURL string) (string, error) {
-	key := fmt.Sprintf("%s/%s", publicGalleryURL, communityImageName)
-	imageID, found := p.imageCache.Get(key)
-	if found {
-		return imageID.(string), nil
+func (p *Provider) resolveImageID(ctx context.Context, defaultImage DefaultImageOutput, useSIG bool) (string, error) {
+	if useSIG {
+		return p.getSIGImageID(ctx, defaultImage)
 	}
+	return p.getCIGImageID(defaultImage.PublicGalleryURL, defaultImage.ImageDefinition)
+}
 
+func (p *Provider) getSIGImageID(ctx context.Context, imgStub DefaultImageOutput) (string, error) {
+	versions, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
+	if err != nil {
+		return "", err
+	}
+	for _, version := range versions.Values {
+		if imgStub.ImageDefinition == version.SKU {
+			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition, version.Version)
+			return imageID, nil
+		}
+	}
+	return "", fmt.Errorf("failed to get the latest version of the image %s", imgStub.ImageDefinition)
+}
+
+func (p *Provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
+	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
+	if err != nil {
+		return "", err
+	}
+	return BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
+}
+
+func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
 	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
 	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
 	for pager.More() {
@@ -116,34 +162,9 @@ func (p *Provider) GetImageID(ctx context.Context, communityImageName, publicGal
 			}
 		}
 	}
-	versionName := lo.FromPtr(topImageVersionCandidate.Name)
-
-	selectedImageID := BuildImageID(publicGalleryURL, communityImageName, versionName)
-	if p.cm.HasChanged(key, selectedImageID) {
-		logging.FromContext(ctx).With("image-id", selectedImageID).Info("discovered new image id")
-	}
-	p.imageCache.Set(key, selectedImageID, imageExpirationInterval)
-	return selectedImageID, nil
+	return lo.FromPtr(topImageVersionCandidate.Name), nil
 }
 
-func BuildImageID(publicGalleryURL, communityImageName, imageVersion string) string {
-	return fmt.Sprintf(imageIDFormat, publicGalleryURL, communityImageName, imageVersion)
-}
-
-// ParseImageIDInfo parses the publicGalleryURL, communityImageName, and imageVersion out of an imageID
-func ParseCommunityImageIDInfo(imageID string) (string, string, string, error) {
-	// TODO (charliedmcb): assess if doing validation on splitting the string and validating the results is better? Mostly is regex too expensive?
-	regexStr := fmt.Sprintf(imageIDFormat, "(?P<publicGalleryURL>.*)", "(?P<communityImageName>.*)", "(?P<imageVersion>.*)")
-	if imageID == "" {
-		return "", "", "", fmt.Errorf("can not parse empty string. Expect it of the form \"%s\"", regexStr)
-	}
-	r := regexp.MustCompile(regexStr)
-	matches := r.FindStringSubmatch(imageID)
-	if matches == nil {
-		return "", "", "", fmt.Errorf("no matches while parsing image id %s", imageID)
-	}
-	if r.SubexpIndex("publicGalleryURL") == -1 || r.SubexpIndex("communityImageName") == -1 || r.SubexpIndex("imageVersion") == -1 {
-		return "", "", "", fmt.Errorf("failed to find sub expressions in %s, for imageID: %s", regexStr, imageID)
-	}
-	return matches[r.SubexpIndex("publicGalleryURL")], matches[r.SubexpIndex("communityImageName")], matches[r.SubexpIndex("imageVersion")], nil
+func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
+	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
 }
