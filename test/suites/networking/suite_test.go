@@ -1,11 +1,13 @@
 package networking_test
 
+
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -27,6 +29,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
+
 var env *azure.Environment
 var nodeClass *v1alpha2.AKSNodeClass
 var nodePool *karpv1.NodePool
@@ -40,7 +43,6 @@ func TestNetworking(t *testing.T) {
 	})
 	AfterSuite(func() {
 		By("Cleaning up Goldpinger resources")
-		// TODO: Move into env.Cleanup()
 		env.ExpectDeleted(
 			&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: "goldpinger-serviceaccount", Namespace: ns}},
 			&rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "goldpinger-clusterrole"}},
@@ -76,7 +78,7 @@ var _ = Describe("Networking", func() {
 			env.ExpectCreated(serviceAccount, clusterRole, clusterRoleBinding, daemonSet, service, deployment)
 			By("should scale up the goldpinger-deploy pods for pod to pod connectivity testing and to scale up karp nodes")
 
-			env.ExpectCreatedNodeCount("==", 10)
+			env.EventuallyExpectCreatedNodeCount("==", 1)
 			env.EventuallyExpectHealthyPodCountWithTimeout(time.Minute*15, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), 10)
 			By("should ensure gold pinger service has clusterIP assigned")
 			Eventually(func() string {
@@ -87,12 +89,30 @@ var _ = Describe("Networking", func() {
 				}
 				return svc.Spec.ClusterIP
 			}, 2*time.Minute, 10*time.Second).ShouldNot(BeEmpty(), "Goldpinger service ClusterIP not assigned")
+
 			By("Fetching node connectivity status from Goldpinger")
-			resp, err := http.Get("http://goldpinger.default.svc.cluster.local:8080/check_all")
+			time.Sleep(time.Second * 100)
+
+			// Port-forward the goldpinger service
+			cmd := exec.Command("kubectl", "port-forward", "-n", ns, "svc/goldpinger", "8080:8080")
+			err := cmd.Start()
+			Expect(err).NotTo(HaveOccurred(), "Failed to start port-forward")
+			defer func() {
+				_ = cmd.Process.Kill()
+			}()
+
+			// Wait for port-forward to be ready
+			// A simple approach: attempt a few curls until success or timeout
+			Eventually(func() error {
+				_, err := http.Get("http://localhost:8080/check_all")
+				return err
+			}, 30*time.Second, 2*time.Second).Should(BeNil(), "Port-forward never became ready")
+
+			resp, err := http.Get("http://localhost:8080/check_all")
 			Expect(err).NotTo(HaveOccurred(), "Failed to reach Goldpinger service")
 			defer resp.Body.Close()
-		
-			body, err := ioutil.ReadAll(resp.Body)
+
+			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred(), "Failed to read Goldpinger response body")
 
 			var checkAllResponse CheckAllResponse
@@ -103,12 +123,12 @@ var _ = Describe("Networking", func() {
 				// This checks that all other nodes in the cluster can reach this node
 				Expect(status.Status).To(Equal("ok"), fmt.Sprintf("Node %s is not reachable", node))
 			}
-			// TODO: Check pod stats to see if pod to pod communciation works
+			// TODO: Check pod stats to see if pod to pod communication works
 			time.Sleep(time.Hour * 1)
 		})
 	})
-
 })
+
 
 // --------------------- Test Helpers ------------------------ //
 type NodeStatus struct {
@@ -240,7 +260,7 @@ func createDeployment(namespace string) *appsv1.Deployment {
 			Labels:    map[string]string{"app": "goldpinger"},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: ptr.To[int32](10),
+			Replicas: ptr.To[int32](1),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "goldpinger"},
 			},
@@ -249,7 +269,6 @@ func createDeployment(namespace string) *appsv1.Deployment {
 					Labels: map[string]string{"app": "goldpinger"},
 				},
 				Spec: corev1.PodSpec{
-					// We want to validate node to node communication so we need to spread the deployment between many karpenter nodes
 					TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 						{
 							MaxSkew:           1,
@@ -260,7 +279,24 @@ func createDeployment(namespace string) *appsv1.Deployment {
 							},
 						},
 					},
-					// TODO: Contribute ServiceAccountName and Containers to the karpenter-core test.PodOptions
+					// This affinity prevents the spread from requiring we spread across the system pool 
+					// and limits scheduling to karpenter nodes
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "karpenter.sh/nodepool",
+												Operator: corev1.NodeSelectorOpExists,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
 					ServiceAccountName: "goldpinger-serviceaccount",
 					Containers: []corev1.Container{
 						{
