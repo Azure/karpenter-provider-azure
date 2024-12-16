@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/Azure/skewer"
 	"io"
 	"net/http"
 	"strings"
@@ -1204,13 +1205,26 @@ var _ = Describe("InstanceType Provider", func() {
 
 var _ = Describe("Tax Calculator", func() {
 	Context("KubeReservedResources", func() {
+		var sku *skewer.SKU
+		var kubeletConfig *v1alpha2.KubeletConfiguration
+		var nodeClassSpec *v1alpha2.AKSNodeClassSpec
+
+		BeforeEach(func() {
+			sku = &skewer.SKU{}
+			kubeletConfig = &v1alpha2.KubeletConfiguration{
+				KubeReserved: make(map[string]string),
+			}
+			nodeClassSpec = &v1alpha2.AKSNodeClassSpec{}
+		})
+
 		It("should have 4 cores, 7GiB", func() {
-			cpus := int64(4) // 4 cores
-			memory := 7.0    // 7 GiB
+			kubeletConfig.KubeReserved["cpu"] = "4"
+			kubeletConfig.KubeReserved["memory"] = "7Gi"
 			expectedCPU := "140m"
 			expectedMemory := "1638Mi"
+			*nodeClassSpec.MaxPods = 50
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(sku, nodeClassSpec)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -1219,12 +1233,12 @@ var _ = Describe("Tax Calculator", func() {
 		})
 
 		It("should have 2 cores, 8GiB", func() {
-			cpus := int64(2) // 2 cores
-			memory := 8.0    // 8 GiB
+			kubeletConfig.KubeReserved["cpu"] = "2"
+			kubeletConfig.KubeReserved["memory"] = "8Gi"
 			expectedCPU := "100m"
 			expectedMemory := "1843Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(sku, nodeClassSpec)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -1233,12 +1247,12 @@ var _ = Describe("Tax Calculator", func() {
 		})
 
 		It("should have 3 cores, 64GiB", func() {
-			cpus := int64(3) // 3 cores
-			memory := 64.0   // 64 GiB
+			kubeletConfig.KubeReserved["cpu"] = "3"
+			kubeletConfig.KubeReserved["memory"] = "64Gi"
 			expectedCPU := "120m"
 			expectedMemory := "5611Mi"
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(sku, nodeClassSpec)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
