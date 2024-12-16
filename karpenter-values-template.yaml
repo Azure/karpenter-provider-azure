@@ -42,7 +42,7 @@ controller:
     - name: USE_SIG
       value: "false"
     - name: SIG_SUBSCRIPTION_ID
-      value: ${SIG_SUBSCRIPTION_ID}
+      value: "" 
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:
