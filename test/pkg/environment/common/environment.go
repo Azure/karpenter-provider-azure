@@ -133,3 +133,84 @@ func NewClient(ctx context.Context, config *rest.Config) client.Client {
 	}
 	return c
 }
+<<<<<<< HEAD
+=======
+
+func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv1.NodePool {
+	nodePool := coretest.NodePool()
+	nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
+		Group: object.GVK(nodeClass).Group,
+		Kind:  object.GVK(nodeClass).Kind,
+		Name:  nodeClass.Name,
+	}
+	nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+		{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:      corev1.LabelOSStable,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{string(corev1.Linux)},
+			},
+		},
+		{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:	v1alpha2.LabelSKUVersion, 
+				Operator: corev1.NodeSelectorOpLt,
+				Values: []string{"6"},
+			},
+		},
+		{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeOnDemand},
+			},
+		},
+		{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:      corev1.LabelArchStable,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.ArchitectureAmd64},
+			},
+		},
+		{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:      v1alpha2.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{"D"},
+			},
+		},
+	}
+
+	nodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized
+	nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("Never")
+	nodePool.Spec.Template.Spec.ExpireAfter.Duration = nil
+	nodePool.Spec.Limits = karpv1.Limits(corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("1000"), // TODO: do we need that much?
+		corev1.ResourceMemory: resource.MustParse("1000Gi"),
+	})
+
+	// TODO: make this conditional on Cilium
+	// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+	nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
+		Key:    "node.cilium.io/agent-not-ready",
+		Effect: corev1.TaintEffectNoExecute,
+		Value:  "true",
+	})
+	// # required for Karpenter to predict overhead from cilium DaemonSet
+	nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+		"kubernetes.azure.com/ebpf-dataplane": "cilium",
+	})
+	return nodePool
+}
+
+func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *karpv1.NodePool {
+	nodePool := env.DefaultNodePool(nodeClass)
+	coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+		NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+			Key:      corev1.LabelArchStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{karpv1.ArchitectureArm64},
+		}})
+	return nodePool
+}
+>>>>>>> 7e01903 (test: removing environment checks that validate against karpenter pod/settings)

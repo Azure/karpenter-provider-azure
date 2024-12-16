@@ -17,10 +17,8 @@ limitations under the License.
 package common
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -97,79 +95,7 @@ func (env *Environment) ExpectCreatedOrUpdated(objects ...client.Object) {
 	}
 }
 
-func (env *Environment) ExpectSettings() (res []v1.EnvVar) {
-	GinkgoHelper()
-
-	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
-	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
-	return lo.Map(d.Spec.Template.Spec.Containers[0].Env, func(v v1.EnvVar, _ int) v1.EnvVar {
-		return *v.DeepCopy()
-	})
-}
-
-func (env *Environment) ExpectSettingsReplaced(vars ...v1.EnvVar) {
-	GinkgoHelper()
-
-	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
-	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
-
-	stored := d.DeepCopy()
-	d.Spec.Template.Spec.Containers[0].Env = vars
-
-	if !equality.Semantic.DeepEqual(d, stored) {
-		By("replacing environment variables for karpenter deployment")
-		Expect(env.Client.Patch(env.Context, d, client.MergeFrom(stored))).To(Succeed())
-		env.EventuallyExpectKarpenterRestarted()
-	}
-}
-
-func (env *Environment) ExpectSettingsOverridden(vars ...v1.EnvVar) {
-	GinkgoHelper()
-
-	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
-	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
-
-	stored := d.DeepCopy()
-	for _, v := range vars {
-		if _, i, ok := lo.FindIndexOf(d.Spec.Template.Spec.Containers[0].Env, func(e v1.EnvVar) bool {
-			return e.Name == v.Name
-		}); ok {
-			d.Spec.Template.Spec.Containers[0].Env[i] = v
-		} else {
-			d.Spec.Template.Spec.Containers[0].Env = append(d.Spec.Template.Spec.Containers[0].Env, v)
-		}
-	}
-	if !equality.Semantic.DeepEqual(d, stored) {
-		By("overriding environment variables for karpenter deployment")
-		Expect(env.Client.Patch(env.Context, d, client.MergeFrom(stored))).To(Succeed())
-		env.EventuallyExpectKarpenterRestarted()
-	}
-}
-
-func (env *Environment) ExpectSettingsRemoved(vars ...v1.EnvVar) {
-	GinkgoHelper()
-
-	varNames := sets.New[string](lo.Map(vars, func(v v1.EnvVar, _ int) string { return v.Name })...)
-
-	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: "karpenter", Name: "karpenter"}, d)).To(Succeed())
-	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
-
-	stored := d.DeepCopy()
-	d.Spec.Template.Spec.Containers[0].Env = lo.Reject(d.Spec.Template.Spec.Containers[0].Env, func(v v1.EnvVar, _ int) bool {
-		return varNames.Has(v.Name)
-	})
-	if !equality.Semantic.DeepEqual(d, stored) {
-		By("removing environment variables for karpenter deployment")
-		Expect(env.Client.Patch(env.Context, d, client.MergeFrom(stored))).To(Succeed())
-		env.EventuallyExpectKarpenterRestarted()
-	}
-}
-
-func (env *Environment) ExpectConfigMapExists(key types.NamespacedName) *v1.ConfigMap {
+func (env *Environment) ExpectConfigMapExists(key types.NamespacedName) *corev1.ConfigMap {
 	GinkgoHelper()
 	cm := &v1.ConfigMap{}
 	Expect(env.Client.Get(env, key, cm)).To(Succeed())
@@ -245,26 +171,6 @@ func (env *Environment) EventuallyExpectHealthyWithTimeout(timeout time.Duration
 			)))
 		}).WithTimeout(timeout).Should(Succeed())
 	}
-}
-
-func (env *Environment) EventuallyExpectKarpenterRestarted() {
-	GinkgoHelper()
-	By("rolling out the new karpenter deployment")
-	env.EventuallyExpectRollout("karpenter", "karpenter")
-	env.ExpectKarpenterLeaseOwnerChanged()
-}
-
-func (env *Environment) ExpectKarpenterLeaseOwnerChanged() {
-	GinkgoHelper()
-
-	By("waiting for a new karpenter pod to hold the lease")
-	pods := env.ExpectKarpenterPods()
-	Eventually(func(g Gomega) {
-		name := env.ExpectActiveKarpenterPodName()
-		g.Expect(lo.ContainsBy(pods, func(p *v1.Pod) bool {
-			return p.Name == name
-		})).To(BeTrue())
-	}).Should(Succeed())
 }
 
 func (env *Environment) EventuallyExpectRollout(name, namespace string) {
@@ -590,25 +496,25 @@ func (env *Environment) printControllerLogs(options *v1.PodLogOptions) {
 		options.SinceTime = lastLogged.DeepCopy()
 		lastLogged = metav1.Now()
 	}
-	pods := env.ExpectKarpenterPods()
-	for _, pod := range pods {
-		temp := options.DeepCopy() // local version of the log options
+	//pods := env.ExpectKarpenterPods()
+	//for _, pod := range pods {
+	//	temp := options.DeepCopy() // local version of the log options
 
-		fmt.Printf("------- pod/%s -------\n", pod.Name)
-		if pod.Status.ContainerStatuses[0].RestartCount > 0 {
-			fmt.Printf("[PREVIOUS CONTAINER LOGS]\n")
-			temp.Previous = true
-		}
-		stream, err := env.KubeClient.CoreV1().Pods("karpenter").GetLogs(pod.Name, temp).Stream(env.Context)
-		if err != nil {
-			logging.FromContext(env.Context).Errorf("fetching controller logs: %s", err)
-			return
-		}
-		log := &bytes.Buffer{}
-		_, err = io.Copy(log, stream)
-		Expect(err).ToNot(HaveOccurred())
-		logging.FromContext(env.Context).Info(log)
-	}
+	//	fmt.Printf("------- pod/%s -------\n", pod.Name)
+	//	if len(pod.Status.ContainerStatuses) > 0 && pod.Status.ContainerStatuses[0].RestartCount > 0 {
+	//		fmt.Printf("[PREVIOUS CONTAINER LOGS]\n")
+	//		temp.Previous = true
+	//	}
+	//	stream, err := env.KubeClient.CoreV1().Pods("kube-system").GetLogs(pod.Name, temp).Stream(env.Context)
+	//	if err != nil {
+	//		log.FromContext(env.Context).Error(err, "failed fetching controller logs")
+	//		return
+	//	}
+	//	raw := &bytes.Buffer{}
+	//	_, err = io.Copy(raw, stream)
+	//	Expect(err).ToNot(HaveOccurred())
+	//	log.FromContext(env.Context).Info(raw.String())
+	//}
 }
 
 func (env *Environment) EventuallyExpectMinUtilization(resource v1.ResourceName, comparator string, value float64) {
