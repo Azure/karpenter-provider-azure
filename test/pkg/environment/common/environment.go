@@ -150,6 +150,13 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 		},
 		{
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:	v1alpha2.LabelSKUVersion, 
+				Operator: corev1.NodeSelectorOpLt,
+				Values: []string{"6"},
+			},
+		},
+		{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      karpv1.CapacityTypeLabelKey,
 				Operator: corev1.NodeSelectorOpIn,
 				Values:   []string{karpv1.CapacityTypeOnDemand},
