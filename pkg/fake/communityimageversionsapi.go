@@ -18,11 +18,9 @@ package fake
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 )
@@ -51,17 +49,6 @@ func (c *CommunityGalleryImageVersionsAPI) NewListPager(_ string, _ string, _ st
 		},
 	}
 	return runtime.NewPager(pagingHandler)
-}
-
-func (c *CommunityGalleryImageVersionsAPI) Get(_ context.Context, location string, publicGalleryName string, galleryImageName string, galleryImageVersionName string, options *armcompute.CommunityGalleryImageVersionsClientGetOptions) (armcompute.CommunityGalleryImageVersionsClientGetResponse, error) {
-	// TODO: Add case where this get doesn't work or succeed
-	return armcompute.CommunityGalleryImageVersionsClientGetResponse{
-		CommunityGalleryImageVersion: armcompute.CommunityGalleryImageVersion{
-			Identifier: &armcompute.CommunityGalleryIdentifier{
-				UniqueID: lo.ToPtr(fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", publicGalleryName, galleryImageName, galleryImageVersionName)),
-			},
-		},
-	}, nil
 }
 
 func (c *CommunityGalleryImageVersionsAPI) Reset() {
