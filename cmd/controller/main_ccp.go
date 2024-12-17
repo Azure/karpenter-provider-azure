@@ -19,54 +19,17 @@ limitations under the License.
 package main
 
 import (
-	"context"
-
 	"github.com/samber/lo"
-	"go.uber.org/zap"
-	"knative.dev/pkg/logging"
 
 	// Injection stuff
-	kubeclientinjection "knative.dev/pkg/client/injection/kube/client"
-	"knative.dev/pkg/configmap"
-	"knative.dev/pkg/controller"
-	knativeinjection "knative.dev/pkg/injection"
-	secretinformer "knative.dev/pkg/injection/clients/namespacedkube/informers/core/v1/secret"
-	kubeinformerfactory "knative.dev/pkg/injection/clients/namespacedkube/informers/factory"
-	"knative.dev/pkg/webhook/certificates"
 
 	altOperator "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/operator"
-	altwebhooks "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/webhooks"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
 )
-
-func newWebhooks(ctx context.Context) []knativeinjection.ControllerConstructor {
-	client := altOperator.GetCCPClient(ctx)
-	ccpInformerFactory := kubeinformerfactory.Get(ctx)
-
-	secretInformer := ccpInformerFactory.Core().V1().Secrets()
-	ctx = context.WithValue(ctx, secretinformer.Key{}, secretInformer)
-
-	logging.FromContext(ctx).Info("Starting horrible CCP informer")
-	if err := controller.StartInformers(ctx.Done(), secretInformer.Informer()); err != nil {
-		logging.FromContext(ctx).Fatalw("Failed to start horrible CCP informer", zap.Error(err))
-	}
-
-	return []knativeinjection.ControllerConstructor{
-		func(ctx context.Context, watcher configmap.Watcher) *controller.Impl {
-			ctx = context.WithValue(ctx, secretinformer.Key{}, secretInformer)
-			ctx = context.WithValue(ctx, kubeclientinjection.Key{}, client)
-			return certificates.NewController(ctx, watcher)
-		},
-		func(ctx context.Context, watcher configmap.Watcher) *controller.Impl {
-			ctx = context.WithValue(ctx, secretinformer.Key{}, secretInformer)
-			return altwebhooks.NewCRDConversionWebhook(ctx, watcher)
-		},
-	}
-}
 
 func main() {
 	//ctx, op := operator.NewOperator(coreoperator.NewOperator())
@@ -91,7 +54,6 @@ func main() {
 			op.EventRecorder,
 			cloudProvider,
 		)...).
-		WithWebhooks(ctx, newWebhooks(ctx)...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
 			op.Manager,
@@ -100,5 +62,5 @@ func main() {
 			aksCloudProvider,
 			op.InstanceProvider,
 		)...).
-		Start(ctx, cloudProvider)
+		Start(ctx)
 }

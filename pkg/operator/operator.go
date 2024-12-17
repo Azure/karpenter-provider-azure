@@ -20,30 +20,18 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"sync"
 
-	"github.com/awslabs/operatorpkg/controller"
-	"github.com/awslabs/operatorpkg/object"
-	"github.com/awslabs/operatorpkg/status"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
-	knativeinjection "knative.dev/pkg/injection"
 	"knative.dev/pkg/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	karpv1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/operator/injection"
-	karpenteroptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	webhooksalt "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/webhooks"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 
@@ -61,7 +49,6 @@ import (
 
 func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
-	karpv1beta1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
 type Operator struct {
@@ -76,9 +63,6 @@ type Operator struct {
 	InstanceTypesProvider  instancetype.Provider
 	InstanceProvider       *instance.DefaultProvider
 	LoadBalancerProvider   *loadbalancer.Provider
-
-	// Copied from the core Operator because we control our own webhooks
-	webhooks []knativeinjection.ControllerConstructor
 }
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
@@ -159,50 +143,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		InstanceProvider:          instanceProvider,
 		LoadBalancerProvider:      loadBalancerProvider,
 	}
-}
-
-// Copied from karpenter-core pkg/operator/operator.go, needed for webhooks
-func (o *Operator) WithControllers(ctx context.Context, controllers ...controller.Controller) *Operator {
-	for _, c := range controllers {
-		lo.Must0(c.Register(ctx, o.Manager))
-	}
-	return o
-}
-
-// Copied from karpenter-core pkg/operator/operator.go, needed for webhooks
-func (o *Operator) WithWebhooks(ctx context.Context, ctors ...knativeinjection.ControllerConstructor) *Operator {
-	if !karpenteroptions.FromContext(ctx).DisableWebhook {
-		o.webhooks = append(o.webhooks, ctors...)
-		lo.Must0(o.Manager.AddReadyzCheck("webhooks", webhooksalt.HealthProbe(ctx)))
-		lo.Must0(o.Manager.AddHealthzCheck("webhooks", webhooksalt.HealthProbe(ctx)))
-	}
-	return o
-}
-
-// Copied from karpenter-core pkg/operator/operator.go, needed for webhooks
-func (o *Operator) Start(ctx context.Context, cp cloudprovider.CloudProvider) {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		lo.Must0(o.Manager.Start(ctx))
-	}()
-	if karpenteroptions.FromContext(ctx).DisableWebhook {
-		log.FromContext(ctx).Info("conversion webhooks are disabled")
-	} else {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// Taking the first supported NodeClass to be the default NodeClass
-			gvk := lo.Map(cp.GetSupportedNodeClasses(), func(nc status.Object, _ int) schema.GroupVersionKind {
-				return object.GVK(nc)
-			})
-			ctx = injection.WithNodeClasses(ctx, gvk)
-			ctx = injection.WithClient(ctx, o.GetClient())
-			webhooksalt.Start(ctx, o.GetConfig(), o.webhooks...) // This is our alt copy of webhooks that can support multiple apiservers
-		}()
-	}
-	wg.Wait()
 }
 
 func GetAZConfig() (*auth.Config, error) {
