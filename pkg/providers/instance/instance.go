@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -474,6 +475,7 @@ func (p *DefaultProvider) launchInstance(
 	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType, p.provisionMode)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
+	logDecodedData(ctx, *vm.Properties.OSProfile.CustomData)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
 	resp, err := p.createVirtualMachine(ctx, vm, resourceName)
 	if err != nil {
@@ -494,6 +496,16 @@ func (p *DefaultProvider) launchInstance(
 		return nil, nil, err
 	}
 	return resp, instanceType, nil
+}
+
+func logDecodedData(ctx context.Context, encodedData string) {
+    decodedBytes, err := base64.StdEncoding.DecodeString(encodedData)
+    if err != nil {
+        logging.FromContext(ctx).Errorf("Failed to decode base64 string: %v", err)
+        return
+    }
+
+    logging.FromContext(ctx).Info("CSE Data (decoded): %s", string(decodedBytes))
 }
 
 // nolint:gocyclo
