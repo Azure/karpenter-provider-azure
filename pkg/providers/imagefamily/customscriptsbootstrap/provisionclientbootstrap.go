@@ -32,6 +32,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"knative.dev/pkg/logging"
 
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -160,7 +161,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		SkuCPU:    lo.ToPtr(p.InstanceType.Capacity.Cpu().AsApproximateFloat64()),
 		SkuMemory: lo.ToPtr(math.Ceil(reverseVMMemoryOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, p.InstanceType.Capacity.Memory().AsApproximateFloat64()) / 1024 / 1024 / 1024)),
 	}
-
+	logging.FromContext(ctx).Infof("%v", provisionProfile)
 	return p.getNodeBootstrappingFromClient(ctx, provisionProfile, provisionHelperValues, p.KubeletClientTLSBootstrapToken)
 }
 
