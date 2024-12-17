@@ -43,3 +43,4 @@ serviceAccount:
     azure.workload.identity/client-id: ${KARPENTER_USER_ASSIGNED_CLIENT_ID}
 podLabels:
   azure.workload.identity/use: "true"
+logLevel: ${LOG_LEVEL}

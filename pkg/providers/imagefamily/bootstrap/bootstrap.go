@@ -52,6 +52,7 @@ type Options struct {
 	CABundle         *string
 	GPUNode          bool
 	GPUDriverVersion string
+	GPUDriverType    string
 	GPUImageSHA      string
 	SubnetID         string
 }
