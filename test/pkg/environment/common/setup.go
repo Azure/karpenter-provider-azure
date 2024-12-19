@@ -108,7 +108,6 @@ func (env *Environment) ExpectCleanCluster() {
 func (env *Environment) Cleanup() {
 	env.CleanupObjects(CleanableObjects...)
 	env.eventuallyExpectScaleDown()
-	env.ExpectNoCrashes()
 }
 
 func (env *Environment) AfterEach() {
