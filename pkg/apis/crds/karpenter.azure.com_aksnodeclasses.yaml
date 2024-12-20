@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.16.5
   name: aksnodeclasses.karpenter.azure.com
 spec:
   group: karpenter.azure.com
@@ -53,9 +53,117 @@ spec:
                 - Ubuntu2204
                 - AzureLinux
                 type: string
-              imageVersion:
-                description: ImageVersion is the image version that instances use.
-                type: string
+              kubelet:
+                description: |-
+                  Kubelet defines args to be used when configuring kubelet on provisioned nodes.
+                  They are a subset of the upstream types, recognizing not all options may be supported.
+                  Wherever possible, the types and names should reflect the upstream kubelet types.
+                properties:
+                  allowedUnsafeSysctls:
+                    description: |-
+                      A comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+                      Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
+                      and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
+                      Default: []
+                    items:
+                      type: string
+                    type: array
+                  containerLogMaxFiles:
+                    default: 5
+                    description: |-
+                      containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
+                      Default: 5
+                    format: int32
+                    minimum: 2
+                    type: integer
+                  containerLogMaxSize:
+                    default: 50Mi
+                    description: |-
+                      containerLogMaxSize is a quantity defining the maximum size of the container log
+                      file before it is rotated. For example: "5Mi" or "256Ki".
+                      Default: "10Mi"
+                      AKS CustomKubeletConfig has containerLogMaxSizeMB (with units), defaults to 50
+                    pattern: ^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$
+                    type: string
+                  cpuCFSQuota:
+                    default: true
+                    description: |-
+                      CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+                      Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
+                    type: boolean
+                  cpuCFSQuotaPeriod:
+                    default: 100ms
+                    description: |-
+                      cpuCfsQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
+                      The value must be between 1 ms and 1 second, inclusive.
+                      Default: "100ms"
+                    type: string
+                  cpuManagerPolicy:
+                    default: none
+                    description: cpuManagerPolicy is the name of the policy to use.
+                    enum:
+                    - none
+                    - static
+                    type: string
+                  imageGCHighThresholdPercent:
+                    description: |-
+                      ImageGCHighThresholdPercent is the percent of disk usage after which image
+                      garbage collection is always run. The percent is calculated by dividing this
+                      field value by 100, so this field must be between 0 and 100, inclusive.
+                      When specified, the value must be greater than ImageGCLowThresholdPercent.
+                      Note: AKS CustomKubeletConfig does not have "Percent" in the field name
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  imageGCLowThresholdPercent:
+                    description: |-
+                      ImageGCLowThresholdPercent is the percent of disk usage before which image
+                      garbage collection is never run. Lowest disk usage to garbage collect to.
+                      The percent is calculated by dividing this field value by 100,
+                      so the field value must be between 0 and 100, inclusive.
+                      When specified, the value must be less than imageGCHighThresholdPercent
+                      Note: AKS CustomKubeletConfig does not have "Percent" in the field name
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  podPidsLimit:
+                    description: |-
+                      podPidsLimit is the maximum number of PIDs in any pod.
+                      AKS CustomKubeletConfig uses PodMaxPids, int32 (!)
+                      Default: -1
+                    format: int64
+                    type: integer
+                  topologyManagerPolicy:
+                    default: none
+                    description: |-
+                      topologyManagerPolicy is the name of the topology manager policy to use.
+                      Valid values include:
+
+                      - `restricted`: kubelet only allows pods with optimal NUMA node alignment for requested resources;
+                      - `best-effort`: kubelet will favor pods with NUMA alignment of CPU and device resources;
+                      - `none`: kubelet has no knowledge of NUMA alignment of a pod's CPU and device resources.
+                      - `single-numa-node`: kubelet only allows pods with a single NUMA alignment
+                        of CPU and device resources.
+                    enum:
+                    - restricted
+                    - best-effort
+                    - none
+                    - single-numa-node
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: imageGCHighThresholdPercent must be greater than imageGCLowThresholdPercent
+                  rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
+                    ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
+                    true'
+              maxPods:
+                description: MaxPods is an override for the maximum number of pods
+                  that can run on a worker node instance.
+                format: int32
+                minimum: 0
+                type: integer
               osDiskSizeGB:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
@@ -76,6 +184,64 @@ spec:
             type: object
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
+            properties:
+              conditions:
+                description: Conditions contains signals for health and readiness
+                items:
+                  description: Condition aliases the upstream type and adds additional
+                    helper methods
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
             type: object
         type: object
     served: true

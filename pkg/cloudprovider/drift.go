@@ -35,17 +35,63 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
 const (
+	NodeClassDrift    cloudprovider.DriftReason = "NodeClassDrift"
 	K8sVersionDrift   cloudprovider.DriftReason = "K8sVersionDrift"
 	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift"
 	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
 )
 
-func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	// First check if the node class is statically staticFieldsDrifted to save on API calls.
+	if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
+		return staticFieldsDrifted, nil
+	}
+	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
+	if err != nil {
+		return "", err
+	}
+	if k8sVersionDrifted != "" {
+		return k8sVersionDrifted, nil
+	}
+	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim)
+	if err != nil {
+		return "", err
+	}
+	if imageVersionDrifted != "" {
+		return imageVersionDrifted, nil
+	}
+	subnetDrifted, err := c.isSubnetDrifted(ctx, nodeClaim, nodeClass)
+	if err != nil {
+		return "", err
+	}
+	if subnetDrifted != "" {
+		return subnetDrifted, nil
+	}
+	return "", nil
+}
+
+func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) cloudprovider.DriftReason {
+	nodeClassHash, foundNodeClassHash := nodeClass.Annotations[v1alpha2.AnnotationAKSNodeClassHash]
+	nodeClassHashVersion, foundNodeClassHashVersion := nodeClass.Annotations[v1alpha2.AnnotationAKSNodeClassHashVersion]
+	nodeClaimHash, foundNodeClaimHash := nodeClaim.Annotations[v1alpha2.AnnotationAKSNodeClassHash]
+	nodeClaimHashVersion, foundNodeClaimHashVersion := nodeClaim.Annotations[v1alpha2.AnnotationAKSNodeClassHashVersion]
+
+	if !foundNodeClassHash || !foundNodeClaimHash || !foundNodeClassHashVersion || !foundNodeClaimHashVersion {
+		return ""
+	}
+	// validate that the hash version for the AKSNodeClass is the same as the NodeClaim before evaluating for static drift
+	if nodeClassHashVersion != nodeClaimHashVersion {
+		return ""
+	}
+	return lo.Ternary(nodeClassHash != nodeClaimHash, NodeClassDrift, "")
+}
+
+func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
 	nodeName := nodeClaim.Status.NodeName
@@ -78,7 +124,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *core
 // Feel reassessing this within the future with a potential minor refactor would be best to fix the gocyclo.
 // nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
-	ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
@@ -113,7 +159,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", err
 	}
 
-	expectedImageID, err := c.imageProvider.GetImageID(ctx, communityImageName, publicGalleryURL, nodeClass.Spec.GetImageVersion())
+	expectedImageID, err := c.imageProvider.GetImageID(ctx, communityImageName, publicGalleryURL)
 	if err != nil {
 		return "", err
 	}
@@ -126,12 +172,12 @@ func (c *CloudProvider) isImageVersionDrifted(
 }
 
 // isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
-func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	expectedSubnet := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
 	nicName := instance.GenerateResourceName(nodeClaim.Name)
 
 	// TODO: Refactor all of AzConfig to be part of options
-	nic, err := instance.GetNic(ctx, c.instanceProvider.AZClient.NetworkInterfacesClient, options.FromContext(ctx).NodeResourceGroup, nicName)
+	nic, err := c.instanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return "", nil

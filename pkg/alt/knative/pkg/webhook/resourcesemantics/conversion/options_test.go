@@ -14,11 +14,25 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package conversion
 
-func (in *AKSNodeClassSpec) GetImageVersion() string {
-	if in.ImageVersion == nil {
-		return ""
+import (
+	"reflect"
+	"testing"
+)
+
+func TestOptions(t *testing.T) {
+	got := &options{}
+	WithPath("path")(got)
+
+	want := &options{
+		path: "path",
+		// we can't compare wc as functions are not
+		// comparable in golang (thus it needs to be
+		// done indirectly)
 	}
-	return *in.ImageVersion
+
+	if !reflect.DeepEqual(got, want) {
+		t.Error("option was not applied")
+	}
 }

@@ -18,9 +18,13 @@ package cloudprovider
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/awslabs/operatorpkg/status"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,6 +39,7 @@ import (
 	// nolint SA1019 - deprecated package
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 
@@ -45,27 +50,27 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	coreapis "sigs.k8s.io/karpenter/pkg/apis"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/events"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"sigs.k8s.io/karpenter/pkg/scheduling"
-	"sigs.k8s.io/karpenter/pkg/utils/functional"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
 type CloudProvider struct {
-	instanceTypeProvider *instancetype.Provider
-	instanceProvider     *instance.Provider
+	instanceTypeProvider instancetype.Provider
+	instanceProvider     instance.Provider
 	kubeClient           client.Client
 	imageProvider        *imagefamily.Provider
 	recorder             events.Recorder
 }
 
-func New(instanceTypeProvider *instancetype.Provider, instanceProvider *instance.Provider, recorder events.Recorder,
+func New(instanceTypeProvider instancetype.Provider, instanceProvider instance.Provider, recorder events.Recorder,
 	kubeClient client.Client, imageProvider *imagefamily.Provider) *CloudProvider {
 	return &CloudProvider{
 		instanceTypeProvider: instanceTypeProvider,
@@ -77,7 +82,7 @@ func New(instanceTypeProvider *instancetype.Provider, instanceProvider *instance
 }
 
 // Create a node given the constraints.
-func (c *CloudProvider) Create(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (*corev1beta1.NodeClaim, error) {
+func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
 	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -85,6 +90,25 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *corev1beta1.NodeC
 		}
 		// We treat a failure to resolve the NodeClass as an ICE since this means there is no capacity possibilities for this NodeClaim
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving node class, %w", err))
+	}
+
+	/*
+		// TODO: Remove this after v1
+		nodePool, err := utils.ResolveNodePoolFromNodeClaim(ctx, c.kubeClient, nodeClaim)
+		if err != nil {
+			return nil, err
+		}
+		kubeletHash, err := utils.GetHashKubelet(nodePool, nodeClass)
+		if err != nil {
+			return nil, err
+		}
+	*/
+	nodeClassReady := nodeClass.StatusConditions().Get(status.ConditionReady)
+	if nodeClassReady.IsFalse() {
+		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
+	}
+	if nodeClassReady.IsUnknown() {
+		return nil, fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message)
 	}
 
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
@@ -101,16 +125,20 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *corev1beta1.NodeC
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
-
-	return c.instanceToNodeClaim(ctx, instance, instanceType)
+	nc, err := c.instanceToNodeClaim(ctx, instance, instanceType)
+	nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
+		v1alpha2.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
+		v1alpha2.AnnotationAKSNodeClassHashVersion: v1alpha2.AKSNodeClassHashVersion,
+	})
+	return nc, err
 }
 
-func (c *CloudProvider) List(ctx context.Context) ([]*corev1beta1.NodeClaim, error) {
+func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	instances, err := c.instanceProvider.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing instances, %w", err)
 	}
-	var nodeClaims []*corev1beta1.NodeClaim
+	var nodeClaims []*karpv1.NodeClaim
 	for _, instance := range instances {
 		instanceType, err := c.resolveInstanceTypeFromInstance(ctx, instance)
 		if err != nil {
@@ -126,7 +154,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*corev1beta1.NodeClaim, err
 	return nodeClaims, nil
 }
 
-func (c *CloudProvider) Get(ctx context.Context, providerID string) (*corev1beta1.NodeClaim, error) {
+func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.NodeClaim, error) {
 	vmName, err := utils.GetVMName(providerID)
 	if err != nil {
 		return nil, fmt.Errorf("getting vm name, %w", err)
@@ -148,11 +176,7 @@ func (c *CloudProvider) LivenessProbe(req *http.Request) error {
 }
 
 // GetInstanceTypes returns all available InstanceTypes
-func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *corev1beta1.NodePool) ([]*cloudprovider.InstanceType, error) {
-	if nodePool == nil {
-		return c.instanceTypeProvider.List(ctx, &corev1beta1.KubeletConfiguration{}, &v1alpha2.AKSNodeClass{})
-	}
-
+func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.NodePool) ([]*cloudprovider.InstanceType, error) {
 	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -163,14 +187,14 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *corev1be
 		// as the cause.
 		return nil, fmt.Errorf("resolving node class, %w", err)
 	}
-	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodePool.Spec.Template.Spec.Kubelet, nodeClass)
+	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		return nil, err
 	}
 	return instanceTypes, nil
 }
 
-func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) error {
+func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
 	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("nodeclaim", nodeClaim.Name))
 
 	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
@@ -180,40 +204,31 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *corev1beta1.NodeC
 	return c.instanceProvider.Delete(ctx, vmName)
 }
 
-func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (cloudprovider.DriftReason, error) {
-	if nodeClaim.Spec.NodeClassRef == nil {
+func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
+	// Not needed when GetInstanceTypes removes nodepool dependency
+	nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]
+	if !ok {
 		return "", nil
 	}
-	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
+	nodePool := &karpv1.NodePool{}
+	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePoolName}, nodePool); err != nil {
+		return "", client.IgnoreNotFound(err)
+	}
+	if nodePool.Spec.Template.Spec.NodeClassRef == nil {
+		return "", nil
+	}
+	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
+			c.recorder.Publish(cloudproviderevents.NodePoolFailedToResolveNodeClass(nodePool))
 		}
 		return "", client.IgnoreNotFound(fmt.Errorf("resolving node class, %w", err))
 	}
-
-	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
+	driftReason, err := c.isNodeClassDrifted(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return "", err
 	}
-	if k8sVersionDrifted != "" {
-		return k8sVersionDrifted, nil
-	}
-	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim, nodeClass)
-	if err != nil {
-		return "", err
-	}
-	if imageVersionDrifted != "" {
-		return imageVersionDrifted, nil
-	}
-	subnetDrifted, err := c.isSubnetDrifted(ctx, nodeClaim, nodeClass)
-	if err != nil {
-		return "", err
-	}
-	if subnetDrifted != "" {
-		return subnetDrifted, nil
-	}
-	return "", nil
+	return driftReason, nil
 }
 
 // Name returns the CloudProvider implementation name.
@@ -221,48 +236,46 @@ func (c *CloudProvider) Name() string {
 	return "azure"
 }
 
-func (c *CloudProvider) GetSupportedNodeClasses() []schema.GroupVersionKind {
-	return []schema.GroupVersionKind{
-		{
-			Group:   v1alpha2.SchemeGroupVersion.Group,
-			Version: v1alpha2.SchemeGroupVersion.Version,
-			Kind:    "AKSNodeClass",
-		},
-	}
+func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
+	return []status.Object{&v1alpha2.AKSNodeClass{}}
 }
 
-func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeClaim *corev1beta1.NodeClaim) (*v1alpha2.AKSNodeClass, error) {
+func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1alpha2.AKSNodeClass, error) {
 	nodeClass := &v1alpha2.AKSNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
 		return nil, err
 	}
 	// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound
 	if !nodeClass.DeletionTimestamp.IsZero() {
-		return nil, errors.NewNotFound(v1alpha2.SchemeGroupVersion.WithResource("aksnodeclasses").GroupResource(), nodeClass.Name)
+		// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound,
+		// but we return a different error message to be clearer to users
+		return nil, newTerminatingNodeClassError(nodeClass.Name)
 	}
 	return nodeClass, nil
 }
 
-func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *corev1beta1.NodePool) (*v1alpha2.AKSNodeClass, error) {
+func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1alpha2.AKSNodeClass, error) {
 	nodeClass := &v1alpha2.AKSNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
 		return nil, err
 	}
 	// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound
 	if !nodeClass.DeletionTimestamp.IsZero() {
-		return nil, errors.NewNotFound(v1alpha2.SchemeGroupVersion.WithResource("aksnodeclasses").GroupResource(), nodeClass.Name)
+		// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound,
+		// but we return a different error message to be clearer to users
+		return nil, newTerminatingNodeClassError(nodeClass.Name)
 	}
 	return nodeClass, nil
 }
-func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
-	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClaim.Spec.Kubelet, nodeClass)
+func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
+	instanceTypes, err := c.instanceTypeProvider.List(ctx, nodeClass)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance types, %w", err)
 	}
 
 	reqs := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 	return lo.Filter(instanceTypes, func(i *cloudprovider.InstanceType, _ int) bool {
-		return reqs.Compatible(i.Requirements, v1alpha2.AllowUndefinedLabels) == nil &&
+		return reqs.Compatible(i.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels) == nil &&
 			len(i.Offerings.Compatible(reqs).Available()) > 0 &&
 			resources.Fits(nodeClaim.Spec.Resources.Requests, i.Allocatable())
 	}), nil
@@ -291,30 +304,31 @@ func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, ins
 	return instanceType, nil
 }
 
-func (c *CloudProvider) resolveNodePoolFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) (*corev1beta1.NodePool, error) {
-	nodePoolName, ok := instance.Tags[corev1beta1.NodePoolLabelKey]
+func (c *CloudProvider) resolveNodePoolFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) (*karpv1.NodePool, error) {
+	nodePoolName, ok := instance.Tags[karpv1.NodePoolLabelKey]
 	if ok && *nodePoolName != "" {
-		nodePool := &corev1beta1.NodePool{}
+		nodePool := &karpv1.NodePool{}
 		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: *nodePoolName}, nodePool); err != nil {
 			return nil, err
 		}
 		return nodePool, nil
 	}
 
-	return nil, errors.NewNotFound(schema.GroupResource{Group: corev1beta1.Group, Resource: "NodePool"}, "")
+	return nil, errors.NewNotFound(schema.GroupResource{Group: coreapis.Group, Resource: "nodepools"}, "")
 }
 
-func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *cloudprovider.InstanceType) (*corev1beta1.NodeClaim, error) {
-	nodeClaim := &corev1beta1.NodeClaim{}
+func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+	nodeClaim := &karpv1.NodeClaim{}
 	labels := map[string]string{}
 	annotations := map[string]string{}
 
 	if instanceType != nil {
 		labels = instance.GetAllSingleValuedRequirementLabels(instanceType)
-		nodeClaim.Status.Capacity = functional.FilterMap(instanceType.Capacity, func(_ v1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
-		nodeClaim.Status.Allocatable = functional.FilterMap(instanceType.Allocatable(), func(_ v1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
+		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ v1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
+		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ v1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
 
+	// TODO: review logic for determining zone (AWS uses Zone from subnet resolved and aviailable from NodeClass conditions ...)
 	if zoneID, err := instance.GetZoneID(vm); err != nil {
 		logging.FromContext(ctx).Warnf("Failed to get zone for VM %s, %v", *vm.Name, err)
 	} else {
@@ -323,11 +337,11 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 		labels[v1alpha2.AlternativeLabelTopologyZone] = zone
 	}
 
-	labels[corev1beta1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
+	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
 
 	// TODO: v1beta1 new kes/labels
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
-		labels[corev1beta1.NodePoolLabelKey] = *tag
+		labels[karpv1.NodePoolLabelKey] = *tag
 	}
 
 	inPlaceUpdateHash, err := inplaceupdate.HashFromVM(vm)
@@ -340,7 +354,14 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
 	nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
+	// Set the deletionTimestamp to be the current time if the instance is currently terminating
+	if utils.IsVMDeleting(*vm) {
+		nodeClaim.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	}
 	nodeClaim.Status.ProviderID = utils.ResourceIDToProviderID(ctx, *vm.ID)
+	if vm.Properties != nil && vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
+		nodeClaim.Status.ImageID = utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)
+	}
 	return nodeClaim, nil
 }
 
@@ -354,4 +375,12 @@ func makeZone(location string, zoneID string) string {
 		return ""
 	}
 	return fmt.Sprintf("%s-%s", strings.ToLower(location), zoneID)
+}
+
+// newTerminatingNodeClassError returns a NotFound error for handling by
+func newTerminatingNodeClassError(name string) *errors.StatusError {
+	qualifiedResource := schema.GroupResource{Group: apis.Group, Resource: "aksnodeclasses"}
+	err := errors.NewNotFound(qualifiedResource, name)
+	err.ErrStatus.Message = fmt.Sprintf("%s %q is terminating, treating as not found", qualifiedResource.String(), name)
+	return err
 }
