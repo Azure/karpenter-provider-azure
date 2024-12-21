@@ -275,7 +275,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *skus[i].Size, err)
 			continue
 		}
-		useSIG := options.FromContext(ctx).UseSIG 
+		useSIG := options.FromContext(ctx).UseSIG
 		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
