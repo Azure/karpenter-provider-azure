@@ -30,9 +30,9 @@ import (
 )
 
 const (
-	AzureLinuxGen2CommunityImage    = "V2gen2"
-	AzureLinuxGen1CommunityImage    = "V2"
-	AzureLinuxGen2ArmCommunityImage = "V2gen2arm64"
+	AzureLinuxGen2ImageDefinition    = "V2gen2"
+	AzureLinuxGen1ImageDefinition    = "V2"
+	AzureLinuxGen2ArmImageDefinition = "V2gen2arm64"
 )
 
 type AzureLinux struct {
@@ -47,8 +47,10 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 	// image provider will select these images in order, first match wins. This is why we chose to put Gen2 first in the defaultImages, as we prefer gen2 over gen1
 	return []DefaultImageOutput{
 		{
-			CommunityImage:   AzureLinuxGen2CommunityImage,
-			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
+			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+			GalleryName:          AKSAzureLinuxGalleryName,
+			ImageDefinition:      AzureLinuxGen2ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
@@ -56,8 +58,10 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			Distro: "aks-azurelinux-v2-gen2",
 		},
 		{
-			CommunityImage:   AzureLinuxGen1CommunityImage,
-			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
+			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+			GalleryName:          AKSAzureLinuxGalleryName,
+			ImageDefinition:      AzureLinuxGen1ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
@@ -65,8 +69,10 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			Distro: "aks-azurelinux-v2",
 		},
 		{
-			CommunityImage:   AzureLinuxGen2ArmCommunityImage,
-			PublicGalleryURL: AKSAzureLinuxPublicGalleryURL,
+			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+			GalleryName:          AKSAzureLinuxGalleryName,
+			ImageDefinition:      AzureLinuxGen2ArmImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
