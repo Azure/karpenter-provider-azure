@@ -41,6 +41,10 @@ type OptionsFields struct {
 	NodeResourceGroup              *string
 	ProvisionMode                  *string
 	NodeBootstrappingServerURL     *string
+
+	// UseSIG Flags not required by the self hosted offering
+	UseSIG            *bool
+	SIGSubscriptionID *string
 }
 
 func Options(overrides ...OptionsFields) *azoptions.Options {
@@ -65,5 +69,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
+		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),
+		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, "10945678-1234-1234-1234-123456789012"),
 	}
 }

@@ -36,6 +36,7 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -274,8 +275,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *skus[i].Size, err)
 			continue
 		}
-
-		useSIG := false // replace with options.FromContext(ctx).UseSIG when available
+		useSIG := options.FromContext(ctx).UseSIG
 		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
