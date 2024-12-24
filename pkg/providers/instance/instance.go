@@ -163,7 +163,8 @@ func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.V
 	var err error
 
 	if vm, err = p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
-		if sdkerrors.IsNotFoundErr(err) {
+		azErr := sdkerrors.IsResponseError(err)
+		if azErr != nil && (azErr.ErrorCode == "NotFound" || azErr.ErrorCode == "ResourceNotFound") {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return nil, fmt.Errorf("failed to get VM instance, %w", err)
