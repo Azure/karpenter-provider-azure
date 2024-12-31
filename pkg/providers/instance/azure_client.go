@@ -63,7 +63,8 @@ type AZClient struct {
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
 
-	ImageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI
+	NodeImageVersionsClient imagefamily.NodeImageVersionsAPI
+	ImageVersionsClient     imagefamily.CommunityGalleryImageVersionsAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
 	SKUClient           skuclient.SkuClient
 	LoadBalancersClient loadbalancer.LoadBalancersAPI
@@ -76,6 +77,7 @@ func NewAZClientFromAPI(
 	interfacesClient NetworkInterfacesAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	imageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI,
+	nodeImageVersionsClient imagefamily.NodeImageVersionsAPI,
 	skuClient skuclient.SkuClient,
 ) *AZClient {
 	return &AZClient{
@@ -84,6 +86,7 @@ func NewAZClientFromAPI(
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
 		ImageVersionsClient:            imageVersionsClient,
+		NodeImageVersionsClient:        nodeImageVersionsClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
 	}
@@ -137,11 +140,13 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	}
 	klog.V(5).Infof("Created azure resource graph client %v, using a token credential", azureResourceGraphClient)
 
-	imageVersionsClient, err := armcomputev5.NewCommunityGalleryImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	communityImageVersionsClient, err := armcomputev5.NewCommunityGalleryImageVersionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created image versions client %v, using a token credential", imageVersionsClient)
+	klog.V(5).Infof("Created image versions client %v, using a token credential", communityImageVersionsClient)
+
+	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred)
 
 	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
@@ -158,6 +163,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		extensionsClient,
 		interfacesClient,
 		loadBalancersClient,
-		imageVersionsClient,
+		communityImageVersionsClient,
+		nodeImageVersionsClient,
 		skuClient), nil
 }

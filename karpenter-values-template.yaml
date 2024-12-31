@@ -37,9 +37,16 @@ controller:
       value: ""
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}
+    
+    # managed karpenter settings 
+    - name: USE_SIG
+      value: "false"
+    - name: SIG_SUBSCRIPTION_ID
+      value: "" 
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:
     azure.workload.identity/client-id: ${KARPENTER_USER_ASSIGNED_CLIENT_ID}
 podLabels:
   azure.workload.identity/use: "true"
+logLevel: ${LOG_LEVEL}

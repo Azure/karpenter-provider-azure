@@ -123,3 +123,11 @@ updates:
       action-deps:
         patterns:
           - '*'
+  - package-ecosystem: github-actions
+    directory: .github/actions/install-deps
+    schedule:
+      interval: weekly
+    groups:
+      action-deps:
+        patterns:
+          - '*'

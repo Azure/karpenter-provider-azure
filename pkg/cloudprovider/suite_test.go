@@ -27,6 +27,7 @@ import (
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -84,7 +85,7 @@ var _ = BeforeSuite(func() {
 	recorder = events.NewRecorder(&record.FakeRecorder{})
 	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
 	cluster = state.NewCluster(fakeClock, env.Client)
-	prov = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster)
+	prov = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
 })
 
 var _ = AfterSuite(func() {
@@ -222,6 +223,15 @@ var _ = Describe("CloudProvider", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).To(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
+		})
+		It("should trigger drift when the image gallery changes to SIG", func() {
+			options := test.Options(test.OptionsFields{
+				UseSIG: lo.ToPtr(true),
+			})
+			ctx = options.ToContext(ctx)
+			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(string(drifted)).To(Equal("ImageVersionDrift"))
 		})
 	})
 })
