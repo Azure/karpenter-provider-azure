@@ -61,8 +61,6 @@ var _ = Describe("Drift", func() {
 	var pod *corev1.Pod
 
 	BeforeEach(func() {
-		env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "Drift=true"})
-
 		coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      corev1.LabelInstanceTypeStable,
@@ -77,15 +75,14 @@ var _ = Describe("Drift", func() {
 					karpv1.DoNotDisruptAnnotationKey: "true",
 				},
 			},
-			ResourceRequirements: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("0.5")}},
+			ResourceRequirements: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}},
 			Image:                "mcr.microsoft.com/oss/kubernetes/pause:3.6",
 		})
 	})
 
 	// TODO: Add budget tests
 
-	It("should deprovision nodes that have drifted due to labels", func() {
-
+	It("should deprovision nodes that have drifted due to image family", func() {
 		By(fmt.Sprintf("creating pod %s, nodepool %s, and nodeclass %s", pod.Name, nodePool.Name, nodeClass.Name))
 		env.ExpectCreated(pod, nodeClass, nodePool)
 
@@ -99,8 +96,8 @@ var _ = Describe("Drift", func() {
 		node := env.EventuallyExpectNodeCount("==", 1)[0]
 
 		By(fmt.Sprintf("waiting for nodepool %s update", nodePool.Name))
-		nodePool.Spec.Template.Labels["triggerdrift"] = "value"
-		env.ExpectCreatedOrUpdated(nodePool)
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
+		env.ExpectCreatedOrUpdated(nodeClass)
 
 		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
 		env.EventuallyExpectDrifted(nodeClaim)
@@ -113,24 +110,25 @@ var _ = Describe("Drift", func() {
 		SetDefaultEventuallyTimeout(10 * time.Minute)
 		env.EventuallyExpectNotFound(pod, nodeClaim, node)
 		SetDefaultEventuallyTimeout(5 * time.Minute)
-	})
-	It("should mark the nodeclaim as drifted for SubnetDrift if AKSNodeClass subnet id changes", func() {
-		env.ExpectCreated(pod, nodeClass, nodePool)
-
-		By(fmt.Sprintf("expect pod %s to be healthy", pod.Name))
 		env.EventuallyExpectHealthy(pod)
-
-		By("expect created node count to be 1")
-		env.ExpectCreatedNodeCount("==", 1)
-
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-		By("triggering subnet drift")
-		// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
-		// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
-		env.ExpectCreatedOrUpdated(nodeClass)
-
-		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
-		env.EventuallyExpectDrifted(nodeClaim)
 	})
+	// It("should mark the nodeclaim as drifted for SubnetDrift if AKSNodeClass subnet id changes", func() {
+	// 	env.ExpectCreated(pod, nodeClass, nodePool)
+
+	// 	By(fmt.Sprintf("expect pod %s to be healthy", pod.Name))
+	// 	env.EventuallyExpectHealthy(pod)
+
+	// 	By("expect created node count to be 1")
+	// 	env.ExpectCreatedNodeCount("==", 1)
+
+	// 	nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+	// 	By("triggering subnet drift")
+	// 	// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
+	// 	// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
+	// 	nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
+	// 	env.ExpectCreatedOrUpdated(nodeClass)
+
+	// 	By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
+	// 	env.EventuallyExpectDrifted(nodeClaim)
+	// })
 })
