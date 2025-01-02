@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 )
 
-
 var (
 	CleanableObjects = []client.Object{
 		&v1alpha2.AKSNodeClass{},

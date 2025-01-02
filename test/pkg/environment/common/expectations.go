@@ -753,25 +753,25 @@ func (env *Environment) printControllerLogs(options *corev1.PodLogOptions) {
 	}
 	isNap := os.Getenv("IS_NAP")
 	if isNap == "" || isNap == "false" {
-	pods := env.ExpectKarpenterPods()
-	for _, pod := range pods {
-		temp := options.DeepCopy() // local version of the log options
+		pods := env.ExpectKarpenterPods()
+		for _, pod := range pods {
+			temp := options.DeepCopy() // local version of the log options
 
-		fmt.Printf("------- pod/%s -------\n", pod.Name)
-		if len(pod.Status.ContainerStatuses) > 0 && pod.Status.ContainerStatuses[0].RestartCount > 0 {
-			fmt.Printf("[PREVIOUS CONTAINER LOGS]\n")
-			temp.Previous = true
+			fmt.Printf("------- pod/%s -------\n", pod.Name)
+			if len(pod.Status.ContainerStatuses) > 0 && pod.Status.ContainerStatuses[0].RestartCount > 0 {
+				fmt.Printf("[PREVIOUS CONTAINER LOGS]\n")
+				temp.Previous = true
+			}
+			stream, err := env.KubeClient.CoreV1().Pods("kube-system").GetLogs(pod.Name, temp).Stream(env.Context)
+			if err != nil {
+				log.FromContext(env.Context).Error(err, "failed fetching controller logs")
+				return
+			}
+			raw := &bytes.Buffer{}
+			_, err = io.Copy(raw, stream)
+			Expect(err).ToNot(HaveOccurred())
+			log.FromContext(env.Context).Info(raw.String())
 		}
-		stream, err := env.KubeClient.CoreV1().Pods("kube-system").GetLogs(pod.Name, temp).Stream(env.Context)
-		if err != nil {
-			log.FromContext(env.Context).Error(err, "failed fetching controller logs")
-			return
-		}
-		raw := &bytes.Buffer{}
-		_, err = io.Copy(raw, stream)
-		Expect(err).ToNot(HaveOccurred())
-		log.FromContext(env.Context).Info(raw.String())
-	}
 	}
 }
 
