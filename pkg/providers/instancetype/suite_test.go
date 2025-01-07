@@ -607,6 +607,33 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
 			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
+		It("should handle ZonalAllocationFailed on creating the VM", func() {
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
+			)
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v2"},
+				}})
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
+			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeSpot)).To(BeTrue())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+
+			By("successfully scheduling in a different zone on retry")
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(zone))
+		})
 
 		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
 			for _, zone := range azEnv.Zones() {
