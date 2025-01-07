@@ -45,17 +45,17 @@ func GetZone(vm *armcompute.VirtualMachine) (string, error) {
 	if vm == nil {
 		return "", fmt.Errorf("cannot pass in a nil virtual machine")
 	}
-	if vm.Name == nil {
-		return "", fmt.Errorf("virtual machine is missing name")
-	}
 	if vm.Zones == nil {
 		return "", nil
 	}
 	if len(vm.Zones) == 1 {
+		if vm.Location == nil {
+			return "", fmt.Errorf("virtual machine is missing location")
+		}
 		return MakeZone(*vm.Location, *(vm.Zones)[0]), nil
 	}
 	if len(vm.Zones) > 1 {
-		return "", fmt.Errorf("virtual machine %v has multiple zones", *vm.Name)
+		return "", fmt.Errorf("virtual machine has multiple zones")
 	}
 	return "", nil
 }

@@ -26,7 +26,6 @@ import (
 )
 
 func TestGetZone(t *testing.T) {
-	testVMName := "silly-armcompute"
 	tc := []struct {
 		testName      string
 		input         *armcompute.VirtualMachine
@@ -34,46 +33,52 @@ func TestGetZone(t *testing.T) {
 		expectedError string
 	}{
 		{
-			testName: "missing name",
-			input: &armcompute.VirtualMachine{
-				Name: nil,
-			},
-			expectedError: "virtual machine is missing name",
-		},
-		{
 			testName:      "invalid virtual machine struct",
 			input:         nil,
 			expectedError: "cannot pass in a nil virtual machine",
 		},
 		{
-			testName: "invalid zones field in virtual machine struct",
-			input: &armcompute.VirtualMachine{
-				Name: &testVMName,
-			},
-			expectedError: "virtual machine silly-armcompute zones are nil",
-		},
-		{
 			testName: "happy case",
 			input: &armcompute.VirtualMachine{
-				Name:     &testVMName,
 				Location: to.Ptr("region"),
 				Zones:    []*string{to.Ptr("1")},
 			},
 			expectedZone: "region-1",
 		},
 		{
-			testName: "emptyZones",
+			testName: "missing Location",
 			input: &armcompute.VirtualMachine{
-				Name:  &testVMName,
+				Zones: []*string{to.Ptr("1")},
+			},
+			expectedError: "virtual machine is missing location",
+		},
+		{
+			testName: "multiple zones",
+			input: &armcompute.VirtualMachine{
+				Zones: []*string{to.Ptr("1"), to.Ptr("2")},
+			},
+			expectedError: "virtual machine has multiple zones",
+		},
+		{
+			testName: "empty Zones",
+			input: &armcompute.VirtualMachine{
 				Zones: []*string{},
 			},
-			expectedError: "virtual machine silly-armcompute does not have any zones specified",
+			expectedZone: "",
+		},
+		{
+			testName:     "nil Zones",
+			input:        &armcompute.VirtualMachine{},
+			expectedZone: "",
 		},
 	}
 
 	for _, c := range tc {
 		zone, err := utils.GetZone(c.input)
 		assert.Equal(t, c.expectedZone, zone, c.testName)
+		if err == nil && c.expectedError != "" {
+			assert.Fail(t, "expected error but got nil", c.testName)
+		}
 		if err != nil {
 			assert.Equal(t, c.expectedError, err.Error(), c.testName)
 		}
