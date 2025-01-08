@@ -66,7 +66,7 @@ func (c *AzureResourceGraphAPI) Resources(_ context.Context, query armresourcegr
 
 func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	switch query {
-	case instance.GetListQueryBuilder(c.ResourceGroup).String():
+	case instance.GetVMListQueryBuilder(c.ResourceGroup).String():
 		vmList := lo.Filter(c.loadVMObjects(), func(vm armcompute.VirtualMachine, _ int) bool {
 			return vm.Tags != nil && vm.Tags[instance.NodePoolTagKey] != nil
 		})

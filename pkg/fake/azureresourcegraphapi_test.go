@@ -67,7 +67,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 					return
 				}
 			}
-			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetListQueryBuilder(resourceGroup).String())
+			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetVMListQueryBuilder(resourceGroup).String())
 			data, err := instance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
 			if err != nil {
 				t.Errorf("Unexpected error %v", err)
