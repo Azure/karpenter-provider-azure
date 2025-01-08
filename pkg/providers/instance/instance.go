@@ -55,7 +55,6 @@ import (
 
 var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
-	listQuery      string
 
 	CapacityTypeToPriority = map[string]string{
 		karpv1.CapacityTypeSpot:     string(compute.Spot),
@@ -85,7 +84,7 @@ type Provider interface {
 	// CreateTags(context.Context, string, map[string]string) error
 	Update(context.Context, string, armcompute.VirtualMachineUpdate) error
 	GetNic(context.Context, string, string) (*armnetwork.Interface, error)
-	ListNics(context.Context) []*armnetwork.Interface
+	ListNics(context.Context) ([]*armnetwork.Interface, error)
 }
 
 // assert that DefaultProvider implements Provider interface
@@ -114,7 +113,6 @@ func NewDefaultProvider(
 	subscriptionID string,
 	provisionMode string,
 ) *DefaultProvider {
-	listQuery = GetListQueryBuilder(resourceGroup).String()
 	return &DefaultProvider{
 		azClient:               azClient,
 		instanceTypeProvider:   instanceTypeProvider,
