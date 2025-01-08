@@ -1,15 +1,24 @@
 # Cleaning Up Orphaned Network Interfaces
-**TOC**
-1. [Motivation and Goals](#motivation-and-goals)  
-2. [Proposed Approaches for Garbage Collecting Network Interfaces](#proposed-approaches-for-garbage-collecting-network-interfaces)  
-   - [Approach A: “Hijack” the Existing `List()` Method](#approach-a-hijack-the-existing-list-method)  
-   - [Approach B: Move NodeClaim GC Controllers to Core and Rename `List()` to `RemovableOrphans()`](#approach-b-move-nodeclaim-gc-controllers-to-core-and-rename-list-to-removableorphans)  
-   - [Approach C: Amend the GC Controller to Have a New Process: `garbageCollectOrphanedNics()`](#approach-c-amend-the-gc-controller-to-have-a-new-process-garbagecollectorphanednics)  
-3. [Deletion via `CloudProvider.Delete()`](#deletion-via-cloudproviderdelete)  
-4. [Methods for Listing Network Interfaces](#methods-for-listing-network-interfaces)  
-   - [Approach A: Azure Resource Graph (ARG) List](#approach-a-azure-resource-graph-arg-list)  
-   - [Approach B: Network Resource Provider (NRP) List](#approach-b-network-resource-provider-nrp-list)  
-5. [Additional Considerations for `NicReservedForAnotherVM` Errors](#additional-considerations-for-nicreservedforanothervm-errors)  
+
+The document is organized into the following sections:
+
+
+0. **Introduction** Why do we need this work in the first place? 
+1. **Proposed Solutions for Orphaned Network Interfaces**: Presents and evaluates four approaches to solving the problem:
+   - Extending the existing `List()` method to include orphaned NICs.
+   - Centralizing garbage collection logic in the core Karpenter codebase and introducing a new method for identifying removable orphaned resources.
+   - Adding a new garbage collection process (`garbageCollectOrphanedNICs`) specifically tailored for Azure NICs.
+   - Modifying the `List()` method to support resource-specific listings for flexible garbage collection.
+
+2. **Handling Deletion of Network Interfaces**: Details the current deletion logic implemented in `CloudProvider.Delete()` and proposes enhancements to support scenarios where NodeClaims lack a populated `ProviderID`.
+
+3. **Network Interface Listing Methods**: Explores two approaches to retrieving lists of orphaned NICs:
+   - Using Azure Resource Graph (ARG) for efficient queries at the expense of slightly delayed data.
+   - Using the Network Resource Provider (NRP) for real-time, up-to-date data at the cost of increased API calls.
+
+4. **Additional Considerations**: Discusses complementary strategies for mitigating orphan NIC issues, including:
+   - Introducing a `--force-delete` option for NICs in Azure.
+   - Using quota APIs to prevent provisioning failures and reduce orphaned resources.
 
 ## Motivation and Goals
 When using the Azure provider, we create five Azure resources when a NodeClaim is launched:
@@ -38,12 +47,16 @@ Currently, we only attempt to delete network interfaces when their corresponding
 We can add the orphaned network interfaces to the list of NodeClaims returned by our `CloudProvider.List()` method. This way, our existing controller logic will detect these interfaces as “instances” without corresponding NodeClaims in Kubernetes, and remove them—assuming they are beyond the registration TTL.
 
 **Pros:**
-- Does not require changes to the core Karpenter code.
-- Does not introduce any new dependencies to the garbage collection controller.
-- Maintains parity with the other cloud providers.
+- Simplest Implementation as it just leverages existing GC Controller implementation with a minor List call addition to a part of the code that already has access to it 
+- Maintains parity with the other cloud providers for the GC controller
+- Reuses existing reconciliation logic and timing mechanisms, including workqueue parallelization 
 
 **Cons:**
 - `List()` is conceptually a list of instances, not arbitrary garbage-collection candidates. If the core code ever uses `List()` for something else, this approach might create conflicts or require future re-engineering.
+- Semantically incorrect - List() should return instances, not arbitrary resources
+- Could cause issues if core Karpenter code starts using List() for other purposes
+- Potentially harder to debug as NICs and VMs are treated the same way 
+- Harder to implement deletion ordering, nics should only be attempted to be gc'd after vms. Doable via having them appeneded to the List after vms are appended
 
 ### Approach B: Move NodeClaim GC Controllers to Core and Rename `List()` to `RemovableOrphans()`
 A concept of garbage-collecting resources exists across cloud providers in an almost identical fashion for AKS, EKS, and Alibaba Cloud. We could:
@@ -65,87 +78,31 @@ Meanwhile, AWS, Azure, and Alibaba Cloud all use their respective `List()` metho
 
 We could rename `List()` to `RemovableOrphans()` to be more semantically correct and then consolidate the garbage collection controllers in the core, so all providers share the same logic.
 
-### Approach C: Amend the GC Controller to Have a New Process: `garbageCollectOrphanedNics()`
-We could introduce custom logic specifically in the Azure garbage collection controller:
+Pros:
+- Most semantically correct approach
+- Provides clear separation between instance listing and orphaned resource collection which is what List is used for primarily
+- Allows for standardized garbage collection across all cloud providers, and utilizes the abstraction of cloudprovider.Delete to cleanup resources neatly
+- Makes the codebase more maintainable long-term, moving shared code to be shared
+- Easier to extend for future resource types (as shown in the Azure implementation needing both NICs and VMs) 
+Cons:
+- Requires significant changes to core Karpenter code
+- All cloud providers would need to update their implementations
+- More complex implementation initially
+- Requires coordination across multiple repositories and organizations
+
+### Approach C: Amend the GC Controller to Have a New Process: `garbageCollectOrphanedNics()` and bring in the instance provider for listing nics
+
+We could Extend the InstanceProvider to List Network Interfaces and call a new gc method for orphaned nics. This requires we bring in the instance provider 
+into the gc controller. This makes the most sense since our clients for accessing instances and their related resources all live here.
+```go    
+nics, err := c.InstanceProvider.ListNics(ctx)
+```
 
 ```go
-func (c *Controller) garbageCollectOrphanedNICs(ctx context.Context) error {
-    // List all network interfaces managed by Karpenter
-    nics, err := c.ListKarpenterNics(ctx)
-    if err != nil {
-        return fmt.Errorf("listing network interfaces, %w", err)
-    }
-
-    // Get all NodeClaims to check against
-    nodeClaimList := &karpv1.NodeClaimList{}
-    if err = c.kubeClient.List(ctx, nodeClaimList); err != nil {
-        return err
-    }
-
-    // Create a set of NodeClaim names for efficient lookup
-    nodeClaimNames := sets.New[string]()
-    for _, nc := range nodeClaimList.Items {
-        nodeClaimNames.Insert(nc.Name)
-    }
-
-    // Check each NIC and delete if orphaned
-    for _, nic := range nics {
-        // Extract the NodeClaim name from the NIC name (e.g., "aks-{nodeclaimname}")
-        nicName := *nic.Name
-        if !strings.HasPrefix(nicName, "aks-") {
-            continue
-        }
-        nodeClaimName := strings.TrimPrefix(nicName, "aks-")
-
-        // If the NodeClaim doesn't exist, this NIC is orphaned
-        if !nodeClaimNames.Has(nodeClaimName) {
-            if err := c.cloudProvider.Delete(ctx, nodeClaimName); err != nil {
-                logging.FromContext(ctx).With("nic-name", nicName).Errorf("failed to delete orphaned network interface: %v", err)
-                continue
-            }
-            logging.FromContext(ctx).With("nic-name", nicName).Info("deleted orphaned network interface")
-        }
-    }
-
-    return nil
-}
-
 func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
     ctx = injection.WithControllerName(ctx, "instance.garbagecollection")
 
     // First handle VM garbage collection
-    retrieved, err := c.cloudProvider.List(ctx)
-    if err != nil {
-        return reconcile.Result{}, fmt.Errorf("listing cloudprovider VMs, %w", err)
-    }
-    managedRetrieved := lo.Filter(retrieved, func(nc *karpv1.NodeClaim, _ int) bool {
-        return nc.DeletionTimestamp.IsZero()
-    })
-
-    nodeClaimList := &karpv1.NodeClaimList{}
-    if err = c.kubeClient.List(ctx, nodeClaimList); err != nil {
-        return reconcile.Result{}, err
-    }
-    nodeList := &v1.NodeList{}
-    if err := c.kubeClient.List(ctx, nodeList); err != nil {
-        return reconcile.Result{}, err
-    }
-
-    resolvedProviderIDs := sets.New[string](lo.FilterMap(nodeClaimList.Items, func(n karpv1.NodeClaim, _ int) (string, bool) {
-        return n.Status.ProviderID, n.Status.ProviderID != ""
-    })...)
-
-    errs := make([]error, len(retrieved))
-    workqueue.ParallelizeUntil(ctx, 100, len(managedRetrieved), func(i int) {
-        if !resolvedProviderIDs.Has(managedRetrieved[i].Status.ProviderID) &&
-           time.Since(managedRetrieved[i].CreationTimestamp.Time) > time.Minute*5 {
-            errs[i] = c.garbageCollect(ctx, managedRetrieved[i], nodeList)
-        }
-    })
-    if err = multierr.Combine(errs...); err != nil {
-        return reconcile.Result{}, err
-    }
-
     // After VM garbage collection, attempt to clean up any orphaned NICs
     if err := c.garbageCollectOrphanedNICs(ctx); err != nil {
         return reconcile.Result{}, fmt.Errorf("garbage collecting orphaned NICs: %w", err)
@@ -159,13 +116,84 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 ```
 
 Pros:
-	•	Does not require changes to the core Karpenter code.
-	•	Keeps List() usage focused on listing VMs.
+- Clear separation of concerns between VM and NIC garbage collection
+- Keeps existing List() functionality pure
+- Can leverage existing instance provider code and clients
+- More flexibility in the cleanup of nics in things such as reconcilation requeue(Could requeue 180 seconds if cloudprovider delete fails with nicReservedForAnotherVM) 
 
 Cons:
-	•	Adds custom logic in the GC controller specific to Azure.
+- Azure-specific solution in the garbage collection controller straying from shared behavior between all gc controllers in all providers 
+- Duplicates some GC logic 
 
+
+### Approach D: Modifying the List Method to take in a cloudprovider ResourceType 
+Alternatively, we could modify the cloudprovider interface List to have lists for different cloudprovider resources(Nic, Instance, Disk).  
+
+We can either use the existing interface and implement the abscraction ourselves, or modify the interface to have a ResourceType parameter. Lets opt for not modifying core.  
+
+We still would need to modify the gc controllers, but we could share the same interface for List, not requiring any importing of the InstanceProvider 
+```go
+// List returns nodeclaims associated with a particular ResourceType
+func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
+	
+	switch options.FromContext(ctx).ResourceType {
+		case "instance":
+		instances, err := c.instanceProvider.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing instances, %w", err)
+		}
+
+		var nodeClaims []*karpv1.NodeClaim
+		for _, instance := range instances {
+			instanceType, err := c.resolveInstanceTypeFromInstance(ctx, instance)
+			if err != nil {
+				return nil, fmt.Errorf("resolving instance type, %w", err)
+			}
+			nodeClaim, err := c.instanceToNodeClaim(ctx, instance, instanceType)
+			if err != nil {
+				return nil, fmt.Errorf("converting instance to node claim, %w", err)
+			}
+
+			nodeClaims = append(nodeClaims, nodeClaim)
+		}
+		return nodeClaims, nil
+		case "networkinterfaces":
+		nics,err := c.instanceProvider.ListNics(ctx)
+		if err != nil {
+			return nil,fmt.Errorf("listing nics, %w", err)
+		}
+		nc, err := c.nicToNodeClaim(ctx, nic) 
+		if err != nil {
+		return fmt.Errorf("converting nic to nodeclaim, %w", err)
+		}
+	}
+	
+}
+```
+
+Pros: 
+- Provides a flexible framework for handling different resource types
+- Could be extended to handle other resource types in the future if needed(probably not)
+- Maintains single point of entry through List() for any generic cloudprovider resource List
+- Allows for resource-specific handling while keeping common interface
+- allows for custom lists to be defined, for example we can define a list of all nics + vms that need to be gc'd have have the list return that having a switch case for it 
+- Doesn't require us to import the InstanceProvider to list cloudprovider resources in our garbage collection controller, we could easily abstract the same logic in the gc controller to have the changes there be minimal. Simply calling the same gc code twice for two resource types.
+Cons:
+- Adds complexity to the List() interface
+- Could make error handling more complex
+
+
+## Recommendation
+We recommend Approach C for the following reasons:
+1. It provides a clean separation of concerns while requiring no changes to the core Karpenter codebase
+2. It leverages existing instance provider functionality
+3. It allows for Azure-specific handling of the NicReservedForAnotherVM error case and it can be implemented without affecting other cloud providers
+4. It provides a clear separation of concerns for Network Interface Listing. By doing a second nodeclaim List after gc of the vms, we cleanly only attempt deletion of network interfaces not associated with vms.
+While Approach B (moving to core) might be the cleanest long-term solution, Approach C provides the best balance of implementation complexity and immediate problem-solving for the Azure provider's specific needs.
 --- 
+
+
+
 
 ### Deletion via CloudProvider.Delete()
 All these approaches assume that CloudProvider.Delete() can be used to remove network interfaces.
@@ -208,6 +236,9 @@ The current logic obtains the VM name from ProviderID, which is not populated if
 ## Methods for Listing Network Interfaces 
 
 ### Approach A: Azure Resource Graph (ARG) List
+This approach uses the Azure Resource Graph (ARG) API to query for network interfaces belonging to Karpenter. If a network interface does not have an associated NodeClaim, it is identified as orphaned and removed. ARG provides a convenient and efficient way to list resources, although its data may lag by a few minutes.
+
+**Example Query:**
 ```go
 func GetNICListQueryBuilder(rg string) *kql.Builder {
     return kql.New(`Resources`).
@@ -216,30 +247,43 @@ func GetNICListQueryBuilder(rg string) *kql.Builder {
         AddLiteral(` | where tags["`).AddString(NodePoolTagKey).AddLiteral(`"] == "`).AddString("karpenter").AddLiteral(`"`)
 }
 ```
-We can use the ARG Resources api to query for network interfaces belonging to karpenter, and if a network interface doesn't have a nodeclaim associated with it, we simply remove it.
-
-ARG Provides a convenient list api, at the cost of some of the data lagging by a factor of minutes. This is ok since
 Pros:
-	•	Reduced API call overhead (one ARG call instead of multiple).
-	•	Good enough for garbage collection since real-time data is not critical.
+- Reduced API call overhead (one ARG query instead of multiple API calls).
+- Sufficient for garbage collection since real-time data is not critical.
 
 Cons:
-	•	ARG data can be slightly delayed compared to Network Resource Provider (NRP). Meaning some network interfaces may not be garbage collected right away. For small subnets this may be problematic. 
-	•	May not reflect the most immediate changes, which is generally fine for garbage collection.
-	• Clusters that have been running karpenter for a long time may have 80k+ network interfaces, meaning this list being one list call may OOM. 
+- ARG data may lag compared to the Network Resource Provider (NRP), causing delays in garbage collection.
+- For small subnets, delays in NIC cleanup could lead to resource exhaustion.
+- Clusters with a high number of NICs (e.g., 80k+) may face performance issues or even out-of-memory (OOM) errors with a single query.
 
 ### Approach B: Network Resource Provider (NRP) List
-We can use the azure sdk for go's ListPager, and iterate through all of the network interfaces
+This approach uses the Azure Network Resource Provider (NRP) API via the ListPager method to iterate through all network interfaces. This provides real-time data but comes at the cost of higher API usage and potential quota limitations.
 
+**Example Query** 
+```go 
+func ListNetworkInterfaces(ctx context.Context, client *armnetwork.InterfacesClient) ([]armnetwork.Interface, error) {
+    var allNics []armnetwork.Interface
+    pager := client.ListAll(ctx, nil)
+    for pager.More() {
+        page, err := pager.NextPage(ctx)
+        if err != nil {
+            return nil, fmt.Errorf("listing network interfaces: %w", err)
+        }
+        allNics = append(allNics, page.Value...)
+    }
+    return allNics, nil
+}
+```
 
 Pros:
-	•	Provides fresh data straight from the NRP control plane
+- Provides fresh, real-time data directly from the NRP control plane.
+- Ensures immediate garbage collection of orphaned NICs.
 Cons:
-	•	Potentially more expensive calls; could consume NIC read quotas if listing a large number of NICs.
-
-
+- Increased latency if the cluster has a large number of nics, arg caches reads whereas we would be getting these live
+- higher api call overhead compared to arg, since we are paginating 
+- may consume NIC Read quota, causing other parts of karpenter to fail if reached 
 
 ---
-### Additional Considerations for NicReservedForAnotherVM Errors
+### Additional Considerations for reducing NicReservedForAnotherVM Errors
 	1.	Introducing a --force-delete: Ideally, Azure’s network resource provider might offer a --force-delete option for NICs. However, such a feature would require changes in the Azure API, which is outside our control.
 	2.	Reducing Quota Errors: We can leverage Azure quota APIs to filter out instance types that exceed our quotas before creating VMs, reducing orphaned NICs in the first place. This could remove the latency and overhead of provisioning attempts that inevitably fail.
