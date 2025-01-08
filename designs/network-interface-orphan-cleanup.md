@@ -1,4 +1,15 @@
 # Cleaning Up Orphaned Network Interfaces
+**TOC**
+1. [Motivation and Goals](#motivation-and-goals)  
+2. [Proposed Approaches for Garbage Collecting Network Interfaces](#proposed-approaches-for-garbage-collecting-network-interfaces)  
+   - [Approach A: “Hijack” the Existing `List()` Method](#approach-a-hijack-the-existing-list-method)  
+   - [Approach B: Move NodeClaim GC Controllers to Core and Rename `List()` to `RemovableOrphans()`](#approach-b-move-nodeclaim-gc-controllers-to-core-and-rename-list-to-removableorphans)  
+   - [Approach C: Amend the GC Controller to Have a New Process: `garbageCollectOrphanedNics()`](#approach-c-amend-the-gc-controller-to-have-a-new-process-garbagecollectorphanednics)  
+3. [Deletion via `CloudProvider.Delete()`](#deletion-via-cloudproviderdelete)  
+4. [Methods for Listing Network Interfaces](#methods-for-listing-network-interfaces)  
+   - [Approach A: Azure Resource Graph (ARG) List](#approach-a-azure-resource-graph-arg-list)  
+   - [Approach B: Network Resource Provider (NRP) List](#approach-b-network-resource-provider-nrp-list)  
+5. [Additional Considerations for `NicReservedForAnotherVM` Errors](#additional-considerations-for-nicreservedforanothervm-errors)  
 
 ## Motivation and Goals
 When using the Azure provider, we create five Azure resources when a NodeClaim is launched:
@@ -215,7 +226,7 @@ Pros:
 Cons:
 	•	ARG data can be slightly delayed compared to Network Resource Provider (NRP). Meaning some network interfaces may not be garbage collected right away. For small subnets this may be problematic. 
 	•	May not reflect the most immediate changes, which is generally fine for garbage collection.
-
+	• Clusters that have been running karpenter for a long time may have 80k+ network interfaces, meaning this list being one list call may OOM. 
 
 ### Approach B: Network Resource Provider (NRP) List
 We can use the azure sdk for go's ListPager, and iterate through all of the network interfaces
