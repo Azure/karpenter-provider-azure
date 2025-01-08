@@ -407,7 +407,6 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class", func() {
 			// Create a Nodepool that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 256GB
-			//			nodeClass = test.AKSNodeClass()
 			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
