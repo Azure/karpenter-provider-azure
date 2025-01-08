@@ -54,6 +54,11 @@ import (
 )
 
 var (
+	vmListQuery  string
+	nicListQuery string
+)
+
+var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 
 	CapacityTypeToPriority = map[string]string{
@@ -113,6 +118,8 @@ func NewDefaultProvider(
 	subscriptionID string,
 	provisionMode string,
 ) *DefaultProvider {
+	vmListQuery = GetVMListQueryBuilder(resourceGroup).String()
+	nicListQuery = GetNICListQueryBuilder(resourceGroup).String()
 	return &DefaultProvider{
 		azClient:               azClient,
 		instanceTypeProvider:   instanceTypeProvider,

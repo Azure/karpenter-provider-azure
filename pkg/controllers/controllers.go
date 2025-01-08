@@ -44,7 +44,7 @@ func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient),
 		nodeclasstermination.NewController(kubeClient, recorder),
-		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider),
+		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider, instanceProvider),
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),
 		status.NewController[*v1alpha2.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),

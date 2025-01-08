@@ -16,11 +16,6 @@ const (
 	nicResourceType = "microsoft.network/networkinterfaces"
 )
 
-var (
-	vmListQuery  string
-	nicListQuery string
-)
-
 // getResourceListQueryBuilder returns a KQL query builder for listing resources with nodepool tags
 func getResourceListQueryBuilder(rg string, resourceType string) *kql.Builder {
 	return kql.New(`Resources`).
@@ -73,6 +68,7 @@ func createNICFromQueryResponseData(data map[string]interface{}) (*armnetwork.In
 	if err != nil {
 		return nil, err
 	}
+
 	nic := armnetwork.Interface{}
 	err = json.Unmarshal(jsonString, &nic)
 	if err != nil {

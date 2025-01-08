@@ -50,31 +50,34 @@ type Controller struct {
 	successfulCount  uint64 // keeps track of successful reconciles for more aggressive requeueing near the start of the controller
 }
 
-func NewController(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *Controller {
+func NewController(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider, instanceProvider instance.Provider) *Controller {
 	return &Controller{
-		kubeClient:      kubeClient,
-		cloudProvider:   cloudProvider,
-		successfulCount: 0,
+		kubeClient:       kubeClient,
+		cloudProvider:    cloudProvider,
+		instanceProvider: instanceProvider,
+		successfulCount:  0,
 	}
 }
 
 func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, "instance.garbagecollection")
+	var aggregatedError error
 
 	// Perform VM garbage collection
 	if err := c.gcVMs(ctx); err != nil {
-		return reconcile.Result{}, fmt.Errorf("VM garbage collection failed: %w", err)
+		aggregatedError = multierr.Append(aggregatedError, fmt.Errorf("VM garbage collection failed: %w", err))
 	}
 
 	// Perform NIC garbage collection
 	if err := c.gcNics(ctx); err != nil {
-		return reconcile.Result{}, fmt.Errorf("NIC garbage collection failed: %w", err)
+		aggregatedError = multierr.Append(aggregatedError, fmt.Errorf("NIC garbage collection failed: %w", err))
 	}
 
 	c.successfulCount++
+
 	return reconcile.Result{
-		RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2),
-	}, nil
+		RequeueAfter: lo.Ternary(c.successfulCount <= 20, 10*time.Second, 2*time.Minute),
+	}, aggregatedError
 }
 
 // gcVMs handles the garbage collection of virtual machines.
@@ -156,6 +159,7 @@ func (c *Controller) gcNics(ctx context.Context) error {
 				gcErrors = append(gcErrors, fmt.Errorf("deleting NIC %s: %w", nicName, err))
 				mu.Unlock()
 			}
+			logging.FromContext(ctx).With("nic", nicName).Infof("garbage collected NIC")
 		}
 	})
 
