@@ -32,9 +32,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -273,8 +275,8 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *skus[i].Size, err)
 			continue
 		}
-
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
+		useSIG := options.FromContext(ctx).UseSIG
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -291,13 +293,14 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
+func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool) bool {
 	return p.hasMinimumCPU(sku) &&
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
 		!p.isUnsupportedGPU(sku) &&
 		!p.hasConstrainedCPUs(vmsize) &&
-		!p.isConfidential(sku)
+		!p.isConfidential(sku) &&
+		isCompatibleImageAvailable(sku, useSIG)
 }
 
 // at least 2 cpus
@@ -405,4 +408,16 @@ var (
 
 func hasZonalSupport(region string) bool {
 	return zonalRegions.Has(region)
+}
+
+func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
+	hasSCSISupport := func(sku *skewer.SKU) bool { // TODO: move capability determination to skewer
+		const diskControllerTypeCapability = "DiskControllerTypes"
+		declaresSCSI := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.SCSI))
+		declaresNVMe := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.NVMe))
+		declaresNothing := !(declaresSCSI || declaresNVMe)
+		return declaresSCSI || declaresNothing // if nothing is declared, assume SCSI is supported
+	}
+
+	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
 }
