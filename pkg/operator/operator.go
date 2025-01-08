@@ -82,12 +82,15 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		operator.Elected(),
 	)
+
 	imageProvider := imagefamily.NewProvider(
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
 			azurecache.DefaultCleanupInterval),
 		azClient.ImageVersionsClient,
 		azConfig.Location,
+		azConfig.SubscriptionID,
+		azClient.NodeImageVersionsClient,
 	)
 	imageResolver := imagefamily.New(
 		operator.GetClient(),
