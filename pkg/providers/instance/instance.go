@@ -18,7 +18,6 @@ package instance
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -32,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/logging"
 
-	"github.com/Azure/azure-kusto-go/kusto/kql"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -87,6 +85,7 @@ type Provider interface {
 	// CreateTags(context.Context, string, map[string]string) error
 	Update(context.Context, string, armcompute.VirtualMachineUpdate) error
 	GetNic(context.Context, string, string) (*armnetwork.Interface, error)
+	ListNics(context.Context) []*armnetwork.Interface
 }
 
 // assert that DefaultProvider implements Provider interface
@@ -175,7 +174,7 @@ func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.V
 }
 
 func (p *DefaultProvider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
-	req := NewQueryRequest(&(p.subscriptionID), listQuery)
+	req := NewQueryRequest(&(p.subscriptionID), vmListQuery)
 	client := p.azClient.azureResourceGraphClient
 	data, err := GetResourceData(ctx, client, *req)
 	if err != nil {
@@ -308,6 +307,25 @@ func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armn
 		return nil, err
 	}
 	return &nicResponse.Interface, nil
+}
+
+// ListNics returns all network interfaces in the resource group that have the nodepool tag
+func (p *DefaultProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
+	req := NewQueryRequest(&(p.subscriptionID), nicListQuery)
+	client := p.azClient.azureResourceGraphClient
+	data, err := GetResourceData(ctx, client, *req)
+	if err != nil {
+		return nil, fmt.Errorf("querying azure resource graph, %w", err)
+	}
+	var nicList []*armnetwork.Interface
+	for i := range data {
+		nic, err := createNICFromQueryResponseData(data[i])
+		if err != nil {
+			return nil, fmt.Errorf("creating NIC object from query response data, %w", err)
+		}
+		nicList = append(nicList, nic)
+	}
+	return nicList, nil
 }
 
 // newVMObject is a helper func that creates a new armcompute.VirtualMachine
@@ -748,38 +766,24 @@ func (p *DefaultProvider) getCSExtension(cse string, isWindows bool) *armcompute
 	}
 }
 
-func GetListQueryBuilder(rg string) *kql.Builder {
-	return kql.New(`Resources`).
-		AddLiteral(` | where type == "microsoft.compute/virtualmachines"`).
-		AddLiteral(` | where resourceGroup == `).AddString(strings.ToLower(rg)). // ARG VMs appear to have lowercase RG
-		AddLiteral(` | where tags has_cs `).AddString(NodePoolTagKey)
-}
-
-func createVMFromQueryResponseData(data map[string]interface{}) (*armcompute.VirtualMachine, error) {
-	jsonString, err := json.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
-	vm := armcompute.VirtualMachine{}
-	err = json.Unmarshal(jsonString, &vm)
-	if err != nil {
-		return nil, err
-	}
-	if vm.ID == nil {
-		return nil, fmt.Errorf("virtual machine is missing id")
+// GetZoneID returns the zone ID for the given virtual machine, or an empty string if there is no zone specified
+func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
+	if vm == nil {
+		return "", fmt.Errorf("cannot pass in a nil virtual machine")
 	}
 	if vm.Name == nil {
-		return nil, fmt.Errorf("virtual machine is missing name")
+		return "", fmt.Errorf("virtual machine is missing name")
 	}
-	if vm.Tags == nil {
-		return nil, fmt.Errorf("virtual machine is missing tags")
+	if vm.Zones == nil {
+		return "", nil
 	}
-	// We see inconsistent casing being returned by ARG for the last segment
-	// of the vm.ID string. This forces it to be lowercase.
-	parts := strings.Split(lo.FromPtr(vm.ID), "/")
-	parts[len(parts)-1] = strings.ToLower(parts[len(parts)-1])
-	vm.ID = lo.ToPtr(strings.Join(parts, "/"))
-	return &vm, nil
+	if len(vm.Zones) == 1 {
+		return *(vm.Zones)[0], nil
+	}
+	if len(vm.Zones) > 1 {
+		return "", fmt.Errorf("virtual machine %v has multiple zones", *vm.Name)
+	}
+	return "", nil
 }
 
 func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.VirtualMachineIdentity {
