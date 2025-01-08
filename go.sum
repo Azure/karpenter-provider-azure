@@ -125,8 +125,8 @@ github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 h1:DklsrG3d
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2/go.mod h1:WaHUgvxTVq04UNunO+XhnAqY/wQc+bxr74GqbsZ/Jqw=
 github.com/avast/retry-go v3.0.0+incompatible h1:4SOWQ7Qs+oroOTQOYnAHqelpCO0biHSxpiH9JdtuBj0=
 github.com/avast/retry-go v3.0.0+incompatible/go.mod h1:XtSnn+n/sHqQIpZ10K1qAevBhOOCWBLXXy3hyiqqBrY=
-github.com/awslabs/operatorpkg v0.0.0-20241125173122-bef8fba1bdf6 h1:O32mqYd4TFNsiZP93RSPfkAKaskV0vP8pBcwTkR9p2M=
-github.com/awslabs/operatorpkg v0.0.0-20241125173122-bef8fba1bdf6/go.mod h1:jina2fQk+b3oa9r5bRuMDbpy6mfhTGuruh05oVVWwnk=
+github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115 h1:9nhjY3dzCpEmhpQ0vMlhB7wqucAiftLjAIEQu8uT2J4=
+github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115/go.mod h1:TTs6HGuqmgdNyNlbdv29v1OoON+kQKVPojZgJaJVtNk=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
@@ -166,8 +166,6 @@ github.com/evanphx/json-patch/v5 v5.9.0 h1:kcBlZQbplgElYIlo/n1hJbls2z/1awpXxpRi0
 github.com/evanphx/json-patch/v5 v5.9.0/go.mod h1:VNkHZ/282BpEyt/tObQO8s5CMPmYYq14uClGH4abBuQ=
 github.com/felixge/httpsnoop v1.0.4 h1:NFTV2Zj1bL4mc9sqWACXbQFVBBg2W3GPvqp8/ESS2Wg=
 github.com/felixge/httpsnoop v1.0.4/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
-github.com/fsnotify/fsnotify v1.7.0 h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=
-github.com/fsnotify/fsnotify v1.7.0/go.mod h1:40Bi/Hjc2AVfZrqy+aj+yEI+/bRxZnMJyTJwOpGvigM=
 github.com/fxamacker/cbor/v2 v2.7.0 h1:iM5WgngdRBanHcxugY4JySA0nk1wZorNOpTgCMedv5E=
 github.com/fxamacker/cbor/v2 v2.7.0/go.mod h1:pxXPTn3joSm21Gbwsv0w9OSA2y1HFR9qXEeXQVeNoDQ=
 github.com/gabriel-vasile/mimetype v1.4.3 h1:in2uUcidCuFcDKtdcBxlR0rJ1+fsokWf+uqxgUFjbI0=
@@ -891,12 +889,12 @@ sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.0.26 h1:BHauRhfjzs4UWu/yiLw82WK
 sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.0.26/go.mod h1:02JRJ7ioAoT9PZzIxlR4Kw7WbejsMIy1eeDyYX8sgvk=
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.0.1 h1:Lp0nALZmvMJoiVeVV6XjnZv1uClfArnThhuDAjaqE5A=
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.0.1/go.mod h1:pPkJPx/eMVWP3R+LhPoOYGoY7lywcMJev5L2uSfH+Jo=
-sigs.k8s.io/controller-runtime v0.19.2 h1:3sPrF58XQEPzbE8T81TN6selQIMGbtYwuaJ6eDssDF8=
-sigs.k8s.io/controller-runtime v0.19.2/go.mod h1:iRmWllt8IlaLjvTTDLhRBXIEtkCK6hwVBJJsYS9Ajf4=
+sigs.k8s.io/controller-runtime v0.19.3 h1:XO2GvC9OPftRst6xWCpTgBZO04S2cbp0Qqkj8bX1sPw=
+sigs.k8s.io/controller-runtime v0.19.3/go.mod h1:j4j87DqtsThvwTv5/Tc5NFRyyF/RF0ip4+62tbTSIUM=
 sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd h1:EDPBXCAspyGV4jQlpZSudPeMmr1bNJefnuqLsRAsHZo=
 sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd/go.mod h1:B8JuhiUyNFVKdsE8h686QcCxMaH6HrOAZj4vswFpcB0=
-sigs.k8s.io/karpenter v1.1.0 h1:4SdCXihNKH4Y5xLwtKh7sqvCPYTQ3vCvCTPFRaNPQ5Y=
-sigs.k8s.io/karpenter v1.1.0/go.mod h1:LPVsUkC/MdmIjCBcmNVzy1wLp86xRKTRKFGPSNAW+YE=
+sigs.k8s.io/karpenter v1.1.1 h1:QPpVC8DsaLgJ/YWcFpZKE4m3jD+Qp88/GtSPvMfffck=
+sigs.k8s.io/karpenter v1.1.1/go.mod h1:NQouOJNK6s1d4EIKa5cY7nAV3IG74qZ6gPzHBeCZNPw=
 sigs.k8s.io/structured-merge-diff/v4 v4.4.1 h1:150L+0vs/8DA78h1u02ooW1/fFq/Lwr+sGiqlzvrtq4=
 sigs.k8s.io/structured-merge-diff/v4 v4.4.1/go.mod h1:N8hJocpFajUSSeSJ9bOZ77VzejKZaXsTtZo4/u7Io08=
 sigs.k8s.io/yaml v1.4.0 h1:Mk1wCc2gy/F0THH0TAp1QYyJNzRm2KCLy3o5ASXVI5E=

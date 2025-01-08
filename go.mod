@@ -17,7 +17,7 @@ require (
 	github.com/Azure/skewer v0.0.19
 	github.com/Pallinder/go-randomdata v1.2.0
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
-	github.com/awslabs/operatorpkg v0.0.0-20241125173122-bef8fba1bdf6
+	github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-openapi/errors v0.22.0
@@ -46,8 +46,8 @@ require (
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
 	knative.dev/pkg v0.0.0-20240910170930-fdbc0b5adde7
 	sigs.k8s.io/cloud-provider-azure v1.29.3
-	sigs.k8s.io/controller-runtime v0.19.2
-	sigs.k8s.io/karpenter v1.1.0
+	sigs.k8s.io/controller-runtime v0.19.3
+	sigs.k8s.io/karpenter v1.1.1
 )
 
 require (
@@ -81,7 +81,6 @@ require (
 	github.com/emicklei/go-restful/v3 v3.12.1 // indirect
 	github.com/evanphx/json-patch/v5 v5.9.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
