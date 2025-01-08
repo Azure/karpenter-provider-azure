@@ -32,7 +32,7 @@ var _ = Describe("Termination", func() {
 		nodes := env.Monitor.CreatedNodes()
 
 		// Pod is deleted so that we don't re-provision after node deletion
-		// NOTE: We have to do this right now to deal with a race condition in provisioner ownership
+		// NOTE: We have to do this right now to deal with a race condition in nodepool ownership
 		// This can be removed once this race is resolved with the Machine
 		env.ExpectDeleted(pod)
 
