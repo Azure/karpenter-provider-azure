@@ -78,13 +78,13 @@ Meanwhile, AWS, Azure, and Alibaba Cloud all use their respective `List()` metho
 
 We could rename `List()` to `RemovableOrphans()` to be more semantically correct and then consolidate the garbage collection controllers in the core, so all providers share the same logic.
 
-Pros:
+**Pros:**
 - Most semantically correct approach
 - Provides clear separation between instance listing and orphaned resource collection which is what List is used for primarily
 - Allows for standardized garbage collection across all cloud providers, and utilizes the abstraction of cloudprovider.Delete to cleanup resources neatly
 - Makes the codebase more maintainable long-term, moving shared code to be shared
 - Easier to extend for future resource types (as shown in the Azure implementation needing both NICs and VMs) 
-Cons:
+**Cons:**
 - Requires significant changes to core Karpenter code
 - All cloud providers would need to update their implementations
 - More complex implementation initially
@@ -115,13 +115,13 @@ func (c *Controller) Reconcile(ctx context.Context) (reconcile.Result, error) {
 }
 ```
 
-Pros:
+**Pros:**
 - Clear separation of concerns between VM and NIC garbage collection
 - Keeps existing List() functionality pure
 - Can leverage existing instance provider code and clients
 - More flexibility in the cleanup of nics in things such as reconcilation requeue(Could requeue 180 seconds if cloudprovider delete fails with nicReservedForAnotherVM) 
 
-Cons:
+**Cons:**
 - Azure-specific solution in the garbage collection controller straying from shared behavior between all gc controllers in all providers 
 - Duplicates some GC logic 
 
@@ -167,18 +167,19 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 		return fmt.Errorf("converting nic to nodeclaim, %w", err)
 		}
 	}
-	
 }
+
+
 ```
 
-Pros: 
+**Pros:**
 - Provides a flexible framework for handling different resource types
 - Could be extended to handle other resource types in the future if needed(probably not)
 - Maintains single point of entry through List() for any generic cloudprovider resource List
 - Allows for resource-specific handling while keeping common interface
 - allows for custom lists to be defined, for example we can define a list of all nics + vms that need to be gc'd have have the list return that having a switch case for it 
 - Doesn't require us to import the InstanceProvider to list cloudprovider resources in our garbage collection controller, we could easily abstract the same logic in the gc controller to have the changes there be minimal. Simply calling the same gc code twice for two resource types.
-Cons:
+**Cons:**
 - Adds complexity to the List() interface
 - Could make error handling more complex
 
@@ -191,9 +192,6 @@ We recommend Approach C for the following reasons:
 4. It provides a clear separation of concerns for Network Interface Listing. By doing a second nodeclaim List after gc of the vms, we cleanly only attempt deletion of network interfaces not associated with vms.
 While Approach B (moving to core) might be the cleanest long-term solution, Approach C provides the best balance of implementation complexity and immediate problem-solving for the Azure provider's specific needs.
 --- 
-
-
-
 
 ### Deletion via CloudProvider.Delete()
 All these approaches assume that CloudProvider.Delete() can be used to remove network interfaces.
@@ -247,11 +245,11 @@ func GetNICListQueryBuilder(rg string) *kql.Builder {
         AddLiteral(` | where tags["`).AddString(NodePoolTagKey).AddLiteral(`"] == "`).AddString("karpenter").AddLiteral(`"`)
 }
 ```
-Pros:
+**Pros:**
 - Reduced API call overhead (one ARG query instead of multiple API calls).
 - Sufficient for garbage collection since real-time data is not critical.
 
-Cons:
+**Cons:**
 - ARG data may lag compared to the Network Resource Provider (NRP), causing delays in garbage collection.
 - For small subnets, delays in NIC cleanup could lead to resource exhaustion.
 - Clusters with a high number of NICs (e.g., 80k+) may face performance issues or even out-of-memory (OOM) errors with a single query.
@@ -275,10 +273,10 @@ func ListNetworkInterfaces(ctx context.Context, client *armnetwork.InterfacesCli
 }
 ```
 
-Pros:
+**Pros:**
 - Provides fresh, real-time data directly from the NRP control plane.
 - Ensures immediate garbage collection of orphaned NICs.
-Cons:
+**Cons:**
 - Increased latency if the cluster has a large number of nics, arg caches reads whereas we would be getting these live
 - higher api call overhead compared to arg, since we are paginating 
 - may consume NIC Read quota, causing other parts of karpenter to fail if reached 
