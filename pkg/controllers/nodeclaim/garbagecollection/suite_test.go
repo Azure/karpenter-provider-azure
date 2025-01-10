@@ -26,6 +26,7 @@ import (
 
 	"github.com/awslabs/operatorpkg/object"
 	opstatus "github.com/awslabs/operatorpkg/status"
+	"github.com/patrickmn/go-cache"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -64,7 +65,7 @@ var nodePool *karpv1.NodePool
 var nodeClass *v1alpha2.AKSNodeClass
 var cluster *state.Cluster
 var cloudProvider *cloudprovider.CloudProvider
-var garbageCollectionController *garbagecollection.Controller
+var virtualMachineGCController *garbagecollection.VirtualMachineController
 var prov *provisioning.Provisioner
 
 func TestAPIs(t *testing.T) {
@@ -80,7 +81,7 @@ var _ = BeforeSuite(func() {
 	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	garbageCollectionController = garbagecollection.NewController(env.Client, cloudProvider, azureEnv.InstanceProvider)
+	virtualMachineGCController = garbagecollection.NewVirtualMachineController(env.Client, cloudProvider, cache.New(time.Minute, time.Second))
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client)
 	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
@@ -119,7 +120,7 @@ var _ = AfterEach(func() {
 // TODO: move before/after each into the tests (see AWS)
 // review tests themselves (very different from AWS?)
 // (e.g. AWS has not a single ExpectPRovisioned? why?)
-var _ = Describe("GarbageCollection", func() {
+var _ = Describe("VirtualMachine Garbage Collection", func() {
 	var vm *armcompute.VirtualMachine
 	var providerID string
 	var err error
@@ -147,7 +148,7 @@ var _ = Describe("GarbageCollection", func() {
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-			ExpectSingletonReconciled(ctx, garbageCollectionController)
+			ExpectSingletonReconciled(ctx, virtualMachineGCController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -180,7 +181,7 @@ var _ = Describe("GarbageCollection", func() {
 					ids = append(ids, *vm.ID)
 				}
 			}
-			ExpectSingletonReconciled(ctx, garbageCollectionController)
+			ExpectSingletonReconciled(ctx, virtualMachineGCController)
 
 			wg := sync.WaitGroup{}
 			for _, id := range ids {
@@ -233,7 +234,7 @@ var _ = Describe("GarbageCollection", func() {
 					nodeClaims = append(nodeClaims, nodeClaim)
 				}
 			}
-			ExpectSingletonReconciled(ctx, garbageCollectionController)
+			ExpectSingletonReconciled(ctx, virtualMachineGCController)
 
 			wg := sync.WaitGroup{}
 			for _, id := range ids {
@@ -259,7 +260,7 @@ var _ = Describe("GarbageCollection", func() {
 			}
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-			ExpectSingletonReconciled(ctx, garbageCollectionController)
+			ExpectSingletonReconciled(ctx, virtualMachineGCController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -280,7 +281,7 @@ var _ = Describe("GarbageCollection", func() {
 			})
 			ExpectApplied(ctx, env.Client, nodeClaim, node)
 
-			ExpectSingletonReconciled(ctx, garbageCollectionController)
+			ExpectSingletonReconciled(ctx, virtualMachineGCController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectExists(ctx, env.Client, node)
@@ -307,7 +308,7 @@ var _ = Describe("GarbageCollection", func() {
 			}
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
-			ExpectSingletonReconciled(ctx, garbageCollectionController)
+			ExpectSingletonReconciled(ctx, virtualMachineGCController)
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -323,7 +324,7 @@ var _ = Describe("GarbageCollection", func() {
 			})
 			ExpectApplied(ctx, env.Client, node)
 
-			ExpectSingletonReconciled(ctx, garbageCollectionController)
+			ExpectSingletonReconciled(ctx, virtualMachineGCController)
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -332,3 +333,4 @@ var _ = Describe("GarbageCollection", func() {
 		})
 	})
 })
+

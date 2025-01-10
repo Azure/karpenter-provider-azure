@@ -25,7 +25,6 @@ import (
 	"github.com/awslabs/operatorpkg/singleton"
 	"github.com/patrickmn/go-cache"
 
-	// "github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/samber/lo"
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
