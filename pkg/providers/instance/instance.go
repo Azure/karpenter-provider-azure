@@ -89,6 +89,7 @@ type Provider interface {
 	// CreateTags(context.Context, string, map[string]string) error
 	Update(context.Context, string, armcompute.VirtualMachineUpdate) error
 	GetNic(context.Context, string, string) (*armnetwork.Interface, error)
+	DeleteNic(context.Context, string) error
 	ListNics(context.Context) ([]*armnetwork.Interface, error)
 }
 
@@ -201,6 +202,38 @@ func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error
 	return p.cleanupAzureResources(ctx, resourceName)
 }
 
+func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
+	nicResponse, err := p.azClient.networkInterfacesClient.Get(ctx, rg, nicName, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &nicResponse.Interface, nil
+}
+
+// ListNics returns all network interfaces in the resource group that have the nodepool tag
+func (p *DefaultProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
+	req := NewQueryRequest(&(p.subscriptionID), nicListQuery)
+	client := p.azClient.azureResourceGraphClient
+	data, err := GetResourceData(ctx, client, *req)
+	if err != nil {
+		return nil, fmt.Errorf("querying azure resource graph, %w", err)
+	}
+	var nicList []*armnetwork.Interface
+	for i := range data {
+		nic, err := createNICFromQueryResponseData(data[i])
+		if err != nil {
+			return nil, fmt.Errorf("creating NIC object from query response data, %w", err)
+		}
+		nicList = append(nicList, nic)
+	}
+	return nicList, nil
+}
+
+func(p *DefaultProvider) DeleteNic(ctx context.Context, nicName string) error {
+	return deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName)
+}
+
+
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
 func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string) (err error) {
 	vmExt := p.getAKSIdentifyingExtension()
@@ -304,33 +337,6 @@ func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *crea
 	}
 	logging.FromContext(ctx).Debugf("Successfully created network interface: %v", *res.ID)
 	return *res.ID, nil
-}
-
-func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
-	nicResponse, err := p.azClient.networkInterfacesClient.Get(ctx, rg, nicName, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &nicResponse.Interface, nil
-}
-
-// ListNics returns all network interfaces in the resource group that have the nodepool tag
-func (p *DefaultProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
-	req := NewQueryRequest(&(p.subscriptionID), nicListQuery)
-	client := p.azClient.azureResourceGraphClient
-	data, err := GetResourceData(ctx, client, *req)
-	if err != nil {
-		return nil, fmt.Errorf("querying azure resource graph, %w", err)
-	}
-	var nicList []*armnetwork.Interface
-	for i := range data {
-		nic, err := createNICFromQueryResponseData(data[i])
-		if err != nil {
-			return nil, fmt.Errorf("creating NIC object from query response data, %w", err)
-		}
-		nicList = append(nicList, nic)
-	}
-	return nicList, nil
 }
 
 // newVMObject is a helper func that creates a new armcompute.VirtualMachine
@@ -665,11 +671,11 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
-	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
+	
+	nicErr := p.DeleteNic(ctx, resourceName) 
 	if nicErr != nil {
-		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
+		logging.FromContext(ctx).Errorf("networkinterface.Delete for %s failed: %v", resourceName, nicErr) 
 	}
-
 	return errors.Join(vmErr, nicErr)
 }
 
