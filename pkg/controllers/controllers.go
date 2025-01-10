@@ -18,9 +18,11 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	"github.com/awslabs/operatorpkg/controller"
 	"github.com/awslabs/operatorpkg/status"
+	"github.com/patrickmn/go-cache"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -40,11 +42,18 @@ import (
 
 func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.Client, recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider) []controller.Controller {
+
+	unremovableNics := cache.New(nodeclaimgarbagecollection.NicReservationDuration, time.Second * 30)
+
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient),
 		nodeclasstermination.NewController(kubeClient, recorder),
-		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider, instanceProvider),
+		
+		// resources the instance provider creates are garbage collected by these controllers
+		nodeclaimgarbagecollection.NewVirtualMachineController(kubeClient, cloudProvider, unremovableNics),
+		nodeclaimgarbagecollection.NewNetworkInterfaceController(kubeClient, instanceProvider, unremovableNics), 
+
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),
 		status.NewController[*v1alpha2.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
