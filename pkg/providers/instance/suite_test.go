@@ -215,7 +215,7 @@ var _ = Describe("InstanceProvider", func() {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
 	})
-	It("should list nic from karpenter provisioning request", func(){
+	It("should list nic from karpenter provisioning request", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
 		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)

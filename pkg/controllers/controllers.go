@@ -42,17 +42,16 @@ import (
 
 func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.Client, recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider) []controller.Controller {
-
-	unremovableNics := cache.New(nodeclaimgarbagecollection.NicReservationDuration, time.Second * 30)
+	unremovableNics := cache.New(nodeclaimgarbagecollection.NicReservationDuration, time.Second*30)
 
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient),
 		nodeclasstermination.NewController(kubeClient, recorder),
-		
+
 		// resources the instance provider creates are garbage collected by these controllers
 		nodeclaimgarbagecollection.NewVirtualMachineController(kubeClient, cloudProvider, unremovableNics),
-		nodeclaimgarbagecollection.NewNetworkInterfaceController(kubeClient, instanceProvider, unremovableNics), 
+		nodeclaimgarbagecollection.NewNetworkInterfaceController(kubeClient, instanceProvider, unremovableNics),
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),

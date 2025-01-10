@@ -229,10 +229,9 @@ func (p *DefaultProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface
 	return nicList, nil
 }
 
-func(p *DefaultProvider) DeleteNic(ctx context.Context, nicName string) error {
+func (p *DefaultProvider) DeleteNic(ctx context.Context, nicName string) error {
 	return deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName)
 }
-
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
 func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string) (err error) {
@@ -671,10 +670,10 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
-	
-	nicErr := p.DeleteNic(ctx, resourceName) 
+
+	nicErr := p.DeleteNic(ctx, resourceName)
 	if nicErr != nil {
-		logging.FromContext(ctx).Errorf("networkinterface.Delete for %s failed: %v", resourceName, nicErr) 
+		logging.FromContext(ctx).Errorf("networkinterface.Delete for %s failed: %v", resourceName, nicErr)
 	}
 	return errors.Join(vmErr, nicErr)
 }

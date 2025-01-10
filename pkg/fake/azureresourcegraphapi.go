@@ -36,7 +36,7 @@ type AzureResourceGraphResourcesInput struct {
 type AzureResourceGraphBehavior struct {
 	AzureResourceGraphResourcesBehavior MockedFunction[AzureResourceGraphResourcesInput, armresourcegraph.ClientResourcesResponse]
 	VirtualMachinesAPI                  *VirtualMachinesAPI
-	NetworkInterfacesAPI				*NetworkInterfacesAPI
+	NetworkInterfacesAPI                *NetworkInterfacesAPI
 	ResourceGroup                       string
 }
 
@@ -82,15 +82,13 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 			return nic.Tags != nil && nic.Tags[instance.NodePoolTagKey] != nil
 		})
 		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
-			b, _ := json.Marshal(nic) 
-			return convertBytesToInterface(b) 
+			b, _ := json.Marshal(nic)
+			return convertBytesToInterface(b)
 		})
 		return resourceList
 	}
 	return nil
 }
-
-
 
 func (c *AzureResourceGraphAPI) loadVMObjects() (vmList []armcompute.VirtualMachine) {
 	c.VirtualMachinesAPI.Instances.Range(func(k, v any) bool {
@@ -101,11 +99,10 @@ func (c *AzureResourceGraphAPI) loadVMObjects() (vmList []armcompute.VirtualMach
 	return vmList
 }
 
-
 func (c *AzureResourceGraphAPI) loadNicObjects() (nicList []armnetwork.Interface) {
 	c.NetworkInterfacesAPI.NetworkInterfaces.Range(func(k, v any) bool {
 		nic, _ := c.NetworkInterfacesAPI.NetworkInterfaces.Load(k)
-		nicList = append(nicList, nic.(armnetwork.Interface)) 
+		nicList = append(nicList, nic.(armnetwork.Interface))
 		return true
 	})
 	return nicList

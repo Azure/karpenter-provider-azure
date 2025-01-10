@@ -333,4 +333,3 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 		})
 	})
 })
-

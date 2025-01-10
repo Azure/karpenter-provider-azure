@@ -92,7 +92,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// API
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
-	
+
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
@@ -103,9 +103,9 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	azureResourceGraphAPI := &fake.AzureResourceGraphAPI{
 		AzureResourceGraphBehavior: fake.AzureResourceGraphBehavior{
-			VirtualMachinesAPI: virtualMachinesAPI,
+			VirtualMachinesAPI:   virtualMachinesAPI,
 			NetworkInterfacesAPI: networkInterfacesAPI,
-			ResourceGroup: resourceGroup,
+			ResourceGroup:        resourceGroup,
 		}}
 	// Cache
 	kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
