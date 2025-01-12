@@ -26,7 +26,6 @@ import (
 
 	"github.com/awslabs/operatorpkg/object"
 	opstatus "github.com/awslabs/operatorpkg/status"
-	"github.com/patrickmn/go-cache"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -81,7 +80,7 @@ var _ = BeforeSuite(func() {
 	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	virtualMachineGCController = garbagecollection.NewVirtualMachineController(env.Client, cloudProvider, cache.New(time.Minute, time.Second))
+	virtualMachineGCController = garbagecollection.NewVirtualMachineController(env.Client, cloudProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client)
 	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)

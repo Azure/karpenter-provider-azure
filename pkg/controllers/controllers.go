@@ -18,7 +18,6 @@ package controllers
 
 import (
 	"context"
-	"time"
 
 	"github.com/awslabs/operatorpkg/controller"
 	"github.com/awslabs/operatorpkg/status"

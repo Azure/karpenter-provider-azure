@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/singleton"
-	"github.com/patrickmn/go-cache"
 
 	"github.com/samber/lo"
 	"go.uber.org/multierr"
@@ -39,10 +38,6 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-)
-
-const (
-	NicBelongsToVM = "NicBelongsToVM"
 )
 
 type VirtualMachineController struct {
