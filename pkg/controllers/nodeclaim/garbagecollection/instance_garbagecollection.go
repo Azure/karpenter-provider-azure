@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/awslabs/operatorpkg/singleton"
 	"github.com/patrickmn/go-cache"
 
@@ -49,15 +48,13 @@ const (
 type VirtualMachineController struct {
 	kubeClient      client.Client
 	cloudProvider   corecloudprovider.CloudProvider
-	unremovableNics *cache.Cache
 	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
 }
 
-func NewVirtualMachineController(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider, unremovableNics *cache.Cache) *VirtualMachineController {
+func NewVirtualMachineController(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *VirtualMachineController {
 	return &VirtualMachineController{
 		kubeClient:      kubeClient,
 		cloudProvider:   cloudProvider,
-		unremovableNics: unremovableNics,
 		successfulCount: 0,
 	}
 }
@@ -71,13 +68,6 @@ func (c *VirtualMachineController) Reconcile(ctx context.Context) (reconcile.Res
 	retrieved, err := c.cloudProvider.List(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing cloudprovider VMs, %w", err)
-	}
-
-	// Mark all vms on the cloudprovider as unremovableNics for the nicGc controller
-	for _, nodeClaim := range retrieved {
-		// Nics Belonging to a vm cannot be removed while attached to the vm.
-		// lets set a nic as unremovable for 15 minutes if it belongs to a vm
-		c.unremovableNics.Set(instance.GenerateResourceName(nodeClaim.Name), "", time.Minute*15)
 	}
 
 	managedRetrieved := lo.Filter(retrieved, func(nc *karpv1.NodeClaim, _ int) bool {

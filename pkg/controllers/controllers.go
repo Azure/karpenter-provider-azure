@@ -22,7 +22,6 @@ import (
 
 	"github.com/awslabs/operatorpkg/controller"
 	"github.com/awslabs/operatorpkg/status"
-	"github.com/patrickmn/go-cache"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -42,7 +41,6 @@ import (
 
 func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.Client, recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider) []controller.Controller {
-	unremovableNics := cache.New(nodeclaimgarbagecollection.NicReservationDuration, time.Second*30)
 
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
@@ -50,8 +48,8 @@ func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		// resources the instance provider creates are garbage collected by these controllers
-		nodeclaimgarbagecollection.NewVirtualMachineController(kubeClient, cloudProvider, unremovableNics),
-		nodeclaimgarbagecollection.NewNetworkInterfaceController(kubeClient, instanceProvider, unremovableNics),
+		nodeclaimgarbagecollection.NewVirtualMachineController(kubeClient, cloudProvider),
+		nodeclaimgarbagecollection.NewNetworkInterfaceController(kubeClient, instanceProvider),
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),

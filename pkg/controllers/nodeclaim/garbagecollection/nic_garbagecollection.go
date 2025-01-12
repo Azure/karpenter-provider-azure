@@ -59,7 +59,8 @@ type NetworkInterfaceController struct {
 	unremovableNics *cache.Cache
 }
 
-func NewNetworkInterfaceController(kubeClient client.Client, instanceProvider instance.Provider, unremovableNics *cache.Cache) *NetworkInterfaceController {
+func NewNetworkInterfaceController(kubeClient client.Client, instanceProvider instance.Provider) *NetworkInterfaceController {
+	unremovableNics := cache.New(NicReservationDuration, time.Second*30)
 	return &NetworkInterfaceController{
 		kubeClient:       kubeClient,
 		instanceProvider: instanceProvider,
