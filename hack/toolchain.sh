@@ -11,11 +11,11 @@ main() {
 
 tools() {
     go install github.com/google/go-licenses@v1.6.0
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.57.2
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.63.4
     go install github.com/google/ko@v0.15.2
     go install github.com/mikefarah/yq/v4@v4.43.1
     go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.13.1
-    go install sigs.k8s.io/controller-runtime/tools/setup-envtest@0c7827e417acc15f29e7c4bfccede809d372676a 
+    go install sigs.k8s.io/controller-runtime/tools/setup-envtest@0c7827e417acc15f29e7c4bfccede809d372676a
     go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.14.0
     go install github.com/sigstore/cosign/v2/cmd/cosign@v2.2.4
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0

@@ -315,10 +315,9 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 		nodeClaim.Status.Allocatable = functional.FilterMap(instanceType.Allocatable(), func(_ v1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
 
-	if zoneID, err := instance.GetZoneID(vm); err != nil {
+	if zone, err := utils.GetZone(vm); err != nil {
 		logging.FromContext(ctx).Warnf("Failed to get zone for VM %s, %v", *vm.Name, err)
 	} else {
-		zone := makeZone(*vm.Location, zoneID)
 		// aks-node-validating-webhook protects v1.LabelTopologyZone, will be set elsewhere, so we use a different label
 		labels[v1alpha2.AlternativeLabelTopologyZone] = zone
 	}
@@ -346,12 +345,4 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 func GenerateNodeClaimName(vmName string) string {
 	return strings.TrimLeft("aks-", vmName)
-}
-
-// makeZone returns the zone value in format of <region>-<zone-id>.
-func makeZone(location string, zoneID string) string {
-	if zoneID == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s-%s", strings.ToLower(location), zoneID)
 }
