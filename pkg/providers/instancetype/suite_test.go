@@ -76,6 +76,8 @@ var coreProvisioner, coreProvisionerNonZonal *provisioning.Provisioner
 var cluster, clusterNonZonal *state.Cluster
 var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
 
+var fakeZone1 = utils.MakeZone(fake.Region, "1")
+
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
@@ -589,8 +591,8 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("Unavailable Offerings", func() {
 		It("should not allocate a vm in a zone marked as unavailable", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeOnDemand)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
@@ -599,19 +601,38 @@ var _ = Describe("InstanceType Provider", func() {
 				}})
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			// Try this 100 times to make sure we don't get a node in eastus-1,
-			// we pick from 3 zones so the likelihood of this test passing by chance is 1/3^100
-			for i := 0; i < 100; i++ {
-				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-				nodes := &v1.NodeList{}
-				Expect(env.Client.List(ctx, nodes)).To(Succeed())
-				for _, node := range nodes.Items {
-					Expect(node.Labels["karpenter.kubernetes.azure/zone"]).ToNot(Equal(fmt.Sprintf("%s-1", fake.Region)))
-					Expect(node.Labels["node.kubernetes.io/instance-type"]).To(Equal("Standard_D2_v2"))
-				}
-			}
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
+		})
+		It("should handle ZonalAllocationFailed on creating the VM", func() {
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
+			)
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v2"},
+				}})
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
+			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeSpot)).To(BeTrue())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+
+			By("successfully scheduling in a different zone on retry")
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(zone))
 		})
 
 		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
@@ -641,8 +662,8 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 
 		It("should launch instances in a different zone than preferred", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeSpot)
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{
@@ -651,18 +672,18 @@ var _ = Describe("InstanceType Provider", func() {
 			pod.Spec.Affinity = &v1.Affinity{NodeAffinity: &v1.NodeAffinity{PreferredDuringSchedulingIgnoredDuringExecution: []v1.PreferredSchedulingTerm{
 				{
 					Weight: 1, Preference: v1.NodeSelectorTerm{MatchExpressions: []v1.NodeSelectorRequirement{
-						{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fmt.Sprintf("%s-1", fake.Region)}},
+						{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1}},
 					}},
 				},
 			}}}
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels["karpenter.kubernetes.azure/zone"]).ToNot(Equal(fmt.Sprintf("%s-1", fake.Region)))
-			Expect(node.Labels["node.kubernetes.io/instance-type"]).To(Equal("Standard_D2_v2"))
+			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 		It("should launch smaller instances than optimal if larger instance launch results in Insufficient Capacity Error", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fakeZone1, karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fakeZone1, karpv1.CapacityTypeSpot)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
@@ -676,7 +697,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
 					},
 					NodeSelector: map[string]string{
-						v1.LabelTopologyZone: fmt.Sprintf("%s-1", fake.Region),
+						v1.LabelTopologyZone: fakeZone1,
 					},
 				}))
 			}
@@ -731,8 +752,8 @@ var _ = Describe("InstanceType Provider", func() {
 				pod := coretest.UnschedulablePod()
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
-				for _, zone := range []string{"1", "2", "3"} {
-					ExpectUnavailable(azureEnv, sku, zone, capacityType)
+				for _, zoneID := range []string{"1", "2", "3"} {
+					ExpectUnavailable(azureEnv, sku, utils.MakeZone(fake.Region, zoneID), capacityType)
 				}
 			}
 
@@ -793,7 +814,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// Well known
 				v1.LabelTopologyRegion:      fake.Region,
 				karpv1.NodePoolLabelKey:     nodePool.Name,
-				v1.LabelTopologyZone:        fmt.Sprintf("%s-1", fake.Region),
+				v1.LabelTopologyZone:        fakeZone1,
 				v1.LabelInstanceTypeStable:  "Standard_NC24ads_A100_v4",
 				v1.LabelOSStable:            "linux",
 				v1.LabelArchStable:          "amd64",
@@ -814,11 +835,11 @@ var _ = Describe("InstanceType Provider", func() {
 				v1alpha2.LabelSKUAccelerator:               "A100",
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
-				v1.LabelFailureDomainBetaZone:      fmt.Sprintf("%s-1", fake.Region),
+				v1.LabelFailureDomainBetaZone:      fakeZone1,
 				"beta.kubernetes.io/arch":          "amd64",
 				"beta.kubernetes.io/os":            "linux",
 				v1.LabelInstanceType:               "Standard_NC24ads_A100_v4",
-				"topology.disk.csi.azure.com/zone": fmt.Sprintf("%s-1", fake.Region),
+				"topology.disk.csi.azure.com/zone": fakeZone1,
 				v1.LabelWindowsBuild:               "window",
 				// Cluster Label
 				v1alpha2.AKSLabelCluster: "test-cluster",
