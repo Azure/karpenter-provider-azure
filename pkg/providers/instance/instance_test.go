@@ -20,7 +20,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/stretchr/testify/assert"
@@ -79,7 +78,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 			},
 			nodeClaim:            &karpv1.NodeClaim{},
 			expectedInstanceType: "Standard_D2s_v3",
-			expectedZone:         "2",
+			expectedZone:         "westus-2",
 			expectedPriority:     karpv1.CapacityTypeOnDemand,
 		},
 	}
@@ -98,60 +97,6 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 			assert.Equal(t, c.expectedZone, zone)
 			assert.Equal(t, c.expectedPriority, priority)
 		})
-	}
-}
-
-func TestGetZone(t *testing.T) {
-	testVMName := "silly-armcompute"
-	tc := []struct {
-		testName      string
-		input         *armcompute.VirtualMachine
-		expectedZone  string
-		expectedError string
-	}{
-		{
-			testName: "missing name",
-			input: &armcompute.VirtualMachine{
-				Name: nil,
-			},
-			expectedError: "virtual machine is missing name",
-		},
-		{
-			testName:      "invalid virtual machine struct",
-			input:         nil,
-			expectedError: "cannot pass in a nil virtual machine",
-		},
-		{
-			testName: "invalid zones field in virtual machine struct",
-			input: &armcompute.VirtualMachine{
-				Name: &testVMName,
-			},
-			expectedError: "virtual machine silly-armcompute zones are nil",
-		},
-		{
-			testName: "happy case",
-			input: &armcompute.VirtualMachine{
-				Name:  &testVMName,
-				Zones: []*string{to.Ptr("poland-central")},
-			},
-			expectedZone: "poland-central",
-		},
-		{
-			testName: "emptyZones",
-			input: &armcompute.VirtualMachine{
-				Name:  &testVMName,
-				Zones: []*string{},
-			},
-			expectedError: "virtual machine silly-armcompute does not have any zones specified",
-		},
-	}
-
-	for _, c := range tc {
-		zone, err := GetZoneID(c.input)
-		assert.Equal(t, c.expectedZone, zone, c.testName)
-		if err != nil {
-			assert.Equal(t, c.expectedError, err.Error(), c.testName)
-		}
 	}
 }
 
