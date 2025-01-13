@@ -69,3 +69,10 @@ func RandomName(prefix string) string {
 	// You could make this more robust by including additional random characters.
 	return prefix + "-" + k8srand.String(10)
 }
+
+func ManagedTags(nodepoolName string) map[string]*string {
+	return map[string]*string{
+		"karpenter.sh_cluster":  lo.ToPtr("test-cluster"),
+		"karpenter.sh_nodepool": lo.ToPtr(nodepoolName),
+	}
+}

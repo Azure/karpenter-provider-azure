@@ -36,6 +36,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations" 
+	. "github.com/Azure/karpenter-provider-azure/pkg/test" 
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -52,7 +54,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
-
+	
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
@@ -65,6 +67,7 @@ var nodeClass *v1alpha2.AKSNodeClass
 var cluster *state.Cluster
 var cloudProvider *cloudprovider.CloudProvider
 var virtualMachineGCController *garbagecollection.VirtualMachineController
+var networkInterfaceGCController *garbagecollection.NetworkInterfaceController
 var prov *provisioning.Provisioner
 
 func TestAPIs(t *testing.T) {
@@ -81,6 +84,7 @@ var _ = BeforeSuite(func() {
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	virtualMachineGCController = garbagecollection.NewVirtualMachineController(env.Client, cloudProvider)
+	networkInterfaceGCController = garbagecollection.NewNetworkInterfaceController(env.Client, azureEnv.InstanceProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client)
 	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
@@ -332,3 +336,26 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 		})
 	})
 })
+
+var _ = Describe("NetworkInterface Garbage Collection", func() {
+	Context("Basic", func() {
+
+		It("should delete a NIC if there is no associated VM", func() {
+			nic := Interface(
+				InterfaceOptions{
+					Tags: ManagedTags("default-np"),
+				},
+			)
+
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+			nicsBeforeGC, err := azureEnv.InstanceProvider.ListNics(ctx)
+			ExpectNoError(err)
+			Expect(len(nicsBeforeGC)).To(Equal(1))
+			// add a nic to azure env, and call reconcile. It should show up in the list before reconcile
+			// then it should not showup after
+			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+		})
+
+	})
+})
+

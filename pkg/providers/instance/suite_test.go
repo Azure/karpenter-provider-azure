@@ -228,9 +228,7 @@ var _ = Describe("InstanceProvider", func() {
 	It("should only list nics that belong to karpenter", func() {
 		managedNic := test.Interface(
 			test.InterfaceOptions{
-				Tags: map[string]*string{
-					instance.NodePoolTagKey: lo.ToPtr(nodePool.Name),
-				},
+				Tags: test.ManagedTags(nodePool.Name),
 			},
 		)
 		unmanagedNic := test.Interface()

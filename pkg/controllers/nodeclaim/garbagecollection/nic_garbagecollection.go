@@ -41,12 +41,12 @@ import (
 const (
 	NICGCControllerName    = "networkinterface.garbagecollection"
 	NicReservationDuration = time.Second * 180
-	// We set this interval at 5 minutes, as thats how often our NRP limits are reset. 
+	// We set this interval at 5 minutes, as thats how often our NRP limits are reset.
 	// See: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling#network-throttling
-	NicGarbageCollectionInterval = time.Minute * 5	
-	VMReason = "vm"
-	NicReason = "nic" 
-	NodeclaimReason = "nc"
+	NicGarbageCollectionInterval = time.Minute * 5
+	VMReason                     = "vm"
+	NicReason                    = "nic"
+	NodeclaimReason              = "nc"
 )
 
 type NetworkInterfaceController struct {
@@ -55,7 +55,7 @@ type NetworkInterfaceController struct {
 	// A network interface is considered unremovable if it meets the following 3 criteria
 	// 1: Reserved by NRP: When creating a nic and attempting to assign it to a vm, the nic will be reserved for that vm arm_resource_id for 180 seconds
 	// 2: Belongs to a Nodeclaim: If a nodeclaim exists in the cluster we shouldn't attempt removing it
-        // 3: Belongs to VM: If the VM Garbage Collection controller is removing a vm, we should not attempt removing it in this controller, and delegate that responsibility to the vm gc controller since deleting a successfully provisioned vm has delete options to also clean up the associated nic
+	// 3: Belongs to VM: If the VM Garbage Collection controller is removing a vm, we should not attempt removing it in this controller, and delegate that responsibility to the vm gc controller since deleting a successfully provisioned vm has delete options to also clean up the associated nic
 	unremovableNics *cache.Cache
 }
 
@@ -74,7 +74,7 @@ func NewNetworkInterfaceController(kubeClient client.Client, instanceProvider in
 // 2: Belongs to a Nodeclaim: If a nodeclaim exists in the cluster we shouldn't attempt removing it
 // 3: Belongs to VM: If the VM Garbage Collection controller is removing a vm, we should not attempt removing it in this controller, and delegate that responsibility to the vm gc controller since deleting a successfully provisioned vm has delete options to also clean up the associated nic
 func (c *NetworkInterfaceController) populateUnremovableNics(ctx context.Context) error {
-	vms, err := c.instanceProvider.List(ctx) 
+	vms, err := c.instanceProvider.List(ctx)
 	if err != nil {
 		return fmt.Errorf("listing VMs: %w", err)
 	}
@@ -85,7 +85,7 @@ func (c *NetworkInterfaceController) populateUnremovableNics(ctx context.Context
 	if err := c.kubeClient.List(ctx, nodeClaimList); err != nil {
 		return fmt.Errorf("listing NodeClaims for NIC GC: %w", err)
 	}
-	
+
 	for _, nodeClaim := range nodeClaimList.Items {
 		c.unremovableNics.SetDefault(instance.GenerateResourceName(nodeClaim.Name), NodeclaimReason)
 	}
@@ -107,7 +107,7 @@ func (c *NetworkInterfaceController) Reconcile(ctx context.Context) (reconcile.R
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing NICs: %w", err)
 	}
-	
+
 	c.populateUnremovableNics(ctx)
 	errs := make([]error, len(nics))
 	workqueue.ParallelizeUntil(ctx, 100, len(nics), func(i int) {
