@@ -30,8 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clock "k8s.io/utils/clock/testing"
 
-	"k8s.io/client-go/tools/record"
-
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -39,6 +37,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"k8s.io/client-go/tools/record"
+
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -46,6 +46,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	. "knative.dev/pkg/logging/testing"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
@@ -223,5 +224,22 @@ var _ = Describe("InstanceProvider", func() {
 		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
 		Expect(err).To(BeNil())
 		Expect(len(interfaces)).To(Equal(1))
+	})
+	It("should only list nics that belong to karpenter", func() {
+		managedNic := test.Interface(
+			test.InterfaceOptions{
+				Tags: map[string]*string{
+					instance.NodePoolTagKey: lo.ToPtr(nodePool.Name),
+				},
+			},
+		)
+		unmanagedNic := test.Interface()
+
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(unmanagedNic.ID), *unmanagedNic)
+		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
+		ExpectNoError(err)
+		Expect(len(interfaces)).To(Equal(1))
+		Expect(interfaces[0].Name).To(Equal(managedNic.Name))
 	})
 })

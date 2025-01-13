@@ -3,10 +3,10 @@ package test
 import (
 	"fmt"
 
-	"github.com/samber/lo"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	k8srand "k8s.io/apimachinery/pkg/util/rand"
 	"github.com/imdario/mergo"
+	"github.com/samber/lo"
+	k8srand "k8s.io/apimachinery/pkg/util/rand"
 )
 
 // InterfaceOptions customizes an Azure Network Interface for testing.
@@ -39,6 +39,7 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 	}
 
 	nic := &armnetwork.Interface{
+		ID:       lo.ToPtr(fmt.Sprintf("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/test-rg/providers/Microsoft.Network/networkInterfaces/%s", options.Name)),
 		Name:     &options.Name,
 		Location: &options.Location,
 		Properties: &armnetwork.InterfacePropertiesFormat{
@@ -47,7 +48,7 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 					Name: lo.ToPtr("ipConfig"),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-						Subnet:                   &armnetwork.Subnet{ID: lo.ToPtr("/subscriptions/.../resourceGroups/.../providers/Microsoft.Network/virtualNetworks/.../subnets/default")},
+						Subnet:                    &armnetwork.Subnet{ID: lo.ToPtr("/subscriptions/.../resourceGroups/.../providers/Microsoft.Network/virtualNetworks/.../subnets/default")},
 					},
 				},
 			},
@@ -63,9 +64,8 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 	return nic
 }
 
-
 // RandomName returns a pseudo-random resource name with a given prefix.
 func RandomName(prefix string) string {
 	// You could make this more robust by including additional random characters.
 	return prefix + "-" + k8srand.String(10)
-} 
+}
