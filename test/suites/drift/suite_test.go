@@ -178,7 +178,6 @@ var _ = Describe("Drift", func() {
 						},
 						Labels: map[string]string{"app": "large-app"},
 					},
-					// TODO
 					// Each Standard_DS4_v2 has 8 cpu, so each node should fit no more than 3 pods.
 					ResourceRequirements: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
