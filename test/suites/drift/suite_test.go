@@ -436,7 +436,7 @@ var _ = Describe("Drift", func() {
 			},
 		}),
 	)
-	FDescribeTable("AKSNodeClass", func(nodeClassSpec v1alpha2.AKSNodeClassSpec) {
+	DescribeTable("AKSNodeClass", func(nodeClassSpec v1alpha2.AKSNodeClassSpec) {
 		updatedNodeClass := test.AKSNodeClass(v1alpha2.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1alpha2.AKSNodeClass{Spec: nodeClassSpec})
 		updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
