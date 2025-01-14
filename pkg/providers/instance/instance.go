@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -140,7 +141,7 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNod
 		}
 		return nil, err
 	}
-	zone, err := GetZoneID(vm)
+	zone, err := utils.GetZone(vm)
 	if err != nil {
 		logging.FromContext(ctx).Error(err)
 	}
@@ -163,7 +164,8 @@ func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.V
 	var err error
 
 	if vm, err = p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
-		if sdkerrors.IsNotFoundErr(err) {
+		azErr := sdkerrors.IsResponseError(err)
+		if azErr != nil && (azErr.ErrorCode == "NotFound" || azErr.ErrorCode == "ResourceNotFound") {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return nil, fmt.Errorf("failed to get VM instance, %w", err)
@@ -374,7 +376,7 @@ func newVMObject(
 				CapacityTypeToPriority[capacityType]),
 			),
 		},
-		Zones: lo.Ternary(len(zone) > 0, []*string{&zone}, []*string{}),
+		Zones: utils.MakeVMZone(zone),
 		Tags:  launchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, launchTemplate.StorageProfile)
@@ -627,11 +629,6 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(ctx context.Context, nodeCl
 	})
 	zonesWithPriority := lo.Map(priorityOfferings, func(o corecloudprovider.Offering, _ int) string { return getOfferingZone(o) })
 	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
-		if len(zone) > 0 {
-			// Zones in zonal Offerings have <region>-<number> format; the zone returned from here will be used for VM instantiation,
-			// which expects just the zone number, without region
-			zone = string(zone[len(zone)-1])
-		}
 		return instanceType, priority, zone
 	}
 	return nil, "", ""
@@ -749,26 +746,6 @@ func (p *DefaultProvider) getCSExtension(cse string, isWindows bool) *armcompute
 			},
 		},
 	}
-}
-
-// GetZoneID returns the zone ID for the given virtual machine, or an empty string if there is no zone specified
-func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
-	if vm == nil {
-		return "", fmt.Errorf("cannot pass in a nil virtual machine")
-	}
-	if vm.Name == nil {
-		return "", fmt.Errorf("virtual machine is missing name")
-	}
-	if vm.Zones == nil {
-		return "", nil
-	}
-	if len(vm.Zones) == 1 {
-		return *(vm.Zones)[0], nil
-	}
-	if len(vm.Zones) > 1 {
-		return "", fmt.Errorf("virtual machine %v has multiple zones", *vm.Name)
-	}
-	return "", nil
 }
 
 func GetListQueryBuilder(rg string) *kql.Builder {
