@@ -40,7 +40,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 type Controller struct {
@@ -90,12 +89,8 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if goalHash == actualHash {
 		return reconcile.Result{}, nil
 	}
-
-	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
+	
+	vmName := instance.GenerateVMName(nodeClaim.Name)
 	vm, err := c.instanceProvider.Get(ctx, vmName)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting azure VM for machine, %w", err)

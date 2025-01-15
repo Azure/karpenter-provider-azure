@@ -135,7 +135,7 @@ func (p *DefaultProvider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNod
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		// Currently, CSE errors will lead to here
-		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
+		if cleanupErr := p.cleanupAzureResources(ctx, nodeClaim.Name); cleanupErr != nil {
 			logging.FromContext(ctx).Errorf("failed to cleanup resources for node claim %s, %w", nodeClaim.Name, cleanupErr)
 		}
 		return nil, err
@@ -190,9 +190,10 @@ func (p *DefaultProvider) List(ctx context.Context) ([]*armcompute.VirtualMachin
 	return vmList, nil
 }
 
-func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error {
-	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", resourceName)
-	return p.cleanupAzureResources(ctx, resourceName)
+func (p *DefaultProvider) Delete(ctx context.Context, nodeClaimName string) error {
+	vmName := GenerateVMName(nodeClaimName)
+	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", vmName)
+	return p.cleanupAzureResources(ctx, nodeClaimName)
 }
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
@@ -273,10 +274,6 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 		}
 	}
 	return nic
-}
-
-func GenerateResourceName(nodeClaimName string) string {
-	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
 
 type createNICOptions struct {
@@ -455,9 +452,6 @@ func (p *DefaultProvider) launchInstance(
 	// set provisioner tag for NIC, VM, and Disk
 	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
 
-	// resourceName for the NIC, VM, and Disk
-	resourceName := GenerateResourceName(nodeClaim.Name)
-
 	// create network interface
 	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 	if err != nil {
@@ -465,7 +459,7 @@ func (p *DefaultProvider) launchInstance(
 	}
 	nicReference, err := p.createNetworkInterface(ctx,
 		&createNICOptions{
-			NICName:           resourceName,
+			NICName:           GenerateNICName(nodeClaim.Name),
 			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
 			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
 			LaunchTemplate:    launchTemplate,
@@ -477,28 +471,31 @@ func (p *DefaultProvider) launchInstance(
 		return nil, nil, err
 	}
 
+	// 
+	vmName := GenerateVMName(nodeClaim.Name)
+	// global options used in each vm create
 	sshPublicKey := options.FromContext(ctx).SSHPublicKey
 	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
 	useSIG := options.FromContext(ctx).UseSIG
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType, p.provisionMode, useSIG)
+	vm := newVMObject(vmName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType, p.provisionMode, useSIG)
 
-	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
+	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", vmName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
-	resp, err := p.createVirtualMachine(ctx, vm, resourceName)
+	resp, err := p.createVirtualMachine(ctx, vm, vmName)
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
 		return nil, nil, azErr
 	}
 
 	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-		err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
+		err = p.createCSExtension(ctx, vmName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
 		if err != nil {
 			// This should fall back to cleanupAzureResources
 			return nil, nil, err
 		}
 	}
 
-	err = p.createAKSIdentifyingExtension(ctx, resourceName)
+	err = p.createAKSIdentifyingExtension(ctx, vmName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -637,17 +634,19 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(ctx context.Context, nodeCl
 	return nil, "", ""
 }
 
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) (err error) {
-	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
+func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, nodeclaimName string) (err error) {
+	vmName := GenerateVMName(nodeclaimName)
+	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName)
 	if vmErr != nil {
-		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", resourceName, vmErr)
+		logging.FromContext(ctx).Errorf("virtualMachine.Delete for %s failed: %v", vmName, vmErr)
 	}
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
-	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
+	nicName := GenerateNICName(nodeclaimName)
+	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName)
 	if nicErr != nil {
-		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
+		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", nicName, nicErr)
 	}
 
 	return errors.Join(vmErr, nicErr)
