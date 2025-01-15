@@ -35,6 +35,8 @@ const (
 	Ubuntu2204Gen2ArmImageDefinition = "2204gen2arm64containerd"
 )
 
+var _ ImageFamily = (*Ubuntu2204)(nil)
+
 type Ubuntu2204 struct {
 	Options *parameters.StaticParameters
 }
@@ -83,7 +85,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType, apiUserData *string) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,

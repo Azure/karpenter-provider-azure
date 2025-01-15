@@ -108,8 +108,3 @@ var (
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
 )
-
-const (
-	Ubuntu2204ImageFamily = "Ubuntu2204"
-	AzureLinuxImageFamily = "AzureLinux"
-)
