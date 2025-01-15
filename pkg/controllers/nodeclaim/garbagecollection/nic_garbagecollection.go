@@ -109,23 +109,21 @@ func (c *NetworkInterfaceController) Reconcile(ctx context.Context) (reconcile.R
 	}
 
 	c.populateUnremovableNics(ctx)
-	errs := make([]error, len(nics))
 	workqueue.ParallelizeUntil(ctx, 100, len(nics), func(i int) {
 		nicName := lo.FromPtr(nics[i].Name)
-		_, removableNic := c.unremovableNics.Get(nicName)
+		_, unremovableNic := c.unremovableNics.Get(nicName)
 		// The networkInterface is unremovable if its
 		// A: Reserved by NRP
 		// B: Belongs to a Nodeclaim
 		// C: Belongs to VM
-		if removableNic {
+		if !unremovableNic {
 			err := c.instanceProvider.DeleteNic(ctx, nicName)
 			if sdkerrors.IsNicReservedForAnotherVM(err) {
 				// cache the network interface as unremovable for 180 seconds
 				c.unremovableNics.SetDefault(nicName, NicReason)
-				return
 			}
 			if err != nil {
-				errs[i] = err
+				logging.FromContext(ctx).Error(err)
 				return
 			}
 

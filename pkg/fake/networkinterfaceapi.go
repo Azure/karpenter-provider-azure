@@ -100,7 +100,7 @@ func (c *NetworkInterfacesAPI) BeginDelete(_ context.Context, resourceGroupName 
 		InterfaceName:     interfaceName,
 	}
 	return c.NetworkInterfacesDeleteBehavior.Invoke(input, func(input *NetworkInterfaceDeleteInput) (*armnetwork.InterfacesClientDeleteResponse, error) {
-		id := mkNetworkInterfaceID(resourceGroupName, interfaceName)
+		id := mkNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
 		c.NetworkInterfaces.Delete(id)
 		return &armnetwork.InterfacesClientDeleteResponse{}, nil
 	})

@@ -35,9 +35,9 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations" 
-	. "github.com/Azure/karpenter-provider-azure/pkg/test" 
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -54,7 +54,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
-	
+
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
@@ -338,24 +338,74 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 })
 
 var _ = Describe("NetworkInterface Garbage Collection", func() {
-	Context("Basic", func() {
+	It("should not delete a network interface if a nodeclaim exists for it", func() {
+		// Create and apply a NodeClaim that references this NIC
+		nodeClaim := coretest.NodeClaim()
+		ExpectApplied(ctx, env.Client, nodeClaim)
 
-		It("should delete a NIC if there is no associated VM", func() {
-			nic := Interface(
-				InterfaceOptions{
-					Tags: ManagedTags("default-np"),
-				},
-			)
+		// Create a managed NIC
+		nic := Interface(
+			InterfaceOptions{
+				Name: instance.GenerateResourceName(nodeClaim.Name),
+				Tags: ManagedTags(nodePool.Name),
+			},
+		)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
 
-			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
-			nicsBeforeGC, err := azureEnv.InstanceProvider.ListNics(ctx)
-			ExpectNoError(err)
-			Expect(len(nicsBeforeGC)).To(Equal(1))
-			// add a nic to azure env, and call reconcile. It should show up in the list before reconcile
-			// then it should not showup after
-			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
-		})
+		nicsBeforeGC, err := azureEnv.InstanceProvider.ListNics(ctx)
+		ExpectNoError(err)
+		Expect(len(nicsBeforeGC)).To(Equal(1))
+
+		// Run garbage collection
+		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+
+		// Verify NIC still exists after GC
+		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
+		ExpectNoError(err)
+		Expect(len(nicsAfterGC)).To(Equal(1))
+	})
+	It("should delete a NIC if there is no associated VM", func() {
+		nic := Interface(
+			InterfaceOptions{
+				Tags: ManagedTags(nodePool.Name),
+			},
+		)
+		nic2 := Interface(
+			InterfaceOptions{
+				Tags: ManagedTags(nodePool.Name),
+			},
+		)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic2.ID), *nic2)
+		nicsBeforeGC, err := azureEnv.InstanceProvider.ListNics(ctx)
+		ExpectNoError(err)
+		Expect(len(nicsBeforeGC)).To(Equal(2))
+		// add a nic to azure env, and call reconcile. It should show up in the list before reconcile
+		// then it should not showup after
+		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
+		ExpectNoError(err)
+		Expect(len(nicsAfterGC)).To(Equal(0))
+	})
+	It("should not delete a NIC if there is an associated VM", func() {
+		managedNic := Interface(
+			InterfaceOptions{
+				Tags: ManagedTags(nodePool.Name),
+			},
+		)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
+		managedVM := VirtualMachine(
+			VirtualMachineOptions{
+				Name: lo.FromPtr(managedNic.Name),
+				Tags: ManagedTags(nodePool.Name),
+			},
+		)
+		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+		// We should still have a network interface here
+		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
+		ExpectNoError(err)
+		Expect(len(nicsAfterGC)).To(Equal(1))
 
 	})
 })
-
