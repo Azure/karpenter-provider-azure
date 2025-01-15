@@ -408,4 +408,31 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterGC)).To(Equal(1))
 
 	})
+	It("the vm gc controller should remove the nic if there is an associated vm", func() {
+		managedNic := Interface(
+			InterfaceOptions{
+				Tags: ManagedTags(nodePool.Name),
+			},
+		)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
+		managedVM := VirtualMachine(
+			VirtualMachineOptions{
+				Name: lo.FromPtr(managedNic.Name),
+				Tags: ManagedTags(nodePool.Name),
+			},
+		)
+		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+		// We should still have a network interface here
+		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
+		ExpectNoError(err)
+		Expect(len(nicsAfterGC)).To(Equal(1))
+
+		ExpectSingletonReconciled(ctx, virtualMachineGCController)
+		nicsAfterVMReconcilation, err := azureEnv.InstanceProvider.ListNics(ctx) 
+		ExpectNoError(err) 
+		Expect(len(nicsAfterVMReconcilation)).To(Equal(0))
+
+	})
+
 })
