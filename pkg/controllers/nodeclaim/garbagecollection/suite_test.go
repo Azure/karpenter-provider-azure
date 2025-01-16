@@ -434,4 +434,4 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterVMReconcilation)).To(Equal(0))
 
 	})
-
+})

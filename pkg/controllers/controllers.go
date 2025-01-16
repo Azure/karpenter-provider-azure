@@ -45,10 +45,9 @@ func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient),
 		nodeclasstermination.NewController(kubeClient, recorder),
-
-		// resources the instance provider creates are garbage collected by these controllers
-		nodeclaimgarbagecollection.NewVirtualMachineController(kubeClient, cloudProvider),
-		nodeclaimgarbagecollection.NewNetworkInterfaceController(kubeClient, instanceProvider),
+		
+		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),
+		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, instanceProvider),
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),
