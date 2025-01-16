@@ -580,11 +580,13 @@ var _ = Describe("Drift", func() {
 					},
 				},
 			})
+			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 			env.ExpectCreated(dep, nodeClass, nodePool)
 
 			By("deploying multiple replicas, pod per node")
 			startingNodeClaimState := env.EventuallyExpectCreatedNodeClaimCount("==", int(numPods))
 			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
+			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			By("drifting the nodeClaim with bad configuration that never registers")
 			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
@@ -626,11 +628,13 @@ var _ = Describe("Drift", func() {
 					},
 				},
 			})
+			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 			env.ExpectCreated(dep, nodeClass, nodePool)
 
 			By("deploying multiple replicas, pod per node")
 			startingNodeClaimState := env.EventuallyExpectCreatedNodeClaimCount("==", int(numPods))
 			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
+			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			By("drifting the nodeClaim with bad configuration that never initializes")
 			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{{Key: "example.com/taint", Effect: corev1.TaintEffectPreferNoSchedule}}
