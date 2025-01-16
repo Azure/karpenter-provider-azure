@@ -49,7 +49,7 @@ const (
 	NodeclaimReason              = "nc"
 )
 
-type NetworkInterfaceController struct {
+type NetworkInterface struct {
 	kubeClient       client.Client
 	instanceProvider instance.Provider
 	// A network interface is considered unremovable if it meets the following 3 criteria
@@ -59,9 +59,9 @@ type NetworkInterfaceController struct {
 	unremovableNics *cache.Cache
 }
 
-func NewNetworkInterfaceController(kubeClient client.Client, instanceProvider instance.Provider) *NetworkInterfaceController {
+func NewNetworkInterface(kubeClient client.Client, instanceProvider instance.Provider) *NetworkInterface {
 	unremovableNics := cache.New(NicReservationDuration, time.Second*30)
-	return &NetworkInterfaceController{
+	return &NetworkInterface{
 		kubeClient:       kubeClient,
 		instanceProvider: instanceProvider,
 		unremovableNics:  unremovableNics,
@@ -73,7 +73,7 @@ func NewNetworkInterfaceController(kubeClient client.Client, instanceProvider in
 // 1: Reserved by NRP: When creating a nic and attempting to assign it to a vm, the nic will be reserved for that vm arm_resource_id for 180 seconds
 // 2: Belongs to a Nodeclaim: If a nodeclaim exists in the cluster we shouldn't attempt removing it
 // 3: Belongs to VM: If the VM Garbage Collection controller is removing a vm, we should not attempt removing it in this controller, and delegate that responsibility to the vm gc controller since deleting a successfully provisioned vm has delete options to also clean up the associated nic
-func (c *NetworkInterfaceController) populateUnremovableNics(ctx context.Context) error {
+func (c *NetworkInterface) populateUnremovableNics(ctx context.Context) error {
 	vms, err := c.instanceProvider.List(ctx)
 	if err != nil {
 		return fmt.Errorf("listing VMs: %w", err)
@@ -93,7 +93,7 @@ func (c *NetworkInterfaceController) populateUnremovableNics(ctx context.Context
 }
 
 // we want to removeNodeclaimsFromUnremovableNics as we want fresh data on nodeclaim state whenever possible
-func (c *NetworkInterfaceController) removeNodeclaimsFromUnremovableNics() {
+func (c *NetworkInterface) removeNodeclaimsFromUnremovableNics() {
 	for key, reason := range c.unremovableNics.Items() {
 		if reason.Object.(string) == NodeclaimReason {
 			c.unremovableNics.Delete(key)
@@ -101,7 +101,7 @@ func (c *NetworkInterfaceController) removeNodeclaimsFromUnremovableNics() {
 	}
 }
 
-func (c *NetworkInterfaceController) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, NICGCControllerName)
 	nics, err := c.instanceProvider.ListNics(ctx)
 	if err != nil {
@@ -138,7 +138,7 @@ func (c *NetworkInterfaceController) Reconcile(ctx context.Context) (reconcile.R
 	}, nil
 }
 
-func (c *NetworkInterfaceController) Register(_ context.Context, m manager.Manager) error {
+func (c *NetworkInterface) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named(NICGCControllerName).
 		WatchesRawSource(singleton.Source()).

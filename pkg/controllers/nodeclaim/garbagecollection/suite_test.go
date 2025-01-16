@@ -66,8 +66,8 @@ var nodePool *karpv1.NodePool
 var nodeClass *v1alpha2.AKSNodeClass
 var cluster *state.Cluster
 var cloudProvider *cloudprovider.CloudProvider
-var virtualMachineGCController *garbagecollection.VirtualMachineController
-var networkInterfaceGCController *garbagecollection.NetworkInterfaceController
+var virtualMachineGCController *garbagecollection.VirtualMachine
+var networkInterfaceGCController *garbagecollection.NetworkInterface
 var prov *provisioning.Provisioner
 
 func TestAPIs(t *testing.T) {
@@ -83,8 +83,8 @@ var _ = BeforeSuite(func() {
 	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	virtualMachineGCController = garbagecollection.NewVirtualMachineController(env.Client, cloudProvider)
-	networkInterfaceGCController = garbagecollection.NewNetworkInterfaceController(env.Client, azureEnv.InstanceProvider)
+	virtualMachineGCController = garbagecollection.NewVirtualMachine(env.Client, cloudProvider)
+	networkInterfaceGCController = garbagecollection.NewNetworkInterface(env.Client, azureEnv.InstanceProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client)
 	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
@@ -435,4 +435,3 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 
 	})
 
-})
