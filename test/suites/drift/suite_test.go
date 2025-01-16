@@ -582,23 +582,24 @@ var _ = Describe("Drift", func() {
 			})
 			env.ExpectCreated(dep, nodeClass, nodePool)
 
+			By("deploying multiple replicas, pod per node")
 			startingNodeClaimState := env.EventuallyExpectCreatedNodeClaimCount("==", int(numPods))
 			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
 
-			// Drift the nodeClaim with bad configuration that will not register a NodeClaim
+			By("drifting the nodeClaim with bad configuration that never registers")
 			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
 			env.ExpectCreatedOrUpdated(nodeClass)
 
 			env.EventuallyExpectDrifted(startingNodeClaimState...)
 
-			// Expect only a single node to be tainted due to default disruption budgets
+			By("checking only a single node gets tainted due to default disruption budgets")
 			taintedNodes := env.EventuallyExpectTaintedNodeCount("==", 1)
 
-			// Drift should fail and the original node should be untainted
+			By("checking drift fails and the original node gets untainted")
 			// TODO: reduce timeouts when disruption waits are factored out
 			env.EventuallyExpectNodesUntaintedWithTimeout(11*time.Minute, taintedNodes...)
 
-			// Expect all the NodeClaims that existed on the initial provisioning loop are not removed.
+			By("checking all the NodeClaims that existed on the initial provisioning loop are not removed")
 			// Assert this over several minutes to ensure a subsequent disruption controller pass doesn't
 			// successfully schedule the evicted pods to the in-flight nodeclaim and disrupt the original node
 			Consistently(func(g Gomega) {
@@ -627,23 +628,24 @@ var _ = Describe("Drift", func() {
 			})
 			env.ExpectCreated(dep, nodeClass, nodePool)
 
+			By("deploying multiple replicas, pod per node")
 			startingNodeClaimState := env.EventuallyExpectCreatedNodeClaimCount("==", int(numPods))
 			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
 
-			// Drift the nodeClaim with bad configuration that never initializes
+			By("drifting the nodeClaim with bad configuration that never initializes")
 			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{{Key: "example.com/taint", Effect: corev1.TaintEffectPreferNoSchedule}}
 			env.ExpectCreatedOrUpdated(nodePool)
 
 			env.EventuallyExpectDrifted(startingNodeClaimState...)
 
-			// Expect only a single node to get tainted due to default disruption budgets
+			By("checking only a single node gets tainted due to default disruption budgets")
 			taintedNodes := env.EventuallyExpectTaintedNodeCount("==", 1)
 
-			// Drift should fail and original node should be untainted
+			By("checking drift fails and the original node gets untainted")
 			// TODO: reduce timeouts when disruption waits are factored out
 			env.EventuallyExpectNodesUntaintedWithTimeout(11*time.Minute, taintedNodes...)
 
-			// Expect that the new nodeClaim/node is kept around after the un-cordon
+			By("checking the new nodeClaim/node is kept around after the un-cordon")
 			nodeList := &corev1.NodeList{}
 			Expect(env.Client.List(env, nodeList, client.HasLabels{coretest.DiscoveryLabel})).To(Succeed())
 			Expect(nodeList.Items).To(HaveLen(int(numPods) + 1))
@@ -652,7 +654,7 @@ var _ = Describe("Drift", func() {
 			Expect(env.Client.List(env, nodeClaimList, client.HasLabels{coretest.DiscoveryLabel})).To(Succeed())
 			Expect(nodeClaimList.Items).To(HaveLen(int(numPods) + 1))
 
-			// Expect all the NodeClaims that existed on the initial provisioning loop are not removed
+			By("checking all the NodeClaims that existed on the initial provisioning loop are not removed")
 			// Assert this over several minutes to ensure a subsequent disruption controller pass doesn't
 			// successfully schedule the evicted pods to the in-flight nodeclaim and disrupt the original node
 			Consistently(func(g Gomega) {
@@ -711,8 +713,8 @@ var _ = Describe("Drift", func() {
 
 	It("should disrupt nodes that have drifted due to VNETSubnetID", func() {
 		env.ExpectCreated(dep, nodeClass, nodePool)
-		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		By("expect created node count to be 1")
 		env.ExpectCreatedNodeCount("==", 1)
 		By("triggering subnet drift")
