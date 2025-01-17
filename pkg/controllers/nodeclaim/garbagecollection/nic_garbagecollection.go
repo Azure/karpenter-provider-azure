@@ -108,7 +108,10 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 		return reconcile.Result{}, fmt.Errorf("listing NICs: %w", err)
 	}
 
-	c.populateUnremovableNics(ctx)
+	err = c.populateUnremovableNics(ctx)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("error listing resources needed to populate unremovable nics %w", err)
+	}
 	workqueue.ParallelizeUntil(ctx, 100, len(nics), func(i int) {
 		nicName := lo.FromPtr(nics[i].Name)
 		_, unremovableNic := c.unremovableNics.Get(nicName)
