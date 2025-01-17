@@ -35,7 +35,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	. "github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
@@ -344,10 +343,10 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		ExpectApplied(ctx, env.Client, nodeClaim)
 
 		// Create a managed NIC
-		nic := Interface(
-			InterfaceOptions{
+		nic := test.Interface(
+			test.InterfaceOptions{
 				Name: instance.GenerateResourceName(nodeClaim.Name),
-				Tags: ManagedTags(nodePool.Name),
+				Tags: test.ManagedTags(nodePool.Name),
 			},
 		)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
@@ -365,14 +364,14 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterGC)).To(Equal(1))
 	})
 	It("should delete a NIC if there is no associated VM", func() {
-		nic := Interface(
-			InterfaceOptions{
-				Tags: ManagedTags(nodePool.Name),
+		nic := test.Interface(
+			test.InterfaceOptions{
+				Tags: test.ManagedTags(nodePool.Name),
 			},
 		)
-		nic2 := Interface(
-			InterfaceOptions{
-				Tags: ManagedTags(nodePool.Name),
+		nic2 := test.Interface(
+			test.InterfaceOptions{
+				Tags: test.ManagedTags(nodePool.Name),
 			},
 		)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
@@ -388,16 +387,16 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterGC)).To(Equal(0))
 	})
 	It("should not delete a NIC if there is an associated VM", func() {
-		managedNic := Interface(
-			InterfaceOptions{
-				Tags: ManagedTags(nodePool.Name),
+		managedNic := test.Interface(
+			test.InterfaceOptions{
+				Tags: test.ManagedTags(nodePool.Name),
 			},
 		)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
-		managedVM := VirtualMachine(
-			VirtualMachineOptions{
+		managedVM := test.VirtualMachine(
+			test.VirtualMachineOptions{
 				Name: lo.FromPtr(managedNic.Name),
-				Tags: ManagedTags(nodePool.Name),
+				Tags: test.ManagedTags(nodePool.Name),
 			},
 		)
 		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
@@ -409,16 +408,16 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 
 	})
 	It("the vm gc controller should remove the nic if there is an associated vm", func() {
-		managedNic := Interface(
-			InterfaceOptions{
-				Tags: ManagedTags(nodePool.Name),
+		managedNic := test.Interface(
+			test.InterfaceOptions{
+				Tags: test.ManagedTags(nodePool.Name),
 			},
 		)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
-		managedVM := VirtualMachine(
-			VirtualMachineOptions{
+		managedVM := test.VirtualMachine(
+			test.VirtualMachineOptions{
 				Name: lo.FromPtr(managedNic.Name),
-				Tags: ManagedTags(nodePool.Name),
+				Tags: test.ManagedTags(nodePool.Name),
 			},
 		)
 		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
