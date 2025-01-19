@@ -40,12 +40,11 @@ import (
 
 func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.Client, recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider) []controller.Controller {
-
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient),
 		nodeclasstermination.NewController(kubeClient, recorder),
-		
+
 		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, instanceProvider),
 

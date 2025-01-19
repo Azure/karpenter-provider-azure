@@ -428,9 +428,9 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterGC)).To(Equal(1))
 
 		ExpectSingletonReconciled(ctx, virtualMachineGCController)
-		nicsAfterVMReconcilation, err := azureEnv.InstanceProvider.ListNics(ctx) 
-		ExpectNoError(err) 
-		Expect(len(nicsAfterVMReconcilation)).To(Equal(0))
+		nicsAfterVMReconciliation, err := azureEnv.InstanceProvider.ListNics(ctx)
+		ExpectNoError(err)
+		Expect(len(nicsAfterVMReconciliation)).To(Equal(0))
 
 	})
 })
