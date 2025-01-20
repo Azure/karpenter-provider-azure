@@ -7,7 +7,7 @@ require (
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/azure-sdk-for-go-extensions v0.1.8
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.0
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.7.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork v1.1.0
@@ -26,7 +26,7 @@ require (
 	github.com/go-openapi/strfmt v0.23.0
 	github.com/go-openapi/swag v0.23.0
 	github.com/go-openapi/validate v0.24.0
-	github.com/go-playground/validator/v10 v10.23.0
+	github.com/go-playground/validator/v10 v10.24.0
 	github.com/google/go-cmp v0.6.0
 	github.com/imdario/mergo v0.3.16
 	github.com/jongio/azidext/go/azidext v0.5.0
@@ -73,7 +73,7 @@ require (
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/Azure/go-autorest/logger v0.2.1 // indirect
 	github.com/Azure/go-autorest/tracing v0.6.0 // indirect
-	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
+	github.com/AzureAD/microsoft-authentication-library-for-go v1.3.2 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -86,7 +86,7 @@ require (
 	github.com/evanphx/json-patch/v5 v5.9.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
