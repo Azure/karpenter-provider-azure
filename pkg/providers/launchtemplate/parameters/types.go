@@ -28,6 +28,7 @@ type StaticParameters struct {
 	Arch                           string
 	GPUNode                        bool
 	GPUDriverVersion               string
+	GPUDriverType                  string
 	GPUImageSHA                    string
 	TenantID                       string
 	SubscriptionID                 string
