@@ -29,6 +29,7 @@ import (
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -212,7 +213,8 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 			continue
 		}
 
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize) {
+		useSIG := false // replace with options.FromContext(ctx).UseSIG when available
+		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -229,13 +231,14 @@ func (p *Provider) getInstanceTypes(ctx context.Context) (map[string]*skewer.SKU
 }
 
 // isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *Provider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType) bool {
+func (p *Provider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool) bool {
 	return p.hasMinimumCPU(sku) &&
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
 		!p.isUnsupportedGPU(sku) &&
 		!p.hasConstrainedCPUs(vmsize) &&
-		!p.isConfidential(sku)
+		!p.isConfidential(sku) &&
+		isCompatibleImageAvailable(sku, useSIG)
 }
 
 // at least 2 cpus
@@ -343,4 +346,16 @@ var (
 
 func hasZonalSupport(region string) bool {
 	return zonalRegions.Has(region)
+}
+
+func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
+	hasSCSISupport := func(sku *skewer.SKU) bool { // TODO: move capability determination to skewer
+		const diskControllerTypeCapability = "DiskControllerTypes"
+		declaresSCSI := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.SCSI))
+		declaresNVMe := sku.HasCapabilityWithSeparator(diskControllerTypeCapability, string(compute.NVMe))
+		declaresNothing := !(declaresSCSI || declaresNVMe)
+		return declaresSCSI || declaresNothing // if nothing is declared, assume SCSI is supported
+	}
+
+	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
 }
