@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"knative.dev/pkg/logging"
 
 	"github.com/awslabs/operatorpkg/singleton"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,7 +34,6 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
-	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
@@ -44,62 +43,39 @@ const (
 	// We set this interval at 5 minutes, as thats how often our NRP limits are reset.
 	// See: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling#network-throttling
 	NicGarbageCollectionInterval = time.Minute * 5
-	VMReason                     = "vm"
-	NicReason                    = "nic"
-	NodeclaimReason              = "nc"
 )
 
 type NetworkInterface struct {
 	kubeClient       client.Client
 	instanceProvider instance.Provider
-	// A network interface is considered unremovable if it meets the following 3 criteria
-	// 1: Reserved by NRP: When creating a nic and attempting to assign it to a vm, the nic will be reserved for that vm arm_resource_id for 180 seconds
-	// 2: Belongs to a Nodeclaim: If a nodeclaim exists in the cluster we shouldn't attempt removing it
-	// 3: Belongs to VM: If the VM Garbage Collection controller is removing a vm, we should not attempt removing it in this controller, and delegate that responsibility to the vm gc controller since deleting a successfully provisioned vm has delete options to also clean up the associated nic
-	unremovableNics *cache.Cache
 }
 
 func NewNetworkInterface(kubeClient client.Client, instanceProvider instance.Provider) *NetworkInterface {
-	unremovableNics := cache.New(NicReservationDuration, time.Second*30)
 	return &NetworkInterface{
 		kubeClient:       kubeClient,
 		instanceProvider: instanceProvider,
-		unremovableNics:  unremovableNics,
 	}
 }
 
-// populateUnremovableNics populates the unremovableNics cache for 3 reasons.
-// A network interface is considered unremovable if it meets the following 3 criteria
-// 1: Reserved by NRP: When creating a nic and attempting to assign it to a vm, the nic will be reserved for that vm arm_resource_id for 180 seconds
-// 2: Belongs to a Nodeclaim: If a nodeclaim exists in the cluster we shouldn't attempt removing it
-// 3: Belongs to VM: If the VM Garbage Collection controller is removing a vm, we should not attempt removing it in this controller, and delegate that responsibility to the vm gc controller since deleting a successfully provisioned vm has delete options to also clean up the associated nic
-func (c *NetworkInterface) populateUnremovableNics(ctx context.Context) error {
+func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (unremovableInterfaces sets.Set[string], err error) {
 	vms, err := c.instanceProvider.List(ctx)
 	if err != nil {
-		return fmt.Errorf("listing VMs: %w", err)
+		return unremovableInterfaces, fmt.Errorf("listing VMs: %w", err)
 	}
 	for _, vm := range vms {
-		c.unremovableNics.SetDefault(lo.FromPtr(vm.Name), VMReason)
+		unremovableInterfaces.Insert(lo.FromPtr(vm.Name))
 	}
 	nodeClaimList := &karpv1.NodeClaimList{}
 	if err := c.kubeClient.List(ctx, nodeClaimList); err != nil {
-		return fmt.Errorf("listing NodeClaims for NIC GC: %w", err)
+		return unremovableInterfaces, fmt.Errorf("listing NodeClaims for NIC GC: %w", err)
 	}
 
 	for _, nodeClaim := range nodeClaimList.Items {
-		c.unremovableNics.SetDefault(instance.GenerateResourceName(nodeClaim.Name), NodeclaimReason)
+		unremovableInterfaces.Insert(instance.GenerateResourceName(nodeClaim.Name))
 	}
-	return nil
+	return unremovableInterfaces, nil
 }
 
-// we want to removeNodeclaimsFromUnremovableNics as we want fresh data on nodeclaim state whenever possible
-func (c *NetworkInterface) removeNodeclaimsFromUnremovableNics() {
-	for key, reason := range c.unremovableNics.Items() {
-		if reason.Object.(string) == NodeclaimReason {
-			c.unremovableNics.Delete(key)
-		}
-	}
-}
 
 func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, NICGCControllerName)
@@ -108,23 +84,14 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 		return reconcile.Result{}, fmt.Errorf("listing NICs: %w", err)
 	}
 
-	err = c.populateUnremovableNics(ctx)
+	unremovableInterfaces, err := c.populateUnremovableInterfaces(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("error listing resources needed to populate unremovable nics %w", err)
 	}
 	workqueue.ParallelizeUntil(ctx, 100, len(nics), func(i int) {
 		nicName := lo.FromPtr(nics[i].Name)
-		_, unremovableNic := c.unremovableNics.Get(nicName)
-		// The networkInterface is unremovable if its
-		// A: Reserved by NRP
-		// B: Belongs to a Nodeclaim
-		// C: Belongs to VM
-		if !unremovableNic {
+		if !unremovableInterfaces.Has(nicName) {
 			err := c.instanceProvider.DeleteNic(ctx, nicName)
-			if sdkerrors.IsNicReservedForAnotherVM(err) {
-				// cache the network interface as unremovable for 180 seconds
-				c.unremovableNics.SetDefault(nicName, NicReason)
-			}
 			if err != nil {
 				logging.FromContext(ctx).Error(err)
 				return
@@ -133,10 +100,7 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 			logging.FromContext(ctx).With("nic", nicName).Infof("garbage collected NIC")
 		}
 	})
-	c.removeNodeclaimsFromUnremovableNics()
-	// requeue every 5 minutes, adjust for throttling?
 	return reconcile.Result{
-		Requeue:      true,
 		RequeueAfter: NicGarbageCollectionInterval,
 	}, nil
 }
