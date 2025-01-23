@@ -38,6 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -124,7 +125,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		}
 		return nil, err
 	}
-	zone, err := GetZoneID(vm)
+	zone, err := utils.GetZone(vm)
 	if err != nil {
 		logging.FromContext(ctx).Error(err)
 	}
@@ -339,7 +340,7 @@ func newVMObject(
 				CapacityTypeToPriority[capacityType]),
 			),
 		},
-		Zones: lo.Ternary(len(zone) > 0, []*string{&zone}, []*string{}),
+		Zones: utils.MakeVMZone(zone),
 		Tags:  launchTemplate.Tags,
 	}
 	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
@@ -576,11 +577,6 @@ func (p *Provider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *co
 	})
 	zonesWithPriority := lo.Map(priorityOfferings, func(o corecloudprovider.Offering, _ int) string { return o.Zone })
 	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
-		if len(zone) > 0 {
-			// Zones in zonal Offerings have <region>-<number> format; the zone returned from here will be used for VM instantiation,
-			// which expects just the zone number, without region
-			zone = string(zone[len(zone)-1])
-		}
 		return instanceType, priority, zone
 	}
 	return nil, "", ""
@@ -668,26 +664,6 @@ func (p *Provider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtens
 	}
 
 	return vmExtension
-}
-
-// GetZoneID returns the zone ID for the given virtual machine, or an empty string if there is no zone specified
-func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
-	if vm == nil {
-		return "", fmt.Errorf("cannot pass in a nil virtual machine")
-	}
-	if vm.Name == nil {
-		return "", fmt.Errorf("virtual machine is missing name")
-	}
-	if vm.Zones == nil {
-		return "", nil
-	}
-	if len(vm.Zones) == 1 {
-		return *(vm.Zones)[0], nil
-	}
-	if len(vm.Zones) > 1 {
-		return "", fmt.Errorf("virtual machine %v has multiple zones", *vm.Name)
-	}
-	return "", nil
 }
 
 func GetListQueryBuilder(rg string) *kql.Builder {

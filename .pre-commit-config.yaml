@@ -4,7 +4,7 @@ repos:
   hooks:
   - id: gitleaks
 - repo: https://github.com/golangci/golangci-lint
-  rev: v1.55.2
+  rev: v1.63.4
   hooks:
   - id: golangci-lint
 - repo: https://github.com/jumanjihouse/pre-commit-hooks

@@ -10,7 +10,6 @@ linters:
     - bidichk
     - errorlint
     - errcheck
-    - exportloopref
     - gosec
     - revive
     - stylecheck
