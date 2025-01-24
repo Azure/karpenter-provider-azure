@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -89,6 +88,7 @@ type Provider struct {
 	resourceGroup          string
 	subscriptionID         string
 	unavailableOfferings   *cache.UnavailableOfferings
+	provisionMode          string
 }
 
 func NewProvider(
@@ -100,6 +100,7 @@ func NewProvider(
 	location string,
 	resourceGroup string,
 	subscriptionID string,
+	provisionMode string,
 ) *Provider {
 	listQuery = GetListQueryBuilder(resourceGroup).String()
 	return &Provider{
@@ -111,6 +112,7 @@ func NewProvider(
 		resourceGroup:          resourceGroup,
 		subscriptionID:         subscriptionID,
 		unavailableOfferings:   offeringsCache,
+		provisionMode:          provisionMode,
 	}
 }
 
@@ -120,6 +122,7 @@ func (p *Provider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
+		// Currently, CSE errors will lead to here
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
 			logging.FromContext(ctx).Errorf("failed to cleanup resources for node claim %s, %w", nodeClaim.Name, cleanupErr)
 		}
@@ -192,6 +195,19 @@ func (p *Provider) createAKSIdentifyingExtension(ctx context.Context, vmName str
 		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
 	}
 	logging.FromContext(ctx).Debugf("Created  virtual machine AKS identifying extension for %s, with an id of %s", vmName, *v.ID)
+	return nil
+}
+
+func (p *Provider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool) (err error) {
+	vmExt := p.getCSExtension(cse, isWindows)
+	vmExtName := *vmExt.Name
+	logging.FromContext(ctx).Debugf("Creating virtual machine CSE for %s", vmName)
+	v, err := createVirtualMachineExtension(ctx, p.AZClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("Creating VM CSE for VM %q failed, %w", vmName, err)
+		return fmt.Errorf("creating VM CSE for VM %q, %w failed", vmName, err)
+	}
+	logging.FromContext(ctx).Debugf("Created virtual machine CSE for %s, with an id of %s", vmName, *v.ID)
 	return nil
 }
 
@@ -286,11 +302,17 @@ func newVMObject(
 	nodeIdentities []string,
 	nodeClass *v1alpha2.AKSNodeClass,
 	launchTemplate *launchtemplate.Template,
-	instanceType *corecloudprovider.InstanceType) armcompute.VirtualMachine {
+	instanceType *corecloudprovider.InstanceType,
+	provisionMode string) armcompute.VirtualMachine {
 	// Build the image reference from template
 	imageReference := armcompute.ImageReference{
 		CommunityGalleryImageID: &launchTemplate.ImageID,
 	}
+
+	if launchTemplate.IsWindows {
+		return armcompute.VirtualMachine{} // TODO(Windows)
+	}
+
 	vm := armcompute.VirtualMachine{
 		Location: lo.ToPtr(location),
 		Identity: ConvertToVirtualMachineIdentity(nodeIdentities),
@@ -335,7 +357,6 @@ func newVMObject(
 						},
 					},
 				},
-				CustomData: lo.ToPtr(launchTemplate.UserData),
 			},
 			Priority: lo.ToPtr(armcompute.VirtualMachinePriorityTypes(
 				CapacityTypeToPriority[capacityType]),
@@ -344,16 +365,21 @@ func newVMObject(
 		Zones: utils.MakeVMZone(zone),
 		Tags:  launchTemplate.Tags,
 	}
-	setVMPropertiesStorageProfile(vm.Properties, instanceType, nodeClass)
+	setVMPropertiesOSDiskType(vm.Properties, launchTemplate.StorageProfile)
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
+
+	if provisionMode == consts.ProvisionModeBootstrappingClient {
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.CustomScriptsCustomData)
+	} else {
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.ScriptlessCustomData)
+	}
 
 	return vm
 }
 
-// setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
-func setVMPropertiesStorageProfile(vmProperties *armcompute.VirtualMachineProperties, instanceType *corecloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) {
-	// use ephemeral disk if it is large enough
-	if *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType) {
+// setVMPropertiesOSDiskType enables ephemeral os disk for instance types that support it
+func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, storageProfile string) {
+	if storageProfile == "Ephemeral" {
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
 			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
 			// placement (cache/resource) is left to CRP
@@ -427,7 +453,7 @@ func (p *Provider) launchInstance(
 
 	sshPublicKey := options.FromContext(ctx).SSHPublicKey
 	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType)
+	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType, p.provisionMode)
 
 	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
@@ -435,6 +461,14 @@ func (p *Provider) launchInstance(
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
 		return nil, nil, azErr
+	}
+
+	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+		err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
+		if err != nil {
+			// This should fall back to cleanupAzureResources
+			return nil, nil, err
+		}
 	}
 
 	err = p.createAKSIdentifyingExtension(ctx, resourceName)
@@ -507,19 +541,6 @@ func (p *Provider) handleResponseErrors(ctx context.Context, instanceType *corec
 		return corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests", capacityType))
 	}
 	return err
-}
-
-func getEphemeralMaxSizeGB(instanceType *corecloudprovider.InstanceType) int32 {
-	reqs := instanceType.Requirements.Get(v1alpha2.LabelSKUStorageEphemeralOSMaxSize).Values()
-	if len(reqs) == 0 || len(reqs) > 1 {
-		return 0
-	}
-	maxSize, err := strconv.ParseFloat(reqs[0], 32)
-	if err != nil {
-		return 0
-	}
-	// decimal places are truncated, so we round down
-	return int32(maxSize)
 }
 
 func cpuLimitIsZero(err error) bool {
@@ -665,6 +686,36 @@ func (p *Provider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtens
 	}
 
 	return vmExtension
+}
+
+func (p *Provider) getCSExtension(cse string, isWindows bool) *armcompute.VirtualMachineExtension {
+	const (
+		vmExtensionType     = "Microsoft.Compute/virtualMachines/extensions"
+		cseNameWindows      = "windows-cse-agent-karpenter"
+		cseTypeWindows      = "CustomScriptExtension"
+		csePublisherWindows = "Microsoft.Compute"
+		cseVersionWindows   = "1.10"
+		cseNameLinux        = "cse-agent-karpenter"
+		cseTypeLinux        = "CustomScript"
+		csePublisherLinux   = "Microsoft.Azure.Extensions"
+		cseVersionLinux     = "2.0"
+	)
+
+	return &armcompute.VirtualMachineExtension{
+		Location: lo.ToPtr(p.location),
+		Name:     lo.ToPtr(lo.Ternary(isWindows, cseNameWindows, cseNameLinux)),
+		Type:     lo.ToPtr(vmExtensionType),
+		Properties: &armcompute.VirtualMachineExtensionProperties{
+			AutoUpgradeMinorVersion: lo.ToPtr(true),
+			Type:                    lo.ToPtr(lo.Ternary(isWindows, cseTypeWindows, cseTypeLinux)),
+			Publisher:               lo.ToPtr(lo.Ternary(isWindows, csePublisherWindows, csePublisherLinux)),
+			TypeHandlerVersion:      lo.ToPtr(lo.Ternary(isWindows, cseVersionWindows, cseVersionLinux)),
+			Settings:                &map[string]interface{}{},
+			ProtectedSettings: &map[string]interface{}{
+				"commandToExecute": cse,
+			},
+		},
+	}
 }
 
 func GetListQueryBuilder(rg string) *kql.Builder {

@@ -18,8 +18,9 @@ package imagefamily
 
 import (
 	"context"
+	"strconv"
 
-	core "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/samber/lo"
@@ -42,13 +44,22 @@ type Resolver struct {
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
 type ImageFamily interface {
-	UserData(
-		kubeletConfig *corev1beta1.KubeletConfiguration,
-		taints []core.Taint,
+	ScriptlessCustomData(
+		kubeletConfig *bootstrap.KubeletConfiguration,
+		taints []corev1.Taint,
 		labels map[string]string,
 		caBundle *string,
 		instanceType *cloudprovider.InstanceType,
 	) bootstrap.Bootstrapper
+	CustomScriptsNodeBootstrapping(
+		kubeletConfig *bootstrap.KubeletConfiguration,
+		taints []corev1.Taint,
+		startupTaints []corev1.Taint,
+		labels map[string]string,
+		instanceType *cloudprovider.InstanceType,
+		imageDistro string,
+		storageProfile string,
+	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
@@ -67,7 +78,7 @@ func New(_ client.Client, imageProvider *Provider) *Resolver {
 func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
-	imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
+	imageDistro, imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
@@ -75,22 +86,45 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 
+	generalTaints := nodeClaim.Spec.Taints
+	startupTaints := nodeClaim.Spec.StartupTaints
+	allTaints := lo.Flatten([][]corev1.Taint{
+		generalTaints,
+		startupTaints,
+	})
+
+	storageProfile := "ManagedDisks"
+	if useEphemeralDisk(instanceType, nodeClass) {
+		storageProfile = "Ephemeral"
+	}
+
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
-		UserData: imageFamily.UserData(
+		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
 			prepareKubeletConfiguration(instanceType, nodeClaim),
-			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
+			allTaints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
-		ImageID: imageID,
+		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
+			prepareKubeletConfiguration(instanceType, nodeClaim),
+			generalTaints,
+			startupTaints,
+			staticParameters.Labels,
+			instanceType,
+			imageDistro,
+			storageProfile,
+		),
+		ImageID:        imageID,
+		StorageProfile: storageProfile,
+		IsWindows:      false, // TODO(Windows)
 	}
 
 	return template, nil
 }
 
-func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nc *corev1beta1.NodeClaim) *corev1beta1.KubeletConfiguration {
+func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nc *corev1beta1.NodeClaim) *bootstrap.KubeletConfiguration {
 	kubeletConfig := nc.Spec.Kubelet
 	if kubeletConfig == nil {
 		kubeletConfig = &corev1beta1.KubeletConfiguration{}
@@ -100,7 +134,7 @@ func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nc *c
 	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
 	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
-	return kubeletConfig
+	return &bootstrap.KubeletConfiguration{KubeletConfiguration: *kubeletConfig}
 }
 
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
@@ -112,4 +146,23 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}
+}
+
+func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
+	reqs := instanceType.Requirements.Get(v1alpha2.LabelSKUStorageEphemeralOSMaxSize).Values()
+	if len(reqs) == 0 || len(reqs) > 1 {
+		return 0
+	}
+	maxSize, err := strconv.ParseFloat(reqs[0], 32)
+	if err != nil {
+		return 0
+	}
+	// decimal places are truncated, so we round down
+	return int32(maxSize)
+}
+
+// setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
+func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) bool {
+	// use ephemeral disk if it is large enough
+	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
 }
