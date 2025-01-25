@@ -776,26 +776,6 @@ func (p *DefaultProvider) getCSExtension(cse string, isWindows bool) *armcompute
 	}
 }
 
-// GetZoneID returns the zone ID for the given virtual machine, or an empty string if there is no zone specified
-func GetZoneID(vm *armcompute.VirtualMachine) (string, error) {
-	if vm == nil {
-		return "", fmt.Errorf("cannot pass in a nil virtual machine")
-	}
-	if vm.Name == nil {
-		return "", fmt.Errorf("virtual machine is missing name")
-	}
-	if vm.Zones == nil {
-		return "", nil
-	}
-	if len(vm.Zones) == 1 {
-		return *(vm.Zones)[0], nil
-	}
-	if len(vm.Zones) > 1 {
-		return "", fmt.Errorf("virtual machine %v has multiple zones", *vm.Name)
-	}
-	return "", nil
-}
-
 func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.VirtualMachineIdentity {
 	var identity *armcompute.VirtualMachineIdentity
 	if len(nodeIdentities) > 0 {
