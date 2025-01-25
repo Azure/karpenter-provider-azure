@@ -22,7 +22,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
-	k8srand "k8s.io/apimachinery/pkg/util/rand"
 )
 
 // InterfaceOptions customizes an Azure Network Interface for testing.
@@ -78,17 +77,4 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 	}
 
 	return nic
-}
-
-// RandomName returns a pseudo-random resource name with a given prefix.
-func RandomName(prefix string) string {
-	// You could make this more robust by including additional random characters.
-	return prefix + "-" + k8srand.String(10)
-}
-
-func ManagedTags(nodepoolName string) map[string]*string {
-	return map[string]*string{
-		"karpenter.sh_cluster":  lo.ToPtr("test-cluster"),
-		"karpenter.sh_nodepool": lo.ToPtr(nodepoolName),
-	}
 }
