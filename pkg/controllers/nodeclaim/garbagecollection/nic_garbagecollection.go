@@ -38,7 +38,6 @@ import (
 )
 
 const (
-	NICGCControllerName    = "networkinterface.garbagecollection"
 	NicReservationDuration = time.Second * 180
 	// We set this interval at 5 minutes, as thats how often our NRP limits are reset.
 	// See: https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling#network-throttling
@@ -76,9 +75,8 @@ func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (u
 	return unremovableInterfaces, nil
 }
 
-
 func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, error) {
-	ctx = injection.WithControllerName(ctx, NICGCControllerName)
+	ctx = injection.WithControllerName(ctx, "networkinterface.garbagecollection")
 	nics, err := c.instanceProvider.ListNics(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing NICs: %w", err)
@@ -107,7 +105,7 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 
 func (c *NetworkInterface) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
-		Named(NICGCControllerName).
+		Named("networkinterface.garbagecollection").
 		WatchesRawSource(singleton.Source()).
 		Complete(singleton.AsReconciler(c))
 }
