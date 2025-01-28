@@ -32,7 +32,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
-	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
@@ -167,19 +166,14 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 					vm, err = azureEnv.InstanceProvider.Get(ctx, vmName)
 					Expect(err).To(BeNil())
 					providerID = utils.ResourceIDToProviderID(ctx, *vm.ID)
-					azureEnv.VirtualMachinesAPI.Instances.Store(
-						*vm.ID,
-						armcompute.VirtualMachine{
-							ID:       vm.ID,
-							Name:     vm.Name,
-							Location: lo.ToPtr(fake.Region),
-							Properties: &armcompute.VirtualMachineProperties{
-								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
-							},
-							Tags: map[string]*string{
-								instance.NodePoolTagKey: lo.ToPtr("default"),
-							},
-						})
+					newVM := test.VirtualMachine(test.VirtualMachineOptions{
+						Name:         vmName,
+						NodepoolName: "default",
+						Properties: &armcompute.VirtualMachineProperties{
+							TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+						},
+					})
+					azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
 					ids = append(ids, *vm.ID)
 				}
 			}
@@ -213,19 +207,14 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 					vm, err = azureEnv.InstanceProvider.Get(ctx, vmName)
 					Expect(err).To(BeNil())
 					providerID = utils.ResourceIDToProviderID(ctx, *vm.ID)
-					azureEnv.VirtualMachinesAPI.Instances.Store(
-						*vm.ID,
-						armcompute.VirtualMachine{
-							ID:       vm.ID,
-							Name:     vm.Name,
-							Location: lo.ToPtr(fake.Region),
-							Properties: &armcompute.VirtualMachineProperties{
-								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
-							},
-							Tags: map[string]*string{
-								instance.NodePoolTagKey: lo.ToPtr("default"),
-							},
-						})
+					newVM := test.VirtualMachine(test.VirtualMachineOptions{
+						Name:         vmName,
+						NodepoolName: "default",
+						Properties: &armcompute.VirtualMachineProperties{
+							TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+						},
+					})
+					azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
 					nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 						Status: karpv1.NodeClaimStatus{
 							ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
@@ -292,16 +281,8 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 
 	var _ = Context("Basic", func() {
 		BeforeEach(func() {
-			id := utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, "vm-a")
-			vm = &armcompute.VirtualMachine{
-				ID:       lo.ToPtr(id),
-				Name:     lo.ToPtr("vm-a"),
-				Location: lo.ToPtr(fake.Region),
-				Tags: map[string]*string{
-					instance.NodePoolTagKey: lo.ToPtr("default"),
-				},
-			}
-			providerID = utils.ResourceIDToProviderID(ctx, id)
+			vm = test.VirtualMachine(test.VirtualMachineOptions{Name: "vm-a", NodepoolName: "default"})
+			providerID = utils.ResourceIDToProviderID(ctx, lo.FromPtr(vm.ID))
 		})
 		It("should delete an instance if there is no NodeClaim owner", func() {
 			// Launch happened 10m ago
