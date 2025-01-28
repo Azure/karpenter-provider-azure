@@ -26,10 +26,11 @@ import (
 
 // InterfaceOptions customizes an Azure Network Interface for testing.
 type InterfaceOptions struct {
-	Name       string
-	Location   string
-	Properties *armnetwork.InterfacePropertiesFormat
-	Tags       map[string]*string
+	Name         string
+	NodepoolName string
+	Location     string
+	Properties   *armnetwork.InterfacePropertiesFormat
+	Tags         map[string]*string
 }
 
 // Interface creates a test Azure Network Interface with defaults that can be overridden by InterfaceOptions.
@@ -46,8 +47,14 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 	if options.Name == "" {
 		options.Name = RandomName("aks")
 	}
+	if options.NodepoolName == "" {
+		options.NodepoolName = "default"
+	}
 	if options.Location == "" {
 		options.Location = "eastus"
+	}
+	if options.Tags == nil {
+		options.Tags = ManagedTags(options.NodepoolName)
 	}
 	if options.Properties == nil {
 		options.Properties = &armnetwork.InterfacePropertiesFormat{}

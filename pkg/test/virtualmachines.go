@@ -27,10 +27,11 @@ import (
 
 // VirtualMachineOptions customizes an Azure Virtual Machine for testing.
 type VirtualMachineOptions struct {
-	Name       string
-	Location   string
-	Properties *armcompute.VirtualMachineProperties
-	Tags       map[string]*string
+	Name         string
+	NodepoolName string
+	Location     string
+	Properties   *armcompute.VirtualMachineProperties
+	Tags         map[string]*string
 }
 
 // VirtualMachine creates a test Azure Virtual Machine with defaults that can be overridden by VirtualMachineOptions.
@@ -47,11 +48,17 @@ func VirtualMachine(overrides ...VirtualMachineOptions) *armcompute.VirtualMachi
 	if options.Name == "" {
 		options.Name = RandomName("aks")
 	}
+	if options.NodepoolName == "" {
+		options.NodepoolName = "default"
+	}
 	if options.Location == "" {
 		options.Location = "eastus"
 	}
 	if options.Properties == nil {
 		options.Properties = &armcompute.VirtualMachineProperties{}
+	}
+	if options.Tags == nil {
+		options.Tags = ManagedTags(options.NodepoolName)
 	}
 	if options.Properties.TimeCreated == nil {
 		options.Properties.TimeCreated = lo.ToPtr(time.Now())

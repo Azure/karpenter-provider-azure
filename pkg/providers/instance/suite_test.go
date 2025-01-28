@@ -226,12 +226,8 @@ var _ = Describe("InstanceProvider", func() {
 		Expect(len(interfaces)).To(Equal(1))
 	})
 	It("should only list nics that belong to karpenter", func() {
-		managedNic := test.Interface(
-			test.InterfaceOptions{
-				Tags: test.ManagedTags(nodePool.Name),
-			},
-		)
-		unmanagedNic := test.Interface()
+		managedNic := test.Interface(test.InterfaceOptions{NodepoolName: nodePool.Name})
+		unmanagedNic := test.Interface(test.InterfaceOptions{Tags: map[string]*string{"kubernetes.io/cluster/test-cluster": lo.ToPtr("random-aks-vm")}})
 
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(unmanagedNic.ID), *unmanagedNic)
