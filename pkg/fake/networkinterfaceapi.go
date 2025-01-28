@@ -73,7 +73,7 @@ func (c *NetworkInterfacesAPI) BeginCreateOrUpdate(_ context.Context, resourceGr
 
 	return c.NetworkInterfacesCreateOrUpdateBehavior.Invoke(input, func(input *NetworkInterfaceCreateOrUpdateInput) (*armnetwork.InterfacesClientCreateOrUpdateResponse, error) {
 		iface := input.Interface
-		iface.Name = to.StringPtr(interfaceName)
+		iface.Name = to.StringPtr(input.InterfaceName)
 		id := mkNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
 		iface.ID = to.StringPtr(id)
 		c.NetworkInterfaces.Store(id, iface)
