@@ -339,7 +339,7 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
 
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
-		labels[karpv1.NodePoolLabelKey] = lo.FromPtr(tag)
+		labels[karpv1.NodePoolLabelKey] = *tag
 	}
 
 	inPlaceUpdateHash, err := inplaceupdate.HashFromVM(vm)
@@ -348,15 +348,15 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	}
 	annotations[v1alpha2.AnnotationInPlaceUpdateHash] = inPlaceUpdateHash
 
-	nodeClaim.Name = GenerateNodeClaimName(lo.FromPtr(vm.Name))
+	nodeClaim.Name = GenerateNodeClaimName(*vm.Name)
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
-	nodeClaim.CreationTimestamp = metav1.Time{Time: lo.FromPtr(vm.Properties.TimeCreated)}
+	nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
 	if utils.IsVMDeleting(*vm) {
 		nodeClaim.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	}
-	nodeClaim.Status.ProviderID = utils.ResourceIDToProviderID(ctx, lo.FromPtr(vm.ID))
+	nodeClaim.Status.ProviderID = utils.ResourceIDToProviderID(ctx, *vm.ID)
 	if vm.Properties != nil && vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
 		nodeClaim.Status.ImageID = utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)
 	}
