@@ -57,14 +57,7 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 		options.Tags = ManagedTags(options.NodepoolName)
 	}
 	if options.Properties == nil {
-		options.Properties = &armnetwork.InterfacePropertiesFormat{}
-	}
-
-	nic := &armnetwork.Interface{
-		ID:       lo.ToPtr(fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/networkInterfaces/%s", options.Name)),
-		Name:     &options.Name,
-		Location: &options.Location,
-		Properties: &armnetwork.InterfacePropertiesFormat{
+		options.Properties = &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
 					Name: lo.ToPtr("ipConfig"),
@@ -74,13 +67,15 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 					},
 				},
 			},
-		},
-		Tags: options.Tags,
+		}
 	}
 
-	// If the user wants to override the full InterfacePropertiesFormat, apply it here
-	if options.Properties != nil {
-		nic.Properties = options.Properties
+	nic := &armnetwork.Interface{
+		ID:         lo.ToPtr(fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/networkInterfaces/%s", options.Name)),
+		Name:       &options.Name,
+		Location:   &options.Location,
+		Properties: options.Properties,
+		Tags:       options.Tags,
 	}
 
 	return nic

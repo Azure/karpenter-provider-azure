@@ -43,7 +43,7 @@ import (
 type VirtualMachine struct {
 	kubeClient      client.Client
 	cloudProvider   corecloudprovider.CloudProvider
-	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeueing near the start of the controller
+	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
 }
 
 func NewVirtualMachine(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *VirtualMachine {
