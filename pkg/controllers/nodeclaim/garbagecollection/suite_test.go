@@ -405,6 +405,9 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		managedVM := test.VirtualMachine(test.VirtualMachineOptions{
 			Name: lo.FromPtr(managedNic.Name),
 			Tags: test.ManagedTags(nodePool.Name),
+			Properties: &armcompute.VirtualMachineProperties{
+				TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 16)), // Needs to be older than the nodeclaim registration ttl
+			},
 		})
 		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
 		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
