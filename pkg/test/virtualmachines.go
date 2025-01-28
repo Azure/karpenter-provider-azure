@@ -18,6 +18,7 @@ package test
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/imdario/mergo"
@@ -52,24 +53,17 @@ func VirtualMachine(overrides ...VirtualMachineOptions) *armcompute.VirtualMachi
 	if options.Properties == nil {
 		options.Properties = &armcompute.VirtualMachineProperties{}
 	}
+	if options.Properties.TimeCreated == nil {
+		options.Properties.TimeCreated = lo.ToPtr(time.Now())
+	}
 
 	// Construct the basic VM
 	vm := &armcompute.VirtualMachine{
 		ID:         lo.ToPtr(fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Compute/virtualMachines/%s", options.Name)),
 		Name:       lo.ToPtr(options.Name),
 		Location:   lo.ToPtr(options.Location),
-		Properties: &armcompute.VirtualMachineProperties{
-			// Minimal default properties can be set here if you like:
-			// HardwareProfile: &armcompute.HardwareProfile{
-			// 	VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesStandardDS1V2),
-			// },
-		},
-		Tags: options.Tags,
-	}
-
-	// If the user wants to override the entire VirtualMachineProperties, apply it here
-	if options.Properties != nil {
-		vm.Properties = options.Properties
+		Properties: options.Properties,
+		Tags:       options.Tags,
 	}
 
 	return vm
