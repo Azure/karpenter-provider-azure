@@ -44,7 +44,21 @@ type AzureResourceGraphBehavior struct {
 var _ instance.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
 
 type AzureResourceGraphAPI struct {
+	vmListQuery  string
+	nicListQuery string
 	AzureResourceGraphBehavior
+}
+
+func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI) *AzureResourceGraphAPI {
+	return &AzureResourceGraphAPI{
+		vmListQuery:  instance.GetVMListQueryBuilder(resourceGroup).String(),
+		nicListQuery: instance.GetNICListQueryBuilder(resourceGroup).String(),
+		AzureResourceGraphBehavior: AzureResourceGraphBehavior{
+			VirtualMachinesAPI:   virtualMachinesAPI,
+			NetworkInterfacesAPI: networkInterfacesAPI,
+			ResourceGroup:        resourceGroup,
+		},
+	}
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
@@ -68,7 +82,7 @@ func (c *AzureResourceGraphAPI) Resources(_ context.Context, query armresourcegr
 
 func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	switch query {
-	case instance.GetVMListQueryBuilder(c.ResourceGroup).String():
+	case c.vmListQuery:
 		vmList := lo.Filter(c.loadVMObjects(), func(vm armcompute.VirtualMachine, _ int) bool {
 			return vm.Tags != nil && vm.Tags[instance.NodePoolTagKey] != nil
 		})
@@ -77,7 +91,7 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 			return convertBytesToInterface(b)
 		})
 		return resourceList
-	case instance.GetNICListQueryBuilder(c.ResourceGroup).String():
+	case c.nicListQuery:
 		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
 			return nic.Tags != nil && nic.Tags[instance.NodePoolTagKey] != nil
 		})

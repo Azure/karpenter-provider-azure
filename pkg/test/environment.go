@@ -101,12 +101,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 
-	azureResourceGraphAPI := &fake.AzureResourceGraphAPI{
-		AzureResourceGraphBehavior: fake.AzureResourceGraphBehavior{
-			VirtualMachinesAPI:   virtualMachinesAPI,
-			NetworkInterfacesAPI: networkInterfacesAPI,
-			ResourceGroup:        resourceGroup,
-		}}
+	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
 	kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
 	instanceTypeCache := cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval)
