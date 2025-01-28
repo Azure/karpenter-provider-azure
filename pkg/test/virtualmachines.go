@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 )
@@ -52,7 +53,7 @@ func VirtualMachine(overrides ...VirtualMachineOptions) *armcompute.VirtualMachi
 		options.NodepoolName = "default"
 	}
 	if options.Location == "" {
-		options.Location = "eastus"
+		options.Location = fake.Region
 	}
 	if options.Properties == nil {
 		options.Properties = &armcompute.VirtualMachineProperties{}

@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 )
@@ -51,7 +52,7 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 		options.NodepoolName = "default"
 	}
 	if options.Location == "" {
-		options.Location = "eastus"
+		options.Location = fake.Region
 	}
 	if options.Tags == nil {
 		options.Tags = ManagedTags(options.NodepoolName)
