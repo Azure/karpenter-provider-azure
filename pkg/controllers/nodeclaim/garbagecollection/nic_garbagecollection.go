@@ -56,7 +56,8 @@ func NewNetworkInterface(kubeClient client.Client, instanceProvider instance.Pro
 	}
 }
 
-func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (unremovableInterfaces sets.Set[string], err error) {
+func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (sets.Set[string], error) {
+	unremovableInterfaces := sets.New[string]()
 	vms, err := c.instanceProvider.List(ctx)
 	if err != nil {
 		return unremovableInterfaces, fmt.Errorf("listing VMs: %w", err)
