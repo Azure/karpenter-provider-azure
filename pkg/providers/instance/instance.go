@@ -671,7 +671,7 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
 
-	nicErr := p.DeleteNic(ctx, resourceName)
+	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
 	if nicErr != nil {
 		logging.FromContext(ctx).Errorf("networkinterface.Delete for %s failed: %v", resourceName, nicErr)
 	}
