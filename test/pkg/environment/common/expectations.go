@@ -1024,3 +1024,10 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 		return p, true
 	})...)
 }
+
+func (env *Environment) GetNodeclaimCount() int {
+	GinkgoHelper()
+	nodeClaimList := &karpv1.NodeClaimList{}
+	Expect(env.Client.List(env.Context, nodeClaimList)).To(Succeed())
+	return len(nodeClaimList.Items)
+}

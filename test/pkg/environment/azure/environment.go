@@ -45,11 +45,11 @@ type Environment struct {
 
 func NewEnvironment(t *testing.T) *Environment {
 	env := common.NewEnvironment(t)
-
-	return &Environment{
-		Region:      "westus2",
+	azureEnv := &Environment{
 		Environment: env,
+		Region:      "westus2",
 	}
+	return azureEnv
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1alpha2.AKSNodeClass {
