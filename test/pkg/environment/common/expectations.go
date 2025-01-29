@@ -1024,3 +1024,4 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 		return p, true
 	})...)
 }
+
