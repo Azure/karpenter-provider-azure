@@ -274,6 +274,13 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
 		enableAcceleratedNetworking = true
 	}
+
+	sgId := opts.NetworkSecurityGroupID
+
+	networkSecurityGroup := armnetwork.SecurityGroup{
+		ID: &sgId,
+	}
+
 	nic := armnetwork.Interface{
 		Location: lo.ToPtr(p.location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
@@ -288,6 +295,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 					},
 				},
 			},
+			NetworkSecurityGroup:        &networkSecurityGroup,
 			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
 			EnableIPForwarding:          lo.ToPtr(false),
 		},
@@ -318,12 +326,13 @@ func GenerateResourceName(nodeClaimName string) string {
 }
 
 type createNICOptions struct {
-	NICName           string
-	BackendPools      *loadbalancer.BackendAddressPools
-	InstanceType      *corecloudprovider.InstanceType
-	LaunchTemplate    *launchtemplate.Template
-	NetworkPlugin     string
-	NetworkPluginMode string
+	NICName                string
+	BackendPools           *loadbalancer.BackendAddressPools
+	InstanceType           *corecloudprovider.InstanceType
+	LaunchTemplate         *launchtemplate.Template
+	NetworkPlugin          string
+	NetworkPluginMode      string
+	NetworkSecurityGroupID string
 }
 
 func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
@@ -495,12 +504,13 @@ func (p *DefaultProvider) launchInstance(
 	}
 	nicReference, err := p.createNetworkInterface(ctx,
 		&createNICOptions{
-			NICName:           resourceName,
-			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
-			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
-			LaunchTemplate:    launchTemplate,
-			BackendPools:      backendPools,
-			InstanceType:      instanceType,
+			NICName:                resourceName,
+			NetworkPlugin:          options.FromContext(ctx).NetworkPlugin,
+			NetworkPluginMode:      options.FromContext(ctx).NetworkPluginMode,
+			LaunchTemplate:         launchTemplate,
+			BackendPools:           backendPools,
+			InstanceType:           instanceType,
+			NetworkSecurityGroupID: fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", p.subscriptionID, p.resourceGroup, options.FromContext(ctx).ClusterID),
 		},
 	)
 	if err != nil {
