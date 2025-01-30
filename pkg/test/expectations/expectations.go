@@ -21,16 +21,14 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
 
 func ExpectUnavailable(env *test.Environment, instanceType string, zone string, capacityType string) {
 	GinkgoHelper()
-	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, fmt.Sprintf("%s-%s", fake.Region, zone), capacityType)).To(BeTrue())
+	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, zone, capacityType)).To(BeTrue())
 }
 
 func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {
@@ -54,4 +52,9 @@ func ExpectDecodedCustomData(env *test.Environment) string {
 	decodedString := string(decodedBytes[:])
 
 	return decodedString
+}
+
+func ExpectNoError(err error) {
+	GinkgoHelper()
+	Expect(err).To(BeNil())
 }

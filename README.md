@@ -44,9 +44,8 @@ Karpenter provider for AKS can be used in two modes:
 * **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment. The rest of this page describes how to use Karpenter in self-hosted mode.
 
 ## Known limitations
-
-* Only AKS clusters with Azure CNI Overlay + Cilium networking are supported.
 * Only Linux nodes are supported.
+* Kubenet and Calico are not supported
 
 ## Installation (self-hosted)
 
