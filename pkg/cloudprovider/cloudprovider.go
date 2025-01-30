@@ -324,7 +324,6 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 	labels[corev1beta1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
 
-	// TODO: v1beta1 new kes/labels
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
 		labels[corev1beta1.NodePoolLabelKey] = *tag
 	}

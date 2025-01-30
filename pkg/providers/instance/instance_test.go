@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/stretchr/testify/assert"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
@@ -91,6 +92,67 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 			assert.Equal(t, c.expectedZone, zone)
 			assert.Equal(t, c.expectedPriority, priority)
 		})
+	}
+}
+
+func TestCreateNICFromQueryResponseData(t *testing.T) {
+	id := "nic_id"
+	name := "nic_name"
+	tag := "tag1"
+	val := "val1"
+	tags := map[string]*string{tag: &val}
+
+	tc := []struct {
+		testName      string
+		data          map[string]interface{}
+		expectedError string
+		expectedNIC   *armnetwork.Interface
+	}{
+		{
+			testName: "missing id",
+			data: map[string]interface{}{
+				"name": name,
+			},
+			expectedError: "network interface is missing id",
+			expectedNIC:   nil,
+		},
+		{
+			testName: "missing name",
+			data: map[string]interface{}{
+				"id": id,
+			},
+			expectedError: "network interface is missing name",
+			expectedNIC:   nil,
+		},
+		{
+			testName: "happy case",
+			data: map[string]interface{}{
+				"id":   id,
+				"name": name,
+				"tags": map[string]interface{}{tag: val},
+			},
+			expectedNIC: &armnetwork.Interface{
+				ID:   &id,
+				Name: &name,
+				Tags: tags,
+			},
+		},
+	}
+
+	for _, c := range tc {
+		nic, err := createNICFromQueryResponseData(c.data)
+		if nic != nil {
+			expected := *c.expectedNIC
+			actual := *nic
+			assert.Equal(t, *expected.ID, *actual.ID, c.testName)
+			assert.Equal(t, *expected.Name, *actual.Name, c.testName)
+			for key := range expected.Tags {
+				assert.Equal(t, *(expected.Tags[key]), *(actual.Tags[key]), c.testName)
+			}
+		}
+		if err != nil {
+			assert.Equal(t, c.expectedError, err.Error(), c.testName)
+		}
 	}
 }
 

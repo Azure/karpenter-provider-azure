@@ -18,7 +18,6 @@ package instance
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -32,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/logging"
 
-	"github.com/Azure/azure-kusto-go/kusto/kql"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -57,7 +55,11 @@ import (
 
 var (
 	NodePoolTagKey = strings.ReplaceAll(corev1beta1.NodePoolLabelKey, "/", "_")
-	listQuery      string
+	vmListQuery  string
+	nicListQuery string
+)
+
+var (
 
 	CapacityTypeToPriority = map[string]string{
 		corev1beta1.CapacityTypeSpot:     string(compute.Spot),
@@ -102,7 +104,8 @@ func NewProvider(
 	subscriptionID string,
 	provisionMode string,
 ) *Provider {
-	listQuery = GetListQueryBuilder(resourceGroup).String()
+		vmListQuery = GetVMListQueryBuilder(resourceGroup).String()
+	nicListQuery = GetNICListQueryBuilder(resourceGroup).String()
 	return &Provider{
 		AZClient:               AZClient,
 		instanceTypeProvider:   instanceTypeProvider,
@@ -162,7 +165,7 @@ func (p *Provider) Get(ctx context.Context, vmName string) (*armcompute.VirtualM
 }
 
 func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
-	req := NewQueryRequest(&(p.subscriptionID), listQuery)
+	req := NewQueryRequest(&(p.subscriptionID), vmListQuery)
 	client := p.AZClient.azureResourceGraphClient
 	data, err := GetResourceData(ctx, client, *req)
 	if err != nil {
@@ -182,6 +185,37 @@ func (p *Provider) List(ctx context.Context) ([]*armcompute.VirtualMachine, erro
 func (p *Provider) Delete(ctx context.Context, resourceName string) error {
 	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", resourceName)
 	return p.cleanupAzureResources(ctx, resourceName)
+}
+
+func (p *Provider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
+	nicResponse, err := p.AZClient.NetworkInterfacesClient.Get(ctx, rg, nicName, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &nicResponse.Interface, nil
+}
+
+// ListNics returns all network interfaces in the resource group that have the nodepool tag
+func (p *Provider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
+	req := NewQueryRequest(&(p.subscriptionID), nicListQuery)
+	client := p.AZClient.azureResourceGraphClient
+	data, err := GetResourceData(ctx, client, *req)
+	if err != nil {
+		return nil, fmt.Errorf("querying azure resource graph, %w", err)
+	}
+	var nicList []*armnetwork.Interface
+	for i := range data {
+		nic, err := createNICFromQueryResponseData(data[i])
+		if err != nil {
+			return nil, fmt.Errorf("creating NIC object from query response data, %w", err)
+		}
+		nicList = append(nicList, nic)
+	}
+	return nicList, nil
+}
+
+func (p *Provider) DeleteNic(ctx context.Context, nicName string) error {
+	return deleteNicIfExists(ctx, p.AZClient.NetworkInterfacesClient, p.resourceGroup, nicName)
 }
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
@@ -613,10 +647,10 @@ func (p *Provider) cleanupAzureResources(ctx context.Context, resourceName strin
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
 	nicErr := deleteNicIfExists(ctx, p.AZClient.NetworkInterfacesClient, p.resourceGroup, resourceName)
-	if nicErr != nil {
-		logging.FromContext(ctx).Errorf("networkInterface.Delete for %s failed: %v", resourceName, nicErr)
-	}
 
+	if nicErr != nil {
+		logging.FromContext(ctx).Errorf("networkinterface.Delete for %s failed: %v", resourceName, nicErr)
+	}
 	return errors.Join(vmErr, nicErr)
 }
 
@@ -716,40 +750,6 @@ func (p *Provider) getCSExtension(cse string, isWindows bool) *armcompute.Virtua
 			},
 		},
 	}
-}
-
-func GetListQueryBuilder(rg string) *kql.Builder {
-	return kql.New(`Resources`).
-		AddLiteral(` | where type == "microsoft.compute/virtualmachines"`).
-		AddLiteral(` | where resourceGroup == `).AddString(strings.ToLower(rg)). // ARG VMs appear to have lowercase RG
-		AddLiteral(` | where tags has_cs `).AddString(NodePoolTagKey)
-}
-
-func createVMFromQueryResponseData(data map[string]interface{}) (*armcompute.VirtualMachine, error) {
-	jsonString, err := json.Marshal(data)
-	if err != nil {
-		return nil, err
-	}
-	vm := armcompute.VirtualMachine{}
-	err = json.Unmarshal(jsonString, &vm)
-	if err != nil {
-		return nil, err
-	}
-	if vm.ID == nil {
-		return nil, fmt.Errorf("virtual machine is missing id")
-	}
-	if vm.Name == nil {
-		return nil, fmt.Errorf("virtual machine is missing name")
-	}
-	if vm.Tags == nil {
-		return nil, fmt.Errorf("virtual machine is missing tags")
-	}
-	// We see inconsistent casing being returned by ARG for the last segment
-	// of the vm.ID string. This forces it to be lowercase.
-	parts := strings.Split(lo.FromPtr(vm.ID), "/")
-	parts[len(parts)-1] = strings.ToLower(parts[len(parts)-1])
-	vm.ID = lo.ToPtr(strings.Join(parts, "/"))
-	return &vm, nil
 }
 
 func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.VirtualMachineIdentity {
