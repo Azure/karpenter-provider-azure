@@ -80,7 +80,6 @@ func ExpectProvisionPodPerNode(getNodeClass func() *v1alpha2.AKSNodeClass, getNo
 					v1.ResourceCPU: resource.MustParse("1.1"),
 				},
 			},
-			Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6",
 		},
 	})
 
