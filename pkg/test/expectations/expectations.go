@@ -21,10 +21,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
 
 func ExpectUnavailable(env *test.Environment, instanceType string, zone string, capacityType string) {
@@ -53,4 +52,9 @@ func ExpectDecodedCustomData(env *test.Environment) string {
 	decodedString := string(decodedBytes[:])
 
 	return decodedString
+}
+
+func ExpectNoError(err error) {
+	GinkgoHelper()
+	Expect(err).To(BeNil())
 }
