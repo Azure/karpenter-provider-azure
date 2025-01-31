@@ -24,15 +24,13 @@ import (
 	"github.com/samber/lo"
 	"knative.dev/pkg/logging"
 
-	"github.com/awslabs/operatorpkg/singleton"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
-	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/karpenter/pkg/operator/injection"
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	"sigs.k8s.io/karpenter/pkg/operator/controller"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
@@ -76,8 +74,7 @@ func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (s
 	return unremovableInterfaces, nil
 }
 
-func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, error) {
-	ctx = injection.WithControllerName(ctx, "networkinterface.garbagecollection")
+func (c *NetworkInterface) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
 	nics, err := c.instanceProvider.ListNics(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing NICs: %w", err)
@@ -104,9 +101,6 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 	}, nil
 }
 
-func (c *NetworkInterface) Register(_ context.Context, m manager.Manager) error {
-	return controllerruntime.NewControllerManagedBy(m).
-		Named("networkinterface.garbagecollection").
-		WatchesRawSource(singleton.Source()).
-		Complete(singleton.AsReconciler(c))
+func (c *NetworkInterface) Builder(_ context.Context, m manager.Manager) {
+	return controller.NewSingletonManagedBy(m)
 }

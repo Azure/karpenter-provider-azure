@@ -21,10 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"sigs.k8s.io/karpenter/pkg/operator/injection"
-	controllerruntime "sigs.k8s.io/controller-runtime"
-	"github.com/awslabs/operatorpkg/singleton"
-
+	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/samber/lo"
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
@@ -42,11 +39,11 @@ import (
 
 type VirtualMachine struct {
 	kubeClient      client.Client
-	cloudProvider   corecloudprovider.CloudProvider
-	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
+	cloudProvider   *cloudprovider.CloudProvider
+	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeueing near the start of the controller
 }
 
-func NewVirtualMachine(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *VirtualMachine {
+func NewVirtualMachine(kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider) *VirtualMachine {
 	return &VirtualMachine{
 		kubeClient:      kubeClient,
 		cloudProvider:   cloudProvider,
@@ -54,9 +51,11 @@ func NewVirtualMachine(kubeClient client.Client, cloudProvider corecloudprovider
 	}
 }
 
-func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error) {
-	ctx = injection.WithControllerName(ctx, "instance.garbagecollection")
+func (c *VirtualMachine) Name() string {
+	return "nodeclaim.garbagecollection"
+}
 
+func (c *VirtualMachine) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
 	// We LIST VMs on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
 	// LISTing instances takes a long time, our information is more updated by the time we get to nodeclaim and Node LIST
 	// This works since our CloudProvider instances are deleted based on whether the NodeClaim exists or not, not vice-versa
@@ -109,9 +108,6 @@ func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *corev1be
 	return nil
 }
 
-func (c *VirtualMachine) Register(_ context.Context, m manager.Manager) error {
-	return controllerruntime.NewControllerManagedBy(m).
-		Named("instance.garbagecollection").
-		WatchesRawSource(singleton.Source()).
-		Complete(singleton.AsReconciler(c))
+func (c *VirtualMachine) Builder(_ context.Context, m manager.Manager) controller.Builder {
+	return controller.NewSingletonManagedBy(m)
 }
