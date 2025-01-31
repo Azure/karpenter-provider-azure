@@ -55,12 +55,11 @@ import (
 
 var (
 	NodePoolTagKey = strings.ReplaceAll(corev1beta1.NodePoolLabelKey, "/", "_")
-	vmListQuery  string
-	nicListQuery string
+	vmListQuery    string
+	nicListQuery   string
 )
 
 var (
-
 	CapacityTypeToPriority = map[string]string{
 		corev1beta1.CapacityTypeSpot:     string(compute.Spot),
 		corev1beta1.CapacityTypeOnDemand: string(compute.Regular),
@@ -104,7 +103,7 @@ func NewProvider(
 	subscriptionID string,
 	provisionMode string,
 ) *Provider {
-		vmListQuery = GetVMListQueryBuilder(resourceGroup).String()
+	vmListQuery = GetVMListQueryBuilder(resourceGroup).String()
 	nicListQuery = GetNICListQueryBuilder(resourceGroup).String()
 	return &Provider{
 		AZClient:               AZClient,

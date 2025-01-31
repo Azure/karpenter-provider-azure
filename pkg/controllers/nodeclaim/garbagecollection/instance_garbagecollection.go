@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/karpenter/pkg/operator/controller"
 
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
@@ -40,7 +41,7 @@ import (
 type VirtualMachine struct {
 	kubeClient      client.Client
 	cloudProvider   *cloudprovider.CloudProvider
-	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeueing near the start of the controller
+	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
 }
 
 func NewVirtualMachine(kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider) *VirtualMachine {
@@ -52,7 +53,7 @@ func NewVirtualMachine(kubeClient client.Client, cloudProvider *cloudprovider.Cl
 }
 
 func (c *VirtualMachine) Name() string {
-	return "nodeclaim.garbagecollection"
+	return "instance.garbagecollection"
 }
 
 func (c *VirtualMachine) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {

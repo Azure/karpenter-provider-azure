@@ -33,9 +33,6 @@ import (
 func NewControllers(ctx context.Context, kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider, instanceProvider *instance.Provider) []controller.Controller {
 	logging.FromContext(ctx).With("version", project.Version).Debugf("discovered version")
 	controllers := []controller.Controller{
-		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient),
-		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, instanceProvider),

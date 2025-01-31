@@ -44,14 +44,18 @@ const (
 
 type NetworkInterface struct {
 	kubeClient       client.Client
-	instanceProvider instance.Provider
+	instanceProvider *instance.Provider
 }
 
-func NewNetworkInterface(kubeClient client.Client, instanceProvider instance.Provider) *NetworkInterface {
+func NewNetworkInterface(kubeClient client.Client, instanceProvider *instance.Provider) *NetworkInterface {
 	return &NetworkInterface{
 		kubeClient:       kubeClient,
 		instanceProvider: instanceProvider,
 	}
+}
+
+func (c *NetworkInterface) Name() string {
+	return "networkinterface.garbagecollection"
 }
 
 func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (sets.Set[string], error) {
@@ -101,6 +105,6 @@ func (c *NetworkInterface) Reconcile(ctx context.Context, _ reconcile.Request) (
 	}, nil
 }
 
-func (c *NetworkInterface) Builder(_ context.Context, m manager.Manager) {
+func (c *NetworkInterface) Builder(_ context.Context, m manager.Manager) controller.Builder {
 	return controller.NewSingletonManagedBy(m)
 }
