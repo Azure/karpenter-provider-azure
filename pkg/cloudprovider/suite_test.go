@@ -135,7 +135,7 @@ var _ = Describe("CloudProvider", func() {
 		nodeClaims, _ := cloudProvider.List(ctx)
 		Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1))
 		queryRequest := azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Pop().Query
-		Expect(*queryRequest.Query).To(Equal(instance.GetListQueryBuilder(azureEnv.AzureResourceGraphAPI.ResourceGroup).String()))
+		Expect(*queryRequest.Query).To(Equal(instance.GetVMListQueryBuilder(azureEnv.AzureResourceGraphAPI.ResourceGroup).String()))
 		Expect(nodeClaims).To(HaveLen(1))
 		Expect(nodeClaims[0]).ToNot(BeNil())
 		resp, _ := azureEnv.VirtualMachinesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, nodeClaims[0].Name, nil)

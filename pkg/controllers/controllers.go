@@ -33,7 +33,11 @@ import (
 func NewControllers(ctx context.Context, kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider, instanceProvider *instance.Provider) []controller.Controller {
 	logging.FromContext(ctx).With("version", project.Version).Debugf("discovered version")
 	controllers := []controller.Controller{
-		nodeclaimgarbagecollection.NewController(kubeClient, cloudProvider),
+
+		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),
+		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, instanceProvider),
+
+		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),
 	}
 	return controllers

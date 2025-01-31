@@ -31,32 +31,32 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/karpenter/pkg/operator/controller"
 
 	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/operator/controller"
 )
 
-type Controller struct {
+type VirtualMachine struct {
 	kubeClient      client.Client
 	cloudProvider   *cloudprovider.CloudProvider
-	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeueing near the start of the controller
+	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
 }
 
-func NewController(kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider) *Controller {
-	return &Controller{
+func NewVirtualMachine(kubeClient client.Client, cloudProvider *cloudprovider.CloudProvider) *VirtualMachine {
+	return &VirtualMachine{
 		kubeClient:      kubeClient,
 		cloudProvider:   cloudProvider,
 		successfulCount: 0,
 	}
 }
 
-func (c *Controller) Name() string {
-	return "nodeclaim.garbagecollection"
+func (c *VirtualMachine) Name() string {
+	return "instance.garbagecollection"
 }
 
-func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
+func (c *VirtualMachine) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
 	// We LIST VMs on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
 	// LISTing instances takes a long time, our information is more updated by the time we get to nodeclaim and Node LIST
 	// This works since our CloudProvider instances are deleted based on whether the NodeClaim exists or not, not vice-versa
@@ -90,7 +90,7 @@ func (c *Controller) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 	return reconcile.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, multierr.Combine(errs...)
 }
 
-func (c *Controller) garbageCollect(ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeList *v1.NodeList) error {
+func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *corev1beta1.NodeClaim, nodeList *v1.NodeList) error {
 	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("provider-id", nodeClaim.Status.ProviderID))
 	if err := c.cloudProvider.Delete(ctx, nodeClaim); err != nil {
 		return corecloudprovider.IgnoreNodeClaimNotFoundError(err)
@@ -109,6 +109,6 @@ func (c *Controller) garbageCollect(ctx context.Context, nodeClaim *corev1beta1.
 	return nil
 }
 
-func (c *Controller) Builder(_ context.Context, m manager.Manager) controller.Builder {
+func (c *VirtualMachine) Builder(_ context.Context, m manager.Manager) controller.Builder {
 	return controller.NewSingletonManagedBy(m)
 }

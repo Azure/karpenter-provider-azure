@@ -73,6 +73,7 @@ func (c *NetworkInterfacesAPI) BeginCreateOrUpdate(_ context.Context, resourceGr
 
 	return c.NetworkInterfacesCreateOrUpdateBehavior.Invoke(input, func(input *NetworkInterfaceCreateOrUpdateInput) (*armnetwork.InterfacesClientCreateOrUpdateResponse, error) {
 		iface := input.Interface
+		iface.Name = to.StringPtr(input.InterfaceName)
 		id := mkNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
 		iface.ID = to.StringPtr(id)
 		c.NetworkInterfaces.Store(id, iface)
@@ -99,7 +100,7 @@ func (c *NetworkInterfacesAPI) BeginDelete(_ context.Context, resourceGroupName 
 		InterfaceName:     interfaceName,
 	}
 	return c.NetworkInterfacesDeleteBehavior.Invoke(input, func(input *NetworkInterfaceDeleteInput) (*armnetwork.InterfacesClientDeleteResponse, error) {
-		id := mkNetworkInterfaceID(resourceGroupName, interfaceName)
+		id := mkNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
 		c.NetworkInterfaces.Delete(id)
 		return &armnetwork.InterfacesClientDeleteResponse{}, nil
 	})
