@@ -324,7 +324,10 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		ExpectApplied(ctx, env.Client, nodeClaim)
 
 		// Create a managed NIC
-		nic := test.Interface(test.InterfaceOptions{Name: instance.GenerateResourceName(nodeClaim.Name), NodepoolName: nodePool.Name})
+		nic := test.Interface(test.InterfaceOptions{
+			Name:         instance.GenerateResourceName(nodeClaim.Name),
+			NodepoolName: nodePool.Name,
+		})
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
 
 		nicsBeforeGC, err := azureEnv.InstanceProvider.ListNics(ctx)
@@ -340,8 +343,12 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterGC)).To(Equal(1))
 	})
 	It("should delete a NIC if there is no associated VM", func() {
-		nic := test.Interface(test.InterfaceOptions{NodepoolName: nodePool.Name})
-		nic2 := test.Interface(test.InterfaceOptions{NodepoolName: nodePool.Name})
+		nic := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+		})
+		nic2 := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+		})
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic2.ID), *nic2)
 		nicsBeforeGC, err := azureEnv.InstanceProvider.ListNics(ctx)
@@ -355,7 +362,9 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterGC)).To(Equal(0))
 	})
 	It("should not delete a NIC if there is an associated VM", func() {
-		managedNic := test.Interface(test.InterfaceOptions{NodepoolName: nodePool.Name})
+		managedNic := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+		})
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 		managedVM := test.VirtualMachine(test.VirtualMachineOptions{Name: lo.FromPtr(managedNic.Name), NodepoolName: nodePool.Name})
 		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
@@ -366,8 +375,10 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterGC)).To(Equal(1))
 
 	})
-	It("the vm gc controller should remove the nic if there is an associated vm", func() {
-		managedNic := test.Interface(test.InterfaceOptions{NodepoolName: nodePool.Name})
+	It("the vm gc controller should handle deletion of network interfaces if a nic is associated with a vm", func() {
+		managedNic := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+		})
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 		managedVM := test.VirtualMachine(test.VirtualMachineOptions{
 			Name:         lo.FromPtr(managedNic.Name),

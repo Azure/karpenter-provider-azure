@@ -54,11 +54,6 @@ import (
 )
 
 var (
-	vmListQuery  string
-	nicListQuery string
-)
-
-var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 
 	CapacityTypeToPriority = map[string]string{
@@ -106,6 +101,8 @@ type DefaultProvider struct {
 	subscriptionID         string
 	unavailableOfferings   *cache.UnavailableOfferings
 	provisionMode          string
+
+	vmListQuery, nicListQuery string
 }
 
 func NewDefaultProvider(
@@ -119,8 +116,6 @@ func NewDefaultProvider(
 	subscriptionID string,
 	provisionMode string,
 ) *DefaultProvider {
-	vmListQuery = GetVMListQueryBuilder(resourceGroup).String()
-	nicListQuery = GetNICListQueryBuilder(resourceGroup).String()
 	return &DefaultProvider{
 		azClient:               azClient,
 		instanceTypeProvider:   instanceTypeProvider,
@@ -131,6 +126,9 @@ func NewDefaultProvider(
 		subscriptionID:         subscriptionID,
 		unavailableOfferings:   offeringsCache,
 		provisionMode:          provisionMode,
+
+		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
+		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
 	}
 }
 
@@ -180,7 +178,7 @@ func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.V
 }
 
 func (p *DefaultProvider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
-	req := NewQueryRequest(&(p.subscriptionID), vmListQuery)
+	req := NewQueryRequest(&(p.subscriptionID), p.vmListQuery)
 	client := p.azClient.azureResourceGraphClient
 	data, err := GetResourceData(ctx, client, *req)
 	if err != nil {
@@ -212,7 +210,7 @@ func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armn
 
 // ListNics returns all network interfaces in the resource group that have the nodepool tag
 func (p *DefaultProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
-	req := NewQueryRequest(&(p.subscriptionID), nicListQuery)
+	req := NewQueryRequest(&(p.subscriptionID), p.nicListQuery)
 	client := p.azClient.azureResourceGraphClient
 	data, err := GetResourceData(ctx, client, *req)
 	if err != nil {
