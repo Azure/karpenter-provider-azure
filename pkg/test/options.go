@@ -41,8 +41,7 @@ type OptionsFields struct {
 	NodeResourceGroup              *string
 	ProvisionMode                  *string
 	NodeBootstrappingServerURL     *string
-
-	VnetGUID						*string
+	VnetGUID                       *string
 
 	// UseSIG Flags not required by the self hosted offering
 	UseSIG            *bool
@@ -65,7 +64,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
 		NetworkPluginMode:              lo.FromPtrOr(options.NetworkPluginMode, "overlay"),
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, "cilium"),
-		VnetGUID: lo.FromPtrOr(options.VnetGUID, "test-vnet-guid"),
+		VnetGUID:                       lo.FromPtrOr(options.VnetGUID, "test-vnet-guid"),
 		NetworkDataplane:               lo.FromPtrOr(options.NetworkDataplane, "cilium"),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
