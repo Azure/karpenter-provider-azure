@@ -119,8 +119,9 @@ az-configure-values:  ## Generate cluster-related values for Karpenter Helm char
 	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME)
 
 az-configure-values-custom-vnet:  ## Generate cluster-related values for Karpenter Helm chart (take custom subnet ID from first agentpool)
-	VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId") \
-	$(MAKE) az-configure-values
+	VNET_SUBNET_ID=$$(az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"); \
+	VNET_GUID=$$(bash -c 's=$$(az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"); vnet_id=$${s%/subnets*}; az network vnet show --ids "$$vnet_id" --query "resourceGuid" -o tsv'); \
+	$(MAKE) az-configure-values VNET_SUBNET_ID=$$VNET_SUBNET_ID VNET_GUID=$$VNET_GUID
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
 	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \
