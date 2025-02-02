@@ -89,11 +89,10 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	azClient, err := instance.CreateAZClient(ctx, azConfig)
 	lo.Must0(err, "creating Azure client")
 
-	
-	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay { 
-	vnetGUID, err := getVnetGUID(azConfig, options.FromContext(ctx).SubnetID)
-	lo.Must0(err, "getting VNET GUID")
-	options.FromContext(ctx).VnetGUID = vnetGUID 
+	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+		vnetGUID, err := getVnetGUID(azConfig, options.FromContext(ctx).SubnetID)
+		lo.Must0(err, "getting VNET GUID")
+		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
