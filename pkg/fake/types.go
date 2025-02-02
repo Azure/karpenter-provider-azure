@@ -45,13 +45,12 @@ func (m *MockedFunction[I, O]) Reset() {
 }
 
 func (m *MockedFunction[I, O]) Invoke(input *I, defaultTransformer func(*I) (O, error)) (O, error) {
+	m.CalledWithInput.Add(input)
 	err := m.Error.Get()
 	if err != nil {
 		m.failedCalls.Add(1)
 		return *new(O), err
 	}
-	m.CalledWithInput.Add(input)
-
 	if !m.Output.IsNil() {
 		m.successfulCalls.Add(1)
 		return *m.Output.Clone(), nil
@@ -94,6 +93,8 @@ func (m *MockedLRO[I, O]) Reset() {
 }
 
 func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, error)) (*runtime.Poller[O], error) {
+	m.CalledWithInput.Add(input)
+
 	if err := m.BeginError.Get(); err != nil {
 		m.failedCalls.Add(1)
 		return nil, err
@@ -102,8 +103,6 @@ func (m *MockedLRO[I, O]) Invoke(input *I, defaultTransformer func(*I) (*O, erro
 		m.failedCalls.Add(1)
 		return newMockPoller[O](nil, err)
 	}
-
-	m.CalledWithInput.Add(input)
 
 	if !m.Output.IsNil() {
 		m.successfulCalls.Add(1)

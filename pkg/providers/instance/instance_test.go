@@ -20,8 +20,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -79,7 +79,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 			},
 			nodeClaim:            &karpv1.NodeClaim{},
 			expectedInstanceType: "Standard_D2s_v3",
-			expectedZone:         "2",
+			expectedZone:         "westus-2",
 			expectedPriority:     karpv1.CapacityTypeOnDemand,
 		},
 	}
@@ -101,54 +101,61 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 	}
 }
 
-func TestGetZone(t *testing.T) {
-	testVMName := "silly-armcompute"
+func TestCreateNICFromQueryResponseData(t *testing.T) {
+	id := "nic_id"
+	name := "nic_name"
+	tag := "tag1"
+	val := "val1"
+	tags := map[string]*string{tag: &val}
+
 	tc := []struct {
 		testName      string
-		input         *armcompute.VirtualMachine
-		expectedZone  string
+		data          map[string]interface{}
 		expectedError string
+		expectedNIC   *armnetwork.Interface
 	}{
 		{
+			testName: "missing id",
+			data: map[string]interface{}{
+				"name": name,
+			},
+			expectedError: "network interface is missing id",
+			expectedNIC:   nil,
+		},
+		{
 			testName: "missing name",
-			input: &armcompute.VirtualMachine{
-				Name: nil,
+			data: map[string]interface{}{
+				"id": id,
 			},
-			expectedError: "virtual machine is missing name",
-		},
-		{
-			testName:      "invalid virtual machine struct",
-			input:         nil,
-			expectedError: "cannot pass in a nil virtual machine",
-		},
-		{
-			testName: "invalid zones field in virtual machine struct",
-			input: &armcompute.VirtualMachine{
-				Name: &testVMName,
-			},
-			expectedError: "virtual machine silly-armcompute zones are nil",
+			expectedError: "network interface is missing name",
+			expectedNIC:   nil,
 		},
 		{
 			testName: "happy case",
-			input: &armcompute.VirtualMachine{
-				Name:  &testVMName,
-				Zones: []*string{to.Ptr("poland-central")},
+			data: map[string]interface{}{
+				"id":   id,
+				"name": name,
+				"tags": map[string]interface{}{tag: val},
 			},
-			expectedZone: "poland-central",
-		},
-		{
-			testName: "emptyZones",
-			input: &armcompute.VirtualMachine{
-				Name:  &testVMName,
-				Zones: []*string{},
+			expectedNIC: &armnetwork.Interface{
+				ID:   &id,
+				Name: &name,
+				Tags: tags,
 			},
-			expectedError: "virtual machine silly-armcompute does not have any zones specified",
 		},
 	}
 
 	for _, c := range tc {
-		zone, err := GetZoneID(c.input)
-		assert.Equal(t, c.expectedZone, zone, c.testName)
+		nic, err := createNICFromQueryResponseData(c.data)
+		if nic != nil {
+			expected := *c.expectedNIC
+			actual := *nic
+			assert.Equal(t, *expected.ID, *actual.ID, c.testName)
+			assert.Equal(t, *expected.Name, *actual.Name, c.testName)
+			for key := range expected.Tags {
+				assert.Equal(t, *(expected.Tags[key]), *(actual.Tags[key]), c.testName)
+			}
+		}
 		if err != nil {
 			assert.Equal(t, c.expectedError, err.Error(), c.testName)
 		}

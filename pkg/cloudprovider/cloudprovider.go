@@ -138,6 +138,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing instances, %w", err)
 	}
+
 	var nodeClaims []*karpv1.NodeClaim
 	for _, instance := range instances {
 		instanceType, err := c.resolveInstanceTypeFromInstance(ctx, instance)
@@ -328,18 +329,15 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ v1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
 
-	// TODO: review logic for determining zone (AWS uses Zone from subnet resolved and aviailable from NodeClass conditions ...)
-	if zoneID, err := instance.GetZoneID(vm); err != nil {
+	if zone, err := utils.GetZone(vm); err != nil {
 		logging.FromContext(ctx).Warnf("Failed to get zone for VM %s, %v", *vm.Name, err)
 	} else {
-		zone := makeZone(*vm.Location, zoneID)
 		// aks-node-validating-webhook protects v1.LabelTopologyZone, will be set elsewhere, so we use a different label
 		labels[v1alpha2.AlternativeLabelTopologyZone] = zone
 	}
 
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
 
-	// TODO: v1beta1 new kes/labels
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
@@ -367,14 +365,6 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 func GenerateNodeClaimName(vmName string) string {
 	return strings.TrimLeft("aks-", vmName)
-}
-
-// makeZone returns the zone value in format of <region>-<zone-id>.
-func makeZone(location string, zoneID string) string {
-	if zoneID == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s-%s", strings.ToLower(location), zoneID)
 }
 
 // newTerminatingNodeClassError returns a NotFound error for handling by
