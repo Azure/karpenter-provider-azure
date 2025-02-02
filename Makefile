@@ -115,7 +115,20 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help presubmit ci-test ci-non-test test deflake e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
+
+codespace: 
+	@if [ -z "$(BRANCH)" ]; then \
+		echo "Usage: make codespace BRANCH=<branch_name>"; \
+		exit 1; \
+	fi
+	gh auth refresh -h github.com -s codespace 
+	@echo "Creating new branch '$(BRANCH)' locally..."
+	git checkout -b $(BRANCH)
+	git push -u origin $(BRANCH)
+	@echo "Creating a GitHub Codespace for branch '$(BRANCH)' with maximum machine size..."
+	gh codespace create --branch $(BRANCH) --machine premiumLinux
+
+.PHONY: help presubmit ci-test ci-non-test test deflake e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download codespace
 
 define newline
 
