@@ -117,7 +117,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 		Entry("OSDiskSizeGB Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(100))}}),
 		Entry("Tags Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}}),
 	)
-	It("should update AKSNodeClass-hash-version annotation when the AKSNodeClass-hash-version on the NodeClass does not match with the controller hash version", func() {
+	It("should update aksnodeclass-hash-version annotation when the aksnodeclass-hash-version on the NodeClass does not match with the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{
 			v1alpha2.AnnotationAKSNodeClassHash:        "abceduefed",
 			v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
@@ -128,11 +128,11 @@ var _ = Describe("NodeClass Hash Controller", func() {
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
 		expectedHash := nodeClass.Hash()
-		// Expect AKSNodeClass-hash on the NodeClass to be updated
+		// Expect aksnodeclass-hash on the NodeClass to be updated
 		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
 		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
 	})
-	It("should update AKSNodeClass-hash-versions on all NodeClaims when the AKSNodeClass-hash-version does not match with the controller hash version", func() {
+	It("should update aksnodeclass-hash-versions on all NodeClaims when the aksnodeclass-hash-version does not match with the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{
 			v1alpha2.AnnotationAKSNodeClassHash:        "abceduefed",
 			v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
@@ -178,13 +178,13 @@ var _ = Describe("NodeClass Hash Controller", func() {
 		nodeClaimTwo = ExpectExists(ctx, env.Client, nodeClaimTwo)
 
 		expectedHash := nodeClass.Hash()
-		// Expect AKSNodeClass-hash on the NodeClaims to be updated
+		// Expect aksnodeclass-hash on the NodeClaims to be updated
 		Expect(nodeClaimOne.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
 		Expect(nodeClaimOne.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
 		Expect(nodeClaimTwo.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
 		Expect(nodeClaimTwo.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
 	})
-	It("should not update AKSNodeClass-hash on all NodeClaims when the AKSNodeClass-hash-version matches the controller hash version", func() {
+	It("should not update aksnodeclass-hash on all NodeClaims when the aksnodeclass-hash-version matches the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{
 			v1alpha2.AnnotationAKSNodeClassHash:        "abceduefed",
 			v1alpha2.AnnotationAKSNodeClassHashVersion: "test-version",
@@ -213,14 +213,14 @@ var _ = Describe("NodeClass Hash Controller", func() {
 
 		expectedHash := nodeClass.Hash()
 
-		// Expect AKSNodeClass-hash on the NodeClass to be updated
+		// Expect aksnodeclass-hash on the NodeClass to be updated
 		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
 		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
-		// Expect AKSNodeClass-hash on the NodeClaims to stay the same
+		// Expect aksnodeclass-hash on the NodeClaims to stay the same
 		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, "1234564654"))
 		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
 	})
-	It("should not update AKSNodeClass-hash on the NodeClaim if it's drifted and the AKSNodeClass-hash-version does not match the controller hash version", func() {
+	It("should not update aksnodeclass-hash on the NodeClaim if it's drifted and the aksnodeclass-hash-version does not match the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{
 			v1alpha2.AnnotationAKSNodeClassHash:        "abceduefed",
 			v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
@@ -247,7 +247,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 		ExpectObjectReconciled(ctx, env.Client, hashController, nodeClass)
 		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
 
-		// Expect AKSNodeClass-hash on the NodeClaims to stay the same
+		// Expect aksnodeclass-hash on the NodeClaims to stay the same
 		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, "123456"))
 		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
 	})
