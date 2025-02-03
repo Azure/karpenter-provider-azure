@@ -76,6 +76,8 @@ var coreProvisioner, coreProvisionerNonZonal *provisioning.Provisioner
 var cluster, clusterNonZonal *state.Cluster
 var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
 
+var fakeZone1 = utils.MakeZone(fake.Region, "1")
+
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
@@ -128,6 +130,7 @@ var _ = Describe("InstanceType Provider", func() {
 			},
 		})
 
+		ctx = options.ToContext(ctx, test.Options())
 		cluster.Reset()
 		clusterNonZonal.Reset()
 		azureEnv.Reset()
@@ -347,6 +350,9 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should not include confidential SKUs", func() {
 			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_DC8s_v3"))))
+		})
+		It("should not include SKUs without compatible image", func() {
+			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2as_v6"))))
 		})
 	})
 	Context("Filtering GPU SKUs ProviderList(AzureLinux)", func() {
@@ -585,8 +591,8 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("Unavailable Offerings", func() {
 		It("should not allocate a vm in a zone marked as unavailable", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeOnDemand)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
@@ -595,19 +601,38 @@ var _ = Describe("InstanceType Provider", func() {
 				}})
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			// Try this 100 times to make sure we don't get a node in eastus-1,
-			// we pick from 3 zones so the likelihood of this test passing by chance is 1/3^100
-			for i := 0; i < 100; i++ {
-				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-				nodes := &v1.NodeList{}
-				Expect(env.Client.List(ctx, nodes)).To(Succeed())
-				for _, node := range nodes.Items {
-					Expect(node.Labels["karpenter.kubernetes.azure/zone"]).ToNot(Equal(fmt.Sprintf("%s-1", fake.Region)))
-					Expect(node.Labels["node.kubernetes.io/instance-type"]).To(Equal("Standard_D2_v2"))
-				}
-			}
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
+		})
+		It("should handle ZonalAllocationFailed on creating the VM", func() {
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
+			)
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v2"},
+				}})
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
+			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeSpot)).To(BeTrue())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+
+			By("successfully scheduling in a different zone on retry")
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(zone))
 		})
 
 		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
@@ -637,8 +662,8 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 
 		It("should launch instances in a different zone than preferred", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "ZonalAllocationFailure", "Standard_D2_v2", fakeZone1, karpv1.CapacityTypeSpot)
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{
@@ -647,18 +672,18 @@ var _ = Describe("InstanceType Provider", func() {
 			pod.Spec.Affinity = &v1.Affinity{NodeAffinity: &v1.NodeAffinity{PreferredDuringSchedulingIgnoredDuringExecution: []v1.PreferredSchedulingTerm{
 				{
 					Weight: 1, Preference: v1.NodeSelectorTerm{MatchExpressions: []v1.NodeSelectorRequirement{
-						{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fmt.Sprintf("%s-1", fake.Region)}},
+						{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{fakeZone1}},
 					}},
 				},
 			}}}
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels["karpenter.kubernetes.azure/zone"]).ToNot(Equal(fmt.Sprintf("%s-1", fake.Region)))
-			Expect(node.Labels["node.kubernetes.io/instance-type"]).To(Equal("Standard_D2_v2"))
+			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 		It("should launch smaller instances than optimal if larger instance launch results in Insufficient Capacity Error", func() {
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeOnDemand)
-			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fmt.Sprintf("%s-1", fake.Region), karpv1.CapacityTypeSpot)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fakeZone1, karpv1.CapacityTypeOnDemand)
+			azureEnv.UnavailableOfferingsCache.MarkUnavailable(ctx, "SubscriptionQuotaReached", "Standard_F16s_v2", fakeZone1, karpv1.CapacityTypeSpot)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
@@ -672,7 +697,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
 					},
 					NodeSelector: map[string]string{
-						v1.LabelTopologyZone: fmt.Sprintf("%s-1", fake.Region),
+						v1.LabelTopologyZone: fakeZone1,
 					},
 				}))
 			}
@@ -727,8 +752,8 @@ var _ = Describe("InstanceType Provider", func() {
 				pod := coretest.UnschedulablePod()
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
-				for _, zone := range []string{"1", "2", "3"} {
-					ExpectUnavailable(azureEnv, sku, zone, capacityType)
+				for _, zoneID := range []string{"1", "2", "3"} {
+					ExpectUnavailable(azureEnv, sku, utils.MakeZone(fake.Region, zoneID), capacityType)
 				}
 			}
 
@@ -789,7 +814,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// Well known
 				v1.LabelTopologyRegion:      fake.Region,
 				karpv1.NodePoolLabelKey:     nodePool.Name,
-				v1.LabelTopologyZone:        fmt.Sprintf("%s-1", fake.Region),
+				v1.LabelTopologyZone:        fakeZone1,
 				v1.LabelInstanceTypeStable:  "Standard_NC24ads_A100_v4",
 				v1.LabelOSStable:            "linux",
 				v1.LabelArchStable:          "amd64",
@@ -810,11 +835,11 @@ var _ = Describe("InstanceType Provider", func() {
 				v1alpha2.LabelSKUAccelerator:               "A100",
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
-				v1.LabelFailureDomainBetaZone:      fmt.Sprintf("%s-1", fake.Region),
+				v1.LabelFailureDomainBetaZone:      fakeZone1,
 				"beta.kubernetes.io/arch":          "amd64",
 				"beta.kubernetes.io/os":            "linux",
 				v1.LabelInstanceType:               "Standard_NC24ads_A100_v4",
-				"topology.disk.csi.azure.com/zone": fmt.Sprintf("%s-1", fake.Region),
+				"topology.disk.csi.azure.com/zone": fakeZone1,
 				v1.LabelWindowsBuild:               "window",
 				// Cluster Label
 				v1alpha2.AKSLabelCluster: "test-cluster",
@@ -882,7 +907,79 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("ImageReference", func() {
+		It("should use shared image gallery images when options are set to UseSIG", func() {
+			options := test.Options(test.OptionsFields{
+				UseSIG: lo.ToPtr(true),
+			})
+			ctx = options.ToContext(ctx)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			// Expect virtual machine to have a shared image gallery id set on it
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+			Expect(vm.Properties.StorageProfile.ImageReference.ID).ShouldNot(BeNil())
+			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).Should(BeNil())
+
+			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(options.SIGSubscriptionID))
+			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring("AKSUbuntu"))
+		})
+		It("should use Community Images when options are set to UseSIG=false", func() {
+			options := test.Options(test.OptionsFields{
+				UseSIG: lo.ToPtr(false),
+			})
+			ctx = options.ToContext(ctx)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID).Should(Not(BeNil()))
+
+		})
+
+	})
 	Context("ImageProvider + Image Family", func() {
+		DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
+			options := test.Options(test.OptionsFields{
+				UseSIG: lo.ToPtr(true),
+			})
+			ctx = options.ToContext(ctx)
+			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{instanceType},
+				}})
+			nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{Name: nodeClass.Name}
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+
+			expectedPrefix := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s", options.SIGSubscriptionID, expectedGalleryRG, expectedGalleryURL, expectedImageDefinition)
+			Expect(*vm.Properties.StorageProfile.ImageReference.ID).To(ContainSubstring(expectedPrefix))
+
+		},
+
+			Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
@@ -911,17 +1008,17 @@ var _ = Describe("InstanceType Provider", func() {
 				azureEnv.Reset()
 			},
 			Entry("Gen2, Gen1 instance type with AKSUbuntu image family",
-				"Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen1 instance type with AKSUbuntu image family",
-				"Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1CommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("ARM instance type with AKSUbuntu image family",
-				"Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmCommunityImage, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen2 instance type with AzureLinux image family",
-				"Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2CommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("Gen1 instance type with AzureLinux image family",
-				"Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1CommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("ARM instance type with AzureLinux image family",
-				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmCommunityImage, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 		)
 	})
 	Context("Instance Types", func() {

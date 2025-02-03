@@ -2,8 +2,8 @@
 replicas: 1 # for better debugging experience
 controller:
   env:
-    - name: LEADER_ELECT # disable leader election for better debugging / troubleshooting experience
-      value: "false"
+    - name: DISABLE_LEADER_ELECTION # disable leader election for better debugging / troubleshooting experience
+      value: "true"
     # disable HTTP/2 to reduce ARM throttling on large-scale tests;
     # with this in place write (and read) QPS can be increased too
     #- name: GODEBUG
@@ -37,6 +37,12 @@ controller:
       value: ""
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}
+
+    # managed karpenter settings
+    - name: USE_SIG
+      value: "false"
+    - name: SIG_SUBSCRIPTION_ID
+      value: ""
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:
