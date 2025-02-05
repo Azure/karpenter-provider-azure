@@ -33,17 +33,19 @@ BOOTSTRAP_TOKEN=$TOKEN_ID.$TOKEN_SECRET
 
 SSH_PUBLIC_KEY="$(cat ~/.ssh/id_rsa.pub) azureuser"
 
+
+VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" | jq -r ".[0]")
+if [[ -z $VNET_JSON ]]; then # This AKS Cluster isn't leveraging the managed VNET
+    VNET_JSON=$(az network vnet show --ids $(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$AKS_JSON") -o json)
+fi
+
 if [[ ! -v VNET_SUBNET_ID ]]; then
-    # first subnet of first VNet found
-    VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" | jq -r ".[0]")
-    # If the vnet is not in the same resource group as the cluster, we need to get the vnet from the subnet id in the cluster 
-    if [[ -z $VNET_JSON ]]; then
-        VNET_JSON=$(az network vnet show --ids $(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$AKS_JSON") -o json)
-    fi
+    # first subnet of first VNET found
     VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
-    if [[ -z $VNET_GUID ]]; then
+fi
+
+if [[ -z $VNET_GUID ]]; then
         VNET_GUID=$(jq -r ".properties.resourceGuid" <<< "$VNET_JSON")
-    fi
 fi
 
 # The // empty ensures that if the files is 'null' or not prsent jq will output nothing
