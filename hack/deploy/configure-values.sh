@@ -36,7 +36,14 @@ SSH_PUBLIC_KEY="$(cat ~/.ssh/id_rsa.pub) azureuser"
 if [[ ! -v VNET_SUBNET_ID ]]; then
     # first subnet of first VNet found
     VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" | jq -r ".[0]")
+    # If the vnet is not in the same resource group as the cluster, we need to get the vnet from the subnet id in the cluster 
+    if [[ -z $VNET_JSON ]]; then
+        VNET_JSON=$(az network vnet show --ids $(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$AKS_JSON") -o json)
+    fi
     VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
+    if [[ -z $VNET_GUID ]]; then
+        VNET_GUID=$(jq -r ".properties.resourceGuid" <<< "$VNET_JSON")
+    fi
 fi
 
 # The // empty ensures that if the files is 'null' or not prsent jq will output nothing
@@ -51,7 +58,7 @@ KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_R
 
 export CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME \
     CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID KARPENTER_USER_ASSIGNED_CLIENT_ID NODE_IDENTITIES AZURE_SUBSCRIPTION_ID NETWORK_PLUGIN NETWORK_PLUGIN_MODE NETWORK_POLICY \
-    LOG_LEVEL
+    LOG_LEVEL VNET_GUID
 
 # get karpenter-values-template.yaml, if not already present (e.g. outside of repo context)
 if [ ! -f karpenter-values-template.yaml ]; then
