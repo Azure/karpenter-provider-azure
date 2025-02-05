@@ -40,9 +40,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 	karpenteroptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	webhooksalt "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/webhooks"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -88,12 +85,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 
 	azClient, err := instance.CreateAZClient(ctx, azConfig)
 	lo.Must0(err, "creating Azure client")
-
-	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
-		vnetGUID, err := getVnetGUID(azConfig, options.FromContext(ctx).SubnetID)
-		lo.Must0(err, "getting VNET GUID")
-		options.FromContext(ctx).VnetGUID = vnetGUID
-	}
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
@@ -236,27 +227,3 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	return ptr.String(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
-func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {
-	creds, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return "", err
-	}
-	opts := armopts.DefaultArmOpts()
-	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, creds, opts)
-	if err != nil {
-		return "", err
-	}
-
-	subnetParts, err := utils.GetVnetSubnetIDComponents(subnetID)
-	if err != nil {
-		return "", err
-	}
-	vnet, err := vnetClient.Get(context.Background(), subnetParts.ResourceGroupName, subnetParts.VNetName, nil)
-	if err != nil {
-		return "", err
-	}
-	if vnet.Properties == nil || vnet.Properties.ResourceGUID == nil {
-		return "", fmt.Errorf("vnet %s does not have a resource GUID", subnetParts.VNetName)
-	}
-	return *vnet.Properties.ResourceGUID, nil
-}
