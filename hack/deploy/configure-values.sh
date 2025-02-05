@@ -44,8 +44,8 @@ if [[ ! -v VNET_SUBNET_ID ]]; then
     VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
 fi
 
-if [[ -z $VNET_GUID ]]; then
-        VNET_GUID=$(jq -r ".properties.resourceGuid" <<< "$VNET_JSON")
+if [[ ! -v VNET_GUID ]] || [[ -z $VNET_GUID ]]; then
+    VNET_GUID=$(jq -r ".properties.resourceGuid" <<< "$VNET_JSON")
 fi
 
 # The // empty ensures that if the files is 'null' or not prsent jq will output nothing
