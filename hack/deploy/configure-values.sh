@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
 # This script interrogates the AKS cluster and Azure resources to generate
 # the karpenter-values.yaml file using the karpenter-values-template.yaml file as a template.
 
@@ -34,19 +33,29 @@ BOOTSTRAP_TOKEN=$TOKEN_ID.$TOKEN_SECRET
 SSH_PUBLIC_KEY="$(cat ~/.ssh/id_rsa.pub) azureuser"
 
 
-VNET_JSON=$(az network vnet list --resource-group "$AZURE_RESOURCE_GROUP_MC" | jq -r ".[0]")
-if [[ -z $VNET_JSON ]]; then # This AKS Cluster isn't leveraging the managed VNET
-    VNET_JSON=$(az network vnet show --ids $(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$AKS_JSON") -o json)
-fi
+get_vnet_json() {
+    local resource_group=$1
+    local aks_json=$2
 
-if [[ ! -v VNET_SUBNET_ID ]]; then
-    # first subnet of first VNET found
-    VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
-fi
+    local vnet_json
+    vnet_json=$(az network vnet list --resource-group "$resource_group" | jq -r ".[0]")
 
-if [[ ! -v VNET_GUID ]] || [[ -z $VNET_GUID ]]; then
-    VNET_GUID=$(jq -r ".properties.resourceGuid" <<< "$VNET_JSON")
-fi
+    if [[ -z "$vnet_json" || "$vnet_json" == "null" ]]; then
+        local subnet_id
+        subnet_id=$(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$aks_json")
+        local vnet_id
+        vnet_id=$(echo "$subnet_id" | sed 's|/subnets/[^/]*$||')
+        vnet_json=$(az network vnet show --ids "$vnet_id")
+    fi
+
+    echo "$vnet_json"
+}
+
+# Retrieve VNET JSON
+VNET_JSON=$(get_vnet_json "$AZURE_RESOURCE_GROUP_MC" "$AKS_JSON")
+# Extract all properties from vnet json
+VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
+VNET_GUID=$(jq -r ".resourceGuid // empty" <<< "$VNET_JSON")
 
 # The // empty ensures that if the files is 'null' or not prsent jq will output nothing
 # If the value returned is none, its from jq and not the aks api in this case we return ""
