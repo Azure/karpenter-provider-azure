@@ -29,6 +29,9 @@ rule=${rule//\"/\\\"}            # escape double quotes
 rule=${rule//$'\n'/}             # remove newlines
 rule=$(echo "$rule" | tr -s ' ') # remove extra spaces
 
+# check that .spec.versions has 2 entries
+[[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodepools.yaml) -eq 2 ]] || { echo "expected two versions"; exit 1; }
+
 # nodepool
 # v1beta1
 printf -v expr '.spec.versions[1].schema.openAPIV3Schema.properties.spec.properties.template.properties.metadata.properties.labels.x-kubernetes-validations +=
