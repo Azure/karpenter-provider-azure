@@ -120,6 +120,7 @@ var _ = Describe("Options", func() {
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
 				ProvisionMode:                  lo.ToPtr("bootstrappingclient"),
 				NodeBootstrappingServerURL:     lo.ToPtr("https://nodebootstrapping-server-url"),
+				VnetGUID: lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
 			}))
 		})
 	})
@@ -294,6 +295,7 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "azure",
+				"--network-plugin-mode", "",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
