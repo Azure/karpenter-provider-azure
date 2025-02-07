@@ -205,6 +205,11 @@ func (in *KubeletConfiguration) DeepCopyInto(out *KubeletConfiguration) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
+	if in.FailSwapOn != nil {
+		in, out := &in.FailSwapOn, &out.FailSwapOn
+		*out = new(bool)
+		**out = **in
+	}
 	if in.ContainerLogMaxFiles != nil {
 		in, out := &in.ContainerLogMaxFiles, &out.ContainerLogMaxFiles
 		*out = new(int32)
