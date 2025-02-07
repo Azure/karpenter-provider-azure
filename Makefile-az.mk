@@ -25,7 +25,7 @@ az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-cre
 
 az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay     az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-custom-vnet:  az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm-subnet-custom az-perm-acr az-configure-values-custom-vnet az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all-custom-vnet:  az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm-subnet-custom az-perm-acr az-configure-values az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 az-all-user:	     az-login                        az-mkaks-user                                                                   az-configure-values             az-helm-install-snapshot az-run-sample ## Provision the cluster and deploy Karpenter snapshot release
 # TODO: az-all-savm case is not currently built to support workload identity, need to re-evaluate
 az-all-savm:         az-login                        az-mkaks-savm                                 az-perm-savm                      az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
@@ -116,11 +116,7 @@ az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use
 	az group delete --name $(AZURE_RESOURCE_GROUP)
 
 az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart
-	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME)
-
-az-configure-values-custom-vnet:  ## Generate cluster-related values for Karpenter Helm chart (take custom subnet ID from first agentpool)
-	VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId") \
-	$(MAKE) az-configure-values
+	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) 
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
 	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \

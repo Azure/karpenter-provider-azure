@@ -92,15 +92,16 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// API
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
-	azureResourceGraphAPI := &fake.AzureResourceGraphAPI{AzureResourceGraphBehavior: fake.AzureResourceGraphBehavior{VirtualMachinesAPI: virtualMachinesAPI, ResourceGroup: resourceGroup}}
-	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
+
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
+	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
 	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
 	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 
+	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
 	kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
 	instanceTypeCache := cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval)
@@ -124,7 +125,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		"test-kubelet-identity-client-id",
 		testOptions.NodeResourceGroup,
 		region,
-		"test-vnet-guid",
+		testOptions.VnetGUID,
 		testOptions.ProvisionMode,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
