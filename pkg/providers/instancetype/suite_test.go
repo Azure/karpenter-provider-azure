@@ -466,6 +466,7 @@ var _ = Describe("InstanceType Provider", func() {
 			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
+				FailSwapOn:                  lo.ToPtr(false), // opposite of default
 				CPUCFSQuota:                 lo.ToPtr(true),
 			}
 
@@ -482,6 +483,8 @@ var _ = Describe("InstanceType Provider", func() {
 				"image-gc-low-threshold":  "20",
 				"cpu-cfs-quota":           "true",
 				"max-pods":                "250",
+				// we don't currently propagate fail-swap-on
+				// "fail-swap-on":            "false",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
