@@ -30,6 +30,7 @@ func (o Options) Validate() error {
 	validate := validator.New()
 	return multierr.Combine(
 		o.validateRequiredFields(),
+		o.validateVNETGUID(), 
 		o.validateEndpoint(),
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
@@ -45,6 +46,7 @@ func (o Options) validateVNETGUID() error {
 	}
 	return nil
 }
+
 func (o Options) validateNetworkingOptions() error {
 	if o.NetworkPlugin != consts.NetworkPluginAzure && o.NetworkPlugin != consts.NetworkPluginNone {
 		return fmt.Errorf("network-plugin %v is invalid. network-plugin must equal 'azure' or 'none'", o.NetworkPlugin)

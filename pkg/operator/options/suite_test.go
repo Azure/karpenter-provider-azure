@@ -55,6 +55,7 @@ var _ = Describe("Options", func() {
 		"NODE_IDENTITIES",
 		"PROVISION_MODE",
 		"NODEBOOTSTRAPPING_SERVER_URL",
+		"VNET_GUID",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -99,6 +100,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 			os.Setenv("PROVISION_MODE", "bootstrappingclient")
 			os.Setenv("NODEBOOTSTRAPPING_SERVER_URL", "https://nodebootstrapping-server-url")
+			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -122,6 +124,20 @@ var _ = Describe("Options", func() {
 		})
 	})
 	Context("Validation", func() {
+		It("should fail when VNET GUID is unset", func(){
+			errMsg := "vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay"
+			err := opts.Parse(
+fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vm-memory-overhead-percent", "-0.01",
+				"--network-plugin", "azure", 
+				"--network-plugin-mode", "overlay",
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
 		It("should fail when network-plugin-mode is invalid", func() {
 			typo := "overlaay"
 			errMsg := fmt.Sprintf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay' or ''", typo)
@@ -316,3 +332,4 @@ func expectOptionsEqual(optsA *options.Options, optsB *options.Options) {
 	Expect(optsA.NetworkPolicy).To(Equal(optsB.NetworkPolicy))
 	Expect(optsA.NodeIdentities).To(Equal(optsB.NodeIdentities))
 }
+
