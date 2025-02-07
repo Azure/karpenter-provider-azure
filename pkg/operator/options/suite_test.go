@@ -312,6 +312,21 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
+		It("should succeed when azure-cni with overlay is configured with the right options", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "azure",
+				"--network-plugin-mode", "overlay",
+				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+		})
 		It("should fail validation when ProvisionMode is not valid", func() {
 			err := opts.Parse(
 				fs,
