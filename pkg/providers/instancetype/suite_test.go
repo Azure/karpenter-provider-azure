@@ -467,7 +467,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				FailSwapOn:                  lo.ToPtr(false), // opposite of default
-				CPUCFSQuota:                 lo.ToPtr(true),
+				CPUCFSQuota:                 lo.ToPtr(false), // opposite of default
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -481,7 +481,7 @@ var _ = Describe("InstanceType Provider", func() {
 				"eviction-hard":           "memory.available<750Mi",
 				"image-gc-high-threshold": "30",
 				"image-gc-low-threshold":  "20",
-				"cpu-cfs-quota":           "true",
+				"cpu-cfs-quota":           "false",
 				"max-pods":                "250",
 				// we don't currently propagate fail-swap-on
 				// "fail-swap-on":            "false",
