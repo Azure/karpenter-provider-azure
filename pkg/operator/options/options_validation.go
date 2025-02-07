@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"go.uber.org/multierr"
 )
 
@@ -41,8 +42,15 @@ func (o Options) Validate() error {
 }
 
 func (o Options) validateVNETGUID() error {
-	if o.isAzureCNIWithOverlay() && o.VnetGUID == "" {
+	if !o.isAzureCNIWithOverlay() {
+		return nil
+	}
+	if o.VnetGUID == "" {
 		return fmt.Errorf("vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay")
+	}
+
+	if _, err := uuid.Parse(o.VnetGUID); err != nil {
+		return fmt.Errorf("vnet-guid %s is malformed with err: %w", o.VnetGUID, err)	
 	}
 	return nil
 }
