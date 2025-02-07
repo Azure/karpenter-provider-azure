@@ -120,7 +120,7 @@ var _ = Describe("Options", func() {
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
 				ProvisionMode:                  lo.ToPtr("bootstrappingclient"),
 				NodeBootstrappingServerURL:     lo.ToPtr("https://nodebootstrapping-server-url"),
-				VnetGUID: lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
+				VnetGUID:                       lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
 			}))
 		})
 	})
