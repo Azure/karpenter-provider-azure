@@ -28,6 +28,22 @@ rule=${rule//\"/\\\"}            # escape double quotes
 rule=${rule//$'\n'/}             # remove newlines
 rule=$(echo "$rule" | tr -s ' ') # remove extra spaces
 
+# check that .spec.versions has 2 entries
+[[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodepools.yaml)  -eq 2 ]] || { echo "expected two versions"; exit 1; }
+[[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodeclaims.yaml) -eq 2 ]] || { echo "expected two versions"; exit 1; }
+
+# v1beta1
+# nodeclaim
+printf -v expr '.spec.versions[1].schema.openAPIV3Schema.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
+    [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"
+yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+
+# nodepool
+printf -v expr '.spec.versions[1].schema.openAPIV3Schema.properties.spec.properties.template.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
+    [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"
+yq eval "${expr}" -i pkg/apis/crds/karpenter.sh_nodepools.yaml
+
+# v1
 # nodeclaim
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.requirements.items.properties.key.x-kubernetes-validations +=
     [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"
