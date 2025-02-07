@@ -124,21 +124,21 @@ var _ = Describe("Options", func() {
 		})
 	})
 	Context("Validation", func() {
-		It("should fail when VNET GUID is unset", func(){
+		It("should fail when VNET GUID is unset", func() {
 			errMsg := "vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay"
 			err := opts.Parse(
-fs,
+				fs,
 				"--cluster-name", "my-name",
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vm-memory-overhead-percent", "-0.01",
-				"--network-plugin", "azure", 
+				"--network-plugin", "azure",
 				"--network-plugin-mode", "overlay",
 			)
 			Expect(err).To(MatchError(ContainSubstring(errMsg)))
 		})
-		It("should fail when VNET GUID is not a uuid", func(){
+		It("should fail when VNET GUID is not a uuid", func() {
 			errMsg := "vnet-guid null is malformed with err:"
 			err := opts.Parse(
 				fs,
@@ -147,7 +147,7 @@ fs,
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vm-memory-overhead-percent", "-0.01",
-				"--network-plugin", "azure", 
+				"--network-plugin", "azure",
 				"--network-plugin-mode", "overlay",
 				"--vnet-guid", "null", // sometimes output of jq can produce null or some other data, we should enforce that the vnet guid passed in at least looks like a uuid
 			)
@@ -347,4 +347,3 @@ func expectOptionsEqual(optsA *options.Options, optsB *options.Options) {
 	Expect(optsA.NetworkPolicy).To(Equal(optsB.NetworkPolicy))
 	Expect(optsA.NodeIdentities).To(Equal(optsB.NodeIdentities))
 }
-

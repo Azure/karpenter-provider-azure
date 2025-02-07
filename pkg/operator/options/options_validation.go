@@ -31,7 +31,7 @@ func (o Options) Validate() error {
 	validate := validator.New()
 	return multierr.Combine(
 		o.validateRequiredFields(),
-		o.validateVNETGUID(), 
+		o.validateVNETGUID(),
 		o.validateEndpoint(),
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
@@ -50,7 +50,7 @@ func (o Options) validateVNETGUID() error {
 	}
 
 	if _, err := uuid.Parse(o.VnetGUID); err != nil {
-		return fmt.Errorf("vnet-guid %s is malformed with err: %w", o.VnetGUID, err)	
+		return fmt.Errorf("vnet-guid %s is malformed with err: %w", o.VnetGUID, err)
 	}
 	return nil
 }

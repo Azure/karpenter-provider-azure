@@ -223,4 +223,3 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	}
 	return ptr.String(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
-
