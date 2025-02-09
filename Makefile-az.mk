@@ -259,7 +259,7 @@ az-taintnodes:
 
 az-e2etests: ## Run e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
-	TEST_SUITE=Azuregarbagecollection make e2etests
+	TEST_SUITE=Utilization make e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --all
 
 az-perftest1: ## Test scaling out/in (1 VM)
