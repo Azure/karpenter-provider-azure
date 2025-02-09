@@ -42,7 +42,7 @@ var env *azure.Environment
 var nodeClass *v1alpha2.AKSNodeClass
 var nodePool *karpv1.NodePool
 var (
-	nicName = "orphan-nic" 
+	nicName = "orphan-nic"
 )
 
 func TestGC(t *testing.T) {
@@ -67,7 +67,7 @@ var _ = Describe("gc", func() {
 		subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
 		vnetResourceGroup := os.Getenv("VNET_RESOURCE_GROUP")
 		if vnetResourceGroup == "" {
-			vnetResourceGroup = resourceGroup 
+			vnetResourceGroup = resourceGroup
 		}
 		interfacesClient, vnetClient, err := newAzureClients(subscriptionID)
 		Expect(err).ToNot(HaveOccurred())
@@ -111,7 +111,7 @@ func getVNET(ctx context.Context, client *armnetwork.VirtualNetworksClient, vnet
 }
 
 func createOrphanNIC(ctx context.Context, client *armnetwork.InterfacesClient, resourceGroup, region string, subnet *armnetwork.Subnet) error {
-	nodepoolKey := 	strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
+	nodepoolKey := strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 	poller, err := client.BeginCreateOrUpdate(ctx, resourceGroup, nicName, armnetwork.Interface{
 		Location: to.Ptr(region),
 		Tags:     map[string]*string{nodepoolKey: lo.ToPtr("default")},
@@ -120,8 +120,8 @@ func createOrphanNIC(ctx context.Context, client *armnetwork.InterfacesClient, r
 				{
 					Name: lo.ToPtr(nicName),
 					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                        lo.ToPtr(true),
-						Subnet:                         subnet,
+						Primary:                   lo.ToPtr(true),
+						Subnet:                    subnet,
 						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
 					},
 				},
