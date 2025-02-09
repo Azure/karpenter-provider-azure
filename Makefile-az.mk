@@ -257,9 +257,6 @@ az-taintsystemnodes: ## Taint all system nodepool nodes
 az-taintnodes:
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
 
-az-e2etests-wcontext: 
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite 
-	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP_MC) TEST_SUITE=Azuregarbagecollection make e2etests
 az-e2etests: ## Run e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
 	TEST_SUITE=Azuregarbagecollection make e2etests

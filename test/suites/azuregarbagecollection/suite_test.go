@@ -18,6 +18,7 @@ package azuregarbagecollection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -39,6 +41,9 @@ import (
 var env *azure.Environment
 var nodeClass *v1alpha2.AKSNodeClass
 var nodePool *karpv1.NodePool
+var (
+	nicName = "orphan-nic" 
+)
 
 func TestGC(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -64,74 +69,80 @@ var _ = Describe("gc", func() {
 		if vnetResourceGroup == "" {
 			vnetResourceGroup = resourceGroup 
 		}
-		
+		interfacesClient, vnetClient, err := newAzureClients(subscriptionID)
+		Expect(err).ToNot(HaveOccurred())
+		vnet, err := getVNET(env.Context, vnetClient, vnetResourceGroup)
+		Expect(err).ToNot(HaveOccurred())
 
-		nicName := "orphan-nic"
-		nodePoolKey := "test-nodepool"
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
-		if err != nil {
-			Expect(err).ToNot(HaveOccurred())
-		}
-		interfacesClient, err := armnetwork.NewInterfacesClient(subscriptionID, cred, nil)
+		err = createOrphanNIC(env.Context, interfacesClient, resourceGroup, env.Region, vnet.Properties.Subnets[0])
 		Expect(err).ToNot(HaveOccurred())
-		vnetClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, cred, nil) 
-		Expect(err).ToNot(HaveOccurred())
-		vnet := getVNET(env.Context, vnetClient, vnetResourceGroup)
-
-		nodepoolKey := 	strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
-		poller, err := interfacesClient.BeginCreateOrUpdate(env.Context, resourceGroup, "orphan-nic", armnetwork.Interface{
-			Location: to.Ptr(env.Region),
-			Tags: map[string]*string{
-					nodepoolKey: lo.ToPtr(nodePoolKey),
-				},
-			Properties: &armnetwork.InterfacePropertiesFormat{
-				IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
-					{
-						Name: lo.ToPtr(nicName), 
-						Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-							Primary: lo.ToPtr(true),
-							Subnet: vnet.Properties.Subnets[0],
-							PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-						},
-					},			
-				},
-				
-			},
-		}, nil)
-		Expect(err).ToNot(HaveOccurred())
-		resp, err := poller.PollUntilDone(env.Context, nil)
-		// Log NIC
-		fmt.Println(resp.Interface)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(resp).ToNot(BeNil())
 		EventuallyExpectOrphanNicsToBeDeleted(env, resourceGroup, interfacesClient)
 	})
 })
 
-func getVNET(ctx context.Context, client *armnetwork.VirtualNetworksClient, vnetRG string) *armnetwork.VirtualNetwork {
+func newAzureClients(subscriptionID string) (*armnetwork.InterfacesClient, *armnetwork.VirtualNetworksClient, error) {
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	interfacesClient, err := armnetwork.NewInterfacesClient(subscriptionID, cred, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	vnetClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, cred, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return interfacesClient, vnetClient, nil
+}
+
+func getVNET(ctx context.Context, client *armnetwork.VirtualNetworksClient, vnetRG string) (*armnetwork.VirtualNetwork, error) {
 	pager := client.NewListPager(vnetRG, nil)
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)
 		if err != nil {
-			Fail("failed to list virtual networks: " + err.Error())
+			return nil, fmt.Errorf("failed to list virtual networks: %w", err)
 		}
 		if len(resp.VirtualNetworkListResult.Value) > 0 {
-			return resp.VirtualNetworkListResult.Value[0]
+			return resp.VirtualNetworkListResult.Value[0], nil
 		}
 	}
-	Fail("no virtual networks found in resource group: " + vnetRG)
-	return &armnetwork.VirtualNetwork{} 
+	return nil, fmt.Errorf("no virtual networks found in resource group: %s", vnetRG)
+}
+
+func createOrphanNIC(ctx context.Context, client *armnetwork.InterfacesClient, resourceGroup, region string, subnet *armnetwork.Subnet) error {
+	nodepoolKey := 	strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
+	poller, err := client.BeginCreateOrUpdate(ctx, resourceGroup, nicName, armnetwork.Interface{
+		Location: to.Ptr(region),
+		Tags:     map[string]*string{nodepoolKey: lo.ToPtr("default")},
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+				{
+					Name: lo.ToPtr(nicName),
+					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+						Primary:                        lo.ToPtr(true),
+						Subnet:                         subnet,
+						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+					},
+				},
+			},
+		},
+	}, nil)
+	if err != nil {
+		return err
+	}
+	_, err = poller.PollUntilDone(ctx, nil)
+	return err
 }
 
 func EventuallyExpectOrphanNicsToBeDeleted(env *azure.Environment, resourceGroup string, nicClient *armnetwork.InterfacesClient) {
 	GinkgoHelper()
 	Eventually(func() bool {
-		_, err := nicClient.Get(env.Context, resourceGroup, "orphan-nic", nil)
-		if err != nil { 
-			if strings.Contains(err.Error(), "ResourceNotFound") {	
-				return true
-			}
+		_, err := nicClient.Get(env.Context, resourceGroup, nicName, nil)
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == 404 {
+			return true
 		}
 		return false
-	}, time.Minute*15, time.Second*15).Should(BeTrue())
+	}, 15*time.Minute, 15*time.Second).Should(BeTrue())
 }
