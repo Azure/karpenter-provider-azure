@@ -34,7 +34,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -86,6 +85,7 @@ var _ = BeforeSuite(func() {
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client)
 	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
+
 })
 
 var _ = AfterSuite(func() {
@@ -331,7 +331,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
 
 		nicsBeforeGC, err := azureEnv.InstanceProvider.ListNics(ctx)
-		ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(len(nicsBeforeGC)).To(Equal(1))
 
 		// Run garbage collection
@@ -339,7 +339,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 
 		// Verify NIC still exists after GC
 		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
-		ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(len(nicsAfterGC)).To(Equal(1))
 	})
 	It("should delete a NIC if there is no associated VM", func() {
@@ -352,13 +352,13 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic2.ID), *nic2)
 		nicsBeforeGC, err := azureEnv.InstanceProvider.ListNics(ctx)
-		ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(len(nicsBeforeGC)).To(Equal(2))
 		// add a nic to azure env, and call reconcile. It should show up in the list before reconcile
 		// then it should not showup after
 		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
-		ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(len(nicsAfterGC)).To(Equal(0))
 	})
 	It("should not delete a NIC if there is an associated VM", func() {
@@ -371,7 +371,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 		// We should still have a network interface here
 		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
-		ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(len(nicsAfterGC)).To(Equal(1))
 
 	})
@@ -391,12 +391,12 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 		// We should still have a network interface here
 		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
-		ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(len(nicsAfterGC)).To(Equal(1))
 
 		ExpectSingletonReconciled(ctx, virtualMachineGCController)
 		nicsAfterVMReconciliation, err := azureEnv.InstanceProvider.ListNics(ctx)
-		ExpectNoError(err)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(len(nicsAfterVMReconciliation)).To(Equal(0))
 
 	})

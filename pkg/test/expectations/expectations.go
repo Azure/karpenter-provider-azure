@@ -53,8 +53,3 @@ func ExpectDecodedCustomData(env *test.Environment) string {
 
 	return decodedString
 }
-
-func ExpectNoError(err error) {
-	GinkgoHelper()
-	Expect(err).To(BeNil())
-}
