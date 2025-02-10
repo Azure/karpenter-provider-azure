@@ -105,25 +105,24 @@ func createOrphanNIC(ctx context.Context, client *armnetwork.InterfacesClient, r
 	return err
 }
 
-
 func EventuallyExpectOrphanNicsToBeDeleted(env *azure.Environment, resourceGroup string, nicClient *armnetwork.InterfacesClient) {
-    GinkgoHelper()
-    Eventually(func() bool {
-        pager := nicClient.NewListPager(resourceGroup, nil)
-        for pager.More() {
-            resp, err := pager.NextPage(env.Context)
-            if err != nil {
-                return false 
-            }
+	GinkgoHelper()
+	Eventually(func() bool {
+		pager := nicClient.NewListPager(resourceGroup, nil)
+		for pager.More() {
+			resp, err := pager.NextPage(env.Context)
+			if err != nil {
+				return false
+			}
 
-            for _, nic := range resp.Value {
-                if nic.Tags != nil {
-                    if _, exists := nic.Tags[strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")]; exists {
-                        return false 
-                    }
-                }
-            }
-        }
-        return true 
-    }).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(BeTrue(), "Expected all orphan NICs to be deleted")
+			for _, nic := range resp.Value {
+				if nic.Tags != nil {
+					if _, exists := nic.Tags[strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")]; exists {
+						return false
+					}
+				}
+			}
+		}
+		return true
+	}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "Expected all orphan NICs to be deleted")
 }

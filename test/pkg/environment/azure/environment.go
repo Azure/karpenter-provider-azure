@@ -48,18 +48,17 @@ type Environment struct {
 }
 
 type Vars struct {
-	NodeResourceGroup string 
-	Region string 
-	SubscriptionID string 
+	NodeResourceGroup string
+	Region            string
+	SubscriptionID    string
 	VNETResourceGroup string
-	ACRName string
-	ClusterName string
+	ACRName           string
+	ClusterName       string
 }
 type AzureClients struct {
-	VNETClient *armnetwork.VirtualNetworksClient
+	VNETClient       *armnetwork.VirtualNetworksClient
 	InterfacesClient *armnetwork.InterfacesClient
 }
-
 
 func NewEnvironment(t *testing.T) *Environment {
 	env := common.NewEnvironment(t)
@@ -69,27 +68,27 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.NodeResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP_MC")
 	azureEnv.SubscriptionID = os.Getenv("AZURE_SUBSCRIPTION_ID")
 	azureEnv.VNETResourceGroup = os.Getenv("VNET_RESOURCE_GROUP")
-		if azureEnv.VNETResourceGroup == "" {
-			azureEnv.VNETResourceGroup = azureEnv.NodeResourceGroup 
-		}
+	if azureEnv.VNETResourceGroup == "" {
+		azureEnv.VNETResourceGroup = azureEnv.NodeResourceGroup
+	}
 	azureEnv.ClusterName = os.Getenv("AZURE_CLUSTER_NAME")
 	azureEnv.ACRName = os.Getenv("ACR_NAME")
 	azureEnv.Region = os.Getenv("AZURE_LOCATION")
-	
+
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		panic(err)
 	}
-	
+
 	interfacesClient, err := armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil)
 	if err != nil {
-		panic(err)	
+		panic(err)
 	}
 	vnetClient, err := armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil)
 	if err != nil {
-		panic(err)	
+		panic(err)
 	}
-	azureEnv.VNETClient = vnetClient 
+	azureEnv.VNETClient = vnetClient
 	azureEnv.InterfacesClient = interfacesClient
 	return azureEnv
 }
