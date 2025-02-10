@@ -17,13 +17,15 @@ limitations under the License.
 package azure
 
 import (
-	"testing"
 	"os"
+	"testing"
 
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -41,6 +43,7 @@ const (
 
 type Environment struct {
 	*common.Environment
+	AzureClients
 	Vars
 }
 
@@ -52,6 +55,11 @@ type Vars struct {
 	ACRName string
 	ClusterName string
 }
+type AzureClients struct {
+	VNETClient *armnetwork.VirtualNetworksClient
+	InterfacesClient *armnetwork.InterfacesClient
+}
+
 
 func NewEnvironment(t *testing.T) *Environment {
 	env := common.NewEnvironment(t)
@@ -67,6 +75,22 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.ClusterName = os.Getenv("AZURE_CLUSTER_NAME")
 	azureEnv.ACRName = os.Getenv("ACR_NAME")
 	azureEnv.Region = os.Getenv("AZURE_LOCATION")
+	
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		panic(err)
+	}
+	
+	interfacesClient, err := armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil)
+	if err != nil {
+		panic(err)	
+	}
+	vnetClient, err := armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil)
+	if err != nil {
+		panic(err)	
+	}
+	azureEnv.VNETClient = vnetClient 
+	azureEnv.InterfacesClient = interfacesClient
 	return azureEnv
 }
 
