@@ -583,7 +583,7 @@ func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if kubeletConfig.ImageGCLowThresholdPercent != nil {
 		args["--image-gc-low-threshold"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.ImageGCLowThresholdPercent))
 	}
-	// ShouldConfigureSwapFile is currently hardcoded to false, so can't support propagating this yet
+	// ShouldConfigSwapFile in bootstrap is currently hardcoded to false, so can't support propagating this yet
 	// if kubeletConfig.FailSwapOn != nil {
 	//	args["--fail-swap-on"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.FailSwapOn))
 	//}
