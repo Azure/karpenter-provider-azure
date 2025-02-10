@@ -66,7 +66,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv := &Environment{
 		Environment: env,
 	}
-	azureEnv.NodeResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP")
+	azureEnv.NodeResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP_MC")
 	azureEnv.SubscriptionID = os.Getenv("AZURE_SUBSCRIPTION_ID")
 	azureEnv.VNETResourceGroup = os.Getenv("VNET_RESOURCE_GROUP")
 		if azureEnv.VNETResourceGroup == "" {
