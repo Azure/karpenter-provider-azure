@@ -63,20 +63,14 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("gc", func() {
 	It("should garbage collect network interfaces created by karpenter", func() {
-		resourceGroup := os.Getenv("AZURE_RESOURCE_GROUP")
-		subscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
-		vnetResourceGroup := os.Getenv("VNET_RESOURCE_GROUP")
-		if vnetResourceGroup == "" {
-			vnetResourceGroup = resourceGroup
-		}
-		interfacesClient, vnetClient, err := newAzureClients(subscriptionID)
+		interfacesClient, vnetClient, err := newAzureClients(env.SubscriptionID)
 		Expect(err).ToNot(HaveOccurred())
-		vnet, err := getVNET(env.Context, vnetClient, vnetResourceGroup)
+		vnet, err := getVNET(env.Context, vnetClient, env.VNETResourceGroup)
 		Expect(err).ToNot(HaveOccurred())
 
-		err = createOrphanNIC(env.Context, interfacesClient, resourceGroup, env.Region, vnet.Properties.Subnets[0])
+		err = createOrphanNIC(env.Context, interfacesClient, env.NodeResourceGroup, env.Region, vnet.Properties.Subnets[0])
 		Expect(err).ToNot(HaveOccurred())
-		EventuallyExpectOrphanNicsToBeDeleted(env, resourceGroup, interfacesClient)
+		EventuallyExpectOrphanNicsToBeDeleted(env, env.NodeResourceGroup, interfacesClient)
 	})
 })
 

@@ -18,6 +18,7 @@ package azure
 
 import (
 	"testing"
+	"os"
 
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -40,15 +41,32 @@ const (
 
 type Environment struct {
 	*common.Environment
-	Region string
+	Vars
+}
+
+type Vars struct {
+	NodeResourceGroup string 
+	Region string 
+	SubscriptionID string 
+	VNETResourceGroup string
+	ACRName string
+	ClusterName string
 }
 
 func NewEnvironment(t *testing.T) *Environment {
 	env := common.NewEnvironment(t)
 	azureEnv := &Environment{
 		Environment: env,
-		Region:      "westus2",
 	}
+	azureEnv.NodeResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP")
+	azureEnv.SubscriptionID = os.Getenv("AZURE_SUBSCRIPTION_ID")
+	azureEnv.VNETResourceGroup = os.Getenv("VNET_RESOURCE_GROUP")
+		if azureEnv.VNETResourceGroup == "" {
+			azureEnv.VNETResourceGroup = azureEnv.NodeResourceGroup 
+		}
+	azureEnv.ClusterName = os.Getenv("AZURE_CLUSTER_NAME")
+	azureEnv.ACRName = os.Getenv("ACR_NAME")
+	azureEnv.Region = os.Getenv("AZURE_LOCATION")
 	return azureEnv
 }
 
