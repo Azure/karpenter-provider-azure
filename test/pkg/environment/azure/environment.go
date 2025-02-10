@@ -67,7 +67,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv := &Environment{
 		Environment: env,
 	}
-	azureEnv.ClusterName = os.Getenv("AZURE_CLUSTER_NAME")
+	azureEnv.ClusterName = os.Getenv("CLUSTER_NAME")
 	azureEnv.ClusterResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP")
 	azureEnv.ACRName = os.Getenv("ACR_NAME")
 	azureEnv.Region = os.Getenv("AZURE_LOCATION")
