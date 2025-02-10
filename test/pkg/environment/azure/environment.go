@@ -17,6 +17,7 @@ limitations under the License.
 package azure
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -54,6 +55,7 @@ type Vars struct {
 	VNETResourceGroup string
 	ACRName           string
 	ClusterName       string
+	ClusterResourceGroup string
 }
 type AzureClients struct {
 	VNETClient       *armnetwork.VirtualNetworksClient
@@ -65,16 +67,18 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv := &Environment{
 		Environment: env,
 	}
-	azureEnv.NodeResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP_MC")
+	azureEnv.ClusterName = os.Getenv("AZURE_CLUSTER_NAME")
+	azureEnv.ClusterResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP")
+	azureEnv.ACRName = os.Getenv("ACR_NAME")
+	azureEnv.Region = os.Getenv("AZURE_LOCATION")
+
+	azureEnv.NodeResourceGroup = fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region) 
 	azureEnv.SubscriptionID = os.Getenv("AZURE_SUBSCRIPTION_ID")
 	azureEnv.VNETResourceGroup = os.Getenv("VNET_RESOURCE_GROUP")
 	if azureEnv.VNETResourceGroup == "" {
 		azureEnv.VNETResourceGroup = azureEnv.NodeResourceGroup
 	}
-	azureEnv.ClusterName = os.Getenv("AZURE_CLUSTER_NAME")
-	azureEnv.ACRName = os.Getenv("ACR_NAME")
-	azureEnv.Region = os.Getenv("AZURE_LOCATION")
-
+	
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		panic(err)
