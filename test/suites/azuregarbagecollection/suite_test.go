@@ -17,19 +17,15 @@ limitations under the License.
 package azuregarbagecollection
 
 import (
-	"context"
-	"fmt"
-	"strings"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	azkarptest "github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
@@ -56,73 +52,25 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("gc", func() {
 	It("should garbage collect network interfaces created by karpenter", func() {
-		vnet, err := getVNET(env.Context, env.VNETClient, env.VNETResourceGroup)
-		Expect(err).ToNot(HaveOccurred())
-		nicName := "orphan-nic"
+		env.ExpectCreatedInterface(armnetwork.Interface{
+			Name: lo.ToPtr("orphan-nic"),
+			Location: lo.ToPtr(env.Region),
+			Tags: azkarptest.ManagedTags("default"),
+			Properties: &armnetwork.InterfacePropertiesFormat{
+				IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+					{
+						Name: lo.ToPtr("ip-config"), 
+						Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+							Primary: lo.ToPtr(true),
+							Subnet: env.GetClusterSubnet(), 
+							PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+						},
+					},			
+				},
 
-		err = createOrphanNIC(env.Context, env.InterfacesClient, env.NodeResourceGroup, env.Region, nicName, vnet.Properties.Subnets[0])
-		Expect(err).ToNot(HaveOccurred())
-		EventuallyExpectOrphanNicsToBeDeleted(env, env.NodeResourceGroup, env.InterfacesClient)
+			},
+		})	
+		env.EventuallyExpectKarpenterNicsToBeDeleted() 
 	})
 })
 
-func getVNET(ctx context.Context, client *armnetwork.VirtualNetworksClient, vnetRG string) (*armnetwork.VirtualNetwork, error) {
-	pager := client.NewListPager(vnetRG, nil)
-	for pager.More() {
-		resp, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list virtual networks: %w", err)
-		}
-		if len(resp.VirtualNetworkListResult.Value) > 0 {
-			return resp.VirtualNetworkListResult.Value[0], nil
-		}
-	}
-	return nil, fmt.Errorf("no virtual networks found in resource group: %s", vnetRG)
-}
-
-func createOrphanNIC(ctx context.Context, client *armnetwork.InterfacesClient, resourceGroup, region, nicName string, subnet *armnetwork.Subnet) error {
-	nodepoolKey := strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
-	poller, err := client.BeginCreateOrUpdate(ctx, resourceGroup, nicName, armnetwork.Interface{
-		Location: to.Ptr(region),
-		Tags:     map[string]*string{nodepoolKey: lo.ToPtr("default")},
-		Properties: &armnetwork.InterfacePropertiesFormat{
-			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
-				{
-					Name: lo.ToPtr(nicName),
-					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(true),
-						Subnet:                    subnet,
-						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-					},
-				},
-			},
-		},
-	}, nil)
-	if err != nil {
-		return err
-	}
-	_, err = poller.PollUntilDone(ctx, nil)
-	return err
-}
-
-func EventuallyExpectOrphanNicsToBeDeleted(env *azure.Environment, resourceGroup string, nicClient *armnetwork.InterfacesClient) {
-	GinkgoHelper()
-	Eventually(func() bool {
-		pager := nicClient.NewListPager(resourceGroup, nil)
-		for pager.More() {
-			resp, err := pager.NextPage(env.Context)
-			if err != nil {
-				return false
-			}
-
-			for _, nic := range resp.Value {
-				if nic.Tags != nil {
-					if _, exists := nic.Tags[strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")]; exists {
-						return false
-					}
-				}
-			}
-		}
-		return true
-	}).WithTimeout(10*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "Expected all orphan NICs to be deleted")
-}
