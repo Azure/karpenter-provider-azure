@@ -1,11 +1,27 @@
+/*
+Portions Copyright (c) Microsoft Corporation.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package azure
 
 import (
-	"fmt" 
 	"context"
+	"fmt"
 	"strings"
 	"time"
-	
+
 	"github.com/samber/lo"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -39,17 +55,17 @@ func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 
 func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Interface) {
 	GinkgoHelper()
-	poller, err := env.InterfacesClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, lo.FromPtr(networkInterface.Name), networkInterface, nil) 
-	Expect(err).ToNot(HaveOccurred())	
+	poller, err := env.InterfacesClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, lo.FromPtr(networkInterface.Name), networkInterface, nil)
+	Expect(err).ToNot(HaveOccurred())
 	_, err = poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
 }
 
 func (env *Environment) GetClusterSubnet() *armnetwork.Subnet {
 	GinkgoHelper()
-		vnet, err := getVNET(env.Context, env.VNETClient, env.VNETResourceGroup)
-		Expect(err).ToNot(HaveOccurred())
-		return vnet.Properties.Subnets[0]
+	vnet, err := getVNET(env.Context, env.VNETClient, env.VNETResourceGroup)
+	Expect(err).ToNot(HaveOccurred())
+	return vnet.Properties.Subnets[0]
 }
 
 func getVNET(ctx context.Context, client *armnetwork.VirtualNetworksClient, vnetRG string) (*armnetwork.VirtualNetwork, error) {

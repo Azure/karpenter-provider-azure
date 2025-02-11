@@ -53,24 +53,22 @@ var _ = AfterEach(func() { env.AfterEach() })
 var _ = Describe("gc", func() {
 	It("should garbage collect network interfaces created by karpenter", func() {
 		env.ExpectCreatedInterface(armnetwork.Interface{
-			Name: lo.ToPtr("orphan-nic"),
+			Name:     lo.ToPtr("orphan-nic"),
 			Location: lo.ToPtr(env.Region),
-			Tags: azkarptest.ManagedTags("default"),
+			Tags:     azkarptest.ManagedTags("default"),
 			Properties: &armnetwork.InterfacePropertiesFormat{
 				IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 					{
-						Name: lo.ToPtr("ip-config"), 
+						Name: lo.ToPtr("ip-config"),
 						Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-							Primary: lo.ToPtr(true),
-							Subnet: env.GetClusterSubnet(), 
+							Primary:                   lo.ToPtr(true),
+							Subnet:                    env.GetClusterSubnet(),
 							PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
 						},
-					},			
+					},
 				},
-
 			},
-		})	
-		env.EventuallyExpectKarpenterNicsToBeDeleted() 
+		})
+		env.EventuallyExpectKarpenterNicsToBeDeleted()
 	})
 })
-

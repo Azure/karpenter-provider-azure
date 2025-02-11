@@ -49,12 +49,12 @@ type Environment struct {
 }
 
 type Vars struct {
-	NodeResourceGroup string
-	Region            string
-	SubscriptionID    string
-	VNETResourceGroup string
-	ACRName           string
-	ClusterName       string
+	NodeResourceGroup    string
+	Region               string
+	SubscriptionID       string
+	VNETResourceGroup    string
+	ACRName              string
+	ClusterName          string
 	ClusterResourceGroup string
 }
 type AzureClients struct {
@@ -67,18 +67,17 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv := &Environment{
 		Environment: env,
 		Vars: Vars{
-			SubscriptionID: os.Getenv("AZURE_SUBSCRIPTION_ID"),
-			ClusterName: os.Getenv("AZURE_CLUSTER_NAME"),
+			SubscriptionID:       os.Getenv("AZURE_SUBSCRIPTION_ID"),
+			ClusterName:          os.Getenv("AZURE_CLUSTER_NAME"),
 			ClusterResourceGroup: os.Getenv("AZURE_RESOURCE_GROUP"),
-			ACRName: os.Getenv("AZURE_ACR_NAME"),
-			Region: lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
-
+			ACRName:              os.Getenv("AZURE_ACR_NAME"),
+			Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		},
 	}
-	
-	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region) 
-	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP")=="", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
-	azureEnv.NodeResourceGroup = defaultNodeRG 
+
+	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
+	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
+	azureEnv.NodeResourceGroup = defaultNodeRG
 
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
