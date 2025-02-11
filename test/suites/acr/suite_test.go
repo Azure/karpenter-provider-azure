@@ -18,7 +18,6 @@ package acr
 
 import (
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
