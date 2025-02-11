@@ -66,19 +66,20 @@ func NewEnvironment(t *testing.T) *Environment {
 	env := common.NewEnvironment(t)
 	azureEnv := &Environment{
 		Environment: env,
-	}
-	azureEnv.ClusterName = os.Getenv("CLUSTER_NAME")
-	azureEnv.ClusterResourceGroup = os.Getenv("AZURE_RESOURCE_GROUP")
-	azureEnv.ACRName = os.Getenv("ACR_NAME")
-	azureEnv.Region = os.Getenv("AZURE_LOCATION")
+		Vars: Vars{
+			SubscriptionID: os.Getenv("AZURE_SUBSCRIPTION_ID"),
+			ClusterName: os.Getenv("AZURE_CLUSTER_NAME"),
+			ClusterResourceGroup: os.Getenv("AZURE_RESOURCE_GROUP"),
+			ACRName: os.Getenv("AZURE_ACR_NAME"),
+			Region: lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 
-	azureEnv.NodeResourceGroup = fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region) 
-	azureEnv.SubscriptionID = os.Getenv("AZURE_SUBSCRIPTION_ID")
-	azureEnv.VNETResourceGroup = os.Getenv("VNET_RESOURCE_GROUP")
-	if azureEnv.VNETResourceGroup == "" {
-		azureEnv.VNETResourceGroup = azureEnv.NodeResourceGroup
+		},
 	}
 	
+	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region) 
+	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP")=="", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
+	azureEnv.NodeResourceGroup = defaultNodeRG 
+
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		panic(err)
