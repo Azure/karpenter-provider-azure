@@ -158,7 +158,7 @@ jobs:
         if: inputs.suite != 'Nonbehavioral'
         run: |
           AZURE_CLUSTER_NAME=${{ env.CLUSTER_NAME }} AZURE_RESOURCE_GROUP=${{ env.RG_NAME }} make az-creds
-          AZURE_SUBSCRIPTION_ID=${{ secrets.E2E_SUBSCRIPTION_ID }} AZURE_RESOURCE_GROUP=${{ env.RG_NAME }} CLUSTER_NAME=${{ env.CLUSTER_NAME }} AZURE_ACR_NAME=${{ env.ACR_NAME}} TEST_SUITE="${{ inputs.suite }}" GIT_REF="$(git rev-parse HEAD)" make e2etests
+          AZURE_LOCATION=${{ inputs.location }} AZURE_SUBSCRIPTION_ID=${{ secrets.E2E_SUBSCRIPTION_ID }} AZURE_RESOURCE_GROUP=${{ env.RG_NAME }} CLUSTER_NAME=${{ env.CLUSTER_NAME }} AZURE_ACR_NAME=${{ env.ACR_NAME}} TEST_SUITE="${{ inputs.suite }}" GIT_REF="$(git rev-parse HEAD)" make e2etests
       - name: dump logs on failure
         uses: ./.github/actions/e2e/dump-logs
         if: failure() || cancelled()
