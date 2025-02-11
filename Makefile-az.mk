@@ -8,6 +8,7 @@ else
   AZURE_ACR_NAME ?= $(COMMON_NAME)
 endif
 
+AZURE_SIG_SUBSCRIPTION_ID ?= $(AZURE_SUBSCRIPTION_ID)
 AZURE_CLUSTER_NAME ?= $(COMMON_NAME)
 AZURE_RESOURCE_GROUP_MC = MC_$(AZURE_RESOURCE_GROUP)_$(AZURE_CLUSTER_NAME)_$(AZURE_LOCATION)
 
@@ -24,7 +25,7 @@ az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-cre
 
 az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay     az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-custom-vnet:  az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm-subnet-custom az-perm-acr az-configure-values-custom-vnet az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all-custom-vnet:  az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm-subnet-custom az-perm-acr az-configure-values az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 az-all-user:	     az-login                        az-mkaks-user                                                                   az-configure-values             az-helm-install-snapshot az-run-sample ## Provision the cluster and deploy Karpenter snapshot release
 # TODO: az-all-savm case is not currently built to support workload identity, need to re-evaluate
 az-all-savm:         az-login                        az-mkaks-savm                                 az-perm-savm                      az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
@@ -46,7 +47,8 @@ az-mkacr: az-mkrg ## Create test ACR
 az-acrimport: ## Imports an image to an acr registry
 	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6"
 
-az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses)
+az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses) 
+	kubectl delete deployments -n default --all
 	kubectl delete pods -n default --all
 	kubectl delete nodeclaims --all
 	kubectl delete nodepools --all
@@ -114,11 +116,7 @@ az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use
 	az group delete --name $(AZURE_RESOURCE_GROUP)
 
 az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart
-	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME)
-
-az-configure-values-custom-vnet:  ## Generate cluster-related values for Karpenter Helm chart (take custom subnet ID from first agentpool)
-	VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId") \
-	$(MAKE) az-configure-values
+	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) 
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
 	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \
@@ -135,6 +133,11 @@ az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
 	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
 	@echo Consider "make az-configure-values"!
+
+az-perm-sig: ## Create role assignments when testing with SIG images 
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
+	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --role "Reader" --scope /subscriptions/$(AZURE_SIG_SUBSCRIPTION_ID)/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu
+	az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --role "Reader" --scope /subscriptions/$(AZURE_SIG_SUBSCRIPTION_ID)/resourceGroups/AKS-AzureLinux/providers/Microsoft.Compute/galleries/AKSAzureLinux
 
 az-perm-subnet-custom: az-perm ## Create role assignments to let Karpenter manage VMs and Network (custom VNet)
 	$(eval VNET_SUBNET_ID=$(shell az aks show --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".agentPoolProfiles[0].vnetSubnetId"))
@@ -171,7 +174,7 @@ az-run: ## Deploy the controller from the current state of your git repository i
 	skaffold run
 
 az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be scaled manually)
-	kubectl apply -f examples/v1beta1/general-purpose.yaml
+	kubectl apply -f examples/v1/general-purpose.yaml
 	kubectl apply -f examples/workloads/inflate.yaml
 
 az-mc-show: ## show managed cluster
@@ -200,6 +203,10 @@ az-debug-bootstrap: ## Debug bootstrap (target first privateIP of the first NIC 
 
 az-cleanup: ## Delete the deployment
 	skaffold delete || true
+
+az-deploy-goldpinger: ## Deploy goldpinger for testing networking 
+	kubectl apply -f https://gist.githubusercontent.com/paulgmiller/084bd4605f1661a329e5ab891a826ae0/raw/94a32d259e137bb300ac8af3ef71caa471463f23/goldpinger-daemon.yaml
+	kubectl apply -f https://gist.githubusercontent.com/paulgmiller/7bca68cd08cccb4e9bc72b0a08485edf/raw/d6a103fb79a65083f6555e4d822554ed64f510f8/goldpinger-deploy.yaml
 
 az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 	helm repo add grafana-charts https://grafana.github.io/helm-charts
@@ -330,8 +337,8 @@ az-klogs-pretty: ## Pretty Print Karpenter logs
 az-kevents: ## Karpenter events
 	kubectl get events -A --field-selector source=karpenter
 
-az-node-viewer: ## Watch nodes using eks-node-viewer
-	eks-node-viewer --disable-pricing --node-selector "karpenter.sh/nodepool" # --resources cpu,memory
+az-node-viewer: ## Watch nodes using aks-node-viewer
+	aks-node-viewer # --node-selector "karpenter.sh/nodepool" --resources cpu,memory
 
 az-argvmlist: ## List current VMs owned by Karpenter
 	az graph query -q "Resources | where type =~ 'microsoft.compute/virtualmachines' | where resourceGroup == tolower('$(AZURE_RESOURCE_GROUP_MC)') | where tags has_cs 'karpenter.sh_nodepool'" \

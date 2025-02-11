@@ -46,6 +46,7 @@ import (
 	webhooksalt "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/webhooks"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -88,8 +89,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	azClient, err := instance.CreateAZClient(ctx, azConfig)
 	lo.Must0(err, "creating Azure client")
 
-	vnetGUID, err := getVnetGUID(azConfig, options.FromContext(ctx).SubnetID)
-	lo.Must0(err, "getting VNET GUID")
+	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+		vnetGUID, err := getVnetGUID(azConfig, options.FromContext(ctx).SubnetID)
+		lo.Must0(err, "getting VNET GUID")
+		options.FromContext(ctx).VnetGUID = vnetGUID
+	}
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
@@ -98,12 +102,15 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		operator.Elected(),
 	)
+
 	imageProvider := imagefamily.NewProvider(
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
 			azurecache.DefaultCleanupInterval),
 		azClient.ImageVersionsClient,
 		azConfig.Location,
+		azConfig.SubscriptionID,
+		azClient.NodeImageVersionsClient,
 	)
 	imageResolver := imagefamily.New(
 		operator.GetClient(),
@@ -121,7 +128,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.KubeletIdentityClientID,
 		azConfig.NodeResourceGroup,
 		azConfig.Location,
-		vnetGUID,
+		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
 	)
 	instanceTypeProvider := instancetype.NewDefaultProvider(

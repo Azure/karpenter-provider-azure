@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.3
+    controller-gen.kubebuilder.io/version: v0.16.5
   name: nodepools.karpenter.sh
 spec:
   group: karpenter.sh
@@ -676,6 +676,8 @@ spec:
                               rule: self.all(x, x != "karpenter.sh/nodepool")
                             - message: label "kubernetes.io/hostname" is restricted
                               rule: self.all(x, x != "kubernetes.io/hostname")
+                            - message: label domain "karpenter.azure.com" is restricted
+                              rule: self.all(x, x in [ "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-accelerator", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-encryptionathost-capable", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !x.find("^([^/]+)").endsWith("karpenter.azure.com"))
                       type: object
                     spec:
                       description: NodeClaimSpec describes the desired state of the NodeClaim
@@ -832,6 +834,8 @@ spec:
                                     rule: self != "karpenter.sh/nodepool"
                                   - message: label "kubernetes.io/hostname" is restricted
                                     rule: self != "kubernetes.io/hostname"
+                                  - message: label domain "karpenter.azure.com" is restricted
+                                    rule: self in [ "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-accelerator", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-encryptionathost-capable", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
                               minValues:
                                 description: |-
                                   This field is ALPHA and can be dropped or replaced at any time
@@ -1078,4 +1082,3 @@ spec:
           namespace: {{ .Values.webhook.serviceNamespace | default .Release.Namespace }}
           port: {{ .Values.webhook.port }}
 {{- end }}
-

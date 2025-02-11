@@ -66,18 +66,23 @@ type Options struct {
 	ClusterID                      string
 	KubeletClientTLSBootstrapToken string // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
 	SSHPublicKey                   string // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1alpha2.AKSNodeClass?
-	NetworkPlugin                  string // => NetworkPlugin in bootstrap
-	NetworkPolicy                  string // => NetworkPolicy in bootstrap
-	NetworkPluginMode              string // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
-	NetworkDataplane               string
-	NodeIdentities                 []string // => Applied onto each VM
 
-	SubnetID string // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
-	setFlags map[string]bool
+	NetworkPlugin     string // => NetworkPlugin in bootstrap
+	NetworkPolicy     string // => NetworkPolicy in bootstrap
+	NetworkPluginMode string // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
+	NetworkDataplane  string
 
-	NodeResourceGroup          string
+	NodeIdentities []string // => Applied onto each VM
+	VnetGUID       string   // resource guid used by azure cni for identifying the right vnet
+	SubnetID       string   // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
+	setFlags       map[string]bool
+
 	ProvisionMode              string
 	NodeBootstrappingServerURL string
+	UseSIG                     bool // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+
+	SIGSubscriptionID string
+	NodeResourceGroup string
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -90,11 +95,14 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", consts.NetworkPluginModeOverlay), "network plugin mode of the cluster.")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
 	fs.StringVar(&o.NetworkDataplane, "network-dataplane", env.WithDefaultString("NETWORK_DATAPLANE", "cilium"), "The network dataplane used by the cluster.")
+	fs.StringVar(&o.VnetGUID, "vnet-guid", env.WithDefaultString("VNET_GUID", ""), "The vnet guid of the clusters vnet, only required by azure cni with overlay")
 	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
-	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
+	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live")
+	fs.BoolVar(&o.UseSIG, "use-sig", env.WithDefaultBool("USE_SIG", false), "If set to true karpenter will use the AKS managed shared image galleries and the node image versions api. If set to false karpenter will use community image galleries. Only a subset of image features will be available in the community image galleries and this flag is only for the managed node provisioning addon.")
+	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 }
 
 func (o Options) GetAPIServerName() string {
