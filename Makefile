@@ -25,7 +25,7 @@ presubmit: verify test ## Run all steps in the developer loop
 
 ci-test: test coverage ## Runs tests and submits coverage
 
-ci-non-test: verify licenses vulncheck ## Runs checks other than tests
+ci-non-test: echo ci-non-test && verify licenses vulncheck ## Runs checks other than tests
 
 test: ## Run tests
 	ginkgo -vv \
