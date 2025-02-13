@@ -44,11 +44,7 @@ const (
 
 type Environment struct {
 	*common.Environment
-	AzureClients
-	Vars
-}
 
-type Vars struct {
 	NodeResourceGroup    string
 	Region               string
 	SubscriptionID       string
@@ -56,44 +52,28 @@ type Vars struct {
 	ACRName              string
 	ClusterName          string
 	ClusterResourceGroup string
-}
-type AzureClients struct {
+
 	VNETClient       *armnetwork.VirtualNetworksClient
 	InterfacesClient *armnetwork.InterfacesClient
 }
 
 func NewEnvironment(t *testing.T) *Environment {
-	env := common.NewEnvironment(t)
 	azureEnv := &Environment{
-		Environment: env,
-		Vars: Vars{
-			SubscriptionID:       os.Getenv("AZURE_SUBSCRIPTION_ID"),
-			ClusterName:          os.Getenv("AZURE_CLUSTER_NAME"),
-			ClusterResourceGroup: os.Getenv("AZURE_RESOURCE_GROUP"),
-			ACRName:              os.Getenv("AZURE_ACR_NAME"),
-			Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
-		},
+		Environment:          common.NewEnvironment(t),
+		SubscriptionID:       lo.Must(os.LookupEnv("AZURE_SUBSCRIPTION_ID")),
+		ClusterName:          lo.Must(os.LookupEnv("AZURE_CLUSTER_NAME")),
+		ClusterResourceGroup: lo.Must(os.LookupEnv("AZURE_RESOURCE_GROUP")),
+		ACRName:              lo.Must(os.LookupEnv("ACR_NAME")),
+		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 	}
 
 	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
 	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		panic(err)
-	}
-
-	interfacesClient, err := armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil)
-	if err != nil {
-		panic(err)
-	}
-	vnetClient, err := armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil)
-	if err != nil {
-		panic(err)
-	}
-	azureEnv.VNETClient = vnetClient
-	azureEnv.InterfacesClient = interfacesClient
+	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	azureEnv.VNETClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.InterfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
 	return azureEnv
 }
 
