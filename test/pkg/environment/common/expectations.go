@@ -931,3 +931,22 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 		return p, true
 	})...)
 }
+
+func (env *Environment) MarkManagedPools() {
+	// List nodepools
+	nodePoolList := &karpv1.NodePoolList{}
+	if err := env.Client.List(env.Context, nodePoolList); err != nil {
+		Fail(err.Error())
+	}
+	for _, np := range nodePoolList.Items {
+		if np.Name == "default" || np.Name == "system-surge" {
+		neverScheduleTaint := corev1.Taint{
+		 Key: "never-schedule", 
+		 Effect: corev1.TaintEffectNoExecute,
+		 Value: "true",
+	 }
+	np.Spec.Template.Spec.Taints = append(np.Spec.Template.Spec.Taints, neverScheduleTaint)		
+		env.ExpectUpdated(&np)		
+		}
+	}
+}

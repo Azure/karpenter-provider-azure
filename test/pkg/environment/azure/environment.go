@@ -46,10 +46,12 @@ type Environment struct {
 func NewEnvironment(t *testing.T) *Environment {
 	env := common.NewEnvironment(t)
 
-	return &Environment{
+	azureEnv := &Environment{
 		Region:      "westus2",
 		Environment: env,
 	}
+	azureEnv.MarkManagedPools() // Simply marking them once is enough for our hack here
+	return azureEnv
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1alpha2.AKSNodeClass {
