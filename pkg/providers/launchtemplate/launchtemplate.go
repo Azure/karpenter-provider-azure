@@ -18,6 +18,7 @@ package launchtemplate
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/go-autorest/autorest/to"
@@ -39,6 +40,7 @@ const (
 	karpenterManagedTagKey = "karpenter.azure.com/cluster"
 
 	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
+	vnetISAzureCNI			= "kubernetes.azure.com/azure-cni-overlay"
 	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
 	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
 	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
@@ -123,7 +125,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
 
-	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+	if isAzureCNIOverlay(ctx) {
 		// TODO: make conditional on pod subnet
 		vnetLabels, err := p.getVnetInfoLabels(subnetID)
 		if err != nil {
@@ -164,11 +166,15 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
 		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
+		NetworkPluginMode:				options.FromContext(ctx).NetworkPluginMode,
 		SubnetID:                       subnetID,
 		ClusterResourceGroup:           p.clusterResourceGroup,
 	}, nil
 }
 
+func isAzureCNIOverlay(ctx context.Context) bool {
+	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay 
+}
 func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
 	// merge and convert to ARM tags
 	azureTags := mergeTags(params.Tags, map[string]string{karpenterManagedTagKey: params.ClusterName})
@@ -215,6 +221,7 @@ func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error)
 	vnetLabels := map[string]string{
 		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
 		vnetGUIDLabel:           p.vnetGUID,
+		vnetISAzureCNI: strconv.FormatBool(true),
 		vnetPodNetworkTypeLabel: consts.NetworkPluginModeOverlay,
 	}
 	return vnetLabels, nil
