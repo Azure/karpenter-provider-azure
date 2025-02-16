@@ -125,22 +125,8 @@ var _ = Describe("Options", func() {
 		})
 	})
 	Context("Validation", func() {
-		It("should fail when VNET GUID is unset", func() {
-			errMsg := "vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay"
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vm-memory-overhead-percent", "-0.01",
-				"--network-plugin", "azure",
-				"--network-plugin-mode", "overlay",
-			)
-			Expect(err).To(MatchError(ContainSubstring(errMsg)))
-		})
-		It("should fail when VNET GUID is not a uuid", func() {
-			errMsg := "vnet-guid null is malformed with err:"
+		It("should fail when vnet guid is not a uuid", func() {
+			errMsg := "vnet-guid null is malformed"
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -151,6 +137,21 @@ var _ = Describe("Options", func() {
 				"--network-plugin", "azure",
 				"--network-plugin-mode", "overlay",
 				"--vnet-guid", "null", // sometimes output of jq can produce null or some other data, we should enforce that the vnet guid passed in at least looks like a uuid
+			)
+			Expect(err).To(MatchError(ContainSubstring(errMsg)))
+		})
+
+		It("should fail when vnet guid is empty for azure cni with overlay clusters", func() {
+			errMsg := "vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay"
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vm-memory-overhead-percent", "-0.01",
+				"--network-plugin", "azure",
+				"--network-plugin-mode", "overlay",
 			)
 			Expect(err).To(MatchError(ContainSubstring(errMsg)))
 		})
