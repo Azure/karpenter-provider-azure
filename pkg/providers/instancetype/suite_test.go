@@ -1223,11 +1223,11 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should include karpenter.sh/unregistered taint", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--register-with-taints=" + karpv1.UnregisteredNoExecuteTaint.ToString()))
 		})
-		It("should set agentbaker network plugin to none if using azure cni with overlay instead delegating cni installation to daemonsets", func(){
+		It("should set agentbaker network plugin to none if using azure cni with overlay instead delegating cni installation to daemonsets", func() {
 			// The network plugin is azure at the controlplane level
-			Expect(options.FromContext(ctx).NetworkPlugin).To(Equal(consts.NetworkPluginAzure)) 
-			// But it is using overlay	
-			Expect(options.FromContext(ctx).NetworkPluginMode).To(Equal(consts.NetworkPluginModeOverlay)) 
+			Expect(options.FromContext(ctx).NetworkPlugin).To(Equal(consts.NetworkPluginAzure))
+			// But it is using overlay
+			Expect(options.FromContext(ctx).NetworkPluginMode).To(Equal(consts.NetworkPluginModeOverlay))
 			// so we should set network plugin to none in cse to delegate cni installation
 			Expect(customData).To(ContainSubstring("NETWORK_PLUGIN=none"))
 		})

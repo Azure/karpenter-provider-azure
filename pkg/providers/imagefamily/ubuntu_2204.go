@@ -108,7 +108,7 @@ func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 		APIServerName:                  u.Options.APIServerName,
 		KubeletClientTLSBootstrapToken: u.Options.KubeletClientTLSBootstrapToken,
 		NetworkPlugin:                  u.Options.NetworkPlugin,
-		NetworkPluginMode:				u.Options.NetworkPluginMode,
+		NetworkPluginMode:              u.Options.NetworkPluginMode,
 		NetworkPolicy:                  u.Options.NetworkPolicy,
 		KubernetesVersion:              u.Options.KubernetesVersion,
 	}
