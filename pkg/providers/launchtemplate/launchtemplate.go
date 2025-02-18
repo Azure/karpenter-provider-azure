@@ -39,11 +39,11 @@ import (
 const (
 	karpenterManagedTagKey = "karpenter.azure.com/cluster"
 
-	vnetDataPlaneLabel       = "kubernetes.azure.com/ebpf-dataplane"
-	vnetAzureCNIOverlayLabel = "kubernetes.azure.com/azure-cni-overlay"
-	vnetSubnetNameLabel      = "kubernetes.azure.com/network-subnet"
-	vnetGUIDLabel            = "kubernetes.azure.com/nodenetwork-vnetguid"
-	vnetPodNetworkTypeLabel  = "kubernetes.azure.com/podnetwork-type"
+	dataplaneLabel       = "kubernetes.azure.com/ebpf-dataplane"
+	azureCNIOverlayLabel = "kubernetes.azure.com/azure-cni-overlay"
+	subnetNameLabel      = "kubernetes.azure.com/network-subnet"
+	vnetGUIDLabel        = "kubernetes.azure.com/nodenetwork-vnetguid"
+	podNetworkTypeLabel  = "kubernetes.azure.com/podnetwork-type"
 )
 
 type Template struct {
@@ -142,7 +142,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		//            values:
 		//              - cilium
 
-		labels[vnetDataPlaneLabel] = consts.NetworkDataplaneCilium
+		labels[dataplaneLabel] = consts.NetworkDataplaneCilium
 	}
 
 	return &parameters.StaticParameters{
@@ -219,10 +219,10 @@ func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error)
 		return nil, err
 	}
 	vnetLabels := map[string]string{
-		vnetSubnetNameLabel:      vnetSubnetComponents.SubnetName,
-		vnetGUIDLabel:            p.vnetGUID,
-		vnetAzureCNIOverlayLabel: strconv.FormatBool(true),
-		vnetPodNetworkTypeLabel:  consts.NetworkPluginModeOverlay,
+		subnetNameLabel:      vnetSubnetComponents.SubnetName,
+		vnetGUIDLabel:        p.vnetGUID,
+		azureCNIOverlayLabel: strconv.FormatBool(true),
+		podNetworkTypeLabel:  consts.NetworkPluginModeOverlay,
 	}
 	return vnetLabels, nil
 }
