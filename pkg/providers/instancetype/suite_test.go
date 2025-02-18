@@ -51,7 +51,6 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 
@@ -1223,15 +1222,54 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should include karpenter.sh/unregistered taint", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--register-with-taints=" + karpv1.UnregisteredNoExecuteTaint.ToString()))
 		})
-		It("should set agentbaker network plugin to none if using azure cni with overlay instead delegating cni installation to daemonsets", func() {
-			// The network plugin is azure at the controlplane level
-			Expect(options.FromContext(ctx).NetworkPlugin).To(Equal(consts.NetworkPluginAzure))
-			// But it is using overlay
-			Expect(options.FromContext(ctx).NetworkPluginMode).To(Equal(consts.NetworkPluginModeOverlay))
-			// so we should set network plugin to none in cse to delegate cni installation
-			Expect(customData).To(ContainSubstring("NETWORK_PLUGIN=none"))
-		})
 	})
+
+	DescribeTable("Azure CNI Labels and Bootstrap", func(
+		networkPlugin, networkPluginMode, networkDataplane, expectedAgentBakerNetPlugin string,
+		expectedNodeLabels sets.Set[string]) {
+		options := test.Options(test.OptionsFields{
+			NetworkPlugin:     lo.ToPtr(networkPlugin),
+			NetworkPluginMode: lo.ToPtr(networkPluginMode),
+			NetworkDataplane:  lo.ToPtr(networkDataplane),
+		})
+		ctx = options.ToContext(ctx)
+
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		pod := coretest.UnschedulablePod()
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+		customData := ExpectDecodedCustomData(azureEnv)
+
+		Expect(customData).To(ContainSubstring(fmt.Sprintf("NETWORK_PLUGIN=%s", expectedAgentBakerNetPlugin)))
+
+		for label := range expectedNodeLabels {
+			Expect(customData).To(ContainSubstring(label))
+		}
+	},
+		Entry("Azure CNI V1",
+			"azure", "", "",
+			"azure", sets.New[string]()),
+		Entry("Azure CNI w Overlay",
+			"azure", "overlay", "",
+			"none",
+			sets.New(
+				"kubernetes.azure.com/azure-cni-overlay=true",
+				"kubernetes.azure.com/network-subnet=karpentersub",
+				"kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid",
+				"kubernetes.azure.com/podnetwork-type=overlay",
+			)),
+		Entry("Azure CNI w Overlay w Cilium",
+			"azure", "overlay", "cilium",
+			"none",
+			sets.New(
+				"kubernetes.azure.com/azure-cni-overlay=true",
+				"kubernetes.azure.com/network-subnet=karpentersub",
+				"kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid",
+				"kubernetes.azure.com/podnetwork-type=overlay",
+				"kubernetes.azure.com/ebpf-dataplane=cilium",
+			)),
+	)
+
 	Context("LoadBalancer", func() {
 		resourceGroup := "test-resourceGroup"
 
@@ -1362,6 +1400,5 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 
 func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
-
 	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 }
