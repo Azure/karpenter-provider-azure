@@ -1224,7 +1224,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	DescribeTable("Azure CNI Labels and Bootstrap", func(
+	DescribeTable("Azure CNI node labels and agentbaker network plugin", func(
 		networkPlugin, networkPluginMode, networkDataplane, expectedAgentBakerNetPlugin string,
 		expectedNodeLabels sets.Set[string]) {
 		options := test.Options(test.OptionsFields{

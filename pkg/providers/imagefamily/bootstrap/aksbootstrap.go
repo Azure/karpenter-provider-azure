@@ -455,7 +455,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.ResourceGroup = a.ResourceGroup
 	nbv.UserAssignedIdentityID = a.KubeletIdentityClientID
 
-    // In some cases we don't need the node to do anything with CNI so tell it NetworkPlugin is 'none'
+	// In some cases we don't need the node to do anything with CNI so tell it NetworkPlugin is 'none'
 	nbv.NetworkPlugin = lo.Ternary(a.NetworkPluginMode == consts.NetworkPluginModeOverlay, consts.NetworkPluginNone, a.NetworkPlugin)
 
 	nbv.NetworkPolicy = a.NetworkPolicy
