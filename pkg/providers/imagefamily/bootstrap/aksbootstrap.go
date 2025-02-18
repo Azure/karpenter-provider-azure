@@ -455,8 +455,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.ResourceGroup = a.ResourceGroup
 	nbv.UserAssignedIdentityID = a.KubeletIdentityClientID
 
-	// if we are using overlay, we delegate the installation of the cni to the cns daemonset and will put none as to not drop the
-	// 10-azure.conflist that will use nodesubnet
+    // In some cases we don't need the node to do anything with CNI so tell it NetworkPlugin is 'none'
 	nbv.NetworkPlugin = lo.Ternary(a.NetworkPluginMode == consts.NetworkPluginModeOverlay, consts.NetworkPluginNone, a.NetworkPlugin)
 
 	nbv.NetworkPolicy = a.NetworkPolicy
