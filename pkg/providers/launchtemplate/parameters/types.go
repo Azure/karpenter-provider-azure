@@ -40,7 +40,6 @@ type StaticParameters struct {
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
 	NetworkPlugin                  string
-	NetworkPluginMode              string
 	NetworkPolicy                  string
 	KubernetesVersion              string
 	SubnetID                       string

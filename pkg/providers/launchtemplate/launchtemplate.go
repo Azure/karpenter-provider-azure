@@ -164,17 +164,28 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		ClusterID:                      options.FromContext(ctx).ClusterID,
 		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
-		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
+		NetworkPlugin:                  getAgentbakerNetworkPlugin(ctx),
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
-		NetworkPluginMode:              options.FromContext(ctx).NetworkPluginMode,
 		SubnetID:                       subnetID,
 		ClusterResourceGroup:           p.clusterResourceGroup,
 	}, nil
 }
 
+func getAgentbakerNetworkPlugin(ctx context.Context) string {
+	if isAzureCNIOverlay(ctx) || isCiliumNodeSubnet(ctx) {
+		return consts.NetworkPluginNone
+	}
+	return consts.NetworkPluginAzure
+}
+
+func isCiliumNodeSubnet(ctx context.Context) bool {
+	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeNone && options.FromContext(ctx).NetworkDataplane == consts.NetworkDataplaneCilium
+}
+
 func isAzureCNIOverlay(ctx context.Context) bool {
 	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay
 }
+
 func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
 	// merge and convert to ARM tags
 	azureTags := mergeTags(params.Tags, map[string]string{karpenterManagedTagKey: params.ClusterName})

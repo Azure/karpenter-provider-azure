@@ -1268,6 +1268,10 @@ var _ = Describe("InstanceType Provider", func() {
 				"kubernetes.azure.com/podnetwork-type=overlay",
 				"kubernetes.azure.com/ebpf-dataplane=cilium",
 			)),
+		Entry("Cilium w feature flag Microsoft.ContainerService/EnableCiliumNodeSubnet",
+			"azure", "", "cilium",
+			"none",
+			sets.New("kubernetes.azure.com/ebpf-dataplane=cilium")),
 	)
 
 	Context("LoadBalancer", func() {

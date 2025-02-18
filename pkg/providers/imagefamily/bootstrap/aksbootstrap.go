@@ -24,7 +24,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
@@ -47,7 +46,6 @@ type AKS struct {
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
 	NetworkPlugin                  string
-	NetworkPluginMode              string
 	NetworkPolicy                  string
 	KubernetesVersion              string
 }
@@ -455,8 +453,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.ResourceGroup = a.ResourceGroup
 	nbv.UserAssignedIdentityID = a.KubeletIdentityClientID
 
-	// In some cases we don't need the node to do anything with CNI so tell it NetworkPlugin is 'none'
-	nbv.NetworkPlugin = lo.Ternary(a.NetworkPluginMode == consts.NetworkPluginModeOverlay, consts.NetworkPluginNone, a.NetworkPlugin)
+	nbv.NetworkPlugin = a.NetworkPlugin
 
 	nbv.NetworkPolicy = a.NetworkPolicy
 	nbv.KubernetesVersion = a.KubernetesVersion
