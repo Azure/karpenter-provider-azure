@@ -63,12 +63,12 @@ func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Inter
 
 func (env *Environment) GetClusterSubnet() *armnetwork.Subnet {
 	GinkgoHelper()
-	vnet, err := getVNET(env.Context, env.VNETClient, env.VNETResourceGroup)
+	vnet, err := firstVNETInRG(env.Context, env.VNETClient, env.VNETResourceGroup)
 	Expect(err).ToNot(HaveOccurred())
 	return vnet.Properties.Subnets[0]
 }
 
-func getVNET(ctx context.Context, client *armnetwork.VirtualNetworksClient, vnetRG string) (*armnetwork.VirtualNetwork, error) {
+func firstVNETInRG(ctx context.Context, client *armnetwork.VirtualNetworksClient, vnetRG string) (*armnetwork.VirtualNetwork, error) {
 	pager := client.NewListPager(vnetRG, nil)
 	for pager.More() {
 		resp, err := pager.NextPage(ctx)

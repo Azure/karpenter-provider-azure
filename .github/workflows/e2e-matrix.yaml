@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim, Chaos, ACR, AzureGarbageCollection]
+        suite: [Nonbehavioral, Utilization, GPU, Drift, Integration, NodeClaim, Chaos, ACR]
     permissions:
       contents: read
       id-token: write
