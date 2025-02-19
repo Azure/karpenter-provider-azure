@@ -68,6 +68,7 @@ func (env *Environment) GetClusterSubnet() *armnetwork.Subnet {
 	return vnet.Properties.Subnets[0]
 }
 
+// This returns the first vnet we find in the resource group, works for managed vnet, it hasn't been tested on custom vnet.
 func firstVNETInRG(ctx context.Context, client *armnetwork.VirtualNetworksClient, vnetRG string) (*armnetwork.VirtualNetwork, error) {
 	pager := client.NewListPager(vnetRG, nil)
 	for pager.More() {
