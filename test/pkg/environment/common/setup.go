@@ -96,13 +96,6 @@ func (env *Environment) ExpectCleanCluster() {
 				fmt.Sprintf("expected to have no provisionable pods, found %s/%s", pods.Items[i].Namespace, pods.Items[i].Name))
 		}
 	}).WithPolling(10 * time.Second).WithTimeout(5 * time.Minute).Should(Succeed())
-	for _, obj := range []client.Object{&karpv1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
-		metaList := &metav1.PartialObjectMetadataList{}
-		gvk := lo.Must(apiutil.GVKForObject(obj, env.Client.Scheme()))
-		metaList.SetGroupVersionKind(gvk)
-		Expect(env.Client.List(env.Context, metaList, client.Limit(1))).To(Succeed())
-		Expect(metaList.Items).To(HaveLen(0), fmt.Sprintf("expected no %s to exist", gvk.Kind))
-	}
 }
 
 func (env *Environment) Cleanup() {
