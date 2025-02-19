@@ -257,7 +257,6 @@ az-taintsystemnodes: ## Taint all system nodepool nodes
 az-taintnodes:
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
 
-
 az-e2etests: ## Run e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
 	TEST_SUITE=Utilization make e2etests
