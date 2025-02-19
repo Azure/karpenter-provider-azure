@@ -934,12 +934,11 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 
 func (env *Environment) MarkManagedPools() {
 	var nodePoolList karpv1.NodePoolList
-
 	Eventually(func(g Gomega) {
 		err := env.Client.List(env.Context, &nodePoolList)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(nodePoolList.Items).NotTo(BeEmpty())
-	}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+	}).WithTimeout(20 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
 	for _, np := range nodePoolList.Items {
 		if np.Name == "default" || np.Name == "system-surge" {

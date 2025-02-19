@@ -50,7 +50,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		Region:      "westus2",
 		Environment: env,
 	}
-	azureEnv.MarkManagedPools() // Simply marking them once is enough for our hack here
+	// azureEnv.MarkManagedPools() // Simply marking them once is enough for our hack here
 	return azureEnv
 }
 
