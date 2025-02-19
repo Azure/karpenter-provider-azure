@@ -933,20 +933,23 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 }
 
 func (env *Environment) MarkManagedPools() {
-	// List nodepools
-	nodePoolList := &karpv1.NodePoolList{}
-	if err := env.Client.List(env.Context, nodePoolList); err != nil {
-		Fail(err.Error())
-	}
+	var nodePoolList karpv1.NodePoolList
+
+	Eventually(func(g Gomega) {
+		err := env.Client.List(env.Context, &nodePoolList)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(nodePoolList.Items).NotTo(BeEmpty())
+	}).WithTimeout(10 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+
 	for _, np := range nodePoolList.Items {
 		if np.Name == "default" || np.Name == "system-surge" {
-		neverScheduleTaint := corev1.Taint{
-		 Key: "never-schedule", 
-		 Effect: corev1.TaintEffectNoExecute,
-		 Value: "true",
-	 }
-	np.Spec.Template.Spec.Taints = append(np.Spec.Template.Spec.Taints, neverScheduleTaint)		
-		env.ExpectUpdated(&np)		
+			neverScheduleTaint := corev1.Taint{
+				Key:    "never-schedule",
+				Effect: corev1.TaintEffectNoExecute,
+				Value:  "true",
+			}
+			np.Spec.Template.Spec.Taints = append(np.Spec.Template.Spec.Taints, neverScheduleTaint)
+			env.ExpectUpdated(&np)
 		}
 	}
 }
