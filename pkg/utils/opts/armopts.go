@@ -36,7 +36,7 @@ func DefaultArmOpts() *arm.ClientOptions {
 	opts.Transport = defaultHTTPClient
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	opts.PerCallPolicies = append(opts.PerCallPolicies, shPolicy.NewLoggingPolicy(logger))
+	opts.PerCallPolicies = append(opts.PerCallPolicies, shPolicy.NewLoggingPolicy(*logger))
 	return opts
 }
 
