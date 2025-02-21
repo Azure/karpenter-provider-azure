@@ -161,7 +161,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(decodedString).To(SatisfyAll(
 				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
-				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
+				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
 				ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
 			))
@@ -522,7 +522,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Since the network plugin is not "azure" it should not include the following kubeletLabels
 			Expect(customData).To(Not(SatisfyAny(
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
-				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid"),
+				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
 			)))
 		})
@@ -1255,7 +1255,7 @@ var _ = Describe("InstanceType Provider", func() {
 			sets.New(
 				"kubernetes.azure.com/azure-cni-overlay=true",
 				"kubernetes.azure.com/network-subnet=karpentersub",
-				"kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid",
+				"kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c",
 				"kubernetes.azure.com/podnetwork-type=overlay",
 			)),
 		Entry("Azure CNI w Overlay w Cilium",
@@ -1264,7 +1264,7 @@ var _ = Describe("InstanceType Provider", func() {
 			sets.New(
 				"kubernetes.azure.com/azure-cni-overlay=true",
 				"kubernetes.azure.com/network-subnet=karpentersub",
-				"kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid",
+				"kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c",
 				"kubernetes.azure.com/podnetwork-type=overlay",
 				"kubernetes.azure.com/ebpf-dataplane=cilium",
 			)),
