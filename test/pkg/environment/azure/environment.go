@@ -17,6 +17,8 @@ limitations under the License.
 package azure
 
 import (
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/samber/lo"
@@ -24,6 +26,8 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -40,16 +44,37 @@ const (
 
 type Environment struct {
 	*common.Environment
-	Region string
+
+	NodeResourceGroup    string
+	Region               string
+	SubscriptionID       string
+	VNETResourceGroup    string
+	ACRName              string
+	ClusterName          string
+	ClusterResourceGroup string
+
+	VNETClient       *armnetwork.VirtualNetworksClient
+	InterfacesClient *armnetwork.InterfacesClient
 }
 
 func NewEnvironment(t *testing.T) *Environment {
-	env := common.NewEnvironment(t)
-
-	return &Environment{
-		Region:      "westus2",
-		Environment: env,
+	azureEnv := &Environment{
+		Environment:          common.NewEnvironment(t),
+		SubscriptionID:       lo.Must(os.LookupEnv("AZURE_SUBSCRIPTION_ID")),
+		ClusterName:          lo.Must(os.LookupEnv("AZURE_CLUSTER_NAME")),
+		ClusterResourceGroup: lo.Must(os.LookupEnv("AZURE_RESOURCE_GROUP")),
+		ACRName:              lo.Must(os.LookupEnv("ACR_NAME")),
+		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 	}
+
+	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
+	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
+	azureEnv.NodeResourceGroup = defaultNodeRG
+
+	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	azureEnv.VNETClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.InterfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
+	return azureEnv
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1alpha2.AKSNodeClass {
