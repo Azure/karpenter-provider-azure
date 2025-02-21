@@ -163,6 +163,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
 				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
+				ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
 			))
 		})
 		It("should use the subnet specified in the nodeclass", func() {
@@ -1222,6 +1223,57 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--register-with-taints=" + karpv1.UnregisteredNoExecuteTaint.ToString()))
 		})
 	})
+
+	DescribeTable("Azure CNI node labels and agentbaker network plugin", func(
+		networkPlugin, networkPluginMode, networkDataplane, expectedAgentBakerNetPlugin string,
+		expectedNodeLabels sets.Set[string]) {
+		options := test.Options(test.OptionsFields{
+			NetworkPlugin:     lo.ToPtr(networkPlugin),
+			NetworkPluginMode: lo.ToPtr(networkPluginMode),
+			NetworkDataplane:  lo.ToPtr(networkDataplane),
+		})
+		ctx = options.ToContext(ctx)
+
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		pod := coretest.UnschedulablePod()
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+		customData := ExpectDecodedCustomData(azureEnv)
+
+		Expect(customData).To(ContainSubstring(fmt.Sprintf("NETWORK_PLUGIN=%s", expectedAgentBakerNetPlugin)))
+
+		for label := range expectedNodeLabels {
+			Expect(customData).To(ContainSubstring(label))
+		}
+	},
+		Entry("Azure CNI V1",
+			"azure", "", "",
+			"azure", sets.New[string]()),
+		Entry("Azure CNI w Overlay",
+			"azure", "overlay", "",
+			"none",
+			sets.New(
+				"kubernetes.azure.com/azure-cni-overlay=true",
+				"kubernetes.azure.com/network-subnet=karpentersub",
+				"kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid",
+				"kubernetes.azure.com/podnetwork-type=overlay",
+			)),
+		Entry("Azure CNI w Overlay w Cilium",
+			"azure", "overlay", "cilium",
+			"none",
+			sets.New(
+				"kubernetes.azure.com/azure-cni-overlay=true",
+				"kubernetes.azure.com/network-subnet=karpentersub",
+				"kubernetes.azure.com/nodenetwork-vnetguid=test-vnet-guid",
+				"kubernetes.azure.com/podnetwork-type=overlay",
+				"kubernetes.azure.com/ebpf-dataplane=cilium",
+			)),
+		Entry("Cilium w feature flag Microsoft.ContainerService/EnableCiliumNodeSubnet",
+			"azure", "", "cilium",
+			"none",
+			sets.New("kubernetes.azure.com/ebpf-dataplane=cilium")),
+	)
+
 	Context("LoadBalancer", func() {
 		resourceGroup := "test-resourceGroup"
 
@@ -1352,6 +1404,5 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 
 func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
-
 	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 }
