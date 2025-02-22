@@ -20,10 +20,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"math"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -166,6 +169,11 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 func (p *ProvisionClientBootstrap) getNodeBootstrappingFromClient(ctx context.Context, provisionProfile *models.ProvisionProfile, provisionHelperValues *models.ProvisionHelperValues, bootstrapToken string) (string, string, error) {
 	transport := httptransport.New(options.FromContext(ctx).NodeBootstrappingServerURL, "/", []string{"http"})
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	loggingClient := restlogger.NewLoggingClient(logger)
+	transport.Transport = loggingClient.Transport
+
 	client := client.New(transport, strfmt.Default)
 
 	params := operations.NewNodeBootstrappingGetParams()
@@ -183,7 +191,7 @@ func (p *ProvisionClientBootstrap) getNodeBootstrappingFromClient(ctx context.Co
 
 	resp, err := client.Operations.NodeBootstrappingGet(params)
 	if err != nil {
-		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisted along with retriable status on the server side.
+		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisited along with retriable status on the server side.
 		return "", "", err
 	}
 
@@ -239,7 +247,7 @@ func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
 }
 
 func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory float64) float64 {
-	// This is not the best way to do it... But will be refactored later, given that retreiving the original memory properly might involves some restructure.
+	// This is not the best way to do it... But will be refactored later, given that retrieving the original memory properly might involves some restructure.
 	// Due to the fact that it is abstracted behind the cloudprovider interface.
 	return adjustedMemory / (1 - vmMemoryOverheadPercent)
 }
