@@ -295,7 +295,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
 		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
 		// ips from the nodeclass instead of using the default
-		for i := 1; i < consts.DefaultKubernetesMaxPods; i++ {
+		for i := 1; i < int(opts.MaxPods); i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
 				&armnetwork.InterfaceIPConfiguration{
@@ -322,6 +322,7 @@ type createNICOptions struct {
 	LaunchTemplate    *launchtemplate.Template
 	NetworkPlugin     string
 	NetworkPluginMode string
+	MaxPods           int32
 }
 
 func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
@@ -496,6 +497,7 @@ func (p *DefaultProvider) launchInstance(
 			NICName:           resourceName,
 			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
 			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
+			MaxPods:           lo.FromPtr(nodeClass.Spec.MaxPods),
 			LaunchTemplate:    launchTemplate,
 			BackendPools:      backendPools,
 			InstanceType:      instanceType,
