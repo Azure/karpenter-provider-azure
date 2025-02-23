@@ -114,7 +114,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 
 	},
 		Entry("ImageFamily Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
-		Entry("OSDiskSizeGB Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(100))}}),
+		Entry("OSDiskSizeGB Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(30))}}),
 		Entry("Tags Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}}),
 	)
 	It("should update AKSNodeClass-hash-version annotation when the AKSNodeClass-hash-version on the NodeClass does not match with the controller hash version", func() {
