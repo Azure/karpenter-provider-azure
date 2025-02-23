@@ -75,7 +75,6 @@ var _ = Describe("GPU", func() {
 						"app": "samples-tf-mnist-demo",
 					},
 				},
-				Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6",
 				ResourceRequirements: v1.ResourceRequirements{
 					Limits: v1.ResourceList{
 						"nvidia.com/gpu": resource.MustParse("1"),
