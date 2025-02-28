@@ -454,6 +454,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.UserAssignedIdentityID = a.KubeletIdentityClientID
 
 	nbv.NetworkPlugin = a.NetworkPlugin
+
 	nbv.NetworkPolicy = a.NetworkPolicy
 	nbv.KubernetesVersion = a.KubernetesVersion
 
