@@ -39,6 +39,13 @@ type OptionsFields struct {
 	NodeIdentities                 []string
 	SubnetID                       *string
 	NodeResourceGroup              *string
+	ProvisionMode                  *string
+	NodeBootstrappingServerURL     *string
+	VnetGUID                       *string
+
+	// UseSIG Flags not required by the self hosted offering
+	UseSIG            *bool
+	SIGSubscriptionID *string
 }
 
 func Options(overrides ...OptionsFields) *azoptions.Options {
@@ -57,10 +64,14 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
 		NetworkPluginMode:              lo.FromPtrOr(options.NetworkPluginMode, "overlay"),
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, "cilium"),
+		VnetGUID:                       lo.FromPtrOr(options.VnetGUID, "a519e60a-cac0-40b2-b883-084477fe6f5c"),
 		NetworkDataplane:               lo.FromPtrOr(options.NetworkDataplane, "cilium"),
 		VMMemoryOverheadPercent:        lo.FromPtrOr(options.VMMemoryOverheadPercent, 0.075),
 		NodeIdentities:                 options.NodeIdentities,
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
+		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
+		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),
+		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, "10945678-1234-1234-1234-123456789012"),
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"go.uber.org/multierr"
 )
 
@@ -30,12 +31,24 @@ func (o Options) Validate() error {
 	validate := validator.New()
 	return multierr.Combine(
 		o.validateRequiredFields(),
+		o.validateVNETGUID(),
 		o.validateEndpoint(),
 		o.validateNetworkingOptions(),
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
+		o.validateProvisionMode(),
 		validate.Struct(o),
 	)
+}
+
+func (o Options) validateVNETGUID() error {
+	if o.VnetGUID != "" && uuid.Validate(o.VnetGUID) != nil {
+		return fmt.Errorf("vnet-guid %s is malformed", o.VnetGUID)
+	}
+	if o.isAzureCNIWithOverlay() && o.VnetGUID == "" {
+		return fmt.Errorf("vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay")
+	}
+	return nil
 }
 
 func (o Options) validateNetworkingOptions() error {
@@ -53,6 +66,10 @@ func (o Options) validateNetworkingOptions() error {
 		return fmt.Errorf("network-plugin-mode '%s' is invalid when network-plugin is 'none'. network-plugin-mode must be empty", o.NetworkPluginMode)
 	}
 	return nil
+}
+
+func (o Options) isAzureCNIWithOverlay() bool {
+	return o.NetworkPlugin == consts.NetworkPluginAzure && o.NetworkPluginMode == consts.NetworkPluginModeOverlay
 }
 
 func (o Options) validateVnetSubnetID() error {
@@ -79,6 +96,18 @@ func (o Options) validateEndpoint() error {
 func (o Options) validateVMMemoryOverheadPercent() error {
 	if o.VMMemoryOverheadPercent < 0 {
 		return fmt.Errorf("vm-memory-overhead-percent cannot be negative")
+	}
+	return nil
+}
+
+func (o Options) validateProvisionMode() error {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
+		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
+	}
+	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+		if o.NodeBootstrappingServerURL == "" {
+			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
+		}
 	}
 	return nil
 }

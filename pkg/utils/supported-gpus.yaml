@@ -1,0 +1,110 @@
+nvidiaEnabledSKUs:
+  StandardNCADSA10v4Family:
+    - standard_nc16ads_a10_v4
+    - standard_nc32ads_a10_v4
+    - standard_nc8ads_a10_v4
+  StandardNCADSA100v4Family:
+    - standard_nc24ads_a100_v4
+    - standard_nc48ads_a100_v4
+    - standard_nc96ads_a100_v4
+  StandardNCASv3_T4Family:
+    - standard_nc16as_t4_v3
+    - standard_nc4as_t4_v3
+    - standard_nc64as_t4_v3
+    - standard_nc8as_t4_v3
+  StandardNCadsH100v5Family:
+    - standard_nc40ads_h100_v5
+    - standard_nc80adis_h100_v5
+  StandardNDASv4_A100Family:
+    - standard_nd96asr_v4
+    - standard_nd112asr_a100_v4
+    - standard_nd120asr_a100_v4
+  StandardNVADSA10v5Family:
+    - standard_nv12ads_a10_v5
+    - standard_nv18ads_a10_v5
+    - standard_nv36adms_a10_v5
+    - standard_nv36ads_a10_v5
+    - standard_nv6ads_a10_v5
+    - standard_nv72ads_a10_v5
+  standardNCFamily:
+    - standard_nc6
+    - standard_nc12
+    - standard_nc24
+    - standard_nc24r
+  standardNCSv3Family:
+    - standard_nc12s_v3
+    - standard_nc24rs_v3
+    - standard_nc24s_v3
+    - standard_nc6s_v3
+  standardNCSv2Family:
+    - standard_nc12s_v2
+    - standard_nc24rs_v2
+    - standard_nc24s_v2
+    - standard_nc6s_v2
+  standardNDAMSv4_A100Family:
+    - standard_nd96amsr_a100_v4
+    - standard_nd112amsr_a100_v4
+    - standard_nd120amsr_a100_v4
+  standardNDSH100v5Family:
+    - standard_nd96isr_h100_v5
+    - standard_nd96is_h100_v5
+    - standard_nd96is_noib_h100_v5
+    - standard_nd96is_flex_h100_v5
+  standardNDSFamily:
+    - standard_nd6s
+    - standard_nd12s
+    - standard_nd24s
+    - standard_nd24rs
+  standardNDSv2Family:
+    - standard_nd40rs_v2
+  standardNDSv3Family:
+    - standard_nd40s_v3
+  standardNVFamily:
+    - standard_nv12
+    - standard_nv24
+    - standard_nv6
+    - standard_nv24r
+  standardNVSv3Family:
+    - standard_nv12s_v3
+    - standard_nv24s_v3
+    - standard_nv48s_v3
+  standardNVPromoFamily:
+    - standard_nv12_promo
+    - standard_nv24_promo
+    - standard_nv6_promo
+  standardNDSFH100v5Family:
+    - standard_nd96isf_h100_v5
+    - standard_nd96isrf_h100_v5
+  standardNDAMSv4A100noRDMAFamily:
+    - standard_nd96ams_v4
+    - standard_nd96ams_a100_flex_v4
+    - standard_nd96ams_a100_v4
+    - standard_nd96amsf_a100_v4
+  standardNDAMSFv4_A100Family:
+    - standard_nd96amsrf_a100_v4
+  standardNCPromoFamily:
+    - standard_nc12_promo
+    - standard_nc24r_promo
+    - standard_nc24_promo
+    - standard_nc6_promo
+  standardNDSH200v5Family:
+    - standard_nd96isr_h200_v5
+    - standard_nd96is_h200_v5
+  standardNDSFH200v5Family:
+    - standard_nd96isf_h200_v5
+    - standard_nd96isrf_h200_v5
+marinerNvidiaEnabledSKUs:
+  StandardNCASv3_T4Family:
+    - standard_nc16as_t4_v3
+    - standard_nc4as_t4_v3
+    - standard_nc64as_t4_v3
+    - standard_nc8as_t4_v3
+  standardNCSv3Family:
+    - standard_nc12s_v3
+    - standard_nc24rs_v3
+    - standard_nc24s_v3
+    - standard_nc6s_v3
+  standardNDSv2Family:
+    - standard_nd40rs_v2
+  standardNDSv3Family:
+    - standard_nd40s_v3

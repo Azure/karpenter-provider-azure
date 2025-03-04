@@ -3,10 +3,7 @@
 {
 	"name": "Go-karpenter",
 	"build": {
-		"dockerfile": "Dockerfile",
-		"args": {
-			"VARIANT": "1.23-bullseye"
-		}
+		"dockerfile": "Dockerfile"
 	},
 	"runArgs": [ "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined" ],
 
@@ -52,11 +49,31 @@
 	"remoteUser": "vscode",
 
 	"features": {
-        "ghcr.io/devcontainers/features/sshd:1": {},
-	"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
-        "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {},
-        "ghcr.io/devcontainers/features/azure-cli:1": {},
-        "ghcr.io/devcontainers-contrib/features/pre-commit:2": {},
-        "ghcr.io/marcozac/devcontainer-features/shellcheck:1": {}
+		// https://github.com/devcontainers/images/blob/main/src/go/.devcontainer/devcontainer.json
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installZsh": "true",
+			"username": "vscode",
+			"userUid": "1000",
+			"userGid": "1000",
+			"upgradePackages": "true"
+		},
+		"ghcr.io/devcontainers/features/go:1": {
+			"version": "none"
+		},
+		"ghcr.io/devcontainers/features/node:1": {
+			"version": "none"
+		},
+		"ghcr.io/devcontainers/features/git:1": {
+			"version": "latest",
+			"ppa": "false"
+		},
+		// custom
+		"ghcr.io/devcontainers/features/sshd:1": {},
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {},
+		"ghcr.io/devcontainers/features/azure-cli:1": {},
+		"ghcr.io/devcontainers-contrib/features/pre-commit:2": {},
+		"ghcr.io/marcozac/devcontainer-features/shellcheck:1": {},
+		"ghcr.io/rio/features/skaffold:2": {}
 	}
 }

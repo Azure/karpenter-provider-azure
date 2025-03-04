@@ -4,10 +4,20 @@ server:
     enabled: false
   nodeSelector:
     kubernetes.azure.com/mode: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+      effect: NoSchedule
 
 alertmanager:
   persistentVolume:
     enabled: false
+  nodeSelector:
+    kubernetes.azure.com/mode: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+      effect: NoSchedule
 
 kube-state-metrics:
   enabled: false
@@ -22,7 +32,7 @@ extraScrapeConfigs: |
       - role: endpoints
         namespaces:
           names:
-          - karpenter
+          - kube-system
       relabel_configs:
       - source_labels:
         - __meta_kubernetes_endpoints_name

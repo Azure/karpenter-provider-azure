@@ -25,23 +25,24 @@ import (
 func TestGetAKSGPUImageSHA(t *testing.T) {
 	assert := assert.New(t)
 	tests := []struct {
-		name   string
-		size   string
-		output string
+		name          string
+		size          string
+		gpuDriverSha  string
+		gpuDriverType string
 	}{
-		{"GRID Driver - NC Series v4", "standard_nc8ads_a10_v4", AKSGPUGridSHA},
-		{"Cuda Driver - NV Series", "standard_nv6", AKSGPUCudaSHA},
-		{"CUDA Driver - NC Series", "standard_nc6s_v3", AKSGPUCudaSHA},
-		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", AKSGPUGridSHA},
-		{"Unknown SKU", "unknown_sku", AKSGPUCudaSHA},
-		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", AKSGPUCudaSHA},
-		{"CUDA Driver - NV Series v3", "standard_nv12s_v3", AKSGPUCudaSHA},
+		{"GRID Driver - NC Series v4", "standard_nc8ads_a10_v4", AKSGPUGridVersionSuffix, "grid"},
+		{"Cuda Driver - NV Series", "standard_nv6", AKSGPUCudaVersionSuffix, "cuda"},
+		{"CUDA Driver - NC Series", "standard_nc6s_v3", AKSGPUCudaVersionSuffix, "cuda"},
+		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", AKSGPUGridVersionSuffix, "grid"},
+		{"Unknown SKU", "unknown_sku", AKSGPUCudaVersionSuffix, "cuda"},
+		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", AKSGPUCudaVersionSuffix, "cuda"},
+		{"CUDA Driver - NV Series v3", "standard_nv12s_v3", AKSGPUCudaVersionSuffix, "cuda"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := GetAKSGPUImageSHA(test.size)
-			assert.Equal(test.output, result, "Failed for size: %s", test.size)
+			assert.Equal(test.gpuDriverSha, GetAKSGPUImageSHA(test.size), "Failed for size: %s", test.size)
+			assert.Equal(test.gpuDriverType, GetGPUDriverType(test.size), "Failed for size: %s", test.size)
 		})
 	}
 }
@@ -53,12 +54,12 @@ func TestGetGPUDriverVersion(t *testing.T) {
 		size   string
 		output string
 	}{
-		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", Nvidia535GridDriverVersion},
+		{"GRID Driver - NV Series v5", "standard_nv6ads_a10_v5", NvidiaGridDriverVersion},
 		{"CUDA Driver - NC Series v1", "standard_nc6s", Nvidia470CudaDriverVersion},
-		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", Nvidia550CudaDriverVersion},
-		{"Unknown SKU", "unknown_sku", Nvidia550CudaDriverVersion},
-		{"CUDA Driver - NC Series v3", "standard_nc6s_v3", Nvidia550CudaDriverVersion},
-		{"GRID Driver - A10", "standard_nc8ads_a10_v4", Nvidia535GridDriverVersion},
+		{"CUDA Driver - NC Series v2", "standard_nc6s_v2", NvidiaCudaDriverVersion},
+		{"Unknown SKU", "unknown_sku", NvidiaCudaDriverVersion},
+		{"CUDA Driver - NC Series v3", "standard_nc6s_v3", NvidiaCudaDriverVersion},
+		{"GRID Driver - A10", "standard_nc8ads_a10_v4", NvidiaGridDriverVersion},
 	}
 
 	for _, test := range tests {

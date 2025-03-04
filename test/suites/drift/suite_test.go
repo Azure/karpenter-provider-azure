@@ -61,8 +61,6 @@ var _ = Describe("Drift", func() {
 	var pod *corev1.Pod
 
 	BeforeEach(func() {
-		env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "Drift=true"})
-
 		coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      corev1.LabelInstanceTypeStable,

@@ -18,7 +18,6 @@ package integration_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -26,7 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -53,7 +51,8 @@ var _ = Describe("Expiration", func() {
 		selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 	})
 	It("should expire the node after the expiration is reached", func() {
-		nodePool.Spec.Template.Spec.ExpireAfter = karpv1.MustParseNillableDuration("2m")
+		// Set expire after large enough to make sure the new nodes are not expired before workloads are moved over.
+		nodePool.Spec.Template.Spec.ExpireAfter = karpv1.MustParseNillableDuration("3m")
 		env.ExpectCreated(nodeClass, nodePool, dep)
 
 		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
@@ -62,15 +61,8 @@ var _ = Describe("Expiration", func() {
 		env.Monitor.Reset() // Reset the monitor so that we can expect a single node to be spun up after expiration
 
 		// Eventually the node will be tainted, which means its actively being disrupted
-		Eventually(func(g Gomega) {
-			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(node), node)).Should(Succeed())
-			_, ok := lo.Find(node.Spec.Taints, func(t corev1.Taint) bool {
-				return t.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
-			})
-			g.Expect(ok).To(BeTrue())
-		}).Should(Succeed())
-
-		env.EventuallyExpectCreatedNodeCount("==", 2)
+		env.EventuallyExpectTaintedNodeCount("==", 1)
+		env.EventuallyExpectCreatedNodeCount("==", 1)
 		// Set the limit to 0 to make sure we don't continue to create nodeClaims.
 		// This is CRITICAL since it prevents leaking node resources into subsequent tests
 		nodePool.Spec.Limits = karpv1.Limits{
@@ -109,15 +101,8 @@ var _ = Describe("Expiration", func() {
 		env.Monitor.Reset() // Reset the monitor so that we can expect a single node to be spun up after expiration
 
 		// Eventually the node will be tainted, which means its actively being disrupted
-		Eventually(func(g Gomega) {
-			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(node), node)).Should(Succeed())
-			_, ok := lo.Find(node.Spec.Taints, func(t corev1.Taint) bool {
-				return t.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
-			})
-			g.Expect(ok).To(BeTrue())
-		}).Should(Succeed())
-
-		env.EventuallyExpectCreatedNodeCount("==", 2)
+		env.EventuallyExpectTaintedNodeCount("==", 1)
+		env.EventuallyExpectCreatedNodeCount("==", 1)
 		// Set the limit to 0 to make sure we don't continue to create nodeClaims.
 		// This is CRITICAL since it prevents leaking node resources into subsequent tests
 		nodePool.Spec.Limits = karpv1.Limits{

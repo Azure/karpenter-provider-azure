@@ -23,20 +23,24 @@ help: ## Display help
 
 presubmit: verify test ## Run all steps in the developer loop
 
-ci-test: battletest coverage ## Runs tests and submits coverage
+ci-test: test coverage ## Runs tests and submits coverage
 
-ci-non-test: verify vulncheck ## Runs checks other than tests
+ci-non-test: verify licenses vulncheck ## Runs checks other than tests
 
 test: ## Run tests
-	ginkgo -v --focus="${FOCUS}" ./pkg/$(shell echo $(TEST_SUITE) | tr A-Z a-z)
-
-battletest: ## Run randomized, racing, code-covered tests
-	ginkgo -v \
-		-race \
+	ginkgo -vv \
 		-cover -coverprofile=coverage.out -output-dir=. -coverpkg=./pkg/... \
 		--focus="${FOCUS}" \
 		--randomize-all \
-		-tags random_test_delay \
+		./pkg/...
+
+deflake: ## Run randomized, racing tests until the test fails to catch flakes
+	ginkgo \
+		--race \
+		--focus="${FOCUS}" \
+		--randomize-all \
+		--until-it-fails \
+		-v \
 		./pkg/...
 
 e2etests: ## Run the e2e suite against your local cluster
@@ -45,7 +49,7 @@ e2etests: ## Run the e2e suite against your local cluster
 	# -count 1: prevents caching
 	# -timeout: If a test binary runs longer than TEST_TIMEOUT, panic
 	# -v: verbose output
-	cd test && CLUSTER_NAME=${CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} go test \
+	cd test && AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} go test \
 		-p 1 \
 		-count 1 \
 		-timeout ${TEST_TIMEOUT} \
@@ -59,22 +63,11 @@ e2etests: ## Run the e2e suite against your local cluster
 benchmark:
 	go test -tags=test_performance -run=NoTests -bench=. ./...
 
-deflake: ## Run randomized, racing, code-covered tests to deflake failures
-	for i in $(shell seq 1 5); do make battletest || exit 1; done
-
-deflake-until-it-fails: ## Run randomized, racing tests until the test fails to catch flakes
-	ginkgo \
-		--race \
-		--focus="${FOCUS}" \
-		--randomize-all \
-		--until-it-fails \
-		-v \
-		./pkg/...
-
 coverage:
 	go tool cover -html coverage.out -o coverage.html
 
 verify: toolchain tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
 	cp $(KARPENTER_CORE_DIR)/pkg/apis/crds/* pkg/apis/crds
@@ -101,6 +94,9 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 vulncheck: ## Verify code vulnerabilities
 	@govulncheck ./pkg/...
 
+licenses: download ## Verifies dependency licenses
+	! go-licenses csv ./... | grep -v -e 'MIT' -e 'Apache-2.0' -e 'BSD-3-Clause' -e 'BSD-2-Clause' -e 'ISC' -e 'MPL-2.0'
+
 codegen: ## Auto generate files based on Azure API responses
 	./hack/codegen.sh
 
@@ -119,7 +115,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help test battletest e2etests verify tidy download codegen toolchain vulncheck snapshot release
+.PHONY: help presubmit ci-test ci-non-test test deflake e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
 
 define newline
 

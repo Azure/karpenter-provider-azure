@@ -19,8 +19,7 @@ echo "{{- if .Values.webhook.enabled }}
           name: {{ .Values.webhook.serviceName }}
           namespace: {{ .Values.webhook.serviceNamespace | default .Release.Namespace }}
           port: {{ .Values.webhook.port }}
-{{- end }}
-" >>  charts/karpenter-crd/templates/karpenter.sh_nodepools.yaml
+{{- end }}" >>  charts/karpenter-crd/templates/karpenter.sh_nodepools.yaml
 
 echo "{{- if .Values.webhook.enabled }}
   conversion:
@@ -34,5 +33,4 @@ echo "{{- if .Values.webhook.enabled }}
           name: {{ .Values.webhook.serviceName }}
           namespace: {{ .Values.webhook.serviceNamespace | default .Release.Namespace }}
           port: {{ .Values.webhook.port }}
-{{- end }}
-" >>  charts/karpenter-crd/templates/karpenter.sh_nodeclaims.yaml
+{{- end }}" >>  charts/karpenter-crd/templates/karpenter.sh_nodeclaims.yaml

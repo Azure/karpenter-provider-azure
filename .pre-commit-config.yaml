@@ -12,7 +12,7 @@ repos:
   hooks:
   - id: shellcheck
 - repo: https://github.com/crate-ci/typos
-  rev: v1.26.0
+  rev: v1.28.1
   hooks:
   - id: typos
     args: [--write-changes, --force-exclude, --exclude, go.mod]

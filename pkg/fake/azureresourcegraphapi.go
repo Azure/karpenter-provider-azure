@@ -23,6 +23,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
@@ -35,6 +36,7 @@ type AzureResourceGraphResourcesInput struct {
 type AzureResourceGraphBehavior struct {
 	AzureResourceGraphResourcesBehavior MockedFunction[AzureResourceGraphResourcesInput, armresourcegraph.ClientResourcesResponse]
 	VirtualMachinesAPI                  *VirtualMachinesAPI
+	NetworkInterfacesAPI                *NetworkInterfacesAPI
 	ResourceGroup                       string
 }
 
@@ -42,7 +44,21 @@ type AzureResourceGraphBehavior struct {
 var _ instance.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
 
 type AzureResourceGraphAPI struct {
+	vmListQuery  string
+	nicListQuery string
 	AzureResourceGraphBehavior
+}
+
+func NewAzureResourceGraphAPI(resourceGroup string, virtualMachinesAPI *VirtualMachinesAPI, networkInterfacesAPI *NetworkInterfacesAPI) *AzureResourceGraphAPI {
+	return &AzureResourceGraphAPI{
+		vmListQuery:  instance.GetVMListQueryBuilder(resourceGroup).String(),
+		nicListQuery: instance.GetNICListQueryBuilder(resourceGroup).String(),
+		AzureResourceGraphBehavior: AzureResourceGraphBehavior{
+			VirtualMachinesAPI:   virtualMachinesAPI,
+			NetworkInterfacesAPI: networkInterfacesAPI,
+			ResourceGroup:        resourceGroup,
+		},
+	}
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
@@ -66,7 +82,7 @@ func (c *AzureResourceGraphAPI) Resources(_ context.Context, query armresourcegr
 
 func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	switch query {
-	case instance.GetListQueryBuilder(c.ResourceGroup).String():
+	case c.vmListQuery:
 		vmList := lo.Filter(c.loadVMObjects(), func(vm armcompute.VirtualMachine, _ int) bool {
 			return vm.Tags != nil && vm.Tags[instance.NodePoolTagKey] != nil
 		})
@@ -75,18 +91,35 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 			return convertBytesToInterface(b)
 		})
 		return resourceList
+	case c.nicListQuery:
+		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
+			return nic.Tags != nil && nic.Tags[instance.NodePoolTagKey] != nil
+		})
+		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
+			b, _ := json.Marshal(nic)
+			return convertBytesToInterface(b)
+		})
+		return resourceList
 	}
 	return nil
 }
 
-func (c *AzureResourceGraphAPI) loadVMObjects() []armcompute.VirtualMachine {
-	vmList := []armcompute.VirtualMachine{}
+func (c *AzureResourceGraphAPI) loadVMObjects() (vmList []armcompute.VirtualMachine) {
 	c.VirtualMachinesAPI.Instances.Range(func(k, v any) bool {
 		vm, _ := c.VirtualMachinesAPI.Instances.Load(k)
 		vmList = append(vmList, vm.(armcompute.VirtualMachine))
 		return true
 	})
 	return vmList
+}
+
+func (c *AzureResourceGraphAPI) loadNicObjects() (nicList []armnetwork.Interface) {
+	c.NetworkInterfacesAPI.NetworkInterfaces.Range(func(k, v any) bool {
+		nic, _ := c.NetworkInterfacesAPI.NetworkInterfaces.Load(k)
+		nicList = append(nicList, nic.(armnetwork.Interface))
+		return true
+	})
+	return nicList
 }
 
 func convertBytesToInterface(b []byte) interface{} {

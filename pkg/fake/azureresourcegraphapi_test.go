@@ -32,7 +32,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 	resourceGroup := "test_managed_cluster_rg"
 	subscriptionID := "test_sub"
 	virtualMachinesAPI := &VirtualMachinesAPI{}
-	azureResourceGraphAPI := &AzureResourceGraphAPI{AzureResourceGraphBehavior{VirtualMachinesAPI: virtualMachinesAPI, ResourceGroup: resourceGroup}}
+	azureResourceGraphAPI := NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, nil)
 	cases := []struct {
 		testName      string
 		vmNames       []string
@@ -67,7 +67,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 					return
 				}
 			}
-			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetListQueryBuilder(resourceGroup).String())
+			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetVMListQueryBuilder(resourceGroup).String())
 			data, err := instance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
 			if err != nil {
 				t.Errorf("Unexpected error %v", err)

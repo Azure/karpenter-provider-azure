@@ -204,6 +204,7 @@ type NodeBootstrapVariables struct {
 	SwapFileSizeMB                    int      // t   user input
 	GPUImageSHA                       string   // s	  static sha rarely updated
 	GPUDriverVersion                  string   // k   determine by OS + GPU hardware requirements; can be determined automatically, but hard. suggest using GPU operator.
+	GPUDriverType                     string   // k
 	GPUInstanceProfile                string   // t   user-specified
 	CustomSearchDomainName            string   // c   user-specified [presumably cluster-level]
 	CustomSearchRealmUser             string   // c   user-specified [presumably cluster-level]
@@ -453,6 +454,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.UserAssignedIdentityID = a.KubeletIdentityClientID
 
 	nbv.NetworkPlugin = a.NetworkPlugin
+
 	nbv.NetworkPolicy = a.NetworkPolicy
 	nbv.KubernetesVersion = a.KubernetesVersion
 
@@ -467,6 +469,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		nbv.GPUNode = true
 		nbv.ConfigGPUDriverIfNeeded = true
 		nbv.GPUDriverVersion = a.GPUDriverVersion
+		nbv.GPUDriverType = a.GPUDriverType
 		nbv.GPUImageSHA = a.GPUImageSHA
 	}
 
