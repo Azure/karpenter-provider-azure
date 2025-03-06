@@ -173,7 +173,7 @@ var _ = Describe("InstanceProvider", func() {
 		AfterEach(func() {
 			ctx = options.ToContext(ctx, originalOptions)
 		})
-		It("should include 250 secondary ips by default", func() {
+		It("should include 250 secondary ips by default(default for MaxPods)", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -187,6 +187,21 @@ var _ = Describe("InstanceProvider", func() {
 
 			// AzureCNI V1 has a DefaultMaxPods of 250 so we should set 250 ip configurations
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(250))
+		})
+		It("should set the number of secondary ips equal to max pods", func() {
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(5))
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic).ToNot(BeNil())
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(5))
 		})
 	})
 	It("should create VM and NIC with valid ARM tags", func() {

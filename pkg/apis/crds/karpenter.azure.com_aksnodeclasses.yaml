@@ -159,6 +159,7 @@ spec:
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
               maxPods:
+                default: 250
                 description: MaxPods is an override for the maximum number of pods
                   that can run on a worker node instance.
                 format: int32
