@@ -55,7 +55,6 @@ var _ = Describe("Options", func() {
 		"NODE_IDENTITIES",
 		"PROVISION_MODE",
 		"NODEBOOTSTRAPPING_SERVER_URL",
-		"VNET_GUID",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -100,7 +99,6 @@ var _ = Describe("Options", func() {
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 			os.Setenv("PROVISION_MODE", "bootstrappingclient")
 			os.Setenv("NODEBOOTSTRAPPING_SERVER_URL", "https://nodebootstrapping-server-url")
-			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -120,41 +118,10 @@ var _ = Describe("Options", func() {
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
 				ProvisionMode:                  lo.ToPtr("bootstrappingclient"),
 				NodeBootstrappingServerURL:     lo.ToPtr("https://nodebootstrapping-server-url"),
-				VnetGUID:                       lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
 			}))
 		})
 	})
 	Context("Validation", func() {
-		It("should fail when vnet guid is not a uuid", func() {
-			errMsg := "vnet-guid null is malformed"
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vm-memory-overhead-percent", "-0.01",
-				"--network-plugin", "azure",
-				"--network-plugin-mode", "overlay",
-				"--vnet-guid", "null", // sometimes output of jq can produce null or some other data, we should enforce that the vnet guid passed in at least looks like a uuid
-			)
-			Expect(err).To(MatchError(ContainSubstring(errMsg)))
-		})
-
-		It("should fail when vnet guid is empty for azure cni with overlay clusters", func() {
-			errMsg := "vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay"
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vm-memory-overhead-percent", "-0.01",
-				"--network-plugin", "azure",
-				"--network-plugin-mode", "overlay",
-			)
-			Expect(err).To(MatchError(ContainSubstring(errMsg)))
-		})
 		It("should fail when network-plugin-mode is invalid", func() {
 			typo := "overlaay"
 			errMsg := fmt.Sprintf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay' or ''", typo)
@@ -296,7 +263,6 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "azure",
-				"--network-plugin-mode", "",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -312,21 +278,6 @@ var _ = Describe("Options", func() {
 				"--network-plugin-mode", "",
 			)
 			Expect(err).ToNot(HaveOccurred())
-		})
-		It("should succeed when azure-cni with overlay is configured with the right options", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
-				"--network-plugin", "azure",
-				"--network-plugin-mode", "overlay",
-				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
-			)
-			Expect(err).ToNot(HaveOccurred())
-
 		})
 		It("should fail validation when ProvisionMode is not valid", func() {
 			err := opts.Parse(

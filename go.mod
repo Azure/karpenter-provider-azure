@@ -29,7 +29,6 @@ require (
 	github.com/go-openapi/validate v0.24.0
 	github.com/go-playground/validator/v10 v10.25.0
 	github.com/google/go-cmp v0.6.0
-	github.com/google/uuid v1.6.0
 	github.com/imdario/mergo v0.3.16
 	github.com/jongio/azidext/go/azidext v0.5.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
@@ -108,6 +107,7 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.24.0 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
