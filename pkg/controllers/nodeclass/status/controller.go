@@ -32,23 +32,26 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/result"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/awslabs/operatorpkg/reasonable"
 )
 
-type nodeClassStatusReconciler interface {
+type Reconciler interface {
 	Reconcile(context.Context, *v1alpha2.AKSNodeClass) (reconcile.Result, error)
 }
 
 type Controller struct {
 	kubeClient client.Client
 
+	nodeImage *NodeImage
 	readiness *Readiness //TODO : Remove this when we have sub status conditions
 }
 
-func NewController(kubeClient client.Client) *Controller {
+func NewController(kubeClient client.Client, imageProvider imagefamily.NodeImageProvider) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
+		nodeImage: NewNodeImageReconciler(imageProvider, kubeClient),
 		readiness: &Readiness{},
 	}
 }
@@ -67,7 +70,8 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 
 	var results []reconcile.Result
 	var errs error
-	for _, reconciler := range []nodeClassStatusReconciler{
+	for _, reconciler := range []Reconciler{
+		c.nodeImage,
 		c.readiness,
 	} {
 		res, err := reconciler.Reconcile(ctx, nodeClass)

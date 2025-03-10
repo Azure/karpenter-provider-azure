@@ -21,6 +21,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+const (
+	ConditionTypeNodeImageReady  = "NodeImageReady"
+	ConditionTypeK8sVersionReady = "K8sVersionReady"
+)
+
 // Image contains resolved image selector values utilized for node launch
 type Image struct {
 	// ID of the image
@@ -33,13 +38,24 @@ type Image struct {
 
 // AKSNodeClassStatus contains the resolved state of the AKSNodeClass
 type AKSNodeClassStatus struct {
+	// Images contains the current set of Images available to use
+	// for the NodeClass
+	// +optional
+	Images []Image `json:"images,omitempty"`
+	// K8sVersion contains the current k8s version which should be
+	// used for nodes provisioned for the NodeClass
+	K8sVersion string `json:"k8sVersion,omitempty"`
 	// Conditions contains signals for health and readiness
 	// +optional
 	Conditions []status.Condition `json:"conditions,omitempty"`
 }
 
 func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
-	return status.NewReadyConditions().For(in)
+	conds := []string{
+		ConditionTypeNodeImageReady,
+		ConditionTypeK8sVersionReady,
+	}
+	return status.NewReadyConditions(conds...).For(in)
 }
 
 func (in *AKSNodeClass) GetConditions() []status.Condition {

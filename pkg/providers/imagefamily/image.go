@@ -30,8 +30,77 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
+
+type NodeImage struct {
+	ID           string
+	BaseID       string
+	Version      string
+	Requirements scheduling.Requirements
+}
+
+type NodeImages []NodeImage
+
+type NodeImageProvider interface {
+	List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (NodeImages, error)
+	KubeServerVersion(ctx context.Context) (string, error)
+}
+
+func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (NodeImages, error) {
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)
+	if options.FromContext(ctx).UseSIG {
+		nodeImages := NodeImages{}
+		retrievedLatestImages, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, nextSupportedImage := range supportedImages {
+			var nextImage *NodeImageVersion
+			for _, retrievedLatestImage := range retrievedLatestImages.Values {
+				if nextSupportedImage.ImageDefinition == retrievedLatestImage.SKU {
+					nextImage = &retrievedLatestImage
+					break
+				}
+			}
+			if nextImage == nil {
+				// Unable to find given image version
+				continue
+			}
+			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, nextSupportedImage.GalleryResourceGroup, nextSupportedImage.GalleryName, nextSupportedImage.ImageDefinition, nextImage.Version)
+			imageIDBase := fmt.Sprintf(sharedImageGalleryImageIDBaseFormat, options.FromContext(ctx).SIGSubscriptionID, nextSupportedImage.GalleryResourceGroup, nextSupportedImage.GalleryName, nextSupportedImage.ImageDefinition)
+			nodeImages = append(nodeImages, NodeImage{
+				ID:           imageID,
+				BaseID:       imageIDBase,
+				Version:      nextImage.Version,
+				Requirements: nextSupportedImage.Requirements,
+			})
+		}
+		return nodeImages, nil
+	}
+
+	// CIG path
+	nodeImages := NodeImages{}
+	for _, nextSupportedImage := range supportedImages {
+		cigImageID, err := p.getCIGImageID(nextSupportedImage.PublicGalleryURL, nextSupportedImage.ImageDefinition)
+		if err != nil {
+			return nil, err
+		}
+		imageIDParts := strings.Split(cigImageID, "/")
+		baseID := strings.Join(imageIDParts[0:len(imageIDParts)-2], "/")
+		version := imageIDParts[6]
+
+		nodeImages = append(nodeImages, NodeImage{
+			ID:           cigImageID,
+			BaseID:       baseID,
+			Version:      version,
+			Requirements: nextSupportedImage.Requirements,
+		})
+	}
+	return nodeImages, nil
+}
 
 type Provider struct {
 	kubernetesVersionCache *cache.Cache
@@ -50,10 +119,11 @@ const (
 	imageExpirationInterval    = time.Hour * 24 * 3
 	imageCacheCleaningInterval = time.Hour * 1
 
-	sharedImageKey                  = "%s/%s" // imageGallery + imageDefinition
-	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
-	communityImageKey               = "%s/%s" // PublicGalleryURL + communityImageName
-	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
+	sharedImageKey                      = "%s/%s" // imageGallery + imageDefinition
+	sharedImageGalleryImageIDBaseFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s"
+	sharedImageGalleryImageIDFormat     = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
+	communityImageKey                   = "%s/%s" // PublicGalleryURL + communityImageName
+	communityImageIDFormat              = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
 func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient NodeImageVersionsAPI) *Provider {

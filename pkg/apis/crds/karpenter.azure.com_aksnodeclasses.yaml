@@ -242,6 +242,59 @@ spec:
                   - type
                   type: object
                 type: array
+              images:
+                description: |-
+                  Images contains the current set of Images available to use
+                  for the NodeClass
+                items:
+                  description: Image contains resolved image selector values utilized
+                    for node launch
+                  properties:
+                    id:
+                      description: ID of the image
+                      type: string
+                    requirements:
+                      description: Requirements of the image to be utilized on an
+                        instance type
+                      items:
+                        description: |-
+                          A node selector requirement is a selector that contains values, a key, and an operator
+                          that relates the key and values.
+                        properties:
+                          key:
+                            description: The label key that the selector applies to.
+                            type: string
+                          operator:
+                            description: |-
+                              Represents a key's relationship to a set of values.
+                              Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                            type: string
+                          values:
+                            description: |-
+                              An array of string values. If the operator is In or NotIn,
+                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                              the values array must be empty. If the operator is Gt or Lt, the values
+                              array must have a single element, which will be interpreted as an integer.
+                              This array is replaced during a strategic merge patch.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - key
+                        - operator
+                        type: object
+                      type: array
+                  required:
+                  - id
+                  - requirements
+                  type: object
+                type: array
+              k8sVersion:
+                description: |-
+                  K8sVersion contains the current k8s version which should be
+                  used for nodes provisioned for the NodeClass
+                type: string
             type: object
         type: object
     served: true

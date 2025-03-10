@@ -35,14 +35,15 @@ import (
 	nodeclasstermination "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/termination"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
 func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.Client, recorder events.Recorder,
-	cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider) []controller.Controller {
+	cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider, imageProvider *imagefamily.Provider) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient),
+		nodeclassstatus.NewController(kubeClient, imageProvider),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),

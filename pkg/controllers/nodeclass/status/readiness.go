@@ -20,7 +20,6 @@ import (
 	"context"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/awslabs/operatorpkg/status"
 
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
@@ -29,6 +28,6 @@ type Readiness struct {
 }
 
 func (n Readiness) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
-	nodeClass.StatusConditions().SetTrue(status.ConditionReady)
+	// nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 	return reconcile.Result{}, nil
 }

@@ -61,6 +61,7 @@ func main() {
 			op.EventRecorder,
 			aksCloudProvider,
 			op.InstanceProvider,
+			op.ImageProvider,
 		)...).
 		//WithWebhooks(ctx, webhooks.NewWebhooks()...).
 		Start(ctx, cloudProvider)

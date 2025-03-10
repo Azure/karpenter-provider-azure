@@ -153,6 +153,11 @@ func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nodeC
 	return kubeletConfig
 }
 
+func getSupportedImages(familyName *string) []DefaultImageOutput {
+	imageFamily := getImageFamily(familyName, nil)
+	return imageFamily.DefaultImages()
+}
+
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1alpha2.Ubuntu2204ImageFamily:
