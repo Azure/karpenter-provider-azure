@@ -492,12 +492,14 @@ func (p *DefaultProvider) launchInstance(
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting backend pools: %w", err)
 	}
+	networkPlugin := options.FromContext(ctx).NetworkPlugin
+	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 	nicReference, err := p.createNetworkInterface(ctx,
 		&createNICOptions{
 			NICName:           resourceName,
-			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
-			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
-			MaxPods:           lo.FromPtr(nodeClass.Spec.MaxPods),
+			NetworkPlugin:     networkPlugin,
+			NetworkPluginMode: networkPluginMode,
+			MaxPods:           utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
 			LaunchTemplate:    launchTemplate,
 			BackendPools:      backendPools,
 			InstanceType:      instanceType,
