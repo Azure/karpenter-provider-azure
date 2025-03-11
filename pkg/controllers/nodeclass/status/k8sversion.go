@@ -24,21 +24,50 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/blang/semver/v4"
 
+	controllerruntime "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
+
+type K8sVersionReconciler struct {
+	k8sVersionProvider imagefamily.K8sVersionProvider
+	cm                 *pretty.ChangeMonitor
+}
+
+func NewK8sVersionReconciler(provider imagefamily.K8sVersionProvider) *K8sVersionReconciler {
+	return &K8sVersionReconciler{
+		k8sVersionProvider: provider,
+		cm:                 pretty.NewChangeMonitor(),
+	}
+}
+
+func (r *K8sVersionReconciler) Register(_ context.Context, m manager.Manager) error {
+	return controllerruntime.NewControllerManagedBy(m).
+		Named("nodeclass.k8sversion").
+		For(&v1alpha2.AKSNodeClass{}).
+		WithOptions(controller.Options{
+			RateLimiter:             reasonable.RateLimiter(),
+			MaxConcurrentReconciles: 10,
+		}).
+		Complete(reconcile.AsReconciler(m.GetClient(), r))
+}
 
 // The upgrade controller will detect reasons to bump the node image version as follows in order:
 // 1. ~~Update any missing NodeImages~~ Updated: Initializes the images we should use based on customer configuration.
 // 2. Handle K8s Upgrade + Image Bump
 // 3. Handle bumps for any Images unsupported by Node Features
 // 4. Update NodeImages to latest if in a MW (retrieved from ConfigMap)
-func (ni *NodeImage) ReconcileK8s(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (r *K8sVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
 	logger := logging.FromContext(ctx)
 	logger.Debug("nodeclass.k8sversion: starting reconcile")
 
-	k8sVersion, err := ni.nodeImageProvider.KubeServerVersion(ctx)
+	k8sVersion, err := r.k8sVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
 		logger.Debug("nodeclass.k8sversion: err getting k8s version")
 		return reconcile.Result{}, fmt.Errorf("getting k8s version, %w", err)

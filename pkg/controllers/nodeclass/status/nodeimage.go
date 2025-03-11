@@ -25,7 +25,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -40,21 +39,19 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
-type NodeImage struct {
+type NodeImageReconciler struct {
 	nodeImageProvider imagefamily.NodeImageProvider
-	kubeClient        client.Client
 	cm                *pretty.ChangeMonitor
 }
 
-func NewNodeImageReconciler(provider imagefamily.NodeImageProvider, kubeClient client.Client) *NodeImage {
-	return &NodeImage{
+func NewNodeImageReconciler(provider imagefamily.NodeImageProvider) *NodeImageReconciler {
+	return &NodeImageReconciler{
 		nodeImageProvider: provider,
-		kubeClient:        kubeClient,
 		cm:                pretty.NewChangeMonitor(),
 	}
 }
 
-func (ni *NodeImage) Register(_ context.Context, m manager.Manager) error {
+func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("nodeclass.nodeimage").
 		For(&v1alpha2.AKSNodeClass{}).
@@ -62,24 +59,20 @@ func (ni *NodeImage) Register(_ context.Context, m manager.Manager) error {
 			RateLimiter:             reasonable.RateLimiter(),
 			MaxConcurrentReconciles: 10,
 		}).
-		Complete(reconcile.AsReconciler(m.GetClient(), ni))
+		Complete(reconcile.AsReconciler(m.GetClient(), r))
 }
 
-// The upgrade controller will detect reasons to bump the node image version as follows in order:
+// The image version reconciler will detect reasons to bump the node image version as follows in order:
 // 1. ~~Update any missing NodeImages~~ Updated: Initializes the images we should use based on customer configuration.
-// 2. Handle K8s Upgrade + Image Bump
-// 3. Handle bumps for any Images unsupported by Node Features
-// 4. Update NodeImages to latest if in a MW (retrieved from ConfigMap)
-func (ni *NodeImage) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
-	_, err := ni.ReconcileK8s(ctx, nodeClass)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
+// 2. Indirectly handle image bump for k8s upgrade
+// 3. Can indirectly handle bumps for any Images unsupported by Node Features, if required to in the future
+// 4. TODO: Update NodeImages to latest if in a MW (retrieved from ConfigMap)
+// 5 NEW: Handles update cases when customer changes image family, SIG usage, or other means of image selectors
+func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
 	logger := logging.FromContext(ctx)
 	logger.Debug("nodeclass.nodeimage: starting reconcile")
 
-	nodeImages, err := ni.nodeImageProvider.List(ctx, nodeClass)
+	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
 		logger.Debug("nodeclass.nodeimage: err listing node images")
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
@@ -105,7 +98,7 @@ func (ni *NodeImage) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 		imageBases[nodeImage.BaseID] = true
 	}
 
-	// Case 1: node images haven't been populated for the nodeclass yet, or k8s upgrade
+	// Case 1: node images haven't been populated for the nodeclass yet, or out of date (k8s upgrade, etc)
 	// Case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
 	// Case 3: Note: like k8s we would also indirectly handle Node Sig features that required an image version bump, but none required atm.
 	shouldUpdate := !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImageReady).IsTrue()
@@ -115,7 +108,7 @@ func (ni *NodeImage) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	if !shouldUpdate {
 		_, removedImages = nodeImageDelta(nodeClass, imageBases)
 
-		// Handles the current case of users updating image family, and/or usage of SIG.
+		// Case 5: Handles the current case of users updating image family, and/or usage of SIG.
 		// TODO: should we automatically soft add newly supported skus, and what about only partial removal due to selectors.
 		if len(removedImages) != 0 {
 			shouldUpdate = true
@@ -166,5 +159,7 @@ func nodeImageDelta(nodeClass *v1alpha2.AKSNodeClass, imageBases map[string]bool
 }
 
 func isOpenMW() bool {
+	// Case 4: check if MW is open
+	// TODO: once MW window is in ConfigMap.
 	return true //TODO
 }
