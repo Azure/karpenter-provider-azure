@@ -28,6 +28,5 @@ type Readiness struct {
 }
 
 func (n Readiness) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
-	// nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 	return reconcile.Result{}, nil
 }

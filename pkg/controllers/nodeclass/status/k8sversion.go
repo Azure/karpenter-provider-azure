@@ -58,11 +58,10 @@ func (r *K8sVersionReconciler) Register(_ context.Context, m manager.Manager) er
 		Complete(reconcile.AsReconciler(m.GetClient(), r))
 }
 
-// The upgrade controller will detect reasons to bump the node image version as follows in order:
-// 1. ~~Update any missing NodeImages~~ Updated: Initializes the images we should use based on customer configuration.
-// 2. Handle K8s Upgrade + Image Bump
-// 3. Handle bumps for any Images unsupported by Node Features
-// 4. Update NodeImages to latest if in a MW (retrieved from ConfigMap)
+// The k8s version reconciler will detect reasons to bump the k8s version:
+//  1. Newly created AKSNodeClass, will select the version discovered from the API server
+//  2. If a later k8s version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
+//     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the NodeImage readiness.
 func (r *K8sVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
 	logger := logging.FromContext(ctx)
 	logger.Debug("nodeclass.k8sversion: starting reconcile")
@@ -73,7 +72,7 @@ func (r *K8sVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha
 		return reconcile.Result{}, fmt.Errorf("getting k8s version, %w", err)
 	}
 
-	// Case 1: init, update k8s status to version found
+	// Case 1: init, update k8s status to API server version found
 	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeK8sVersionReady).IsTrue() || nodeClass.Status.K8sVersion == "" {
 		logger.Debug("nodeclass.k8sversion: init k8s version")
 		nodeClass.Status.K8sVersion = k8sVersion

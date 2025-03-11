@@ -19,7 +19,6 @@ package imagefamily
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -28,8 +27,6 @@ import (
 
 type NodeImage struct {
 	ID           string
-	BaseID       string
-	Version      string
 	Requirements scheduling.Requirements
 }
 
@@ -61,12 +58,9 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 				continue
 			}
 			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, nextSupportedImage.GalleryResourceGroup, nextSupportedImage.GalleryName, nextSupportedImage.ImageDefinition, nextImage.Version)
-			imageIDBase, _ := splitImageID(imageID)
 
 			nodeImages = append(nodeImages, NodeImage{
 				ID:           imageID,
-				BaseID:       imageIDBase,
-				Version:      nextImage.Version,
 				Requirements: nextSupportedImage.Requirements,
 			})
 		}
@@ -80,24 +74,11 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 		if err != nil {
 			return nil, err
 		}
-		baseID, version := splitImageID(cigImageID)
 
 		nodeImages = append(nodeImages, NodeImage{
 			ID:           cigImageID,
-			BaseID:       baseID,
-			Version:      version,
 			Requirements: nextSupportedImage.Requirements,
 		})
 	}
 	return nodeImages, nil
-}
-
-// Splits the imageID into components of:
-// - baseID: imageID without the version suffix
-// - version: version of the imageID
-func splitImageID(imageID string) (baseID, version string) {
-	imageIDParts := strings.Split(imageID, "/")
-	baseID = strings.Join(imageIDParts[0:len(imageIDParts)-2], "/")
-	version = imageIDParts[len(imageIDParts)-1]
-	return baseID, version
 }
