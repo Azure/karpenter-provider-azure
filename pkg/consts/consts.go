@@ -27,9 +27,10 @@ const (
 	NetworkDataplaneCilium = "cilium"
 	NetworkDataplaneAzure  = "azure"
 
-	DefaultOverlayMaxPods    = 250
-	DefaultNodeSubnetMaxPods = 30
-	DefaultKubernetesMaxPods = 110
+	DefaultNetPluginNoneMaxPods = 250
+	DefaultOverlayMaxPods       = 250
+	DefaultNodeSubnetMaxPods    = 30
+	DefaultKubernetesMaxPods    = 110
 
 	ProvisionModeAKSScriptless       = "aksscriptless"
 	ProvisionModeBootstrappingClient = "bootstrappingclient"
