@@ -67,7 +67,11 @@ func NewEnvironment(t *testing.T) *Environment {
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 	}
 
-	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
+	defaultNodeRG := lo.Ternary(
+		os.Getenv("AZURE_NODE_RESOURCE_GROUP") == "",
+		fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region),
+		os.Getenv("AZURE_NODE_RESOURCE_GROUP"),
+	)
 	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
