@@ -31,7 +31,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/awslabs/operatorpkg/reasonable"
-	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -72,15 +71,19 @@ func (ni *NodeImage) Register(_ context.Context, m manager.Manager) error {
 // 3. Handle bumps for any Images unsupported by Node Features
 // 4. Update NodeImages to latest if in a MW (retrieved from ConfigMap)
 func (ni *NodeImage) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+	_, err := ni.ReconcileK8s(ctx, nodeClass)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
 	logger := logging.FromContext(ctx)
-	logger.Info("nodeclass.nodeimage: starting reconcile")
+	logger.Debug("nodeclass.nodeimage: starting reconcile")
 
 	nodeImages, err := ni.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
-		logger.Error("nodeclass.nodeimage: err listing node images")
+		logger.Debug("nodeclass.nodeimage: err listing node images")
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
-	logger.Infof("nodeclass.nodeimage: listed images: %+v, ", nodeImages)
 	images := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.Image {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return item.NodeSelectorRequirement
@@ -97,81 +100,45 @@ func (ni *NodeImage) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 			Requirements: reqs,
 		}
 	})
-	logger.Infof("nodeclass.nodeimage: images: %+v, ", images)
-
 	imageBases := map[string]bool{}
 	for _, nodeImage := range nodeImages {
 		imageBases[nodeImage.BaseID] = true
 	}
 
-	k8sVersion, err := ni.nodeImageProvider.KubeServerVersion(ctx)
-	if err != nil {
-		logger.Error("nodeclass.nodeimage: err getting k8s version")
-		return reconcile.Result{}, fmt.Errorf("getting k8s version, %w", err)
-	}
+	// Case 1: node images haven't been populated for the nodeclass yet, or k8s upgrade
+	// Case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
+	// Case 3: Note: like k8s we would also indirectly handle Node Sig features that required an image version bump, but none required atm.
+	shouldUpdate := !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImageReady).IsTrue()
+	logger.Debugf("nodeclass.nodeimage: should init/k8s upgrade: %t", shouldUpdate)
 
-	// Case 1: node images haven't been populated for the nodeclass yet
-	shouldUpdate := shouldInit(nodeClass)
-	logger.Infof("nodeclass.nodeimage: should init: %t", shouldUpdate)
-
-	var newImages map[string]bool
 	var removedImages map[string]bool
 	if !shouldUpdate {
-		newImages, removedImages = nodeImageDelta(nodeClass, imageBases)
+		_, removedImages = nodeImageDelta(nodeClass, imageBases)
 
+		// Handles the current case of users updating image family, and/or usage of SIG.
+		// TODO: should we automatically soft add newly supported skus, and what about only partial removal due to selectors.
 		if len(removedImages) != 0 {
 			shouldUpdate = true
 		} else {
-			shouldUpdate, err = shouldUpgrade(nodeClass, k8sVersion)
-			if err != nil {
-				logger.Error("nodeclass.nodeimage: err determining upgrade")
-				return reconcile.Result{}, err
-			}
+			shouldUpdate = isOpenMW()
 		}
 	}
-	logger.Infof("nodeclass.nodeimage: shouldUpdate: %t", shouldUpdate)
+	logger.Debugf("nodeclass.nodeimage: should update overall: %t", shouldUpdate)
 
-	logger.Infof("nodeclass.nodeimage: newImages: %+v, removedImages: %+v", newImages, removedImages)
 	if shouldUpdate {
 		if len(images) == 0 {
 			nodeClass.Status.Images = nil
 			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
-			// if !equality.Semantic.DeepEqual(stored, nodeClass) {
-			// 	if err := ni.kubeClient.Status().Patch(ctx, nodeClass, client.MergeFrom(stored)); err != nil {
-			// 		if errors.IsConflict(err) {
-			// 			return reconcile.Result{Requeue: true}, nil
-			// 		}
-			// 		logger.Error("nodeclass.nodeimage: err patching 1")
-			// 		return reconcile.Result{}, err
-			// 	}
-			// }
 			logger.Info("nodeclass.nodeimage: no images")
 			return reconcile.Result{RequeueAfter: time.Minute}, nil
 		}
 
 		nodeClass.Status.Images = images
 		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImageReady)
-
-		nodeClass.Status.K8sVersion = k8sVersion
-		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeK8sVersionReady)
 	} // else if len(newImages) != 0 { // Preform partial update? }
 
-	// if !equality.Semantic.DeepEqual(stored, nodeClass) {
-	// 	if err := ni.kubeClient.Status().Patch(ctx, nodeClass, client.MergeFrom(stored)); err != nil {
-	// 		if errors.IsConflict(err) {
-	// 			return reconcile.Result{Requeue: true}, nil
-	// 		}
-	// 		logger.Error("nodeclass.nodeimage: err patching 2")
-	// 		return reconcile.Result{}, err
-	// 	}
-	// }
-	logger.Info("nodeclass.nodeimage: success")
+	logger.Debug("nodeclass.nodeimage: success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-}
-
-func shouldInit(nodeClass *v1alpha2.AKSNodeClass) bool {
-	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImageReady).IsTrue() ||
-		!nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeK8sVersionReady).IsTrue()
 }
 
 func nodeImageDelta(nodeClass *v1alpha2.AKSNodeClass, imageBases map[string]bool) (map[string]bool, map[string]bool) {
@@ -196,24 +163,6 @@ func nodeImageDelta(nodeClass *v1alpha2.AKSNodeClass, imageBases map[string]bool
 		}
 	}
 	return newImages, removedImages
-}
-
-func shouldUpgrade(nodeClass *v1alpha2.AKSNodeClass, k8sVersion string) (bool, error) {
-	foundK8sVersion, err := semver.Parse(k8sVersion)
-	if err != nil {
-		return false, fmt.Errorf("parsing discovered k8s version, %w", err)
-	}
-	currentK8sVersion, err := semver.Parse(nodeClass.Status.K8sVersion)
-	if err != nil {
-		return false, fmt.Errorf("parsing current k8s version, %w", err)
-	}
-
-	// 2. Handle K8s Upgrade + Image Bump
-	// 3. Note: this is where we would check if there was a required bump based off of Node Sig features, but none required atm.
-	// 4. Update NodeImages to latest if in a MW (retrieved from ConfigMap)
-	// TODO: need to handle case of customer updating image family, and/or usage of SIG.
-	return foundK8sVersion.GT(currentK8sVersion) ||
-		isOpenMW(), nil
 }
 
 func isOpenMW() bool {
