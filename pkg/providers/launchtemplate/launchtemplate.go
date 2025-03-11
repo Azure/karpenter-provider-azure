@@ -18,6 +18,7 @@ package launchtemplate
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/go-autorest/autorest/to"
@@ -38,10 +39,11 @@ import (
 const (
 	karpenterManagedTagKey = "karpenter.azure.com/cluster"
 
-	vnetDataPlaneLabel      = "kubernetes.azure.com/ebpf-dataplane"
-	vnetSubnetNameLabel     = "kubernetes.azure.com/network-subnet"
-	vnetGUIDLabel           = "kubernetes.azure.com/nodenetwork-vnetguid"
-	vnetPodNetworkTypeLabel = "kubernetes.azure.com/podnetwork-type"
+	dataplaneLabel       = "kubernetes.azure.com/ebpf-dataplane"
+	azureCNIOverlayLabel = "kubernetes.azure.com/azure-cni-overlay"
+	subnetNameLabel      = "kubernetes.azure.com/network-subnet"
+	vnetGUIDLabel        = "kubernetes.azure.com/nodenetwork-vnetguid"
+	podNetworkTypeLabel  = "kubernetes.azure.com/podnetwork-type"
 )
 
 type Template struct {
@@ -123,7 +125,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
 
-	if options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+	if isAzureCNIOverlay(ctx) {
 		// TODO: make conditional on pod subnet
 		vnetLabels, err := p.getVnetInfoLabels(subnetID)
 		if err != nil {
@@ -140,7 +142,7 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		//            values:
 		//              - cilium
 
-		labels[vnetDataPlaneLabel] = consts.NetworkDataplaneCilium
+		labels[dataplaneLabel] = consts.NetworkDataplaneCilium
 	}
 
 	return &parameters.StaticParameters{
@@ -162,11 +164,26 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		ClusterID:                      options.FromContext(ctx).ClusterID,
 		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
-		NetworkPlugin:                  options.FromContext(ctx).NetworkPlugin,
+		NetworkPlugin:                  getAgentbakerNetworkPlugin(ctx),
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       subnetID,
 		ClusterResourceGroup:           p.clusterResourceGroup,
 	}, nil
+}
+
+func getAgentbakerNetworkPlugin(ctx context.Context) string {
+	if isAzureCNIOverlay(ctx) || isCiliumNodeSubnet(ctx) {
+		return consts.NetworkPluginNone
+	}
+	return consts.NetworkPluginAzure
+}
+
+func isCiliumNodeSubnet(ctx context.Context) bool {
+	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeNone && options.FromContext(ctx).NetworkDataplane == consts.NetworkDataplaneCilium
+}
+
+func isAzureCNIOverlay(ctx context.Context) bool {
+	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay
 }
 
 func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
@@ -213,9 +230,10 @@ func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error)
 		return nil, err
 	}
 	vnetLabels := map[string]string{
-		vnetSubnetNameLabel:     vnetSubnetComponents.SubnetName,
-		vnetGUIDLabel:           p.vnetGUID,
-		vnetPodNetworkTypeLabel: consts.NetworkPluginModeOverlay,
+		subnetNameLabel:      vnetSubnetComponents.SubnetName,
+		vnetGUIDLabel:        p.vnetGUID,
+		azureCNIOverlayLabel: strconv.FormatBool(true),
+		podNetworkTypeLabel:  consts.NetworkPluginModeOverlay,
 	}
 	return vnetLabels, nil
 }
