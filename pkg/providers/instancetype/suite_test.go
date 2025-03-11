@@ -541,7 +541,7 @@ var _ = Describe("InstanceType Provider", func() {
 			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
 				"eviction-hard":           "memory.available<750Mi",
-				"max-pods":                "250",
+				"max-pods":                "110",
 				"image-gc-low-threshold":  "20",
 				"image-gc-high-threshold": "30",
 				"cpu-cfs-quota":           "true",
