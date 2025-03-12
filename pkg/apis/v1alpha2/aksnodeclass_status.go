@@ -38,10 +38,10 @@ type Image struct {
 
 // AKSNodeClassStatus contains the resolved state of the AKSNodeClass
 type AKSNodeClassStatus struct {
-	// Images contains the current set of Images available to use
+	// NodeImages contains the current set of images available to use
 	// for the NodeClass
 	// +optional
-	Images []Image `json:"images,omitempty"`
+	NodeImages []Image `json:"nodeImages,omitempty"`
 	// K8sVersion contains the current k8s version which should be
 	// used for nodes provisioned for the NodeClass
 	K8sVersion string `json:"k8sVersion,omitempty"`

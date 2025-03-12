@@ -242,9 +242,14 @@ spec:
                   - type
                   type: object
                 type: array
-              images:
+              k8sVersion:
                 description: |-
-                  Images contains the current set of Images available to use
+                  K8sVersion contains the current k8s version which should be
+                  used for nodes provisioned for the NodeClass
+                type: string
+              nodeImages:
+                description: |-
+                  NodeImages contains the current set of images available to use
                   for the NodeClass
                 items:
                   description: Image contains resolved image selector values utilized
@@ -290,11 +295,6 @@ spec:
                   - requirements
                   type: object
                 type: array
-              k8sVersion:
-                description: |-
-                  K8sVersion contains the current k8s version which should be
-                  used for nodes provisioned for the NodeClass
-                type: string
             type: object
         type: object
     served: true

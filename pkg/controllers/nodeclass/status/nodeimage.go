@@ -111,13 +111,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	logger.Debugf("nodeclass.nodeimage: should update overall: %t", shouldUpdate)
 	if shouldUpdate {
 		if len(images) == 0 {
-			nodeClass.Status.Images = nil
+			nodeClass.Status.NodeImages = nil
 			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
 			logger.Info("nodeclass.nodeimage: no images")
 			return reconcile.Result{RequeueAfter: time.Minute}, nil
 		}
 
-		nodeClass.Status.Images = images
+		nodeClass.Status.NodeImages = images
 		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImageReady)
 	}
 
@@ -146,7 +146,7 @@ func isOpenMW() bool {
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
 func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.Image) ([]v1alpha2.Image, bool) {
-	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.Images)
+	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.NodeImages)
 	discoveredBaseIDMapping := mapImageBasesToImages(discoveredImages)
 
 	updatedImages := []v1alpha2.Image{}
