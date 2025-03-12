@@ -266,7 +266,7 @@ func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1alpha2.A
 		corev1.ResourceCPU:                    *cpu(sku),
 		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
 		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
-		corev1.ResourcePods:                   *pods(nodeClass),
+		corev1.ResourcePods:                   *pods(ctx, nodeClass),
 		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 	}
 }
@@ -312,16 +312,9 @@ func ephemeralStorage(nodeClass *v1alpha2.AKSNodeClass) *resource.Quantity {
 	return resource.NewScaledQuantity(int64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)), resource.Giga)
 }
 
-func pods(nc *v1alpha2.AKSNodeClass) *resource.Quantity {
-	// TODO: fine-tune pods calc
-	var count int64
-	switch {
-	case nc.Spec.MaxPods != nil:
-		count = int64(ptr.Int32Value(nc.Spec.MaxPods))
-	default:
-		count = 110
-	}
-	return resources.Quantity(fmt.Sprint(count))
+func pods(ctx context.Context, nc *v1alpha2.AKSNodeClass) *resource.Quantity {
+	networkPlugin, networkPluginMode := options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode
+	return resources.Quantity(fmt.Sprint(int64(utils.GetMaxPods(nc, networkPlugin, networkPluginMode))))
 }
 
 func SystemReservedResources() corev1.ResourceList {

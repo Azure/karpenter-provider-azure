@@ -55,6 +55,7 @@ type AKSNodeClassSpec struct {
 	// MaxPods is an override for the maximum number of pods that can run on a worker node instance.
 	// +kubebuilder:validation:Minimum:=10
 	// +kubebuilder:validation:Maximum:=250
+	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 }
 
