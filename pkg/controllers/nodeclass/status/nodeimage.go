@@ -71,7 +71,7 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 //     Note: Currently there are no node features to be handled in this way.
 //   - 4. TODO: Update NodeImages to latest if in a MW (retrieved from ConfigMap)
 //
-// Scenario B: Calculate images to be updated based on delta of availailbe images
+// Scenario B: Calculate images to be updated based on delta of available images
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
 //   - 6. Handles softly adding newest image version of any newly supported SKUs by Karpenter
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
@@ -83,7 +83,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 		logger.Debug("nodeclass.nodeimage: err listing node images")
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
-	images := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.Image {
+	images := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return item.NodeSelectorRequirement
 		})
@@ -94,7 +94,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 			}
 			return reqs[i].Key < reqs[j].Key
 		})
-		return v1alpha2.Image{
+		return v1alpha2.NodeImage{
 			ID:           nodeImage.ID,
 			Requirements: reqs,
 		}
@@ -145,11 +145,11 @@ func isOpenMW() bool {
 //   - Note: I think this should be assess, if this is the exact behavior we want to give users, before any actual new SKU support is released.
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
-func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.Image) ([]v1alpha2.Image, bool) {
+func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) ([]v1alpha2.NodeImage, bool) {
 	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.NodeImages)
 	discoveredBaseIDMapping := mapImageBasesToImages(discoveredImages)
 
-	updatedImages := []v1alpha2.Image{}
+	updatedImages := []v1alpha2.NodeImage{}
 	foundUpdate := false
 	for discoveredBaseImageID, discoveredImage := range discoveredBaseIDMapping {
 		if existingImage, ok := existingBaseIDMapping[discoveredBaseImageID]; ok {
@@ -162,8 +162,8 @@ func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v
 	return updatedImages, foundUpdate
 }
 
-func mapImageBasesToImages(images []v1alpha2.Image) map[string]*v1alpha2.Image {
-	imagesBaseMapping := map[string]*v1alpha2.Image{}
+func mapImageBasesToImages(images []v1alpha2.NodeImage) map[string]*v1alpha2.NodeImage {
+	imagesBaseMapping := map[string]*v1alpha2.NodeImage{}
 	for _, image := range images {
 		baseID := trimVersionSuffix(image.ID)
 		imagesBaseMapping[baseID] = &image

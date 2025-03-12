@@ -27,7 +27,7 @@ const (
 )
 
 // Image contains resolved image selector values utilized for node launch
-type Image struct {
+type NodeImage struct {
 	// ID of the image
 	// +required
 	ID string `json:"id"`
@@ -41,7 +41,7 @@ type AKSNodeClassStatus struct {
 	// NodeImages contains the current set of images available to use
 	// for the NodeClass
 	// +optional
-	NodeImages []Image `json:"nodeImages,omitempty"`
+	NodeImages []NodeImage `json:"nodeImages,omitempty"`
 	// K8sVersion contains the current k8s version which should be
 	// used for nodes provisioned for the NodeClass
 	K8sVersion string `json:"k8sVersion,omitempty"`
