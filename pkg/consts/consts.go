@@ -27,6 +27,8 @@ const (
 	NetworkDataplaneCilium = "cilium"
 	NetworkDataplaneAzure  = "azure"
 
+	// All of these values for max pods match the aks defaults for max pods for the various
+	// cni modes
 	DefaultNetPluginNoneMaxPods = 250
 	DefaultOverlayMaxPods       = 250
 	DefaultNodeSubnetMaxPods    = 30
