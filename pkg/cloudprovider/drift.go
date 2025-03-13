@@ -48,9 +48,9 @@ const (
 
 func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	// First check if the node class is statically staticFieldsDrifted to save on API calls.
-	if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
-		return staticFieldsDrifted, nil
-	}
+	// if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
+	// 	return staticFieldsDrifted, nil
+	// }
 	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
 	if err != nil {
 		return "", err
@@ -58,13 +58,13 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	if k8sVersionDrifted != "" {
 		return k8sVersionDrifted, nil
 	}
-	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim)
-	if err != nil {
-		return "", err
-	}
-	if imageVersionDrifted != "" {
-		return imageVersionDrifted, nil
-	}
+	//imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim)
+	//if err != nil {
+	//	return "", err
+	//}
+	//if imageVersionDrifted != "" {
+	//	return imageVersionDrifted, nil
+	//}
 	subnetDrifted, err := c.isSubnetDrifted(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return "", err

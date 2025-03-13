@@ -19,13 +19,12 @@ package instancetype
 import (
 	"context"
 	"fmt"
-	"math"
-
 	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"knative.dev/pkg/ptr"
+	"math"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -39,35 +38,11 @@ import (
 )
 
 const (
-	MemoryAvailable        = "memory.available"
-	DefaultMemoryAvailable = "750Mi"
+	MemoryAvailable          = "memory.available"
+	DefaultEvictionThreshold = "100Mi"
 )
 
 var (
-	// reservedMemoryTaxGi denotes the tax brackets for memory in Gi.
-	reservedMemoryTaxGi = TaxBrackets{
-		{
-			UpperBound: 4,
-			Rate:       .25,
-		},
-		{
-			UpperBound: 8,
-			Rate:       .20,
-		},
-		{
-			UpperBound: 16,
-			Rate:       .10,
-		},
-		{
-			UpperBound: 128,
-			Rate:       .06,
-		},
-		{
-			UpperBound: math.MaxFloat64,
-			Rate:       .02,
-		},
-	}
-
 	//reservedCPUTaxVCPU denotes the tax brackets for Virtual CPU cores.
 	reservedCPUTaxVCPU = TaxBrackets{
 		{
@@ -126,7 +101,7 @@ func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSize
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, nodeClass),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
-			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
+			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory()), int64(*nodeClass.Spec.MaxPods)),
 			SystemReserved:    SystemReservedResources(),
 			EvictionThreshold: EvictionThreshold(),
 		},
@@ -333,20 +308,24 @@ func SystemReservedResources() corev1.ResourceList {
 	}
 }
 
-func KubeReservedResources(vcpus int64, memoryGib float64) corev1.ResourceList {
-	reservedMemoryMi := int64(1024 * reservedMemoryTaxGi.Calculate(memoryGib))
-	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
-
-	resources := corev1.ResourceList{
-		corev1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
-		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
+func KubeReservedResources(vcpus int64, memoryGib float64, maxPodCount int64) corev1.ResourceList {
+	kubeReservedResources := corev1.ResourceList{
+		corev1.ResourceCPU:    *resource.NewScaledQuantity(int64(1000*reservedCPUTaxVCPU.Calculate(float64(vcpus))), resource.Milli),
+		corev1.ResourceMemory: AzureKubeMemoryReservation(memoryGib, maxPodCount),
 	}
-
-	return resources
+	return kubeReservedResources
 }
 
 func EvictionThreshold() corev1.ResourceList {
 	return corev1.ResourceList{
-		corev1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
+		corev1.ResourceMemory: resource.MustParse(DefaultEvictionThreshold),
 	}
+}
+
+func AzureKubeMemoryReservation(memoryGib float64, maxPodCount int64) resource.Quantity {
+	aksNodeMemoryReserve := (memoryGib * 0.25) * 1024 * 1024 * 1024
+	aksPerPodMemoryReserve := float64((maxPodCount*20)+150) * 1024 * 1024
+
+	// Use the minimum of newMemory and aksDefaultMemoryReserve
+	return *resource.NewQuantity(int64(math.Min(aksPerPodMemoryReserve, aksNodeMemoryReserve)), resource.BinarySI)
 }

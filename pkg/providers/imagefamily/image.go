@@ -19,6 +19,9 @@ package imagefamily
 import (
 	"context"
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"log"
+	"reflect"
 	"strings"
 	"time"
 
@@ -71,12 +74,24 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 
 // Get returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
 func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily ImageFamily) (string, string, error) {
-	defaultImages := imageFamily.DefaultImages()
-	for _, defaultImage := range defaultImages {
-		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
-			imageID, imageRetrievalErr := p.GetLatestImageID(ctx, defaultImage)
-			return defaultImage.Distro, imageID, imageRetrievalErr
+	if reflect.DeepEqual(nodeClass.Spec.CustomImageTerm, v1alpha2.CustomImageTerm{}) {
+		defaultImages := imageFamily.DefaultImages()
+		for _, defaultImage := range defaultImages {
+			if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
+				communityImageName, publicGalleryURL := defaultImage.ImageDefinition, defaultImage.PublicGalleryURL
+				imageID, err := p.getCIGImageID(communityImageName, publicGalleryURL)
+				if err != nil {
+					return "", "", err
+				}
+				return defaultImage.Distro, imageID, nil
+			}
 		}
+	} else {
+		imageID, err := p.GetCustomImageID(ctx, &nodeClass.Spec.CustomImageTerm)
+		if err != nil {
+			return "", "", err
+		}
+		return nodeClass.Spec.CustomImageTerm.DistroName, imageID, nil
 	}
 
 	return "", "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
@@ -101,6 +116,49 @@ func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultIma
 	p.imageCache.Set(key, imageID, imageExpirationInterval)
 	logging.FromContext(ctx).With("image-id", imageID).Info("discovered new image id")
 	return imageID, nil
+}
+
+func (p *Provider) GetCustomImageID(ctx context.Context, imageTerm *v1alpha2.CustomImageTerm) (string, error) {
+	key := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", imageTerm.GallerySubscriptionID, imageTerm.GalleryResourceGroupName, imageTerm.GalleryName, imageTerm.Name, imageTerm.Version)
+	imageID, found := p.imageCache.Get(key)
+	if found {
+		return imageID.(string), nil
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		log.Fatalf("failed to obtain a credential: %v", err)
+	}
+	clientFactory, err := armcompute.NewClientFactory(imageTerm.GallerySubscriptionID, cred, nil)
+	if err != nil {
+		log.Fatalf("failed to create client: %v", err)
+	}
+	imageCandidate := armcompute.GalleryImageVersion{}
+	if imageTerm.Version != "" {
+		imageInfo, err := clientFactory.NewGalleryImageVersionsClient().Get(ctx, imageTerm.GalleryResourceGroupName, imageTerm.GalleryName, imageTerm.Name, imageTerm.Version, nil)
+		if err != nil {
+			return "", err
+		}
+		imageCandidate = imageInfo.GalleryImageVersion
+	} else {
+		pager := clientFactory.NewGalleryImageVersionsClient().NewListByGalleryImagePager(imageTerm.GalleryResourceGroupName, imageTerm.GalleryName, imageTerm.Name, nil)
+		for pager.More() {
+			page, err := pager.NextPage(context.Background())
+			if err != nil {
+				return "", err
+			}
+			for _, imageVersion := range page.GalleryImageVersionList.Value {
+				if lo.IsEmpty(imageCandidate.ID) || imageVersion.Properties.PublishingProfile.PublishedDate.After(*imageCandidate.Properties.PublishingProfile.PublishedDate) {
+					imageCandidate = *imageVersion
+				}
+			}
+		}
+	}
+
+	if p.cm.HasChanged(key, *imageCandidate.ID) {
+		logging.FromContext(ctx).With("image-id", imageCandidate.ID).Info("discovered new image id")
+	}
+	p.imageCache.Set(key, *imageCandidate.ID, imageExpirationInterval)
+	return *imageCandidate.ID, nil
 }
 
 func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {

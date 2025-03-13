@@ -1358,9 +1358,10 @@ var _ = Describe("Tax Calculator", func() {
 			cpus := int64(4) // 4 cores
 			memory := 7.0    // 7 GiB
 			expectedCPU := "140m"
-			expectedMemory := "1638Mi"
+			expectedMemory := "1750Mi"
+			maxPods := int64(100)
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, maxPods)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -1372,9 +1373,10 @@ var _ = Describe("Tax Calculator", func() {
 			cpus := int64(2) // 2 cores
 			memory := 8.0    // 8 GiB
 			expectedCPU := "100m"
-			expectedMemory := "1843Mi"
+			expectedMemory := "550Mi"
+			maxPods := int64(20)
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, maxPods)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 
@@ -1386,9 +1388,10 @@ var _ = Describe("Tax Calculator", func() {
 			cpus := int64(3) // 3 cores
 			memory := 64.0   // 64 GiB
 			expectedCPU := "120m"
-			expectedMemory := "5611Mi"
+			expectedMemory := "1150Mi"
+			maxPods := int64(50)
 
-			resources := instancetype.KubeReservedResources(cpus, memory)
+			resources := instancetype.KubeReservedResources(cpus, memory, maxPods)
 			gotCPU := resources[v1.ResourceCPU]
 			gotMemory := resources[v1.ResourceMemory]
 

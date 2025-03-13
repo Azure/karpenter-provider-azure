@@ -77,13 +77,14 @@ func New(_ client.Client, imageProvider *Provider) *Resolver {
 // Resolve fills in dynamic launch template parameters
 func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
+	var imageID string
+
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
 	imageDistro, imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
 	}
-
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
 
 	generalTaints := nodeClaim.Spec.Taints
@@ -157,6 +158,8 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	switch lo.FromPtr(familyName) {
 	case v1alpha2.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
+	case v1alpha2.CustomImageFamily:
+		return &CustomImages{Options: parameters}
 	case v1alpha2.AzureLinuxImageFamily:
 		return &AzureLinux{Options: parameters}
 	default:
