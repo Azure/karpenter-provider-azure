@@ -313,7 +313,7 @@ func ephemeralStorage(nodeClass *v1alpha2.AKSNodeClass) *resource.Quantity {
 
 func pods(ctx context.Context, nc *v1alpha2.AKSNodeClass) *resource.Quantity {
 	networkPlugin, networkPluginMode := options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode
-	return resources.Quantity(fmt.Sprint(int64(utils.GetMaxPods(nc, networkPlugin, networkPluginMode))))
+	return resource.NewQuantity(int64(utils.GetMaxPods(nc, networkPlugin, networkPluginMode)), resource.DecimalSI)
 }
 
 func SystemReservedResources() corev1.ResourceList {
