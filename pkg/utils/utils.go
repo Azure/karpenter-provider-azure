@@ -151,15 +151,14 @@ func GetMaxPods(nodeClass *v1alpha2.AKSNodeClass, networkPlugin, networkPluginMo
 	if nodeClass.Spec.MaxPods != nil {
 		return lo.FromPtr(nodeClass.Spec.MaxPods)
 	}
-	if networkPlugin == consts.NetworkPluginNone {
+	switch {
+	case networkPlugin == consts.NetworkPluginNone:
 		return consts.DefaultNetPluginNoneMaxPods
-	}
-	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.NetworkPluginModeOverlay {
+	case networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.NetworkPluginModeOverlay:
 		return consts.DefaultOverlayMaxPods
-	}
-	if networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.NetworkPluginModeNone {
+	case networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.NetworkPluginModeNone:
 		return consts.DefaultNodeSubnetMaxPods
+	default:
+		return consts.DefaultKubernetesMaxPods
 	}
-	// if not an overlay or nodesubnet network-plugin-mode, return the default
-	return consts.DefaultKubernetesMaxPods
 }
