@@ -293,9 +293,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
 		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
-		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
-		// ips from the nodeclass instead of using the default
-		for i := 1; i < consts.DefaultKubernetesMaxPods; i++ {
+		for i := 1; i < int(opts.MaxPods); i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
 				&armnetwork.InterfaceIPConfiguration{
@@ -322,6 +320,7 @@ type createNICOptions struct {
 	LaunchTemplate    *launchtemplate.Template
 	NetworkPlugin     string
 	NetworkPluginMode string
+	MaxPods           int32
 }
 
 func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
@@ -491,11 +490,14 @@ func (p *DefaultProvider) launchInstance(
 	if err != nil {
 		return nil, nil, fmt.Errorf("getting backend pools: %w", err)
 	}
+	networkPlugin := options.FromContext(ctx).NetworkPlugin
+	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 	nicReference, err := p.createNetworkInterface(ctx,
 		&createNICOptions{
 			NICName:           resourceName,
-			NetworkPlugin:     options.FromContext(ctx).NetworkPlugin,
-			NetworkPluginMode: options.FromContext(ctx).NetworkPluginMode,
+			NetworkPlugin:     networkPlugin,
+			NetworkPluginMode: networkPluginMode,
+			MaxPods:           utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
 			LaunchTemplate:    launchTemplate,
 			BackendPools:      backendPools,
 			InstanceType:      instanceType,

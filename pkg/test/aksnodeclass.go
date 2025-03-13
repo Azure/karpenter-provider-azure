@@ -46,6 +46,7 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
 	nc.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 	nc.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2204ImageFamily)
+
 	return nc
 }
 
