@@ -69,7 +69,7 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 //   - 2. Indirectly handle image bump for k8s upgrade
 //   - 3. Can indirectly handle bumps for any images unsupported by node features, if required to in the future
 //     Note: Currently there are no node features to be handled in this way.
-//   - 4. TODO: Update NodeImages to latest if in a MW (retrieved from ConfigMap)
+//   - 4. TODO: Update NodeImages to latest if in a MW (maintenance windows) [retrieved from ConfigMap]
 //
 // Scenario B: Calculate images to be updated based on delta of available images
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
@@ -165,14 +165,14 @@ func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v
 func mapImageBasesToImages(images []v1alpha2.NodeImage) map[string]*v1alpha2.NodeImage {
 	imagesBaseMapping := map[string]*v1alpha2.NodeImage{}
 	for _, image := range images {
-		baseID := trimVersionSuffix(image.ID)
+		baseID := TrimVersionSuffix(image.ID)
 		imagesBaseMapping[baseID] = &image
 	}
 	return imagesBaseMapping
 }
 
 // Trims off the version suffix, and leaves just the image base id
-func trimVersionSuffix(imageID string) string {
+func TrimVersionSuffix(imageID string) string {
 	imageIDParts := strings.Split(imageID, "/")
 	baseID := strings.Join(imageIDParts[0:len(imageIDParts)-2], "/")
 	return baseID
