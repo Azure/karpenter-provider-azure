@@ -45,6 +45,10 @@ func (env *Environment) Cleanup() {
 }
 
 func (env *Environment) AfterEach() {
+	if !env.InClusterController() {
+		return
+	}
+
 	fmt.Println("##[group]    E2E SUITE: LOG DUMP")
 	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
