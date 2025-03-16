@@ -212,7 +212,7 @@ func (env *Environment) ExpectSettingsRemoved(vars ...corev1.EnvVar) {
 	varNames := sets.New(lo.Map(vars, func(v corev1.EnvVar, _ int) string { return v.Name })...)
 
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: "karpenter"}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 	stored := d.DeepCopy()
