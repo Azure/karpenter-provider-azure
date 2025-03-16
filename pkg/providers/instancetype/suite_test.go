@@ -777,6 +777,12 @@ var _ = Describe("InstanceType Provider", func() {
 			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
 			Expect(err).NotTo(HaveOccurred())
 			ExpectCapacityPodsToMatchMaxPods(instanceTypes, maxPods)
+
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(100))
+			// Expect that an updated nodeclass is reflected
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(100))
 		})
 		It("should set pods equal to the expected default MaxPods for NodeSubnet", func() {
 			ctx = options.ToContext(
