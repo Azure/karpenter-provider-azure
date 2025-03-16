@@ -838,7 +838,7 @@ func (env *Environment) GetNode(nodeName string) corev1.Node {
 func (env *Environment) ExpectNoCrashes() {
 	GinkgoHelper()
 	for k, v := range env.Monitor.RestartCount(DefaultControllerNamespace) {
-		if strings.Contains(k, "karpenter") && v > 0 {
+		if strings.Contains(k, DefaultDeploymentName) && v > 0 {
 			Fail("expected karpenter containers to not crash")
 		}
 	}
