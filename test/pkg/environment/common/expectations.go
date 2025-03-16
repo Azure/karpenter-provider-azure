@@ -375,7 +375,7 @@ func (env *Environment) ConsistentlyExpectHealthyPods(duration time.Duration, po
 func (env *Environment) EventuallyExpectKarpenterRestarted() {
 	GinkgoHelper()
 	By("rolling out the new karpenter deployment")
-	env.EventuallyExpectRollout("karpenter", DefaultControllerNamespace)
+	env.EventuallyExpectRollout(DefaultDeploymentName, DefaultControllerNamespace)
 
 	if !lo.ContainsBy(env.ExpectSettings(), func(v corev1.EnvVar) bool {
 		return v.Name == "DISABLE_LEADER_ELECTION" && v.Value == "true"
