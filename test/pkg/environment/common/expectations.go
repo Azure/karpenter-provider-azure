@@ -56,8 +56,7 @@ const (
 
 // InClusterController returns a boolean if the karpenter controller is hosted in the cluster rather than some managed
 // controlplane.
-func (env *Environment) InClusterController() bool {
-	GinkgoHelper()
+func (env *Environment) GetInClusterController() bool {
 	d := &appsv1.Deployment{}
 	err := env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)
 	return err == nil
@@ -160,10 +159,6 @@ func (env *Environment) ExpectCreatedOrUpdated(objects ...client.Object) {
 
 func (env *Environment) ExpectSettings() (res []corev1.EnvVar) {
 	GinkgoHelper()
-	// we cannot run tests for now on karpenter if the controller isn't in cluster
-	if !env.InClusterController() {
-		return
-	}
 	d := &appsv1.Deployment{}
 	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
@@ -174,10 +169,6 @@ func (env *Environment) ExpectSettings() (res []corev1.EnvVar) {
 
 func (env *Environment) ExpectSettingsReplaced(vars ...corev1.EnvVar) {
 	GinkgoHelper()
-	// we cannot run tests for now on karpenter if the controller isn't in cluster
-	if !env.InClusterController() {
-		return
-	}
 	d := &appsv1.Deployment{}
 	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
@@ -195,9 +186,6 @@ func (env *Environment) ExpectSettingsReplaced(vars ...corev1.EnvVar) {
 func (env *Environment) ExpectSettingsOverridden(vars ...corev1.EnvVar) {
 	GinkgoHelper()
 	// we cannot run tests for now on karpenter if the controller isn't in cluster
-	if !env.InClusterController() {
-		return
-	}
 	d := &appsv1.Deployment{}
 	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: "karpenter"}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
@@ -221,10 +209,6 @@ func (env *Environment) ExpectSettingsOverridden(vars ...corev1.EnvVar) {
 
 func (env *Environment) ExpectSettingsRemoved(vars ...corev1.EnvVar) {
 	GinkgoHelper()
-	// we cannot run tests for now on karpenter if the controller isn't in cluster
-	if !env.InClusterController() {
-		return
-	}
 	varNames := sets.New(lo.Map(vars, func(v corev1.EnvVar, _ int) string { return v.Name })...)
 
 	d := &appsv1.Deployment{}
@@ -390,10 +374,6 @@ func (env *Environment) ConsistentlyExpectHealthyPods(duration time.Duration, po
 
 func (env *Environment) EventuallyExpectKarpenterRestarted() {
 	GinkgoHelper()
-	// we cannot run tests for now on karpenter if the controller isn't in cluster
-	if !env.InClusterController() {
-		return
-	}
 	By("rolling out the new karpenter deployment")
 	env.EventuallyExpectRollout("karpenter", DefaultControllerNamespace)
 
@@ -406,10 +386,6 @@ func (env *Environment) EventuallyExpectKarpenterRestarted() {
 
 func (env *Environment) ExpectKarpenterLeaseOwnerChanged() {
 	GinkgoHelper()
-	// we cannot run tests for now on karpenter if the controller isn't in cluster
-	if !env.InClusterController() {
-		return
-	}
 	By("waiting for a new karpenter pod to hold the lease")
 	pods := env.ExpectKarpenterPods()
 	Eventually(func(g Gomega) {
@@ -422,10 +398,6 @@ func (env *Environment) ExpectKarpenterLeaseOwnerChanged() {
 
 func (env *Environment) EventuallyExpectRollout(name, namespace string) {
 	GinkgoHelper()
-	// we cannot run tests for now on karpenter if the controller isn't in cluster
-	if !env.InClusterController() {
-		return
-	}
 	By("restarting the deployment")
 	deploy := &appsv1.Deployment{}
 	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: name, Namespace: namespace}, deploy)).To(Succeed())

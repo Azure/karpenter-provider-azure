@@ -62,7 +62,8 @@ type Environment struct {
 	KubeClient kubernetes.Interface
 	Monitor    *Monitor
 
-	StartingNodeCount int
+	InClusterController bool
+	StartingNodeCount   int
 }
 
 func NewEnvironment(t *testing.T) *Environment {
@@ -78,7 +79,7 @@ func NewEnvironment(t *testing.T) *Environment {
 
 	gomega.SetDefaultEventuallyTimeout(16 * time.Minute)
 	gomega.SetDefaultEventuallyPollingInterval(1 * time.Second)
-	return &Environment{
+	env := &Environment{
 		Context:    ctx,
 		cancel:     cancel,
 		Config:     config,
@@ -86,6 +87,8 @@ func NewEnvironment(t *testing.T) *Environment {
 		KubeClient: kubernetes.NewForConfigOrDie(config),
 		Monitor:    NewMonitor(ctx, client),
 	}
+	env.InClusterController = env.GetInClusterController()
+	return env
 }
 
 func (env *Environment) Stop() {

@@ -35,7 +35,9 @@ var (
 )
 
 func (env *Environment) BeforeEach() {
-	persistedSettings = env.ExpectSettings()
+	if env.InClusterController {
+		persistedSettings = env.ExpectSettings()
+	}
 	env.Environment.BeforeEach()
 }
 
@@ -45,13 +47,11 @@ func (env *Environment) Cleanup() {
 }
 
 func (env *Environment) AfterEach() {
-	if !env.InClusterController() {
-		return
-	}
-
 	fmt.Println("##[group]    E2E SUITE: LOG DUMP")
 	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
 	// Ensure we reset settings after collecting the controller logs
-	env.ExpectSettingsReplaced(persistedSettings...)
+	if env.InClusterController {
+		env.ExpectSettingsReplaced(persistedSettings...)
+	}
 }

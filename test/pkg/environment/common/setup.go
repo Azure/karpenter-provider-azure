@@ -132,7 +132,9 @@ func (env *Environment) Cleanup() {
 
 func (env *Environment) AfterEach() {
 	debug.AfterEach(env.Context)
-	env.printControllerLogs(&corev1.PodLogOptions{Container: "controller"})
+	if env.InClusterController {
+		env.printControllerLogs(&corev1.PodLogOptions{Container: "controller"})
+	}
 }
 
 func (env *Environment) CleanupObjects(cleanableObjects ...client.Object) {
