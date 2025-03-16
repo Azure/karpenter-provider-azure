@@ -187,7 +187,7 @@ func (env *Environment) ExpectSettingsOverridden(vars ...corev1.EnvVar) {
 	GinkgoHelper()
 	// we cannot run tests for now on karpenter if the controller isn't in cluster
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: "karpenter"}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 	stored := d.DeepCopy()
