@@ -127,7 +127,9 @@ func (env *Environment) ExpectNoNodePoolOrAKSNodeClass() {
 func (env *Environment) Cleanup() {
 	env.CleanupObjects(CleanableObjects...)
 	env.eventuallyExpectScaleDown()
-	env.ExpectNoCrashes()
+	if env.InClusterController {
+		env.ExpectNoCrashes()
+	}
 }
 
 func (env *Environment) AfterEach() {
