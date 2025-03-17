@@ -87,7 +87,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		KubeClient: kubernetes.NewForConfigOrDie(config),
 		Monitor:    NewMonitor(ctx, client),
 	}
-	env.InClusterController = env.GetInClusterController()
+	env.InClusterController = env.getInClusterController()
 	return env
 }
 

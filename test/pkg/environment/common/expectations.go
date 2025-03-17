@@ -50,15 +50,13 @@ import (
 )
 
 const (
-	DefaultControllerNamespace = "kube-system"
-	DefaultDeploymentName      = "karpenter"
+	controllerNamespace = "kube-system"
+	deploymentName      = "karpenter"
 )
 
-// InClusterController returns a boolean if the karpenter controller is hosted in the cluster rather than some managed
-// controlplane.
-func (env *Environment) GetInClusterController() bool {
+func (env *Environment) getInClusterController() bool {
 	d := &appsv1.Deployment{}
-	err := env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)
+	err := env.Client.Get(env.Context, types.NamespacedName{Namespace: controllerNamespace, Name: deploymentName}, d)
 	return err == nil
 }
 
@@ -160,7 +158,7 @@ func (env *Environment) ExpectCreatedOrUpdated(objects ...client.Object) {
 func (env *Environment) ExpectSettings() (res []corev1.EnvVar) {
 	GinkgoHelper()
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: controllerNamespace, Name: deploymentName}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 	return lo.Map(d.Spec.Template.Spec.Containers[0].Env, func(v corev1.EnvVar, _ int) corev1.EnvVar {
 		return *v.DeepCopy()
@@ -170,7 +168,7 @@ func (env *Environment) ExpectSettings() (res []corev1.EnvVar) {
 func (env *Environment) ExpectSettingsReplaced(vars ...corev1.EnvVar) {
 	GinkgoHelper()
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: controllerNamespace, Name: deploymentName}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 	stored := d.DeepCopy()
@@ -185,9 +183,8 @@ func (env *Environment) ExpectSettingsReplaced(vars ...corev1.EnvVar) {
 
 func (env *Environment) ExpectSettingsOverridden(vars ...corev1.EnvVar) {
 	GinkgoHelper()
-	// we cannot run tests for now on karpenter if the controller isn't in cluster
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: controllerNamespace, Name: deploymentName}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 	stored := d.DeepCopy()
@@ -212,7 +209,7 @@ func (env *Environment) ExpectSettingsRemoved(vars ...corev1.EnvVar) {
 	varNames := sets.New(lo.Map(vars, func(v corev1.EnvVar, _ int) string { return v.Name })...)
 
 	d := &appsv1.Deployment{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: DefaultControllerNamespace, Name: DefaultDeploymentName}, d)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Namespace: controllerNamespace, Name: deploymentName}, d)).To(Succeed())
 	Expect(d.Spec.Template.Spec.Containers).To(HaveLen(1))
 
 	stored := d.DeepCopy()
@@ -375,7 +372,7 @@ func (env *Environment) ConsistentlyExpectHealthyPods(duration time.Duration, po
 func (env *Environment) EventuallyExpectKarpenterRestarted() {
 	GinkgoHelper()
 	By("rolling out the new karpenter deployment")
-	env.EventuallyExpectRollout(DefaultDeploymentName, DefaultControllerNamespace)
+	env.EventuallyExpectRollout(deploymentName, controllerNamespace)
 
 	if !lo.ContainsBy(env.ExpectSettings(), func(v corev1.EnvVar) bool {
 		return v.Name == "DISABLE_LEADER_ELECTION" && v.Value == "true"
@@ -439,7 +436,7 @@ func (env *Environment) ExpectKarpenterPods() []*corev1.Pod {
 func (env *Environment) ExpectActiveKarpenterPodName() string {
 	GinkgoHelper()
 	lease := &coordinationv1.Lease{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: "karpenter-leader-election", Namespace: DefaultControllerNamespace}, lease)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: "karpenter-leader-election", Namespace: controllerNamespace}, lease)).To(Succeed())
 
 	// Holder identity for lease is always in the format "<pod-name>_<pseudo-random-value>
 	holderArr := strings.Split(lo.FromPtr(lease.Spec.HolderIdentity), "_")
@@ -453,7 +450,7 @@ func (env *Environment) ExpectActiveKarpenterPod() *corev1.Pod {
 	podName := env.ExpectActiveKarpenterPodName()
 
 	pod := &corev1.Pod{}
-	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: podName, Namespace: DefaultControllerNamespace}, pod)).To(Succeed())
+	Expect(env.Client.Get(env.Context, types.NamespacedName{Name: podName, Namespace: controllerNamespace}, pod)).To(Succeed())
 	return pod
 }
 
@@ -837,8 +834,8 @@ func (env *Environment) GetNode(nodeName string) corev1.Node {
 
 func (env *Environment) ExpectNoCrashes() {
 	GinkgoHelper()
-	for k, v := range env.Monitor.RestartCount(DefaultControllerNamespace) {
-		if strings.Contains(k, DefaultDeploymentName) && v > 0 {
+	for k, v := range env.Monitor.RestartCount(controllerNamespace) {
+		if strings.Contains(k, deploymentName) && v > 0 {
 			Fail("expected karpenter containers to not crash")
 		}
 	}
@@ -865,7 +862,7 @@ func (env *Environment) printControllerLogs(options *corev1.PodLogOptions) {
 			fmt.Printf("[PREVIOUS CONTAINER LOGS]\n")
 			temp.Previous = true
 		}
-		stream, err := env.KubeClient.CoreV1().Pods(DefaultControllerNamespace).GetLogs(pod.Name, temp).Stream(env.Context)
+		stream, err := env.KubeClient.CoreV1().Pods(controllerNamespace).GetLogs(pod.Name, temp).Stream(env.Context)
 		if err != nil {
 			log.FromContext(env.Context).Error(err, "failed fetching controller logs")
 			return
