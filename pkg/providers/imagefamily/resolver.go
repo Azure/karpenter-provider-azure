@@ -25,8 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -109,14 +109,14 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
-			prepareKubeletConfiguration(instanceType, nodeClass),
+			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
 			allTaints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
 		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
-			prepareKubeletConfiguration(instanceType, nodeClass),
+			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
 			generalTaints,
 			startupTaints,
 			staticParameters.Labels,
@@ -132,19 +132,14 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	return template, nil
 }
 
-func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *bootstrap.KubeletConfiguration {
+func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *bootstrap.KubeletConfiguration {
 	kubeletConfig := &bootstrap.KubeletConfiguration{}
 
 	if nodeClass.Spec.Kubelet != nil {
 		kubeletConfig.KubeletConfiguration = *nodeClass.Spec.Kubelet
 	}
 
-	// TODO: make default maxpods dependent on CNI
-	if nodeClass.Spec.MaxPods != nil {
-		kubeletConfig.MaxPods = *nodeClass.Spec.MaxPods
-	} else {
-		kubeletConfig.MaxPods = consts.DefaultKubernetesMaxPods
-	}
+	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)
 
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
