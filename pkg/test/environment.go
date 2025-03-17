@@ -160,6 +160,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		AzureResourceGraphAPI:       azureResourceGraphAPI,
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:        networkInterfacesAPI,
+		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		MockSkuClientSignalton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
