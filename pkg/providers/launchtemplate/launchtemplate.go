@@ -172,10 +172,14 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 }
 
 func getAgentbakerNetworkPlugin(ctx context.Context) string {
-	if isAzureCNIOverlay(ctx) || isCiliumNodeSubnet(ctx) {
+	if isAzureCNIOverlay(ctx) || isCiliumNodeSubnet(ctx) || isNetworkPluginNone(ctx) {
 		return consts.NetworkPluginNone
 	}
 	return consts.NetworkPluginAzure
+}
+
+func isNetworkPluginNone(ctx context.Context) bool {
+	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginNone
 }
 
 func isCiliumNodeSubnet(ctx context.Context) bool {
