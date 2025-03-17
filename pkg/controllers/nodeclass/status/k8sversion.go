@@ -93,7 +93,7 @@ func (r *K8sVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha
 		if newK8sVersion.GT(currentK8sVersion) {
 			logger.Debug("nodeclass.k8sversion: k8s upgrade detected")
 			nodeClass.Status.K8sVersion = k8sVersion
-			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "K8sUpgrade", "Preforming K8s upgrade, need to get latest node images")
+			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "K8sUpgrade", "Performing K8s upgrade, need to get latest node images")
 			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeK8sVersionReady)
 		}
 	}
