@@ -140,7 +140,6 @@ var _ = Describe("InstanceType Provider", func() {
 	AfterEach(func() {
 		ExpectCleanedUp(ctx, env.Client)
 	})
-
 	Context("Subnet", func() {
 		It("should use the VNET_SUBNET_ID", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -541,7 +540,7 @@ var _ = Describe("InstanceType Provider", func() {
 			customData := ExpectDecodedCustomData(azureEnv)
 			expectedFlags := map[string]string{
 				"eviction-hard":           "memory.available<750Mi",
-				"max-pods":                "250",
+				"max-pods":                "110",
 				"image-gc-low-threshold":  "20",
 				"image-gc-high-threshold": "30",
 				"cpu-cfs-quota":           "true",
@@ -767,10 +766,76 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 	})
+	Context("Provider List MaxPods", func() {
+		BeforeEach(func() {
+			ctx = options.ToContext(ctx, test.Options())
+		})
+		It("should set pods equal to MaxPods in the AKSNodeClass when specified", func() {
+			maxPods := int32(150)
+			nodeClass.Spec.MaxPods = lo.ToPtr(maxPods)
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectCapacityPodsToMatchMaxPods(instanceTypes, maxPods)
+
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(100))
+			// Expect that an updated nodeclass is reflected
+			instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(100))
+		})
+		It("should set pods equal to the expected default MaxPods for NodeSubnet", func() {
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin:     lo.ToPtr("azure"),
+					NetworkPluginMode: lo.ToPtr(""),
+				}),
+			)
+			Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("azure"))
+			Expect(options.FromContext(ctx).NetworkPluginMode).To(Equal(""))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(30))
+		})
+		It("should set pods equal to the expected default MaxPods for AzureCNI Overlay", func() {
+			// The default options should be using azure cni + overlay networking
+			Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("azure"))
+			Expect(options.FromContext(ctx).NetworkPluginMode).To(Equal("overlay"))
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(250))
+		})
+		It("should set pods equal to expected default MaxPods for network plugin none", func() {
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin: lo.ToPtr("none"),
+				}),
+			)
+			Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("none"))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(250))
+		})
+		It("should set pods equal to expected default MaxPods for unsupported cni", func() {
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin: lo.ToPtr("kubenet"),
+				}),
+			)
+			Expect(options.FromContext(ctx).NetworkPlugin).To(Equal("kubenet"))
+
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).NotTo(HaveOccurred())
+			ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(110))
+		})
+	})
 	Context("Provider List", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
 		var err error
-
 		BeforeEach(func() {
 			// disable VM memory overhead for simpler capacity testing
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
@@ -1408,4 +1473,16 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 func ExpectKubeletFlagsPassed(customData string) string {
 	GinkgoHelper()
 	return customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
+}
+
+func ExpectCapacityPodsToMatchMaxPods(instanceTypes []*corecloudprovider.InstanceType, expectedMaxPods int32) {
+	GinkgoHelper()
+	expected := int64(expectedMaxPods)
+	for _, inst := range instanceTypes {
+		pods, found := inst.Capacity[v1.ResourcePods]
+		Expect(found).To(BeTrue(), "resource pods not found for instance")
+		podsCount, ok := pods.AsInt64()
+		Expect(ok).To(BeTrue(), "failed to convert pods capacity to int64")
+		Expect(podsCount).To(Equal(expected), "pods capacity does not match expected value")
+	}
 }
