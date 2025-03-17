@@ -45,7 +45,7 @@ var azureEnv *test.Environment
 var nodeClass *v1alpha2.AKSNodeClass
 var controller *status.Controller
 
-func TestAPIs(t *testing.T) {
+func TestAKSNodeClassStatusController(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "AKSNodeClass_Status")

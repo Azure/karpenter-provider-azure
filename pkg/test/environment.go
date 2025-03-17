@@ -44,7 +44,7 @@ func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
-var (
+const (
 	resourceGroup = "test-resourceGroup"
 	subscription  = "12345678-1234-1234-1234-123456789012"
 )
