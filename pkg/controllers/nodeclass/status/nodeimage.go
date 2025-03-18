@@ -164,9 +164,9 @@ func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v
 
 func mapImageBasesToImages(images []v1alpha2.NodeImage) map[string]*v1alpha2.NodeImage {
 	imagesBaseMapping := map[string]*v1alpha2.NodeImage{}
-	for _, image := range images {
-		baseID := TrimVersionSuffix(image.ID)
-		imagesBaseMapping[baseID] = &image
+	for i := range images {
+		baseID := TrimVersionSuffix(images[i].ID)
+		imagesBaseMapping[baseID] = &images[i]
 	}
 	return imagesBaseMapping
 }
