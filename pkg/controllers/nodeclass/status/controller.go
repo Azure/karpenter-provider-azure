@@ -43,18 +43,18 @@ type Reconciler interface {
 type Controller struct {
 	kubeClient client.Client
 
-	k8sVersion *K8sVersionReconciler
-	nodeImage  *NodeImageReconciler
-	readiness  *Readiness //TODO : Remove this when we have sub status conditions
+	kubernetesVersion *KubernetesVersionReconciler
+	nodeImage         *NodeImageReconciler
+	readiness         *Readiness //TODO : Remove this when we have sub status conditions
 }
 
-func NewController(kubeClient client.Client, k8sVersionProvider imagefamily.K8sVersionProvider, imageProvider imagefamily.NodeImageProvider) *Controller {
+func NewController(kubeClient client.Client, kubernetesVersionProvider imagefamily.KubernetesVersionProvider, imageProvider imagefamily.NodeImageProvider) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
-		k8sVersion: NewK8sVersionReconciler(k8sVersionProvider),
-		nodeImage:  NewNodeImageReconciler(imageProvider),
-		readiness:  &Readiness{},
+		kubernetesVersion: NeKubernetesVersionReconciler(kubernetesVersionProvider),
+		nodeImage:         NewNodeImageReconciler(imageProvider),
+		readiness:         &Readiness{},
 	}
 }
 
@@ -73,7 +73,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	var results []reconcile.Result
 	var errs error
 	for _, reconciler := range []Reconciler{
-		c.k8sVersion,
+		c.kubernetesVersion,
 		c.nodeImage,
 		c.readiness,
 	} {

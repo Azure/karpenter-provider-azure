@@ -35,21 +35,21 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
-type K8sVersionReconciler struct {
-	k8sVersionProvider imagefamily.K8sVersionProvider
-	cm                 *pretty.ChangeMonitor
+type KubernetesVersionReconciler struct {
+	kubernetesVersionProvider imagefamily.KubernetesVersionProvider
+	cm                        *pretty.ChangeMonitor
 }
 
-func NewK8sVersionReconciler(provider imagefamily.K8sVersionProvider) *K8sVersionReconciler {
-	return &K8sVersionReconciler{
-		k8sVersionProvider: provider,
-		cm:                 pretty.NewChangeMonitor(),
+func NeKubernetesVersionReconciler(provider imagefamily.KubernetesVersionProvider) *KubernetesVersionReconciler {
+	return &KubernetesVersionReconciler{
+		kubernetesVersionProvider: provider,
+		cm:                        pretty.NewChangeMonitor(),
 	}
 }
 
-func (r *K8sVersionReconciler) Register(_ context.Context, m manager.Manager) error {
+func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
-		Named("nodeclass.k8sversion").
+		Named("nodeclass.kubernetesversion").
 		For(&v1alpha2.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter:             reasonable.RateLimiter(),
@@ -58,45 +58,45 @@ func (r *K8sVersionReconciler) Register(_ context.Context, m manager.Manager) er
 		Complete(reconcile.AsReconciler(m.GetClient(), r))
 }
 
-// The k8s version reconciler will detect reasons to bump the k8s version:
+// The kubernetes version reconciler will detect reasons to bump the kubernetes version:
 //  1. Newly created AKSNodeClass, will select the version discovered from the API server
-//  2. If a later k8s version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
+//  2. If a later kubernetes version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
 //     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the NodeImage readiness.
-func (r *K8sVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
 	logger := logging.FromContext(ctx)
-	logger.Debug("nodeclass.k8sversion: starting reconcile")
+	logger.Debug("nodeclass.kubernetesversion: starting reconcile")
 
-	k8sVersion, err := r.k8sVersionProvider.KubeServerVersion(ctx)
+	k8sVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
-		logger.Debug("nodeclass.k8sversion: err getting k8s version")
-		return reconcile.Result{}, fmt.Errorf("getting k8s version, %w", err)
+		logger.Debug("nodeclass.kubernetesversion: err getting kubernetes version")
+		return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
 	}
 
-	// Case 1: init, update k8s status to API server version found
+	// Case 1: init, update kubernetes status to API server version found
 	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == "" {
-		logger.Debug("nodeclass.k8sversion: init k8s version")
+		logger.Debug("nodeclass.kubernetesversion: init kubernetes version")
 		nodeClass.Status.KubernetesVersion = k8sVersion
 		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 	} else {
 		// Check if there is an upgrade
 		newK8sVersion, err := semver.Parse(k8sVersion)
 		if err != nil {
-			logger.Debug("nodeclass.k8sversion: err parsing new k8s version")
-			return reconcile.Result{}, fmt.Errorf("parsing discovered k8s version, %w", err)
+			logger.Debug("nodeclass.kubernetesversion: err parsing new kubernetes version")
+			return reconcile.Result{}, fmt.Errorf("parsing discovered kubernetes version, %w", err)
 		}
 		currentK8sVersion, err := semver.Parse(nodeClass.Status.KubernetesVersion)
 		if err != nil {
-			logger.Debug("nodeclass.k8sversion: err parsing current k8s version")
-			return reconcile.Result{}, fmt.Errorf("parsing current k8s version, %w", err)
+			logger.Debug("nodeclass.kubernetesversion: err parsing current kubernetes version")
+			return reconcile.Result{}, fmt.Errorf("parsing current kubernetes version, %w", err)
 		}
-		// Case 2: Upgrade k8s version [Note: we set node image to not ready, since we upgrade node image when there is a k8s upgrade]
+		// Case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
-			logger.Debug("nodeclass.k8sversion: k8s upgrade detected")
+			logger.Debug("nodeclass.kubernetesversion: kubernetes upgrade detected")
 			nodeClass.Status.KubernetesVersion = k8sVersion
-			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "K8sUpgrade", "Performing K8s upgrade, need to get latest node images")
+			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest node images")
 			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 		}
 	}
-	logger.Debug("nodeclass.k8sversion: successful reconcile")
+	logger.Debug("nodeclass.kubernetesversion: successful reconcile")
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }

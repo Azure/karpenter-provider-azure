@@ -50,7 +50,7 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 	})
 
-	It("Should update KubernetesVersion when new k8s version is detected", func() {
+	It("Should update KubernetesVersion when new kubernetes version is detected", func() {
 		nodeClass.Status.KubernetesVersion = oldK8sVersion
 		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 
@@ -67,16 +67,16 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 	})
 
-	Context("K8sVersionReconciler direct tests", func() {
+	Context("KubernetesVersionReconciler direct tests", func() {
 		var (
-			k8sReconciler *status.K8sVersionReconciler
+			k8sReconciler *status.KubernetesVersionReconciler
 		)
 
 		BeforeEach(func() {
-			k8sReconciler = status.NewK8sVersionReconciler(azureEnv.ImageProvider)
+			k8sReconciler = status.NeKubernetesVersionReconciler(azureEnv.ImageProvider)
 		})
 
-		It("Should update KubernetesVersion when new k8s version is detected, and reset node image readiness to false", func() {
+		It("Should update KubernetesVersion when new kubernetes version is detected, and reset node image readiness to false", func() {
 			nodeClass.Status.KubernetesVersion = oldK8sVersion
 			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 

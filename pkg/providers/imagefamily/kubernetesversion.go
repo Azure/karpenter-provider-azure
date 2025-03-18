@@ -20,6 +20,6 @@ import (
 	"context"
 )
 
-type K8sVersionProvider interface {
+type KubernetesVersionProvider interface {
 	KubeServerVersion(ctx context.Context) (string, error)
 }
