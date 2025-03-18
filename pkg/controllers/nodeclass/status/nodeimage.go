@@ -69,7 +69,7 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 //   - 2. Indirectly handle image bump for k8s upgrade
 //   - 3. Can indirectly handle bumps for any images unsupported by node features, if required to in the future
 //     Note: Currently there are no node features to be handled in this way.
-//   - 4. TODO: Update NodeImages to latest if in a MW (maintenance windows) [retrieved from ConfigMap]
+//   - 4. TODO: Update NodeImages to latest if in an open maintenance window [retrieved from ConfigMap]
 //
 // Scenario B: Calculate images to be updated based on delta of available images
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
@@ -101,7 +101,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	})
 
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
-	shouldUpdate := imageVersionsUnready(nodeClass) || isOpenMW()
+	shouldUpdate := imageVersionsUnready(nodeClass) || isMaintenanceWindowOpen()
 	logger.Debugf("nodeclass.nodeimage: should complete a full update to latest: %t", shouldUpdate)
 	if !shouldUpdate {
 		// Scenario B: Check if we should do any partial update based on image selectors, or newly supports SKUs
@@ -132,9 +132,9 @@ func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
 	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImageReady).IsTrue()
 }
 
-func isOpenMW() bool {
-	// Case 4: check if MW is open
-	// TODO: need to add the actual logic for handling MWs once it is in the ConfigMap.
+func isMaintenanceWindowOpen() bool {
+	// Case 4: check if the maintenance window is open
+	// TODO: need to add the actual logic for handling maintenance windows once it is in the ConfigMap.
 	return true
 }
 
