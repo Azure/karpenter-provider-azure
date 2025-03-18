@@ -165,14 +165,14 @@ func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v
 func mapImageBasesToImages(images []v1alpha2.NodeImage) map[string]*v1alpha2.NodeImage {
 	imagesBaseMapping := map[string]*v1alpha2.NodeImage{}
 	for i := range images {
-		baseID := TrimVersionSuffix(images[i].ID)
+		baseID := trimVersionSuffix(images[i].ID)
 		imagesBaseMapping[baseID] = &images[i]
 	}
 	return imagesBaseMapping
 }
 
 // Trims off the version suffix, and leaves just the image base id
-func TrimVersionSuffix(imageID string) string {
+func trimVersionSuffix(imageID string) string {
 	imageIDParts := strings.Split(imageID, "/")
 	baseID := strings.Join(imageIDParts[0:len(imageIDParts)-2], "/")
 	return baseID
