@@ -62,6 +62,7 @@ func main() {
 			aksCloudProvider,
 			op.InstanceProvider,
 			op.ImageProvider,
+			op.ImageProvider,
 		)...).
 		//WithWebhooks(ctx, webhooks.NewWebhooks()...).
 		Start(ctx, cloudProvider)
