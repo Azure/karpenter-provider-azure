@@ -249,9 +249,9 @@ spec:
                   - type
                   type: object
                 type: array
-              k8sVersion:
+              kubernetesVersion:
                 description: |-
-                  K8sVersion contains the current k8s version which should be
+                  KubernetesVersion contains the current kubernetes version which should be
                   used for nodes provisioned for the NodeClass
                 type: string
               nodeImages:
@@ -259,7 +259,7 @@ spec:
                   NodeImages contains the current set of images available to use
                   for the NodeClass
                 items:
-                  description: Image contains resolved image selector values utilized
+                  description: NodeImage contains resolved image selector values utilized
                     for node launch
                   properties:
                     id:

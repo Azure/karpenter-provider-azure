@@ -259,7 +259,7 @@ spec:
                   NodeImages contains the current set of images available to use
                   for the NodeClass
                 items:
-                  description: Image contains resolved image selector values utilized
+                  description: NodeImage contains resolved image selector values utilized
                     for node launch
                   properties:
                     id:
