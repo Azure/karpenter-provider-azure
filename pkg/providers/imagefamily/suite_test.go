@@ -20,8 +20,6 @@ import (
 	"context"
 	"testing"
 
-	//used for launch template tests until they are migrated
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"

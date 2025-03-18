@@ -22,8 +22,6 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
-	//used for launch template tests until they are migrated
-
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
