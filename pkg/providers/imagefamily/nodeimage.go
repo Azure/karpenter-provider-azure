@@ -39,35 +39,42 @@ type NodeImageProvider interface {
 func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (NodeImages, error) {
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)
 	if options.FromContext(ctx).UseSIG {
-		nodeImages := NodeImages{}
-		retrievedLatestImages, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, supportedImage := range supportedImages {
-			var nextImage *NodeImageVersion
-			for _, retrievedLatestImage := range retrievedLatestImages.Values {
-				if supportedImage.ImageDefinition == retrievedLatestImage.SKU {
-					nextImage = &retrievedLatestImage
-					break
-				}
-			}
-			if nextImage == nil {
-				// Unable to find given image version
-				continue
-			}
-			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, supportedImage.GalleryResourceGroup, supportedImage.GalleryName, supportedImage.ImageDefinition, nextImage.Version)
-
-			nodeImages = append(nodeImages, NodeImage{
-				ID:           imageID,
-				Requirements: supportedImage.Requirements,
-			})
-		}
-		return nodeImages, nil
+		return p.listSIG(ctx, supportedImages)
 	}
 
-	// CIG path
+	return p.listCIG(ctx, supportedImages)
+}
+
+func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOutput) (NodeImages, error) {
+	nodeImages := NodeImages{}
+	retrievedLatestImages, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, supportedImage := range supportedImages {
+		var nextImage *NodeImageVersion
+		for _, retrievedLatestImage := range retrievedLatestImages.Values {
+			if supportedImage.ImageDefinition == retrievedLatestImage.SKU {
+				nextImage = &retrievedLatestImage
+				break
+			}
+		}
+		if nextImage == nil {
+			// Unable to find given image version
+			continue
+		}
+		imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, supportedImage.GalleryResourceGroup, supportedImage.GalleryName, supportedImage.ImageDefinition, nextImage.Version)
+
+		nodeImages = append(nodeImages, NodeImage{
+			ID:           imageID,
+			Requirements: supportedImage.Requirements,
+		})
+	}
+	return nodeImages, nil
+}
+
+func (p *Provider) listCIG(ctx context.Context, supportedImages []DefaultImageOutput) (NodeImages, error) {
 	nodeImages := NodeImages{}
 	for _, supportedImage := range supportedImages {
 		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
