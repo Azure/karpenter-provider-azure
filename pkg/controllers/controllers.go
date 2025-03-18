@@ -39,8 +39,15 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
-func NewControllers(ctx context.Context, mgr manager.Manager, kubeClient client.Client, recorder events.Recorder,
-	cloudProvider cloudprovider.CloudProvider, instanceProvider instance.Provider, imageProvider *imagefamily.Provider) []controller.Controller {
+func NewControllers(
+	ctx context.Context,
+	mgr manager.Manager,
+	kubeClient client.Client,
+	recorder events.Recorder,
+	cloudProvider cloudprovider.CloudProvider,
+	instanceProvider instance.Provider,
+	imageProvider *imagefamily.Provider,
+) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
 		nodeclassstatus.NewController(kubeClient, imageProvider, imageProvider),
