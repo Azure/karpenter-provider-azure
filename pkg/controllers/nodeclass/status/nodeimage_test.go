@@ -103,7 +103,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeNodeImageReady)).To(BeTrue())
 	})
 
-	It("should update NodeImages and its readiness on AKSNodeClass when in an open MW", func() {
+	It("should update NodeImages and its readiness on AKSNodeClass when in an open maintenance window", func() {
 		// TODO: once MW support is added we need to actually add test code here causing it to be open.
 		nodeClass.Status.NodeImages = getExpectedTestCommunityImages(oldcigImageVersion)
 		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImageReady)
