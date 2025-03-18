@@ -45,10 +45,10 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 			return nil, err
 		}
 
-		for _, nextSupportedImage := range supportedImages {
+		for _, supportedImage := range supportedImages {
 			var nextImage *NodeImageVersion
 			for _, retrievedLatestImage := range retrievedLatestImages.Values {
-				if nextSupportedImage.ImageDefinition == retrievedLatestImage.SKU {
+				if supportedImage.ImageDefinition == retrievedLatestImage.SKU {
 					nextImage = &retrievedLatestImage
 					break
 				}
@@ -57,11 +57,11 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 				// Unable to find given image version
 				continue
 			}
-			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, nextSupportedImage.GalleryResourceGroup, nextSupportedImage.GalleryName, nextSupportedImage.ImageDefinition, nextImage.Version)
+			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, supportedImage.GalleryResourceGroup, supportedImage.GalleryName, supportedImage.ImageDefinition, nextImage.Version)
 
 			nodeImages = append(nodeImages, NodeImage{
 				ID:           imageID,
-				Requirements: nextSupportedImage.Requirements,
+				Requirements: supportedImage.Requirements,
 			})
 		}
 		return nodeImages, nil
@@ -69,15 +69,15 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 
 	// CIG path
 	nodeImages := NodeImages{}
-	for _, nextSupportedImage := range supportedImages {
-		cigImageID, err := p.getCIGImageID(nextSupportedImage.PublicGalleryURL, nextSupportedImage.ImageDefinition)
+	for _, supportedImage := range supportedImages {
+		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
 		if err != nil {
 			return nil, err
 		}
 
 		nodeImages = append(nodeImages, NodeImage{
 			ID:           cigImageID,
-			Requirements: nextSupportedImage.Requirements,
+			Requirements: supportedImage.Requirements,
 		})
 	}
 	return nodeImages, nil
