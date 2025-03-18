@@ -36,7 +36,7 @@ import (
 	"github.com/awslabs/operatorpkg/reasonable"
 )
 
-type Reconciler interface {
+type reconciler interface {
 	Reconcile(context.Context, *v1alpha2.AKSNodeClass) (reconcile.Result, error)
 }
 
@@ -72,7 +72,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 
 	var results []reconcile.Result
 	var errs error
-	for _, reconciler := range []Reconciler{
+	for _, reconciler := range []reconciler{
 		c.kubernetesVersion,
 		c.nodeImage,
 		c.readiness,
