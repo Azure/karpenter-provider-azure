@@ -73,10 +73,10 @@ func (r *K8sVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha
 	}
 
 	// Case 1: init, update k8s status to API server version found
-	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeK8sVersionReady).IsTrue() || nodeClass.Status.K8sVersion == "" {
+	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == "" {
 		logger.Debug("nodeclass.k8sversion: init k8s version")
-		nodeClass.Status.K8sVersion = k8sVersion
-		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeK8sVersionReady)
+		nodeClass.Status.KubernetesVersion = k8sVersion
+		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 	} else {
 		// Check if there is an upgrade
 		newK8sVersion, err := semver.Parse(k8sVersion)
@@ -84,7 +84,7 @@ func (r *K8sVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha
 			logger.Debug("nodeclass.k8sversion: err parsing new k8s version")
 			return reconcile.Result{}, fmt.Errorf("parsing discovered k8s version, %w", err)
 		}
-		currentK8sVersion, err := semver.Parse(nodeClass.Status.K8sVersion)
+		currentK8sVersion, err := semver.Parse(nodeClass.Status.KubernetesVersion)
 		if err != nil {
 			logger.Debug("nodeclass.k8sversion: err parsing current k8s version")
 			return reconcile.Result{}, fmt.Errorf("parsing current k8s version, %w", err)
@@ -92,9 +92,9 @@ func (r *K8sVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha
 		// Case 2: Upgrade k8s version [Note: we set node image to not ready, since we upgrade node image when there is a k8s upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
 			logger.Debug("nodeclass.k8sversion: k8s upgrade detected")
-			nodeClass.Status.K8sVersion = k8sVersion
+			nodeClass.Status.KubernetesVersion = k8sVersion
 			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "K8sUpgrade", "Performing K8s upgrade, need to get latest node images")
-			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeK8sVersionReady)
+			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 		}
 	}
 	logger.Debug("nodeclass.k8sversion: successful reconcile")

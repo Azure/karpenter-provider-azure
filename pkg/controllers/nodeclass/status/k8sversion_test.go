@@ -35,36 +35,36 @@ const (
 	oldK8sVersion = "1.28.6"
 )
 
-var _ = Describe("NodeClass K8sVersion Status Controller", func() {
+var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 	var nodeClass *v1alpha2.AKSNodeClass
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
 	})
 
-	It("Should init K8sVersion and its readiness on AKSNodeClass", func() {
+	It("Should init KubernetesVersion and its readiness on AKSNodeClass", func() {
 		ExpectApplied(ctx, env.Client, nodeClass)
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(nodeClass.Status.K8sVersion).To(Equal(testK8sVersion))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeK8sVersionReady)).To(BeTrue())
+		Expect(nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
+		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 	})
 
-	It("Should update K8sVersion when new k8s version is detected", func() {
-		nodeClass.Status.K8sVersion = oldK8sVersion
-		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeK8sVersionReady)
+	It("Should update KubernetesVersion when new k8s version is detected", func() {
+		nodeClass.Status.KubernetesVersion = oldK8sVersion
+		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 
 		ExpectApplied(ctx, env.Client, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(nodeClass.Status.K8sVersion).To(Equal(oldK8sVersion))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeK8sVersionReady)).To(BeTrue())
+		Expect(nodeClass.Status.KubernetesVersion).To(Equal(oldK8sVersion))
+		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(nodeClass.Status.K8sVersion).To(Equal(testK8sVersion))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeK8sVersionReady)).To(BeTrue())
+		Expect(nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
+		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 	})
 
 	Context("K8sVersionReconciler direct tests", func() {
@@ -76,16 +76,16 @@ var _ = Describe("NodeClass K8sVersion Status Controller", func() {
 			k8sReconciler = status.NewK8sVersionReconciler(azureEnv.ImageProvider)
 		})
 
-		It("Should update K8sVersion when new k8s version is detected, and reset node image readiness to false", func() {
-			nodeClass.Status.K8sVersion = oldK8sVersion
-			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeK8sVersionReady)
+		It("Should update KubernetesVersion when new k8s version is detected, and reset node image readiness to false", func() {
+			nodeClass.Status.KubernetesVersion = oldK8sVersion
+			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 
 			result, err := k8sReconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}))
 
-			Expect(nodeClass.Status.K8sVersion).To(Equal(testK8sVersion))
-			Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeK8sVersionReady)).To(BeTrue())
+			Expect(nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
+			Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 			Expect(nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImageReady).IsFalse()).To(BeTrue())
 		})
 	})
