@@ -44,7 +44,7 @@ type KubernetesVersionReconciler struct {
 	cm                        *pretty.ChangeMonitor
 }
 
-func NeKubernetesVersionReconciler(provider imagefamily.KubernetesVersionProvider) *KubernetesVersionReconciler {
+func NewKubernetesVersionReconciler(provider imagefamily.KubernetesVersionProvider) *KubernetesVersionReconciler {
 	return &KubernetesVersionReconciler{
 		kubernetesVersionProvider: provider,
 		cm:                        pretty.NewChangeMonitor(),

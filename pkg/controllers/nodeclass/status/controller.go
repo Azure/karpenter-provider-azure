@@ -52,7 +52,7 @@ func NewController(kubeClient client.Client, kubernetesVersionProvider imagefami
 	return &Controller{
 		kubeClient: kubeClient,
 
-		kubernetesVersion: NeKubernetesVersionReconciler(kubernetesVersionProvider),
+		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(imageProvider),
 		readiness:         &Readiness{},
 	}

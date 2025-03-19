@@ -73,7 +73,7 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 		)
 
 		BeforeEach(func() {
-			k8sReconciler = status.NeKubernetesVersionReconciler(azureEnv.ImageProvider)
+			k8sReconciler = status.NewKubernetesVersionReconciler(azureEnv.ImageProvider)
 		})
 
 		It("Should update KubernetesVersion when new kubernetes version is detected, and reset node image readiness to false", func() {
