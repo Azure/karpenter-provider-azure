@@ -39,6 +39,10 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
+const (
+	nodeImageReconcilerName = "nodeclass.nodeimage"
+)
+
 type NodeImageReconciler struct {
 	nodeImageProvider imagefamily.NodeImageProvider
 	cm                *pretty.ChangeMonitor
@@ -53,7 +57,7 @@ func NewNodeImageReconciler(provider imagefamily.NodeImageProvider) *NodeImageRe
 
 func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
-		Named("nodeclass.nodeimage").
+		Named(nodeImageReconcilerName).
 		For(&v1alpha2.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter:             reasonable.RateLimiter(),
@@ -75,7 +79,7 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
 //   - 6. Handles softly adding newest image version of any newly supported SKUs by Karpenter
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named("nodeclass.nodeimage"))
+	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named(nodeImageReconcilerName))
 	logger := logging.FromContext(ctx)
 	logger.Debug("starting reconcile")
 

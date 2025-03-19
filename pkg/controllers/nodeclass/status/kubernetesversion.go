@@ -35,6 +35,10 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
+const (
+	kubernetesVersionReconcilerName = "nodeclass.kubernetesversion"
+)
+
 type KubernetesVersionReconciler struct {
 	kubernetesVersionProvider imagefamily.KubernetesVersionProvider
 	cm                        *pretty.ChangeMonitor
@@ -49,7 +53,7 @@ func NeKubernetesVersionReconciler(provider imagefamily.KubernetesVersionProvide
 
 func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
-		Named("nodeclass.kubernetesversion").
+		Named(kubernetesVersionReconcilerName).
 		For(&v1alpha2.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter:             reasonable.RateLimiter(),
@@ -63,7 +67,7 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 //  2. If a later kubernetes version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
 //     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the NodeImage readiness.
 func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named("nodeclass.kubernetesversion"))
+	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named(kubernetesVersionReconcilerName))
 	logger := logging.FromContext(ctx)
 	logger.Debug("starting reconcile")
 
