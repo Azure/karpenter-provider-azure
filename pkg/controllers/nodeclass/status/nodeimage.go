@@ -117,7 +117,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 			nodeClass.Status.NodeImages = nil
 			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
 			logger.Info("no node images")
-			return reconcile.Result{RequeueAfter: time.Minute}, nil
+			return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 		}
 
 		nodeClass.Status.NodeImages = images
