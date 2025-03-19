@@ -73,30 +73,27 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 
 	k8sVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
-		logger.Debug("err getting kubernetes version")
 		return reconcile.Result{}, fmt.Errorf("getting kubernetes version, %w", err)
 	}
 
 	// Case 1: init, update kubernetes status to API server version found
 	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == "" {
-		logger.Debug("init kubernetes version")
+		logger.Infof("init kubernetes version: %s", k8sVersion)
 		nodeClass.Status.KubernetesVersion = k8sVersion
 		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 	} else {
 		// Check if there is an upgrade
 		newK8sVersion, err := semver.Parse(k8sVersion)
 		if err != nil {
-			logger.Debug("err parsing new kubernetes version")
 			return reconcile.Result{}, fmt.Errorf("parsing discovered kubernetes version, %w", err)
 		}
 		currentK8sVersion, err := semver.Parse(nodeClass.Status.KubernetesVersion)
 		if err != nil {
-			logger.Debug("err parsing current kubernetes version")
 			return reconcile.Result{}, fmt.Errorf("parsing current kubernetes version, %w", err)
 		}
 		// Case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
-			logger.Debug("kubernetes upgrade detected")
+			logger.Infof("kubernetes upgrade detected: from %s, to %s", currentK8sVersion.String(), newK8sVersion.String())
 			nodeClass.Status.KubernetesVersion = k8sVersion
 			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest node images")
 			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)

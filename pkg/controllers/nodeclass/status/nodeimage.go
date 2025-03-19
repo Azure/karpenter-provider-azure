@@ -85,7 +85,6 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
-		logger.Debug("err listing node images")
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
 	images := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
@@ -107,18 +106,16 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
 	shouldUpdate := imageVersionsUnready(nodeClass) || isMaintenanceWindowOpen()
-	logger.Debugf("should complete a full update to latest: %t", shouldUpdate)
 	if !shouldUpdate {
 		// Scenario B: Check if we should do any partial update based on image selectors, or newly supports SKUs
 		images, shouldUpdate = processPartialUpdate(nodeClass, images)
 	}
 
-	logger.Debugf("should update overall: %t", shouldUpdate)
 	if shouldUpdate {
 		if len(images) == 0 {
 			nodeClass.Status.NodeImages = nil
 			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
-			logger.Info("no images")
+			logger.Info("no node images")
 			return reconcile.Result{RequeueAfter: time.Minute}, nil
 		}
 
@@ -147,7 +144,7 @@ func isMaintenanceWindowOpen() bool {
 //   - Currently, this is just image family, and/or usage of SIG, which means that we should just be looking at the baseID of the images
 //
 // Case 6: We will softly add newly supported SKUs by Karpenter on their latest version
-//   - Note: I think this should be assess, if this is the exact behavior we want to give users, before any actual new SKU support is released.
+//   - Note: I think this should be re-assessed if this is the exact behavior we want to give users before any actual new SKU support is released.
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
 func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) ([]v1alpha2.NodeImage, bool) {
