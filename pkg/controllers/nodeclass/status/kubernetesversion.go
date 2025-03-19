@@ -53,7 +53,7 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 		For(&v1alpha2.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter:             reasonable.RateLimiter(),
-			MaxConcurrentReconciles: 10,
+			MaxConcurrentReconciles: 10, // TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), r))
 }
