@@ -51,7 +51,7 @@ type AKSNodeClassSpec struct {
 	// Wherever possible, the types and names should reflect the upstream kubelet types.
 	// +kubebuilder:validation:XValidation:message="imageGCHighThresholdPercent must be greater than imageGCLowThresholdPercent",rule="has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent) ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  : true"
 	// +optional
-	Kubelet *KubeletConfiguration `json:"kubelet,omitempty" hash:"ignore"`
+	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
 	// MaxPods is an override for the maximum number of pods that can run on a worker node instance.
 	// See minimum + maximum pods per node documentation: https://learn.microsoft.com/en-us/azure/aks/concepts-network-ip-address-planning#maximum-pods-per-node
 	// Default behavior if this is not specified depends on the network plugin:
