@@ -128,23 +128,23 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-// Case 1: This is a new AKSNodeClass, where node images haven't been populated yet
-// Case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
-// Case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
+// Handles case 1: This is a new AKSNodeClass, where node images haven't been populated yet
+// Handles case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
+// Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
 func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
 	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImageReady).IsTrue()
 }
 
+// Handles case 4: check if the maintenance window is open
 func isMaintenanceWindowOpen() bool {
-	// Case 4: check if the maintenance window is open
 	// TODO: need to add the actual logic for handling maintenance windows once it is in the ConfigMap.
 	return true
 }
 
-// Case 5: Handles the case of users updating image selectors.
+// Handles case 5: users updating image selectors.
 //   - Currently, this is just image family, and/or usage of SIG, which means that we should just be looking at the baseID of the images
 //
-// Case 6: We will softly add newly supported SKUs by Karpenter on their latest version
+// Handles case 6: We will softly add newly supported SKUs by Karpenter on their latest version
 //   - Note: I think this should be re-assessed if this is the exact behavior we want to give users before any actual new SKU support is released.
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
