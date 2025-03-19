@@ -30,13 +30,11 @@ type NodeImage struct {
 	Requirements scheduling.Requirements
 }
 
-type NodeImages []NodeImage
-
 type NodeImageProvider interface {
-	List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (NodeImages, error)
+	List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]NodeImage, error)
 }
 
-func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (NodeImages, error) {
+func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]NodeImage, error) {
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)
 	if options.FromContext(ctx).UseSIG {
 		return p.listSIG(ctx, supportedImages)
@@ -45,8 +43,8 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 	return p.listCIG(ctx, supportedImages)
 }
 
-func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOutput) (NodeImages, error) {
-	nodeImages := NodeImages{}
+func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOutput) ([]NodeImage, error) {
+	nodeImages := []NodeImage{}
 	retrievedLatestImages, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
 	if err != nil {
 		return nil, err
@@ -74,8 +72,8 @@ func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOu
 	return nodeImages, nil
 }
 
-func (p *Provider) listCIG(_ context.Context, supportedImages []DefaultImageOutput) (NodeImages, error) {
-	nodeImages := NodeImages{}
+func (p *Provider) listCIG(_ context.Context, supportedImages []DefaultImageOutput) ([]NodeImage, error) {
+	nodeImages := []NodeImage{}
 	for _, supportedImage := range supportedImages {
 		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
 		if err != nil {
