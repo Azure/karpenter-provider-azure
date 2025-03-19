@@ -92,6 +92,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 			return item.NodeSelectorRequirement
 		})
 
+		// sorted for consistency
 		sort.Slice(reqs, func(i, j int) bool {
 			if len(reqs[i].Key) != len(reqs[j].Key) {
 				return len(reqs[i].Key) < len(reqs[j].Key)
