@@ -106,6 +106,10 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	})
 
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
+	//
+	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
+	// for initialization, based off an underlying customer operation, or a different update we're
+	// dependant upon which would have already been preformed within its required maintenance Window.
 	shouldUpdate := imageVersionsUnready(nodeClass) || isMaintenanceWindowOpen()
 	if !shouldUpdate {
 		// Scenario B: Check if we should do any partial update based on image selectors, or newly supports SKUs
