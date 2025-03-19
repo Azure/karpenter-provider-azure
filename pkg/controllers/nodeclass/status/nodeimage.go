@@ -75,12 +75,13 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
 //   - 6. Handles softly adding newest image version of any newly supported SKUs by Karpenter
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named("nodeclass.nodeimage"))
 	logger := logging.FromContext(ctx)
-	logger.Debug("nodeclass.nodeimage: starting reconcile")
+	logger.Debug("starting reconcile")
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
-		logger.Debug("nodeclass.nodeimage: err listing node images")
+		logger.Debug("err listing node images")
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
 	images := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
@@ -102,18 +103,18 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 
 	// Scenario A: Check if we should do a full update to latest before processing any partial update
 	shouldUpdate := imageVersionsUnready(nodeClass) || isMaintenanceWindowOpen()
-	logger.Debugf("nodeclass.nodeimage: should complete a full update to latest: %t", shouldUpdate)
+	logger.Debugf("should complete a full update to latest: %t", shouldUpdate)
 	if !shouldUpdate {
 		// Scenario B: Check if we should do any partial update based on image selectors, or newly supports SKUs
 		images, shouldUpdate = processPartialUpdate(nodeClass, images)
 	}
 
-	logger.Debugf("nodeclass.nodeimage: should update overall: %t", shouldUpdate)
+	logger.Debugf("should update overall: %t", shouldUpdate)
 	if shouldUpdate {
 		if len(images) == 0 {
 			nodeClass.Status.NodeImages = nil
 			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
-			logger.Info("nodeclass.nodeimage: no images")
+			logger.Info("no images")
 			return reconcile.Result{RequeueAfter: time.Minute}, nil
 		}
 
@@ -121,7 +122,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImageReady)
 	}
 
-	logger.Debug("nodeclass.nodeimage: success")
+	logger.Debug("success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
