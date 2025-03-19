@@ -74,7 +74,7 @@ func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOu
 	return nodeImages, nil
 }
 
-func (p *Provider) listCIG(ctx context.Context, supportedImages []DefaultImageOutput) (NodeImages, error) {
+func (p *Provider) listCIG(_ context.Context, supportedImages []DefaultImageOutput) (NodeImages, error) {
 	nodeImages := NodeImages{}
 	for _, supportedImage := range supportedImages {
 		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
