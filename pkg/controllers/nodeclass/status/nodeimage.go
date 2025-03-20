@@ -116,6 +116,11 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 		goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
 	}
 
+	// Sorting goalImages for consistency to prevent unnessicary updates to status.
+	sort.Slice(goalImages, func(i, j int) bool {
+		return goalImages[i].ID < goalImages[j].ID
+	})
+
 	if len(goalImages) == 0 {
 		nodeClass.Status.NodeImages = nil
 		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
