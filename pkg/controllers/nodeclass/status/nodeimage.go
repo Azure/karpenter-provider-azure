@@ -87,7 +87,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
-	images := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
+	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return item.NodeSelectorRequirement
 		})
@@ -112,21 +112,19 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	// dependant upon which would have already been preformed within its required maintenance Window.
 	shouldUpdate := imageVersionsUnready(nodeClass) || isMaintenanceWindowOpen()
 	if !shouldUpdate {
-		// Scenario B: Check if we should do any partial update based on image selectors, or newly supports SKUs
-		images, shouldUpdate = processPartialUpdate(nodeClass, images)
+		// Scenario B: Calculate any partial update based on image selectors, or newly supports SKUs
+		goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
 	}
 
-	if shouldUpdate {
-		if len(images) == 0 {
-			nodeClass.Status.NodeImages = nil
-			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
-			logger.Info("no node images")
-			return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
-		}
-
-		nodeClass.Status.NodeImages = images
-		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImageReady)
+	if len(goalImages) == 0 {
+		nodeClass.Status.NodeImages = nil
+		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImageReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
+		logger.Info("no node images")
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
+
+	nodeClass.Status.NodeImages = goalImages
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImageReady)
 
 	logger.Debug("success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -145,6 +143,10 @@ func isMaintenanceWindowOpen() bool {
 	return true
 }
 
+// overrideAnyGoalStateVersionsWithExisting: will look over all the discovered images, and choose to either keep the existing version if already found in the status
+// or merge the new version in. This will discard any images that are no longer selected for as well. Results in picking up new images, while also not bumping
+// image versions outside of a maintenance window for existing ones.
+//
 // Handles case 5: users updating image selectors.
 //   - Currently, this is just image family, and/or usage of SIG, which means that we should just be looking at the baseID of the images
 //
@@ -152,21 +154,19 @@ func isMaintenanceWindowOpen() bool {
 //   - Note: I think this should be re-assessed if this is the exact behavior we want to give users before any actual new SKU support is released.
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
-func processPartialUpdate(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) ([]v1alpha2.NodeImage, bool) {
+func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) []v1alpha2.NodeImage {
 	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.NodeImages)
 	discoveredBaseIDMapping := mapImageBasesToImages(discoveredImages)
 
 	updatedImages := []v1alpha2.NodeImage{}
-	foundUpdate := false
 	for discoveredBaseImageID, discoveredImage := range discoveredBaseIDMapping {
 		if existingImage, ok := existingBaseIDMapping[discoveredBaseImageID]; ok {
 			updatedImages = append(updatedImages, *existingImage)
 		} else {
-			foundUpdate = true
 			updatedImages = append(updatedImages, *discoveredImage)
 		}
 	}
-	return updatedImages, foundUpdate
+	return updatedImages
 }
 
 func mapImageBasesToImages(images []v1alpha2.NodeImage) map[string]*v1alpha2.NodeImage {
