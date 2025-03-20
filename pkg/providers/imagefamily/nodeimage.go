@@ -126,7 +126,7 @@ func (p *Provider) cacheKey(supportedImages []DefaultImageOutput, k8sVersion str
 		useSIG,
 	}, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	if err != nil {
-		return "", nil
+		return "", err
 	}
 	return fmt.Sprintf("%016x", hash), nil
 }
