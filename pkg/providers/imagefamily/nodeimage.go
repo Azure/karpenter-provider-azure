@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/mitchellh/hashstructure/v2"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
@@ -35,12 +36,42 @@ type NodeImageProvider interface {
 }
 
 func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]NodeImage, error) {
-	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)
-	if options.FromContext(ctx).UseSIG {
-		return p.listSIG(ctx, supportedImages)
+	kubernetesVersion, err := p.KubeServerVersion(ctx)
+	if err != nil {
+		return []NodeImage{}, err
 	}
 
-	return p.listCIG(ctx, supportedImages)
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)
+	useSIG := options.FromContext(ctx).UseSIG
+
+	key, err := p.cacheKey(
+		supportedImages,
+		kubernetesVersion,
+		useSIG,
+	)
+	if err != nil {
+		return []NodeImage{}, err
+	}
+
+	if nodeImages, ok := p.imagesCache.Get(key); ok {
+		return nodeImages.([]NodeImage), nil
+	}
+
+	var nodeImages []NodeImage
+	if useSIG {
+		nodeImages, err = p.listSIG(ctx, supportedImages)
+		if err != nil {
+			return []NodeImage{}, err
+		}
+	} else {
+		nodeImages, err = p.listCIG(ctx, supportedImages)
+		if err != nil {
+			return []NodeImage{}, err
+		}
+	}
+	p.imageCache.Set(key, nodeImages, imageExpirationInterval)
+
+	return nodeImages, nil
 }
 
 func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOutput) ([]NodeImage, error) {
@@ -86,4 +117,16 @@ func (p *Provider) listCIG(_ context.Context, supportedImages []DefaultImageOutp
 		})
 	}
 	return nodeImages, nil
+}
+
+func (p *Provider) cacheKey(supportedImages []DefaultImageOutput, k8sVersion string, useSIG bool) (string, error) {
+	hash, err := hashstructure.Hash([]interface{}{
+		supportedImages,
+		k8sVersion,
+		useSIG,
+	}, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
+	if err != nil {
+		return "", nil
+	}
+	return fmt.Sprintf("%016x", hash), nil
 }
