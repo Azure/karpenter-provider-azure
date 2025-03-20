@@ -53,7 +53,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 		return []NodeImage{}, err
 	}
 
-	if nodeImages, ok := p.imagesCache.Get(key); ok {
+	if nodeImages, ok := p.nodeImagesCache.Get(key); ok {
 		return nodeImages.([]NodeImage), nil
 	}
 
@@ -69,7 +69,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 			return []NodeImage{}, err
 		}
 	}
-	p.imageCache.Set(key, nodeImages, imageExpirationInterval)
+	p.nodeImagesCache.Set(key, nodeImages, imageExpirationInterval)
 
 	return nodeImages, nil
 }

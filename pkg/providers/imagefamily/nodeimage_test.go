@@ -40,7 +40,8 @@ import (
 const (
 	subscription = "12345678-1234-1234-1234-123456789012"
 
-	cigImageVersion = "202410.09.0"
+	cigImageVersion      = "202410.09.0"
+	laterCIGImageVersion = "202411.09.0"
 
 	sigImageVersion = "202410.09.0"
 )
@@ -83,6 +84,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 	var (
 		env *coretest.Environment
 
+		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
+
 		nodeImageProvider imagefamily.NodeImageProvider
 		nodeClass         *v1alpha2.AKSNodeClass
 	)
@@ -92,7 +95,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		ctx = coreoptions.ToContext(ctx, coretest.Options())
 		ctx = options.ToContext(ctx, test.Options())
 
-		communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
+		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}
 		var cigImageVersionTest = cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
@@ -136,6 +139,53 @@ var _ = Describe("NodeImageProvider tests", func() {
 			nodeClass.Spec.ImageFamily = &imageFamily
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)))
+		})
+	})
+
+	Context("Test Caching", func() {
+		It("Ensure List uses cache data", func() {
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
+
+			communityImageVersionsAPI.Reset()
+			var laterCIGImageVersionTest = laterCIGImageVersion
+			communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &laterCIGImageVersionTest})
+
+			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
+		})
+
+		It("Ensure List gets new data if imageFamily changes", func() {
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
+
+			communityImageVersionsAPI.Reset()
+			var laterCIGImageVersionTest = laterCIGImageVersion
+			communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &laterCIGImageVersionTest})
+
+			var imageFamily = v1alpha2.AzureLinuxImageFamily
+			nodeClass.Spec.ImageFamily = &imageFamily
+
+			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, laterCIGImageVersionTest)))
+		})
+
+		It("Ensure List gets new data if usage of SIG changes", func() {
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
+
+			ops := options.FromContext(ctx)
+			ops.UseSIG = true
+			ctx = options.ToContext(ctx, ops)
+
+			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)))
 		})
