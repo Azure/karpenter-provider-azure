@@ -58,7 +58,7 @@ type Template struct {
 }
 
 type Provider struct {
-	imageFamily             *imagefamily.Resolver
+	imageFamily             imagefamily.Resolver
 	imageProvider           *imagefamily.Provider
 	caBundle                *string
 	clusterEndpoint         string
@@ -74,7 +74,7 @@ type Provider struct {
 
 // TODO: add caching of launch templates
 
-func NewProvider(_ context.Context, imageFamily *imagefamily.Resolver, imageProvider *imagefamily.Provider, caBundle *string, clusterEndpoint string,
+func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvider *imagefamily.Provider, caBundle *string, clusterEndpoint string,
 	tenantID, subscriptionID, clusterResourceGroup string, kubeletIdentityClientID, resourceGroup, location, vnetGUID, provisionMode string,
 ) *Provider {
 	return &Provider{
