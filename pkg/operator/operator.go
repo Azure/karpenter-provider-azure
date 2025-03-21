@@ -65,7 +65,7 @@ type Operator struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	ImageProvider          *imagefamily.Provider
-	ImageResolver          *imagefamily.Resolver
+	ImageResolver          imagefamily.Resolver
 	LaunchTemplateProvider *launchtemplate.Provider
 	PricingProvider        *pricing.Provider
 	InstanceTypesProvider  instancetype.Provider
