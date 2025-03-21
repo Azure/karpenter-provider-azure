@@ -47,7 +47,7 @@ type Resolver interface {
 }
 
 // assert that defaultResolver implements Resolver interface
-var _ Resolver = (*defaultResolver)(nil)
+var _ Resolver = &defaultResolver{}
 
 // defaultResolver is able to fill-in dynamic launch template parameters
 type defaultResolver struct {
