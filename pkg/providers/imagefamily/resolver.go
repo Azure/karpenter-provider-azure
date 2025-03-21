@@ -37,9 +37,18 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-// Resolver is able to fill-in dynamic launch template parameters
-type Resolver struct {
+// resolver is able to fill-in dynamic launch template parameters
+type resolver struct {
 	imageProvider *Provider
+}
+
+type Resolver interface {
+	Resolve(
+		ctx context.Context,
+		nodeClass *v1alpha2.AKSNodeClass,
+		nodeClaim *karpv1.NodeClaim,
+		instanceType *cloudprovider.InstanceType,
+		staticParameters *template.StaticParameters) (*template.Parameters, error)
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -68,14 +77,14 @@ type ImageFamily interface {
 }
 
 // New constructs a new launch template Resolver
-func New(_ client.Client, imageProvider *Provider) *Resolver {
-	return &Resolver{
+func NewResolver(_ client.Client, imageProvider *Provider) *Resolver {
+	return &resolver{
 		imageProvider: imageProvider,
 	}
 }
 
 // Resolve fills in dynamic launch template parameters
-func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
+func (r resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
 	imageDistro, imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)

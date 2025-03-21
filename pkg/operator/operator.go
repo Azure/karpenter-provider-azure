@@ -100,7 +100,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.SubscriptionID,
 		azClient.NodeImageVersionsClient,
 	)
-	imageResolver := imagefamily.New(
+	imageResolver := imagefamily.NewResolver(
 		operator.GetClient(),
 		imageProvider,
 	)
