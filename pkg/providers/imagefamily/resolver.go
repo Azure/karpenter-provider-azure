@@ -37,11 +37,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-// resolver is able to fill-in dynamic launch template parameters
-type resolver struct {
-	imageProvider *Provider
-}
-
 type Resolver interface {
 	Resolve(
 		ctx context.Context,
@@ -49,6 +44,14 @@ type Resolver interface {
 		nodeClaim *karpv1.NodeClaim,
 		instanceType *cloudprovider.InstanceType,
 		staticParameters *template.StaticParameters) (*template.Parameters, error)
+}
+
+// assert that defaultResolver implements Resolver interface
+var _ Resolver = (*defaultResolver)(nil)
+
+// defaultResolver is able to fill-in dynamic launch template parameters
+type defaultResolver struct {
+	imageProvider *Provider
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -76,15 +79,15 @@ type ImageFamily interface {
 	DefaultImages() []DefaultImageOutput
 }
 
-// New constructs a new launch template Resolver
-func NewResolver(_ client.Client, imageProvider *Provider) Resolver {
-	return &resolver{
+// NewDefaultResolver constructs a new launch template Resolver
+func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolver {
+	return &defaultResolver{
 		imageProvider: imageProvider,
 	}
 }
 
 // Resolve fills in dynamic launch template parameters
-func (r *resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
+func (r *defaultResolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
 	imageDistro, imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
