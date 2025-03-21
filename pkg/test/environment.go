@@ -71,7 +71,7 @@ type Environment struct {
 	InstanceProvider       instance.Provider
 	PricingProvider        *pricing.Provider
 	ImageProvider          *imagefamily.Provider
-	ImageResolver          *imagefamily.Resolver
+	ImageResolver          imagefamily.Resolver
 	LaunchTemplateProvider *launchtemplate.Provider
 	LoadBalancerProvider   *loadbalancer.Provider
 
