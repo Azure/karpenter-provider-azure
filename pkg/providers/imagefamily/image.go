@@ -39,6 +39,7 @@ type Provider struct {
 	location               string
 	kubernetesInterface    kubernetes.Interface
 	imageCache             *cache.Cache
+	nodeImagesCache        *cache.Cache
 	imageVersionsClient    CommunityGalleryImageVersionsAPI
 	subscription           string
 	NodeImageVersions      NodeImageVersionsAPI
@@ -60,6 +61,7 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 	return &Provider{
 		kubernetesVersionCache: kubernetesVersionCache,
 		imageCache:             cache.New(imageExpirationInterval, imageCacheCleaningInterval),
+		nodeImagesCache:        cache.New(imageExpirationInterval, imageCacheCleaningInterval),
 		location:               location,
 		imageVersionsClient:    versionsClient,
 		cm:                     pretty.NewChangeMonitor(),

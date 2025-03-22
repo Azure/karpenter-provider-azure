@@ -32,24 +32,29 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/result"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/awslabs/operatorpkg/reasonable"
 )
 
-type nodeClassStatusReconciler interface {
+type reconciler interface {
 	Reconcile(context.Context, *v1alpha2.AKSNodeClass) (reconcile.Result, error)
 }
 
 type Controller struct {
 	kubeClient client.Client
 
-	readiness *Readiness //TODO : Remove this when we have sub status conditions
+	kubernetesVersion *KubernetesVersionReconciler
+	nodeImage         *NodeImageReconciler
+	readiness         *Readiness //TODO : Remove this when we have sub status conditions
 }
 
-func NewController(kubeClient client.Client) *Controller {
+func NewController(kubeClient client.Client, kubernetesVersionProvider imagefamily.KubernetesVersionProvider, imageProvider imagefamily.NodeImageProvider) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
-		readiness: &Readiness{},
+		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
+		nodeImage:         NewNodeImageReconciler(imageProvider),
+		readiness:         &Readiness{},
 	}
 }
 
@@ -67,7 +72,9 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 
 	var results []reconcile.Result
 	var errs error
-	for _, reconciler := range []nodeClassStatusReconciler{
+	for _, reconciler := range []reconciler{
+		c.kubernetesVersion,
+		c.nodeImage,
 		c.readiness,
 	} {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
@@ -92,7 +99,7 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 		For(&v1alpha2.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter:             reasonable.RateLimiter(),
-			MaxConcurrentReconciles: 10,
+			MaxConcurrentReconciles: 10, // TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }
