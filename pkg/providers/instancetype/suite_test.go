@@ -889,7 +889,7 @@ var _ = Describe("InstanceType Provider", func() {
 				v1alpha2.LabelSKUName:                      "Standard_NC24ads_A100_v4",
 				v1alpha2.LabelSKUFamily:                    "N",
 				v1alpha2.LabelSKUVersion:                   "4",
-				v1alpha2.LabelSKUStorageEphemeralOSMaxSize: "53.6870912",
+				v1alpha2.LabelSKUStorageEphemeralOSMaxSize: "54",
 				v1alpha2.LabelSKUAcceleratedNetworking:     "true",
 				v1alpha2.LabelSKUEncryptionAtHostSupported: "true",
 				v1alpha2.LabelSKUStoragePremiumCapable:     "true",
