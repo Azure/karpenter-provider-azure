@@ -18,6 +18,10 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -31,6 +35,38 @@ import (
 // See: https://github.com/hashicorp/terraform-provider-azurerm/issues/20834 for more details
 type expireEarlyTokenCredential struct {
 	cred azcore.TokenCredential
+}
+
+func GetAuxiliaryToken(ctx context.Context, scope string) (azcore.AccessToken, error) {
+	client := &http.Client{}
+	var token azcore.AccessToken
+	req, err := http.NewRequest("GET", "msi-connector.msi-connector.svc.cluster.local/karpenter", nil)
+	if err != nil {
+		return token, err
+	}
+	q := req.URL.Query()
+	q.Add("scope", scope)
+	req.URL.RawQuery = q.Encode()
+
+	// Send the request
+	resp, err := client.Do(req)
+	if err != nil {
+		return token, fmt.Errorf("error making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return token, fmt.Errorf("error reading response: %w", err)
+	}
+
+	// Unmarshal the response body into the AccessToken struct
+	err = json.Unmarshal(body, &token)
+	if err != nil {
+		return token, fmt.Errorf("error unmarshalling response: %w", err)
+	}
+	return token, nil
 }
 
 func NewTokenWrapper(cred azcore.TokenCredential) azcore.TokenCredential {
