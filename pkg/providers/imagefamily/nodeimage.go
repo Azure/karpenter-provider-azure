@@ -125,7 +125,6 @@ func (p *Provider) cacheKey(supportedImages []DefaultImageOutput, k8sVersion str
 	hash, err := hashstructure.Hash([]interface{}{
 		supportedImages,
 		k8sVersion,
-		useSIG,
 	}, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
 	if err != nil {
 		return "", err
