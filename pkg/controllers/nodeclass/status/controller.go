@@ -45,7 +45,6 @@ type Controller struct {
 
 	kubernetesVersion *KubernetesVersionReconciler
 	nodeImage         *NodeImageReconciler
-	readiness         *Readiness //TODO : Remove this when we have sub status conditions
 }
 
 func NewController(kubeClient client.Client, kubernetesVersionProvider imagefamily.KubernetesVersionProvider, imageProvider imagefamily.NodeImageProvider) *Controller {
@@ -54,7 +53,6 @@ func NewController(kubeClient client.Client, kubernetesVersionProvider imagefami
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(imageProvider),
-		readiness:         &Readiness{},
 	}
 }
 
@@ -75,7 +73,6 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	for _, reconciler := range []reconciler{
 		c.kubernetesVersion,
 		c.nodeImage,
-		c.readiness,
 	} {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)
