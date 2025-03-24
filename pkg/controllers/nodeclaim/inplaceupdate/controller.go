@@ -167,8 +167,10 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 				),
 			)).
 		WithOptions(controller.Options{
-			RateLimiter:             reasonable.RateLimiter(),
-			MaxConcurrentReconciles: 10, // TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
+			RateLimiter: reasonable.RateLimiter(),
+			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
+			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
+			MaxConcurrentReconciles: 10,
 		}).
 		// TODO: Can add .Watches(&karpv1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
 		// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5

@@ -118,8 +118,10 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 			}),
 		).
 		WithOptions(controller.Options{
-			RateLimiter:             reasonable.RateLimiter(),
-			MaxConcurrentReconciles: 10, // TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
+			RateLimiter: reasonable.RateLimiter(),
+			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
+			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
+			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }
