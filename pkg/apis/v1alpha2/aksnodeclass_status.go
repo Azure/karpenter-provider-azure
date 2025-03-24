@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	ConditionTypeNodeImageReady         = "NodeImageReady"
+	ConditionTypeNodeImagesReady        = "NodeImagesReady"
 	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
 )
 
@@ -54,7 +54,7 @@ type AKSNodeClassStatus struct {
 
 func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
 	conds := []string{
-		ConditionTypeNodeImageReady,
+		ConditionTypeNodeImagesReady,
 		ConditionTypeKubernetesVersionReady,
 	}
 	return status.NewReadyConditions(conds...).For(in)
