@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/mitchellh/hashstructure/v2"
+	"github.com/patrickmn/go-cache"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
@@ -69,7 +70,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 			return []NodeImage{}, err
 		}
 	}
-	p.nodeImagesCache.Set(key, nodeImages, imageExpirationInterval)
+	p.nodeImagesCache.Set(key, nodeImages, cache.DefaultExpiration)
 
 	return nodeImages, nil
 }
