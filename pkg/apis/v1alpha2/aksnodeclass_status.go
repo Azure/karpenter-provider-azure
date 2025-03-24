@@ -46,6 +46,7 @@ type AKSNodeClassStatus struct {
 	NodeImages []NodeImage `json:"nodeImages,omitempty"`
 	// KubernetesVersion contains the current kubernetes version which should be
 	// used for nodes provisioned for the NodeClass
+	// +optional
 	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
 	// Conditions contains signals for health and readiness
 	// +optional
