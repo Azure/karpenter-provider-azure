@@ -33,6 +33,12 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
+// TODO: Remove this provider, by refactoring it into the nodeimage.go provider, and resolver.go as needed
+// This is part of a shift to have the new controllers for k8s and node image version which populate status.
+// At the current point the provisioning logic isn't update itself, just the status being populated.
+// As part of the change to the actual provisioning, this provider will be refafctored as mentioned above.
+// The logic the nodeimage.go provider is dependent upon will refactor into its file, and the runtime logic for
+// creation will refactor into resolver.go but dropping API retrievals for the data stored in the status instead.
 type Provider struct {
 	kubernetesVersionCache *cache.Cache
 	cm                     *pretty.ChangeMonitor
