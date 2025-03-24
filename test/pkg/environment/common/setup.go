@@ -77,7 +77,7 @@ func (env *Environment) BeforeEach() {
 func (env *Environment) ExpectCleanCluster() {
 	env.ExpectSystemNodesTainted()
 	env.ExpectNoPodsInDefaultNamespace()
-	env.ExpectNoProvisionablePods()
+	env.EventuallyExpectNoProvisionablePods()
 
 	// This assumes the cluster is created without managed pools
 	env.ExpectNoNodePoolOrAKSNodeClass()
@@ -102,7 +102,7 @@ func (env *Environment) ExpectNoPodsInDefaultNamespace() {
 	}
 }
 
-func (env *Environment) ExpectNoProvisionablePods() {
+func (env *Environment) EventuallyExpectNoProvisionablePods() {
 	Eventually(func(g Gomega) {
 		var pods corev1.PodList
 		g.Expect(env.Client.List(env.Context, &pods)).To(Succeed())
