@@ -80,6 +80,12 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 // Scenario B: Calculate images to be updated based on delta of available images
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
 //   - 6. Handles softly adding newest image version of any newly supported SKUs by Karpenter
+//
+// Note: While we'd currently only need to store a SKU -> version mapping in the status for avilaible NodeImages
+// we decided to store the full image ID, plus Requirements associated with it. Storing the complete ID is a simple
+// and clean approach while allowing us to extend future capabilities off of it. Additionally, while the decision to
+// store Requirements adds minor bloat, it also provides extra visibility into the avilaible images and how their
+// selection will work, which is seen as worth the tradeoff.
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
 	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named(nodeImageReconcilerName))
 	logger := logging.FromContext(ctx)
