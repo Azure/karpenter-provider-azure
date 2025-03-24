@@ -50,7 +50,6 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 	key, err := p.cacheKey(
 		supportedImages,
 		kubernetesVersion,
-		useSIG,
 	)
 	if err != nil {
 		return []NodeImage{}, err
@@ -122,7 +121,7 @@ func (p *Provider) listCIG(_ context.Context, supportedImages []DefaultImageOutp
 	return nodeImages, nil
 }
 
-func (p *Provider) cacheKey(supportedImages []DefaultImageOutput, k8sVersion string, useSIG bool) (string, error) {
+func (p *Provider) cacheKey(supportedImages []DefaultImageOutput, k8sVersion string) (string, error) {
 	hash, err := hashstructure.Hash([]interface{}{
 		supportedImages,
 		k8sVersion,
