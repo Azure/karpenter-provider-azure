@@ -44,6 +44,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 	}
 
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)
+	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 
 	key, err := p.cacheKey(
