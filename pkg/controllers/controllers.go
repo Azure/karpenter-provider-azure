@@ -47,11 +47,11 @@ func NewControllers(
 	cloudProvider cloudprovider.CloudProvider,
 	instanceProvider instance.Provider,
 	kubernetesVersionProvider imagefamily.KubernetesVersionProvider,
-	imageProvider imagefamily.NodeImageProvider,
+	nodeImageProvider imagefamily.NodeImageProvider,
 ) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, imageProvider),
+		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),

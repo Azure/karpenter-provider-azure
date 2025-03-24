@@ -47,12 +47,12 @@ type Controller struct {
 	nodeImage         *NodeImageReconciler
 }
 
-func NewController(kubeClient client.Client, kubernetesVersionProvider imagefamily.KubernetesVersionProvider, imageProvider imagefamily.NodeImageProvider) *Controller {
+func NewController(kubeClient client.Client, kubernetesVersionProvider imagefamily.KubernetesVersionProvider, nodeImageProvider imagefamily.NodeImageProvider) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
-		nodeImage:         NewNodeImageReconciler(imageProvider),
+		nodeImage:         NewNodeImageReconciler(nodeImageProvider),
 	}
 }
 
