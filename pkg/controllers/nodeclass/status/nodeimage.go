@@ -116,7 +116,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 		goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
 	}
 
-	// Sorting goalImages for consistency to prevent unnessicary updates to status.
+	// Sorting goalImages for consistency to prevent unnecessary updates to status.
 	sort.Slice(goalImages, func(i, j int) bool {
 		return goalImages[i].ID < goalImages[j].ID
 	})
