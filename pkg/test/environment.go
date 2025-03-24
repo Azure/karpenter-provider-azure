@@ -192,6 +192,7 @@ func (env *Environment) Reset() {
 	env.MockSkuClientSignalton.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
+	env.ImageProvider.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.InstanceTypeCache.Flush()

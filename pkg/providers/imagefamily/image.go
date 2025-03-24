@@ -176,3 +176,8 @@ func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
 	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
 }
+
+func (p *Provider) Reset() {
+	p.imageCache.Flush()
+	p.nodeImagesCache.Flush()
+}
