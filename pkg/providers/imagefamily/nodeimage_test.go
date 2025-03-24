@@ -105,14 +105,14 @@ var _ = Describe("NodeImageProvider tests", func() {
 		nodeClass = test.AKSNodeClass()
 	})
 
-	Context("CIG Images", func() {
-		It("Ubuntu2204 successful list case", func() {
+	Context("List CIG Images", func() {
+		It("should match expected images for Ubuntu2204", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
 		})
 
-		It("AzureLinux successful list case", func() {
+		It("should match expected images for AzureLinux", func() {
 			var imageFamily = v1alpha2.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
 
@@ -122,19 +122,19 @@ var _ = Describe("NodeImageProvider tests", func() {
 		})
 	})
 
-	Context("SIG Images", func() {
+	Context("List SIG Images", func() {
 		BeforeEach(func() {
 			var varTrue = true
 			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{UseSIG: &varTrue}))
 		})
 
-		It("Ubuntu2204 successful list case", func() {
+		It("should match expected images for Ubuntu2204", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)))
 		})
 
-		It("AzureLinux successful list case", func() {
+		It("should match expected images for AzureLinux", func() {
 			var imageFamily = v1alpha2.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
 
@@ -144,8 +144,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 		})
 	})
 
-	Context("Test Caching", func() {
-		It("Ensure List uses cache data", func() {
+	Context("Caching tests", func() {
+		It("should ensure List images uses cached data", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
@@ -159,7 +159,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
 		})
 
-		It("Ensure List gets new data if imageFamily changes", func() {
+		It("should ensure List gets new image data if imageFamily changes", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
@@ -176,7 +176,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, laterCIGImageVersionTest)))
 		})
 
-		It("Ensure List gets new data if usage of SIG changes", func() {
+		It("should ensure List gets new image data if usage of SIG changes", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
