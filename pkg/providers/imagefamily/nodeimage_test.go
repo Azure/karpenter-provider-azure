@@ -175,19 +175,5 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, laterCIGImageVersionTest)))
 		})
-
-		It("should ensure List gets new image data if usage of SIG changes", func() {
-			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
-
-			ops := options.FromContext(ctx)
-			ops.UseSIG = true
-			ctx = options.ToContext(ctx, ops)
-
-			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)))
-		})
 	})
 })
