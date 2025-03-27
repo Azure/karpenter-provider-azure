@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
+	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -98,7 +99,11 @@ var _ = BeforeEach(func() {
 	ctx = options.ToContext(ctx, test.Options())
 
 	nodeClass = test.AKSNodeClass()
+	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
+	nodeClass.Status.KubernetesVersion = testK8sVersion
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+
 	nodePool = coretest.NodePool(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
@@ -112,6 +117,7 @@ var _ = BeforeEach(func() {
 			},
 		},
 	})
+
 	nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
