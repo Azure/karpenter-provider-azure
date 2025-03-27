@@ -81,8 +81,6 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	// Handles case 1: init, update kubernetes status to API server version found
 	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == "" {
 		logger.Infof("init kubernetes version: %s", goalK8sVersion)
-		nodeClass.Status.KubernetesVersion = goalK8sVersion
-		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 	} else {
 		// Check if there is an upgrade
 		newK8sVersion, err := semver.Parse(goalK8sVersion)
@@ -96,13 +94,15 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
 			logger.Infof("kubernetes upgrade detected: from %s (current), to %s (discovered)", currentK8sVersion.String(), newK8sVersion.String())
-			nodeClass.Status.KubernetesVersion = goalK8sVersion
 			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest node images")
-			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 		} else if newK8sVersion.LT(currentK8sVersion) {
 			logger.Infof("detected potential kubernetes downgrade: from %s (current), to %s (discovered)", currentK8sVersion.String(), newK8sVersion.String())
+			// We do not currently support downgrading, so keep the kubernetes version the same
+			goalK8sVersion = nodeClass.Status.KubernetesVersion
 		}
 	}
+	nodeClass.Status.KubernetesVersion = goalK8sVersion
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 	logger.Debug("successful reconcile")
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
