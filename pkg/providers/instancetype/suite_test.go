@@ -117,7 +117,11 @@ var _ = Describe("InstanceType Provider", func() {
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
+		testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
+		nodeClass.Status.KubernetesVersion = testK8sVersion
+		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
+
 		nodePool = coretest.NodePool(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
 				Template: karpv1.NodeClaimTemplate{
@@ -410,6 +414,9 @@ var _ = Describe("InstanceType Provider", func() {
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 256GB
 			nodeClass = test.AKSNodeClass()
 			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
+			testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
+			nodeClass.Status.KubernetesVersion = testK8sVersion
+			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 			nodeClass.StatusConditions().SetTrue(status.ConditionReady)
 			np := coretest.NodePool()
 			np.Spec.Template.Spec.Requirements = append(np.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
