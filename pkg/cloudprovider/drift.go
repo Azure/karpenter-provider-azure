@@ -94,8 +94,13 @@ func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, node
 func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
-	nodeName := nodeClaim.Status.NodeName
+	// Only check for potential drift if kubernetes version is ready. Note: AWS doesn't do this.
+	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeKubernetesVersionReady).IsTrue() {
+		return "", nil
+	}
+	k8sVersion := nodeClass.Status.KubernetesVersion
 
+	nodeName := nodeClaim.Status.NodeName
 	if nodeName == "" {
 		return "", nil
 	}
@@ -105,13 +110,8 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		// TODO (charliedmcb): should we ignore is not found errors? Will it ever be trying to check for drift before the node/vm exist?
 		return "", err
 	}
-
-	k8sVersion, err := c.imageProvider.KubeServerVersion(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	nodeK8sVersion := strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")
+
 	if nodeK8sVersion != k8sVersion {
 		logger.Debugf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion)
 		return K8sVersionDrift, nil
