@@ -111,6 +111,7 @@ func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultIma
 	return imageID, nil
 }
 
+// TODO: refactor this into kubernetesversion.go, and split into a snew kubernetes provider
 func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	if version, ok := p.kubernetesVersionCache.Get(kubernetesVersionCacheKey); ok {
 		return version.(string), nil

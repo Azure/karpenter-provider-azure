@@ -100,11 +100,7 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 		return nil, err
 	}
 
-	kubeServerVersion, err := p.imageProvider.KubeServerVersion(ctx)
-	if err != nil {
-		return nil, err
-	}
-	staticParameters.KubernetesVersion = kubeServerVersion
+	staticParameters.KubernetesVersion = nodeClass.Status.KubernetesVersion
 	templateParameters, err := p.imageFamily.Resolve(ctx, nodeClass, nodeClaim, instanceType, staticParameters)
 	if err != nil {
 		return nil, err

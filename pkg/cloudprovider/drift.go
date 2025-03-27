@@ -51,7 +51,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
 		return staticFieldsDrifted, nil
 	}
-	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
+	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return "", err
 	}
@@ -91,7 +91,7 @@ func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, node
 	return lo.Ternary(nodeClassHash != nodeClaimHash, NodeClassDrift, "")
 }
 
-func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
 	nodeName := nodeClaim.Status.NodeName
