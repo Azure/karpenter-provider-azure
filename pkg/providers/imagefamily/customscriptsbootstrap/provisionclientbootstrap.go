@@ -126,6 +126,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 			CPUCfsQuota:           p.KubeletConfig.CPUCFSQuota,
 			ImageGcHighThreshold:  p.KubeletConfig.ImageGCHighThresholdPercent,
 			ImageGcLowThreshold:   p.KubeletConfig.ImageGCLowThresholdPercent,
+			FailSwapOn:            p.KubeletConfig.FailSwapOn,
 			ContainerLogMaxSizeMB: convertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
 			ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
 			PodMaxPids:            convertPodMaxPids(p.KubeletConfig.PodPidsLimit),
