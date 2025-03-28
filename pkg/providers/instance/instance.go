@@ -235,7 +235,7 @@ func (p *DefaultProvider) DeleteNic(ctx context.Context, nicName string) error {
 func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string) (err error) {
 	vmExt := p.getAKSIdentifyingExtension()
 	vmExtName := *vmExt.Name
-	logging.FromContext(ctx).Debugf("Creating virtual machine AKS identifying extension for %s", vmName)
+	logging.FromContext(ctx).Infof("Creating virtual machine AKS identifying extension for %s", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
 		logging.FromContext(ctx).Errorf("Creating VM AKS identifying extension for VM %q failed, %w", vmName, err)
@@ -248,7 +248,7 @@ func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmN
 func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool) (err error) {
 	vmExt := p.getCSExtension(cse, isWindows)
 	vmExtName := *vmExt.Name
-	logging.FromContext(ctx).Debugf("Creating virtual machine CSE for %s", vmName)
+	logging.FromContext(ctx).Infof("Creating virtual machine CSE for %s", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
 		logging.FromContext(ctx).Errorf("Creating VM CSE for VM %q failed, %w", vmName, err)
@@ -326,7 +326,7 @@ type createNICOptions struct {
 func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
-	logging.FromContext(ctx).Debugf("Creating network interface %s", opts.NICName)
+	logging.FromContext(ctx).Infof("Creating network interface %s", opts.NICName)
 	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
 	if err != nil {
 		return "", err
@@ -512,7 +512,7 @@ func (p *DefaultProvider) launchInstance(
 	useSIG := options.FromContext(ctx).UseSIG
 	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType, p.provisionMode, useSIG)
 
-	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
+	logging.FromContext(ctx).Infof("Creating virtual machine %s (%s)", resourceName, instanceType.Name)
 	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
 	resp, err := p.createVirtualMachine(ctx, vm, resourceName)
 	if err != nil {
