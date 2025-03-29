@@ -652,10 +652,10 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(ctx context.Context, nodeCl
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
 	// Zone - ideally random/spread from requested zones that support given Priority
 	requestedZones := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
-	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool {
+	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
 		return getOfferingCapacityType(o) == priority && requestedZones.Has(getOfferingZone(o))
 	})
-	zonesWithPriority := lo.Map(priorityOfferings, func(o corecloudprovider.Offering, _ int) string { return getOfferingZone(o) })
+	zonesWithPriority := lo.Map(priorityOfferings, func(o *corecloudprovider.Offering, _ int) string { return getOfferingZone(o) })
 	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
 		return instanceType, priority, zone
 	}
@@ -795,10 +795,10 @@ func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.Virtua
 	return identity
 }
 
-func getOfferingCapacityType(offering corecloudprovider.Offering) string {
+func getOfferingCapacityType(offering *corecloudprovider.Offering) string {
 	return offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Any()
 }
 
-func getOfferingZone(offering corecloudprovider.Offering) string {
+func getOfferingZone(offering *corecloudprovider.Offering) string {
 	return offering.Requirements.Get(v1.LabelTopologyZone).Any()
 }

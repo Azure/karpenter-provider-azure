@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2" //nolint:revive,stylecheck
-	. "github.com/onsi/gomega"    //nolint:revive,stylecheck
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -124,7 +124,7 @@ func (env *Environment) ExpectStatusUpdated(objects ...client.Object) {
 }
 
 func ReplaceNodeConditions(node *corev1.Node, conds ...corev1.NodeCondition) *corev1.Node {
-	keys := sets.New[string](lo.Map(conds, func(c corev1.NodeCondition, _ int) string { return string(c.Type) })...)
+	keys := sets.New(lo.Map(conds, func(c corev1.NodeCondition, _ int) string { return string(c.Type) })...)
 	node.Status.Conditions = lo.Reject(node.Status.Conditions, func(c corev1.NodeCondition, _ int) bool {
 		return keys.Has(string(c.Type))
 	})
@@ -686,7 +686,7 @@ func (env *Environment) EventuallyExpectNodeClaimCount(comparator string, count 
 	nodeClaimList := &karpv1.NodeClaimList{}
 	Eventually(func(g Gomega) {
 		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel})).To(Succeed())
-		g.Expect(len(nodeClaimList.Items)).To(BeNumerically(comparator, count),
+		g.Expect(lo.CountBy(nodeClaimList.Items, func(nc karpv1.NodeClaim) bool { return nc.StatusConditions().IsTrue(karpv1.ConditionTypeLaunched) })).To(BeNumerically(comparator, count),
 			fmt.Sprintf("expected %d nodeclaims, had %d (%v)", count, len(nodeClaimList.Items), NodeClaimNames(lo.ToSlicePtr(nodeClaimList.Items))))
 	}).Should(Succeed())
 	return lo.ToSlicePtr(nodeClaimList.Items)
@@ -1000,7 +1000,7 @@ func (env *Environment) GetDaemonSetCount(np *karpv1.NodePool) int {
 	return lo.CountBy(daemonSetList.Items, func(d appsv1.DaemonSet) bool {
 		p := &corev1.Pod{Spec: d.Spec.Template.Spec}
 		nodeClaimTemplate := pscheduling.NewNodeClaimTemplate(np)
-		if err := scheduling.Taints(nodeClaimTemplate.Spec.Taints).Tolerates(p); err != nil {
+		if err := scheduling.Taints(nodeClaimTemplate.Spec.Taints).ToleratesPod(p); err != nil {
 			return false
 		}
 		if err := nodeClaimTemplate.Requirements.Compatible(scheduling.NewPodRequirements(p), scheduling.AllowUndefinedWellKnownLabels); err != nil {
@@ -1021,7 +1021,7 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 	return coreresources.RequestsForPods(lo.FilterMap(daemonSetList.Items, func(ds appsv1.DaemonSet, _ int) (*corev1.Pod, bool) {
 		p := &corev1.Pod{Spec: ds.Spec.Template.Spec}
 		nodeClaimTemplate := pscheduling.NewNodeClaimTemplate(np)
-		if err := scheduling.Taints(nodeClaimTemplate.Spec.Taints).Tolerates(p); err != nil {
+		if err := scheduling.Taints(nodeClaimTemplate.Spec.Taints).ToleratesPod(p); err != nil {
 			return nil, false
 		}
 		if err := nodeClaimTemplate.Requirements.Compatible(scheduling.NewPodRequirements(p), scheduling.AllowUndefinedWellKnownLabels); err != nil {

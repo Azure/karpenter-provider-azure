@@ -52,7 +52,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 			instanceTypes: []*cloudprovider.InstanceType{
 				{
 					Name: "Standard_D2s_v3",
-					Offerings: []cloudprovider.Offering{
+					Offerings: []*cloudprovider.Offering{
 						{
 							Price: 0.1,
 							Requirements: scheduling.NewRequirements(
@@ -65,7 +65,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 				},
 				{
 					Name: "Standard_NV16as_v4",
-					Offerings: []cloudprovider.Offering{
+					Offerings: []*cloudprovider.Offering{
 						{
 							Price: 0.1,
 							Requirements: scheduling.NewRequirements(
