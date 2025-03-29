@@ -32,24 +32,27 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/result"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/awslabs/operatorpkg/reasonable"
 )
 
-type nodeClassStatusReconciler interface {
+type reconciler interface {
 	Reconcile(context.Context, *v1alpha2.AKSNodeClass) (reconcile.Result, error)
 }
 
 type Controller struct {
 	kubeClient client.Client
 
-	readiness *Readiness //TODO : Remove this when we have sub status conditions
+	kubernetesVersion *KubernetesVersionReconciler
+	nodeImage         *NodeImageReconciler
 }
 
-func NewController(kubeClient client.Client) *Controller {
+func NewController(kubeClient client.Client, kubernetesVersionProvider imagefamily.KubernetesVersionProvider, nodeImageProvider imagefamily.NodeImageProvider) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
-		readiness: &Readiness{},
+		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
+		nodeImage:         NewNodeImageReconciler(nodeImageProvider),
 	}
 }
 
@@ -67,8 +70,9 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 
 	var results []reconcile.Result
 	var errs error
-	for _, reconciler := range []nodeClassStatusReconciler{
-		c.readiness,
+	for _, reconciler := range []reconciler{
+		c.kubernetesVersion,
+		c.nodeImage,
 	} {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)
@@ -76,7 +80,10 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	}
 
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
-		if err := c.kubeClient.Status().Patch(ctx, nodeClass, client.MergeFrom(stored)); err != nil {
+		// We use client.MergeFromWithOptimisticLock because patching a list with a JSON merge patch
+		// can cause races due to the fact that it fully replaces the list on a change
+		// Here, we are updating the status condition list
+		if err := c.kubeClient.Status().Patch(ctx, nodeClass, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
 			errs = multierr.Append(errs, client.IgnoreNotFound(err))
 		}
 	}
@@ -91,7 +98,9 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 		Named("nodeclass.status").
 		For(&v1alpha2.AKSNodeClass{}).
 		WithOptions(controller.Options{
-			RateLimiter:             reasonable.RateLimiter(),
+			RateLimiter: reasonable.RateLimiter(),
+			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
+			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
 			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))

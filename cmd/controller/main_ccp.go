@@ -99,6 +99,8 @@ func main() {
 			op.EventRecorder,
 			aksCloudProvider,
 			op.InstanceProvider,
+			op.ImageProvider,
+			op.ImageProvider,
 		)...).
 		Start(ctx, cloudProvider)
 }
