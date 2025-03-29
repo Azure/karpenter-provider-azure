@@ -21,10 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
-	. "github.com/onsi/ginkgo/v2" //nolint:revive,stylecheck
-	. "github.com/onsi/gomega"    //nolint:revive,stylecheck
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,6 +36,12 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/utils/pod"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
+
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,stylecheck
+	. "github.com/onsi/gomega"    //nolint:revive,stylecheck
 )
 
 const TestingFinalizer = "testing/finalizer"
@@ -126,6 +128,7 @@ func (env *Environment) ExpectNoNodePoolOrAKSNodeClass() {
 
 func (env *Environment) Cleanup() {
 	env.CleanupObjects(CleanableObjects...)
+	env.EventuallyExpectNoLeakedKubeNodeLease()
 	env.eventuallyExpectScaleDown()
 	if env.InClusterController {
 		env.ExpectNoCrashes()
