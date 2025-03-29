@@ -77,6 +77,15 @@ func (env *Environment) BeforeEach() {
 }
 
 func (env *Environment) ExpectCleanCluster() {
+	env.ExpectSystemNodesTainted()
+	env.ExpectNoPodsInDefaultNamespace()
+	env.EventuallyExpectNoProvisionablePods()
+
+	// This assumes the cluster is created without managed pools
+	env.ExpectNoNodePoolOrAKSNodeClass()
+}
+
+func (env *Environment) ExpectSystemNodesTainted() {
 	var nodes corev1.NodeList
 	Expect(env.Client.List(env.Context, &nodes)).To(Succeed())
 	for _, node := range nodes.Items {
@@ -84,26 +93,36 @@ func (env *Environment) ExpectCleanCluster() {
 			Fail(fmt.Sprintf("expected system pool node %s to be tainted", node.Name))
 		}
 	}
+}
+
+func (env *Environment) ExpectNoPodsInDefaultNamespace() {
 	var pods corev1.PodList
 	Expect(env.Client.List(env.Context, &pods)).To(Succeed())
-	for i := range pods.Items {
-		Expect(pods.Items[i].Namespace).ToNot(Equal("default"),
-			fmt.Sprintf("expected no pods in the `default` namespace, found %s/%s", pods.Items[i].Namespace, pods.Items[i].Name))
+	for _, pod := range pods.Items {
+		Expect(pod.Namespace).ToNot(Equal("default"),
+			fmt.Sprintf("expected no pods in the `default` namespace, found %s/%s", pod.Namespace, pod.Name))
 	}
+}
+
+func (env *Environment) EventuallyExpectNoProvisionablePods() {
 	Eventually(func(g Gomega) {
 		var pods corev1.PodList
 		g.Expect(env.Client.List(env.Context, &pods)).To(Succeed())
-		for i := range pods.Items {
-			g.Expect(pod.IsProvisionable(&pods.Items[i])).To(BeFalse(),
-				fmt.Sprintf("expected to have no provisionable pods, found %s/%s", pods.Items[i].Namespace, pods.Items[i].Name))
+		for _, p := range pods.Items {
+			g.Expect(pod.IsProvisionable(&p)).To(BeFalse(),
+				fmt.Sprintf("expected to have no provisionable pods, found %s/%s", p.Namespace, p.Name))
 		}
 	}).WithPolling(10 * time.Second).WithTimeout(5 * time.Minute).Should(Succeed())
+}
+
+func (env *Environment) ExpectNoNodePoolOrAKSNodeClass() {
 	for _, obj := range []client.Object{&karpv1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
 		metaList := &metav1.PartialObjectMetadataList{}
 		gvk := lo.Must(apiutil.GVKForObject(obj, env.Client.Scheme()))
 		metaList.SetGroupVersionKind(gvk)
 		Expect(env.Client.List(env.Context, metaList, client.Limit(1))).To(Succeed())
-		Expect(metaList.Items).To(HaveLen(0), fmt.Sprintf("expected no %s to exist", gvk.Kind))
+		Expect(metaList.Items).To(HaveLen(0),
+			fmt.Sprintf("expected no %s to exist", gvk.Kind))
 	}
 }
 
@@ -111,12 +130,16 @@ func (env *Environment) Cleanup() {
 	env.CleanupObjects(CleanableObjects...)
 	env.EventuallyExpectNoLeakedKubeNodeLease()
 	env.eventuallyExpectScaleDown()
-	env.ExpectNoCrashes()
+	if env.InClusterController {
+		env.ExpectNoCrashes()
+	}
 }
 
 func (env *Environment) AfterEach() {
 	debug.AfterEach(env.Context)
-	env.printControllerLogs(&corev1.PodLogOptions{Container: "controller"})
+	if env.InClusterController {
+		env.printControllerLogs(&corev1.PodLogOptions{Container: "controller"})
+	}
 }
 
 func (env *Environment) CleanupObjects(cleanableObjects ...client.Object) {

@@ -53,7 +53,15 @@ type AKSNodeClassSpec struct {
 	// +optional
 	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
 	// MaxPods is an override for the maximum number of pods that can run on a worker node instance.
-	// +kubebuilder:validation:Minimum:=0
+	// See minimum + maximum pods per node documentation: https://learn.microsoft.com/en-us/azure/aks/concepts-network-ip-address-planning#maximum-pods-per-node
+	// Default behavior if this is not specified depends on the network plugin:
+	//   - If Network Plugin is Azure with "" (v1 or NodeSubnet), the default is 30.
+	//   - If Network Plugin is Azure with "overlay", the default is 250.
+	//   - If Network Plugin is None, the default is 250.
+	//   - Otherwise, the default is 110 (the usual Kubernetes default).
+	//
+	// +kubebuilder:validation:Minimum:=10
+	// +kubebuilder:validation:Maximum:=250
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 }
