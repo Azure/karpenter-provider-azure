@@ -25,8 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -37,8 +37,20 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-// Resolver is able to fill-in dynamic launch template parameters
-type Resolver struct {
+type Resolver interface {
+	Resolve(
+		ctx context.Context,
+		nodeClass *v1alpha2.AKSNodeClass,
+		nodeClaim *karpv1.NodeClaim,
+		instanceType *cloudprovider.InstanceType,
+		staticParameters *template.StaticParameters) (*template.Parameters, error)
+}
+
+// assert that defaultResolver implements Resolver interface
+var _ Resolver = &defaultResolver{}
+
+// defaultResolver is able to fill-in dynamic launch template parameters
+type defaultResolver struct {
 	imageProvider *Provider
 }
 
@@ -67,15 +79,15 @@ type ImageFamily interface {
 	DefaultImages() []DefaultImageOutput
 }
 
-// New constructs a new launch template Resolver
-func New(_ client.Client, imageProvider *Provider) *Resolver {
-	return &Resolver{
+// NewDefaultResolver constructs a new launch template Resolver
+func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolver {
+	return &defaultResolver{
 		imageProvider: imageProvider,
 	}
 }
 
 // Resolve fills in dynamic launch template parameters
-func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
+func (r *defaultResolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters) (*template.Parameters, error) {
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
 	imageDistro, imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
@@ -109,14 +121,14 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
-			prepareKubeletConfiguration(instanceType, nodeClass),
+			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
 			allTaints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
 		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
-			prepareKubeletConfiguration(instanceType, nodeClass),
+			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
 			generalTaints,
 			startupTaints,
 			staticParameters.Labels,
@@ -132,19 +144,14 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 	return template, nil
 }
 
-func prepareKubeletConfiguration(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *bootstrap.KubeletConfiguration {
+func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *bootstrap.KubeletConfiguration {
 	kubeletConfig := &bootstrap.KubeletConfiguration{}
 
 	if nodeClass.Spec.Kubelet != nil {
 		kubeletConfig.KubeletConfiguration = *nodeClass.Spec.Kubelet
 	}
 
-	// TODO: make default maxpods dependent on CNI
-	if nodeClass.Spec.MaxPods != nil {
-		kubeletConfig.MaxPods = *nodeClass.Spec.MaxPods
-	} else {
-		kubeletConfig.MaxPods = consts.DefaultKubernetesMaxPods
-	}
+	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)
 
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)

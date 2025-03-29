@@ -30,6 +30,9 @@ rule=${rule//\"/\\\"}            # escape double quotes
 rule=${rule//$'\n'/}             # remove newlines
 rule=$(echo "$rule" | tr -s ' ') # remove extra spaces
 
+# check that .spec.versions has 1 entry
+[[ $(yq e '.spec.versions | length' pkg/apis/crds/karpenter.sh_nodepools.yaml) -eq 1 ]] || { echo "expected one version"; exit 1; }
+
 # nodepool
 printf -v expr '.spec.versions[0].schema.openAPIV3Schema.properties.spec.properties.template.properties.metadata.properties.labels.x-kubernetes-validations +=
     [{"message": "label domain \\"karpenter.azure.com\\" is restricted", "rule": "%s"}]' "$rule"

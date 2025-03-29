@@ -30,8 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clock "k8s.io/utils/clock/testing"
 
-	"k8s.io/client-go/tools/record"
-
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -39,6 +37,9 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"k8s.io/client-go/tools/record"
+
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
@@ -159,6 +160,7 @@ var _ = Describe("InstanceProvider", func() {
 		},
 		ZonalAndNonZonalRegions,
 	)
+
 	Context("AzureCNI V1", func() {
 		var originalOptions *options.Options
 
@@ -175,7 +177,7 @@ var _ = Describe("InstanceProvider", func() {
 		AfterEach(func() {
 			ctx = options.ToContext(ctx, originalOptions)
 		})
-		It("should include 250 secondary ips by default", func() {
+		It("should include 30 secondary ips by default for NodeSubnet", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -187,8 +189,57 @@ var _ = Describe("InstanceProvider", func() {
 			Expect(nic).ToNot(BeNil())
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
-			// AzureCNI V1 has a DefaultMaxPods of 250 so we should set 250 ip configurations
-			Expect(len(nic.Properties.IPConfigurations)).To(Equal(250))
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(30))
+			customData := ExpectDecodedCustomData(azureEnv)
+			expectedFlags := map[string]string{
+				"max-pods": "30",
+			}
+			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+
+		})
+		It("should include 1 ip config for Azure CNI Overlay", func() {
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					NetworkPlugin:     lo.ToPtr(consts.NetworkPluginAzure),
+					NetworkPluginMode: lo.ToPtr(consts.NetworkPluginModeOverlay),
+				}))
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic).ToNot(BeNil())
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Overlay doesn't rely on secondary ips and instead allocates from a
+			// virtual address space.
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(1))
+			customData := ExpectDecodedCustomData(azureEnv)
+			expectedFlags := map[string]string{
+				"max-pods": "250",
+			}
+			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+
+		})
+		It("should set the number of secondary ips equal to max pods (NodeSubnet)", func() {
+			nodeClass.Spec.MaxPods = lo.ToPtr(int32(11))
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			Expect(nic).ToNot(BeNil())
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			Expect(len(nic.Properties.IPConfigurations)).To(Equal(11))
 		})
 	})
 	It("should create VM and NIC with valid ARM tags", func() {
@@ -216,5 +267,25 @@ var _ = Describe("InstanceProvider", func() {
 		Expect(lo.PickBy(nicTags, func(key string, value *string) bool {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
+	})
+	It("should list nic from karpenter provisioning request", func() {
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
+		Expect(err).To(BeNil())
+		Expect(len(interfaces)).To(Equal(1))
+	})
+	It("should only list nics that belong to karpenter", func() {
+		managedNic := test.Interface(test.InterfaceOptions{NodepoolName: nodePool.Name})
+		unmanagedNic := test.Interface(test.InterfaceOptions{Tags: map[string]*string{"kubernetes.io/cluster/test-cluster": lo.ToPtr("random-aks-vm")}})
+
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(unmanagedNic.ID), *unmanagedNic)
+		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(interfaces)).To(Equal(1))
+		Expect(interfaces[0].Name).To(Equal(managedNic.Name))
 	})
 })

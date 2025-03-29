@@ -26,7 +26,7 @@ az aks get-credentials --name "${CLUSTER_NAME}" --resource-group "${RG}" --overw
 echo "Creating federated credential linked to the Karpenter service account ..."
 az identity federated-credential create --name KARPENTER_FID --identity-name karpentermsi --resource-group "${RG}" \
   --issuer "$(jq -r ".oidcIssuerProfile.issuerUrl" <<< "$AKS_JSON")" \
-  --subject system:serviceaccount:${KARPENTER_NAMESPACE}:karpenter-sa \
+  --subject "system:serviceaccount:${KARPENTER_NAMESPACE}:karpenter-sa" \
   --audience api://AzureADTokenExchange
 
 echo "Creating role assignments to let Karpenter manage VMs and Network resources ..."
@@ -34,5 +34,5 @@ KARPENTER_USER_ASSIGNED_CLIENT_ID=$(jq -r '.principalId' <<< "$KMSI_JSON")
 RG_MC=$(jq -r ".nodeResourceGroup" <<< "$AKS_JSON")
 RG_MC_RES=$(az group show --name "${RG_MC}" --query "id" -otsv)
 for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identity Operator"; do
-  az role assignment create --assignee "${KARPENTER_USER_ASSIGNED_CLIENT_ID}" --scope "${RG_MC_RES}" --role "$role"
+  az role assignment create --assignee-object-id "${KARPENTER_USER_ASSIGNED_CLIENT_ID}" --assignee-principal-type "ServicePrincipal" --scope "${RG_MC_RES}" --role "$role"
 done

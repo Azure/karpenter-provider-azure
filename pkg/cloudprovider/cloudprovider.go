@@ -138,6 +138,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing instances, %w", err)
 	}
+
 	var nodeClaims []*karpv1.NodeClaim
 	for _, instance := range instances {
 		instanceType, err := c.resolveInstanceTypeFromInstance(ctx, instance)
@@ -349,7 +350,6 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
 
-	// TODO: v1beta1 new kes/labels
 	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}

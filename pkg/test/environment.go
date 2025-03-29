@@ -69,7 +69,7 @@ type Environment struct {
 	InstanceProvider       instance.Provider
 	PricingProvider        *pricing.Provider
 	ImageProvider          *imagefamily.Provider
-	ImageResolver          *imagefamily.Resolver
+	ImageResolver          imagefamily.Resolver
 	LaunchTemplateProvider *launchtemplate.Provider
 	LoadBalancerProvider   *loadbalancer.Provider
 
@@ -90,15 +90,16 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// API
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
-	azureResourceGraphAPI := &fake.AzureResourceGraphAPI{AzureResourceGraphBehavior: fake.AzureResourceGraphBehavior{VirtualMachinesAPI: virtualMachinesAPI, ResourceGroup: resourceGroup}}
-	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
+
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
+	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
 	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
 	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 
+	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
 	kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
 	instanceTypeCache := cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval)
@@ -108,7 +109,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI)
-	imageFamilyResolver := imagefamily.New(env.Client, imageFamilyProvider)
+	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider)
 	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -122,7 +123,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		"test-kubelet-identity-client-id",
 		testOptions.NodeResourceGroup,
 		region,
-		"test-vnet-guid",
+		testOptions.VnetGUID,
 		testOptions.ProvisionMode,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
