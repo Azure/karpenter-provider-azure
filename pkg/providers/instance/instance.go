@@ -196,6 +196,18 @@ func (p *DefaultProvider) List(ctx context.Context) ([]*armcompute.VirtualMachin
 }
 
 func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error {
+	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
+	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted
+	vm, err := p.Get(ctx, resourceName)
+	if err != nil {
+		return err
+	}
+	// Check if the instance is already shutting down to reduce the number of API calls.
+	// Leftover network interfaces (if any) will be cleaned by by GC controller.
+	if utils.IsVMDeleting(*vm) {
+		return nil
+	}
+
 	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", resourceName)
 	return p.cleanupAzureResources(ctx, resourceName)
 }
