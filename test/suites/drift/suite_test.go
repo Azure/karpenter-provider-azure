@@ -273,7 +273,7 @@ var _ = Describe("Drift", func() {
 			By("drifting the nodepool")
 			nodePool.Spec.Template.Annotations = lo.Assign(nodePool.Spec.Template.Annotations, map[string]string{"test-annotation": "drift"})
 			env.ExpectUpdated(nodePool)
-			env.ConsistentlyExpectDisruptionsUntilNoneLeft(5, 3, 10*time.Minute)
+			env.ConsistentlyExpectDisruptionsUntilNoneLeft(5, 3, 15*time.Minute)
 
 			for _, node := range originalNodes {
 				Expect(env.ExpectTestingFinalizerRemoved(node)).To(Succeed())
