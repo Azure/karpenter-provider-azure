@@ -30,6 +30,7 @@ import (
 )
 
 var _ = Describe("Hash", func() {
+	// NOTE: When the hashing algorithm is updated, these tests are expected to fail, and the test hash constants here need to be updated.
 	const staticHash = "3322684356700793451"
 	var nodeClass *v1alpha2.AKSNodeClass
 	BeforeEach(func() {
