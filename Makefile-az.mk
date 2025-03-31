@@ -259,7 +259,12 @@ az-taintnodes:
 
 az-e2etests: az-cleanenv ## Run e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
-	TEST_SUITE=Utilization make e2etests
+	TEST_SUITE=Utilization \
+	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
+	AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
+	AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
+	ACR_NAME=$(AZURE_ACR_NAME) \
+	make e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --all
 
 az-perftest1: ## Test scaling out/in (1 VM)
