@@ -239,7 +239,7 @@ var _ = Describe("Drift", func() {
 			// Create a 5 pod deployment with hostname inter-pod anti-affinity to ensure each pod is placed on a unique node
 			numPods = 5
 			selector = labels.SelectorFromSet(appLabels)
-			deployment := coretest.Deployment(coretest.DeploymentOptions{
+			dep = coretest.Deployment(coretest.DeploymentOptions{
 				Replicas: int32(numPods),
 				PodOptions: coretest.PodOptions{
 					ObjectMeta: metav1.ObjectMeta{
@@ -254,7 +254,7 @@ var _ = Describe("Drift", func() {
 				},
 			})
 
-			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.ExpectCreated(nodeClass, nodePool, dep)
 
 			originalNodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", numPods)
 			originalNodes := env.EventuallyExpectCreatedNodeCount("==", numPods)
