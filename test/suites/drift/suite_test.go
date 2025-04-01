@@ -102,7 +102,9 @@ var _ = Describe("Drift", func() {
 					},
 				},
 			)
-			// We're expecting to create 3 nodes, so we'll expect to see 2 nodes deleting at one time.
+			// We're expecting to create 3 nodes, so normally one would expect to see 2 nodes deleting at one time.
+			// Due to synchronous nature of current implementation, only 1 node is expected to be disrupted/deleted at a time.
+			// The test is still written to expect maximum of 2 nodes disruped/deleted at a time.
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes: "50%",
 			}}
