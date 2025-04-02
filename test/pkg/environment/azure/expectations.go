@@ -86,12 +86,14 @@ func firstVNETInRG(ctx context.Context, client *armnetwork.VirtualNetworksClient
 }
 
 func (env *Environment) ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster() []*containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem {
+	GinkgoHelper()
 	upgradeProfile, err := env.AKSManagedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
 	Expect(err).ToNot(HaveOccurred())
 	return upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades
 }
 
 func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion string) containerservice.ManagedCluster {
+	GinkgoHelper()
 	managedClusterResponse, err := env.AKSManagedClusterClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
 	Expect(err).ToNot(HaveOccurred())
 	managedCluster := managedClusterResponse.ManagedCluster
