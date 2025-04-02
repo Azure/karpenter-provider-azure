@@ -112,6 +112,6 @@ var _ = Describe("KubernetesUpgrade", func() {
 
 		By(fmt.Sprintf("new nodes having upgraded kubernetes version: %s", kubernetesUpgradeVersion))
 		node = env.ExpectCreatedNodeCount("==", 1)[0]
-		Expect(strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")).To(Equal(kubernetesUpgradeVersion))
+		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(kubernetesUpgradeVersion))
 	})
 })
