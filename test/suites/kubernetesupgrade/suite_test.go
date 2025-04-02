@@ -93,19 +93,6 @@ var _ = Describe("KubernetesUpgrade", func() {
 		})
 		kubernetesUpgradeVersion := *availableKubernetesUpgrades[len(availableKubernetesUpgrades)-1].KubernetesVersion
 
-		// upgradeProfile, err := env.AKSManagedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
-		// Expect(err).ToNot(HaveOccurred())
-
-		// Expect(upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades[0].KubernetesVersion).ToNot(BeNil())
-		// upgradeK8sVersion := *upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades[0].KubernetesVersion
-		// for i := 1; i < len(upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades); i++ {
-		// 	nextUpgradeOption := upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades[i]
-		// 	Expect(nextUpgradeOption.KubernetesVersion).ToNot(BeNil())
-		// 	if *nextUpgradeOption.KubernetesVersion > upgradeK8sVersion {
-		// 		upgradeK8sVersion = *nextUpgradeOption.KubernetesVersion
-		// 	}
-		// }
-
 		By(fmt.Sprintf("upgrading the managed cluster to kubernetes version: %s", kubernetesUpgradeVersion))
 		env.ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion)
 
