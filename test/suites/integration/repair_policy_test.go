@@ -37,6 +37,13 @@ var _ = Describe("Repair Policy", func() {
 	var unhealthyCondition corev1.NodeCondition
 
 	BeforeEach(func() {
+		// remove this if NodeRepair feature gate is enabled by default
+		if env.InClusterController {
+			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "NodeRepair=True"})
+		} else {
+			Skip("This test requires the controller to be running in-cluster (to ensure NodeRepair feature gate is enabled")
+		}
+
 		unhealthyCondition = corev1.NodeCondition{
 			Type:               corev1.NodeReady,
 			Status:             corev1.ConditionFalse,
