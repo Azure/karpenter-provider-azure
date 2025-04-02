@@ -21,19 +21,18 @@ package main
 import (
 	"github.com/samber/lo"
 
-	// Injection stuff
-
-	altOperator "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/operator"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
-	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
+
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
 )
 
 func main() {
-	//ctx, op := operator.NewOperator(coreoperator.NewOperator())
-	ctx, op := operator.NewOperator(altOperator.NewOperator())
+	ctx, op := operator.NewOperator(coreoperator.NewOperator())
 	aksCloudProvider := cloudprovider.New(
 		op.InstanceTypesProvider,
 		op.InstanceProvider,
@@ -44,6 +43,7 @@ func main() {
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))
 	cloudProvider := metrics.Decorate(aksCloudProvider)
+	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
 	op.
 		WithControllers(ctx, corecontrollers.NewControllers(
@@ -53,6 +53,7 @@ func main() {
 			op.GetClient(),
 			op.EventRecorder,
 			cloudProvider,
+			clusterState,
 		)...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
