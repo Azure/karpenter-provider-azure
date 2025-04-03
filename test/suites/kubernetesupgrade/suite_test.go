@@ -91,6 +91,7 @@ var _ = Describe("KubernetesUpgrade", func() {
 		sort.Slice(availableKubernetesUpgrades, func(i, j int) bool {
 			return *availableKubernetesUpgrades[i].KubernetesVersion < *availableKubernetesUpgrades[j].KubernetesVersion
 		})
+		// Get the latest available version
 		kubernetesUpgradeVersion := *availableKubernetesUpgrades[len(availableKubernetesUpgrades)-1].KubernetesVersion
 
 		By(fmt.Sprintf("upgrading the managed cluster to kubernetes version: %s", kubernetesUpgradeVersion))
