@@ -63,7 +63,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		SubscriptionID:       lo.Must(os.LookupEnv("AZURE_SUBSCRIPTION_ID")),
 		ClusterName:          lo.Must(os.LookupEnv("AZURE_CLUSTER_NAME")),
 		ClusterResourceGroup: lo.Must(os.LookupEnv("AZURE_RESOURCE_GROUP")),
-		ACRName:              lo.Must(os.LookupEnv("ACR_NAME")),
+		ACRName:              lo.Must(os.LookupEnv("AZURE_ACR_NAME")),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 	}
 
