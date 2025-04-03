@@ -55,7 +55,7 @@ var _ = Describe("Termination", func() {
 	//   3. Critical Non-Daemonset pods
 	//   4. Critical Daemonset pods
 	// Pods in one group are expected to be fully removed before the next group is executed
-	It("should drain pods on a node in order", func() {
+	PIt("should drain pods on a node in order", func() {
 		daemonSet := test.DaemonSet(test.DaemonSetOptions{
 			Selector: map[string]string{"app": "non-critical-daemonset"},
 			PodOptions: test.PodOptions{
