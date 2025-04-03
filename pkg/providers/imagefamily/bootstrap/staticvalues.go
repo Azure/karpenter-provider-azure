@@ -27,19 +27,25 @@ const (
 	globalAKSMirror = "https://acs-mirror.azureedge.net"
 )
 
-// NOTE: embed only works on vars not defined in a function, so without putting this into an interal package for encapulation, we are stuck with these remaining vars.
+// NOTE: embed only works on vars not defined in a function, so without putting this into an internal package for encapulation, we are stuck with these remaining vars.
 var (
 	//go:embed cse_cmd.sh.gtpl
 	customDataTemplateText string
-	customDataTemplate     = template.Must(template.New("customdata").Parse(customDataTemplateText))
 
 	//go:embed  containerd.toml.gtpl
 	containerdConfigTemplateText string
-	containerdConfigTemplate     = template.Must(template.New("containerdconfig").Parse(containerdConfigTemplateText))
 
 	//go:embed sysctl.conf
 	sysctlContent []byte
 )
+
+func getCustomDataTemplate() *template.Template {
+	return template.Must(template.New("customdata").Parse(customDataTemplateText))
+}
+
+func getContainerdConfigTemplate() *template.Template {
+	return template.Must(template.New("containerdconfig").Parse(containerdConfigTemplateText))
+}
 
 func getBaseKubeletFlags() map[string]string {
 	// source note: unique per nodepool. partially user-specified, static, and RP-generated

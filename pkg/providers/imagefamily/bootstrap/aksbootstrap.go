@@ -90,7 +90,7 @@ func (a AKS) Script() (string, error) {
 // Nodepool spec            : selected nodepool-level user input (p)
 
 // NodeBootstrapVariables carries all variables needed to bootstrap a node
-// It is used as input rendering the bootstrap script Go template (customDataTemplate)
+// It is used as input rendering the bootstrap script Go template (gotten from getCustomDataTemplate)
 type NodeBootstrapVariables struct {
 	IsAKSCustomCloud                  bool     // n   (false)
 	InitAKSCustomCloudFilepath        string   // n   (static)
@@ -351,7 +351,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
 	var buffer bytes.Buffer
-	if err := containerdConfigTemplate.Execute(&buffer, *nbv); err != nil {
+	if err := getContainerdConfigTemplate().Execute(&buffer, *nbv); err != nil {
 		return "", fmt.Errorf("error executing containerd config template: %w", err)
 	}
 	return buffer.String(), nil
@@ -359,7 +359,7 @@ func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string,
 
 func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
 	var buffer bytes.Buffer
-	if err := customDataTemplate.Execute(&buffer, *nbv); err != nil {
+	if err := getCustomDataTemplate().Execute(&buffer, *nbv); err != nil {
 		return "", fmt.Errorf("error executing custom data template: %w", err)
 	}
 	return buffer.String(), nil
