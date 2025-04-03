@@ -1,6 +1,6 @@
 repos:
 - repo: https://github.com/gitleaks/gitleaks
-  rev: v8.20.1
+  rev: v8.24.2
   hooks:
   - id: gitleaks
 - repo: https://github.com/golangci/golangci-lint
@@ -12,7 +12,7 @@ repos:
   hooks:
   - id: shellcheck
 - repo: https://github.com/crate-ci/typos
-  rev: v1.28.1
+  rev: v1.31.1
   hooks:
   - id: typos
     args: [--write-changes, --force-exclude, --exclude, go.mod]
