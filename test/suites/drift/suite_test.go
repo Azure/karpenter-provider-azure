@@ -167,6 +167,8 @@ var _ = Describe("Drift", func() {
 				},
 			)
 			// We're expecting to create 3 nodes, so we'll expect to see at most 2 nodes deleting at one time.
+			// Due to synchronous nature of current implementation, only 1 node is expected to be disrupted/deleted at a time.
+			// The test is still written to expect maximum of 2 nodes disruped/deleted at a time.
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes: "50%",
 			}}
@@ -234,6 +236,8 @@ var _ = Describe("Drift", func() {
 			appLabels := map[string]string{"app": "large-app"}
 			nodePool.Labels = appLabels
 			// We're expecting to create 5 nodes, so we'll expect to see at most 3 nodes deleting at one time.
+			// Due to synchronous nature of current implementation, only 1 node is expected to be disrupted/deleted at a time.
+			// The test is still written to expect maximum of 3 nodes disruped/deleted at a time.
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes: "3",
 			}}
