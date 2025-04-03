@@ -90,7 +90,7 @@ func (a AKS) Script() (string, error) {
 // Nodepool spec            : selected nodepool-level user input (p)
 
 // NodeBootstrapVariables carries all variables needed to bootstrap a node
-// It is used as input rendering the bootstrap script Go template (gotten from getCustomDataTemplate)
+// It is used as input rendering the bootstrap script Go template (retrieved from getCustomDataTemplate)
 type NodeBootstrapVariables struct {
 	IsAKSCustomCloud                  bool     // n   (false)
 	InitAKSCustomCloudFilepath        string   // n   (static)
