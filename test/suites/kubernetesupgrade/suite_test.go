@@ -61,7 +61,7 @@ var _ = Describe("KubernetesUpgrade", func() {
 	// NOTE: This Describe has only one test, and no BeforeEach, as this test preforms modifications to the managed cluster in a way that can not be undone,
 	// meaning the environment can not be reset for any additional tests.
 	//
-	// This is actually test of Drift. However, testing kubernetes upgrade has to be isolated due to its modification of the managed cluster environment.
+	// This is actually a test of Drift. However, testing kubernetes upgrade has to be isolated due to its modification of the managed cluster environment.
 	It("should drift and replace all nodes when the cluster's kubernetes version upgrades", func() {
 		numPods := 1
 		// Add pods with a do-not-disrupt annotation so that we can check node metadata before we disrupt
