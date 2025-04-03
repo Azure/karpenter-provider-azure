@@ -45,9 +45,6 @@ func (o Options) validateVNETGUID() error {
 	if o.VnetGUID != "" && uuid.Validate(o.VnetGUID) != nil {
 		return fmt.Errorf("vnet-guid %s is malformed", o.VnetGUID)
 	}
-	if o.isAzureCNIWithOverlay() && o.VnetGUID == "" {
-		return fmt.Errorf("vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay")
-	}
 	return nil
 }
 
