@@ -71,7 +71,7 @@ type Operator struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	ImageProvider          *imagefamily.Provider
-	ImageResolver          *imagefamily.Resolver
+	ImageResolver          imagefamily.Resolver
 	LaunchTemplateProvider *launchtemplate.Provider
 	PricingProvider        *pricing.Provider
 	InstanceTypesProvider  instancetype.Provider
@@ -111,7 +111,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.SubscriptionID,
 		azClient.NodeImageVersionsClient,
 	)
-	imageResolver := imagefamily.New(
+	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
 		imageProvider,
 	)
