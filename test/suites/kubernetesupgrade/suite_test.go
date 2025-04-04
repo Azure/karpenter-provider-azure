@@ -99,9 +99,7 @@ var _ = Describe("KubernetesUpgrade", func() {
 		// Raising the timeout for Drift detection.
 		// Based off KubernetesVersionTTL. However, not directly referenced, as if KubernetesVersionTTL is increased we don't want this test
 		// runtime to balloon out of control.
-		SetDefaultEventuallyTimeout(15 * time.Minute)
-		env.EventuallyExpectDrifted(nodeClaim)
-		SetDefaultEventuallyTimeout(5 * time.Minute)
+		env.EventuallyExpectDriftedWithTimeout(15*time.Minute, nodeClaim)
 
 		delete(pod.Annotations, karpv1.DoNotDisruptAnnotationKey)
 		env.ExpectUpdated(pod)
