@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -89,7 +90,9 @@ var _ = Describe("KubernetesUpgrade", func() {
 		By("getting latest available kubernetes version upgrade")
 		availableKubernetesUpgrades := env.ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster()
 		kubernetesUpgradeVersion := *lo.MaxBy(availableKubernetesUpgrades, func(a, b *containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem) bool {
-			return *a.KubernetesVersion > *b.KubernetesVersion
+			aK8sVersion := lo.Must(semver.Parse(*a.KubernetesVersion))
+			bK8sVersion := lo.Must(semver.Parse(*b.KubernetesVersion))
+			return aK8sVersion.GT(bK8sVersion)
 		}).KubernetesVersion
 
 		By(fmt.Sprintf("upgrading the managed cluster to kubernetes version: %s", kubernetesUpgradeVersion))
