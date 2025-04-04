@@ -92,9 +92,4 @@ func (in *AKSNodeClass) KubernetesVersionReadyAndValid() error {
 		return fmt.Errorf("NodeClass KubernetesVersion is uninitialized, and considered invalid")
 	}
 	return nil
-	// if in == nil {
-	// 	return false
-	// }
-	// kubernetesStatusCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
-	// return (kubernetesStatusCondition.IsTrue() && kubernetesStatusCondition.ObservedGeneration == in.GetGeneration()) && in.Status.KubernetesVersion != ""
 }
