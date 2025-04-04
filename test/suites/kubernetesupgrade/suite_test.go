@@ -88,11 +88,9 @@ var _ = Describe("KubernetesUpgrade", func() {
 
 		By("getting latest available kubernetes version upgrade")
 		availableKubernetesUpgrades := env.ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster()
-		sort.Slice(availableKubernetesUpgrades, func(i, j int) bool {
-			return *availableKubernetesUpgrades[i].KubernetesVersion < *availableKubernetesUpgrades[j].KubernetesVersion
-		})
-		// Get the latest available version
-		kubernetesUpgradeVersion := *availableKubernetesUpgrades[len(availableKubernetesUpgrades)-1].KubernetesVersion
+		kubernetesUpgradeVersion := lo.MaxBy(availableKubernetesUpgrades, func(a, b *containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem) bool {
+			return *a.KubernetesVersion < *b.KubernetesVersion
+		}).KubernetesVersion
 
 		By(fmt.Sprintf("upgrading the managed cluster to kubernetes version: %s", kubernetesUpgradeVersion))
 		env.ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion)
