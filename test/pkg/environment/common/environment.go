@@ -182,6 +182,13 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 		corev1.ResourceMemory: resource.MustParse("1000Gi"),
 	})
 
+	return env.AdaptToClusterConfig(nodePool)
+}
+
+// AdaptToClusterConfig modifies NodePool to match the cluster configuration.
+// It has to be applied to any custom node pools constructed by tests;
+// is already applied by default test NodePool constructors.
+func (env *Environment) AdaptToClusterConfig(nodePool *karpv1.NodePool) *karpv1.NodePool {
 	// TODO: make this conditional on Cilium
 	// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
 	nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
@@ -189,7 +196,7 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 		Effect: corev1.TaintEffectNoExecute,
 		Value:  "true",
 	})
-	// # required for Karpenter to predict overhead from cilium DaemonSet
+	// required for Karpenter to predict overhead from cilium DaemonSet
 	nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
 		"kubernetes.azure.com/ebpf-dataplane": "cilium",
 	})
