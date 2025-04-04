@@ -38,7 +38,9 @@ type NodeImageProvider interface {
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]NodeImage, error) {
-	// Should we be nil checking status?
+	if err := nodeClass.KubernetesVersionReadyAndValid(); err != nil {
+		return []NodeImage{}, err
+	}
 	kubernetesVersion := nodeClass.Status.KubernetesVersion
 
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)

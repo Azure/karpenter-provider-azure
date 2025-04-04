@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha2
 
 import (
+	"fmt"
+
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -67,4 +69,32 @@ func (in *AKSNodeClass) GetConditions() []status.Condition {
 
 func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 	in.Status.Conditions = conditions
+}
+
+// Will return nil if the the KubernetesVersion is considered valid to use,
+// otherwise will return an error detailing the reason of failure.
+//
+// Ensures
+// - The AKSNodeClass is non-nil
+// - The AKSNodeClass' KubernetesVersionReady Condition is true
+// - The condition's ObservedGeneration is up to date with the latest spec generation
+// - The KubernetesVersion is initialized and non-empty
+func (in *AKSNodeClass) KubernetesVersionReadyAndValid() error {
+	if in == nil {
+		return fmt.Errorf("NodeClass is nil, meaning %s is consequently unready", ConditionTypeKubernetesVersionReady)
+	}
+	kubernetesVersionStatusCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
+	if !kubernetesVersionStatusCondition.IsTrue() {
+		return fmt.Errorf("NodeClass condition %s is not ready with status %s ", ConditionTypeKubernetesVersionReady, kubernetesVersionStatusCondition.GetStatus())
+	} else if kubernetesVersionStatusCondition.ObservedGeneration != in.GetGeneration() {
+		return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeKubernetesVersionReady, kubernetesVersionStatusCondition.ObservedGeneration, in.GetGeneration())
+	} else if in.Status.KubernetesVersion == "" {
+		return fmt.Errorf("NodeClass KubernetesVersion is uninitialized, and considered invalid")
+	}
+	return nil
+	// if in == nil {
+	// 	return false
+	// }
+	// kubernetesStatusCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
+	// return (kubernetesStatusCondition.IsTrue() && kubernetesStatusCondition.ObservedGeneration == in.GetGeneration()) && in.Status.KubernetesVersion != ""
 }

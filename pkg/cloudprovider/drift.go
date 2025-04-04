@@ -94,8 +94,10 @@ func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, node
 func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
-	// Only check for potential drift if kubernetes version is ready. Note: AWS doesn't do this.
-	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeKubernetesVersionReady).IsTrue() {
+	// Only check for potential drift if kubernetes version is ready, and valid to use. Note: AWS doesn't do this.
+	if err := nodeClass.KubernetesVersionReadyAndValid(); err != nil {
+		// Note: we don't consider this a failure for drift if the KubernetesVersion is invalid, so we ignore returning the error here.
+		// We simply want to ensure the stored version is valid and ready to use, if we are to calculate potential Drift.
 		return "", nil
 	}
 	k8sVersion := nodeClass.Status.KubernetesVersion
