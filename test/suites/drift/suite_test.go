@@ -129,7 +129,7 @@ var _ = Describe("Drift", func() {
 			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", 3)
+			nodeClaims := env.EventuallyExpectLaunchedNodeClaimCount("==", 3)
 			nodes := env.EventuallyExpectCreatedNodeCount("==", 3)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
@@ -374,6 +374,7 @@ var _ = Describe("Drift", func() {
 			},
 		)
 		updatedNodePool.ObjectMeta = nodePool.ObjectMeta
+		updatedNodePool = env.AdaptToClusterConfig(updatedNodePool)
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
@@ -643,7 +644,8 @@ var _ = Describe("Drift", func() {
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			By("drifting the nodeClaim with bad configuration that never initializes")
-			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{{Key: "example.com/taint", Effect: corev1.TaintEffectPreferNoSchedule}}
+			nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints,
+				corev1.Taint{Key: "example.com/taint", Effect: corev1.TaintEffectPreferNoSchedule})
 			env.ExpectCreatedOrUpdated(nodePool)
 
 			env.EventuallyExpectDrifted(startingNodeClaimState...)
