@@ -93,7 +93,8 @@ var _ = Describe("KubernetesUpgrade", func() {
 		}).KubernetesVersion
 
 		By(fmt.Sprintf("upgrading the managed cluster to kubernetes version: %s", kubernetesUpgradeVersion))
-		env.ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion)
+		upgradedMC := env.ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion)
+		Expect(*upgradedMC.Properties.CurrentKubernetesVersion).To(Equal(kubernetesUpgradeVersion))
 
 		By("replacing nodes via Drift on kubernetes version")
 		// Raising the timeout for Drift detection.
