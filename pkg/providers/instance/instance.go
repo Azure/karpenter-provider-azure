@@ -196,6 +196,18 @@ func (p *DefaultProvider) List(ctx context.Context) ([]*armcompute.VirtualMachin
 }
 
 func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error {
+	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
+	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted
+	vm, err := p.Get(ctx, resourceName)
+	if err != nil {
+		return err
+	}
+	// Check if the instance is already shutting down to reduce the number of API calls.
+	// Leftover network interfaces (if any) will be cleaned by by GC controller.
+	if utils.IsVMDeleting(*vm) {
+		return nil
+	}
+
 	logging.FromContext(ctx).Debugf("Deleting virtual machine %s and associated resources", resourceName)
 	return p.cleanupAzureResources(ctx, resourceName)
 }
@@ -652,10 +664,10 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(ctx context.Context, nodeCl
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
 	// Zone - ideally random/spread from requested zones that support given Priority
 	requestedZones := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...).Get(v1.LabelTopologyZone)
-	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o corecloudprovider.Offering, _ int) bool {
+	priorityOfferings := lo.Filter(instanceType.Offerings.Available(), func(o *corecloudprovider.Offering, _ int) bool {
 		return getOfferingCapacityType(o) == priority && requestedZones.Has(getOfferingZone(o))
 	})
-	zonesWithPriority := lo.Map(priorityOfferings, func(o corecloudprovider.Offering, _ int) string { return getOfferingZone(o) })
+	zonesWithPriority := lo.Map(priorityOfferings, func(o *corecloudprovider.Offering, _ int) string { return getOfferingZone(o) })
 	if zone, ok := sets.New(zonesWithPriority...).PopAny(); ok {
 		return instanceType, priority, zone
 	}
@@ -795,10 +807,10 @@ func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.Virtua
 	return identity
 }
 
-func getOfferingCapacityType(offering corecloudprovider.Offering) string {
+func getOfferingCapacityType(offering *corecloudprovider.Offering) string {
 	return offering.Requirements.Get(karpv1.CapacityTypeLabelKey).Any()
 }
 
-func getOfferingZone(offering corecloudprovider.Offering) string {
+func getOfferingZone(offering *corecloudprovider.Offering) string {
 	return offering.Requirements.Get(v1.LabelTopologyZone).Any()
 }
