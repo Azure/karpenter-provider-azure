@@ -22,8 +22,6 @@ import (
 	"testing"
 
 	"github.com/awslabs/operatorpkg/object"
-	opstatus "github.com/awslabs/operatorpkg/status"
-	"github.com/blang/semver/v4"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -99,11 +97,7 @@ var _ = Describe("InstanceProvider", func() {
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-
-		testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
-		nodeClass.Status.KubernetesVersion = testK8sVersion
-		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-		nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+		test.ApplyDefaultStatus(nodeClass, env)
 
 		nodePool = coretest.NodePool(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{

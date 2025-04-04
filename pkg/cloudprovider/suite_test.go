@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
-	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -36,7 +35,6 @@ import (
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	opstatus "github.com/awslabs/operatorpkg/status"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
@@ -99,10 +97,7 @@ var _ = BeforeEach(func() {
 	ctx = options.ToContext(ctx, test.Options())
 
 	nodeClass = test.AKSNodeClass()
-	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
-	nodeClass.Status.KubernetesVersion = testK8sVersion
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	test.ApplyDefaultStatus(nodeClass, env)
 
 	nodePool = coretest.NodePool(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
