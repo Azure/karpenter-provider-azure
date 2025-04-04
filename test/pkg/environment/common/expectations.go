@@ -680,7 +680,7 @@ func (env *Environment) EventuallyExpectNodesUntaintedWithTimeout(timeout time.D
 	}).WithTimeout(timeout).Should(Succeed())
 }
 
-func (env *Environment) EventuallyExpectNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
+func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
 	By(fmt.Sprintf("waiting for nodes to be %s to %d", comparator, count))
 	nodeClaimList := &karpv1.NodeClaimList{}

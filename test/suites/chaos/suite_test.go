@@ -88,7 +88,6 @@ var _ = Describe("Chaos", func() {
 			dep := coretest.Deployment(coretest.DeploymentOptions{
 				Replicas: int32(numPods),
 				PodOptions: coretest.PodOptions{
-					Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6",
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{"app": "my-app"},
 					},
