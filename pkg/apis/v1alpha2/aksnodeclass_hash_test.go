@@ -30,7 +30,7 @@ import (
 )
 
 var _ = Describe("Hash", func() {
-	// NOTE: When the hashing algorithm is updated, these tests are expected to fail, and the test hash constants here along with the v1alpha2.AKSNodeClassHashVersion need to be updated.
+	// NOTE: When the hashing algorithm is updated, these tests are expected to fail; test hash constants here would have to be updated, and currentHashVersion would have to be updated to the new version matching v1alpha2.AKSNodeClassHashVersion
 	const staticHash = "3322684356700793451"
 	var nodeClass *v1alpha2.AKSNodeClass
 	BeforeEach(func() {
