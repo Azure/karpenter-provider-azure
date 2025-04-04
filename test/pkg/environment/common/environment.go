@@ -196,7 +196,7 @@ func (env *Environment) AdaptToClusterConfig(nodePool *karpv1.NodePool) *karpv1.
 		Effect: corev1.TaintEffectNoExecute,
 		Value:  "true",
 	})
-	// # required for Karpenter to predict overhead from cilium DaemonSet
+	// required for Karpenter to predict overhead from cilium DaemonSet
 	nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
 		"kubernetes.azure.com/ebpf-dataplane": "cilium",
 	})
