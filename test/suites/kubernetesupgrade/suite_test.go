@@ -18,7 +18,6 @@ package kubernetesupgrade_test
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
+	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -88,8 +88,8 @@ var _ = Describe("KubernetesUpgrade", func() {
 
 		By("getting latest available kubernetes version upgrade")
 		availableKubernetesUpgrades := env.ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster()
-		kubernetesUpgradeVersion := lo.MaxBy(availableKubernetesUpgrades, func(a, b *containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem) bool {
-			return *a.KubernetesVersion < *b.KubernetesVersion
+		kubernetesUpgradeVersion := *lo.MaxBy(availableKubernetesUpgrades, func(a, b *containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem) bool {
+			return *a.KubernetesVersion > *b.KubernetesVersion
 		}).KubernetesVersion
 
 		By(fmt.Sprintf("upgrading the managed cluster to kubernetes version: %s", kubernetesUpgradeVersion))
