@@ -58,7 +58,7 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("KubernetesUpgrade", func() {
-	// NOTE: This Describe has only one test, and no BeforeEach, as this test preforms modifications to the managed cluster in a way that can not be undone,
+	// NOTE: This Describe has only one test, and no BeforeEach, as this test performs modifications to the managed cluster in a way that can not be undone,
 	// meaning the environment can not be reset for any additional tests.
 	//
 	// This is actually a test of Drift. However, testing kubernetes upgrade has to be isolated due to its modification of the managed cluster environment.
