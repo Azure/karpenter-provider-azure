@@ -795,12 +795,17 @@ func (env *Environment) EventuallyExpectNodeClaimsReady(nodeClaims ...*karpv1.No
 
 func (env *Environment) EventuallyExpectDrifted(nodeClaims ...*karpv1.NodeClaim) {
 	GinkgoHelper()
+	env.EventuallyExpectDriftedWithTimeout(-1, nodeClaims...)
+}
+
+func (env *Environment) EventuallyExpectDriftedWithTimeout(timeout time.Duration, nodeClaims ...*karpv1.NodeClaim) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		for _, nc := range nodeClaims {
 			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(nc), nc)).To(Succeed())
 			g.Expect(nc.StatusConditions().Get(karpv1.ConditionTypeDrifted).IsTrue()).To(BeTrue())
 		}
-	}).Should(Succeed())
+	}).WithTimeout(timeout).Should(Succeed())
 }
 
 func (env *Environment) ConsistentlyExpectNodeClaimsNotDrifted(duration time.Duration, nodeClaims ...*karpv1.NodeClaim) {
