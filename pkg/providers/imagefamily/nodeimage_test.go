@@ -103,6 +103,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, subscription, nodeImageVersionsAPI)
 
 		nodeClass = test.AKSNodeClass()
+		test.ApplyDefaultStatus(nodeClass, env)
 	})
 
 	Context("List CIG Images", func() {
