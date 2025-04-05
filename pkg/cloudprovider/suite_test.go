@@ -35,7 +35,6 @@ import (
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	opstatus "github.com/awslabs/operatorpkg/status"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
@@ -98,7 +97,8 @@ var _ = BeforeEach(func() {
 	ctx = options.ToContext(ctx, test.Options())
 
 	nodeClass = test.AKSNodeClass()
-	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	test.ApplyDefaultStatus(nodeClass, env)
+
 	nodePool = coretest.NodePool(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
@@ -112,6 +112,7 @@ var _ = BeforeEach(func() {
 			},
 		},
 	})
+
 	nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},

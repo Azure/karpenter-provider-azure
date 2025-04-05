@@ -51,7 +51,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
 		return staticFieldsDrifted, nil
 	}
-	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
+	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return "", err
 	}
@@ -91,11 +91,18 @@ func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, node
 	return lo.Ternary(nodeClassHash != nodeClaimHash, NodeClassDrift, "")
 }
 
-func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
-	nodeName := nodeClaim.Status.NodeName
+	// Only check for potential drift if kubernetes version is ready, and valid to use. Note: AWS doesn't do this.
+	if err := nodeClass.KubernetesVersionReadyAndValid(); err != nil {
+		// Note: we don't consider this a hard failure for drift if the KubernetesVersion is invalid, so we ignore returning the error here.
+		// We simply want to ensure the stored version is valid and ready to use, if we are to calculate potential Drift based on it.
+		return "", nil //nolint:nilerr
+	}
+	k8sVersion := nodeClass.Status.KubernetesVersion
 
+	nodeName := nodeClaim.Status.NodeName
 	if nodeName == "" {
 		return "", nil
 	}
@@ -105,13 +112,8 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		// TODO (charliedmcb): should we ignore is not found errors? Will it ever be trying to check for drift before the node/vm exist?
 		return "", err
 	}
-
-	k8sVersion, err := c.imageProvider.KubeServerVersion(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	nodeK8sVersion := strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")
+
 	if nodeK8sVersion != k8sVersion {
 		logger.Debugf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion)
 		return K8sVersionDrift, nil
