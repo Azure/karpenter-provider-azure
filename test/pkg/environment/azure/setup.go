@@ -35,7 +35,9 @@ var (
 )
 
 func (env *Environment) BeforeEach() {
-	persistedSettings = env.ExpectSettings()
+	if env.InClusterController {
+		persistedSettings = env.ExpectSettings()
+	}
 	env.Environment.BeforeEach()
 }
 
@@ -49,5 +51,7 @@ func (env *Environment) AfterEach() {
 	defer fmt.Println("##[endgroup]")
 	env.Environment.AfterEach()
 	// Ensure we reset settings after collecting the controller logs
-	env.ExpectSettingsReplaced(persistedSettings...)
+	if env.InClusterController {
+		env.ExpectSettingsReplaced(persistedSettings...)
+	}
 }
