@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2" //nolint:revive,stylecheck
-	. "github.com/onsi/gomega"    //nolint:revive,stylecheck
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
@@ -680,13 +680,13 @@ func (env *Environment) EventuallyExpectNodesUntaintedWithTimeout(timeout time.D
 	}).WithTimeout(timeout).Should(Succeed())
 }
 
-func (env *Environment) EventuallyExpectNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
+func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
 	By(fmt.Sprintf("waiting for nodes to be %s to %d", comparator, count))
 	nodeClaimList := &karpv1.NodeClaimList{}
 	Eventually(func(g Gomega) {
 		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel})).To(Succeed())
-		g.Expect(len(nodeClaimList.Items)).To(BeNumerically(comparator, count),
+		g.Expect(lo.CountBy(nodeClaimList.Items, func(nc karpv1.NodeClaim) bool { return nc.StatusConditions().IsTrue(karpv1.ConditionTypeLaunched) })).To(BeNumerically(comparator, count),
 			fmt.Sprintf("expected %d nodeclaims, had %d (%v)", count, len(nodeClaimList.Items), NodeClaimNames(lo.ToSlicePtr(nodeClaimList.Items))))
 	}).Should(Succeed())
 	return lo.ToSlicePtr(nodeClaimList.Items)
@@ -795,12 +795,17 @@ func (env *Environment) EventuallyExpectNodeClaimsReady(nodeClaims ...*karpv1.No
 
 func (env *Environment) EventuallyExpectDrifted(nodeClaims ...*karpv1.NodeClaim) {
 	GinkgoHelper()
+	env.EventuallyExpectDriftedWithTimeout(-1, nodeClaims...)
+}
+
+func (env *Environment) EventuallyExpectDriftedWithTimeout(timeout time.Duration, nodeClaims ...*karpv1.NodeClaim) {
+	GinkgoHelper()
 	Eventually(func(g Gomega) {
 		for _, nc := range nodeClaims {
 			g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(nc), nc)).To(Succeed())
 			g.Expect(nc.StatusConditions().Get(karpv1.ConditionTypeDrifted).IsTrue()).To(BeTrue())
 		}
-	}).Should(Succeed())
+	}).WithTimeout(timeout).Should(Succeed())
 }
 
 func (env *Environment) ConsistentlyExpectNodeClaimsNotDrifted(duration time.Duration, nodeClaims ...*karpv1.NodeClaim) {
