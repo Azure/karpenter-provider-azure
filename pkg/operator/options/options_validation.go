@@ -65,10 +65,6 @@ func (o Options) validateNetworkingOptions() error {
 	return nil
 }
 
-func (o Options) isAzureCNIWithOverlay() bool {
-	return o.NetworkPlugin == consts.NetworkPluginAzure && o.NetworkPluginMode == consts.NetworkPluginModeOverlay
-}
-
 func (o Options) validateVnetSubnetID() error {
 	_, err := utils.GetVnetSubnetIDComponents(o.SubnetID)
 	if err != nil {
