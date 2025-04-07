@@ -36,17 +36,19 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 			panic(fmt.Sprintf("Failed to merge settings: %s", err))
 		}
 	}
-
-	nc := &v1alpha2.AKSNodeClass{
+	// In reality, these default values will be set via the defaulting done by the API server. The reason we provide them here is
+	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
+	if options.Spec.OSDiskSizeGB == nil {
+		options.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
+	}
+	if options.Spec.ImageFamily == nil {
+		options.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2204ImageFamily)
+	}
+	return &v1alpha2.AKSNodeClass{
 		ObjectMeta: test.ObjectMeta(options.ObjectMeta),
 		Spec:       options.Spec,
 		Status:     options.Status,
 	}
-	// In reality, these default values will be set via the defaulting done by the API server. The reason we provide them here is
-	// we sometimes reference a test.AKSNodeClass without applying it, and in that case we need to set the default values ourselves
-	nc.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
-	nc.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2204ImageFamily)
-	return nc
 }
 
 func AKSNodeClassFieldIndexer(ctx context.Context) func(cache.Cache) error {

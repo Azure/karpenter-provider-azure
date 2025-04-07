@@ -82,9 +82,9 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }
 
-// Updating `AKSNodeClass-hash-version` annotation inside the karpenter controller means a breaking change has been made to the hash calculation.
-// `AKSNodeClass-hash` annotation on the AKSNodeClass will be updated, due to the breaking change, making the `AKSNodeClass-hash` on the NodeClaim different from
-// AKSNodeClass. Since, we cannot rely on the `AKSNodeClass-hash` on the NodeClaims, due to the breaking change, we will need to re-calculate the hash and update the annotation.
+// Updating `aksnodeclass-hash-version` annotation inside the karpenter controller means a breaking change has been made to the hash calculation.
+// `aksnodeclass-hash` annotation on the AKSNodeClass will be updated, due to the breaking change, making the `aksnodeclass-hash` on the NodeClaim different from
+// AKSNodeClass. Since, we cannot rely on the `aksnodeclass-hash` on the NodeClaims, due to the breaking change, we will need to re-calculate the hash and update the annotation.
 // For more information on the Drift Hash Versioning: https://github.com/kubernetes-sigs/karpenter/blob/main/designs/drift-hash-versioning.md
 func (c *Controller) updateNodeClaimHash(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) error {
 	ncList := &karpv1.NodeClaimList{}
