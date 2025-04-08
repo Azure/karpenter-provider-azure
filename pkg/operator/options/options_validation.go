@@ -45,9 +45,6 @@ func (o Options) validateVNETGUID() error {
 	if o.VnetGUID != "" && uuid.Validate(o.VnetGUID) != nil {
 		return fmt.Errorf("vnet-guid %s is malformed", o.VnetGUID)
 	}
-	if o.isAzureCNIWithOverlay() && o.VnetGUID == "" {
-		return fmt.Errorf("vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay")
-	}
 	return nil
 }
 
@@ -66,10 +63,6 @@ func (o Options) validateNetworkingOptions() error {
 		return fmt.Errorf("network-plugin-mode '%s' is invalid when network-plugin is 'none'. network-plugin-mode must be empty", o.NetworkPluginMode)
 	}
 	return nil
-}
-
-func (o Options) isAzureCNIWithOverlay() bool {
-	return o.NetworkPlugin == consts.NetworkPluginAzure && o.NetworkPluginMode == consts.NetworkPluginModeOverlay
 }
 
 func (o Options) validateVnetSubnetID() error {
