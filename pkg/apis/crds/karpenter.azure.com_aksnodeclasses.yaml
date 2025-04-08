@@ -61,6 +61,7 @@ spec:
                       Here are all distro https://github.com/Azure/AgentBaker/blob/dev/pkg/agent/datamodel/types.go#L144.
                     enum:
                     - aks-ubuntu-containerd-22.04-gen2
+                    - aks-ubuntu-arm64-containerd-22.04-gen2
                     type: string
                   galleryName:
                     description: |-

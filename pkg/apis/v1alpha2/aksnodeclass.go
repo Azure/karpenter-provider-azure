@@ -83,7 +83,7 @@ type CustomImageTerm struct {
 	Name string `json:"name,omitempty"`
 	// DistroName is the aks container service agent pool distro name which need to be valid.
 	// Here are all distro https://github.com/Azure/AgentBaker/blob/dev/pkg/agent/datamodel/types.go#L144.
-	// +kubebuilder:validation:Enum:={aks-ubuntu-containerd-22.04-gen2}
+	// +kubebuilder:validation:Enum=aks-ubuntu-containerd-22.04-gen2;aks-ubuntu-arm64-containerd-22.04-gen2
 	// +kubebuilder:default="aks-ubuntu-containerd-22.04-gen2"
 	// +optional
 	DistroName string `json:"distroName,omitempty"`
