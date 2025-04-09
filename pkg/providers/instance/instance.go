@@ -489,9 +489,39 @@ func setNodePoolNameTag(tags map[string]*string, nodeClaim *karpv1.NodeClaim) {
 	}
 }
 
+<<<<<<< HEAD
 type createResult struct {
 	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
 	VM     *armcompute.VirtualMachine
+=======
+// createVirtualMachine creates a new VM using the provided options
+func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*armcompute.VirtualMachine, error) {
+	// First Check if the VM already exists. The reason we do this is
+	// if karpenter restarts, it will try to create the VM again.
+	// in retrying it will mutate the properties on os.CustomData or zones
+	// in subsequent puts. This will cause the create call to fail with the error
+	// RESPONSE 409: 409 Conflict ERROR CODE: PropertyChangeNotAllowed
+	//{"code": "PropertyChangeNotAllowed"
+	// message": "Changing property 'osProfile.customData' is not allowed.", "target": "osProfile.customData"}
+	existingVM, err := p.Get(ctx, opts.VMName)
+	if err != nil {
+		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
+	}
+	if existingVM != nil {
+		return existingVM, nil
+	}
+	vm := newVMObject(opts)
+	logging.FromContext(ctx).Debugf("Creating virtual machine %s (%s)", opts.VMName, opts.InstanceType.Name)
+
+	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, opts.VMName, vm)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed: %v", opts.VMName, err)
+		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
+	}
+
+	logging.FromContext(ctx).Debugf("Created virtual machine %s", *result.ID)
+	return result, nil
+>>>>>>> 6cd45df (fix(instance-provider): karpenter should tolerate restarts and hit PropertyChangeNotAllowed errors)
 }
 
 // createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists, which means opts is not guaranteed except VMName
@@ -603,7 +633,6 @@ func (p *DefaultProvider) beginLaunchInstance(
 	// which we don't want.
 	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
 	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
-
 	return &VirtualMachinePromise{
 		Wait: func() error {
 			if result.Poller == nil {
