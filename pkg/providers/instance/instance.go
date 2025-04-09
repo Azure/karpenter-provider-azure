@@ -347,38 +347,40 @@ func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *crea
 	return *res.ID, nil
 }
 
-// newVMObject is a helper func that creates a new armcompute.VirtualMachine
-// from key input.
-func newVMObject(
-	vmName,
-	nicReference,
-	zone,
-	capacityType,
-	location,
-	sshPublicKey string,
-	nodeIdentities []string,
-	nodeClass *v1alpha2.AKSNodeClass,
-	launchTemplate *launchtemplate.Template,
-	instanceType *corecloudprovider.InstanceType,
-	provisionMode string,
-	useSIG bool,
-) armcompute.VirtualMachine {
-	if launchTemplate.IsWindows {
+// createVMOptions contains all the parameters needed to create a VM
+type createVMOptions struct {
+	VMName         string
+	NicReference   string
+	Zone           string
+	CapacityType   string
+	Location       string
+	SSHPublicKey   string
+	NodeIdentities []string
+	NodeClass      *v1alpha2.AKSNodeClass
+	LaunchTemplate *launchtemplate.Template
+	InstanceType   *corecloudprovider.InstanceType
+	ProvisionMode  string
+	UseSIG         bool
+}
+
+// newVMObject creates a new armcompute.VirtualMachine from the provided options
+func newVMObject(opts *createVMOptions) armcompute.VirtualMachine {
+	if opts.LaunchTemplate.IsWindows {
 		return armcompute.VirtualMachine{} // TODO(Windows)
 	}
 
 	vm := armcompute.VirtualMachine{
-		Location: lo.ToPtr(location),
-		Identity: ConvertToVirtualMachineIdentity(nodeIdentities),
+		Location: lo.ToPtr(opts.Location),
+		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
+				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
 			},
 
 			StorageProfile: &armcompute.StorageProfile{
 				OSDisk: &armcompute.OSDisk{
-					Name:         lo.ToPtr(vmName),
-					DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
+					Name:         lo.ToPtr(opts.VMName),
+					DiskSizeGB:   opts.NodeClass.Spec.OSDiskSizeGB,
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},
@@ -387,7 +389,7 @@ func newVMObject(
 			NetworkProfile: &armcompute.NetworkProfile{
 				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
 					{
-						ID: &nicReference,
+						ID: &opts.NicReference,
 						Properties: &armcompute.NetworkInterfaceReferenceProperties{
 							Primary:      lo.ToPtr(true),
 							DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
@@ -398,13 +400,13 @@ func newVMObject(
 
 			OSProfile: &armcompute.OSProfile{
 				AdminUsername: lo.ToPtr("azureuser"),
-				ComputerName:  &vmName,
+				ComputerName:  &opts.VMName,
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
 					DisablePasswordAuthentication: lo.ToPtr(true),
 					SSH: &armcompute.SSHConfiguration{
 						PublicKeys: []*armcompute.SSHPublicKey{
 							{
-								KeyData: lo.ToPtr(sshPublicKey),
+								KeyData: lo.ToPtr(opts.SSHPublicKey),
 								Path:    lo.ToPtr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
 							},
 						},
@@ -412,20 +414,20 @@ func newVMObject(
 				},
 			},
 			Priority: lo.ToPtr(armcompute.VirtualMachinePriorityTypes(
-				CapacityTypeToPriority[capacityType]),
+				CapacityTypeToPriority[opts.CapacityType]),
 			),
 		},
-		Zones: utils.MakeVMZone(zone),
-		Tags:  launchTemplate.Tags,
+		Zones: utils.MakeVMZone(opts.Zone),
+		Tags:  opts.LaunchTemplate.Tags,
 	}
-	setVMPropertiesOSDiskType(vm.Properties, launchTemplate.StorageProfile)
-	setImageReference(vm.Properties, launchTemplate.ImageID, useSIG)
-	setVMPropertiesBillingProfile(vm.Properties, capacityType)
+	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate.StorageProfile)
+	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
+	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 
-	if provisionMode == consts.ProvisionModeBootstrappingClient {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.CustomScriptsCustomData)
+	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
 	} else {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.ScriptlessCustomData)
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.ScriptlessCustomData)
 	}
 
 	return vm
@@ -472,13 +474,32 @@ func setNodePoolNameTag(tags map[string]*string, nodeClaim *karpv1.NodeClaim) {
 	}
 }
 
-func (p *DefaultProvider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName string) (*armcompute.VirtualMachine, error) {
-	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
+// createVirtualMachine creates a new VM using the provided options
+func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*armcompute.VirtualMachine, error) {
+	// First Check if the VM already exists. The reason we do this is
+	// if karpenter restarts, it will try to create the VM again.
+	// in retrying it will mutate the properties on os.CustomData or zones
+	// in subsequent puts. This will cause the create call to fail with the error
+	// RESPONSE 409: 409 Conflict ERROR CODE: PropertyChangeNotAllowed
+	//{"code": "PropertyChangeNotAllowed"
+	// message": "Changing property 'osProfile.customData' is not allowed.", "target": "osProfile.customData"}
+	existingVM, err := p.Get(ctx, opts.VMName)
 	if err != nil {
-		log.FromContext(ctx).Error(err, fmt.Sprintf("Creating virtual machine %q failed", vmName))
-		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
+		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Created virtual machine %s", *result.ID))
+	if existingVM != nil {
+		return existingVM, nil
+	}
+	vm := newVMObject(opts)
+	log.("Creating virtual machine %s (%s)", opts.VMName, opts.InstanceType.Name)
+
+	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, opts.VMName, vm)
+	if err != nil {
+		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed: %v", opts.VMName, err)
+		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
+	}
+
+	logging.FromContext(ctx).Debugf("Created virtual machine %s", *result.ID)
 	return result, nil
 }
 
@@ -497,13 +518,12 @@ func (p *DefaultProvider) launchInstance(
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
 
-	// set provisioner tag for NIC, VM, and Disk
+	// set nodepool tag for NIC, VM, and Disk
 	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
 
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
-	// create network interface
 	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting backend pools: %w", err)
@@ -526,14 +546,20 @@ func (p *DefaultProvider) launchInstance(
 		return nil, err
 	}
 
-	sshPublicKey := options.FromContext(ctx).SSHPublicKey
-	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	useSIG := options.FromContext(ctx).UseSIG
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType, p.provisionMode, useSIG)
-
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine %s (%s)", resourceName, instanceType.Name))
-	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
-	resp, err := p.createVirtualMachine(ctx, vm, resourceName)
+	vm, err := p.createVirtualMachine(ctx, &createVMOptions{
+		VMName:         resourceName,
+		NicReference:   nicReference,
+		Zone:           zone,
+		CapacityType:   capacityType,
+		Location:       p.location,
+		SSHPublicKey:   options.FromContext(ctx).SSHPublicKey,
+		NodeIdentities: options.FromContext(ctx).NodeIdentities,
+		NodeClass:      nodeClass,
+		LaunchTemplate: launchTemplate,
+		InstanceType:   instanceType,
+		ProvisionMode:  p.provisionMode,
+		UseSIG:         options.FromContext(ctx).UseSIG,
+	})
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
 		return nil, azErr
@@ -551,7 +577,7 @@ func (p *DefaultProvider) launchInstance(
 	if err != nil {
 		return nil, err
 	}
-	return resp, nil
+	return vm, nil
 }
 
 // nolint:gocyclo
