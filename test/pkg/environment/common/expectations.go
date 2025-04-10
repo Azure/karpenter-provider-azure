@@ -49,6 +49,17 @@ import (
 	coreresources "sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
+func (env *Environment) ExpectKarpenterPodLogsToNotContainString(text string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		logs, err := env.KubeClient.CoreV1().Pods("kube-system").GetLogs(env.ExpectActiveKarpenterPod().Name, &corev1.PodLogOptions{
+			Container: "controller",
+		}).DoRaw(env.Context)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(logs).ToNot(ContainSubstring(text))
+	}).WithTimeout(time.Minute * 1).Should(Succeed())
+}
+
 func (env *Environment) ExpectCreated(objects ...client.Object) {
 	GinkgoHelper()
 	for _, object := range objects {
