@@ -483,12 +483,15 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 	// RESPONSE 409: 409 Conflict ERROR CODE: PropertyChangeNotAllowed
 	//{"code": "PropertyChangeNotAllowed"
 	// message": "Changing property 'osProfile.customData' is not allowed.", "target": "osProfile.customData"}
-	existingVM, err := p.Get(ctx, opts.VMName)
-	if err != nil {
-		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
+	resp, err := p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, opts.VMName, nil)
+	// If status == ok, we want to return the existing vmm
+	if err == nil {
+		return &resp.VirtualMachine, nil
 	}
-	if existingVM != nil {
-		return existingVM, nil
+	// if status != ok, and for a reason other than we did not find the vm
+	azErr := sdkerrors.IsResponseError(err)
+	if azErr != nil && (azErr.ErrorCode != "NotFound" && azErr.ErrorCode != "ResourceNotFound") {
+		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
 	vm := newVMObject(opts)
 	log.("Creating virtual machine %s (%s)", opts.VMName, opts.InstanceType.Name)
