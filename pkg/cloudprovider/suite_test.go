@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
+	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -178,7 +179,9 @@ var _ = Describe("CloudProvider", func() {
 				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 			})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
-			ExpectScheduled(ctx, env.Client, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
+			ExpectApplied(ctx, env.Client, node)
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
@@ -187,6 +190,7 @@ var _ = Describe("CloudProvider", func() {
 			// Corresponding NodeClaim
 			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
+					NodeName:   node.Name,
 					ProviderID: utils.ResourceIDToProviderID(ctx, utils.MkVMID(rg, vmName)),
 				},
 				ObjectMeta: metav1.ObjectMeta{
@@ -233,6 +237,71 @@ var _ = Describe("CloudProvider", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(string(drifted)).To(Equal("ImageVersionDrift"))
+		})
+
+		Context("Kubernetes Version", func() {
+			It("should succeed with no drift when nothing changes", func() {
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("should succeed with no drift when KubernetesVersionReady is not true", func() {
+				nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
+				test.PreemptivelyBumpConditionsObservedGeneration(nodeClass)
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("should succeed with no drift when KubernetesVersionReady is behind on ObservedGeneration", func() {
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			// TODO (chmcbrid): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
+			It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
+				nodeClass.Status.KubernetesVersion = ""
+				test.PreemptivelyBumpConditionsObservedGeneration(nodeClass)
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			// TODO (chmcbrid): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
+			It("shouldn't error or be drifted when NodeName is missing", func() {
+				nodeClaim.Status.NodeName = ""
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			// TODO (charliedmcb): wondering if we should actually ignore not found errors? Can IsDrifted be called before the node exists?
+			It("should error when node is not found", func() {
+				nodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("should succeed with drift true when KubernetesVersion is new", func() {
+				nodeClass := ExpectExists(ctx, env.Client, nodeClass)
+
+				semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(nodeClass.Status.KubernetesVersion))
+				semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
+				nodeClass.Status.KubernetesVersion = semverCurrentK8sVersion.String()
+
+				test.PreemptivelyBumpConditionsObservedGeneration(nodeClass)
+				ExpectApplied(ctx, env.Client, nodeClass)
+
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(K8sVersionDrift))
+			})
 		})
 	})
 })
