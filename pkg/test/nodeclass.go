@@ -58,6 +58,20 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 	nodeClass.Status.KubernetesVersion = testK8sVersion
 	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+
+	PreemptivelyBumpConditionsObservedGeneration(nodeClass)
+}
+
+// PreemptivelyBumpConditionsObservedGeneration is used to align a preset status' ObservedGeneration
+// with the object, as when ExpectApplied is called the server will automatically bump the object's
+// Generation, meaning we need to preset the ObservedGeneration to object.Generation + 1.
+func PreemptivelyBumpConditionsObservedGeneration(nodeClass *v1alpha2.AKSNodeClass) {
+	conditions := []opstatus.Condition{}
+	for _, condition := range nodeClass.GetConditions() {
+		condition.ObservedGeneration = nodeClass.Generation + 1
+		conditions = append(conditions, condition)
+	}
+	nodeClass.SetConditions(conditions)
 }
 
 func AKSNodeClassFieldIndexer(ctx context.Context) func(cache.Cache) error {
