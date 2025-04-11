@@ -289,7 +289,7 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			It("should succeed with drift true when KubernetesVersion is new", func() {
-				nodeClass := ExpectExists(ctx, env.Client, nodeClass)
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
 				semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(nodeClass.Status.KubernetesVersion))
 				semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
