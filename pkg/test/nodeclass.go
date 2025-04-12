@@ -59,7 +59,12 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 
-	PreemptivelyBumpConditionsObservedGeneration(nodeClass)
+	conditions := []opstatus.Condition{}
+	for _, condition := range nodeClass.GetConditions() {
+		condition.ObservedGeneration = 1
+		conditions = append(conditions, condition)
+	}
+	nodeClass.SetConditions(conditions)
 }
 
 // PreemptivelyBumpConditionsObservedGeneration is used to align a preset status' ObservedGeneration
