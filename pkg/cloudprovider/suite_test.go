@@ -255,7 +255,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(NoDrift))
 			})
 
-			// TODO (chmcbrid): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
+			// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 			It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
 				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 				nodeClass.Status.KubernetesVersion = ""
@@ -265,7 +265,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(NoDrift))
 			})
 
-			// TODO (chmcbrid): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
+			// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 			It("shouldn't error or be drifted when NodeName is missing", func() {
 				nodeClaim.Status.NodeName = ""
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
