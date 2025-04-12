@@ -61,19 +61,9 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 
 	conditions := []opstatus.Condition{}
 	for _, condition := range nodeClass.GetConditions() {
+		// Using the magic number 1, as it appears the Generation is always equal to 1 on the NodeClass in testing. If that appears to not be the case,
+		// than we should add some function for allows bumps as needed to match.
 		condition.ObservedGeneration = 1
-		conditions = append(conditions, condition)
-	}
-	nodeClass.SetConditions(conditions)
-}
-
-// PreemptivelyBumpConditionsObservedGeneration is used to align a preset status' ObservedGeneration
-// with the object, as when ExpectApplied is called the server will automatically bump the object's
-// Generation, meaning we need to preset the ObservedGeneration to object.Generation + 1.
-func PreemptivelyBumpConditionsObservedGeneration(nodeClass *v1alpha2.AKSNodeClass) {
-	conditions := []opstatus.Condition{}
-	for _, condition := range nodeClass.GetConditions() {
-		condition.ObservedGeneration = nodeClass.Generation + 1
 		conditions = append(conditions, condition)
 	}
 	nodeClass.SetConditions(conditions)
