@@ -61,7 +61,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.testName, func(t *testing.T) {
 			for _, name := range c.vmNames {
-				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags})
+				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags, Zones: []*string{lo.ToPtr("1")}})
 				if err != nil {
 					t.Errorf("Unexpected error %v", err)
 					return
