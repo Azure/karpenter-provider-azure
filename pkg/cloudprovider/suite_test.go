@@ -169,21 +169,6 @@ var _ = Describe("CloudProvider", func() {
 		Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 		Expect(cloudProviderMachine).To(BeNil())
 	})
-	// It("should return an error when KubernetesVersionReady is not up to ready for nodeclass", func() {
-	// 	ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-	// 	nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-	// 	ExpectApplied(ctx, env.Client, nodeClass, nodeClaim) // Bumping Generation by applying, which makes the KubernetesVersionReady ObservedGeneration out of date
-	// 	_, err := cloudProvider.Create(ctx, nodeClaim)
-	// 	Expect(err).To(HaveOccurred())
-	// 	Expect(err).To(Equal(fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", v1alpha2.ConditionTypeKubernetesVersionReady, 1, 2)))
-	// })
-	// It("should return an error when KubernetesVersionReady is false for nodeclass", func() {
-	// 	nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
-	// 	ExpectApplied(ctx, env.Client, nodeClass, nodeClaim)
-	// 	_, err := cloudProvider.Create(ctx, nodeClaim)
-	// 	Expect(err).To(HaveOccurred())
-	// 	Expect(err).To(Equal(fmt.Errorf("NodeClass condition %s is not ready with status %s ", v1alpha2.ConditionTypeKubernetesVersionReady, "False")))
-	// })
 	Context("Drift", func() {
 		var nodeClaim *karpv1.NodeClaim
 		var pod *v1.Pod
@@ -269,13 +254,6 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(drifted).To(Equal(NoDrift))
 			})
-
-			// It("should succeed with no drift when KubernetesVersionReady is behind on ObservedGeneration", func() {
-			// 	ExpectApplied(ctx, env.Client, nodeClass)
-			// 	drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-			// 	Expect(err).ToNot(HaveOccurred())
-			// 	Expect(drifted).To(Equal(NoDrift))
-			// })
 
 			// TODO (chmcbrid): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 			It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
