@@ -26,8 +26,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 )
 
@@ -81,4 +83,28 @@ func firstVNETInRG(ctx context.Context, client *armnetwork.VirtualNetworksClient
 		}
 	}
 	return nil, fmt.Errorf("no virtual networks found in resource group: %s", vnetRG)
+}
+
+func (env *Environment) ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster() []*containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem {
+	GinkgoHelper()
+	upgradeProfile, err := env.AKSManagedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
+	Expect(err).ToNot(HaveOccurred())
+	return upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades
+}
+
+func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion string) containerservice.ManagedCluster {
+	GinkgoHelper()
+	managedClusterResponse, err := env.AKSManagedClusterClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
+	Expect(err).ToNot(HaveOccurred())
+	managedCluster := managedClusterResponse.ManagedCluster
+
+	// See documentation for KubernetesVersion (client specified) and CurrentKubernetesVersion (version under use):
+	// https://learn.microsoft.com/en-us/rest/api/aks/managed-clusters/get?view=rest-aks-2025-01-01&tabs=HTTP
+	By(fmt.Sprintf("upgrading from kubernetes version %s to kubernetes version %s", *managedCluster.Properties.CurrentKubernetesVersion, kubernetesUpgradeVersion))
+	managedCluster.Properties.KubernetesVersion = &kubernetesUpgradeVersion
+	poller, err := env.AKSManagedClusterClient.BeginCreateOrUpdate(env.Context, env.ClusterResourceGroup, env.ClusterName, managedCluster, nil)
+	Expect(err).ToNot(HaveOccurred())
+	res, err := poller.PollUntilDone(env.Context, nil)
+	Expect(err).ToNot(HaveOccurred())
+	return res.ManagedCluster
 }

@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.17.2
+    controller-gen.kubebuilder.io/version: v0.17.3
   name: aksnodeclasses.karpenter.azure.com
 spec:
   group: karpenter.azure.com
@@ -159,10 +159,17 @@ spec:
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
               maxPods:
-                description: MaxPods is an override for the maximum number of pods
-                  that can run on a worker node instance.
+                description: |-
+                  MaxPods is an override for the maximum number of pods that can run on a worker node instance.
+                  See minimum + maximum pods per node documentation: https://learn.microsoft.com/en-us/azure/aks/concepts-network-ip-address-planning#maximum-pods-per-node
+                  Default behavior if this is not specified depends on the network plugin:
+                    - If Network Plugin is Azure with "" (v1 or NodeSubnet), the default is 30.
+                    - If Network Plugin is Azure with "overlay", the default is 250.
+                    - If Network Plugin is None, the default is 250.
+                    - Otherwise, the default is 110 (the usual Kubernetes default).
                 format: int32
-                minimum: 0
+                maximum: 250
+                minimum: 10
                 type: integer
               osDiskSizeGB:
                 default: 128

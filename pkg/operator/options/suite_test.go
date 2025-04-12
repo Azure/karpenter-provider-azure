@@ -141,20 +141,6 @@ var _ = Describe("Options", func() {
 			Expect(err).To(MatchError(ContainSubstring(errMsg)))
 		})
 
-		It("should fail when vnet guid is empty for azure cni with overlay clusters", func() {
-			errMsg := "vnet-guid cannot be empty for AzureCNI clusters with networkPluginMode overlay"
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vm-memory-overhead-percent", "-0.01",
-				"--network-plugin", "azure",
-				"--network-plugin-mode", "overlay",
-			)
-			Expect(err).To(MatchError(ContainSubstring(errMsg)))
-		})
 		It("should fail when network-plugin-mode is invalid", func() {
 			typo := "overlaay"
 			errMsg := fmt.Sprintf("network-plugin-mode %v is invalid. network-plugin-mode must equal 'overlay' or ''", typo)

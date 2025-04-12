@@ -25,6 +25,11 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+
+	"github.com/samber/lo"
+
 	v1 "k8s.io/api/core/v1"
 	"knative.dev/pkg/logging"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
@@ -137,4 +142,23 @@ func PrettySlice[T any](s []T, maxItems int) string {
 		fmt.Fprint(&sb, elem)
 	}
 	return sb.String()
+}
+
+// GetMaxPods resolves what we should set max pods to for a given nodeclass.
+// If not specified, defaults based on network-plugin. 30 for "azure", 110 for "kubenet",
+// or 250 for "none" and network plugin mode overlay.
+func GetMaxPods(nodeClass *v1alpha2.AKSNodeClass, networkPlugin, networkPluginMode string) int32 {
+	if nodeClass.Spec.MaxPods != nil {
+		return lo.FromPtr(nodeClass.Spec.MaxPods)
+	}
+	switch {
+	case networkPlugin == consts.NetworkPluginNone:
+		return consts.DefaultNetPluginNoneMaxPods
+	case networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.NetworkPluginModeOverlay:
+		return consts.DefaultOverlayMaxPods
+	case networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.NetworkPluginModeNone:
+		return consts.DefaultNodeSubnetMaxPods
+	default:
+		return consts.DefaultKubernetesMaxPods
+	}
 }

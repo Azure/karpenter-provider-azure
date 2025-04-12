@@ -70,6 +70,10 @@ rules:
     verbs: ["delete"]
   {{- if .Values.webhook.enabled }}
   - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions/status"]
+    resourceNames: ["aksnodeclasses.karpenter.azure.com", "nodepools.karpenter.sh", "nodeclaims.karpenter.sh"]
+    verbs: ["patch"]
+  - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
     verbs: ["update"]
   {{- end }}
