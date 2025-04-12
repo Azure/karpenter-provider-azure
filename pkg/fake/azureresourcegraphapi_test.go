@@ -88,6 +88,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 					}
 				}
 			}
+			virtualMachinesAPI.Reset()
 		})
 	}
 }
