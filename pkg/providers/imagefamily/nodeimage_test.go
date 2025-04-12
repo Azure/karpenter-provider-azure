@@ -107,6 +107,13 @@ var _ = Describe("NodeImageProvider tests", func() {
 	})
 
 	Context("List CIG Images", func() {
+		It("should fail if KubernetesVersionReady is false", func() {
+			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeKubernetesVersionReady, "KubernetesVersionFalseForTesting", "tesitng false kubernetes version status")
+			_, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(Equal(fmt.Errorf("NodeClass condition %s is not ready with status %s ", v1alpha2.ConditionTypeKubernetesVersionReady, "False")))
+		})
+
 		It("should match expected images for Ubuntu2204", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
