@@ -77,9 +77,9 @@ func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 // Ensures
 // - The AKSNodeClass is non-nil
 // - The AKSNodeClass' KubernetesVersionReady Condition is true
-// - The condition's ObservedGeneration is up to date with the latest spec generation
+// - The Condition's ObservedGeneration is up to date with the latest Spec Generation
 // - The KubernetesVersion is initialized and non-empty
-func (in *AKSNodeClass) KubernetesVersionReadyAndValid() error {
+func (in *AKSNodeClass) ValidateKubernetesVersionReadiness() error {
 	if in == nil {
 		return fmt.Errorf("NodeClass is nil, meaning %s is consequently unready", ConditionTypeKubernetesVersionReady)
 	}

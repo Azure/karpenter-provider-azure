@@ -110,7 +110,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if nodeClassReady.IsUnknown() {
 		return nil, fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message)
 	}
-	if err = nodeClass.KubernetesVersionReadyAndValid(); err != nil {
+	if err = nodeClass.ValidateKubernetesVersionReadiness(); err != nil {
 		return nil, err
 	}
 
