@@ -45,6 +45,7 @@ const (
 	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift"
 	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
 
+	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
 	NoDrift cloudprovider.DriftReason = ""
 )
 
