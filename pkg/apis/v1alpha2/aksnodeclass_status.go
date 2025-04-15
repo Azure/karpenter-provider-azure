@@ -71,7 +71,7 @@ func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 	in.Status.Conditions = conditions
 }
 
-// Returns the Status.KubernetesVersion if valid to use, and error otherwise.
+// Returns the Status.KubernetesVersion if its up to date and valid to use, otherwise returns an error.
 func (in *AKSNodeClass) GetKubernetesVersion() (string, error) {
 	err := in.validateKubernetesVersionReadiness()
 	if err != nil {
