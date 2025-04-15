@@ -93,8 +93,8 @@ func (in *AKSNodeClass) validateKubernetesVersionReadiness() error {
 		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeKubernetesVersionReady)
 	}
 	kubernetesVersionCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
-	if !kubernetesVersionCondition.IsTrue() {
-		return fmt.Errorf("NodeClass condition %s is not ready with status %s ", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.GetStatus())
+	if kubernetesVersionCondition.IsFalse() || kubernetesVersionCondition.IsUnknown() {
+		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.GetStatus(), kubernetesVersionCondition.Message)
 		// TODO: this needs to be uncommented as soon as we update core to 1.1.x, but until then would make tests, and code checks fail.
 		// } else if kubernetesVersionCondition.ObservedGeneration != in.GetGeneration() {
 		// 	return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.ObservedGeneration, in.GetGeneration())
