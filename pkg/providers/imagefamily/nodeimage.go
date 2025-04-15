@@ -38,10 +38,10 @@ type NodeImageProvider interface {
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]NodeImage, error) {
-	if err := nodeClass.ValidateKubernetesVersionReadiness(); err != nil {
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
 		return []NodeImage{}, err
 	}
-	kubernetesVersion := nodeClass.Status.KubernetesVersion
 
 	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.

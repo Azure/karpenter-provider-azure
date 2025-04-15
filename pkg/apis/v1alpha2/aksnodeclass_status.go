@@ -71,6 +71,15 @@ func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 	in.Status.Conditions = conditions
 }
 
+// Returns the Status.KubernetesVersion if valid to use, and error otherwise.
+func (in *AKSNodeClass) GetKubernetesVersion() (string, error) {
+	err := in.validateKubernetesVersionReadiness()
+	if err != nil {
+		return "", err
+	}
+	return in.Status.KubernetesVersion, nil
+}
+
 // Will return nil if the the KubernetesVersion is considered valid to use,
 // otherwise will return an error detailing the reason of failure.
 //
@@ -79,7 +88,7 @@ func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 // - The AKSNodeClass' KubernetesVersionReady Condition is true
 // - The Condition's ObservedGeneration is up to date with the latest Spec Generation
 // - The KubernetesVersion is initialized and non-empty
-func (in *AKSNodeClass) ValidateKubernetesVersionReadiness() error {
+func (in *AKSNodeClass) validateKubernetesVersionReadiness() error {
 	if in == nil {
 		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeKubernetesVersionReady)
 	}

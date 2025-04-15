@@ -100,12 +100,12 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 		return nil, err
 	}
 
-	// Note: we check ValidateKubernetesVersionReadiness at the start of the Create call. However, to ensure no call paths slip through, also calling it
-	// where we use the KubernetesVersion
-	if err = nodeClass.ValidateKubernetesVersionReadiness(); err != nil {
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		// Note: we check GetKubernetesVersion for errors at the start of the Create call. so this case should not happen.
 		return nil, err
 	}
-	staticParameters.KubernetesVersion = nodeClass.Status.KubernetesVersion
+	staticParameters.KubernetesVersion = kubernetesVersion
 	templateParameters, err := p.imageFamily.Resolve(ctx, nodeClass, nodeClaim, instanceType, staticParameters)
 	if err != nil {
 		return nil, err
