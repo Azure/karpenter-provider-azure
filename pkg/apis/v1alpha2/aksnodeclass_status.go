@@ -90,7 +90,7 @@ func (in *AKSNodeClass) ValidateKubernetesVersionReadiness() error {
 		// } else if kubernetesVersionStatusCondition.ObservedGeneration != in.GetGeneration() {
 		// 	return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeKubernetesVersionReady, kubernetesVersionStatusCondition.ObservedGeneration, in.GetGeneration())
 	} else if in.Status.KubernetesVersion == "" {
-		return fmt.Errorf("NodeClass KubernetesVersion is uninitialized, and considered invalid")
+		return fmt.Errorf("NodeClass KubernetesVersion is uninitialized")
 	}
 	return nil
 }
