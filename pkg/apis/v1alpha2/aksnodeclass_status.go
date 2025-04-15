@@ -83,12 +83,12 @@ func (in *AKSNodeClass) ValidateKubernetesVersionReadiness() error {
 	if in == nil {
 		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeKubernetesVersionReady)
 	}
-	kubernetesVersionStatusCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
-	if !kubernetesVersionStatusCondition.IsTrue() {
-		return fmt.Errorf("NodeClass condition %s is not ready with status %s ", ConditionTypeKubernetesVersionReady, kubernetesVersionStatusCondition.GetStatus())
+	kubernetesVersionCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
+	if !kubernetesVersionCondition.IsTrue() {
+		return fmt.Errorf("NodeClass condition %s is not ready with status %s ", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.GetStatus())
 		// TODO: this needs to be uncommented as soon as we update core to 1.1.x, but until then would make tests, and code checks fail.
-		// } else if kubernetesVersionStatusCondition.ObservedGeneration != in.GetGeneration() {
-		// 	return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeKubernetesVersionReady, kubernetesVersionStatusCondition.ObservedGeneration, in.GetGeneration())
+		// } else if kubernetesVersionCondition.ObservedGeneration != in.GetGeneration() {
+		// 	return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.ObservedGeneration, in.GetGeneration())
 	} else if in.Status.KubernetesVersion == "" {
 		return fmt.Errorf("NodeClass KubernetesVersion is uninitialized")
 	}
