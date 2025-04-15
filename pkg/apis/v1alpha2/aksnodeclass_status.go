@@ -81,7 +81,7 @@ func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 // - The KubernetesVersion is initialized and non-empty
 func (in *AKSNodeClass) ValidateKubernetesVersionReadiness() error {
 	if in == nil {
-		return fmt.Errorf("NodeClass is nil, meaning %s is consequently unready", ConditionTypeKubernetesVersionReady)
+		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeKubernetesVersionReady)
 	}
 	kubernetesVersionStatusCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
 	if !kubernetesVersionStatusCondition.IsTrue() {
