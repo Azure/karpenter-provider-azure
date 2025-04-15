@@ -273,7 +273,6 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(NoDrift))
 			})
 
-			// TODO (charliedmcb): wondering if we should actually ignore not found errors? Can IsDrifted be called before the node exists?
 			It("should error when node is not found", func() {
 				nodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
