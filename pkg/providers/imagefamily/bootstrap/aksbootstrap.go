@@ -18,11 +18,9 @@ package bootstrap
 
 import (
 	"bytes"
-	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"strings"
-	"text/template"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
@@ -92,7 +90,7 @@ func (a AKS) Script() (string, error) {
 // Nodepool spec            : selected nodepool-level user input (p)
 
 // NodeBootstrapVariables carries all variables needed to bootstrap a node
-// It is used as input rendering the bootstrap script Go template (customDataTemplate)
+// It is used as input rendering the bootstrap script Go template (retrieved from getCustomDataTemplate)
 type NodeBootstrapVariables struct {
 	IsAKSCustomCloud                  bool     // n   (false)
 	InitAKSCustomCloudFilepath        string   // n   (static)
@@ -222,190 +220,21 @@ type NodeBootstrapVariables struct {
 	IsKata                            bool     // n   user-specified
 }
 
-var (
-	//go:embed cse_cmd.sh.gtpl
-	customDataTemplateText string
-	customDataTemplate     = template.Must(template.New("customdata").Parse(customDataTemplateText))
-
-	//go:embed  containerd.toml.gtpl
-	containerdConfigTemplateText string
-	containerdConfigTemplate     = template.Must(template.New("containerdconfig").Parse(containerdConfigTemplateText))
-
-	//go:embed sysctl.conf
-	sysctlContent []byte
-
-	// source note: unique per nodepool. partially user-specified, static, and RP-generated
-	// removed --image-pull-progress-deadline=30m  (not in 1.24?)
-	// removed --network-plugin=cni (not in 1.24?)
-	// removed --azure-container-registry-config (not in 1.30)
-	// removed --keep-terminated-pod-volumes (not in 1.31)
-	kubeletFlagsBase = map[string]string{
-		"--address":                           "0.0.0.0",
-		"--anonymous-auth":                    "false",
-		"--authentication-token-webhook":      "true",
-		"--authorization-mode":                "Webhook",
-		"--cgroups-per-qos":                   "true",
-		"--client-ca-file":                    "/etc/kubernetes/certs/ca.crt",
-		"--cloud-config":                      "/etc/kubernetes/azure.json",
-		"--cloud-provider":                    "external",
-		"--cluster-dns":                       "10.0.0.10",
-		"--cluster-domain":                    "cluster.local",
-		"--enforce-node-allocatable":          "pods",
-		"--event-qps":                         "0",
-		"--eviction-hard":                     "memory.available<750Mi,nodefs.available<10%,nodefs.inodesFree<5%",
-		"--image-gc-high-threshold":           "85",
-		"--image-gc-low-threshold":            "80",
-		"--kubeconfig":                        "/var/lib/kubelet/kubeconfig",
-		"--max-pods":                          "110",
-		"--node-status-update-frequency":      "10s",
-		"--pod-infra-container-image":         "mcr.microsoft.com/oss/kubernetes/pause:3.6",
-		"--pod-manifest-path":                 "/etc/kubernetes/manifests",
-		"--pod-max-pids":                      "-1",
-		"--protect-kernel-defaults":           "true",
-		"--read-only-port":                    "0",
-		"--resolv-conf":                       "/run/systemd/resolve/resolv.conf",
-		"--rotate-certificates":               "true",
-		"--streaming-connection-idle-timeout": "4h",
-		"--tls-cert-file":                     "/etc/kubernetes/certs/kubeletserver.crt",
-		"--tls-cipher-suites":                 "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_128_GCM_SHA256",
-		"--tls-private-key-file":              "/etc/kubernetes/certs/kubeletserver.key",
-	}
-
-	kubeletNodeLabelsBase = map[string]string{
-		"kubernetes.azure.com/mode": "user",
-	}
-	vnetCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-amd64-v1.4.32.tgz", globalAKSMirror)
-	cniPluginsURL          = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-amd64-v1.1.1.tgz", globalAKSMirror)
-)
-
-var (
-
-	// baseline, covering unused (-), static (s), and unsupported (n) fields,
-	// as well as defaults, cluster/node level (cd/td/xd)
-	staticNodeBootstrapVars = NodeBootstrapVariables{
-		IsAKSCustomCloud:                  false,                  // n
-		InitAKSCustomCloudFilepath:        "",                     // n
-		AKSCustomCloudRepoDepotEndpoint:   "",                     // n
-		AdminUsername:                     "azureuser",            // td
-		MobyVersion:                       "",                     // -
-		HyperkubeURL:                      "",                     // -
-		KubeBinaryURL:                     "",                     // cd
-		CustomKubeBinaryURL:               "",                     // -
-		KubeproxyURL:                      "",                     // -
-		VMType:                            "vmss",                 // xd
-		Subnet:                            "aks-subnet",           // xd
-		VirtualNetworkResourceGroup:       "",                     // xd
-		PrimaryAvailabilitySet:            "",                     // -
-		PrimaryScaleSet:                   "",                     // -
-		ServicePrincipalClientID:          "msi",                  // ad
-		VNETCNILinuxPluginsURL:            vnetCNILinuxPluginsURL, // - [currently required, installCNI in provisioning scripts depends on CNI_PLUGINS_URL]
-		CNIPluginsURL:                     cniPluginsURL,          // - [currently required, same]
-		CloudProviderBackoff:              true,                   // s
-		CloudProviderBackoffMode:          "v2",                   // s
-		CloudProviderBackoffRetries:       "6",                    // s
-		CloudProviderBackoffExponent:      "0",                    // s
-		CloudProviderBackoffDuration:      "5",                    // s
-		CloudProviderBackoffJitter:        "0",                    // s
-		CloudProviderRatelimit:            true,                   // s
-		CloudProviderRatelimitQPS:         "10",                   // s
-		CloudProviderRatelimitQPSWrite:    "10",                   // s
-		CloudProviderRatelimitBucket:      "100",                  // s
-		CloudProviderRatelimitBucketWrite: "100",                  // s
-		LoadBalancerDisableOutboundSNAT:   false,                  // xd
-		UseManagedIdentityExtension:       true,                   // s
-		UseInstanceMetadata:               true,                   // s
-		LoadBalancerSKU:                   "Standard",             // xd
-		ExcludeMasterFromStandardLB:       true,                   // s
-		MaximumLoadbalancerRuleCount:      250,                    // xd
-		ContainerRuntime:                  "containerd",           // s
-		CLITool:                           "ctr",                  // s
-		ContainerdDownloadURLBase:         "",                     // -
-		NetworkMode:                       "",                     // cd
-		IsVHD:                             true,                   // s
-		SGXNode:                           false,                  // -
-		MIGNode:                           false,                  // td
-		ConfigGPUDriverIfNeeded:           true,                   // s
-		EnableGPUDevicePluginIfNeeded:     false,                  // -
-		TeleportdPluginDownloadURL:        "",                     // -
-		ContainerdVersion:                 "",                     // -
-		ContainerdPackageURL:              "",                     // -
-		RuncVersion:                       "",                     // -
-		RuncPackageURL:                    "",                     // -
-		DisableSSH:                        false,                  // td
-		EnableHostsConfigAgent:            false,                  // n
-		NeedsContainerd:                   true,                   // s
-		TeleportEnabled:                   false,                  // td
-		ShouldConfigureHTTPProxy:          false,                  // cd
-		ShouldConfigureHTTPProxyCA:        false,                  // cd
-		HTTPProxyTrustedCA:                "",                     // cd
-		ShouldConfigureCustomCATrust:      false,                  // cd
-		CustomCATrustConfigCerts:          []string{},             // cd
-
-		OutboundCommand:                 "curl -v --insecure --proxy-insecure https://mcr.microsoft.com/v2/", // s
-		EnableUnattendedUpgrades:        false,                                                               // cd
-		IsKrustlet:                      false,                                                               // td
-		ShouldConfigSwapFile:            false,                                                               // td
-		ShouldConfigTransparentHugePage: false,                                                               // td
-		TargetCloud:                     "AzurePublicCloud",                                                  // n
-		TargetEnvironment:               "AzurePublicCloud",                                                  // n
-		CustomEnvJSON:                   "",                                                                  // n
-		IsCustomCloud:                   false,                                                               // n
-		CSEHelpersFilepath:              "/opt/azure/containers/provision_source.sh",                         // s
-		CSEDistroHelpersFilepath:        "/opt/azure/containers/provision_source_distro.sh",                  // s
-		CSEInstallFilepath:              "/opt/azure/containers/provision_installs.sh",                       // s
-		CSEDistroInstallFilepath:        "/opt/azure/containers/provision_installs_distro.sh",                // s
-		CSEConfigFilepath:               "/opt/azure/containers/provision_configs.sh",                        // s
-		AzurePrivateRegistryServer:      "",                                                                  // cd
-		HasCustomSearchDomain:           false,                                                               // cd
-		CustomSearchDomainFilepath:      "/opt/azure/containers/setup-custom-search-domains.sh",              // s
-		HTTPProxyURLs:                   "",                                                                  // cd
-		HTTPSProxyURLs:                  "",                                                                  // cd
-		NoProxyURLs:                     "",                                                                  // cd
-		TLSBootstrappingEnabled:         true,                                                                // s
-		SecureTLSBootstrappingEnabled:   false,                                                               // s
-		THPEnabled:                      "",                                                                  // cd
-		THPDefrag:                       "",                                                                  // cd
-		ServicePrincipalFileContent:     base64.StdEncoding.EncodeToString([]byte("msi")),                    // s
-		KubeletClientContent:            "",                                                                  // -
-		KubeletClientCertContent:        "",                                                                  // -
-		KubeletConfigFileEnabled:        false,                                                               // s
-		KubeletConfigFileContent:        "",                                                                  // s
-		SwapFileSizeMB:                  0,                                                                   // td
-		GPUInstanceProfile:              "",                                                                  // td
-		CustomSearchDomainName:          "",                                                                  // cd
-		CustomSearchRealmUser:           "",                                                                  // cd
-		CustomSearchRealmPassword:       "",                                                                  // cd
-		MessageOfTheDay:                 "",                                                                  // td
-		HasKubeletDiskType:              false,                                                               // td
-		SysctlContent:                   base64.StdEncoding.EncodeToString(sysctlContent),                    // td
-		KubeletFlags:                    "",                                                                  // psX
-		AzureEnvironmentFilepath:        "",                                                                  // s
-		ContainerdConfigContent:         "",                                                                  // kd
-		IsKata:                          false,                                                               // n
-		NeedsCgroupV2:                   true,                                                                // s only static for karpenter
-		EnsureNoDupePromiscuousBridge:   false,                                                               // s karpenter does not support kubenet
-	}
-)
-
-const (
-	globalAKSMirror = "https://acs-mirror.azureedge.net"
-)
-
 func (a AKS) aksBootstrapScript() (string, error) {
 	// use these as the base / defaults
-	nbv := staticNodeBootstrapVars // don't need deep copy (yet)
+	nbv := getStaticNodeBootstrapVars()
 
 	// apply overrides from passed in options
-	a.applyOptions(&nbv)
+	a.applyOptions(nbv)
 
-	containerdConfigTemplate, err := containerdConfigFromNodeBootstrapVars(&nbv)
+	containerdConfigTemplate, err := containerdConfigFromNodeBootstrapVars(nbv)
 	if err != nil {
 		return "", fmt.Errorf("error getting containerd config from node bootstrap variables: %w", err)
 	}
 
 	nbv.ContainerdConfigContent = base64.StdEncoding.EncodeToString([]byte(containerdConfigTemplate))
 	// generate script from template using the variables
-	customData, err := getCustomDataFromNodeBootstrapVars(&nbv)
+	customData, err := getCustomDataFromNodeBootstrapVars(nbv)
 	if err != nil {
 		return "", fmt.Errorf("error getting custom data from node bootstrap variables: %w", err)
 	}
@@ -474,7 +303,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	}
 
 	// merge and stringify labels
-	kubeletLabels := lo.Assign(kubeletNodeLabelsBase, a.Labels)
+	kubeletLabels := lo.Assign(getBaseKubeletNodeLabels(), a.Labels)
 	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
 
 	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
@@ -488,6 +317,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	// Assign Per K8s version kubelet flags
 	minorVersion := semver.MustParse(a.KubernetesVersion).Minor
+	kubeletFlagsBase := getBaseKubeletFlags()
 	if minorVersion < 31 {
 		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
 	}
@@ -521,7 +351,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
 	var buffer bytes.Buffer
-	if err := containerdConfigTemplate.Execute(&buffer, *nbv); err != nil {
+	if err := getContainerdConfigTemplate().Execute(&buffer, *nbv); err != nil {
 		return "", fmt.Errorf("error executing containerd config template: %w", err)
 	}
 	return buffer.String(), nil
@@ -529,7 +359,7 @@ func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string,
 
 func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
 	var buffer bytes.Buffer
-	if err := customDataTemplate.Execute(&buffer, *nbv); err != nil {
+	if err := getCustomDataTemplate().Execute(&buffer, *nbv); err != nil {
 		return "", fmt.Errorf("error executing custom data template: %w", err)
 	}
 	return buffer.String(), nil
