@@ -160,6 +160,9 @@ func (c *CloudProvider) isImageVersionDrifted(
 		logger.Warnf("NodeImage readiness invalid when checking drift: %w", err)
 		return "", nil //nolint:nilerr
 	}
+	if len(nodeImages) == 0 {
+		return "", fmt.Errorf("no node images exist for the given constraints")
+	}
 
 	for _, availableImage := range nodeImages {
 		if availableImage.ID == vmImageID {
