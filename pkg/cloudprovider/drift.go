@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
@@ -58,7 +57,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	if k8sVersionDrifted != "" {
 		return k8sVersionDrifted, nil
 	}
-	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim)
+	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return "", err
 	}
@@ -124,7 +123,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 // Feel reassessing this within the future with a potential minor refactor would be best to fix the gocyclo.
 // nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
-	ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
+	ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
@@ -152,19 +151,24 @@ func (c *CloudProvider) isImageVersionDrifted(
 	SIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
 	vmImageID := lo.Ternary(SIGID != "", SIGID, CIGID)
 
-	var imageStub imagefamily.DefaultImageOutput
-	imageStub.PopulateImageTraitsFromID(vmImageID)
-
-	expectedImageID, err := c.imageProvider.GetLatestImageID(ctx, imageStub)
+	nodeImages, err := nodeClass.GetNodeImages()
+	// Note: this differs from AWS, as they don't check for status readiness during Drift.
 	if err != nil {
-		return "", err
+		// Note: we don't consider this a hard failure for drift if the NodeImages are not ready to use, so we ignore returning the error here.
+		// We simply ensure the stored NodeImages are ready to use, if we are to calculate potential Drift based on them.
+		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
+		logger.Warnf("NodeImage readiness invalid when checking drift: %w", err)
+		return "", nil //nolint:nilerr
 	}
 
-	if vmImageID != expectedImageID {
-		logger.Debugf("drift triggered for %s, with expected image id %s, and actual image id %s", ImageVersionDrift, expectedImageID, vmImageID)
-		return ImageVersionDrift, nil
+	for _, availableImage := range nodeImages {
+		if availableImage.ID == vmImageID {
+			return "", nil
+		}
 	}
-	return "", nil
+
+	logger.Debugf("drift triggered for %s, as actual image id %s was not found in the set of currently available node images", ImageVersionDrift, vmImageID)
+	return ImageVersionDrift, nil
 }
 
 // isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
