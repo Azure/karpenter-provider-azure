@@ -75,13 +75,13 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 //   - 2. Indirectly handle image bump for k8s upgrade
 //   - 3. Can indirectly handle bumps for any images unsupported by node features, if required to in the future
 //     Note: Currently there are no node features to be handled in this way.
-//   - 4. TODO: Update NodeImages to latest if in an open maintenance window [retrieved from ConfigMap]
+//   - 4. TODO: Update Images to latest if in an open maintenance window [retrieved from ConfigMap]
 //
 // Scenario B: Calculate images to be updated based on delta of available images
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
 //   - 6. Handles softly adding newest image version of any newly supported SKUs by Karpenter
 //
-// Note: While we'd currently only need to store a SKU -> version mapping in the status for avilaible NodeImages
+// Note: While we'd currently only need to store a SKU -> version mapping in the status for avilaible Images
 // we decided to store the full image ID, plus Requirements associated with it. Storing the complete ID is a simple
 // and clean approach while allowing us to extend future capabilities off of it. Additionally, while the decision to
 // store Requirements adds minor bloat, it also provides extra visibility into the avilaible images and how their
@@ -126,7 +126,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 
 	if len(goalImages) == 0 {
 		nodeClass.Status.Images = nil
-		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImagesReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
+		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
 		logger.Info("no node images")
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
