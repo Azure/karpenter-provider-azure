@@ -125,13 +125,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	}
 
 	if len(goalImages) == 0 {
-		nodeClass.Status.NodeImages = nil
+		nodeClass.Status.Images = nil
 		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImagesReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
 		logger.Info("no node images")
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
-	nodeClass.Status.NodeImages = goalImages
+	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImagesReady)
 
 	logger.Debug("success")
@@ -163,7 +163,7 @@ func isMaintenanceWindowOpen() bool {
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
 func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) []v1alpha2.NodeImage {
-	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.NodeImages)
+	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.Images)
 	discoveredBaseIDMapping := mapImageBasesToImages(discoveredImages)
 
 	updatedImages := []v1alpha2.NodeImage{}
