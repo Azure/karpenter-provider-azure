@@ -138,7 +138,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-// Handles case 1: This is a new AKSNodeClass, where node images haven't been populated yet
+// Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet
 // Handles case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
 func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
