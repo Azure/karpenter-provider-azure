@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	nodeImageReconcilerName = "nodeclass.nodeimage"
+	nodeImageReconcilerName = "nodeclass.images"
 )
 
 type NodeImageReconciler struct {
