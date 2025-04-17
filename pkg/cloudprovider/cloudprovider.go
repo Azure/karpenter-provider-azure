@@ -332,8 +332,7 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	if zone, err := utils.GetZone(vm); err != nil {
 		logging.FromContext(ctx).Warnf("Failed to get zone for VM %s, %v", *vm.Name, err)
 	} else {
-		// aks-node-validating-webhook protects v1.LabelTopologyZone, will be set elsewhere, so we use a different label
-		labels[v1alpha2.AlternativeLabelTopologyZone] = zone
+		labels[v1.LabelTopologyZone] = zone
 	}
 
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)

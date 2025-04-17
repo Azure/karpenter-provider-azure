@@ -494,6 +494,14 @@ func (env *Environment) EventuallyExpectHealthyPodCountWithTimeout(timeout time.
 	return pods
 }
 
+func (env *Environment) ExpectHealthyPodCount(selector labels.Selector, numPods int) []*corev1.Pod {
+	GinkgoHelper()
+	By(fmt.Sprintf("expecting %d pods matching selector %s to be ready", numPods, selector.String()))
+	pods := env.Monitor.RunningPods(selector)
+	Expect(pods).To(HaveLen(numPods))
+	return pods
+}
+
 func (env *Environment) ExpectPodsMatchingSelector(selector labels.Selector) []*corev1.Pod {
 	GinkgoHelper()
 
@@ -582,6 +590,18 @@ func (env *Environment) ConsistentlyExpectNodeCount(comparator string, count int
 			fmt.Sprintf("expected %d nodes, had %d (%v) for %s", count, len(nodeList.Items), NodeNames(lo.ToSlicePtr(nodeList.Items)), duration))
 	}, duration.String()).Should(Succeed())
 	return lo.ToSlicePtr(nodeList.Items)
+}
+
+func (env *Environment) ConsistentlyExpectCreatedNodeCount(comparator string, count int, duration time.Duration) []*corev1.Node {
+	GinkgoHelper()
+	By(fmt.Sprintf("waiting for created nodes to be %s to %d", comparator, count))
+	var createdNodes []*corev1.Node
+	Consistently(func(g Gomega) {
+		createdNodes = env.Monitor.CreatedNodes()
+		g.Expect(len(createdNodes)).To(BeNumerically(comparator, count),
+			fmt.Sprintf("expected %d created nodes, had %d (%v) for %s", count, len(createdNodes), NodeNames(createdNodes), duration))
+	}, duration.String()).Should(Succeed())
+	return createdNodes
 }
 
 // ConsistentlyExpectNoDisruptions asserts that the number of tainted nodes remains the same.
