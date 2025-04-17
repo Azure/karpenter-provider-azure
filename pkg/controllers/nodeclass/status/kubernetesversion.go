@@ -94,7 +94,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
 			logger.Infof("kubernetes upgrade detected: from %s (current), to %s (discovered)", currentK8sVersion.String(), newK8sVersion.String())
-			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest node images")
+			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
 		} else if newK8sVersion.LT(currentK8sVersion) {
 			logger.Infof("detected potential kubernetes downgrade: from %s (current), to %s (discovered)", currentK8sVersion.String(), newK8sVersion.String())
 			// We do not currently support downgrading, so keep the kubernetes version the same

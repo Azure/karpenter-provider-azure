@@ -126,13 +126,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 
 	if len(goalImages) == 0 {
 		nodeClass.Status.Images = nil
-		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
+		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
 		logger.Info("no node images")
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
 	nodeClass.Status.Images = goalImages
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImagesReady)
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
 
 	logger.Debug("success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -142,7 +142,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 // Handles case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
 func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
-	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImagesReady).IsTrue()
+	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeImagesReady).IsTrue()
 }
 
 // Handles case 4: check if the maintenance window is open

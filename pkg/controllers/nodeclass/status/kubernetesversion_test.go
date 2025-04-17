@@ -90,7 +90,7 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 
 			Expect(nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
 			Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeKubernetesVersionReady)).To(BeTrue())
-			Expect(nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImagesReady).IsFalse()).To(BeTrue())
+			Expect(nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
 		})
 	})
 })

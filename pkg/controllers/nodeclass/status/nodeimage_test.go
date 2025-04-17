@@ -100,26 +100,26 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 		Expect(len(nodeClass.Status.Images)).To(Equal(3))
 		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(newCIGImageVersion)))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeNodeImagesReady)).To(BeTrue())
+		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
 	})
 
 	It("should update Images and its readiness on AKSNodeClass when in an open maintenance window", func() {
 		// TODO: once maintenance window support is added we need to actually add test code here causing it to be open.
 		nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImagesReady)
+		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
 
 		ExpectApplied(ctx, env.Client, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
 		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeNodeImagesReady)).To(BeTrue())
+		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
 
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
 		Expect(len(nodeClass.Status.Images)).To(Equal(3))
 		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(newCIGImageVersion)))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeNodeImagesReady)).To(BeTrue())
+		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
 	})
 
 	// TODO: Handle test cases where maintenance window is not open, but other update conditions trigger an update, once maintenance windows are supported.
