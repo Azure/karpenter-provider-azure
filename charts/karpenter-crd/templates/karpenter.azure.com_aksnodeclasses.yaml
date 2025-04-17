@@ -249,14 +249,9 @@ spec:
                   - type
                   type: object
                 type: array
-              kubernetesVersion:
+              images:
                 description: |-
-                  KubernetesVersion contains the current kubernetes version which should be
-                  used for nodes provisioned for the NodeClass
-                type: string
-              nodeImages:
-                description: |-
-                  NodeImages contains the current set of images available to use
+                  Images contains the current set of images available to use
                   for the NodeClass
                 items:
                   description: NodeImage contains resolved image selector values utilized
@@ -305,6 +300,11 @@ spec:
                   - requirements
                   type: object
                 type: array
+              kubernetesVersion:
+                description: |-
+                  KubernetesVersion contains the current kubernetes version which should be
+                  used for nodes provisioned for the NodeClass
+                type: string
             type: object
         type: object
     served: true
