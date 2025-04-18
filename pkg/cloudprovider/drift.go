@@ -44,6 +44,9 @@ const (
 	K8sVersionDrift   cloudprovider.DriftReason = "K8sVersionDrift"
 	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift"
 	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
+
+	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
+	NoDrift cloudprovider.DriftReason = ""
 )
 
 func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
@@ -51,7 +54,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
 		return staticFieldsDrifted, nil
 	}
-	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim)
+	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return "", err
 	}
@@ -91,27 +94,32 @@ func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, node
 	return lo.Ternary(nodeClassHash != nodeClaimHash, NodeClassDrift, "")
 }
 
-func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := logging.FromContext(ctx)
 
-	nodeName := nodeClaim.Status.NodeName
+	k8sVersion, err := nodeClass.GetKubernetesVersion()
+	// Note: this differs from AWS, as they don't check for status readiness during Drift.
+	if err != nil {
+		// Note: we don't consider this a hard failure for drift if the KubernetesVersion is invalid/not ready to use, so we ignore returning the error here.
+		// We simply ensure the stored version is valid and ready to use, if we are to calculate potential Drift based on it.
+		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
+		logger.Warnf("Kubernetes version readiness invalid when checking drift: %w", err)
+		return "", nil //nolint:nilerr
+	}
 
+	nodeName := nodeClaim.Status.NodeName
 	if nodeName == "" {
 		return "", nil
 	}
 
 	n := &v1.Node{}
 	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, n); err != nil {
-		// TODO (charliedmcb): should we ignore is not found errors? Will it ever be trying to check for drift before the node/vm exist?
+		// Core check for Launched status should prevent us from getting here before the node exists, so any NotFound errors should indicate a real issue.
+		// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
 		return "", err
 	}
-
-	k8sVersion, err := c.imageProvider.KubeServerVersion(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	nodeK8sVersion := strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")
+
 	if nodeK8sVersion != k8sVersion {
 		logger.Debugf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion)
 		return K8sVersionDrift, nil
