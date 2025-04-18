@@ -67,7 +67,7 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 // The kubernetes version reconciler will detect reasons to bump the kubernetes version:
 //  1. Newly created AKSNodeClass, will select the version discovered from the API server
 //  2. If a later kubernetes version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
-//     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the NodeImage readiness.
+//     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the Images readiness.
 func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
 	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named(kubernetesVersionReconcilerName))
 	logger := logging.FromContext(ctx)
@@ -94,7 +94,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
 			logger.Infof("kubernetes upgrade detected: from %s (current), to %s (discovered)", currentK8sVersion.String(), newK8sVersion.String())
-			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest node images")
+			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
 		} else if newK8sVersion.LT(currentK8sVersion) {
 			logger.Infof("detected potential kubernetes downgrade: from %s (current), to %s (discovered)", currentK8sVersion.String(), newK8sVersion.String())
 			// We do not currently support downgrading, so keep the kubernetes version the same
