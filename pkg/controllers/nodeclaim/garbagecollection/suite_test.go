@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
-	opstatus "github.com/awslabs/operatorpkg/status"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -95,7 +94,7 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	nodeClass = test.AKSNodeClass()
-	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	test.ApplyDefaultStatus(nodeClass, env)
 	nodePool = coretest.NodePool(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{

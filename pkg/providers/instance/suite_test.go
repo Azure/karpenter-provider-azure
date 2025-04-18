@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/awslabs/operatorpkg/object"
-	opstatus "github.com/awslabs/operatorpkg/status"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -98,7 +97,7 @@ var _ = Describe("InstanceProvider", func() {
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+		test.ApplyDefaultStatus(nodeClass, env)
 		nodePool = coretest.NodePool(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
 				Template: karpv1.NodeClaimTemplate{

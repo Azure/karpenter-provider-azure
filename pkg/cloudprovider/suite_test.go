@@ -19,6 +19,8 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
+	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -35,7 +37,6 @@ import (
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	opstatus "github.com/awslabs/operatorpkg/status"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
@@ -50,6 +51,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -98,7 +100,7 @@ var _ = BeforeEach(func() {
 	ctx = options.ToContext(ctx, test.Options())
 
 	nodeClass = test.AKSNodeClass()
-	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	test.ApplyDefaultStatus(nodeClass, env)
 	nodePool = coretest.NodePool(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
@@ -225,13 +227,50 @@ var _ = Describe("CloudProvider", func() {
 			Expect(drifted).To(BeEmpty())
 		})
 		It("should trigger drift when the image gallery changes to SIG", func() {
-			options := test.Options(test.OptionsFields{
-				UseSIG: lo.ToPtr(true),
-			})
-			ctx = options.ToContext(ctx)
+			sigImageVersion := "202410.09.0"
+			imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)
+			nodeClass.Status.NodeImages = translateToStatusNodeImages(imageFamilyNodeImages)
+			ExpectApplied(ctx, env.Client, nodeClass)
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(string(drifted)).To(Equal("ImageVersionDrift"))
 		})
 	})
 })
+
+func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
+	var images []imagefamily.DefaultImageOutput
+	if imageFamily == v1alpha2.Ubuntu2204ImageFamily {
+		images = imagefamily.Ubuntu2204{}.DefaultImages()
+	} else if imageFamily == v1alpha2.AzureLinuxImageFamily {
+		images = imagefamily.AzureLinux{}.DefaultImages()
+	}
+	nodeImages := []imagefamily.NodeImage{}
+	for _, image := range images {
+		nodeImages = append(nodeImages, imagefamily.NodeImage{
+			ID:           fmt.Sprintf("/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
+			Requirements: image.Requirements,
+		})
+	}
+	return nodeImages
+}
+
+func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) []v1alpha2.NodeImage {
+	return lo.Map(imageFamilyNodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
+		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item karpv1.NodeSelectorRequirementWithMinValues, _ int) v1.NodeSelectorRequirement {
+			return item.NodeSelectorRequirement
+		})
+
+		// sorted for consistency
+		sort.Slice(reqs, func(i, j int) bool {
+			if len(reqs[i].Key) != len(reqs[j].Key) {
+				return len(reqs[i].Key) < len(reqs[j].Key)
+			}
+			return reqs[i].Key < reqs[j].Key
+		})
+		return v1alpha2.NodeImage{
+			ID:           nodeImage.ID,
+			Requirements: reqs,
+		}
+	})
+}

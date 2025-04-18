@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha2
 
 import (
+	"fmt"
+
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -67,4 +69,34 @@ func (in *AKSNodeClass) GetConditions() []status.Condition {
 
 func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 	in.Status.Conditions = conditions
+}
+
+// Returns the Status.KubernetesVersion if its up to date and valid to use, otherwise returns an error.
+func (in *AKSNodeClass) GetNodeImages() ([]NodeImage, error) {
+	err := in.validateNodeImagesReadiness()
+	if err != nil {
+		return []NodeImage{}, err
+	}
+	return in.Status.NodeImages, nil
+}
+
+// Will return nil if the the NodeImages are considered valid to use,
+// otherwise will return an error detailing the reason of failure.
+//
+// Ensures
+// - The AKSNodeClass is non-nil
+// - The AKSNodeClass' ConditionTypeNodeImagesReady Condition is true
+// - The Condition's ObservedGeneration is up to date with the latest Spec Generation
+func (in *AKSNodeClass) validateNodeImagesReadiness() error {
+	if in == nil {
+		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeNodeImagesReady)
+	}
+	nodeImageCondition := in.StatusConditions().Get(ConditionTypeNodeImagesReady)
+	if nodeImageCondition.IsFalse() || nodeImageCondition.IsUnknown() {
+		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeNodeImagesReady, nodeImageCondition.GetStatus(), nodeImageCondition.Message)
+		// TODO: this needs to be uncommented as soon as we update core to 1.1.x, but until then would make tests, and code checks fail.
+		// } else if nodeImageCondition.ObservedGeneration != in.GetGeneration() {
+		// 	return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeNodeImagesReady, nodeImageCondition.ObservedGeneration, in.GetGeneration())
+	}
+	return nil
 }

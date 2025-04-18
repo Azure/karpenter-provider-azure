@@ -18,6 +18,7 @@ package imagefamily
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
@@ -87,16 +88,31 @@ func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolv
 }
 
 // Resolve fills in dynamic launch template parameters
-func (r *defaultResolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceType *cloudprovider.InstanceType,
-	staticParameters *template.StaticParameters) (*template.Parameters, error) {
+func (r *defaultResolver) Resolve(
+	ctx context.Context,
+	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceType *cloudprovider.InstanceType,
+	staticParameters *template.StaticParameters,
+) (*template.Parameters, error) {
+	nodeImages, err := nodeClass.GetNodeImages()
+	if err != nil {
+		return nil, err
+	}
+
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
-	imageDistro, imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
+	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
 	}
-
 	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
+
+	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
+	imageDistro, err := mapToImageDistro(imageID, imageFamily)
+	if err != nil {
+		return nil, err
+	}
 
 	generalTaints := nodeClaim.Spec.Taints
 	startupTaints := nodeClaim.Spec.StartupTaints
@@ -142,6 +158,17 @@ func (r *defaultResolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNo
 	}
 
 	return template, nil
+}
+
+func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
+	var imageInfo DefaultImageOutput
+	imageInfo.PopulateImageTraitsFromID(imageID)
+	for _, defaultImage := range imageFamily.DefaultImages() {
+		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
+			return defaultImage.Distro, nil
+		}
+	}
+	return "", fmt.Errorf("no distro found for image id %s", imageID)
 }
 
 func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *bootstrap.KubeletConfiguration {
