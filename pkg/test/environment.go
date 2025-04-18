@@ -44,7 +44,7 @@ func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
-var (
+const (
 	resourceGroup = "test-resourceGroup"
 	subscription  = "12345678-1234-1234-1234-123456789012"
 )
@@ -160,6 +160,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		AzureResourceGraphAPI:       azureResourceGraphAPI,
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:        networkInterfacesAPI,
+		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		MockSkuClientSignalton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
@@ -191,6 +192,7 @@ func (env *Environment) Reset() {
 	env.MockSkuClientSignalton.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
+	env.ImageProvider.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.InstanceTypeCache.Flush()
