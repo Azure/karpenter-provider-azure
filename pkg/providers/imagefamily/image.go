@@ -33,12 +33,19 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
+// TODO: Remove this provider, by refactoring it into the nodeimage.go provider, and resolver.go as needed
+// This is part of a shift to have the new controllers for k8s and node image version which populate status.
+// At the current point the provisioning logic isn't update itself, just the status being populated.
+// As part of the change to the actual provisioning, this provider will be refactored as mentioned above.
+// The logic the nodeimage.go provider is dependent upon will refactor into its file, and the runtime logic for
+// creation will refactor into resolver.go but dropping API retrievals for the data stored in the status instead.
 type Provider struct {
 	kubernetesVersionCache *cache.Cache
 	cm                     *pretty.ChangeMonitor
 	location               string
 	kubernetesInterface    kubernetes.Interface
 	imageCache             *cache.Cache
+	nodeImagesCache        *cache.Cache
 	imageVersionsClient    CommunityGalleryImageVersionsAPI
 	subscription           string
 	NodeImageVersions      NodeImageVersionsAPI
@@ -60,6 +67,7 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 	return &Provider{
 		kubernetesVersionCache: kubernetesVersionCache,
 		imageCache:             cache.New(imageExpirationInterval, imageCacheCleaningInterval),
+		nodeImagesCache:        cache.New(imageExpirationInterval, imageCacheCleaningInterval),
 		location:               location,
 		imageVersionsClient:    versionsClient,
 		cm:                     pretty.NewChangeMonitor(),
@@ -167,4 +175,9 @@ func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 
 func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
 	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
+}
+
+func (p *Provider) Reset() {
+	p.imageCache.Flush()
+	p.nodeImagesCache.Flush()
 }
