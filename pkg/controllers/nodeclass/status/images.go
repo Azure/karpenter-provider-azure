@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	nodeImageReconcilerName = "nodeclass.nodeimage"
+	nodeImageReconcilerName = "nodeclass.images"
 )
 
 type NodeImageReconciler struct {
@@ -75,13 +75,13 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 //   - 2. Indirectly handle image bump for k8s upgrade
 //   - 3. Can indirectly handle bumps for any images unsupported by node features, if required to in the future
 //     Note: Currently there are no node features to be handled in this way.
-//   - 4. TODO: Update NodeImages to latest if in an open maintenance window [retrieved from ConfigMap]
+//   - 4. TODO: Update Images to latest if in an open maintenance window [retrieved from ConfigMap]
 //
 // Scenario B: Calculate images to be updated based on delta of available images
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
 //   - 6. Handles softly adding newest image version of any newly supported SKUs by Karpenter
 //
-// Note: While we'd currently only need to store a SKU -> version mapping in the status for avilaible NodeImages
+// Note: While we'd currently only need to store a SKU -> version mapping in the status for avilaible Images
 // we decided to store the full image ID, plus Requirements associated with it. Storing the complete ID is a simple
 // and clean approach while allowing us to extend future capabilities off of it. Additionally, while the decision to
 // store Requirements adds minor bloat, it also provides extra visibility into the avilaible images and how their
@@ -125,24 +125,24 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	}
 
 	if len(goalImages) == 0 {
-		nodeClass.Status.NodeImages = nil
-		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeNodeImagesReady, "NodeImagesNotFound", "NodeImageSelectors did not match any NodeImages")
+		nodeClass.Status.Images = nil
+		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
 		logger.Info("no node images")
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
-	nodeClass.Status.NodeImages = goalImages
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImagesReady)
+	nodeClass.Status.Images = goalImages
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
 
 	logger.Debug("success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-// Handles case 1: This is a new AKSNodeClass, where node images haven't been populated yet
+// Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet
 // Handles case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
 func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
-	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeNodeImagesReady).IsTrue()
+	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeImagesReady).IsTrue()
 }
 
 // Handles case 4: check if the maintenance window is open
@@ -163,7 +163,7 @@ func isMaintenanceWindowOpen() bool {
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
 func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) []v1alpha2.NodeImage {
-	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.NodeImages)
+	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.Images)
 	discoveredBaseIDMapping := mapImageBasesToImages(discoveredImages)
 
 	updatedImages := []v1alpha2.NodeImage{}
