@@ -17,7 +17,11 @@ limitations under the License.
 package fake
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"net/http"
 	"sync"
 	"time"
 
@@ -94,9 +98,9 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGrou
 		VM:                parameters,
 		Options:           options,
 	}
+	// BeginCreateOrUpdate should fail, if the vm exists in the cache, and we are attempting to change properties for zone
 
 	return c.VirtualMachineCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineCreateOrUpdateInput) (*armcompute.VirtualMachinesClientCreateOrUpdateResponse, error) {
-		// example of input validation
 		//if input.ResourceGroupName == "" {
 		//	return nil, errors.New("ResourceGroupName is required")
 		//}
@@ -105,6 +109,39 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGrou
 		vm := input.VM
 		id := utils.MkVMID(input.ResourceGroupName, input.VMName)
 		vm.ID = to.StringPtr(id)
+
+		// Check store for existing vm by name
+		existingVM, ok := c.Instances.Load(id)
+		if ok {
+			incomingZone := vm.Zones[0] // Note: this assumes at least 1 zone and only one zone is put on our vm
+			existingZone := existingVM.(armcompute.VirtualMachine).Zones[0]
+			if incomingZone != existingZone {
+				// Currently only returning for zones, but osProfile.customData will also return this error
+				errCode := "PropertyChangeNotAllowed"
+				msg := `Creating virtual machine "aks-default-4984v" failed: PUT https://management.azure.com/subscriptions/****/resourceGroups/****/providers/Microsoft.Compute/virtualMachines/aks-default-4984v
+--------------------------------------------------------------------------------
+RESPONSE 409: 409 Conflict
+ERROR CODE: PropertyChangeNotAllowed
+--------------------------------------------------------------------------------
+{
+  "error": {
+    "code": "PropertyChangeNotAllowed",
+    "message": "Changing property 'zones' is not allowed.",
+    "target": "zones"
+  }
+}
+--------------------------------------------------------------------------------`
+				return nil, &azcore.ResponseError{
+					ErrorCode: errCode,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(errCode, msg),
+					},
+				}
+			}
+			// Use existing vm rather than restoring
+			return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{VirtualMachine: existingVM.(armcompute.VirtualMachine)}, nil
+		}
+
 		vm.Name = to.StringPtr(input.VMName)
 		if vm.Properties == nil {
 			vm.Properties = &armcompute.VirtualMachineProperties{}
@@ -113,9 +150,7 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGrou
 			vm.Properties.TimeCreated = lo.ToPtr(time.Now()) // TODO: use simulated time?
 		}
 		c.Instances.Store(id, vm)
-		return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{
-			VirtualMachine: vm,
-		}, nil
+		return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{VirtualMachine: vm}, nil
 	})
 }
 
@@ -190,4 +225,8 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 		c.Instances.Delete(utils.MkVMID(input.ResourceGroupName, input.VMName))
 		return &armcompute.VirtualMachinesClientDeleteResponse{}, nil
 	})
+}
+
+func createSDKErrorBody(code, message string) io.ReadCloser {
+	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
 }
