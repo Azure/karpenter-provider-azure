@@ -474,15 +474,19 @@ func setNodePoolNameTag(tags map[string]*string, nodeClaim *karpv1.NodeClaim) {
 	}
 }
 
-// createVirtualMachine creates a new VM using the provided options
+// createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists
 func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*armcompute.VirtualMachine, error) {
-	// First Check if the VM already exists. The reason we do this is
-	// if karpenter restarts, it will try to create the VM again.
-	// in retrying it will mutate the properties on os.CustomData or zones
-	// in subsequent puts. This will cause the create call to fail with the error
-	// RESPONSE 409: 409 Conflict ERROR CODE: PropertyChangeNotAllowed
-	//{"code": "PropertyChangeNotAllowed"
-	// message": "Changing property 'osProfile.customData' is not allowed.", "target": "osProfile.customData"}
+	// We assume that if a vm exists, we successfully created it with the right parameters from the nodeclaims during another run before a restart.
+	// there are some non-deterministic properties that may change.
+	// Zones: zones are non-detrminsitic as we do a random pick out of zones on the nodeclaim that satisfy the workload requirements.
+	// 	      Nodeclaim can have Requirements: Zone-1, Zone-2, Zone-3
+	//        Then we pick a random zone from that list in each create call that satisfies the workload
+	// UnavailableOfferingsCache: The unavailable offerings cache is used to determine if we should pick the sku, zone, or even priority.
+	//        Errors for things like subscription level spot quota, SKU Quota, etc are stored in the unavailable offerings cache.
+	//        So values like the SKU, Priority(Spot/On-Demand), may be different, which results in a different image, different
+	//        os.CustomData.
+	// If any of these properties are modified, the existing vm will return a 409 status code "PropertyChangeNotAllowed".
+	// this results in create being blocked on the nodeclaim until liveness TTL is hit.
 	resp, err := p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, opts.VMName, nil)
 	// If status == ok, we want to return the existing vmm
 	if err == nil {
