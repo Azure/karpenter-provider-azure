@@ -90,10 +90,12 @@ func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Env
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
 	testOptions := Options()
 
-	// API
-	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
-
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
+	// API
+	virtualMachinesAPI := &fake.VirtualMachinesAPI{
+		NetworkInterfacesAPI: networkInterfacesAPI,
+	}
+
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
 	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
