@@ -349,7 +349,7 @@ func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 // For Ephemeral disk creation, CRP will use the larger of the two values to ensure we have enough space for the ephemeral disk.
 // Note that generally only older SKUs use the Temp Disk space for ephemeral disks, and newer SKUs use the Cached Disk in most cases.
 // The ephemeral OS disk is created with the free space of the larger of the two values in that place.
-func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
+func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) int32 {
 	if sku == nil {
 		return 0
 	}
@@ -362,7 +362,7 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 		return 0
 	}
 	// convert bytes to GB
-	return maxDiskBytes / float64(units.Gigabyte)
+	return int32(maxDiskBytes / float64(units.Gigabyte))
 }
 
 var (
