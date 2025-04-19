@@ -18,9 +18,9 @@ jobs:
     if: github.repository == 'Azure/karpenter-provider-azure'
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      actions: read # github/codeql-action/init@v2
       contents: read
-      security-events: write
+      security-events: write # github/codeql-action/init@v2
 
     steps:
       - name: Harden Runner
@@ -54,7 +54,7 @@ jobs:
   # https://github.blog/2023-08-09-four-tips-to-keep-your-github-actions-workflows-secure/#2-enable-code-scanning-for-workflows
   analyze-github-actions:
     name: Analyze Github Actions
-    if: github.repository == 'aws/karpenter-provider-aws'
+    if: github.repository == 'Azure/karpenter-provider-azure'
     runs-on: ubuntu-latest
     permissions:
       actions: read # github/codeql-action/init@v2
