@@ -66,24 +66,29 @@ func TestGetCredentialProviderURL(t *testing.T) {
 		url     string
 	}{
 		{
+			version: "1.32.0",
+			arch:    "amd64",
+			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.32.3/binaries/azure-acr-credential-provider-linux-amd64-v1.32.3.tar.gz", globalAKSMirror),
+		},
+		{
 			version: "1.31.0",
 			arch:    "amd64",
-			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.31.0/binaries/azure-acr-credential-provider-linux-amd64-v1.31.0.tar.gz", globalAKSMirror),
+			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.31.4/binaries/azure-acr-credential-provider-linux-amd64-v1.31.4.tar.gz", globalAKSMirror),
 		},
 		{
 			version: "1.30.2",
 			arch:    "amd64",
-			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.30.0/binaries/azure-acr-credential-provider-linux-amd64-v1.30.0.tar.gz", globalAKSMirror),
+			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.30.10/binaries/azure-acr-credential-provider-linux-amd64-v1.30.10.tar.gz", globalAKSMirror),
 		},
 		{
 			version: "1.30.0",
 			arch:    "amd64",
-			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.30.0/binaries/azure-acr-credential-provider-linux-amd64-v1.30.0.tar.gz", globalAKSMirror),
+			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.30.10/binaries/azure-acr-credential-provider-linux-amd64-v1.30.10.tar.gz", globalAKSMirror),
 		},
 		{
 			version: "1.30.0",
 			arch:    "arm64",
-			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.30.0/binaries/azure-acr-credential-provider-linux-arm64-v1.30.0.tar.gz", globalAKSMirror),
+			url:     fmt.Sprintf("%s/cloud-provider-azure/v1.30.10/binaries/azure-acr-credential-provider-linux-arm64-v1.30.10.tar.gz", globalAKSMirror),
 		},
 		{
 			version: "1.29.2",
