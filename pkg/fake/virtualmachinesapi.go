@@ -29,6 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -76,6 +77,7 @@ type VirtualMachinesAPI struct {
 	// TODO: document the implications of embedding vs. not embedding the interface here
 	// instance.VirtualMachinesAPI // - this is the interface we are mocking.
 	VirtualMachinesBehavior
+	*NetworkInterfacesAPI
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
@@ -90,7 +92,7 @@ func (c *VirtualMachinesAPI) Reset() {
 	})
 }
 
-func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error) {
+func (c *VirtualMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error) {
 	// gather input parameters (may get rid of this with multiple mocked function signatures to reflect common patterns)
 	input := &VirtualMachineCreateOrUpdateInput{
 		ResourceGroupName: resourceGroupName,
@@ -149,6 +151,21 @@ ERROR CODE: PropertyChangeNotAllowed
 		if vm.Properties.TimeCreated == nil {
 			vm.Properties.TimeCreated = lo.ToPtr(time.Now()) // TODO: use simulated time?
 		}
+
+		// If the api version is set, we attempt to create a nic alongside the vm create
+		if vm.Properties != nil && vm.Properties.NetworkProfile != nil && lo.FromPtr(vm.Properties.NetworkProfile.NetworkAPIVersion) != "" {
+			nicFromVMProfile := nicFromNetworkProfile(vm.Properties.NetworkProfile)
+			nicPoller, err := c.NetworkInterfacesAPI.BeginCreateOrUpdate(ctx, resourceGroupName, vmName, *nicFromVMProfile, nil)
+			if err != nil {
+				return nil, err
+			}
+			nicResp, err := nicPoller.PollUntilDone(ctx, nil)
+			if err != nil {
+				return nil, err
+			}
+			c.NetworkInterfaces.Store(nicResp.Interface.ID, nicResp.Interface)
+		}
+
 		c.Instances.Store(id, vm)
 		return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{VirtualMachine: vm}, nil
 	})
@@ -229,4 +246,55 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 
 func createSDKErrorBody(code, message string) io.ReadCloser {
 	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
+}
+
+// nicFromNetworkProfile converts an armcompute.NetworkProfile (from a Get VM call)
+// into a fully populated armnetwork.Interface object (sans location/tags).
+func nicFromNetworkProfile(vmNetworkProfile *armcompute.NetworkProfile) *armnetwork.Interface {
+	if vmNetworkProfile == nil || len(vmNetworkProfile.NetworkInterfaceConfigurations) == 0 {
+		return nil
+	}
+	var cfg *armcompute.VirtualMachineNetworkInterfaceConfiguration
+	for _, c := range vmNetworkProfile.NetworkInterfaceConfigurations {
+		if c.Properties != nil &&
+			c.Properties.Primary != nil &&
+			*c.Properties.Primary {
+			cfg = c
+			break
+		}
+	}
+	if cfg == nil {
+		cfg = vmNetworkProfile.NetworkInterfaceConfigurations[0]
+	}
+
+	var ipConfigs []*armnetwork.InterfaceIPConfiguration
+	if cfg.Properties != nil {
+		for _, ip := range cfg.Properties.IPConfigurations {
+			props := &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+				Primary:                   ip.Properties.Primary,
+				PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
+			}
+			if ip.Properties.Subnet != nil && ip.Properties.Subnet.ID != nil {
+				props.Subnet = &armnetwork.Subnet{ID: ip.Properties.Subnet.ID}
+			}
+			for _, pool := range ip.Properties.LoadBalancerBackendAddressPools {
+				props.LoadBalancerBackendAddressPools = append(
+					props.LoadBalancerBackendAddressPools,
+					&armnetwork.BackendAddressPool{ID: pool.ID},
+				)
+			}
+			ipConfigs = append(ipConfigs, &armnetwork.InterfaceIPConfiguration{
+				Name:       ip.Name,
+				Properties: props,
+			})
+		}
+	}
+
+	return &armnetwork.Interface{
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			IPConfigurations:            ipConfigs,
+			EnableAcceleratedNetworking: cfg.Properties.EnableAcceleratedNetworking,
+			EnableIPForwarding:          cfg.Properties.EnableIPForwarding,
+		},
+	}
 }

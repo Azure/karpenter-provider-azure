@@ -293,6 +293,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
 		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
+		fmt.Println(opts.MaxPods)
 		for i := 1; i < int(opts.MaxPods); i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
@@ -338,7 +339,6 @@ func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *crea
 // createVMOptions contains all the parameters needed to create a VM
 type createVMOptions struct {
 	VMName         string
-	NicReference   string
 	Zone           string
 	CapacityType   string
 	Location       string
@@ -349,6 +349,100 @@ type createVMOptions struct {
 	InstanceType   *corecloudprovider.InstanceType
 	ProvisionMode  string
 	UseSIG         bool
+
+	*createNICOptions
+}
+
+// createNetworkInterfaceConfiguration creates a network interface configuration for the VM
+func createNetworkInterfaceConfiguration(opts *createVMOptions) *armcompute.VirtualMachineNetworkInterfaceConfiguration {
+	// Create the base NIC configuration
+	nicConfig := &armcompute.VirtualMachineNetworkInterfaceConfiguration{
+		Name: lo.ToPtr(opts.VMName),
+		Properties: &armcompute.VirtualMachineNetworkInterfaceConfigurationProperties{
+			DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
+			Primary:      lo.ToPtr(true),
+		},
+	}
+
+	// Set up IP configurations
+	var ipConfigurations []*armcompute.VirtualMachineNetworkInterfaceIPConfiguration
+
+	// Primary IP configuration
+	primaryIPConfig := &armcompute.VirtualMachineNetworkInterfaceIPConfiguration{
+		Name: lo.ToPtr("ipconfig1"),
+		Properties: &armcompute.VirtualMachineNetworkInterfaceIPConfigurationProperties{
+			Primary:                 lo.ToPtr(true),
+			PrivateIPAddressVersion: lo.ToPtr(armcompute.IPVersionsIPv4),
+			Subnet: &armcompute.SubResource{
+				ID: lo.ToPtr(opts.LaunchTemplate.SubnetID),
+			},
+		},
+	}
+
+	// Add backend pools if available
+	if opts.BackendPools != nil && len(opts.BackendPools.IPv4PoolIDs) > 0 {
+		var backendPools []*armcompute.SubResource
+		for _, poolID := range opts.BackendPools.IPv4PoolIDs {
+			backendPools = append(backendPools, &armcompute.SubResource{
+				ID: lo.ToPtr(poolID),
+			})
+		}
+		primaryIPConfig.Properties.LoadBalancerBackendAddressPools = backendPools
+	}
+
+	ipConfigurations = append(ipConfigurations, primaryIPConfig)
+
+	// Add secondary IP configurations for AzureCNI without overlay
+	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
+		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
+		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
+		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
+		// ips from the nodeclass instead of using the default
+		for i := 1; i < consts.DefaultKubernetesMaxPods; i++ {
+			ipConfigurations = append(
+				ipConfigurations,
+				&armcompute.VirtualMachineNetworkInterfaceIPConfiguration{
+					Name: lo.ToPtr(fmt.Sprintf("ipconfig%d", i+1)),
+					Properties: &armcompute.VirtualMachineNetworkInterfaceIPConfigurationProperties{
+						Primary:                 lo.ToPtr(false),
+						PrivateIPAddressVersion: lo.ToPtr(armcompute.IPVersionsIPv4),
+						Subnet: &armcompute.SubResource{
+							ID: lo.ToPtr(opts.LaunchTemplate.SubnetID),
+						},
+					},
+				},
+			)
+		}
+	}
+
+	nicConfig.Properties.IPConfigurations = ipConfigurations
+
+	// Enable accelerated networking if supported by the instance type
+	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
+	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
+		nicConfig.Properties.EnableAcceleratedNetworking = lo.ToPtr(true)
+	}
+
+	// Enable IP forwarding for non-AzureCNI
+	if opts.NetworkPlugin != consts.NetworkPluginAzure {
+		nicConfig.Properties.EnableIPForwarding = lo.ToPtr(true)
+	}
+
+	return nicConfig
+}
+
+// setNetworkProfile creates a network profile for the VM with the NIC configuration
+func setNetworkProfile(vmProperties *armcompute.VirtualMachineProperties, opts *createVMOptions) {
+	nicConfig := createNetworkInterfaceConfiguration(opts)
+
+	networkProfile := &armcompute.NetworkProfile{
+		NetworkAPIVersion: lo.ToPtr(armcompute.NetworkAPIVersionTwoThousandTwenty1101),
+		NetworkInterfaceConfigurations: []*armcompute.VirtualMachineNetworkInterfaceConfiguration{
+			nicConfig,
+		},
+	}
+	vmProperties.NetworkProfile = networkProfile
+	return
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -371,18 +465,6 @@ func newVMObject(opts *createVMOptions) armcompute.VirtualMachine {
 					DiskSizeGB:   opts.NodeClass.Spec.OSDiskSizeGB,
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
-				},
-			},
-
-			NetworkProfile: &armcompute.NetworkProfile{
-				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
-					{
-						ID: &opts.NicReference,
-						Properties: &armcompute.NetworkInterfaceReferenceProperties{
-							Primary:      lo.ToPtr(true),
-							DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
-						},
-					},
 				},
 			},
 
@@ -411,6 +493,7 @@ func newVMObject(opts *createVMOptions) armcompute.VirtualMachine {
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate.StorageProfile)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
+	setNetworkProfile(vm.Properties, opts)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -521,34 +604,32 @@ func (p *DefaultProvider) launchInstance(
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
-	nicReference, err := p.createNetworkInterface(ctx,
-		&createNICOptions{
-			NICName:           resourceName,
-			NetworkPlugin:     networkPlugin,
-			NetworkPluginMode: networkPluginMode,
-			MaxPods:           utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
-			LaunchTemplate:    launchTemplate,
-			BackendPools:      backendPools,
-			InstanceType:      instanceType,
-		},
-	)
+	nicOptions := &createNICOptions{
+		NICName:           resourceName,
+		NetworkPlugin:     networkPlugin,
+		NetworkPluginMode: networkPluginMode,
+		MaxPods:           utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
+		LaunchTemplate:    launchTemplate,
+		BackendPools:      backendPools,
+		InstanceType:      instanceType,
+	}
 	if err != nil {
 		return nil, nil, err
 	}
 
 	vm, err := p.createVirtualMachine(ctx, &createVMOptions{
-		VMName:         resourceName,
-		NicReference:   nicReference,
-		Zone:           zone,
-		CapacityType:   capacityType,
-		Location:       p.location,
-		SSHPublicKey:   options.FromContext(ctx).SSHPublicKey,
-		NodeIdentities: options.FromContext(ctx).NodeIdentities,
-		NodeClass:      nodeClass,
-		LaunchTemplate: launchTemplate,
-		InstanceType:   instanceType,
-		ProvisionMode:  p.provisionMode,
-		UseSIG:         options.FromContext(ctx).UseSIG,
+		VMName:           resourceName,
+		Zone:             zone,
+		CapacityType:     capacityType,
+		Location:         p.location,
+		SSHPublicKey:     options.FromContext(ctx).SSHPublicKey,
+		NodeIdentities:   options.FromContext(ctx).NodeIdentities,
+		NodeClass:        nodeClass,
+		LaunchTemplate:   launchTemplate,
+		InstanceType:     instanceType,
+		ProvisionMode:    p.provisionMode,
+		UseSIG:           options.FromContext(ctx).UseSIG,
+		createNICOptions: nicOptions,
 	})
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
