@@ -55,7 +55,6 @@ func NewControllers(
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),
-		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, instanceProvider),
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),

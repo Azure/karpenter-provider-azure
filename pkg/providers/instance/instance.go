@@ -84,7 +84,6 @@ type Provider interface {
 	Update(context.Context, string, armcompute.VirtualMachineUpdate) error
 	GetNic(context.Context, string, string) (*armnetwork.Interface, error)
 	DeleteNic(context.Context, string) error
-	ListNics(context.Context) ([]*armnetwork.Interface, error)
 }
 
 // assert that DefaultProvider implements Provider interface
@@ -101,7 +100,7 @@ type DefaultProvider struct {
 	unavailableOfferings   *cache.UnavailableOfferings
 	provisionMode          string
 
-	vmListQuery, nicListQuery string
+	vmListQuery string
 }
 
 func NewDefaultProvider(
@@ -126,8 +125,7 @@ func NewDefaultProvider(
 		unavailableOfferings:   offeringsCache,
 		provisionMode:          provisionMode,
 
-		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
-		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
+		vmListQuery: GetVMListQueryBuilder(resourceGroup).String(),
 	}
 }
 
@@ -231,25 +229,6 @@ func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armn
 		return nil, err
 	}
 	return &nicResponse.Interface, nil
-}
-
-// ListNics returns all network interfaces in the resource group that have the nodepool tag
-func (p *DefaultProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
-	req := NewQueryRequest(&(p.subscriptionID), p.nicListQuery)
-	client := p.azClient.azureResourceGraphClient
-	data, err := GetResourceData(ctx, client, *req)
-	if err != nil {
-		return nil, fmt.Errorf("querying azure resource graph, %w", err)
-	}
-	var nicList []*armnetwork.Interface
-	for i := range data {
-		nic, err := createNICFromQueryResponseData(data[i])
-		if err != nil {
-			return nil, fmt.Errorf("creating NIC object from query response data, %w", err)
-		}
-		nicList = append(nicList, nic)
-	}
-	return nicList, nil
 }
 
 func (p *DefaultProvider) DeleteNic(ctx context.Context, nicName string) error {

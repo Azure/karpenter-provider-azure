@@ -271,24 +271,4 @@ var _ = Describe("InstanceProvider", func() {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
 	})
-	It("should list nic from karpenter provisioning request", func() {
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-		ExpectScheduled(ctx, env.Client, pod)
-		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
-		Expect(err).To(BeNil())
-		Expect(len(interfaces)).To(Equal(1))
-	})
-	It("should only list nics that belong to karpenter", func() {
-		managedNic := test.Interface(test.InterfaceOptions{NodepoolName: nodePool.Name})
-		unmanagedNic := test.Interface(test.InterfaceOptions{Tags: map[string]*string{"kubernetes.io/cluster/test-cluster": lo.ToPtr("random-aks-vm")}})
-
-		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
-		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(unmanagedNic.ID), *unmanagedNic)
-		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(len(interfaces)).To(Equal(1))
-		Expect(interfaces[0].Name).To(Equal(managedNic.Name))
-	})
 })
