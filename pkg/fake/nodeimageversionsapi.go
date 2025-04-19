@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 )
 
+// TODO: no ability to simulate errors in the List call.
 type NodeImageVersionsAPI struct {
 }
 

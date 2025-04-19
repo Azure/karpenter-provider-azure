@@ -160,6 +160,12 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
+func getSupportedImages(familyName *string) []DefaultImageOutput {
+	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
+	imageFamily := getImageFamily(familyName, nil)
+	return imageFamily.DefaultImages()
+}
+
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1alpha2.Ubuntu2204ImageFamily:

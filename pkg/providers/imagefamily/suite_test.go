@@ -14,21 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package status
+package imagefamily_test
 
 import (
 	"context"
+	"testing"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
-	"github.com/awslabs/operatorpkg/status"
-
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 )
 
-type Readiness struct {
-}
+var ctx context.Context
 
-func (n Readiness) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
-	nodeClass.StatusConditions().SetTrue(status.ConditionReady)
-	return reconcile.Result{}, nil
+func TestImageFamilyProvider(t *testing.T) {
+	ctx = TestContextWithLogger(t)
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "ImageFamily_Provider")
 }

@@ -23,7 +23,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	karpv1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
 
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -40,11 +39,10 @@ import (
 )
 
 func init() {
-	karpv1beta1.NormalizedLabels = lo.Assign(karpv1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
-var (
+const (
 	resourceGroup = "test-resourceGroup"
 	subscription  = "12345678-1234-1234-1234-123456789012"
 )
@@ -160,6 +158,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		AzureResourceGraphAPI:       azureResourceGraphAPI,
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:        networkInterfacesAPI,
+		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		MockSkuClientSignalton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
@@ -191,6 +190,7 @@ func (env *Environment) Reset() {
 	env.MockSkuClientSignalton.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
+	env.ImageProvider.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.InstanceTypeCache.Flush()
