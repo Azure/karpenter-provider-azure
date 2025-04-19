@@ -457,14 +457,17 @@ func createNetworkInterfaceConfiguration(opts *createVMOptions) *armcompute.Virt
 }
 
 // setNetworkProfile creates a network profile for the VM with the NIC configuration
-func setNetworkProfile(opts *createVMOptions) *armcompute.NetworkProfile {
+func setNetworkProfile(vmProperties *armcompute.VirtualMachineProperties, opts *createVMOptions) {
 	nicConfig := createNetworkInterfaceConfiguration(opts)
 
-	return &armcompute.NetworkProfile{
+	networkProfile := &armcompute.NetworkProfile{
+		NetworkAPIVersion: lo.ToPtr(armcompute.NetworkAPIVersionTwoThousandTwenty1101),
 		NetworkInterfaceConfigurations: []*armcompute.VirtualMachineNetworkInterfaceConfiguration{
 			nicConfig,
 		},
 	}
+	vmProperties.NetworkProfile = networkProfile
+	return
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -516,7 +519,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate.StorageProfile)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
-	setNetworkProfile(opts)
+	setNetworkProfile(vm.Properties, opts)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
