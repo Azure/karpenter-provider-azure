@@ -319,6 +319,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
 		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
+		fmt.Println(opts.MaxPods)
 		for i := 1; i < int(opts.MaxPods); i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,

@@ -31,7 +31,9 @@ import (
 func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 	resourceGroup := "test_managed_cluster_rg"
 	subscriptionID := "test_sub"
-	virtualMachinesAPI := &VirtualMachinesAPI{}
+	virtualMachinesAPI := &VirtualMachinesAPI{
+		NetworkInterfacesAPI: &NetworkInterfacesAPI{},
+	}
 	azureResourceGraphAPI := NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, nil)
 	cases := []struct {
 		testName      string
