@@ -34,7 +34,10 @@ test: ## Run tests
 		--randomize-all \
 		./pkg/...
 
-deflake: ## Run randomized, racing tests until the test fails to catch flakes
+deflake: ## Run randomized, racing, code-covered tests to deflake failures
+	for i in $(shell seq 1 5); do make test || exit 1; done
+
+deflake-until-it-fails: ## Run randomized, racing tests until the test fails to catch flakes
 	ginkgo \
 		--race \
 		--focus="${FOCUS}" \
@@ -115,7 +118,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help presubmit ci-test ci-non-test test deflake e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
+.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
 
 define newline
 
