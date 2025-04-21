@@ -70,6 +70,11 @@ func MkVMID(resourceGroupName string, vmName string) string {
 	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
 }
 
+func MkNICID(resourceGroupName string, vmName string) string {
+	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Network/networkInterfaces/%s"
+	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
+}
+
 // WithDefaultFloat64 returns the float64 value of the supplied environment variable or, if not present,
 // the supplied default value. If the float64 conversion fails, returns the default
 func WithDefaultFloat64(key string, def float64) float64 {

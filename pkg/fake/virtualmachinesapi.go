@@ -90,6 +90,12 @@ func (c *VirtualMachinesAPI) Reset() {
 		c.Instances.Delete(k)
 		return true
 	})
+
+	c.NetworkInterfaces.Range(func(k, v any) bool {
+		c.NetworkInterfaces.Delete(k)
+		return true
+	})
+	c.NetworkInterfacesAPI.Reset()
 }
 
 func (c *VirtualMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error) {
@@ -240,6 +246,7 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 	}
 	return c.VirtualMachineDeleteBehavior.Invoke(input, func(input *VirtualMachineDeleteInput) (*armcompute.VirtualMachinesClientDeleteResponse, error) {
 		c.Instances.Delete(utils.MkVMID(input.ResourceGroupName, input.VMName))
+		c.NetworkInterfaces.Delete(utils.MkNICID(input.ResourceGroupName, input.VMName))
 		return &armcompute.VirtualMachinesClientDeleteResponse{}, nil
 	})
 }

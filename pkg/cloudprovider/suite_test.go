@@ -183,7 +183,7 @@ var _ = Describe("CloudProvider", func() {
 			// KubeletVersion must be applied to the node to satisfy k8s drift
 			node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
 			ExpectApplied(ctx, env.Client, node)
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			rg := input.ResourceGroupName

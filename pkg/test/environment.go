@@ -52,7 +52,6 @@ type Environment struct {
 	VirtualMachinesAPI          *fake.VirtualMachinesAPI
 	AzureResourceGraphAPI       *fake.AzureResourceGraphAPI
 	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
-	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
 	MockSkuClientSignalton      *fake.MockSkuClientSingleton
 	PricingAPI                  *fake.PricingAPI
@@ -159,7 +158,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		VirtualMachinesAPI:          virtualMachinesAPI,
 		AzureResourceGraphAPI:       azureResourceGraphAPI,
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
-		NetworkInterfacesAPI:        networkInterfacesAPI,
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		MockSkuClientSignalton:      skuClientSingleton,
@@ -186,7 +184,6 @@ func (env *Environment) Reset() {
 	env.VirtualMachinesAPI.Reset()
 	env.AzureResourceGraphAPI.Reset()
 	env.VirtualMachineExtensionsAPI.Reset()
-	env.NetworkInterfacesAPI.Reset()
 	env.LoadBalancersAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
 	env.MockSkuClientSignalton.Reset()

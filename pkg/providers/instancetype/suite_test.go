@@ -156,7 +156,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			nic := azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 			Expect(nic).NotTo(BeNil())
 			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"))
 		})
@@ -181,7 +181,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
-			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			nic := azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 			Expect(nic).NotTo(BeNil())
 			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet"))
 		})
@@ -212,7 +212,7 @@ var _ = Describe("InstanceType Provider", func() {
 			_, err := cloudProvider.Create(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred()) // Without the GET in instance.CreateVirtualMachine this will fail
 		})
-		It("should delete the network interface on failure to create the vm", func() {
+		It("should not create a network interface on failure to create the vm", func() {
 			ErrMsg := "test error"
 			ErrCode := fmt.Sprint(http.StatusNotFound)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -229,17 +229,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectNotScheduled(ctx, env.Client, pod)
 
 			// We should have created a nic for the vm
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			// The nic we used in the vm create, should be cleaned up if the vm call fails
-			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-			Expect(nic).NotTo(BeNil())
-			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
-			Expect(ok).To(Equal(false))
-
-			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
-			pod = coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectScheduled(ctx, env.Client, pod)
+			Expect(azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		})
 		It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
 			LowPriorityCoresQuotaErrorMessage := "Operation could not be completed as it results in exceeding approved Low Priority Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22LowPriorityCores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:32,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22LowPriorityCores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
@@ -290,13 +280,8 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
 
-			// We should have created a nic for the vm
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			// The nic we used in the vm create, should be cleaned up if the vm call fails
-			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-			Expect(nic).NotTo(BeNil())
-			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
-			Expect(ok).To(Equal(false))
+			// we shouldn't be creating a network interface in the event of a failure
+			Expect(azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			pod = coretest.UnschedulablePod()
@@ -317,13 +302,8 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
-			// We should have created a nic for the vm
-			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			// The nic we used in the vm create, should be cleaned up if the vm call fails
-			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
-			Expect(nic).NotTo(BeNil())
-			_, ok := azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Load(nic.Interface.ID)
-			Expect(ok).To(Equal(false))
+			// we shouldn't be creating a network interface in the event of a failure
+			Expect(azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			pod = coretest.UnschedulablePod()
@@ -1191,10 +1171,9 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(len(vm.Properties.NetworkProfile.NetworkInterfaces)).To(Equal(1))
 				Expect(lo.FromPtr(vm.Properties.NetworkProfile.NetworkInterfaces[0].Properties.Primary)).To(BeTrue())
 
-				Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+				Expect(azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				nic := azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
 				Expect(nic.Properties).ToNot(BeNil())
-
 				Expect(len(nic.Properties.IPConfigurations)).To(Equal(1))
 			})
 		})
@@ -1391,7 +1370,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-			iface := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+			iface := azureEnv.VirtualMachinesAPI.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
 
 			Expect(iface.Properties.IPConfigurations).ToNot(BeEmpty())
 			Expect(lo.FromPtr(iface.Properties.IPConfigurations[0].Properties.Primary)).To(Equal(true))

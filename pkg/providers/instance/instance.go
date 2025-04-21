@@ -298,7 +298,6 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
 		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
-		fmt.Println(opts.MaxPods)
 		for i := 1; i < int(opts.MaxPods); i++ {
 			nic.Properties.IPConfigurations = append(
 				nic.Properties.IPConfigurations,
@@ -327,18 +326,6 @@ type createNICOptions struct {
 	NetworkPlugin     string
 	NetworkPluginMode string
 	MaxPods           int32
-}
-
-func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
-	nic := p.newNetworkInterfaceForVM(opts)
-	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating network interface %s", opts.NICName))
-	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
-	if err != nil {
-		return "", err
-	}
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Successfully created network interface: %v", *res.ID))
-	return *res.ID, nil
 }
 
 // createVMOptions contains all the parameters needed to create a VM
@@ -403,7 +390,7 @@ func createNetworkInterfaceConfiguration(opts *createVMOptions) *armcompute.Virt
 		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
 		// TODO: When MaxPods comes from the AKSNodeClass kubelet configuration, get the number of secondary
 		// ips from the nodeclass instead of using the default
-		for i := 1; i < consts.DefaultKubernetesMaxPods; i++ {
+		for i := 1; i < int(opts.MaxPods); i++ {
 			ipConfigurations = append(
 				ipConfigurations,
 				&armcompute.VirtualMachineNetworkInterfaceIPConfiguration{
@@ -444,6 +431,14 @@ func setNetworkProfile(vmProperties *armcompute.VirtualMachineProperties, opts *
 		NetworkAPIVersion: lo.ToPtr(armcompute.NetworkAPIVersionTwoThousandTwenty1101),
 		NetworkInterfaceConfigurations: []*armcompute.VirtualMachineNetworkInterfaceConfiguration{
 			nicConfig,
+		},
+		NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+			{
+				Properties: &armcompute.NetworkInterfaceReferenceProperties{
+					Primary:      lo.ToPtr(true),
+					DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
+				},
+			},
 		},
 	}
 	vmProperties.NetworkProfile = networkProfile
