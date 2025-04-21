@@ -102,7 +102,7 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 
 	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 	if err != nil {
-		// Note: we check GetKubernetesVersion for errors at the start of the Create call. so this case should not happen.
+		// Note: we check GetKubernetesVersion for errors at the start of the Create call, so this case should not happen.
 		return nil, err
 	}
 	staticParameters.KubernetesVersion = kubernetesVersion

@@ -180,6 +180,7 @@ var _ = Describe("CloudProvider", func() {
 			})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
+			// KubeletVersion must be applied to the node to satisfy k8s drift
 			node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
 			ExpectApplied(ctx, env.Client, node)
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
