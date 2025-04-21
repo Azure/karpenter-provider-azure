@@ -98,7 +98,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 	logger := logging.FromContext(ctx)
 
 	k8sVersion, err := nodeClass.GetKubernetesVersion()
-	// Note: this differs from AWS, as they don't check for status readiness during Drift.
+	//  Note: this differs from AWS, as they don't check for status readiness during Drift.
 	if err != nil {
 		// Note: we don't consider this a hard failure for drift if the KubernetesVersion is invalid/not ready to use, so we ignore returning the error here.
 		// We simply ensure the stored version is valid and ready to use, if we are to calculate potential Drift based on it.
