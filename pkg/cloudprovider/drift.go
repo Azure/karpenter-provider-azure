@@ -114,8 +114,12 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 
 	n := &v1.Node{}
 	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, n); err != nil {
-		// Core check for Launched status should prevent us from getting here before the node exists, so any NotFound errors should indicate a real issue.
+		// Core's check for Launched status should currently prevent us from getting here before the node exists because of the LRO block on Create:
 		// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
+		// However, in my opinion, we should look at updating this logic to ignore NotFound errors as we fix the LRO issue.
+		// Shouldn't cause an issue to my awareness, but could be noisy.
+		// TODO: re-evaluate ignoring NotFound error, and using core's library for nodeclaims. Similar to usage here:
+		// https://github.com/kubernetes-sigs/karpenter/blob/bbe6bd27e65d88fe55376b6c3c2c828312c105c4/pkg/controllers/nodeclaim/lifecycle/registration.go#L53
 		return "", err
 	}
 	nodeK8sVersion := strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")
