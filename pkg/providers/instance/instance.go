@@ -18,7 +18,6 @@ package instance
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -828,20 +827,8 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	return nil, "", ""
 }
 
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) error {
-	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
-	if vmErr != nil {
-		log.FromContext(ctx).Error(vmErr, fmt.Sprintf("virtualMachine.Delete for %s failed", resourceName))
-	}
-	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
-	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
-	// then we attempt to delete the nic.
-
-	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
-	if nicErr != nil {
-		log.FromContext(ctx).Error(nicErr, fmt.Sprintf("networkinterface.Delete for %s failed", resourceName))
-	}
-	return errors.Join(vmErr, nicErr)
+func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) (err error) {
+	return deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 }
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.
