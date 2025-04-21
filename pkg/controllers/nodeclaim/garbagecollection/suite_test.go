@@ -82,7 +82,7 @@ var _ = BeforeSuite(func() {
 	virtualMachineGCController = garbagecollection.NewVirtualMachine(env.Client, cloudProvider)
 	networkInterfaceGCController = garbagecollection.NewNetworkInterface(env.Client, azureEnv.InstanceProvider)
 	fakeClock = &clock.FakeClock{}
-	cluster = state.NewCluster(fakeClock, env.Client)
+	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	prov = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 
 })

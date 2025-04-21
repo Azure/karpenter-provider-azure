@@ -79,7 +79,7 @@ func TestAzure(t *testing.T) {
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 	fakeClock = &clock.FakeClock{}
-	cluster = state.NewCluster(fakeClock, env.Client)
+	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 	RunSpecs(t, "Provider/Azure")
 }
@@ -121,7 +121,9 @@ var _ = Describe("InstanceProvider", func() {
 			},
 			Spec: karpv1.NodeClaimSpec{
 				NodeClassRef: &karpv1.NodeClassReference{
-					Name: nodeClass.Name,
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
 				},
 			},
 		})

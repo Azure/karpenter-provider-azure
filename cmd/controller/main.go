@@ -27,8 +27,8 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
+	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
-	corewebhooks "sigs.k8s.io/karpenter/pkg/webhooks"
 )
 
 func main() {
@@ -43,6 +43,7 @@ func main() {
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))
 	cloudProvider := metrics.Decorate(aksCloudProvider)
+	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
 	op.
 		WithControllers(ctx, corecontrollers.NewControllers(
@@ -52,8 +53,8 @@ func main() {
 			op.GetClient(),
 			op.EventRecorder,
 			cloudProvider,
+			clusterState,
 		)...).
-		WithWebhooks(ctx, corewebhooks.NewWebhooks()...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
 			op.Manager,
@@ -65,6 +66,5 @@ func main() {
 			op.ImageProvider,
 			op.ImageProvider,
 		)...).
-		//WithWebhooks(ctx, webhooks.NewWebhooks()...).
-		Start(ctx, cloudProvider)
+		Start(ctx)
 }

@@ -26,7 +26,7 @@ import (
 
 	"github.com/awslabs/operatorpkg/status"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -244,6 +244,23 @@ func (c *CloudProvider) GetSupportedNodeClasses() []status.Object {
 	return []status.Object{&v1alpha2.AKSNodeClass{}}
 }
 
+// TODO: review repair policies
+func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
+	return []cloudprovider.RepairPolicy{
+		// Supported Kubelet fields
+		{
+			ConditionType:      corev1.NodeReady,
+			ConditionStatus:    corev1.ConditionFalse,
+			TolerationDuration: 30 * time.Minute,
+		},
+		{
+			ConditionType:      corev1.NodeReady,
+			ConditionStatus:    corev1.ConditionUnknown,
+			TolerationDuration: 30 * time.Minute,
+		},
+	}
+}
+
 func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1alpha2.AKSNodeClass, error) {
 	nodeClass := &v1alpha2.AKSNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
@@ -328,8 +345,8 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 	if instanceType != nil {
 		labels = instance.GetAllSingleValuedRequirementLabels(instanceType)
-		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ v1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
-		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ v1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
+		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
+		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
 
 	if zone, err := utils.GetZone(vm); err != nil {
