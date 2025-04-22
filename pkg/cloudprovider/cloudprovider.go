@@ -25,12 +25,12 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/status"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/karpenter/pkg/metrics"
 
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -122,10 +122,20 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 	}
-	instance, err := c.instanceProvider.Create(ctx, nodeClass, nodeClaim, instanceTypes)
+	instancePromise, err := c.instanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		return nil, fmt.Errorf("creating instance, %w", err)
 	}
+
+	// Launch a single goroutine to poll the returned promise.
+	// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
+	// crashes should be rare, and even in the case of a crash, as long as the node comes up successfully there's
+	// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
+	// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
+	// only held in memory.
+	go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+
+	instance := instancePromise.VM
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
@@ -135,6 +145,68 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		v1alpha2.AnnotationAKSNodeClassHashVersion: v1alpha2.AKSNodeClassHashVersion,
 	})
 	return nc, err
+}
+
+func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {
+	defer func() {
+		if r := recover(); r != nil {
+			err := fmt.Errorf("%v", r)
+			log.FromContext(ctx).Error(err, "panic during waitOnPromise")
+		}
+	}()
+
+	err := promise.Wait()
+
+	// Wait until the claim is Launched, to avoid racing with creation.
+	// This isn't strictly required, but without this, failure test scenarios are harder
+	// to write because the nodeClaim gets deleted by error handling below before
+	// the EnsureApplied call finishes, so EnsureApplied creates it again (which is wrong/isn't how
+	// it would actually happen in production).
+	c.waitUntilLaunched(ctx, nodeClaim)
+
+	if err != nil {
+		c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
+		log.FromContext(ctx).Error(err, "failed launching nodeclaim")
+
+		// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
+		vmName := lo.FromPtr(promise.VM.Name)
+		err = c.instanceProvider.Delete(ctx, vmName)
+		if cloudprovider.IgnoreNodeClaimNotFoundError(err) != nil {
+			log.FromContext(ctx).Error(err, "failed to delete VM %s", vmName)
+		}
+
+		if err = c.kubeClient.Delete(ctx, nodeClaim); err != nil {
+			err = client.IgnoreNotFound(err)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "failed to delete nodeclaim %s, will wait for liveness TTL", nodeClaim.Name)
+			}
+		}
+		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
+			metrics.ReasonLabel:       "async_provisioning",
+			metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+			metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
+		})
+
+		return
+	}
+}
+
+func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1.NodeClaim) {
+	freshClaim := &karpv1.NodeClaim{}
+	for {
+		err := c.kubeClient.Get(ctx, types.NamespacedName{Namespace: nodeClaim.Namespace, Name: nodeClaim.Name}, freshClaim)
+		if err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return
+			}
+			log.FromContext(ctx).Error(err, "failed getting nodeclaim to wait until launched")
+		}
+
+		if cond := freshClaim.StatusConditions().Get(karpv1.ConditionTypeLaunched); !cond.IsUnknown() {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
