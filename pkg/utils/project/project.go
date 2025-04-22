@@ -18,4 +18,4 @@ package project
 
 // Version is the karpenter app version injected during compilation
 // when using the Makefile
-var Version = "unspecified"
+var Version = "v0.7.6"
