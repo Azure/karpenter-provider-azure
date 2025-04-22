@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
@@ -131,7 +132,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		return nil, err
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
-	// TODO: Once ListImageVersions work is merged, gate this behind ManagedKarpenter
 	clientOptions, err := getVirtualMachinesClientOptions(ctx)
 	if err != nil {
 		return nil, err
@@ -176,8 +176,14 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 }
 
 func getVirtualMachinesClientOptions(ctx context.Context) (*armpolicy.ClientOptions, error) {
-	// TODO: pass in custom scope based on cloud env
-	token, err := auth.GetAuxiliaryToken(ctx, "https://management.azure.com/.default")
+	useSIG := options.FromContext(ctx).UseSIG
+	if !useSIG {
+		return &armpolicy.ClientOptions{}, nil
+	}
+
+	// TODO: this env var needs to be customized based on cloud
+	scope := options.FromContext(ctx).SIGScope
+	token, err := auth.GetAuxiliaryToken(ctx, scope)
 	if err != nil {
 		return &armpolicy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
 	}

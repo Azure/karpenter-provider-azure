@@ -79,10 +79,11 @@ type Options struct {
 
 	ProvisionMode              string
 	NodeBootstrappingServerURL string
-	UseSIG                     bool // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
-
-	SIGSubscriptionID string
-	NodeResourceGroup string
+	UseSIG                     bool   // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+	AuxiliaryTokenServerURL    string // => AuxiliaryTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
+	SIGScope                   string // => SIGScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
+	SIGSubscriptionID          string
+	NodeResourceGroup          string
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {

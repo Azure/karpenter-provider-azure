@@ -43,9 +43,11 @@ type OptionsFields struct {
 	NodeBootstrappingServerURL     *string
 	VnetGUID                       *string
 
-	// UseSIG Flags not required by the self hosted offering
-	UseSIG            *bool
-	SIGSubscriptionID *string
+	// SIG Flags not required by the self hosted offering
+	UseSIG                  *bool
+	AuxiliaryTokenServerURL string
+	SIGScope                string
+	SIGSubscriptionID       *string
 }
 
 func Options(overrides ...OptionsFields) *azoptions.Options {
