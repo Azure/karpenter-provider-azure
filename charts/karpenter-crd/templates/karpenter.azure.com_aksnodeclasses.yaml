@@ -175,7 +175,7 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
-                minimum: 100
+                minimum: 30
                 type: integer
               tags:
                 additionalProperties:
@@ -249,6 +249,62 @@ spec:
                   - type
                   type: object
                 type: array
+              images:
+                description: |-
+                  Images contains the current set of images available to use
+                  for the NodeClass
+                items:
+                  description: NodeImage contains resolved image selector values utilized
+                    for node launch
+                  properties:
+                    id:
+                      description: |-
+                        The ID of the image. Examples:
+                        - CIG: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
+                        - SIG: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
+                      type: string
+                    requirements:
+                      description: Requirements of the image to be utilized on an
+                        instance type
+                      items:
+                        description: |-
+                          A node selector requirement is a selector that contains values, a key, and an operator
+                          that relates the key and values.
+                        properties:
+                          key:
+                            description: The label key that the selector applies to.
+                            type: string
+                          operator:
+                            description: |-
+                              Represents a key's relationship to a set of values.
+                              Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                            type: string
+                          values:
+                            description: |-
+                              An array of string values. If the operator is In or NotIn,
+                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                              the values array must be empty. If the operator is Gt or Lt, the values
+                              array must have a single element, which will be interpreted as an integer.
+                              This array is replaced during a strategic merge patch.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - key
+                        - operator
+                        type: object
+                      type: array
+                  required:
+                  - id
+                  - requirements
+                  type: object
+                type: array
+              kubernetesVersion:
+                description: |-
+                  KubernetesVersion contains the current kubernetes version which should be
+                  used for nodes provisioned for the NodeClass
+                type: string
             type: object
         type: object
     served: true

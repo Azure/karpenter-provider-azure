@@ -14,25 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package conversion
+package imagefamily
 
 import (
-	"reflect"
-	"testing"
+	"context"
 )
 
-func TestOptions(t *testing.T) {
-	got := &options{}
-	WithPath("path")(got)
-
-	want := &options{
-		path: "path",
-		// we can't compare wc as functions are not
-		// comparable in golang (thus it needs to be
-		// done indirectly)
-	}
-
-	if !reflect.DeepEqual(got, want) {
-		t.Error("option was not applied")
-	}
+type KubernetesVersionProvider interface {
+	KubeServerVersion(ctx context.Context) (string, error)
 }
