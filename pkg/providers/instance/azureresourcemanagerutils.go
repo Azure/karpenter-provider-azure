@@ -103,6 +103,7 @@ func deleteNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName str
 	return nil
 }
 
+// TODO: Fix this to save GET
 func deleteNicIfExists(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string) error {
 	_, err := client.Get(ctx, rg, nicName, nil)
 	if err != nil {
