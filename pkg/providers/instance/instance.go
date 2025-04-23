@@ -25,44 +25,37 @@ import (
 	"strings"
 	"time"
 
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-
 	"k8s.io/apimachinery/pkg/util/sets"
 	"knative.dev/pkg/logging"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-
-	//nolint SA1019 - deprecated package
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
-
-	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 
 	CapacityTypeToPriority = map[string]string{
-		karpv1.CapacityTypeSpot:     string(compute.Spot),
-		karpv1.CapacityTypeOnDemand: string(compute.Regular),
+		karpv1.CapacityTypeSpot:     string(armcompute.VirtualMachinePriorityTypesSpot),
+		karpv1.CapacityTypeOnDemand: string(armcompute.VirtualMachinePriorityTypesRegular),
 	}
 	PriorityToCapacityType = map[string]string{
-		string(compute.Spot):    karpv1.CapacityTypeSpot,
-		string(compute.Regular): karpv1.CapacityTypeOnDemand,
+		string(armcompute.VirtualMachinePriorityTypesSpot):    karpv1.CapacityTypeSpot,
+		string(armcompute.VirtualMachinePriorityTypesRegular): karpv1.CapacityTypeOnDemand,
 	}
 
 	SubscriptionQuotaReachedReason = "SubscriptionQuotaReached"
@@ -134,7 +127,12 @@ func NewDefaultProvider(
 
 // Create an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
-func (p *DefaultProvider) Create(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, error) {
+func (p *DefaultProvider) Create(
+	ctx context.Context,
+	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) (*armcompute.VirtualMachine, error) {
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
@@ -278,7 +276,8 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 		})
 	}
 
-	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
+	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(
+		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
 
 	enableAcceleratedNetworking := false
 	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
@@ -360,7 +359,9 @@ func newVMObject(
 	nodeClass *v1alpha2.AKSNodeClass,
 	launchTemplate *launchtemplate.Template,
 	instanceType *corecloudprovider.InstanceType,
-	provisionMode string, useSIG bool) armcompute.VirtualMachine {
+	provisionMode string,
+	useSIG bool,
+) armcompute.VirtualMachine {
 	if launchTemplate.IsWindows {
 		return armcompute.VirtualMachine{} // TODO(Windows)
 	}
@@ -481,7 +482,11 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, vm armcomput
 }
 
 func (p *DefaultProvider) launchInstance(
-	ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, *corecloudprovider.InstanceType, error) {
+	ctx context.Context,
+	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) (*armcompute.VirtualMachine, *corecloudprovider.InstanceType, error) {
 	instanceType, capacityType, zone := p.pickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
 	if instanceType == nil {
 		return nil, nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
@@ -504,7 +509,8 @@ func (p *DefaultProvider) launchInstance(
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
-	nicReference, err := p.createNetworkInterface(ctx,
+	nicReference, err := p.createNetworkInterface(
+		ctx,
 		&createNICOptions{
 			NICName:           resourceName,
 			NetworkPlugin:     networkPlugin,
@@ -595,7 +601,11 @@ func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType
 		}
 
 		logging.FromContext(ctx).Error(err)
-		return fmt.Errorf("the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable", instanceType.Name, zone, capacityType)
+		return fmt.Errorf(
+			"the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable",
+			instanceType.Name,
+			zone,
+			capacityType)
 	}
 	if sdkerrors.ZonalAllocationFailureOccurred(err) {
 		logging.FromContext(ctx).With("zone", zone).Error(err)
@@ -607,7 +617,10 @@ func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType
 	if sdkerrors.RegionalQuotaHasBeenReached(err) {
 		logging.FromContext(ctx).Error(err)
 		// InsufficientCapacityError is appropriate here because trying any other instance type will not help
-		return corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests", capacityType))
+		return corecloudprovider.NewInsufficientCapacityError(
+			fmt.Errorf(
+				"regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests",
+				capacityType))
 	}
 	return err
 }
@@ -624,8 +637,13 @@ func (p *DefaultProvider) applyTemplateToNic(nic *armnetwork.Interface, template
 	}
 }
 
-func (p *DefaultProvider) getLaunchTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim,
-	instanceType *corecloudprovider.InstanceType, capacityType string) (*launchtemplate.Template, error) {
+func (p *DefaultProvider) getLaunchTemplate(
+	ctx context.Context,
+	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceType *corecloudprovider.InstanceType,
+	capacityType string,
+) (*launchtemplate.Template, error) {
 	additionalLabels := lo.Assign(GetAllSingleValuedRequirementLabels(instanceType), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
 
 	launchTemplate, err := p.launchTemplateProvider.GetTemplate(ctx, nodeClass, nodeClaim, instanceType, additionalLabels)
@@ -653,7 +671,11 @@ func GetAllSingleValuedRequirementLabels(instanceType *corecloudprovider.Instanc
 }
 
 // pick the "best" SKU, priority and zone, from InstanceType options (and their offerings) in the request
-func (p *DefaultProvider) pickSkuSizePriorityAndZone(ctx context.Context, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*corecloudprovider.InstanceType, string, string) {
+func (p *DefaultProvider) pickSkuSizePriorityAndZone(
+	ctx context.Context,
+	nodeClaim *karpv1.NodeClaim,
+	instanceTypes []*corecloudprovider.InstanceType,
+) (*corecloudprovider.InstanceType, string, string) {
 	if len(instanceTypes) == 0 {
 		return nil, "", ""
 	}
