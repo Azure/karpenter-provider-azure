@@ -366,9 +366,12 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 }
 
 var (
-	// https://learn.microsoft.com/en-us/azure/reliability/availability-zones-service-support#azure-regions-with-availability-zone-support
+	// https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1
 	// (could also be obtained programmatically)
 	zonalRegions = sets.New(
+		// Special
+		"centraluseuap",
+		"eastus2euap",
 		// Americas
 		"brazilsouth",
 		"canadacentral",
@@ -379,6 +382,8 @@ var (
 		"usgovvirginia",
 		"westus2",
 		"westus3",
+		"chilecentral",
+		"mexicocentral",
 		// Europe
 		"francecentral",
 		"italynorth",
@@ -390,6 +395,7 @@ var (
 		"swedencentral",
 		"switzerlandnorth",
 		"polandcentral",
+		"spaincentral",
 		// Middle East
 		"qatarcentral",
 		"uaenorth",
@@ -404,6 +410,9 @@ var (
 		"southeastasia",
 		"eastasia",
 		"chinanorth3",
+		"indonesiacentral",
+		"japanwest",
+		"newzealandnorth",
 	)
 )
 
