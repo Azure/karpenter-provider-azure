@@ -370,6 +370,7 @@ var (
 	// (could also be obtained programmatically)
 	zonalRegions = sets.New(
 		// Special
+		"centraluseuap",
 		"eastus2euap",
 		// Americas
 		"brazilsouth",
