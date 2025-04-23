@@ -76,12 +76,21 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		)
 	})
 	BeforeAll(func() {
-		selectors = sets.New[string]()
+		// populate the initial set with selectors that won't be tested
+		selectors = sets.New(
+			// we don't support Windows yet
+			corev1.LabelWindowsBuild,
+			// GPU test is disabled until we test on subscription with GPU quota
+			v1alpha2.LabelSKUAccelerator,
+			v1alpha2.LabelSKUGPUName,
+			v1alpha2.LabelSKUGPUManufacturer,
+			v1alpha2.LabelSKUGPUCount,
+			// TODO: review the use of "kubernetes.azure.com/cluster"
+			v1alpha2.AKSLabelCluster,
+		)
 	})
 	AfterAll(func() {
-		// Ensure that we're exercising all well known labels
-		// (pretend we tested GPU labels, the test is currently disabled until we test on subscription with GPU quota)
-		selectors.Insert(v1alpha2.LabelSKUAccelerator, v1alpha2.LabelSKUGPUName, v1alpha2.LabelSKUGPUManufacturer, v1alpha2.LabelSKUGPUCount)
+		// Ensure that we're exercising all well known labels (with the above exceptions)
 		Expect(lo.Keys(selectors)).To(ContainElements(append(karpv1.WellKnownLabels.UnsortedList(), lo.Keys(karpv1.NormalizedLabels)...)))
 	})
 
