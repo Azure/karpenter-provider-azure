@@ -3,6 +3,15 @@ repos:
   rev: v8.24.2
   hooks:
   - id: gitleaks
+- repo: local # This requires gofumpt locally (run make toolchain)
+  hooks:
+    - id: gofumpt
+      name: gofumpt
+      entry: gofumpt -l -w
+      files: \.go$
+      types: [ go ]
+      language: system
+      description: "Runs gofumpt to format Go code"
 - repo: https://github.com/golangci/golangci-lint
   rev: v1.64.8
   hooks:

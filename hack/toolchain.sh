@@ -27,6 +27,7 @@ tools() {
     go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0
     go install github.com/Azure/aks-node-viewer/cmd/aks-node-viewer@latest
     go install github.com/google/pprof@latest
+    go install mvdan.cc/gofumpt@latest
 
     if ! echo "$PATH" | grep -q "${GOPATH:-undefined}/bin\|$HOME/go/bin"; then
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
