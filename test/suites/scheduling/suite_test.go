@@ -173,6 +173,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", 1)
 		})
+		// disabled until we test on subscription with GPU quota
 		PIt("should support well-known labels for a gpu (nvidia)", func() {
 			nodeSelector := map[string]string{
 				v1alpha2.LabelSKUAccelerator:     "A100",
