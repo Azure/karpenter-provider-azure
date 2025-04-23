@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"testing"
 
-	//ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
