@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/awslabs/operatorpkg/singleton"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -92,11 +92,11 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 		if !unremovableInterfaces.Has(nicName) {
 			err := c.instanceProvider.DeleteNic(ctx, nicName)
 			if err != nil {
-				logging.FromContext(ctx).Error(err)
+				log.FromContext(ctx).Error(err, "")
 				return
 			}
 
-			logging.FromContext(ctx).With("nic", nicName).Infof("garbage collected NIC")
+			log.FromContext(ctx).WithValues("nic", nicName).Info("garbage collected NIC")
 		}
 	})
 	return reconcile.Result{

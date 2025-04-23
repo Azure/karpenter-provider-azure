@@ -22,11 +22,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	"knative.dev/pkg/ptr"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -409,13 +409,13 @@ func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	}), "=")
 
 	if kubeletConfig.EvictionMaxPodGracePeriod != nil {
-		args["--eviction-max-pod-grace-period"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.EvictionMaxPodGracePeriod))
+		args["--eviction-max-pod-grace-period"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.EvictionMaxPodGracePeriod))
 	}
 	if kubeletConfig.ImageGCHighThresholdPercent != nil {
-		args["--image-gc-high-threshold"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.ImageGCHighThresholdPercent))
+		args["--image-gc-high-threshold"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ImageGCHighThresholdPercent))
 	}
 	if kubeletConfig.ImageGCLowThresholdPercent != nil {
-		args["--image-gc-low-threshold"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.ImageGCLowThresholdPercent))
+		args["--image-gc-low-threshold"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ImageGCLowThresholdPercent))
 	}
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
