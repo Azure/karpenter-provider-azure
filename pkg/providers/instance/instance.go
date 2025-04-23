@@ -134,7 +134,7 @@ func (p *DefaultProvider) Create(
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*armcompute.VirtualMachine, error) {
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
-	vm, instanceType, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+	vm, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		// Currently, CSE errors will lead to here
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
@@ -146,12 +146,13 @@ func (p *DefaultProvider) Create(
 	if err != nil {
 		logging.FromContext(ctx).Error(err)
 	}
+
 	logging.FromContext(ctx).With(
 		"launched-instance", *vm.ID,
 		"hostname", *vm.Name,
 		"type", string(*vm.Properties.HardwareProfile.VMSize),
 		"zone", zone,
-		"capacity-type", p.getPriorityForInstanceType(nodeClaim, instanceType)).Infof("launched new instance")
+		"capacity-type", GetCapacityType(vm)).Infof("launched new instance")
 
 	return vm, nil
 }
@@ -486,14 +487,14 @@ func (p *DefaultProvider) launchInstance(
 	nodeClass *v1alpha2.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
-) (*armcompute.VirtualMachine, *corecloudprovider.InstanceType, error) {
+) (*armcompute.VirtualMachine, error) {
 	instanceType, capacityType, zone := p.pickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
 	if instanceType == nil {
-		return nil, nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
+		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
 	launchTemplate, err := p.getLaunchTemplate(ctx, nodeClass, nodeClaim, instanceType, capacityType)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting launch template: %w", err)
+		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
 
 	// set provisioner tag for NIC, VM, and Disk
@@ -505,7 +506,7 @@ func (p *DefaultProvider) launchInstance(
 	// create network interface
 	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting backend pools: %w", err)
+		return nil, fmt.Errorf("getting backend pools: %w", err)
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
@@ -522,7 +523,7 @@ func (p *DefaultProvider) launchInstance(
 		},
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	sshPublicKey := options.FromContext(ctx).SSHPublicKey
@@ -535,22 +536,22 @@ func (p *DefaultProvider) launchInstance(
 	resp, err := p.createVirtualMachine(ctx, vm, resourceName)
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
-		return nil, nil, azErr
+		return nil, azErr
 	}
 
 	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
 		err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
 		if err != nil {
 			// This should fall back to cleanupAzureResources
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
 	err = p.createAKSIdentifyingExtension(ctx, resourceName)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return resp, instanceType, nil
+	return resp, nil
 }
 
 // nolint:gocyclo
