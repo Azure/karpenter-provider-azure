@@ -34,13 +34,14 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/patrickmn/go-cache"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/patrickmn/go-cache"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"knative.dev/pkg/logging"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
@@ -131,12 +132,12 @@ func (p *DefaultProvider) List(
 	for _, sku := range skus {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *sku.Size, err)
+			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing VM size %s", *sku.Size))
 			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing SKU architecture %s, %v", *sku.Size, err)
+			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing SKU architecture %s", *sku.Size))
 			continue
 		}
 		instanceTypeZones := instanceTypeZones(sku, p.region)
@@ -269,11 +270,11 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 
 	skus := cache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines))
-	logging.FromContext(ctx).Debugf("Discovered %d SKUs", len(skus))
+	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Discovered %d SKUs", len(skus)))
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
-			logging.FromContext(ctx).Errorf("parsing VM size %s, %v", *skus[i].Size, err)
+			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing VM size %s", *skus[i].Size))
 			continue
 		}
 		useSIG := options.FromContext(ctx).UseSIG
@@ -286,8 +287,8 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		// Only update instanceTypesSeqNun with the instance types have been changed
 		// This is to not create new keys with duplicate instance types option
 		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
-		logging.FromContext(ctx).With(
-			"count", len(instanceTypes)).Debugf("discovered instance types")
+		log.FromContext(ctx).WithValues(
+			"count", len(instanceTypes)).V(1).Info("discovered instance types")
 	}
 	p.instanceTypesCache.SetDefault(InstanceTypesCacheKey, instanceTypes)
 	return instanceTypes, nil
@@ -366,9 +367,12 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 }
 
 var (
-	// https://learn.microsoft.com/en-us/azure/reliability/availability-zones-service-support#azure-regions-with-availability-zone-support
+	// https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1
 	// (could also be obtained programmatically)
 	zonalRegions = sets.New(
+		// Special
+		"centraluseuap",
+		"eastus2euap",
 		// Americas
 		"brazilsouth",
 		"canadacentral",
@@ -379,6 +383,8 @@ var (
 		"usgovvirginia",
 		"westus2",
 		"westus3",
+		"chilecentral",
+		"mexicocentral",
 		// Europe
 		"francecentral",
 		"italynorth",
@@ -390,6 +396,7 @@ var (
 		"swedencentral",
 		"switzerlandnorth",
 		"polandcentral",
+		"spaincentral",
 		// Middle East
 		"qatarcentral",
 		"uaenorth",
@@ -404,6 +411,9 @@ var (
 		"southeastasia",
 		"eastasia",
 		"chinanorth3",
+		"indonesiacentral",
+		"japanwest",
+		"newzealandnorth",
 	)
 )
 

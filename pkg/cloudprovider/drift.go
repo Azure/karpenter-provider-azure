@@ -29,7 +29,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1 "k8s.io/api/core/v1"
 
@@ -92,7 +92,7 @@ func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, node
 }
 
 func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
-	logger := logging.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	nodeName := nodeClaim.Status.NodeName
 
@@ -113,7 +113,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 
 	nodeK8sVersion := strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")
 	if nodeK8sVersion != k8sVersion {
-		logger.Debugf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion)
+		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion))
 		return K8sVersionDrift, nil
 	}
 	return "", nil
@@ -125,7 +125,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 // nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
 	ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
-	logger := logging.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
@@ -161,7 +161,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 	}
 
 	if vmImageID != expectedImageID {
-		logger.Debugf("drift triggered for %s, with expected image id %s, and actual image id %s", ImageVersionDrift, expectedImageID, vmImageID)
+		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, with expected image id %s, and actual image id %s", ImageVersionDrift, expectedImageID, vmImageID))
 		return ImageVersionDrift, nil
 	}
 	return "", nil
