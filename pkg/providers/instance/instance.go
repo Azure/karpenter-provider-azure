@@ -498,15 +498,14 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
 	vm := newVMObject(opts)
-	log.("Creating virtual machine %s (%s)", opts.VMName, opts.InstanceType.Name)
+	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine %s (%s)", opts.VMName, opts.InstanceType.Name))
 
 	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, opts.VMName, vm)
 	if err != nil {
-		logging.FromContext(ctx).Errorf("Creating virtual machine %q failed: %v", opts.VMName, err)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 
-	logging.FromContext(ctx).Debugf("Created virtual machine %s", *result.ID)
+	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Created virtual machine %s", *result.ID))
 	return result, nil
 }
 
