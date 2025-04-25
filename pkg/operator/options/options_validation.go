@@ -127,9 +127,9 @@ func (o Options) validateRequiredFields() error {
 
 func (o Options) validateUseSIG() error {
 	if o.UseSIG {
-		// if o.AuxiliaryTokenServerURL == "" {
-		// 	return fmt.Errorf("auxiliary-token-server-url is required when use-sig is true")
-		// }
+		if o.AuxiliaryTokenServerURL == "" {
+			return fmt.Errorf("auxiliary-token-server-url is required when use-sig is true")
+		}
 		if o.SIGScope == "" {
 			return fmt.Errorf("sig-scope is required when use-sig is true")
 		}
