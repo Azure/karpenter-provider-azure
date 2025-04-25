@@ -2,8 +2,8 @@ apiVersion: v2
 name: karpenter
 description: A Helm chart for AKS Karpenter provider.
 type: application
-version: 0-25a2798cca130ea1e5a7a7cd12f690af231c825e
-appVersion: 0-25a2798cca130ea1e5a7a7cd12f690af231c825e
+version: 0.1.0
+appVersion: 0.29.2
 keywords:
   - cluster
   - node

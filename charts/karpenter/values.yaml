@@ -88,15 +88,16 @@ tolerations:
     operator: Exists
 # -- Additional volumes for the pod.
 extraVolumes: []
+
 controller:
   image:
     # -- Repository path to the controller image.
-    repository: ksnap.azurecr.io/karpenter/snapshot/controller
+    repository: mcr.microsoft.com/aks/karpenter/controller
     # -- Tag of the controller image.
-    tag: 25a2798cca130ea1e5a7a7cd12f690af231c825e
+    tag:
     # -- SHA256 digest of the controller image.
     # digest:
-    digest: sha256:2b365b18d94f8bb590ba020b32128207faa0b43eb695f25b131a93ca797f4012
+    digest: sha256:dd095cdcf857c3812f2084a7b20294932f461b0bff912acf58d592faa032fbef
   # -- Additional environment variables for the controller pod.
   env: []
   # - name:
@@ -166,6 +167,7 @@ settings:
   # -- The global tags to use on all Azure infrastructure resources (VMs, etc.)
   # TODO: not propagated yet ...
   tags:
+
   # -- Feature Gate configuration values. Feature Gates will follow the same graduation process and requirements as feature gates
   # in Kubernetes. More information here https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features
   featureGates:
