@@ -172,7 +172,7 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 		vmName := lo.FromPtr(promise.VM.Name)
 		err = c.instanceProvider.Delete(ctx, vmName)
 		if cloudprovider.IgnoreNodeClaimNotFoundError(err) != nil {
-			log.FromContext(ctx).Error(err, "failed to delete VM %s", vmName)
+			log.FromContext(ctx).Error(err, fmt.Sprintf("failed to delete VM %s", vmName))
 		}
 
 		if err = c.kubeClient.Delete(ctx, nodeClaim); err != nil {
@@ -205,7 +205,12 @@ func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1
 		if cond := freshClaim.StatusConditions().Get(karpv1.ConditionTypeLaunched); !cond.IsUnknown() {
 			return
 		}
-		time.Sleep(500 * time.Millisecond)
+
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-ctx.Done():
+			return // context was canceled
+		}
 	}
 }
 

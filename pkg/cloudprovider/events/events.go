@@ -26,13 +26,15 @@ import (
 )
 
 const (
-	AsyncProvisioningReason = "AsyncProvisioningError"
+	AsyncProvisioningReason   = "AsyncProvisioningError"
+	NodeClassResolutionReason = "NodeClassResolutionError"
 )
 
 func NodePoolFailedToResolveNodeClass(nodePool *v1.NodePool) events.Event {
 	return events.Event{
 		InvolvedObject: nodePool,
 		Type:           corev1.EventTypeWarning,
+		Reason:         NodeClassResolutionReason,
 		Message:        "Failed resolving NodeClass",
 		DedupeValues:   []string{string(nodePool.UID)},
 	}
@@ -42,6 +44,7 @@ func NodeClaimFailedToResolveNodeClass(nodeClaim *v1.NodeClaim) events.Event {
 	return events.Event{
 		InvolvedObject: nodeClaim,
 		Type:           corev1.EventTypeWarning,
+		Reason:         NodeClassResolutionReason,
 		Message:        "Failed resolving NodeClass",
 		DedupeValues:   []string{string(nodeClaim.UID)},
 	}
@@ -51,8 +54,8 @@ func NodeClaimFailedToRegister(nodeClaim *v1.NodeClaim, err error) events.Event 
 	return events.Event{
 		InvolvedObject: nodeClaim,
 		Type:           corev1.EventTypeWarning,
-		Reason:         AsyncProvisioningReason, // TODO: our other events don't set reason... is it an oversight?
-		Message:        fmt.Sprintf("NodeClaim %s failed to register: %s", nodeClaim.Name, truncateMessage(err.Error())),
+		Reason:         AsyncProvisioningReason,
+		Message:        fmt.Sprintf("Failed to register: %s", truncateMessage(err.Error())),
 		DedupeValues:   []string{string(nodeClaim.UID)},
 	}
 }
