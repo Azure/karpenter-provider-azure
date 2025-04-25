@@ -74,8 +74,5 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
 		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),
-		AuxiliaryTokenServerURL:        lo.FromPtrOr(options.AuxiliaryTokenServerURL, ""),
-		SIGScope:                       lo.FromPtrOr(options.SIGScope, ""),
-		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, ""),
 	}
 }

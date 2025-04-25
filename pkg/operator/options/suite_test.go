@@ -129,7 +129,7 @@ var _ = Describe("Options", func() {
 				ProvisionMode:                  lo.ToPtr("bootstrappingclient"),
 				NodeBootstrappingServerURL:     lo.ToPtr("https://nodebootstrapping-server-url"),
 				VnetGUID:                       lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
-				UseSIG:                         lo.ToPtr(false),
+				UseSIG:                         lo.ToPtr(true),
 				AuxiliaryTokenServerURL:        lo.ToPtr("https://auxiliary-token-server-url"),
 				SIGScope:                       lo.ToPtr("my-scope"),
 				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
@@ -335,7 +335,7 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--provision-mode", "ekeselfexposed",
 			)
-			Expect(err).To(MatchError(ContainSubstring("provision-mode")))
+			Expect(err).To(MatchError(ContainSubstring("invalid")))
 		})
 		It("should fail validation when ProvisionMode is bootstrappingclient but NodebootstrappingServerURL is not provided", func() {
 			err := opts.Parse(
@@ -355,9 +355,9 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
-				"--use-sig", "true",
 				"--sig-scope", "my-scope",
 				"--sig-subscription-id", "my-subscription-id",
+				"--use-sig",
 			)
 			Expect(err).To(MatchError(ContainSubstring("auxiliary-token-server-url")))
 		})
@@ -368,9 +368,9 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
-				"--use-sig", "true",
 				"--auxiliary-token-server-url", "my-url",
 				"--sig-subscription-id", "my-subscription-id",
+				"--use-sig",
 			)
 			Expect(err).To(MatchError(ContainSubstring("sig-scope")))
 		})
@@ -381,9 +381,9 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
-				"--use-sig", "true",
 				"--auxiliary-token-server-url", "my-url",
 				"--sig-scope", "my-scope",
+				"--use-sig",
 			)
 			Expect(err).To(MatchError(ContainSubstring("sig-subscription-id")))
 		})
