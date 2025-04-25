@@ -24,6 +24,9 @@ import (
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/patrickmn/go-cache"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
+
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -32,10 +35,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
-	"github.com/patrickmn/go-cache"
-	"knative.dev/pkg/ptr"
-
-	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 func init() {
@@ -115,7 +114,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		ctx,
 		imageFamilyResolver,
 		imageFamilyProvider,
-		ptr.String("ca-bundle"),
+		lo.ToPtr("ca-bundle"),
 		testOptions.ClusterEndpoint,
 		"test-tenant",
 		subscription,

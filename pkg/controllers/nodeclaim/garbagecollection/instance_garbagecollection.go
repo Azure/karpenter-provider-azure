@@ -28,9 +28,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
-	"knative.dev/pkg/logging"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
@@ -94,11 +94,11 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 }
 
 func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("provider-id", nodeClaim.Status.ProviderID))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("provider-id", nodeClaim.Status.ProviderID))
 	if err := c.cloudProvider.Delete(ctx, nodeClaim); err != nil {
 		return corecloudprovider.IgnoreNodeClaimNotFoundError(err)
 	}
-	logging.FromContext(ctx).Debugf("garbage collected cloudprovider instance")
+	log.FromContext(ctx).V(1).Info("garbage collected cloudprovider instance")
 
 	// Go ahead and cleanup the node if we know that it exists to make scheduling go quicker
 	if node, ok := lo.Find(nodeList.Items, func(n v1.Node) bool {
@@ -107,7 +107,7 @@ func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.N
 		if err := c.kubeClient.Delete(ctx, &node); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		logging.FromContext(ctx).With("node", node.Name).Debugf("garbage collected node")
+		log.FromContext(ctx).WithValues("node", node.Name).V(1).Info("garbage collected node")
 	}
 	return nil
 }

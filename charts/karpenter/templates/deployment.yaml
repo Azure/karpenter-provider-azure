@@ -92,10 +92,6 @@ spec:
               value: "{{ .Values.controller.metrics.port }}"
             - name: HEALTH_PROBE_PORT
               value: "{{ .Values.controller.healthProbe.port }}"
-            - name: SYSTEM_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
             - name: MEMORY_LIMIT
               valueFrom:
                 resourceFieldRef:

@@ -80,7 +80,3 @@ issues:
     - hack
     - charts
     - designs
-    - pkg/alt/knative # copy
-    - pkg/alt/karpenter-core/pkg/webhooks # copy
-  exclude-files:
-    - pkg/alt/karpenter-core/pkg/operator/logger.go # copy
