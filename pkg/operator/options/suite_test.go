@@ -56,6 +56,10 @@ var _ = Describe("Options", func() {
 		"PROVISION_MODE",
 		"NODEBOOTSTRAPPING_SERVER_URL",
 		"VNET_GUID",
+		"USE_SIG",
+		"AUXILIARY_TOKEN_SERVER_URL",
+		"SIG_SCOPE",
+		"SIG_SUBSCRIPTION_ID",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -100,6 +104,10 @@ var _ = Describe("Options", func() {
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 			os.Setenv("PROVISION_MODE", "bootstrappingclient")
 			os.Setenv("NODEBOOTSTRAPPING_SERVER_URL", "https://nodebootstrapping-server-url")
+			os.Setenv("USE_SIG", "true")
+			os.Setenv("AUXILIARY_TOKEN_SERVER_URL", "https://auxiliary-token-server-url")
+			os.Setenv("SIG_SCOPE", "my-scope")
+			os.Setenv("SIG_SUBSCRIPTION_ID", "my-subscription-id")
 			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
@@ -121,6 +129,10 @@ var _ = Describe("Options", func() {
 				ProvisionMode:                  lo.ToPtr("bootstrappingclient"),
 				NodeBootstrappingServerURL:     lo.ToPtr("https://nodebootstrapping-server-url"),
 				VnetGUID:                       lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
+				UseSIG:                         lo.ToPtr(false),
+				AuxiliaryTokenServerURL:        lo.ToPtr("https://auxiliary-token-server-url"),
+				SIGScope:                       lo.ToPtr("my-scope"),
+				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
 			}))
 		})
 	})
@@ -335,6 +347,45 @@ var _ = Describe("Options", func() {
 				"--provision-mode", "bootstrappingclient",
 			)
 			Expect(err).To(MatchError(ContainSubstring("nodebootstrapping-server-url")))
+		})
+		It("should fail if use-sig is enabled, but auxiliary-token-server-url is not set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--use-sig", "true",
+				"--sig-scope", "my-scope",
+				"--sig-subscription-id", "my-subscription-id",
+			)
+			Expect(err).To(MatchError(ContainSubstring("auxiliary-token-server-url")))
+		})
+		It("should fail if use-sig is enabled, but sig-scope is not set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--use-sig", "true",
+				"--auxiliary-token-server-url", "my-url",
+				"--sig-subscription-id", "my-subscription-id",
+			)
+			Expect(err).To(MatchError(ContainSubstring("sig-scope")))
+		})
+		It("should fail if use-sig is enabled, but sig-subscription-id is not set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--use-sig", "true",
+				"--auxiliary-token-server-url", "my-url",
+				"--sig-scope", "my-scope",
+			)
+			Expect(err).To(MatchError(ContainSubstring("sig-subscription-id")))
 		})
 	})
 })

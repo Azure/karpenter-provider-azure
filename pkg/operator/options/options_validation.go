@@ -37,6 +37,7 @@ func (o Options) Validate() error {
 		o.validateVMMemoryOverheadPercent(),
 		o.validateVnetSubnetID(),
 		o.validateProvisionMode(),
+		o.validateUseSIG(),
 		validate.Struct(o),
 	)
 }
@@ -120,6 +121,21 @@ func (o Options) validateRequiredFields() error {
 	}
 	if o.SubnetID == "" {
 		return fmt.Errorf("missing field, vnet-subnet-id")
+	}
+	return nil
+}
+
+func (o Options) validateUseSIG() error {
+	if o.UseSIG {
+		// if o.AuxiliaryTokenServerURL == "" {
+		// 	return fmt.Errorf("auxiliary-token-server-url is required when use-sig is true")
+		// }
+		if o.SIGScope == "" {
+			return fmt.Errorf("sig-scope is required when use-sig is true")
+		}
+		if o.SIGSubscriptionID == "" {
+			return fmt.Errorf("sig-subscription-id is required when use-sig is true")
+		}
 	}
 	return nil
 }
