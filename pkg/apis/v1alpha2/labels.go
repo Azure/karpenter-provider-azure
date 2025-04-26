@@ -33,7 +33,6 @@ func init() {
 
 		LabelSKUCPU,
 		LabelSKUMemory,
-		LabelSKUAccelerator,
 
 		LabelSKUAcceleratedNetworking,
 
@@ -42,7 +41,6 @@ func init() {
 
 		LabelSKUEncryptionAtHostSupported,
 
-		LabelSKUGPUName,
 		LabelSKUGPUManufacturer,
 		LabelSKUGPUCount,
 
@@ -80,9 +78,8 @@ var (
 	LabelSKUFamily  = Group + "/sku-family"  // A
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
-	LabelSKUCPU         = Group + "/sku-cpu"    // sku.vCPUs
-	LabelSKUMemory      = Group + "/sku-memory" // sku.MemoryGB
-	LabelSKUAccelerator = Group + "/sku-accelerator"
+	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
+	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
 
 	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
@@ -93,7 +90,6 @@ var (
 	LabelSKUEncryptionAtHostSupported = Group + "/sku-encryptionathost-capable" // sku.EncryptionAtHostSupported
 
 	// GPU labels
-	LabelSKUGPUName         = Group + "/sku-gpu-name"         // ie GPU Accelerator type we parse from vmSize
 	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // ie NVIDIA, AMD, etc
 	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // ie 16, 32, etc
 

@@ -155,14 +155,12 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 		scheduling.NewRequirement(v1alpha2.LabelSKUMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
 		scheduling.NewRequirement(v1alpha2.LabelSKUGPUCount, corev1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
 		scheduling.NewRequirement(v1alpha2.LabelSKUGPUManufacturer, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUGPUName, corev1.NodeSelectorOpDoesNotExist),
 
 		// composites
 		scheduling.NewRequirement(v1alpha2.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
 
 		// size parts
 		scheduling.NewRequirement(v1alpha2.LabelSKUFamily, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUAccelerator, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUVersion, corev1.NodeSelectorOpDoesNotExist),
 
 		// SKU capabilities
@@ -185,8 +183,7 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
 	setRequirementsAcceleratedNetworking(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
-	setRequirementsGPU(requirements, sku, vmsize)
-	setRequirementsAccelerator(requirements, vmsize)
+	setRequirementsGPU(requirements, sku)
 	setRequirementsVersion(requirements, vmsize)
 
 	return requirements
@@ -225,18 +222,9 @@ func setRequirementsHyperVGeneration(requirements scheduling.Requirements, sku *
 	}
 }
 
-func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
+func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU) {
 	if utils.IsNvidiaEnabledSKU(sku.GetName()) {
 		requirements[v1alpha2.LabelSKUGPUManufacturer].Insert(v1alpha2.ManufacturerNvidia)
-		if vmsize.AcceleratorType != nil {
-			requirements[v1alpha2.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
-		}
-	}
-}
-
-func setRequirementsAccelerator(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	if vmsize.AcceleratorType != nil {
-		requirements[v1alpha2.LabelSKUAccelerator].Insert(*vmsize.AcceleratorType)
 	}
 }
 

@@ -884,12 +884,10 @@ var _ = Describe("InstanceType Provider", func() {
 				v1alpha2.LabelSKUAcceleratedNetworking:     "true",
 				v1alpha2.LabelSKUEncryptionAtHostSupported: "true",
 				v1alpha2.LabelSKUStoragePremiumCapable:     "true",
-				v1alpha2.LabelSKUGPUName:                   "A100",
 				v1alpha2.LabelSKUGPUManufacturer:           "nvidia",
 				v1alpha2.LabelSKUGPUCount:                  "1",
 				v1alpha2.LabelSKUCPU:                       "24",
 				v1alpha2.LabelSKUMemory:                    "8192",
-				v1alpha2.LabelSKUAccelerator:               "A100",
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
 				v1.LabelFailureDomainBetaZone:      fakeZone1,
@@ -935,8 +933,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 			Expect(normalNode.Requirements.Get(v1alpha2.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1alpha2.HyperVGenerationV1))
 			Expect(gpuNode.Requirements.Get(v1alpha2.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1alpha2.HyperVGenerationV2))
-
-			Expect(gpuNode.Requirements.Get(v1alpha2.LabelSKUAccelerator).Values()).To(ConsistOf("A100"))
 
 			Expect(normalNode.Requirements.Get(v1alpha2.LabelSKUVersion).Values()).To(ConsistOf("2"))
 			Expect(gpuNode.Requirements.Get(v1alpha2.LabelSKUVersion).Values()).To(ConsistOf("4"))
@@ -1222,7 +1218,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 			// Verify that the node the pod was scheduled on has GPU resource and labels set
 			Expect(node.Status.Allocatable).To(HaveKeyWithValue(v1.ResourceName("nvidia.com/gpu"), resource.MustParse("1")))
-			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-name", "T4"))
 			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-manufacturer", v1alpha2.ManufacturerNvidia))
 			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-count", "1"))
 		})
