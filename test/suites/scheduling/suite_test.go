@@ -181,7 +181,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		// note: this test can fail on subscription that don't have quota for GPU SKUs
-		FIt("should support well-known labels for a gpu (nvidia)", func() {
+		It("should support well-known labels for a gpu (nvidia)", func() {
 			nodeSelector := map[string]string{
 				v1alpha2.LabelSKUGPUManufacturer: "nvidia",
 				v1alpha2.LabelSKUGPUCount:        "1",
