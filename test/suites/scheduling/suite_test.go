@@ -80,11 +80,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		selectors = sets.New(
 			// we don't support Windows yet
 			corev1.LabelWindowsBuild,
-			// GPU test is disabled until we test on subscription with GPU quota
+			// these are both unreliable and redundant, should be removed from support; won't be tested
 			v1alpha2.LabelSKUAccelerator,
 			v1alpha2.LabelSKUGPUName,
-			v1alpha2.LabelSKUGPUManufacturer,
-			v1alpha2.LabelSKUGPUCount,
 			// TODO: review the use of "kubernetes.azure.com/cluster"
 			v1alpha2.AKSLabelCluster,
 		)
@@ -182,11 +180,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", 1)
 		})
-		// disabled until we test on subscription with GPU quota
-		PIt("should support well-known labels for a gpu (nvidia)", func() {
+		// note: this test can fail on subscription that don't have quota for GPU SKUs
+		FIt("should support well-known labels for a gpu (nvidia)", func() {
 			nodeSelector := map[string]string{
-				v1alpha2.LabelSKUAccelerator:     "A100",
-				v1alpha2.LabelSKUGPUName:         "A100",
 				v1alpha2.LabelSKUGPUManufacturer: "nvidia",
 				v1alpha2.LabelSKUGPUCount:        "1",
 			}
