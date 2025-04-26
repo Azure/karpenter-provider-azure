@@ -472,7 +472,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		)
 		It("should provision a right-sized node when a pod has InitContainers (mixed resources)", func() {
 			if env.K8sMinorVersion() < 29 {
-				Skip("native sidecar containers are only enabled on EKS 1.29+")
+				Skip("native sidecar containers are only enabled on AKS 1.29+")
 			}
 			pod := test.Pod(test.PodOptions{
 				InitContainers: []corev1.Container{

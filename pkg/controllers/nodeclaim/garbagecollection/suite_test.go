@@ -41,7 +41,7 @@ import (
 	"github.com/samber/lo"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
-	. "knative.dev/pkg/logging/testing"
+	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
