@@ -170,7 +170,7 @@ var _ = Describe("CloudProvider", func() {
 		Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 		Expect(cloudProviderMachine).To(BeNil())
 	})
-	FContext("Drift", func() {
+	Context("Drift", func() {
 		var nodeClaim *karpv1.NodeClaim
 		var pod *v1.Pod
 		BeforeEach(func() {
