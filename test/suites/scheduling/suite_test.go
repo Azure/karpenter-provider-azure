@@ -271,6 +271,21 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		It("should provision three nodes for a zonal topology spread", func() {
+
+			// Temporarily constrain max VM SKU size to ensure one-pass provisioning
+			// (in the presence of limits, scheduling simulation has to assume the largest allowed SKU)
+			// and avoid overprovisioning on the second pass due to missing zone label on NodeClaim.
+			// This can be removed once the handling of zone labels is fixed.
+			test.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+						Key:      v1alpha2.LabelSKUCPU,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{"2"},
+					},
+				},
+			)
+
 			// one pod per zone
 			podLabels := map[string]string{"test": "zonal-spread"}
 			deployment := test.Deployment(test.DeploymentOptions{
@@ -359,6 +374,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 					},
 				},
 			})
+			nodePoolLowPri = env.AdaptToClusterConfig(nodePoolLowPri)
+			nodePoolHighPri = env.AdaptToClusterConfig(nodePoolHighPri)
+
 			pod := test.Pod()
 			env.ExpectCreated(pod, nodeClass, nodePoolLowPri, nodePoolHighPri)
 			env.EventuallyExpectHealthy(pod)
