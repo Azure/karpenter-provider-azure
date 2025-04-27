@@ -262,7 +262,6 @@ az-taintnodes:
 
 az-e2etests: az-cleanenv ## Run e2etests
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
-	TEST_SUITE=Utilization \
 	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
 	AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
 	AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
