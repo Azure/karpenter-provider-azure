@@ -550,6 +550,10 @@ func (p *DefaultProvider) launchInstance(
 		return nil, azErr
 	}
 
+	if p.requiredVMExtensionsInstalled(lo.FromPtr(vm)) {
+		return vm, nil
+	}
+
 	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
 		err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
 		if err != nil {
