@@ -93,17 +93,6 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving node class, %w", err))
 	}
 
-	/*
-		// TODO: Remove this after v1
-		nodePool, err := utils.ResolveNodePoolFromNodeClaim(ctx, c.kubeClient, nodeClaim)
-		if err != nil {
-			return nil, err
-		}
-		kubeletHash, err := utils.GetHashKubelet(nodePool, nodeClass)
-		if err != nil {
-			return nil, err
-		}
-	*/
 	nodeClassReady := nodeClass.StatusConditions().Get(status.ConditionReady)
 	if nodeClassReady.IsFalse() {
 		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
@@ -119,14 +108,21 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 	}
-	instance, err := c.instanceProvider.Create(ctx, nodeClass, nodeClaim, instanceTypes)
+	vm, err := c.instanceProvider.Create(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
+		// This allows us to delegate the responsibility of deletion of a nodeclaim to the cloudprovider leaving nodeclaim deletion operations
+		// outside of the instance provider which should just be responsible for shipping an instance.
+		if instance.IsInvalidInstanceStateError(err) {
+			if kerr := c.kubeClient.Delete(ctx, nodeClaim); kerr != nil {
+				return nil, client.IgnoreNotFound(kerr)
+			}
+		}
 		return nil, fmt.Errorf("creating instance, %w", err)
 	}
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
-		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
+		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
 	})
-	nc, err := c.instanceToNodeClaim(ctx, instance, instanceType)
+	nc, err := c.instanceToNodeClaim(ctx, vm, instanceType)
 	nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
 		v1alpha2.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
 		v1alpha2.AnnotationAKSNodeClassHashVersion: v1alpha2.AKSNodeClassHashVersion,
