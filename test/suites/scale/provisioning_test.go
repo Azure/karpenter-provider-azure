@@ -113,9 +113,7 @@ var _ = Describe("Provisioning", Label(debug.NoWatch), Label(debug.NoEvents), fu
 		replicas := replicasPerNode * expectedNodeCount
 		deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
 		nodeClass.Spec.MaxPods = lo.ToPtr(int32(maxPodDensity))
-		///???
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			// AWS: With Prefix Delegation enabled, .large instances can have 434 pods.
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      v1alpha2.LabelSKUCPU,
 				Operator: corev1.NodeSelectorOpIn,
