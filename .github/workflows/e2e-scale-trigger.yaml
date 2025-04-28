@@ -1,0 +1,31 @@
+name: E2EScaleTrigger
+on:
+  workflow_dispatch:
+    inputs:
+      location:
+        type: string
+        description: "the azure location to run the e2e test in"
+        default: "westus3"
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    if: (github.repository == 'Azure/karpenter-provider-azure' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')) || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/resolve-args.yaml
+  scale:
+    permissions:
+      contents: read
+      id-token: write # This is required for requesting the JWT
+      statuses: write # ./.github/actions/commit-status/*
+    needs: [resolve]
+    uses: ./.github/workflows/e2e.yaml
+    with:
+      suite: Scale
+      git_ref: ${{ needs.resolve.outputs.GIT_REF }}
+      location: ${{ inputs.location || 'westus3' }}
+    secrets:
+      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
+      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
+      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
