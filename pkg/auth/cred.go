@@ -57,6 +57,7 @@ func GetAuxiliaryToken(ctx context.Context) (azcore.AccessToken, error) {
 	q := req.URL.Query()
 	q.Add("scope", scope)
 	req.URL.RawQuery = q.Encode()
+	req.Header.Set("User-Agent", GetUserAgentExtension())
 
 	// Send the request
 	resp, err := client.Do(req)

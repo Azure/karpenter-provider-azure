@@ -60,7 +60,6 @@ func (sc *skuClient) updateInstance() {
 	authorizer := azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope})
 
 	azClientConfig := sc.cfg.GetAzureClientConfig(authorizer, sc.env)
-	azClientConfig.UserAgent = auth.GetUserAgentExtension()
 
 	skuClient := compute.NewResourceSkusClient(sc.cfg.SubscriptionID)
 	skuClient.Authorizer = azClientConfig.Authorizer
