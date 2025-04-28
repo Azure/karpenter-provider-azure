@@ -11,18 +11,39 @@ permissions:
   contents: read
 
 jobs:
+  initialize-generative-params:
+    runs-on: ubuntu-latest
+    outputs:
+      E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        with:
+          disable-telemetry: true
+          disable-sudo: true
+          egress-policy: block
+          # no allowed endpoints
+          allowed-endpoints: >
+
+      - id: generate-e2e-run-hash
+        run: |
+          E2E_HASH="$RANDOM$RANDOM"
+          echo "Using e2e hash \"$E2E_HASH\""
+          echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
+
   resolve:
-    if: (github.repository == 'Azure/karpenter-provider-azure' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')) || github.event_name == 'workflow_dispatch'
+    if: (github.repository == 'Azure/karpenter-provider-azure' && (github.event_name != 'workflow_run')) || github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/resolve-args.yaml
   scale:
     permissions:
       contents: read
       id-token: write # This is required for requesting the JWT
       statuses: write # ./.github/actions/commit-status/*
-    needs: [resolve]
+    needs: [initialize-generative-params, resolve]
     uses: ./.github/workflows/e2e.yaml
     with:
       suite: Scale
+      hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
       location: ${{ inputs.location || 'westus3' }}
     secrets:
