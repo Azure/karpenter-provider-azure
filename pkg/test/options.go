@@ -42,7 +42,8 @@ type OptionsFields struct {
 	ProvisionMode                  *string
 	NodeBootstrappingServerURL     *string
 	VnetGUID                       *string
-
+	DNSServiceIP                   *string
+	
 	// UseSIG Flags not required by the self hosted offering
 	UseSIG            *bool
 	SIGSubscriptionID *string
