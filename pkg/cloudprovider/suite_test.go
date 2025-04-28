@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"fmt"
+
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -134,6 +136,7 @@ var _ = AfterEach(func() {
 })
 
 var _ = Describe("CloudProvider", func() {
+	It("should delete the nodeclaim if we spot a vm without the extensions in the cache", func() {})
 	It("should list nodeclaim created by the CloudProvider", func() {
 		ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 		pod := coretest.UnschedulablePod()
@@ -183,6 +186,7 @@ var _ = Describe("CloudProvider", func() {
 			input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			rg := input.ResourceGroupName
 			vmName := input.VMName
+			fmt.Println(input)
 			// Corresponding NodeClaim
 			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
