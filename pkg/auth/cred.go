@@ -38,7 +38,7 @@ type expireEarlyTokenCredential struct {
 }
 
 func GetAuxiliaryToken(ctx context.Context) (azcore.AccessToken, error) {
-	client := &http.Client{}
+	client := &http.Client{Timeout: 10 * time.Second}
 	url := options.FromContext(ctx).AuxiliaryTokenServerURL
 	if url == "" {
 		return azcore.AccessToken{}, fmt.Errorf("auxiliary token server URL is not set")
@@ -65,11 +65,15 @@ func GetAuxiliaryToken(ctx context.Context) (azcore.AccessToken, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return azcore.AccessToken{}, fmt.Errorf("error: %s", resp.Status)
+	}
+
 	// Decode the response body into the AccessToken struct
 	var token azcore.AccessToken
 	err = json.NewDecoder(resp.Body).Decode(&token)
 	if err != nil {
-		return token, fmt.Errorf("error decoding json: %w", err)
+		return azcore.AccessToken{}, fmt.Errorf("error decoding json: %w", err)
 	}
 	return token, nil
 }
