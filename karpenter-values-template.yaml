@@ -29,6 +29,8 @@ controller:
       value: ${VNET_GUID}
     - name: NODE_IDENTITIES
       value: ${NODE_IDENTITIES}
+    - name: DNS_SERVICE_IP
+      value: ${DNS_SERVICE_IP}
 
     # Azure client settings
     - name: ARM_SUBSCRIPTION_ID
