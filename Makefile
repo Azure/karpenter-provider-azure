@@ -81,7 +81,6 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	hack/validation/requirements.sh
 	hack/validation/common.sh
 	cp pkg/apis/crds/* charts/karpenter-crd/templates
-	hack/mutation/conversion_webhooks_injection.sh
 	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
 	@git diff --quiet ||\
