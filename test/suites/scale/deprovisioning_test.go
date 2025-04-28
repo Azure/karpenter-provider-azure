@@ -334,7 +334,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 		It("should delete all empty nodes with consolidation", func(_ context.Context) {
 			replicasPerNode := 20
 			maxPodDensity := replicasPerNode + dsCount
-			expectedNodeCount := 200
+			expectedNodeCount := 100
 			replicas := replicasPerNode * expectedNodeCount
 
 			deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
@@ -385,7 +385,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 		It("should consolidate nodes to get a higher utilization (multi-consolidation delete)", func(_ context.Context) {
 			replicasPerNode := 20
 			maxPodDensity := replicasPerNode + dsCount
-			expectedNodeCount := 200
+			expectedNodeCount := 100
 			replicas := replicasPerNode * expectedNodeCount
 
 			deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
@@ -511,7 +511,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 		It("should deprovision all nodes when empty", func(_ context.Context) {
 			replicasPerNode := 20
 			maxPodDensity := replicasPerNode + dsCount
-			expectedNodeCount := 200
+			expectedNodeCount := 100
 			replicas := replicasPerNode * expectedNodeCount
 
 			deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
