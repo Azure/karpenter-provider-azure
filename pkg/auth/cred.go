@@ -38,9 +38,19 @@ type expireEarlyTokenCredential struct {
 	cred azcore.TokenCredential
 }
 
-func GetAuxiliaryToken(ctx context.Context, scope string) (azcore.AccessToken, error) {
+func GetAuxiliaryToken(ctx context.Context) (azcore.AccessToken, error) {
 	client := &http.Client{}
 	url := options.FromContext(ctx).AuxiliaryTokenServerURL
+	if url == "" {
+		return azcore.AccessToken{}, fmt.Errorf("auxiliary token server URL is not set")
+	}
+
+	// TODO: this env var needs to be customized based on cloud
+	scope := options.FromContext(ctx).SIGScope
+	if scope == "" {
+		return azcore.AccessToken{}, fmt.Errorf("scope is not set")
+	}
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return azcore.AccessToken{}, err

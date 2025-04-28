@@ -133,7 +133,10 @@ var _ = Describe("NodeImageProvider tests", func() {
 	Context("List SIG Images", func() {
 		BeforeEach(func() {
 			var varTrue = true
-			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{UseSIG: &varTrue}))
+			var subscription = subscription
+			var scope = "scope"
+			var url = "url"
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{UseSIG: &varTrue, SIGSubscriptionID: &subscription, SIGScope: &scope, AuxiliaryTokenServerURL: &url}))
 		})
 
 		It("should match expected images for Ubuntu2204", func() {

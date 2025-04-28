@@ -74,5 +74,8 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
 		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),
+		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, "10945678-1234-1234-1234-123456789012"),
+		AuxiliaryTokenServerURL:        lo.FromPtrOr(options.AuxiliaryTokenServerURL, "https://test-auxiliary-token-server"),
+		SIGScope:                       lo.FromPtrOr(options.SIGScope, "https://management.azure.com/.default"),
 	}
 }

@@ -181,9 +181,7 @@ func getVirtualMachinesClientOptions(ctx context.Context) (*armpolicy.ClientOpti
 		return &armpolicy.ClientOptions{}, nil
 	}
 
-	// TODO: this env var needs to be customized based on cloud
-	scope := options.FromContext(ctx).SIGScope
-	token, err := auth.GetAuxiliaryToken(ctx, scope)
+	token, err := auth.GetAuxiliaryToken(ctx)
 	if err != nil {
 		return &armpolicy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
 	}
