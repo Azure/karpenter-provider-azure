@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -66,17 +65,11 @@ func GetAuxiliaryToken(ctx context.Context) (azcore.AccessToken, error) {
 	}
 	defer resp.Body.Close()
 
-	// Read the response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return azcore.AccessToken{}, fmt.Errorf("error reading response: %w", err)
-	}
-
-	// Unmarshal the response body into the AccessToken struct
+	// Decode the response body into the AccessToken struct
 	var token azcore.AccessToken
-	err = json.Unmarshal(body, &token)
+	err = json.NewDecoder(resp.Body).Decode(&token)
 	if err != nil {
-		return token, fmt.Errorf("error unmarshalling response: %w", err)
+		return token, fmt.Errorf("error decoding json: %w", err)
 	}
 	return token, nil
 }
