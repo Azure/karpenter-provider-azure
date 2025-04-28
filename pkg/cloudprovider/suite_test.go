@@ -268,7 +268,6 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(NoDrift))
 			})
 
-			// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
 			It("shouldn't error or be drifted when NodeName is missing", func() {
 				nodeClaim.Status.NodeName = ""
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)

@@ -109,6 +109,9 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 
 	nodeName := nodeClaim.Status.NodeName
 	if nodeName == "" {
+		// We do not return an error here as its expected within the lifecycle of the nodeclaims registration.
+		// Drift can be called for a nodeclaim once its launched, but .Status.NodeName is only filled out after the node is registered:
+		// https://github.com/kubernetes-sigs/karpenter/blob/8b9ea2e7cd10acdb40bccdf91a153a2e69b71107/pkg/controllers/nodeclaim/lifecycle/registration.go#L83
 		return "", nil
 	}
 
