@@ -54,6 +54,7 @@ var _ = Describe("Options", func() {
 		"SSH_PUBLIC_KEY",
 		"NETWORK_PLUGIN",
 		"NETWORK_POLICY",
+		"DNS_SERVICE_IP",
 		"NODE_IDENTITIES",
 		"PROVISION_MODE",
 		"NODEBOOTSTRAPPING_SERVER_URL",
@@ -105,6 +106,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("NETWORK_PLUGIN", "none") // Testing with none to make sure the default isn't overriding or something like that with "azure"
 			os.Setenv("NETWORK_PLUGIN_MODE", "")
 			os.Setenv("NETWORK_POLICY", "env-network-policy")
+			os.Setenv("DNS_SERVICE_IP", "10.244.0.1")
 			os.Setenv("NODE_IDENTITIES", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2")
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 			os.Setenv("PROVISION_MODE", "bootstrappingclient")
@@ -145,6 +147,7 @@ var _ = Describe("Options", func() {
 				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
 				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
 				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
+				DNSServiceIP:                   lo.ToPtr("10.244.0.1"),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
 		})

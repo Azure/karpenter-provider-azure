@@ -44,6 +44,7 @@ type OptionsFields struct {
 	NodeBootstrappingServerURL     *string
 	VnetGUID                       *string
 	KubeletIdentityClientID        *string
+	DNSServiceIP                   *string
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -82,5 +83,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, ""),
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, ""),
 		SIGAccessTokenScope:            lo.FromPtrOr(options.SIGAccessTokenScope, ""),
+		DNSServiceIP:                   lo.FromPtrOr(options.DNSServiceIP, ""),
 	}
 }

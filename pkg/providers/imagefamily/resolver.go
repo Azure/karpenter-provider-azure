@@ -189,6 +189,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	}
 
 	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)
+	kubeletConfig.DNSServiceIP = options.FromContext(ctx).DNSServiceIP
 
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
