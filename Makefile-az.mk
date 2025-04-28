@@ -4,8 +4,9 @@ ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
 else
-  AZURE_RESOURCE_GROUP ?= $(COMMON_NAME)
-  AZURE_ACR_NAME ?= $(COMMON_NAME)
+  NAME_SUFFIX ?= $(shell git config user.email | cut -d'@' -f1)
+  AZURE_RESOURCE_GROUP ?= $(COMMON_NAME)$(NAME_SUFFIX)
+  AZURE_ACR_NAME ?= $(COMMON_NAME)$(NAME_SUFFIX)
 endif
 
 AZURE_SIG_SUBSCRIPTION_ID ?= $(AZURE_SUBSCRIPTION_ID)
@@ -18,6 +19,8 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 
 CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
+
+.DEFAULT_GOAL := help	# make without arguments will show help
 
 az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 

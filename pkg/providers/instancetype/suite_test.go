@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
@@ -36,7 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
-	. "knative.dev/pkg/logging/testing"
+	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
@@ -53,6 +54,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -180,6 +182,31 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 	Context("VM Creation Failures", func() {
+		It("should not reattempt creation of a vm thats been created before", func() {
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
+				},
+				Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
+			})
+			vmName := instance.GenerateResourceName(nodeClaim.Name)
+			vm := &armcompute.VirtualMachine{
+				Name:     lo.ToPtr(vmName),
+				ID:       lo.ToPtr(utils.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+				Location: lo.ToPtr(fake.Region),
+				Zones:    []*string{lo.ToPtr("fantasy-zone")}, // Makes sure we do not get a match from the existing set of zones
+				Properties: &armcompute.VirtualMachineProperties{
+					TimeCreated: lo.ToPtr(time.Now()),
+					HardwareProfile: &armcompute.HardwareProfile{
+						VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
+					},
+				},
+			}
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			_, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).ToNot(HaveOccurred()) // Without the GET in instance.CreateVirtualMachine this will fail
+		})
 		It("should delete the network interface on failure to create the vm", func() {
 			ErrMsg := "test error"
 			ErrCode := fmt.Sprint(http.StatusNotFound)

@@ -33,8 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"k8s.io/apimachinery/pkg/types"
-	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	// nolint SA1019 - deprecated package
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
@@ -43,12 +43,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 
+	"github.com/samber/lo"
+
 	cloudproviderevents "github.com/Azure/karpenter-provider-azure/pkg/cloudprovider/events"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/samber/lo"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -163,7 +164,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	if err != nil {
 		return nil, fmt.Errorf("getting vm name, %w", err)
 	}
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("id", vmName))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("id", vmName))
 	instance, err := c.instanceProvider.Get(ctx, vmName)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance, %w", err)
@@ -199,7 +200,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).With("nodeclaim", nodeClaim.Name))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclaim", nodeClaim.Name))
 
 	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
@@ -350,7 +351,7 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	}
 
 	if zone, err := utils.GetZone(vm); err != nil {
-		logging.FromContext(ctx).Warnf("Failed to get zone for VM %s, %v", *vm.Name, err)
+		log.FromContext(ctx).Info(fmt.Sprintf("WARN: Failed to get zone for VM %s, %v", *vm.Name, err))
 	} else {
 		// aks-node-validating-webhook protects v1.LabelTopologyZone, will be set elsewhere, so we use a different label
 		labels[v1alpha2.AlternativeLabelTopologyZone] = zone

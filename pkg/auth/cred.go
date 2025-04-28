@@ -22,7 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // expireEarlyTokenCredential is a wrapper around the azcore.TokenCredential that
@@ -51,7 +51,7 @@ func (w *expireEarlyTokenCredential) GetToken(ctx context.Context, options polic
 	if token.ExpiresOn.Before(twoHoursFromNow) {
 		return token, nil
 	}
-	logging.FromContext(ctx).Debug("adjusting token ExpiresOn")
+	log.FromContext(ctx).V(1).Info("adjusting token ExpiresOn")
 	// If the token expires in more than 2 hours, this means we are taking in a new token with a fresh 24h expiration time or one already in the cache that hasn't been modified by us, so we want to set that to two hours so
 	// we can refresh it early to avoid the polling bugs mentioned in the above issue
 	token.ExpiresOn = twoHoursFromNow
