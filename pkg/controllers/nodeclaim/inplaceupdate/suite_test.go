@@ -51,6 +51,7 @@ func TestInPlaceUpdate(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	ctx = options.ToContext(ctx, test.Options())
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	// ctx, stop = context.WithCancel(ctx)
