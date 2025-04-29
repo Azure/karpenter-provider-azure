@@ -80,6 +80,7 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
 	hack/validation/common.sh
+	hack/mutation/kubectl_get_ux.sh
 	cp pkg/apis/crds/* charts/karpenter-crd/templates
 	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
