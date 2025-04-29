@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/object"
-	"github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -120,7 +119,8 @@ var _ = Describe("InstanceType Provider", func() {
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		nodeClass.StatusConditions().SetTrue(status.ConditionReady)
+		test.ApplyDefaultStatus(nodeClass, env)
+
 		nodePool = coretest.NodePool(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
 				Template: karpv1.NodeClaimTemplate{
