@@ -154,7 +154,7 @@ type KubeletConfiguration struct {
 
 // AKSNodeClass is the Schema for the AKSNodeClass API
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories=karpenter,shortName={aksnc,aksncs}
+// +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories={karpenter,nap},shortName={aksnc,aksncs}
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 type AKSNodeClass struct {
