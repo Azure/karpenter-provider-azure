@@ -134,6 +134,11 @@ func NewDefaultProvider(
 // BeginCreate creates an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
 // Note that the returned instance may not be finished provisioning yet.
+// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due
+// to invalid user input, and similar, will have the error returned here.
+// Errors that occur on the "async side" of the VM create (after the request is accepted, or after polling the
+// VM create and while ) will be returned
+// from the VirtualMachinePromise.Wait() function.
 func (p *DefaultProvider) BeginCreate(
 	ctx context.Context,
 	nodeClass *v1alpha2.AKSNodeClass,
@@ -143,7 +148,8 @@ func (p *DefaultProvider) BeginCreate(
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vmPromise, err := p.beginLaunchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		// There may be orphan NICs
+		// There may be orphan NICs (created before promise started)
+		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
 			log.FromContext(ctx).Error(cleanupErr, fmt.Sprintf("failed to cleanup resources for node claim %s", nodeClaim.Name))
 		}
@@ -601,7 +607,10 @@ func (p *DefaultProvider) beginLaunchInstance(
 	return &VirtualMachinePromise{
 		Wait: func() error {
 			if result.Poller == nil {
-				// Poller is nil means the VM existed already and we're done
+				// Poller is nil means the VM existed already and we're done.
+				// TODO: if the VM doesn't have extensions this will still happen and we will have to
+				// TODO: wait for the TTL for the claim to be deleted and recreated. This will most likely
+				// TODO: happen during Karpenter pod restart.
 				return nil
 			}
 
@@ -614,8 +623,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
 				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
 				if err != nil {
-					// This should fall back to cleanupAzureResources
-					// TODO: Confirm this
+					// An error here is handled by CloudProvider create and calls instanceProvider.Delete (which cleans up the azure resources)
 					return err
 				}
 			}
