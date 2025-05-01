@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -51,21 +51,32 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("GPU", func() {
-	// Table test for gpu passing in different node classes
+	// Table test for GPU provisioning
 	DescribeTable("should provision one GPU node and one GPU Pod",
 		func(nodeClass *v1alpha2.AKSNodeClass) {
+			// Enable NodeRepair feature gate if running in-cluster
+			if env.InClusterController {
+				// One scenario we want to test, is that our node-auto-repair isn't too aggressive.
+				// If a gpu vm joins the cluster at 3 minutes, and takes 10 minutes to get ready, we don't want
+				// to GC the vm for node auto repair.
+				// By enabling the controller, the below assertions that the gpu workload eventually gets scheduled
+				// and runs means we didnt remove the not-ready vm
+				env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "NodeRepair=True"})
+			}
+
 			nodePool := env.DefaultNodePool(nodeClass)
 
-			// Relax default SKU family selector to allow for GPU nodes
+			// Relax SKU family selector to allow GPU SKUs
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 					Key:      v1alpha2.LabelSKUFamily,
-					Operator: v1.NodeSelectorOpExists,
-				}})
-			// Exclude some of the more expensive GPU SKUs
+					Operator: corev1.NodeSelectorOpExists,
+				},
+			})
+
 			nodePool.Spec.Limits = karpv1.Limits{
-				v1.ResourceCPU:                    resource.MustParse("25"),
-				v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+				corev1.ResourceCPU:                    resource.MustParse("25"),
+				corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
 			}
 
 			minstPodOptions := test.PodOptions{
@@ -75,8 +86,8 @@ var _ = Describe("GPU", func() {
 						"app": "samples-tf-mnist-demo",
 					},
 				},
-				ResourceRequirements: v1.ResourceRequirements{
-					Limits: v1.ResourceList{
+				ResourceRequirements: corev1.ResourceRequirements{
+					Limits: corev1.ResourceList{
 						"nvidia.com/gpu": resource.MustParse("1"),
 					},
 				},
@@ -89,8 +100,11 @@ var _ = Describe("GPU", func() {
 			devicePlugin := createNVIDIADevicePluginDaemonSet()
 			env.ExpectCreated(nodeClass, nodePool, deployment, devicePlugin)
 
-			// This test exercises the full lifecycle of the GPU Node, and validates it can successfully schedule GPU Resources
-			env.EventuallyExpectHealthyPodCountWithTimeout(time.Minute*15, labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.EventuallyExpectHealthyPodCountWithTimeout(
+				time.Minute*15,
+				labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels),
+				int(*deployment.Spec.Replicas),
+			)
 			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
 		},
 		Entry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass()),
@@ -110,44 +124,44 @@ func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {
 					"name": "nvidia-device-plugin-ds",
 				},
 			},
-			Template: v1.PodTemplateSpec{
+			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						"name": "nvidia-device-plugin-ds",
 					},
 				},
-				Spec: v1.PodSpec{
-					Tolerations: []v1.Toleration{
+				Spec: corev1.PodSpec{
+					Tolerations: []corev1.Toleration{
 						{
 							Key:      "nvidia.com/gpu",
-							Operator: v1.TolerationOpExists,
-							Effect:   v1.TaintEffectNoSchedule,
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoSchedule,
 						},
 					},
 					PriorityClassName: "system-node-critical",
-					Volumes: []v1.Volume{
+					Volumes: []corev1.Volume{
 						{
 							Name: "device-plugin",
-							VolumeSource: v1.VolumeSource{
-								HostPath: &v1.HostPathVolumeSource{
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
 									Path: "/var/lib/kubelet/device-plugins",
 								},
 							},
 						},
 					},
-					Containers: []v1.Container{
+					Containers: []corev1.Container{
 						{
 							Name:  "nvidia-device-plugin-ctr",
 							Image: "nvcr.io/nvidia/k8s-device-plugin:v0.14.1",
-							SecurityContext: &v1.SecurityContext{
+							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: lo.ToPtr(false),
-								Capabilities: &v1.Capabilities{
-									Drop: []v1.Capability{
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{
 										"ALL",
 									},
 								},
 							},
-							VolumeMounts: []v1.VolumeMount{
+							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "device-plugin",
 									MountPath: "/var/lib/kubelet/device-plugins",
@@ -160,3 +174,4 @@ func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {
 		},
 	}
 }
+
