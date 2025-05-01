@@ -10,6 +10,7 @@ spec:
   names:
     categories:
       - karpenter
+      - nap
     kind: NodeClaim
     listKind: NodeClaimList
     plural: nodeclaims
@@ -35,14 +36,6 @@ spec:
         - jsonPath: .metadata.creationTimestamp
           name: Age
           type: date
-        - jsonPath: .status.imageID
-          name: ImageID
-          priority: 1
-          type: string
-        - jsonPath: .status.providerID
-          name: ID
-          priority: 1
-          type: string
         - jsonPath: .metadata.labels.karpenter\.sh/nodepool
           name: NodePool
           priority: 1
@@ -397,14 +390,3 @@ spec:
       storage: true
       subresources:
         status: {}
-  conversion:
-    strategy: Webhook
-    webhook:
-      conversionReviewVersions:
-        - v1beta1
-        - v1
-      clientConfig:
-        service:
-          name: karpenter
-          namespace: kube-system
-          port: 8443

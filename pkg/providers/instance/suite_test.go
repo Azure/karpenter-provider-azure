@@ -22,13 +22,14 @@ import (
 	"testing"
 
 	"github.com/awslabs/operatorpkg/object"
-	opstatus "github.com/awslabs/operatorpkg/status"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clock "k8s.io/utils/clock/testing"
+
+	"k8s.io/client-go/tools/record"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -38,7 +39,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
-	"k8s.io/client-go/tools/record"
 
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -98,7 +98,8 @@ var _ = Describe("InstanceProvider", func() {
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+		test.ApplyDefaultStatus(nodeClass, env)
+
 		nodePool = coretest.NodePool(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
 				Template: karpv1.NodeClaimTemplate{
@@ -112,6 +113,7 @@ var _ = Describe("InstanceProvider", func() {
 				},
 			},
 		})
+
 		nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
@@ -126,6 +128,7 @@ var _ = Describe("InstanceProvider", func() {
 				},
 			},
 		})
+
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
 		cluster.Reset()
@@ -154,7 +157,7 @@ var _ = Describe("InstanceProvider", func() {
 			instanceTypes = lo.Filter(instanceTypes, func(i *corecloudprovider.InstanceType, _ int) bool { return i.Name == "Standard_D2_v2" })
 
 			// Since all the offerings are unavailable, this should return back an ICE error
-			instance, err := azEnv.InstanceProvider.Create(ctx, nodeClass, nodeClaim, instanceTypes)
+			instance, err := azEnv.InstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(instance).To(BeNil())
 		},
