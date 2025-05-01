@@ -34,6 +34,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 	klog "k8s.io/klog/v2"
@@ -186,7 +187,7 @@ func getVirtualMachinesClientOptions(ctx context.Context) (*armpolicy.ClientOpti
 		return &armpolicy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
 	}
 	auxPolicy := auth.NewAuxiliaryTokenPolicy(token)
-
+	log.FromContext(ctx).V(1).Info("Will use auxiliary token policy for creating virtual machines")
 	return &armpolicy.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			PerRetryPolicies: []policy.Policy{&auxPolicy},
