@@ -21,12 +21,14 @@ import (
 	"fmt"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	opstatus "github.com/awslabs/operatorpkg/status"
+	"github.com/blang/semver/v4"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/karpenter/pkg/test"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
@@ -45,10 +47,26 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 		options.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2204ImageFamily)
 	}
 	return &v1alpha2.AKSNodeClass{
-		ObjectMeta: test.ObjectMeta(options.ObjectMeta),
+		ObjectMeta: coretest.ObjectMeta(options.ObjectMeta),
 		Spec:       options.Spec,
 		Status:     options.Status,
 	}
+}
+
+func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environment) {
+	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
+	nodeClass.Status.KubernetesVersion = testK8sVersion
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
+	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+
+	conditions := []opstatus.Condition{}
+	for _, condition := range nodeClass.GetConditions() {
+		// Using the magic number 1, as it appears the Generation is always equal to 1 on the NodeClass in testing. If that appears to not be the case,
+		// than we should add some function for allows bumps as needed to match.
+		condition.ObservedGeneration = 1
+		conditions = append(conditions, condition)
+	}
+	nodeClass.SetConditions(conditions)
 }
 
 func AKSNodeClassFieldIndexer(ctx context.Context) func(cache.Cache) error {

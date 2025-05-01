@@ -29,6 +29,7 @@ import (
 
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -85,7 +86,7 @@ func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Env
 }
 
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
-	testOptions := Options()
+	testOptions := options.FromContext(ctx)
 
 	// API
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
