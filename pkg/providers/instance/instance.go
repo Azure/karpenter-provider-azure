@@ -26,6 +26,7 @@ import (
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
@@ -69,8 +70,13 @@ var (
 
 type Resource = map[string]interface{}
 
+type VirtualMachinePromise struct {
+	VM   *armcompute.VirtualMachine
+	Wait func() error
+}
+
 type Provider interface {
-	Create(context.Context, *v1alpha2.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, error)
+	BeginCreate(context.Context, *v1alpha2.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
@@ -125,23 +131,31 @@ func NewDefaultProvider(
 	}
 }
 
-// Create an instance given the constraints.
+// BeginCreate creates an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
-func (p *DefaultProvider) Create(
+// Note that the returned instance may not be finished provisioning yet.
+// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due
+// to invalid user input, and similar, will have the error returned here.
+// Errors that occur on the "async side" of the VM create (after the request is accepted, or after polling the
+// VM create and while ) will be returned
+// from the VirtualMachinePromise.Wait() function.
+func (p *DefaultProvider) BeginCreate(
 	ctx context.Context,
 	nodeClass *v1alpha2.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
-) (*armcompute.VirtualMachine, error) {
+) (*VirtualMachinePromise, error) {
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
-	vm, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+	vmPromise, err := p.beginLaunchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		// Currently, CSE errors will lead to here
+		// There may be orphan NICs (created before promise started)
+		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
 			log.FromContext(ctx).Error(cleanupErr, fmt.Sprintf("failed to cleanup resources for node claim %s", nodeClaim.Name))
 		}
 		return nil, err
 	}
+	vm := vmPromise.VM
 	zone, err := utils.GetZone(vm)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "")
@@ -154,7 +168,7 @@ func (p *DefaultProvider) Create(
 		"zone", zone,
 		"capacity-type", GetCapacityType(vm)).Info("launched new instance")
 
-	return vm, nil
+	return vmPromise, nil
 }
 
 func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
@@ -256,7 +270,7 @@ func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmN
 	return nil
 }
 
-func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool) (err error) {
+func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool) error {
 	vmExt := p.getCSExtension(cse, isWindows)
 	vmExtName := *vmExt.Name
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine CSE for %s", vmName))
@@ -364,12 +378,13 @@ type createVMOptions struct {
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
-func newVMObject(opts *createVMOptions) armcompute.VirtualMachine {
+func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	if opts.LaunchTemplate.IsWindows {
-		return armcompute.VirtualMachine{} // TODO(Windows)
+		return &armcompute.VirtualMachine{} // TODO(Windows)
 	}
 
-	vm := armcompute.VirtualMachine{
+	vm := &armcompute.VirtualMachine{
+		Name:     lo.ToPtr(opts.VMName), // TODO: I think it's safe to set this, even though it's read only
 		Location: lo.ToPtr(opts.Location),
 		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
@@ -474,8 +489,13 @@ func setNodePoolNameTag(tags map[string]*string, nodeClaim *karpv1.NodeClaim) {
 	}
 }
 
+type createResult struct {
+	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
+	VM     *armcompute.VirtualMachine
+}
+
 // createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists, which means opts is not guaranteed except VMName
-func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*armcompute.VirtualMachine, error) {
+func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*createResult, error) {
 	// We assume that if a vm exists, we successfully created it with the right parameters from the nodeclaims during another run before a restart.
 	// there are some non-deterministic properties that may change.
 	// Zones: zones are non-detrminsitic as we do a random pick out of zones on the nodeclaim that satisfy the workload requirements.
@@ -490,7 +510,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 	resp, err := p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, opts.VMName, nil)
 	// If status == ok, we want to return the existing vmm
 	if err == nil {
-		return &resp.VirtualMachine, nil
+		return &createResult{VM: &resp.VirtualMachine}, nil
 	}
 	// if status != ok, and for a reason other than we did not find the vm
 	azErr := sdkerrors.IsResponseError(err)
@@ -500,21 +520,23 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 	vm := newVMObject(opts)
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine %s (%s)", opts.VMName, opts.InstanceType.Name))
 
-	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, opts.VMName, vm)
+	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
+		log.FromContext(ctx).Error(err, fmt.Sprintf("Creating virtual machine %q failed", opts.VMName))
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
-
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Created virtual machine %s", *result.ID))
-	return result, nil
+	return &createResult{Poller: poller, VM: vm}, nil
 }
 
-func (p *DefaultProvider) launchInstance(
+// beginLaunchInstance starts the launch of a VM instance.
+// The returned VirtualMachinePromise must be called to gather any errors
+// that are retrieved during async provisioning, as well as to complete the provisioning process.
+func (p *DefaultProvider) beginLaunchInstance(
 	ctx context.Context,
 	nodeClass *v1alpha2.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
-) (*armcompute.VirtualMachine, error) {
+) (*VirtualMachinePromise, error) {
 	instanceType, capacityType, zone := p.pickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
 	if instanceType == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
@@ -536,6 +558,10 @@ func (p *DefaultProvider) launchInstance(
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
+	// TODO: Not returning after launching this LRO because
+	// TODO: doing so would bypass the capacity and other errors that are currently handled by
+	// TODO: core pkg/controllers/nodeclaim/lifecycle/controller.go - in particular, there are metrics/events
+	// TODO: emitted in capacity failure cases that we probably want.
 	nicReference, err := p.createNetworkInterface(
 		ctx,
 		&createNICOptions{
@@ -552,7 +578,7 @@ func (p *DefaultProvider) launchInstance(
 		return nil, err
 	}
 
-	vm, err := p.createVirtualMachine(ctx, &createVMOptions{
+	result, err := p.createVirtualMachine(ctx, &createVMOptions{
 		VMName:         resourceName,
 		NicReference:   nicReference,
 		Zone:           zone,
@@ -571,19 +597,46 @@ func (p *DefaultProvider) launchInstance(
 		return nil, azErr
 	}
 
-	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-		err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
-		if err != nil {
-			// This should fall back to cleanupAzureResources
-			return nil, err
-		}
-	}
+	// Patch the VM object to fill out a few fields that are needed later.
+	// This is a bit of a hack that saves us doing a GET now.
+	// The reason to avoid a GET is that it can fail, and if it does the future above will be lost,
+	// which we don't want.
+	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
+	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
 
-	err = p.createAKSIdentifyingExtension(ctx, resourceName)
-	if err != nil {
-		return nil, err
-	}
-	return vm, nil
+	return &VirtualMachinePromise{
+		Wait: func() error {
+			if result.Poller == nil {
+				// Poller is nil means the VM existed already and we're done.
+				// TODO: if the VM doesn't have extensions this will still happen and we will have to
+				// TODO: wait for the TTL for the claim to be deleted and recreated. This will most likely
+				// TODO: happen during Karpenter pod restart.
+				return nil
+			}
+
+			_, err = result.Poller.PollUntilDone(ctx, nil)
+			if err != nil {
+				azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+				return azErr
+			}
+
+			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
+				if err != nil {
+					// An error here is handled by CloudProvider create and calls instanceProvider.Delete (which cleans up the azure resources)
+					return err
+				}
+			}
+
+			err = p.createAKSIdentifyingExtension(ctx, resourceName)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
+		VM: result.VM,
+	}, nil
 }
 
 // nolint:gocyclo
@@ -729,7 +782,7 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	return nil, "", ""
 }
 
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) (err error) {
+func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) error {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		log.FromContext(ctx).Error(vmErr, fmt.Sprintf("virtualMachine.Delete for %s failed", resourceName))
