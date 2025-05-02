@@ -27,6 +27,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -40,7 +41,8 @@ func init() {
 }
 
 const (
-	CiliumAgentNotReadyTaint = "node.cilium.io/agent-not-ready"
+	CiliumAgentNotReadyTaint    = "node.cilium.io/agent-not-ready"
+	EphemeralInitContainerImage = "alpine"
 )
 
 type Environment struct {
@@ -54,6 +56,7 @@ type Environment struct {
 	ClusterName          string
 	ClusterResourceGroup string
 
+	vmClient                *armcompute.VirtualMachinesClient
 	VNETClient              *armnetwork.VirtualNetworksClient
 	InterfacesClient        *armnetwork.InterfacesClient
 	AKSManagedClusterClient *containerservice.ManagedClustersClient
@@ -74,6 +77,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.VNETClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.InterfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.AKSManagedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
