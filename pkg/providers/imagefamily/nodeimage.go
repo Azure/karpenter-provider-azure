@@ -65,7 +65,6 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 		log.FromContext(ctx).V(1).Info("Using SIG to list node images")
 		nodeImages, err = p.listSIG(ctx, supportedImages)
 		if err != nil {
-
 			return []NodeImage{}, err
 		}
 	} else {
