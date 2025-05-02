@@ -19,6 +19,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,9 +30,32 @@ import (
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 )
+
+func (env *Environment) GetVM(nodeName string) armcompute.VirtualMachine {
+	GinkgoHelper()
+	node := env.Environment.GetNode(nodeName)
+	return env.GetVMByName(env.ExpectParsedProviderID(node.Spec.ProviderID))
+}
+
+func (env *Environment) GetVMSKU(nodeName string) string {
+	GinkgoHelper()
+	vm := env.GetVM(nodeName)
+	Expect(vm.Properties).ToNot(BeNil())
+	Expect(vm.Properties.HardwareProfile).ToNot(BeNil())
+	Expect(vm.Properties.HardwareProfile.VMSize).ToNot(BeNil())
+	return string(*vm.Properties.HardwareProfile.VMSize)
+}
+
+func (env *Environment) GetVMByName(vmName string) armcompute.VirtualMachine {
+	GinkgoHelper()
+	response, err := env.vmClient.Get(env.Context, env.NodeResourceGroup, vmName, nil)
+	Expect(err).ToNot(HaveOccurred())
+	return response.VirtualMachine
+}
 
 func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 	GinkgoHelper()
@@ -107,4 +131,35 @@ func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgrad
 	res, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
 	return res.ManagedCluster
+}
+
+func (env *Environment) ExpectParsedProviderID(providerID string) string {
+	GinkgoHelper()
+	providerIDSplit := strings.Split(providerID, "/")
+	Expect(len(providerIDSplit)).ToNot(Equal(0))
+	return providerIDSplit[len(providerIDSplit)-1]
+}
+
+func (env *Environment) K8sVersion() string {
+	GinkgoHelper()
+	return env.K8sVersionWithOffset(0)
+}
+
+func (env *Environment) K8sVersionWithOffset(offset int) string {
+	GinkgoHelper()
+	serverVersion, err := env.KubeClient.Discovery().ServerVersion()
+	Expect(err).To(BeNil())
+	minorVersion, err := strconv.Atoi(strings.TrimSuffix(serverVersion.Minor, "+"))
+	Expect(err).To(BeNil())
+	// Choose a minor version one lesser than the server's minor version. This ensures that we choose an AMI for
+	// this test that wouldn't be selected as Karpenter's SSM default (therefore avoiding false positives), and also
+	// ensures that we aren't violating version skew.
+	return fmt.Sprintf("%s.%d", serverVersion.Major, minorVersion-offset)
+}
+
+func (env *Environment) K8sMinorVersion() int {
+	GinkgoHelper()
+	version, err := strconv.Atoi(strings.Split(env.K8sVersion(), ".")[1])
+	Expect(err).ToNot(HaveOccurred())
+	return version
 }
