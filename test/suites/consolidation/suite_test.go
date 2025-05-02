@@ -101,6 +101,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			lastPodEventTime := nodeClaim.Status.LastPodEventTime
 
 			// wait 10 seconds so that we don't run into the de-dupe timeout
+			// https://github.com/kubernetes-sigs/karpenter/blob/9daeda1ffdcead28c99d148d5d2a7ccecd9ad58f/pkg/controllers/nodeclaim/podevents/controller.go#L41-L44
 			time.Sleep(10 * time.Second)
 
 			dep.Spec.Replicas = lo.ToPtr[int32](4)
