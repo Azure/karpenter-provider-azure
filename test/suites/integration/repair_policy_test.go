@@ -47,7 +47,7 @@ var _ = Describe("Repair Policy", func() {
 		unhealthyCondition = corev1.NodeCondition{
 			Type:               corev1.NodeReady,
 			Status:             corev1.ConditionFalse,
-			LastTransitionTime: metav1.Time{Time: time.Now().Add(-31 * time.Minute)},
+			LastTransitionTime: metav1.Time{Time: time.Now().Add(-11 * time.Minute)},
 		}
 		numPods = 1
 		// Add pods with a do-not-disrupt annotation so that we can check node metadata before we disrupt
@@ -83,12 +83,12 @@ var _ = Describe("Repair Policy", func() {
 		Entry("Node Ready False", corev1.NodeCondition{
 			Type:               corev1.NodeReady,
 			Status:             corev1.ConditionFalse,
-			LastTransitionTime: metav1.Time{Time: time.Now().Add(-31 * time.Minute)},
+			LastTransitionTime: metav1.Time{Time: time.Now().Add(-11 * time.Minute)},
 		}),
 		Entry("Node Ready Unknown", corev1.NodeCondition{
 			Type:               corev1.NodeReady,
 			Status:             corev1.ConditionUnknown,
-			LastTransitionTime: metav1.Time{Time: time.Now().Add(-31 * time.Minute)},
+			LastTransitionTime: metav1.Time{Time: time.Now().Add(-11 * time.Minute)},
 		}),
 	)
 	It("should ignore disruption budgets", func() {
