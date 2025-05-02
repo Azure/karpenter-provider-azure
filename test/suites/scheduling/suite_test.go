@@ -80,6 +80,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			// we don't support Windows yet
 			corev1.LabelWindowsBuild,
 			// TODO: restore when we support zone selectors without overscaling
+			corev1.LabelTopologyZone,
 			corev1.LabelFailureDomainBetaZone,
 			"topology.disk.csi.azure.com/zone",
 			// these are both unreliable and redundant, should be removed from support; won't be tested
