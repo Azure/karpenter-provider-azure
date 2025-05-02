@@ -51,7 +51,6 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("GPU", func() {
-	// Table test for GPU provisioning
 	DescribeTable("should provision one GPU node and one GPU Pod",
 		func(nodeClass *v1alpha2.AKSNodeClass) {
 			// Enable NodeRepair feature gate if running in-cluster
@@ -63,10 +62,7 @@ var _ = Describe("GPU", func() {
 				// and runs means we didnt remove the not-ready vm
 				env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "NodeRepair=True"})
 			}
-
 			nodePool := env.DefaultNodePool(nodeClass)
-
-			// Relax SKU family selector to allow GPU SKUs
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 					Key:      v1alpha2.LabelSKUFamily,
@@ -174,4 +170,3 @@ func createNVIDIADevicePluginDaemonSet() *appsv1.DaemonSet {
 		},
 	}
 }
-
