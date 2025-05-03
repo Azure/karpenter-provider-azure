@@ -261,58 +261,6 @@ func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, 
 	return nil
 }
 
-func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
-	var ipv4BackendPools []*armnetwork.BackendAddressPool
-	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
-		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
-			ID: &poolID,
-		})
-	}
-
-	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(
-		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
-
-	enableAcceleratedNetworking := false
-	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
-		enableAcceleratedNetworking = true
-	}
-	nic := armnetwork.Interface{
-		Location: lo.ToPtr(p.location),
-		Properties: &armnetwork.InterfacePropertiesFormat{
-			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
-				{
-					Name: &opts.NICName,
-					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(true),
-						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-
-						LoadBalancerBackendAddressPools: ipv4BackendPools,
-					},
-				},
-			},
-			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
-			EnableIPForwarding:          lo.ToPtr(false),
-		},
-	}
-	if opts.NetworkPlugin == consts.NetworkPluginAzure && opts.NetworkPluginMode != consts.NetworkPluginModeOverlay {
-		// AzureCNI without overlay requires secondary IPs, for pods. (These IPs are not included in backend address pools.)
-		// NOTE: Unlike AKS RP, this logic does not reduce secondary IP count by the number of expected hostNetwork pods, favoring simplicity instead
-		for i := 1; i < int(opts.MaxPods); i++ {
-			nic.Properties.IPConfigurations = append(
-				nic.Properties.IPConfigurations,
-				&armnetwork.InterfaceIPConfiguration{
-					Name: lo.ToPtr(fmt.Sprintf("ipconfig%d", i)),
-					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
-						Primary:                   lo.ToPtr(false),
-						PrivateIPAllocationMethod: lo.ToPtr(armnetwork.IPAllocationMethodDynamic),
-					},
-				},
-			)
-		}
-	}
-	return nic
-}
-
 func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
@@ -425,7 +373,6 @@ func createNetworkInterfaceConfiguration(opts *createVMOptions) *armcompute.Virt
 // setNetworkProfile creates a network profile for the VM with the NIC configuration
 func setNetworkProfile(vmProperties *armcompute.VirtualMachineProperties, opts *createVMOptions) {
 	nicConfig := createNetworkInterfaceConfiguration(opts)
-
 	networkProfile := &armcompute.NetworkProfile{
 		NetworkAPIVersion: lo.ToPtr(armcompute.NetworkAPIVersionTwoThousandTwenty1101),
 		NetworkInterfaceConfigurations: []*armcompute.VirtualMachineNetworkInterfaceConfiguration{
@@ -441,7 +388,6 @@ func setNetworkProfile(vmProperties *armcompute.VirtualMachineProperties, opts *
 		},
 	}
 	vmProperties.NetworkProfile = networkProfile
-	return
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -758,14 +704,6 @@ func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType
 
 func cpuLimitIsZero(err error) bool {
 	return strings.Contains(err.Error(), "Current Limit: 0")
-}
-
-func (p *DefaultProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
-	// set tags
-	nic.Tags = template.Tags
-	for _, ipConfig := range nic.Properties.IPConfigurations {
-		ipConfig.Properties.Subnet = &armnetwork.Subnet{ID: &template.SubnetID}
-	}
 }
 
 func (p *DefaultProvider) getLaunchTemplate(

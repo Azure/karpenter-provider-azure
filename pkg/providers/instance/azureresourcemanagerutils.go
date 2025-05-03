@@ -75,19 +75,6 @@ func createVirtualMachineExtension(ctx context.Context, client VirtualMachineExt
 	return &res.VirtualMachineExtension, nil
 }
 
-func createNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string, nic armnetwork.Interface) (*armnetwork.Interface, error) {
-	poller, err := client.BeginCreateOrUpdate(ctx, rg, nicName, nic, nil)
-	if err != nil {
-		return nil, err
-	}
-	res, err := poller.PollUntilDone(ctx, nil)
-
-	if err != nil {
-		return nil, err
-	}
-	return &res.Interface, nil
-}
-
 func deleteNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string) error {
 	poller, err := client.BeginDelete(ctx, rg, nicName, nil)
 	if err != nil {

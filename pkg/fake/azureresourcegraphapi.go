@@ -42,8 +42,7 @@ type AzureResourceGraphBehavior struct {
 var _ instance.AzureResourceGraphAPI = &AzureResourceGraphAPI{}
 
 type AzureResourceGraphAPI struct {
-	vmListQuery  string
-	nicListQuery string
+	vmListQuery string
 	AzureResourceGraphBehavior
 }
 

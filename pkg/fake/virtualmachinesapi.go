@@ -257,6 +257,7 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 
 // nicFromNetworkProfile converts an armcompute.NetworkProfile (from a Get VM call)
 // into a fully populated armnetwork.Interface object (sans location/tags).
+// nolint:gocyclo
 func nicFromNetworkProfile(vmNetworkProfile *armcompute.NetworkProfile) *armnetwork.Interface {
 	if vmNetworkProfile == nil || len(vmNetworkProfile.NetworkInterfaceConfigurations) == 0 {
 		return nil
