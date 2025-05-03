@@ -55,11 +55,10 @@ var _ = Describe("GPU", func() {
 		func(nodeClass *v1alpha2.AKSNodeClass) {
 			// Enable NodeRepair feature gate if running in-cluster
 			if env.InClusterController {
-				// One scenario we want to test, is that our node-auto-repair isn't too aggressive.
-				// If a gpu vm joins the cluster at 3 minutes, and takes 10 minutes to get ready, we don't want
-				// to GC the vm for node auto repair.
-				// By enabling the controller, the below assertions that the gpu workload eventually gets scheduled
-				// and runs means we didnt remove the not-ready vm
+				// Have Node Repair enabled to validate it does not interfere with
+				// provisioning of GPU VMs, which can take longer to become Ready.
+				// The assertions on healthy workload and created node count
+				// already rule out node repair scenario.
 				env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "NodeRepair=True"})
 			}
 			nodePool := env.DefaultNodePool(nodeClass)
