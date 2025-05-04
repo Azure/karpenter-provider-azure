@@ -1035,3 +1035,19 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 		return p, true
 	})...)
 }
+
+func (env *Environment) IsCilium() bool {
+	GinkgoHelper()
+
+	dsList := &appsv1.DaemonSetList{}
+	Expect(env.Client.List(env.Context, dsList,
+		client.InNamespace("kube-system"),
+	)).To(Succeed())
+
+	for _, ds := range dsList.Items {
+		if strings.HasPrefix(ds.Name, "cilium") {
+			return true
+		}
+	}
+	return false
+}
