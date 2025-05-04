@@ -10,6 +10,7 @@ spec:
   names:
     categories:
     - karpenter
+    - nap
     kind: AKSNodeClass
     listKind: AKSNodeClassList
     plural: aksnodeclasses

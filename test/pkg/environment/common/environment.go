@@ -51,6 +51,9 @@ type ContextKey string
 
 const (
 	GitRefContextKey = ContextKey("gitRef")
+
+	NetworkDataplaneCilium = "cilium"
+	NetworkDataplaneAzure  = "azure"
 )
 
 type Environment struct {
@@ -62,8 +65,11 @@ type Environment struct {
 	KubeClient kubernetes.Interface
 	Monitor    *Monitor
 
+	// Resolved from cluster
 	InClusterController bool
-	StartingNodeCount   int
+	NetworkDataplane    string
+
+	StartingNodeCount int
 }
 
 func NewEnvironment(t *testing.T) *Environment {
@@ -87,6 +93,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		Monitor:    NewMonitor(ctx, client),
 	}
 	env.InClusterController = env.getInClusterController()
+	env.NetworkDataplane = lo.Ternary(env.IsCilium(), NetworkDataplaneCilium, NetworkDataplaneAzure)
 	return env
 }
 
@@ -188,17 +195,18 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 // It has to be applied to any custom node pools constructed by tests;
 // is already applied by default test NodePool constructors.
 func (env *Environment) AdaptToClusterConfig(nodePool *karpv1.NodePool) *karpv1.NodePool {
-	// TODO: make this conditional on Cilium
-	// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
-	nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
-		Key:    "node.cilium.io/agent-not-ready",
-		Effect: corev1.TaintEffectNoExecute,
-		Value:  "true",
-	})
-	// required for Karpenter to predict overhead from cilium DaemonSet
-	nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-		"kubernetes.azure.com/ebpf-dataplane": "cilium",
-	})
+	if env.NetworkDataplane == NetworkDataplaneCilium {
+		// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+		nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
+			Key:    "node.cilium.io/agent-not-ready",
+			Effect: corev1.TaintEffectNoExecute,
+			Value:  "true",
+		})
+		// required for Karpenter to predict overhead from cilium DaemonSet
+		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+			"kubernetes.azure.com/ebpf-dataplane": "cilium",
+		})
+	}
 	return nodePool
 }
 
