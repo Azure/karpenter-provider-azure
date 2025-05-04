@@ -277,6 +277,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		})
 		// TODO: restore when we support zonal topology spread without overscaling
 		PIt("should provision three nodes for a zonal topology spread", func() {
+
 			// one pod per zone
 			podLabels := map[string]string{"test": "zonal-spread"}
 			deployment := test.Deployment(test.DeploymentOptions{
