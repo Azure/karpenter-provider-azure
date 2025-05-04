@@ -96,9 +96,9 @@ var _ = Describe("Drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      corev1.LabelInstanceTypeStable,
+						Key:      v1alpha2.LabelSKUCPU,
 						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"Standard_DS4_v2"},
+						Values:   []string{"8"},
 					},
 				},
 			)
@@ -118,7 +118,7 @@ var _ = Describe("Drift", func() {
 						},
 						Labels: map[string]string{"app": "large-app"},
 					},
-					// Each Standard_DS4_v2 has 8 cpu, so each node should fit 2 pods.
+					// Each node has 8 cpus, so should fit 2 pods.
 					ResourceRequirements: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU: resource.MustParse("3"),
@@ -160,9 +160,9 @@ var _ = Describe("Drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      corev1.LabelInstanceTypeStable,
+						Key:      v1alpha2.LabelSKUCPU,
 						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"Standard_DS4_v2"},
+						Values:   []string{"8"},
 					},
 				},
 			)
@@ -182,7 +182,7 @@ var _ = Describe("Drift", func() {
 						},
 						Labels: map[string]string{"app": "large-app"},
 					},
-					// Each Standard_DS4_v2 has 8 cpu, so each node should fit no more than 3 pods.
+					// Each node has 8 cpu, so should fit no more than 3 pods.
 					ResourceRequirements: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
 							corev1.ResourceCPU: resource.MustParse("2100m"),
@@ -434,10 +434,10 @@ var _ = Describe("Drift", func() {
 		}),
 		Entry("NodeRequirements", karpv1.NodeClaimTemplate{
 			Spec: karpv1.NodeClaimTemplateSpec{
-				// since this will overwrite the default requirements, add instance category and family selectors back into requirements
+				// since this will overwrite the default requirements, add SKU family selector back into requirements
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}}},
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: corev1.LabelInstanceTypeStable, Operator: corev1.NodeSelectorOpIn, Values: []string{"Standard_DS4_v2"}}},
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: v1alpha2.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}}},
 				},
 			},
 		}),
