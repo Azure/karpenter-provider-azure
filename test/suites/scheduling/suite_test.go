@@ -83,8 +83,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelTopologyZone,
 			corev1.LabelFailureDomainBetaZone,
 			"topology.disk.csi.azure.com/zone",
-			// these are both unreliable and redundant, should be removed from support; won't be tested
-			v1alpha2.LabelSKUAccelerator,
+			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1alpha2.LabelSKUGPUName,
 			// TODO: review the use of "kubernetes.azure.com/cluster"
 			v1alpha2.AKSLabelCluster,
