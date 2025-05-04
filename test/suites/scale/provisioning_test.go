@@ -39,7 +39,7 @@ import (
 
 const testGroup = "provisioning"
 
-var _ = FDescribe("Provisioning", Label(debug.NoWatch), Label(debug.NoEvents), func() {
+var _ = Describe("Provisioning", Label(debug.NoWatch), Label(debug.NoEvents), func() {
 	var nodePool *karpv1.NodePool
 	var nodeClass *v1alpha2.AKSNodeClass
 	var deployment *appsv1.Deployment

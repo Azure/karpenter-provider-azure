@@ -68,7 +68,7 @@ var disableProvisioningLimits = karpv1.Limits{
 	corev1.ResourceMemory: resource.MustParse("0Gi"),
 }
 
-var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), func() {
+var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), func() {
 	var nodePool *karpv1.NodePool
 	var nodeClass *v1alpha2.AKSNodeClass
 	var deployment *appsv1.Deployment
