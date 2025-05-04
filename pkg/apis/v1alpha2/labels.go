@@ -41,6 +41,7 @@ func init() {
 
 		LabelSKUEncryptionAtHostSupported,
 
+		LabelSKUGPUName,
 		LabelSKUGPUManufacturer,
 		LabelSKUGPUCount,
 
@@ -90,6 +91,7 @@ var (
 	LabelSKUEncryptionAtHostSupported = Group + "/sku-encryptionathost-capable" // sku.EncryptionAtHostSupported
 
 	// GPU labels
+	LabelSKUGPUName         = Group + "/sku-gpu-name"         // ie GPU Accelerator type we parse from vmSize
 	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // ie NVIDIA, AMD, etc
 	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // ie 16, 32, etc
 
