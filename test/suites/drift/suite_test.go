@@ -103,8 +103,6 @@ var _ = Describe("Drift", func() {
 				},
 			)
 			// We're expecting to create 3 nodes, so normally one would expect to see 2 nodes deleting at one time.
-			// Due to synchronous nature of current implementation, only 1 node is expected to be disrupted/deleted at a time.
-			// The test is still written to expect maximum of 2 nodes disruped/deleted at a time.
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes: "50%",
 			}}
@@ -167,8 +165,6 @@ var _ = Describe("Drift", func() {
 				},
 			)
 			// We're expecting to create 3 nodes, so we'll expect to see at most 2 nodes deleting at one time.
-			// Due to synchronous nature of current implementation, only 1 node is expected to be disrupted/deleted at a time.
-			// The test is still written to expect maximum of 2 nodes disruped/deleted at a time.
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes: "50%",
 			}}
@@ -236,8 +232,6 @@ var _ = Describe("Drift", func() {
 			appLabels := map[string]string{"app": "large-app"}
 			nodePool.Labels = appLabels
 			// We're expecting to create 5 nodes, so we'll expect to see at most 3 nodes deleting at one time.
-			// Due to synchronous nature of current implementation, only 1 node is expected to be disrupted/deleted at a time.
-			// The test is still written to expect maximum of 3 nodes disruped/deleted at a time.
 			nodePool.Spec.Disruption.Budgets = []karpv1.Budget{{
 				Nodes: "3",
 			}}
@@ -268,7 +262,7 @@ var _ = Describe("Drift", func() {
 			// Check that all deployment pods are online
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
 
-			By("cordoning and adding finalizer to the nodes")
+			By("adding finalizer to the nodes")
 			// Add a finalizer to each node so that we can stop termination disruptions
 			for _, node := range originalNodes {
 				Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(node), node)).To(Succeed())
@@ -279,8 +273,14 @@ var _ = Describe("Drift", func() {
 			By("drifting the nodepool")
 			nodePool.Spec.Template.Annotations = lo.Assign(nodePool.Spec.Template.Annotations, map[string]string{"test-annotation": "drift"})
 			env.ExpectUpdated(nodePool)
+
+			By("waiting for disruption to start")
+			env.EventuallyExpectTaintedNodeCount(">", 0)
+
+			By("checking max 3 out of 5 nodes to be disrupted at any time")
 			env.ConsistentlyExpectDisruptionsUntilNoneLeft(5, 3, 15*time.Minute)
 
+			By("removing testing finalizes on original nodes and nodeclaims")
 			for _, node := range originalNodes {
 				Expect(env.ExpectTestingFinalizerRemoved(node)).To(Succeed())
 			}
@@ -291,8 +291,10 @@ var _ = Describe("Drift", func() {
 			// Eventually expect all the nodes to be rolled and completely removed
 			// Since this completes the disruption operation, this also ensures that we aren't leaking nodes into subsequent
 			// tests since nodeclaims that are actively replacing but haven't brought-up nodes yet can register nodes later
+			By("checking all nodes are rolled and completely removed")
 			env.EventuallyExpectNotFound(lo.Map(originalNodes, func(n *corev1.Node, _ int) client.Object { return n })...)
 			env.EventuallyExpectNotFound(lo.Map(originalNodeClaims, func(n *karpv1.NodeClaim, _ int) client.Object { return n })...)
+			By("checking the final count of nodes and nodeclaims")
 			env.ExpectNodeClaimCount("==", 5)
 			env.ExpectNodeCount("==", 5)
 		})
