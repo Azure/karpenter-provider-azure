@@ -26,6 +26,7 @@ import (
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
@@ -69,8 +70,13 @@ var (
 
 type Resource = map[string]interface{}
 
+type VirtualMachinePromise struct {
+	VM   *armcompute.VirtualMachine
+	Wait func() error
+}
+
 type Provider interface {
-	Create(context.Context, *v1alpha2.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*armcompute.VirtualMachine, error)
+	BeginCreate(context.Context, *v1alpha2.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
@@ -125,23 +131,31 @@ func NewDefaultProvider(
 	}
 }
 
-// Create an instance given the constraints.
+// BeginCreate creates an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
-func (p *DefaultProvider) Create(
+// Note that the returned instance may not be finished provisioning yet.
+// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due
+// to invalid user input, and similar, will have the error returned here.
+// Errors that occur on the "async side" of the VM create (after the request is accepted, or after polling the
+// VM create and while ) will be returned
+// from the VirtualMachinePromise.Wait() function.
+func (p *DefaultProvider) BeginCreate(
 	ctx context.Context,
 	nodeClass *v1alpha2.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
-) (*armcompute.VirtualMachine, error) {
+) (*VirtualMachinePromise, error) {
 	instanceTypes = orderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
-	vm, err := p.launchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
+	vmPromise, err := p.beginLaunchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		// Currently, CSE errors will lead to here
+		// There may be orphan NICs (created before promise started)
+		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
 			log.FromContext(ctx).Error(cleanupErr, fmt.Sprintf("failed to cleanup resources for node claim %s", nodeClaim.Name))
 		}
 		return nil, err
 	}
+	vm := vmPromise.VM
 	zone, err := utils.GetZone(vm)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "")
@@ -154,7 +168,7 @@ func (p *DefaultProvider) Create(
 		"zone", zone,
 		"capacity-type", GetCapacityType(vm)).Info("launched new instance")
 
-	return vm, nil
+	return vmPromise, nil
 }
 
 func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
@@ -256,7 +270,7 @@ func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmN
 	return nil
 }
 
-func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool) (err error) {
+func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool) error {
 	vmExt := p.getCSExtension(cse, isWindows)
 	vmExtName := *vmExt.Name
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine CSE for %s", vmName))
@@ -347,38 +361,41 @@ func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *crea
 	return *res.ID, nil
 }
 
-// newVMObject is a helper func that creates a new armcompute.VirtualMachine
-// from key input.
-func newVMObject(
-	vmName,
-	nicReference,
-	zone,
-	capacityType,
-	location,
-	sshPublicKey string,
-	nodeIdentities []string,
-	nodeClass *v1alpha2.AKSNodeClass,
-	launchTemplate *launchtemplate.Template,
-	instanceType *corecloudprovider.InstanceType,
-	provisionMode string,
-	useSIG bool,
-) armcompute.VirtualMachine {
-	if launchTemplate.IsWindows {
-		return armcompute.VirtualMachine{} // TODO(Windows)
+// createVMOptions contains all the parameters needed to create a VM
+type createVMOptions struct {
+	VMName         string
+	NicReference   string
+	Zone           string
+	CapacityType   string
+	Location       string
+	SSHPublicKey   string
+	NodeIdentities []string
+	NodeClass      *v1alpha2.AKSNodeClass
+	LaunchTemplate *launchtemplate.Template
+	InstanceType   *corecloudprovider.InstanceType
+	ProvisionMode  string
+	UseSIG         bool
+}
+
+// newVMObject creates a new armcompute.VirtualMachine from the provided options
+func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
+	if opts.LaunchTemplate.IsWindows {
+		return &armcompute.VirtualMachine{} // TODO(Windows)
 	}
 
-	vm := armcompute.VirtualMachine{
-		Location: lo.ToPtr(location),
-		Identity: ConvertToVirtualMachineIdentity(nodeIdentities),
+	vm := &armcompute.VirtualMachine{
+		Name:     lo.ToPtr(opts.VMName), // TODO: I think it's safe to set this, even though it's read only
+		Location: lo.ToPtr(opts.Location),
+		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(instanceType.Name)),
+				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
 			},
 
 			StorageProfile: &armcompute.StorageProfile{
 				OSDisk: &armcompute.OSDisk{
-					Name:         lo.ToPtr(vmName),
-					DiskSizeGB:   nodeClass.Spec.OSDiskSizeGB,
+					Name:         lo.ToPtr(opts.VMName),
+					DiskSizeGB:   opts.NodeClass.Spec.OSDiskSizeGB,
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},
@@ -387,7 +404,7 @@ func newVMObject(
 			NetworkProfile: &armcompute.NetworkProfile{
 				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
 					{
-						ID: &nicReference,
+						ID: &opts.NicReference,
 						Properties: &armcompute.NetworkInterfaceReferenceProperties{
 							Primary:      lo.ToPtr(true),
 							DeleteOption: lo.ToPtr(armcompute.DeleteOptionsDelete),
@@ -398,13 +415,13 @@ func newVMObject(
 
 			OSProfile: &armcompute.OSProfile{
 				AdminUsername: lo.ToPtr("azureuser"),
-				ComputerName:  &vmName,
+				ComputerName:  &opts.VMName,
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
 					DisablePasswordAuthentication: lo.ToPtr(true),
 					SSH: &armcompute.SSHConfiguration{
 						PublicKeys: []*armcompute.SSHPublicKey{
 							{
-								KeyData: lo.ToPtr(sshPublicKey),
+								KeyData: lo.ToPtr(opts.SSHPublicKey),
 								Path:    lo.ToPtr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
 							},
 						},
@@ -412,20 +429,20 @@ func newVMObject(
 				},
 			},
 			Priority: lo.ToPtr(armcompute.VirtualMachinePriorityTypes(
-				CapacityTypeToPriority[capacityType]),
+				CapacityTypeToPriority[opts.CapacityType]),
 			),
 		},
-		Zones: utils.MakeVMZone(zone),
-		Tags:  launchTemplate.Tags,
+		Zones: utils.MakeVMZone(opts.Zone),
+		Tags:  opts.LaunchTemplate.Tags,
 	}
-	setVMPropertiesOSDiskType(vm.Properties, launchTemplate.StorageProfile)
-	setImageReference(vm.Properties, launchTemplate.ImageID, useSIG)
-	setVMPropertiesBillingProfile(vm.Properties, capacityType)
+	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate.StorageProfile)
+	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
+	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 
-	if provisionMode == consts.ProvisionModeBootstrappingClient {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.CustomScriptsCustomData)
+	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
 	} else {
-		vm.Properties.OSProfile.CustomData = lo.ToPtr(launchTemplate.ScriptlessCustomData)
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.ScriptlessCustomData)
 	}
 
 	return vm
@@ -472,22 +489,54 @@ func setNodePoolNameTag(tags map[string]*string, nodeClaim *karpv1.NodeClaim) {
 	}
 }
 
-func (p *DefaultProvider) createVirtualMachine(ctx context.Context, vm armcompute.VirtualMachine, vmName string) (*armcompute.VirtualMachine, error) {
-	result, err := CreateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, vm)
-	if err != nil {
-		log.FromContext(ctx).Error(err, fmt.Sprintf("Creating virtual machine %q failed", vmName))
-		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", vmName, err)
-	}
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Created virtual machine %s", *result.ID))
-	return result, nil
+type createResult struct {
+	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
+	VM     *armcompute.VirtualMachine
 }
 
-func (p *DefaultProvider) launchInstance(
+// createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists, which means opts is not guaranteed except VMName
+func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*createResult, error) {
+	// We assume that if a vm exists, we successfully created it with the right parameters from the nodeclaims during another run before a restart.
+	// there are some non-deterministic properties that may change.
+	// Zones: zones are non-detrminsitic as we do a random pick out of zones on the nodeclaim that satisfy the workload requirements.
+	// 	      Nodeclaim can have Requirements: Zone-1, Zone-2, Zone-3
+	//        Then we pick a random zone from that list in each create call that satisfies the workload
+	// UnavailableOfferingsCache: The unavailable offerings cache is used to determine if we should pick the sku, zone, or even priority.
+	//        Errors for things like subscription level spot quota, SKU Quota, etc are stored in the unavailable offerings cache.
+	//        So values like the SKU, Priority(Spot/On-Demand), may be different, which results in a different image, different
+	//        os.CustomData.
+	// If any of these properties are modified, the existing vm will return a 409 status code "PropertyChangeNotAllowed".
+	// this results in create being blocked on the nodeclaim until liveness TTL is hit.
+	resp, err := p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, opts.VMName, nil)
+	// If status == ok, we want to return the existing vmm
+	if err == nil {
+		return &createResult{VM: &resp.VirtualMachine}, nil
+	}
+	// if status != ok, and for a reason other than we did not find the vm
+	azErr := sdkerrors.IsResponseError(err)
+	if azErr != nil && (azErr.ErrorCode != "NotFound" && azErr.ErrorCode != "ResourceNotFound") {
+		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
+	}
+	vm := newVMObject(opts)
+	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine %s (%s)", opts.VMName, opts.InstanceType.Name))
+
+	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
+	if err != nil {
+		log.FromContext(ctx).Error(err, fmt.Sprintf("Creating virtual machine %q failed", opts.VMName))
+		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
+	}
+	return &createResult{Poller: poller, VM: vm}, nil
+}
+
+// beginLaunchInstance starts the launch of a VM instance.
+// The returned VirtualMachinePromise must be called to gather any errors
+// that are retrieved during async provisioning, as well as to complete the provisioning process.
+func (p *DefaultProvider) beginLaunchInstance(
 	ctx context.Context,
 	nodeClass *v1alpha2.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
-) (*armcompute.VirtualMachine, error) {
+) (*VirtualMachinePromise, error) {
 	instanceType, capacityType, zone := p.pickSkuSizePriorityAndZone(ctx, nodeClaim, instanceTypes)
 	if instanceType == nil {
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
@@ -497,19 +546,22 @@ func (p *DefaultProvider) launchInstance(
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
 
-	// set provisioner tag for NIC, VM, and Disk
+	// set nodepool tag for NIC, VM, and Disk
 	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
 
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
-	// create network interface
 	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting backend pools: %w", err)
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
+	// TODO: Not returning after launching this LRO because
+	// TODO: doing so would bypass the capacity and other errors that are currently handled by
+	// TODO: core pkg/controllers/nodeclaim/lifecycle/controller.go - in particular, there are metrics/events
+	// TODO: emitted in capacity failure cases that we probably want.
 	nicReference, err := p.createNetworkInterface(
 		ctx,
 		&createNICOptions{
@@ -526,32 +578,65 @@ func (p *DefaultProvider) launchInstance(
 		return nil, err
 	}
 
-	sshPublicKey := options.FromContext(ctx).SSHPublicKey
-	nodeIdentityIDs := options.FromContext(ctx).NodeIdentities
-	useSIG := options.FromContext(ctx).UseSIG
-	vm := newVMObject(resourceName, nicReference, zone, capacityType, p.location, sshPublicKey, nodeIdentityIDs, nodeClass, launchTemplate, instanceType, p.provisionMode, useSIG)
-
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine %s (%s)", resourceName, instanceType.Name))
-	// Uses AZ Client to create a new virtual machine using the vm object we prepared earlier
-	resp, err := p.createVirtualMachine(ctx, vm, resourceName)
+	result, err := p.createVirtualMachine(ctx, &createVMOptions{
+		VMName:         resourceName,
+		NicReference:   nicReference,
+		Zone:           zone,
+		CapacityType:   capacityType,
+		Location:       p.location,
+		SSHPublicKey:   options.FromContext(ctx).SSHPublicKey,
+		NodeIdentities: options.FromContext(ctx).NodeIdentities,
+		NodeClass:      nodeClass,
+		LaunchTemplate: launchTemplate,
+		InstanceType:   instanceType,
+		ProvisionMode:  p.provisionMode,
+		UseSIG:         options.FromContext(ctx).UseSIG,
+	})
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
 		return nil, azErr
 	}
 
-	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-		err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
-		if err != nil {
-			// This should fall back to cleanupAzureResources
-			return nil, err
-		}
-	}
+	// Patch the VM object to fill out a few fields that are needed later.
+	// This is a bit of a hack that saves us doing a GET now.
+	// The reason to avoid a GET is that it can fail, and if it does the future above will be lost,
+	// which we don't want.
+	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
+	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
 
-	err = p.createAKSIdentifyingExtension(ctx, resourceName)
-	if err != nil {
-		return nil, err
-	}
-	return resp, nil
+	return &VirtualMachinePromise{
+		Wait: func() error {
+			if result.Poller == nil {
+				// Poller is nil means the VM existed already and we're done.
+				// TODO: if the VM doesn't have extensions this will still happen and we will have to
+				// TODO: wait for the TTL for the claim to be deleted and recreated. This will most likely
+				// TODO: happen during Karpenter pod restart.
+				return nil
+			}
+
+			_, err = result.Poller.PollUntilDone(ctx, nil)
+			if err != nil {
+				azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+				return azErr
+			}
+
+			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
+				if err != nil {
+					// An error here is handled by CloudProvider create and calls instanceProvider.Delete (which cleans up the azure resources)
+					return err
+				}
+			}
+
+			err = p.createAKSIdentifyingExtension(ctx, resourceName)
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
+		VM: result.VM,
+	}, nil
 }
 
 // nolint:gocyclo
@@ -697,7 +782,7 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	return nil, "", ""
 }
 
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) (err error) {
+func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) error {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		log.FromContext(ctx).Error(vmErr, fmt.Sprintf("virtualMachine.Delete for %s failed", resourceName))

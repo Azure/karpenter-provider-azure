@@ -63,6 +63,20 @@ e2etests: ## Run the e2e suite against your local cluster
 		--ginkgo.grace-period=3m \
 		--ginkgo.vv
 
+upstream-e2etests:
+	AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} \
+	go test \
+		-count 1 \
+		-timeout 1h \
+		-v \
+		$(KARPENTER_CORE_DIR)/test/suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
+		--ginkgo.focus="${FOCUS}" \
+		--ginkgo.timeout=1h \
+		--ginkgo.grace-period=5m \
+		--ginkgo.vv \
+		--default-nodeclass="$(shell pwd)/test/pkg/environment/azure/default_aksnodeclass.yaml" \
+		--default-nodepool="$(shell pwd)/test/pkg/environment/azure/default_nodepool.yaml"
+
 benchmark:
 	go test -tags=test_performance -run=NoTests -bench=. ./...
 
@@ -80,8 +94,8 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
 	hack/validation/common.sh
+	hack/mutation/kubectl_get_ux.sh
 	cp pkg/apis/crds/* charts/karpenter-crd/templates
-	hack/mutation/conversion_webhooks_injection.sh
 	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
 	@git diff --quiet ||\
@@ -118,7 +132,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
+.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
 
 define newline
 
