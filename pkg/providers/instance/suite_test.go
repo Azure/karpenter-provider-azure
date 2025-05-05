@@ -53,6 +53,8 @@ import (
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 )
 
 var ctx context.Context
@@ -290,5 +292,91 @@ var _ = Describe("InstanceProvider", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(len(interfaces)).To(Equal(1))
 		Expect(interfaces[0].Name).To(Equal(managedNic.Name))
+	})
+	Context("CSExtension", func() {
+		var originalOptions *options.Options
+
+		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
+				}))
+		})
+
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, originalOptions)
+		})
+
+		It("should create CSExtension with correct configuration", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			Expect(azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(2)) // One for CSE, one for AKS identifying extension
+
+			var cseExtension *armcompute.VirtualMachineExtension
+			for i := 0; i < 2; i++ {
+				input := azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsCreateOrUpdateBehavior.CalledWithInput.Pop()
+				if *input.VirtualMachineExtension.Name == "cse-agent-karpenter" {
+					cseExtension = &input.VirtualMachineExtension
+					break
+				}
+			}
+			Expect(cseExtension).ToNot(BeNil())
+
+			Expect(*cseExtension.Properties.Type).To(Equal("CustomScript"))
+			Expect(*cseExtension.Properties.Publisher).To(Equal("Microsoft.Azure.Extensions"))
+			Expect(*cseExtension.Properties.TypeHandlerVersion).To(Equal("2.0"))
+			Expect(cseExtension.Properties.ProtectedSettings).ToNot(BeNil())
+
+			protectedSettings, ok := cseExtension.Properties.ProtectedSettings.(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(protectedSettings["commandToExecute"]).ToNot(BeEmpty())
+
+			Expect(cseExtension.Tags).ToNot(BeNil())
+			Expect(cseExtension.Tags[instance.NodePoolTagKey]).ToNot(BeNil())
+			Expect(*cseExtension.Tags[instance.NodePoolTagKey]).To(Equal(nodePool.Name))
+		})
+
+		It("should create Windows CSExtension with correct configuration", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr("Windows2019")
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+
+			Expect(azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(2)) // One for CSE, one for AKS identifying extension
+
+			var cseExtension *armcompute.VirtualMachineExtension
+			for i := 0; i < 2; i++ {
+				input := azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsCreateOrUpdateBehavior.CalledWithInput.Pop()
+				if *input.VirtualMachineExtension.Name == "windows-cse-agent-karpenter" {
+					cseExtension = &input.VirtualMachineExtension
+					break
+				}
+			}
+			Expect(cseExtension).ToNot(BeNil())
+
+			Expect(*cseExtension.Properties.Type).To(Equal("CustomScriptExtension"))
+			Expect(*cseExtension.Properties.Publisher).To(Equal("Microsoft.Compute"))
+			Expect(*cseExtension.Properties.TypeHandlerVersion).To(Equal("1.10"))
+			Expect(cseExtension.Properties.ProtectedSettings).ToNot(BeNil())
+
+			protectedSettings, ok := cseExtension.Properties.ProtectedSettings.(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(protectedSettings["commandToExecute"]).ToNot(BeEmpty())
+
+			Expect(cseExtension.Tags).ToNot(BeNil())
+			Expect(cseExtension.Tags[instance.NodePoolTagKey]).ToNot(BeNil())
+			Expect(*cseExtension.Tags[instance.NodePoolTagKey]).To(Equal(nodePool.Name))
+		})
 	})
 })

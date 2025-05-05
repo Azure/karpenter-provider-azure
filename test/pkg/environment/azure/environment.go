@@ -57,6 +57,7 @@ type Environment struct {
 	ClusterResourceGroup string
 
 	vmClient                *armcompute.VirtualMachinesClient
+	vmExtensionsClient      *armcompute.VirtualMachineExtensionsClient
 	VNETClient              *armnetwork.VirtualNetworksClient
 	InterfacesClient        *armnetwork.InterfacesClient
 	AKSManagedClusterClient *containerservice.ManagedClustersClient
@@ -78,6 +79,7 @@ func NewEnvironment(t *testing.T) *Environment {
 
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
 	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.vmExtensionsClient = lo.Must(armcompute.NewVirtualMachineExtensionsClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.VNETClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.InterfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.AKSManagedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))

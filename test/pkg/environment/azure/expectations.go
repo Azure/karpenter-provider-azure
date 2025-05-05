@@ -163,3 +163,10 @@ func (env *Environment) K8sMinorVersion() int {
 	Expect(err).ToNot(HaveOccurred())
 	return version
 }
+
+func (env *Environment) GetVMExtensions(vmName string) ([]*armcompute.VirtualMachineExtension, error) {
+	GinkgoHelper()
+	response, err := env.vmExtensionsClient.List(env.Context, env.NodeResourceGroup, vmName, nil)
+	Expect(err).ToNot(HaveOccurred())
+	return response.VirtualMachineExtensionsListResult.Value, nil
+}
