@@ -1,23 +1,11 @@
-name: E2EMatrix
+name: E2EScaleTrigger
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
-      git_ref:
-        type: string
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "eastus"
-  #     k8s_version:
-  #       type: string
-  #       default: "1.27"
-    secrets:
-      E2E_CLIENT_ID:
-        required: true
-      E2E_TENANT_ID:
-        required: true
-      E2E_SUBSCRIPTION_ID:
-        required: true
+        default: "westus3"
 
 permissions:
   contents: read
@@ -42,23 +30,22 @@ jobs:
           E2E_HASH="$RANDOM$RANDOM"
           echo "Using e2e hash \"$E2E_HASH\""
           echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
-  e2e:
-    needs: [initialize-generative-params]
-    strategy:
-      fail-fast: false
-      matrix:
-        suite: [Scale]
+
+  resolve:
+    if: (github.repository == 'Azure/karpenter-provider-azure' && (github.event_name != 'workflow_run')) || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/resolve-args.yaml
+  scale:
     permissions:
       contents: read
-      id-token: write
-      statuses: write
+      id-token: write # This is required for requesting the JWT
+      statuses: write # ./.github/actions/commit-status/*
+    needs: [initialize-generative-params, resolve]
     uses: ./.github/workflows/e2e.yaml
     with:
-      git_ref: ${{ inputs.git_ref }}
-      suite: ${{ matrix.suite }}
+      suite: Scale
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
-      location: ${{ inputs.location }}
-  #     k8s_version: ${{ inputs.k8s_version }}
+      git_ref: ${{ needs.resolve.outputs.GIT_REF }}
+      location: ${{ inputs.location || 'westus3' }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}

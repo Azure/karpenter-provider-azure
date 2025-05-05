@@ -18,12 +18,8 @@ package opts
 
 import (
 	"net/http"
-	"os"
 	"time"
 
-	"log/slog"
-
-	shPolicy "github.com/Azure/aks-middleware/http/client/azuresdk/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
@@ -35,8 +31,8 @@ func DefaultArmOpts() *arm.ClientOptions {
 	opts.Retry = DefaultRetryOpts()
 	opts.Transport = defaultHTTPClient
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	opts.PerCallPolicies = append(opts.PerCallPolicies, shPolicy.NewLoggingPolicy(*logger))
+	// logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	// opts.PerCallPolicies = append(opts.PerCallPolicies, shPolicy.NewLoggingPolicy(*logger))
 	return opts
 }
 
