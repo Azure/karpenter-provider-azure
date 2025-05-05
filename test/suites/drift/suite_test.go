@@ -467,6 +467,7 @@ var _ = Describe("Drift", func() {
 		// ImageID TBD
 		Entry("ImageFamily", v1alpha2.AKSNodeClassSpec{ImageFamily: to.StringPtr("AzureLinux")}),
 		Entry("Tags", v1alpha2.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}),
+		Entry("CSE Tags", v1alpha2.AKSNodeClassSpec{Tags: map[string]string{"cse-tag-test": "cse-value-test"}}),
 		Entry("KubeletConfiguration", v1alpha2.AKSNodeClassSpec{
 			Kubelet: &v1alpha2.KubeletConfiguration{
 				ImageGCLowThresholdPercent:  to.Int32Ptr(10),
@@ -739,5 +740,27 @@ var _ = Describe("Drift", func() {
 
 		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
 		env.EventuallyExpectDrifted(nodeClaim)
+	})
+
+	It("should apply tags to CSE extension", func() {
+		env.ExpectCreated(dep, nodeClass, nodePool)
+		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+		env.EventuallyExpectHealthyPodCount(selector, numPods)
+		env.ExpectCreatedNodeCount("==", 1)
+
+		By("updating nodeclass with CSE specific tags")
+		nodeClass.Spec.Tags = map[string]string{
+			"cse-tag-test":                "cse-value-test",
+			"karpenter.azure.com/cluster": env.ClusterName,
+		}
+		env.ExpectCreatedOrUpdated(nodeClass)
+
+		By("verifying CSE extension has the correct tags")
+		Eventually(func(g Gomega) {
+			vm := env.GetVM(nodeClaim.Name)
+			g.Expect(vm).ToNot(BeNil())
+			g.Expect(vm.Tags).To(HaveKeyWithValue("cse_tag_test", "cse-value-test"))
+			g.Expect(vm.Tags).To(HaveKeyWithValue("karpenter.azure.com_cluster", env.ClusterName))
+		}).WithTimeout(30 * time.Second).Should(Succeed())
 	})
 })
