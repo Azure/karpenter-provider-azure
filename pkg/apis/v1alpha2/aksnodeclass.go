@@ -33,7 +33,7 @@ type AKSNodeClassSpec struct {
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
 	// +kubebuilder:default=128
-	// +kubebuilder:validation:Minimum=100
+	// +kubebuilder:validation:Minimum=30
 	// osDiskSizeGB is the size of the OS disk in GB.
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 	// ImageID is the ID of the image that instances use.
@@ -154,7 +154,7 @@ type KubeletConfiguration struct {
 
 // AKSNodeClass is the Schema for the AKSNodeClass API
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories=karpenter,shortName={aksnc,aksncs}
+// +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories={karpenter,nap},shortName={aksnc,aksncs}
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 type AKSNodeClass struct {

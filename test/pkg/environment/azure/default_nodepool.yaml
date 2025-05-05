@@ -1,0 +1,42 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+ name: default
+spec:
+ disruption:
+   consolidationPolicy: WhenEmptyOrUnderutilized
+   consolidateAfter: Never
+   budgets:
+     - nodes: 100%
+ limits:
+   cpu: 1000
+   memory: 1000Gi
+ template:
+    metadata:
+      labels:
+        # required for Karpenter to predict overhead from cilium DaemonSet
+        kubernetes.azure.com/ebpf-dataplane: cilium
+    spec:
+      expireAfter: Never
+      startupTaints:
+      # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+      - key: node.cilium.io/agent-not-ready
+        effect: NoExecute
+        value: "true"
+      requirements:
+      - key: kubernetes.io/arch
+        operator: In
+        values: ["amd64"]
+      - key: kubernetes.io/os
+        operator: In
+        values: ["linux"]
+      - key: karpenter.sh/capacity-type
+        operator: In
+        values: ["on-demand"]
+      - key: karpenter.azure.com/sku-family
+        operator: In
+        values: [D]
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: default

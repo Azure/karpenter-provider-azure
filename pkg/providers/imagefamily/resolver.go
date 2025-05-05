@@ -18,11 +18,12 @@ package imagefamily
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
-	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
@@ -96,7 +97,7 @@ func (r *defaultResolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNo
 		return nil, err
 	}
 
-	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
+	log.FromContext(ctx).Info(fmt.Sprintf("Resolved image %s for instance type %s", imageID, instanceType.Name))
 
 	generalTaints := nodeClaim.Spec.Taints
 	startupTaints := nodeClaim.Spec.StartupTaints
@@ -158,6 +159,12 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
 	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
 	return kubeletConfig
+}
+
+func getSupportedImages(familyName *string) []DefaultImageOutput {
+	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
+	imageFamily := getImageFamily(familyName, nil)
+	return imageFamily.DefaultImages()
 }
 
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {

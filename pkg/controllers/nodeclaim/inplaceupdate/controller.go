@@ -23,12 +23,11 @@ import (
 
 	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/samber/lo"
-	"go.uber.org/zap/zapcore"
-	"knative.dev/pkg/logging"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -37,6 +36,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -84,7 +84,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 	actualHash := nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash]
 
-	logging.FromContext(ctx).Debugf("goal hash is: %q, actual hash is: %q", goalHash, actualHash)
+	log.FromContext(ctx).V(1).Info(fmt.Sprintf("goal hash is: %q, actual hash is: %q", goalHash, actualHash))
 
 	// If there's no difference from goal state, no need to do anything else
 	if goalHash == actualHash {
@@ -167,21 +167,23 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 				),
 			)).
 		WithOptions(controller.Options{
-			RateLimiter:             reasonable.RateLimiter(),
+			RateLimiter: reasonable.RateLimiter(),
+			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
+			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
 			MaxConcurrentReconciles: 10,
 		}).
 		// TODO: Can add .Watches(&karpv1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
 		// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
-		// TODO: if/when we need to monitor provisoner changes and flow updates on the NodePool down to the underlying VMs.
+		// TODO: if/when we need to monitor provisioner changes and flow updates on the NodePool down to the underlying VMs.
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
 }
 func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
-	if logging.FromContext(ctx).Level().Enabled(zapcore.DebugLevel) {
+	if log.FromContext(ctx).V(1).Enabled() {
 		rawStr := "<nil>"
 		if update != nil {
 			raw, _ := json.Marshal(update)
 			rawStr = string(raw)
 		}
-		logging.FromContext(ctx).Debugf("applying patch to Azure VM: %s", rawStr)
+		log.FromContext(ctx).V(1).Info(fmt.Sprintf("applying patch to Azure VM: %s", rawStr))
 	}
 }
