@@ -24,10 +24,13 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
+	"k8s.io/client-go/util/flowcontrol"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -54,6 +57,11 @@ func init() {
 type Operator struct {
 	*operator.Operator
 
+	// InClusterKubernetesInterface is a Kubernetes client that can be used to talk to the APIServer
+	// of the cluster where the Karpenter pod is running. This is usually the same as operator.KubernetesInterface,
+	// but may be different if Karpenter is running in a different cluster than the one it manages.
+	InClusterKubernetesInterface kubernetes.Interface
+
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	ImageProvider          *imagefamily.Provider
@@ -76,6 +84,12 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
+
+	// These options are set similarly to those used by operator.KubernetesInterface
+	inClusterConfig := lo.Must(rest.InClusterConfig())
+	inClusterConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
+	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
+	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
@@ -138,15 +152,16 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	)
 
 	return ctx, &Operator{
-		Operator:                  operator,
-		UnavailableOfferingsCache: unavailableOfferingsCache,
-		ImageProvider:             imageProvider,
-		ImageResolver:             imageResolver,
-		LaunchTemplateProvider:    launchTemplateProvider,
-		PricingProvider:           pricingProvider,
-		InstanceTypesProvider:     instanceTypeProvider,
-		InstanceProvider:          instanceProvider,
-		LoadBalancerProvider:      loadBalancerProvider,
+		Operator:                     operator,
+		InClusterKubernetesInterface: inClusterClient,
+		UnavailableOfferingsCache:    unavailableOfferingsCache,
+		ImageProvider:                imageProvider,
+		ImageResolver:                imageResolver,
+		LaunchTemplateProvider:       launchTemplateProvider,
+		PricingProvider:              pricingProvider,
+		InstanceTypesProvider:        instanceTypeProvider,
+		InstanceProvider:             instanceProvider,
+		LoadBalancerProvider:         loadBalancerProvider,
 	}
 }
 
