@@ -303,7 +303,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 						defer GinkgoRecover()
 						defer wg.Done()
 
-						By("waiting for type " + k)
+						By("waiting for deprovisioning type " + k)
 						// Provide a default selector based on the original nodePool name if one isn't specified
 						selector = assertions.deletedNodeCountSelector
 						if selector == nil {
@@ -318,7 +318,7 @@ var _ = Describe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents), 
 						}
 						env.EventuallyExpectNodeCountWithSelector("==", assertions.nodeCount, selector)
 						env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deploymentMap[d].Spec.Selector.MatchLabels), int(lo.FromPtr(deploymentMap[d].Spec.Replicas)))
-						By("done waiting for type " + k)
+						By("done waiting for deprovisioning type " + k)
 					}(k, v)
 				}
 				wg.Wait()
