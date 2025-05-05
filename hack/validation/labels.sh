@@ -12,7 +12,6 @@ rule=$'self.all(x, x in
         "karpenter.azure.com/sku-version",
         "karpenter.azure.com/sku-cpu",
         "karpenter.azure.com/sku-memory",
-        "karpenter.azure.com/sku-accelerator",
         "karpenter.azure.com/sku-networking-accelerated",
         "karpenter.azure.com/sku-storage-premium-capable",
         "karpenter.azure.com/sku-storage-ephemeralos-maxsize",
