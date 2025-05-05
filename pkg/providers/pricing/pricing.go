@@ -161,9 +161,16 @@ func (p *Provider) SpotPrice(instanceType string) (float64, bool) {
 }
 
 func (p *Provider) updatePricing(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+
 	prices := map[client.Item]bool{}
 	err := p.fetchPricing(ctx, processPage(prices))
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		log.FromContext(ctx).Error(err, fmt.Sprintf("error fetching updated pricing for region %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err.lastOnDemandUpdateTime.Format(time.RFC3339), err.lastSpotUpdateTime.Format(time.RFC3339)))
 		return
 	}
