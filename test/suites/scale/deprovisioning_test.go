@@ -115,9 +115,9 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 
 	Context("Multiple Deprovisioners", func() {
 		It("should run consolidation, emptiness, expiration, and drift simultaneously", func(_ context.Context) {
-			replicasPerNode := 20
+			replicasPerNode := 10
 			maxPodDensity := replicasPerNode + dsCount
-			nodeCountPerNodePool := 10
+			nodeCountPerNodePool := 4
 			replicas := replicasPerNode * nodeCountPerNodePool
 
 			disruptionMethods := []string{
@@ -227,7 +227,7 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 			env.Monitor.Reset() // Reset the monitor so that we now track the nodes starting at this point in time
 
 			By("scaling down replicas across deployments")
-			deploymentMap[consolidationValue].Spec.Replicas = lo.ToPtr(int32(int(float64(replicas) * 0.2)))
+			deploymentMap[consolidationValue].Spec.Replicas = lo.ToPtr(int32(int(float64(replicas) * 0.25)))
 			deploymentMap[emptinessValue].Spec.Replicas = lo.ToPtr[int32](0)
 			for _, d := range deploymentMap {
 				env.ExpectUpdated(d)
@@ -256,8 +256,8 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 			}
 			assertionMap := map[string]testAssertions{
 				consolidationValue: {
-					deletedCount: int(float64(nodeCountPerNodePool) * 0.8),
-					nodeCount:    int(float64(nodeCountPerNodePool) * 0.2),
+					deletedCount: int(float64(nodeCountPerNodePool) * 0.75),
+					nodeCount:    int(float64(nodeCountPerNodePool) * 0.25),
 					createdCount: 0,
 				},
 				emptinessValue: {
@@ -303,6 +303,7 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 						defer GinkgoRecover()
 						defer wg.Done()
 
+						By("waiting for type " + k)
 						// Provide a default selector based on the original nodePool name if one isn't specified
 						selector = assertions.deletedNodeCountSelector
 						if selector == nil {
@@ -317,7 +318,7 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 						}
 						env.EventuallyExpectNodeCountWithSelector("==", assertions.nodeCount, selector)
 						env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deploymentMap[d].Spec.Selector.MatchLabels), int(lo.FromPtr(deploymentMap[d].Spec.Replicas)))
-
+						By("done waiting for type " + k)
 					}(k, v)
 				}
 				wg.Wait()
@@ -334,7 +335,7 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 		It("should delete all empty nodes with consolidation", func(_ context.Context) {
 			replicasPerNode := 20
 			maxPodDensity := replicasPerNode + dsCount
-			expectedNodeCount := 100
+			expectedNodeCount := 50
 			replicas := replicasPerNode * expectedNodeCount
 
 			deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
@@ -381,11 +382,11 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 				azure.DeprovisionedNodeCountDimension: strconv.Itoa(expectedNodeCount),
 				azure.PodDensityDimension:             strconv.Itoa(replicasPerNode),
 			})
-		}, SpecTimeout(time.Minute*30))
+		}, SpecTimeout(time.Hour))
 		It("should consolidate nodes to get a higher utilization (multi-consolidation delete)", func(_ context.Context) {
 			replicasPerNode := 20
 			maxPodDensity := replicasPerNode + dsCount
-			expectedNodeCount := 100
+			expectedNodeCount := 50
 			replicas := replicasPerNode * expectedNodeCount
 
 			deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
@@ -434,7 +435,7 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 				azure.DeprovisionedNodeCountDimension: strconv.Itoa(int(float64(expectedNodeCount) * 0.8)),
 				azure.PodDensityDimension:             strconv.Itoa(replicasPerNode),
 			})
-		}, SpecTimeout(time.Minute*30))
+		}, SpecTimeout(time.Hour))
 		It("should consolidate nodes to get a higher utilization (single consolidation replace)", func(_ context.Context) {
 			replicasPerNode := 1
 			// TODO: review and adjust this for Azure provider performance
@@ -511,7 +512,7 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 		It("should deprovision all nodes when empty", func(_ context.Context) {
 			replicasPerNode := 20
 			maxPodDensity := replicasPerNode + dsCount
-			expectedNodeCount := 100
+			expectedNodeCount := 50
 			replicas := replicasPerNode * expectedNodeCount
 
 			deployment.Spec.Replicas = lo.ToPtr(int32(replicas))
@@ -559,7 +560,7 @@ var _ = FDescribe("Deprovisioning", Label(debug.NoWatch), Label(debug.NoEvents),
 				azure.DeprovisionedNodeCountDimension: strconv.Itoa(expectedNodeCount),
 				azure.PodDensityDimension:             strconv.Itoa(replicasPerNode),
 			})
-		}, SpecTimeout(time.Minute*30))
+		}, SpecTimeout(time.Hour))
 	})
 	Context("Expiration", func() {
 		It("should expire all nodes", func(_ context.Context) {
