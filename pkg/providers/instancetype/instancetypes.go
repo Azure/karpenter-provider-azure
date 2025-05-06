@@ -270,7 +270,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 
 	// TODO when https://github.com/Azure/skewer/pull/24 merges
-	// skus := cache.List(ctx, skewer.Includes(getKarpenterWorkingSKUs()))
+	// skus := cache.List(ctx, skewer.IncludesFilter(getKarpenterWorkingSKUs()))
 	skus := cache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines))
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Discovered %d SKUs", len(skus)))
 	for i := range skus {

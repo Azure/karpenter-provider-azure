@@ -30,19 +30,15 @@ func getKarpenterWorkingSKUs() []skewer.SKU {
 		var found bool
 		// If we find this SKU in the AKS restricted list, exclude it
 		for _, aksRestrictedSKU := range aksRestrictedVMSKUs {
-			if aksRestrictedSKU.Name != nil && sku.Name != nil {
-				if *sku.Name == *aksRestrictedSKU.Name {
-					found = true
-				}
+			if aksRestrictedSKU.GetName() == sku.GetName() {
+				found = true
 			}
 		}
 		// If it's not in the AKS restricted list, it may be in the Karpenter restricted list
 		if !found {
 			for _, karpenterRestrictedSKU := range karpenterRestrictedVMSKUs {
-				if karpenterRestrictedSKU.Name != nil && sku.Name != nil {
-					if *sku.Name == *karpenterRestrictedSKU.Name {
-						found = true
-					}
+				if karpenterRestrictedSKU.GetName() == sku.GetName() {
+					found = true
 				}
 			}
 		}
