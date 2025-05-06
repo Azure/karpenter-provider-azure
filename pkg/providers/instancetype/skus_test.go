@@ -22,14 +22,14 @@ import (
 
 func TestGetKarpenterWorkingSKUs(t *testing.T) {
 	for _, sku := range getKarpenterWorkingSKUs() {
-		for _, aksRestrictedSKU := range aksRestrictedVMSKUs {
-			if *aksRestrictedSKU.Name == *sku.Name {
-				t.Errorf("AKS restricted SKU %s should not be in the list of SKUs", *aksRestrictedSKU.Name)
+		for _, aksRestrictedSKU := range AKSRestrictedVMSizes.UnsortedList() {
+			if aksRestrictedSKU == *sku.Name {
+				t.Errorf("AKS restricted SKU %s should not be in the list of SKUs", aksRestrictedSKU)
 			}
 		}
-		for _, karpenterRestrictedSKU := range karpenterRestrictedVMSKUs {
-			if *karpenterRestrictedSKU.Name == *sku.Name {
-				t.Errorf("Karpenter restricted SKU %s should not be in the list of SKUs", *karpenterRestrictedSKU.Name)
+		for _, karpenterRestrictedSKU := range karpenterRestrictedVMSKUs.UnsortedList() {
+			if karpenterRestrictedSKU == *sku.Name {
+				t.Errorf("Karpenter restricted SKU %s should not be in the list of SKUs", karpenterRestrictedSKU)
 			}
 		}
 	}

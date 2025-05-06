@@ -321,7 +321,7 @@ func (p *DefaultProvider) hasMinimumMemory(sku *skewer.SKU) bool {
 
 // instances AKS does not support
 func (p *DefaultProvider) isUnsupportedByAKS(sku *skewer.SKU) bool {
-	return RestrictedVMSizes.Has(sku.GetName())
+	return AKSRestrictedVMSizes.Has(sku.GetName())
 }
 
 // GPU SKUs AKS does not support
