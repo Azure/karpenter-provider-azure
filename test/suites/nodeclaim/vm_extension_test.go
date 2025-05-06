@@ -1,4 +1,4 @@
-package integration_test
+package nodeclaim_test
 
 import (
 	. "github.com/onsi/ginkgo/v2"
@@ -23,15 +23,14 @@ var _ = Describe("VMExtension", func() {
 		expectedExtensions := []any{
 			// TODO: Uncomment when AKSLinuxExtension rolls out
 			// "AKSLinuxExtension",
-			"computeAksBilling",
+			"computeAksLinuxBilling",
 		}
-		Expect(installedExtensions).To(ConsistOf(expectedExtensions...))
-
+		Expect(installedExtensions).To(ContainElements(expectedExtensions...))
 		if !env.InClusterController {
 			expectedManagedExtensions := []any{
 				"cse-agent-karpenter",
 			}
-			Expect(installedExtensions).To(ConsistOf(expectedManagedExtensions))
+			Expect(installedExtensions).To(ContainElements(expectedManagedExtensions))
 		}
 
 	})
