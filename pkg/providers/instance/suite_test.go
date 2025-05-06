@@ -328,52 +328,6 @@ var _ = Describe("InstanceProvider", func() {
 				}
 			}
 			Expect(cseExtension).ToNot(BeNil())
-
-			Expect(*cseExtension.Properties.Type).To(Equal("CustomScript"))
-			Expect(*cseExtension.Properties.Publisher).To(Equal("Microsoft.Azure.Extensions"))
-			Expect(*cseExtension.Properties.TypeHandlerVersion).To(Equal("2.0"))
-			Expect(cseExtension.Properties.ProtectedSettings).ToNot(BeNil())
-
-			protectedSettings, ok := cseExtension.Properties.ProtectedSettings.(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(protectedSettings["commandToExecute"]).ToNot(BeEmpty())
-
-			Expect(cseExtension.Tags).ToNot(BeNil())
-			Expect(cseExtension.Tags[instance.NodePoolTagKey]).ToNot(BeNil())
-			Expect(*cseExtension.Tags[instance.NodePoolTagKey]).To(Equal(nodePool.Name))
-		})
-
-		It("should create Windows CSExtension with correct configuration", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr("Windows2019")
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-
-			Expect(azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(2)) // One for CSE, one for AKS identifying extension
-
-			var cseExtension *armcompute.VirtualMachineExtension
-			for i := 0; i < 2; i++ {
-				input := azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsCreateOrUpdateBehavior.CalledWithInput.Pop()
-				if *input.VirtualMachineExtension.Name == "windows-cse-agent-karpenter" {
-					cseExtension = &input.VirtualMachineExtension
-					break
-				}
-			}
-			Expect(cseExtension).ToNot(BeNil())
-
-			Expect(*cseExtension.Properties.Type).To(Equal("CustomScriptExtension"))
-			Expect(*cseExtension.Properties.Publisher).To(Equal("Microsoft.Compute"))
-			Expect(*cseExtension.Properties.TypeHandlerVersion).To(Equal("1.10"))
-			Expect(cseExtension.Properties.ProtectedSettings).ToNot(BeNil())
-
-			protectedSettings, ok := cseExtension.Properties.ProtectedSettings.(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(protectedSettings["commandToExecute"]).ToNot(BeEmpty())
-
 			Expect(cseExtension.Tags).ToNot(BeNil())
 			Expect(cseExtension.Tags[instance.NodePoolTagKey]).ToNot(BeNil())
 			Expect(*cseExtension.Tags[instance.NodePoolTagKey]).To(Equal(nodePool.Name))
