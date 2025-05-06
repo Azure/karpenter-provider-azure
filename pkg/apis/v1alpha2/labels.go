@@ -91,9 +91,9 @@ var (
 	LabelSKUEncryptionAtHostSupported = Group + "/sku-encryptionathost-capable" // sku.EncryptionAtHostSupported
 
 	// GPU labels
-	LabelSKUGPUName         = Group + "/sku-gpu-name"         // ie GPU Accelerator type we parse from vmSize
-	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // ie NVIDIA, AMD, etc
-	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // ie 16, 32, etc
+	LabelSKUGPUName         = Group + "/sku-gpu-name"         // e.g. A100 (GPU name / accelerator type we parse from vmSize)
+	LabelSKUGPUManufacturer = Group + "/sku-gpu-manufacturer" // e.g. nvidia
+	LabelSKUGPUCount        = Group + "/sku-gpu-count"        // e.g. 16, 32, etc
 
 	// Internal/restricted labels
 	LabelSKUHyperVGeneration = Group + "/sku-hyperv-generation" // sku.HyperVGenerations
