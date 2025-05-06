@@ -18,6 +18,7 @@ package instancetype
 
 import (
 	"github.com/Azure/skewer"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 )
 
@@ -29,15 +30,15 @@ func getKarpenterWorkingSKUs() []skewer.SKU {
 	for _, sku := range allAzureVMSkus {
 		var found bool
 		// If we find this SKU in the AKS restricted list, exclude it
-		for _, aksRestrictedSKU := range aksRestrictedVMSKUs {
-			if aksRestrictedSKU.GetName() == sku.GetName() {
+		for _, aksRestrictedSKU := range AKSRestrictedVMSizes.UnsortedList() {
+			if aksRestrictedSKU == sku.GetName() {
 				found = true
 			}
 		}
 		// If it's not in the AKS restricted list, it may be in the Karpenter restricted list
 		if !found {
-			for _, karpenterRestrictedSKU := range karpenterRestrictedVMSKUs {
-				if karpenterRestrictedSKU.GetName() == sku.GetName() {
+			for _, karpenterRestrictedSKU := range karpenterRestrictedVMSKUs.UnsortedList() {
+				if karpenterRestrictedSKU == sku.GetName() {
 					found = true
 				}
 			}
@@ -50,53 +51,227 @@ func getKarpenterWorkingSKUs() []skewer.SKU {
 	return workingSKUs
 }
 
-// aksRestrictedVMSKUs is a list of VM SKUs that are not allowed by AKS.
-var aksRestrictedVMSKUs = []skewer.SKU{
-	{
-		Name: ptr.To("Standard_A0"),
-	},
-	{
-		Name: ptr.To("Standard_A1"),
-	},
-	{
-		Name: ptr.To("Standard_A1_v2"),
-	},
-	{
-		Name: ptr.To("Standard_B1s"),
-	},
-	{
-		Name: ptr.To("Standard_B1ms"),
-	},
-	{
-		Name: ptr.To("Standard_F1"),
-	},
-	{
-		Name: ptr.To("Standard_F1s"),
-	},
-	{
-		Name: ptr.To("Basic_A0"),
-	},
-	{
-		Name: ptr.To("Basic_A1"),
-	},
-	{
-		Name: ptr.To("Basic_A2"),
-	},
-	{
-		Name: ptr.To("Basic_A3"),
-	},
-	{
-		Name: ptr.To("Basic_A4"),
-	},
-}
-
-// karpenterRestrictedVMSKUs is a list of VM SKUs that do not meet operational reliability
-// requirements for the Karpenter Azure provider.
-var karpenterRestrictedVMSKUs = []skewer.SKU{
-	{
-		Name: ptr.To("Standard_A4m_v2"),
-	},
-}
+var (
+	// AKSRestrictedVMSizes are low-performance VM sizes
+	// that are not allowed for use in AKS node pools.
+	AKSRestrictedVMSizes = sets.New(
+		"Standard_A0",
+		"Standard_A1",
+		"Standard_A1_v2",
+		"Standard_B1s",
+		"Standard_B1ms",
+		"Standard_F1",
+		"Standard_F1s",
+		"Basic_A0",
+		"Basic_A1",
+		"Basic_A2",
+		"Basic_A3",
+		"Basic_A4",
+	)
+	// karpenterRestrictedVMSKUs are VMS SKUs that are known to
+	// be problematic with karpenter-provider-azure.
+	karpenterRestrictedVMSKUs = sets.New(
+		"Standard_D128ds_v6",
+		"Standard_D128lds_v6",
+		"Standard_D128ls_v6",
+		"Standard_D128s_v6",
+		"Standard_D16ads_v6",
+		"Standard_D16alds_v6",
+		"Standard_D16als_v6",
+		"Standard_D16as_v6",
+		"Standard_D16ds_v6",
+		"Standard_D16lds_v6",
+		"Standard_D16ls_v6",
+		"Standard_D16pds_v6",
+		"Standard_D16plds_v6",
+		"Standard_D16pls_v6",
+		"Standard_D16ps_v6",
+		"Standard_D16s_v6",
+		"Standard_D192ds_v6",
+		"Standard_D192s_v6",
+		"Standard_D2ads_v6",
+		"Standard_D2alds_v6",
+		"Standard_D2als_v6",
+		"Standard_D2as_v6",
+		"Standard_D2ds_v6",
+		"Standard_D2lds_v6",
+		"Standard_D2ls_v6",
+		"Standard_D2pds_v6",
+		"Standard_D2plds_v6",
+		"Standard_D2pls_v6",
+		"Standard_D2ps_v6",
+		"Standard_D2s_v6",
+		"Standard_D32ads_v6",
+		"Standard_D32alds_v6",
+		"Standard_D32als_v6",
+		"Standard_D32as_v6",
+		"Standard_D32ds_v6",
+		"Standard_D32lds_v6",
+		"Standard_D32ls_v6",
+		"Standard_D32pds_v6",
+		"Standard_D32plds_v6",
+		"Standard_D32pls_v6",
+		"Standard_D32ps_v6",
+		"Standard_D32s_v6",
+		"Standard_D48ads_v6",
+		"Standard_D48alds_v6",
+		"Standard_D48als_v6",
+		"Standard_D48as_v6",
+		"Standard_D48ds_v6",
+		"Standard_D48lds_v6",
+		"Standard_D48ls_v6",
+		"Standard_D48pds_v6",
+		"Standard_D48plds_v6",
+		"Standard_D48pls_v6",
+		"Standard_D48ps_v6",
+		"Standard_D48s_v6",
+		"Standard_D4ads_v6",
+		"Standard_D4alds_v6",
+		"Standard_D4als_v6",
+		"Standard_D4as_v6",
+		"Standard_D4ds_v6",
+		"Standard_D4lds_v6",
+		"Standard_D4ls_v6",
+		"Standard_D4pds_v6",
+		"Standard_D4plds_v6",
+		"Standard_D4pls_v6",
+		"Standard_D4ps_v6",
+		"Standard_D4s_v6",
+		"Standard_D64ads_v6",
+		"Standard_D64alds_v6",
+		"Standard_D64als_v6",
+		"Standard_D64as_v6",
+		"Standard_D64ds_v6",
+		"Standard_D64lds_v6",
+		"Standard_D64ls_v6",
+		"Standard_D64pds_v6",
+		"Standard_D64plds_v6",
+		"Standard_D64pls_v6",
+		"Standard_D64ps_v6",
+		"Standard_D64s_v6",
+		"Standard_D8ads_v6",
+		"Standard_D8alds_v6",
+		"Standard_D8als_v6",
+		"Standard_D8as_v6",
+		"Standard_D8ds_v6",
+		"Standard_D8lds_v6",
+		"Standard_D8ls_v6",
+		"Standard_D8pds_v6",
+		"Standard_D8plds_v6",
+		"Standard_D8pls_v6",
+		"Standard_D8ps_v6",
+		"Standard_D8s_v6",
+		"Standard_D96ads_v6",
+		"Standard_D96alds_v6",
+		"Standard_D96als_v6",
+		"Standard_D96as_v6",
+		"Standard_D96ds_v6",
+		"Standard_D96lds_v6",
+		"Standard_D96ls_v6",
+		"Standard_D96pds_v6",
+		"Standard_D96plds_v6",
+		"Standard_D96pls_v6",
+		"Standard_D96ps_v6",
+		"Standard_D96s_v6",
+		"Standard_E16-4ds_v6",
+		"Standard_E16-4s_v6",
+		"Standard_E16-8ds_v6",
+		"Standard_E16-8s_v6",
+		"Standard_E16ads_v6",
+		"Standard_E16as_v6",
+		"Standard_E16ds_v6",
+		"Standard_E16pds_v6",
+		"Standard_E16ps_v6",
+		"Standard_E16s_v6",
+		"Standard_E20ads_v6",
+		"Standard_E20as_v6",
+		"Standard_E20ds_v6",
+		"Standard_E20s_v6",
+		"Standard_E2ads_v6",
+		"Standard_E2as_v6",
+		"Standard_E2ds_v6",
+		"Standard_E2pds_v6",
+		"Standard_E2ps_v6",
+		"Standard_E2s_v6",
+		"Standard_E32-16ds_v6",
+		"Standard_E32-16s_v6",
+		"Standard_E32-8ds_v6",
+		"Standard_E32-8s_v6",
+		"Standard_E32ads_v6",
+		"Standard_E32as_v6",
+		"Standard_E32ds_v6",
+		"Standard_E32pds_v6",
+		"Standard_E32ps_v6",
+		"Standard_E32s_v6",
+		"Standard_E4-2ds_v6",
+		"Standard_E4-2s_v6",
+		"Standard_E48ads_v6",
+		"Standard_E48as_v6",
+		"Standard_E48ds_v6",
+		"Standard_E48pds_v6",
+		"Standard_E48ps_v6",
+		"Standard_E48s_v6",
+		"Standard_E4ads_v6",
+		"Standard_E4as_v6",
+		"Standard_E4ds_v6",
+		"Standard_E4pds_v6",
+		"Standard_E4ps_v6",
+		"Standard_E4s_v6",
+		"Standard_E64-16ds_v6",
+		"Standard_E64-16s_v6",
+		"Standard_E64-32ds_v6",
+		"Standard_E64-32s_v6",
+		"Standard_E64ads_v6",
+		"Standard_E64as_v6",
+		"Standard_E64ds_v6",
+		"Standard_E64pds_v6",
+		"Standard_E64ps_v6",
+		"Standard_E64s_v6",
+		"Standard_E8-2ds_v6",
+		"Standard_E8-2s_v6",
+		"Standard_E8-4ds_v6",
+		"Standard_E8-4s_v6",
+		"Standard_E8ads_v6",
+		"Standard_E8as_v6",
+		"Standard_E8ds_v6",
+		"Standard_E8pds_v6",
+		"Standard_E8ps_v6",
+		"Standard_E8s_v6",
+		"Standard_E96-24ads_v6",
+		"Standard_E96-24ds_v6",
+		"Standard_E96-24s_v6",
+		"Standard_E96-48ads_v6",
+		"Standard_E96-48ds_v6",
+		"Standard_E96-48s_v6",
+		"Standard_E96ads_v6",
+		"Standard_E96as_v6",
+		"Standard_E96ds_v6",
+		"Standard_E96pds_v6",
+		"Standard_E96ps_v6",
+		"Standard_E96s_v6",
+		"Standard_F16als_v6",
+		"Standard_F16ams_v6",
+		"Standard_F16as_v6",
+		"Standard_F2als_v6",
+		"Standard_F2ams_v6",
+		"Standard_F2as_v6",
+		"Standard_F32als_v6",
+		"Standard_F32ams_v6",
+		"Standard_F32as_v6",
+		"Standard_F48als_v6",
+		"Standard_F48ams_v6",
+		"Standard_F48as_v6",
+		"Standard_F4als_v6",
+		"Standard_F4ams_v6",
+		"Standard_F4as_v6",
+		"Standard_F64als_v6",
+		"Standard_F64ams_v6",
+		"Standard_F64as_v6",
+		"Standard_F8als_v6",
+		"Standard_F8ams_v6",
+		"Standard_F8as_v6",
+	)
+)
 
 // allAzureVMSkus is a generated list from https://github.com/Azure/skewer
 // git clone https://github.com/Azure/skewer.git
