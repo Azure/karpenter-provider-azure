@@ -28,23 +28,23 @@ import (
 func getKarpenterWorkingSKUs() []skewer.SKU {
 	workingSKUs := []skewer.SKU{}
 	for _, sku := range allAzureVMSkus {
-		var found bool
+		var exclude bool
 		// If we find this SKU in the AKS restricted list, exclude it
 		for _, aksRestrictedSKU := range AKSRestrictedVMSizes.UnsortedList() {
 			if aksRestrictedSKU == sku.GetName() {
-				found = true
+				exclude = true
 			}
 		}
 		// If it's not in the AKS restricted list, it may be in the Karpenter restricted list
-		if !found {
+		if !exclude {
 			for _, karpenterRestrictedSKU := range karpenterRestrictedVMSKUs.UnsortedList() {
 				if karpenterRestrictedSKU == sku.GetName() {
-					found = true
+					exclude = true
 				}
 			}
 		}
 		// If it's not in any of the restricted lists, we register it as a working VM SKU
-		if !found {
+		if !exclude {
 			workingSKUs = append(workingSKUs, sku)
 		}
 	}
