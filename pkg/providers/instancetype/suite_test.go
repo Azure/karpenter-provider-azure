@@ -890,7 +890,6 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(reqs.Has(v1alpha2.LabelSKUName)).To(BeTrue())
 
 				Expect(reqs.Has(v1alpha2.LabelSKUStoragePremiumCapable)).To(BeTrue())
-				Expect(reqs.Has(v1alpha2.LabelSKUEncryptionAtHostSupported)).To(BeTrue())
 				Expect(reqs.Has(v1alpha2.LabelSKUAcceleratedNetworking)).To(BeTrue())
 				Expect(reqs.Has(v1alpha2.LabelSKUHyperVGeneration)).To(BeTrue())
 				Expect(reqs.Has(v1alpha2.LabelSKUStorageEphemeralOSMaxSize)).To(BeTrue())
@@ -925,7 +924,6 @@ var _ = Describe("InstanceType Provider", func() {
 				v1alpha2.LabelSKUVersion:                   "4",
 				v1alpha2.LabelSKUStorageEphemeralOSMaxSize: "53.6870912",
 				v1alpha2.LabelSKUAcceleratedNetworking:     "true",
-				v1alpha2.LabelSKUEncryptionAtHostSupported: "true",
 				v1alpha2.LabelSKUStoragePremiumCapable:     "true",
 				v1alpha2.LabelSKUGPUName:                   "A100",
 				v1alpha2.LabelSKUGPUManufacturer:           "nvidia",
