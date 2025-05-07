@@ -172,7 +172,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		// Note: we don't consider this a hard failure for drift if the Images are not ready to use, so we ignore returning the error here.
 		// We simply ensure the stored Images are ready to use, if we are to calculate potential Drift based on them.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.Warnf("NodeImage readiness invalid when checking drift: %w", err)
+		logger.Info(fmt.Sprintf("WARN: NodeImage readiness invalid when checking drift: %s", err))
 		return "", nil //nolint:nilerr
 	}
 	if len(nodeImages) == 0 {
@@ -185,7 +185,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		}
 	}
 
-	logger.Debugf("drift triggered for %s, as actual image id %s was not found in the set of currently available node images", ImageVersionDrift, vmImageID)
+	logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as actual image id %s was not found in the set of currently available node images", ImageVersionDrift, vmImageID))
 	return ImageVersionDrift, nil
 }
 
