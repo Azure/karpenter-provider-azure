@@ -19,8 +19,6 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
-	"fmt"
-	"sort"
 	"testing"
 	"time"
 
@@ -52,7 +50,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -172,6 +169,8 @@ var _ = Describe("CloudProvider", func() {
 		Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 		Expect(cloudProviderMachine).To(BeNil())
 	})
+
+	// TODO (chmcbrid): split Drift tests into their own test file drift_test.go
 	Context("Drift", func() {
 		var nodeClaim *karpv1.NodeClaim
 		var pod *v1.Pod
@@ -212,37 +211,42 @@ var _ = Describe("CloudProvider", func() {
 				},
 			})
 		})
+
 		It("should not fail if nodeClass does not exist", func() {
 			ExpectDeleted(ctx, env.Client, nodeClass)
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
+
 		It("should not fail if nodePool does not exist", func() {
 			ExpectDeleted(ctx, env.Client, nodePool)
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
+
 		It("should not return drifted if the NodeClaim is valid", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
+
 		It("should error drift if NodeClaim doesn't have provider id", func() {
 			nodeClaim.Status = karpv1.NodeClaimStatus{}
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).To(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
-		It("should trigger drift when the image gallery changes to SIG", func() {
-			sigImageVersion := "202410.09.0"
-			imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)
-			nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
-			ExpectApplied(ctx, env.Client, nodeClass)
-			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(string(drifted)).To(Equal("ImageVersionDrift"))
+
+		Context("Node Image Drift", func() {
+			It("should trigger drift when the image gallery changes to SIG", func() {
+				test.ApplySIGImages(nodeClass)
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(string(drifted)).To(Equal("ImageVersionDrift"))
+			})
 		})
 
 		Context("Kubernetes Version", func() {
@@ -301,40 +305,3 @@ var _ = Describe("CloudProvider", func() {
 		})
 	})
 })
-
-func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
-	var images []imagefamily.DefaultImageOutput
-	if imageFamily == v1alpha2.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages()
-	} else if imageFamily == v1alpha2.AzureLinuxImageFamily {
-		images = imagefamily.AzureLinux{}.DefaultImages()
-	}
-	nodeImages := []imagefamily.NodeImage{}
-	for _, image := range images {
-		nodeImages = append(nodeImages, imagefamily.NodeImage{
-			ID:           fmt.Sprintf("/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
-			Requirements: image.Requirements,
-		})
-	}
-	return nodeImages
-}
-
-func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) []v1alpha2.NodeImage {
-	return lo.Map(imageFamilyNodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
-		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item karpv1.NodeSelectorRequirementWithMinValues, _ int) v1.NodeSelectorRequirement {
-			return item.NodeSelectorRequirement
-		})
-
-		// sorted for consistency
-		sort.Slice(reqs, func(i, j int) bool {
-			if len(reqs[i].Key) != len(reqs[j].Key) {
-				return len(reqs[i].Key) < len(reqs[j].Key)
-			}
-			return reqs[i].Key < reqs[j].Key
-		})
-		return v1alpha2.NodeImage{
-			ID:           nodeImage.ID,
-			Requirements: reqs,
-		}
-	})
-}
