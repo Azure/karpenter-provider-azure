@@ -41,7 +41,7 @@ import (
 const (
 	NodeClassDrift    cloudprovider.DriftReason = "NodeClassDrift"
 	K8sVersionDrift   cloudprovider.DriftReason = "K8sVersionDrift"
-	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift"
+	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift" // TODO (chmcbrid): should we change this to ImageDrift, since it covers more than just "ImageVersion"?
 	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
 
 	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
