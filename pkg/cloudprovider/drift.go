@@ -166,17 +166,17 @@ func (c *CloudProvider) isImageVersionDrifted(
 	SIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
 	vmImageID := lo.Ternary(SIGID != "", SIGID, CIGID)
 
-	nodeImages, err := nodeClass.GetNodeImages()
+	nodeImages, err := nodeClass.GetImages()
 	// Note: this differs from AWS, as they don't check for status readiness during Drift.
 	if err != nil {
-		// Note: we don't consider this a hard failure for drift if the NodeImages are not ready to use, so we ignore returning the error here.
-		// We simply ensure the stored NodeImages are ready to use, if we are to calculate potential Drift based on them.
+		// Note: we don't consider this a hard failure for drift if the Images are not ready to use, so we ignore returning the error here.
+		// We simply ensure the stored Images are ready to use, if we are to calculate potential Drift based on them.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
 		logger.Warnf("NodeImage readiness invalid when checking drift: %w", err)
 		return "", nil //nolint:nilerr
 	}
 	if len(nodeImages) == 0 {
-		return "", fmt.Errorf("no node images exist for the given constraints")
+		return "", fmt.Errorf("no images exist for the given constraints")
 	}
 
 	for _, availableImage := range nodeImages {

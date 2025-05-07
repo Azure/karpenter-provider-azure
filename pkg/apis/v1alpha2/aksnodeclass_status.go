@@ -103,32 +103,32 @@ func (in *AKSNodeClass) validateKubernetesVersionReadiness() error {
 	return nil
 }
 
-// Returns the Status.KubernetesVersion if its up to date and valid to use, otherwise returns an error.
-func (in *AKSNodeClass) GetNodeImages() ([]NodeImage, error) {
-	err := in.validateNodeImagesReadiness()
+// GetImages returns the Status.Images if its up to date and valid to use, otherwise returns an error.
+func (in *AKSNodeClass) GetImages() ([]NodeImage, error) {
+	err := in.validateImagesReadiness()
 	if err != nil {
 		return []NodeImage{}, err
 	}
-	return in.Status.NodeImages, nil
+	return in.Status.Images, nil
 }
 
-// Will return nil if the the NodeImages are considered valid to use,
+// validateImagesReadiness will return nil if the the Images are considered valid to use,
 // otherwise will return an error detailing the reason of failure.
 //
 // Ensures
 // - The AKSNodeClass is non-nil
-// - The AKSNodeClass' ConditionTypeNodeImagesReady Condition is true
+// - The AKSNodeClass' ConditionTypeImagesReady Condition is true
 // - The Condition's ObservedGeneration is up to date with the latest Spec Generation
-func (in *AKSNodeClass) validateNodeImagesReadiness() error {
+func (in *AKSNodeClass) validateImagesReadiness() error {
 	if in == nil {
-		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeNodeImagesReady)
+		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeImagesReady)
 	}
-	nodeImageCondition := in.StatusConditions().Get(ConditionTypeNodeImagesReady)
-	if nodeImageCondition.IsFalse() || nodeImageCondition.IsUnknown() {
-		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeNodeImagesReady, nodeImageCondition.GetStatus(), nodeImageCondition.Message)
+	imagesCondition := in.StatusConditions().Get(ConditionTypeImagesReady)
+	if imagesCondition.IsFalse() || imagesCondition.IsUnknown() {
+		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeImagesReady, imagesCondition.GetStatus(), imagesCondition.Message)
 		// TODO: this needs to be uncommented as soon as we update core to 1.1.x, but until then would make tests, and code checks fail.
-		// } else if nodeImageCondition.ObservedGeneration != in.GetGeneration() {
-		// 	return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeNodeImagesReady, nodeImageCondition.ObservedGeneration, in.GetGeneration())
+		// } else if imagesCondition.ObservedGeneration != in.GetGeneration() {
+		// 	return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeImagesReady, imagesCondition.ObservedGeneration, in.GetGeneration())
 	}
 	return nil
 }

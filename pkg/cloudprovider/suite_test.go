@@ -238,7 +238,7 @@ var _ = Describe("CloudProvider", func() {
 		It("should trigger drift when the image gallery changes to SIG", func() {
 			sigImageVersion := "202410.09.0"
 			imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)
-			nodeClass.Status.NodeImages = translateToStatusNodeImages(imageFamilyNodeImages)
+			nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 			ExpectApplied(ctx, env.Client, nodeClass)
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())

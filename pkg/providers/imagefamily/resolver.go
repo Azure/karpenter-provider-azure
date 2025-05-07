@@ -95,7 +95,7 @@ func (r *defaultResolver) Resolve(
 	instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters,
 ) (*template.Parameters, error) {
-	nodeImages, err := nodeClass.GetNodeImages()
+	nodeImages, err := nodeClass.GetImages()
 	if err != nil {
 		return nil, err
 	}

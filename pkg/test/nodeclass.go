@@ -56,7 +56,7 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 
 func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environment) {
 	cigImageVersion := "202501.02.0"
-	nodeClass.Status.NodeImages = []v1alpha2.NodeImage{
+	nodeClass.Status.Images = []v1alpha2.NodeImage{
 		{
 			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
@@ -103,7 +103,7 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 			},
 		},
 	}
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImagesReady)
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
 
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
 	nodeClass.Status.KubernetesVersion = testK8sVersion

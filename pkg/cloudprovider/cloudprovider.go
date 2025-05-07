@@ -114,7 +114,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if _, err = nodeClass.GetKubernetesVersion(); err != nil {
 		return nil, err
 	}
-	if _, err := nodeClass.GetNodeImages(); err != nil {
+	if _, err := nodeClass.GetImages(); err != nil {
 		return nil, err
 	}
 
