@@ -20,28 +20,18 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"sync"
 
-	"github.com/awslabs/operatorpkg/controller"
-	"github.com/awslabs/operatorpkg/object"
-	"github.com/awslabs/operatorpkg/status"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
-	knativeinjection "knative.dev/pkg/injection"
-	"knative.dev/pkg/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	"k8s.io/client-go/util/flowcontrol"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	karpv1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/operator"
-	"sigs.k8s.io/karpenter/pkg/operator/injection"
-	karpenteroptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
-	webhooksalt "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/webhooks"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 
@@ -62,11 +52,15 @@ import (
 
 func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
-	karpv1beta1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
 type Operator struct {
 	*operator.Operator
+
+	// InClusterKubernetesInterface is a Kubernetes client that can be used to talk to the APIServer
+	// of the cluster where the Karpenter pod is running. This is usually the same as operator.KubernetesInterface,
+	// but may be different if Karpenter is running in a different cluster than the one it manages.
+	InClusterKubernetesInterface kubernetes.Interface
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
@@ -77,9 +71,6 @@ type Operator struct {
 	InstanceTypesProvider  instancetype.Provider
 	InstanceProvider       *instance.DefaultProvider
 	LoadBalancerProvider   *loadbalancer.Provider
-
-	// Copied from the core Operator because we control our own webhooks
-	webhooks []knativeinjection.ControllerConstructor
 }
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
@@ -93,6 +84,12 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
+
+	// These options are set similarly to those used by operator.KubernetesInterface
+	inClusterConfig := lo.Must(rest.InClusterConfig())
+	inClusterConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
+	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
+	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
@@ -155,60 +152,17 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	)
 
 	return ctx, &Operator{
-		Operator:                  operator,
-		UnavailableOfferingsCache: unavailableOfferingsCache,
-		ImageProvider:             imageProvider,
-		ImageResolver:             imageResolver,
-		LaunchTemplateProvider:    launchTemplateProvider,
-		PricingProvider:           pricingProvider,
-		InstanceTypesProvider:     instanceTypeProvider,
-		InstanceProvider:          instanceProvider,
-		LoadBalancerProvider:      loadBalancerProvider,
+		Operator:                     operator,
+		InClusterKubernetesInterface: inClusterClient,
+		UnavailableOfferingsCache:    unavailableOfferingsCache,
+		ImageProvider:                imageProvider,
+		ImageResolver:                imageResolver,
+		LaunchTemplateProvider:       launchTemplateProvider,
+		PricingProvider:              pricingProvider,
+		InstanceTypesProvider:        instanceTypeProvider,
+		InstanceProvider:             instanceProvider,
+		LoadBalancerProvider:         loadBalancerProvider,
 	}
-}
-
-// Copied from karpenter-core pkg/operator/operator.go, needed for webhooks
-func (o *Operator) WithControllers(ctx context.Context, controllers ...controller.Controller) *Operator {
-	for _, c := range controllers {
-		lo.Must0(c.Register(ctx, o.Manager))
-	}
-	return o
-}
-
-// Copied from karpenter-core pkg/operator/operator.go, needed for webhooks
-func (o *Operator) WithWebhooks(ctx context.Context, ctors ...knativeinjection.ControllerConstructor) *Operator {
-	if !karpenteroptions.FromContext(ctx).DisableWebhook {
-		o.webhooks = append(o.webhooks, ctors...)
-		lo.Must0(o.Manager.AddReadyzCheck("webhooks", webhooksalt.HealthProbe(ctx)))
-		lo.Must0(o.Manager.AddHealthzCheck("webhooks", webhooksalt.HealthProbe(ctx)))
-	}
-	return o
-}
-
-// Copied from karpenter-core pkg/operator/operator.go, needed for webhooks
-func (o *Operator) Start(ctx context.Context, cp cloudprovider.CloudProvider) {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		lo.Must0(o.Manager.Start(ctx))
-	}()
-	if karpenteroptions.FromContext(ctx).DisableWebhook {
-		log.FromContext(ctx).Info("conversion webhooks are disabled")
-	} else {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// Taking the first supported NodeClass to be the default NodeClass
-			gvk := lo.Map(cp.GetSupportedNodeClasses(), func(nc status.Object, _ int) schema.GroupVersionKind {
-				return object.GVK(nc)
-			})
-			ctx = injection.WithNodeClasses(ctx, gvk)
-			ctx = injection.WithClient(ctx, o.GetClient())
-			webhooksalt.Start(ctx, o.GetConfig(), o.webhooks...) // This is our alt copy of webhooks that can support multiple apiservers
-		}()
-	}
-	wg.Wait()
 }
 
 func GetAZConfig() (*auth.Config, error) {
@@ -232,7 +186,7 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("discovering caBundle, loading TLS config, %w", err)
 	}
-	return ptr.String(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
+	return lo.ToPtr(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
 func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {

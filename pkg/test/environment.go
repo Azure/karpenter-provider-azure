@@ -23,24 +23,22 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	karpv1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+
+	"github.com/patrickmn/go-cache"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
-	"github.com/patrickmn/go-cache"
-	"knative.dev/pkg/ptr"
-
-	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
 func init() {
-	karpv1beta1.NormalizedLabels = lo.Assign(karpv1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 }
 
@@ -88,7 +86,7 @@ func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Env
 }
 
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
-	testOptions := Options()
+	testOptions := options.FromContext(ctx)
 
 	// API
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
@@ -117,7 +115,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		ctx,
 		imageFamilyResolver,
 		imageFamilyProvider,
-		ptr.String("ca-bundle"),
+		lo.ToPtr("ca-bundle"),
 		testOptions.ClusterEndpoint,
 		"test-tenant",
 		subscription,

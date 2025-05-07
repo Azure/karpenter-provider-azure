@@ -24,13 +24,14 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"knative.dev/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/awslabs/operatorpkg/reasonable"
+	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	"github.com/awslabs/operatorpkg/reasonable"
-	"github.com/samber/lo"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -87,9 +88,9 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 // store Requirements adds minor bloat, it also provides extra visibility into the avilaible images and how their
 // selection will work, which is seen as worth the tradeoff.
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named(nodeImageReconcilerName))
-	logger := logging.FromContext(ctx)
-	logger.Debug("starting reconcile")
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
+	logger := log.FromContext(ctx)
+	logger.V(1).Info("starting reconcile")
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
@@ -134,7 +135,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
 
-	logger.Debug("success")
+	logger.V(1).Info("success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 

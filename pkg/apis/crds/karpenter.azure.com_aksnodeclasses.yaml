@@ -10,6 +10,7 @@ spec:
   names:
     categories:
     - karpenter
+    - nap
     kind: AKSNodeClass
     listKind: AKSNodeClassList
     plural: aksnodeclasses
@@ -175,7 +176,7 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
-                minimum: 100
+                minimum: 30
                 type: integer
               tags:
                 additionalProperties:

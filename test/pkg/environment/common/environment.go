@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -35,9 +34,10 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+
 	. "sigs.k8s.io/karpenter/pkg/utils/testing" //nolint:stylecheck
 
-	"knative.dev/pkg/system"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,6 +51,9 @@ type ContextKey string
 
 const (
 	GitRefContextKey = ContextKey("gitRef")
+
+	NetworkDataplaneCilium = "cilium"
+	NetworkDataplaneAzure  = "azure"
 )
 
 type Environment struct {
@@ -62,8 +65,11 @@ type Environment struct {
 	KubeClient kubernetes.Interface
 	Monitor    *Monitor
 
+	// Resolved from cluster
 	InClusterController bool
-	StartingNodeCount   int
+	NetworkDataplane    string
+
+	StartingNodeCount int
 }
 
 func NewEnvironment(t *testing.T) *Environment {
@@ -72,7 +78,6 @@ func NewEnvironment(t *testing.T) *Environment {
 	config := NewConfig()
 	client := NewClient(ctx, config)
 
-	lo.Must0(os.Setenv(system.NamespaceEnvKey, "kube-system"))
 	if val, ok := os.LookupEnv("GIT_REF"); ok {
 		ctx = context.WithValue(ctx, GitRefContextKey, val)
 	}
@@ -88,6 +93,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		Monitor:    NewMonitor(ctx, client),
 	}
 	env.InClusterController = env.getInClusterController()
+	env.NetworkDataplane = lo.Ternary(env.IsCilium(), NetworkDataplaneCilium, NetworkDataplaneAzure)
 	return env
 }
 
@@ -189,17 +195,18 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 // It has to be applied to any custom node pools constructed by tests;
 // is already applied by default test NodePool constructors.
 func (env *Environment) AdaptToClusterConfig(nodePool *karpv1.NodePool) *karpv1.NodePool {
-	// TODO: make this conditional on Cilium
-	// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
-	nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
-		Key:    "node.cilium.io/agent-not-ready",
-		Effect: corev1.TaintEffectNoExecute,
-		Value:  "true",
-	})
-	// required for Karpenter to predict overhead from cilium DaemonSet
-	nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-		"kubernetes.azure.com/ebpf-dataplane": "cilium",
-	})
+	if env.NetworkDataplane == NetworkDataplaneCilium {
+		// https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+		nodePool.Spec.Template.Spec.StartupTaints = append(nodePool.Spec.Template.Spec.StartupTaints, corev1.Taint{
+			Key:    "node.cilium.io/agent-not-ready",
+			Effect: corev1.TaintEffectNoExecute,
+			Value:  "true",
+		})
+		// required for Karpenter to predict overhead from cilium DaemonSet
+		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+			"kubernetes.azure.com/ebpf-dataplane": "cilium",
+		})
+	}
 	return nodePool
 }
 

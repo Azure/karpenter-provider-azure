@@ -71,6 +71,38 @@ func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 	in.Status.Conditions = conditions
 }
 
+// GetKubernetesVersion returns the Status.KubernetesVersion if its up to date and valid to use, otherwise returns an error.
+func (in *AKSNodeClass) GetKubernetesVersion() (string, error) {
+	err := in.validateKubernetesVersionReadiness()
+	if err != nil {
+		return "", err
+	}
+	return in.Status.KubernetesVersion, nil
+}
+
+// validateKubernetesVersionReadiness will return nil if the the KubernetesVersion is considered valid to use,
+// otherwise will return an error detailing the reason of failure.
+//
+// Ensures
+// - The AKSNodeClass is non-nil
+// - The AKSNodeClass' KubernetesVersionReady Condition is true
+// - The Condition's ObservedGeneration is up to date with the latest Spec Generation
+// - The KubernetesVersion is initialized and non-empty
+func (in *AKSNodeClass) validateKubernetesVersionReadiness() error {
+	if in == nil {
+		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeKubernetesVersionReady)
+	}
+	kubernetesVersionCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
+	if kubernetesVersionCondition.IsFalse() || kubernetesVersionCondition.IsUnknown() {
+		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.GetStatus(), kubernetesVersionCondition.Message)
+	} else if kubernetesVersionCondition.ObservedGeneration != in.GetGeneration() {
+		return fmt.Errorf("NodeClass condition %s ObservedGeneration %d does not match the NodeClass Generation %d", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.ObservedGeneration, in.GetGeneration())
+	} else if in.Status.KubernetesVersion == "" {
+		return fmt.Errorf("NodeClass KubernetesVersion is uninitialized")
+	}
+	return nil
+}
+
 // Returns the Status.KubernetesVersion if its up to date and valid to use, otherwise returns an error.
 func (in *AKSNodeClass) GetNodeImages() ([]NodeImage, error) {
 	err := in.validateNodeImagesReadiness()

@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	opstatus "github.com/awslabs/operatorpkg/status"
+	"github.com/blang/semver/v4"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
@@ -103,6 +104,11 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 		},
 	}
 	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeNodeImagesReady)
+
+	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
+	nodeClass.Status.KubernetesVersion = testK8sVersion
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
+
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 
 	conditions := []opstatus.Condition{}

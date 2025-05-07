@@ -22,11 +22,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	"knative.dev/pkg/ptr"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -257,15 +257,18 @@ func CredentialProviderURL(kubernetesVersion, arch string) string {
 	// credential provider has its own release outside of k8s version, and there'll be one credential provider binary for each k8s release,
 	// as credential provider release goes with cloud-provider-azure, not every credential provider release will be picked up unless
 	// there are CVE or bug fixes.
-	credentialProviderVersion := "1.29.2"
+	var credentialProviderVersion string
 	switch minorVersion {
 	case 29:
-		credentialProviderVersion = "1.29.2"
+		credentialProviderVersion = "1.29.13"
 	case 30:
-		credentialProviderVersion = "1.30.0"
-
+		credentialProviderVersion = "1.30.10"
 	case 31:
-		credentialProviderVersion = "1.31.0"
+		credentialProviderVersion = "1.31.4"
+	case 32:
+		fallthrough // to default, which is same as latest
+	default:
+		credentialProviderVersion = "1.32.3"
 	}
 
 	return fmt.Sprintf("%s/cloud-provider-azure/v%s/binaries/azure-acr-credential-provider-linux-%s-v%s.tar.gz", globalAKSMirror, credentialProviderVersion, arch, credentialProviderVersion)
@@ -406,13 +409,13 @@ func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	}), "=")
 
 	if kubeletConfig.EvictionMaxPodGracePeriod != nil {
-		args["--eviction-max-pod-grace-period"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.EvictionMaxPodGracePeriod))
+		args["--eviction-max-pod-grace-period"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.EvictionMaxPodGracePeriod))
 	}
 	if kubeletConfig.ImageGCHighThresholdPercent != nil {
-		args["--image-gc-high-threshold"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.ImageGCHighThresholdPercent))
+		args["--image-gc-high-threshold"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ImageGCHighThresholdPercent))
 	}
 	if kubeletConfig.ImageGCLowThresholdPercent != nil {
-		args["--image-gc-low-threshold"] = fmt.Sprintf("%d", ptr.Int32Value(kubeletConfig.ImageGCLowThresholdPercent))
+		args["--image-gc-low-threshold"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ImageGCLowThresholdPercent))
 	}
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
