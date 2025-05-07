@@ -144,22 +144,29 @@ func (c *CloudProvider) isImageVersionDrifted(
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be fine/impossible.
 		return "", err
 	}
 
 	vm, err := c.instanceProvider.Get(ctx, id)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
+		//     However, we may want to collect this with the over errors up a level as to not block over drift conditions.
 		return "", err
 	}
 	if vm == nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
+		//     However, we may want to collect this with the over errors up a level as to not block over drift conditions.
 		return "", fmt.Errorf("vm with id %s missing", id)
 	}
 
 	if vm.Properties == nil ||
 		vm.Properties.StorageProfile == nil ||
 		vm.Properties.StorageProfile.ImageReference == nil {
+		// TODO (charliedmcb): this seems like an error case to me, but maybe not one to hard fail on? Is it even possible?
+		//     We may want to collect this with the over errors up a level as to not block over drift conditions.
 		return "", nil
 	}
 	CIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
@@ -176,6 +183,8 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", nil //nolint:nilerr
 	}
 	if len(nodeImages) == 0 {
+		// Note: this case shouldn't happen, since if there are node nodeImages, the ConditionTypeImagesReady should be false.
+		//     However, if it would happen, we want this to error, as it means the NodeClass is in a state it can't provision nodes.
 		return "", fmt.Errorf("no images exist for the given constraints")
 	}
 

@@ -35,6 +35,11 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
+const (
+	DefaultCIGImageVersion = "202501.02.0"
+	DefaultSIGImageVersion = "202410.09.0"
+)
+
 func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 	options := v1alpha2.AKSNodeClass{}
 	for _, override := range overrides {
@@ -78,7 +83,10 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 }
 
 func ApplyCIGImages(nodeClass *v1alpha2.AKSNodeClass) {
-	cigImageVersion := "202501.02.0"
+	ApplyCIGImagesWithVersion(nodeClass, DefaultCIGImageVersion)
+}
+
+func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion string) {
 	nodeClass.Status.Images = []v1alpha2.NodeImage{
 		{
 			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", cigImageVersion),
@@ -129,7 +137,10 @@ func ApplyCIGImages(nodeClass *v1alpha2.AKSNodeClass) {
 }
 
 func ApplySIGImages(nodeClass *v1alpha2.AKSNodeClass) {
-	sigImageVersion := "202410.09.0"
+	ApplySIGImagesWithVersion(nodeClass, DefaultSIGImageVersion)
+}
+
+func ApplySIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, sigImageVersion string) {
 	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }

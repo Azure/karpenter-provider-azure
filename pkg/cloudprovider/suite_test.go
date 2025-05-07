@@ -240,12 +240,45 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		Context("Node Image Drift", func() {
+			It("should succeed with no drift when nothing changes", func() {
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("should succeed with no drift when ConditionTypeImagesReady is not true", func() {
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeImagesReady, "ImagesNoLongerReady", "test when images aren't ready")
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			// Note: this case shouldn't be able to happen in practice since if Images is empty ConditionTypeImagesReady should be false.
+			It("should error when Images are empty", func() {
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				nodeClass.Status.Images = []v1alpha2.NodeImage{}
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
 			It("should trigger drift when the image gallery changes to SIG", func() {
 				test.ApplySIGImages(nodeClass)
 				ExpectApplied(ctx, env.Client, nodeClass)
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(string(drifted)).To(Equal("ImageVersionDrift"))
+				Expect(string(drifted)).To(Equal(ImageVersionDrift))
+			})
+
+			It("should trigger drift when the image version changes", func() {
+				test.ApplyCIGImagesWithVersion(nodeClass, "202503.02.0")
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(string(drifted)).To(Equal(ImageVersionDrift))
 			})
 		})
 
