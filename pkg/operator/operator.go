@@ -20,10 +20,16 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
@@ -212,4 +218,42 @@ func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {
 		return "", fmt.Errorf("vnet %s does not have a resource GUID", subnetParts.VNetName)
 	}
 	return *vnet.Properties.ResourceGUID, nil
+}
+
+// WaitForCRDs waits for the required CRDs to be available with a timeout
+func WaitForCRDs(ctx context.Context, client *discovery.DiscoveryClient, timeout time.Duration, log logr.Logger) error {
+	var requiredCRDs = []schema.GroupVersionResource{
+		{Group: "karpenter.sh", Version: "v1", Resource: "nodepools"},
+		{Group: "karpenter.sh", Version: "v1", Resource: "nodeclaims"},
+		{Group: "karpenter.azure.com", Version: "v1alpha2", Resource: "aksnodeclasses"},
+	}
+
+	log.WithValues("timeout", timeout).Info("waiting for required CRDs to be available")
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	for _, crd := range requiredCRDs {
+		crdName := fmt.Sprintf("%s.%s/%s", crd.Resource, crd.GroupVersion().Group, crd.Version)
+		if err := wait.PollUntilContextCancel(ctx, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+			_, err := client.RESTClient().Get().AbsPath("/apis", crd.Group, crd.Version, crd.Resource).Do(ctx).Raw()
+
+			if err != nil {
+				if errors.IsNotFound(err) {
+					log.V(1).WithValues("crd", crdName).Info("waiting for CRD to be available")
+					return false, nil
+				}
+				return false, err
+			}
+			log.V(1).WithValues("crd", crdName).Info("CRD is available")
+			return true, nil
+		}); err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("timed out waiting for CRD %s to be available", crdName)
+			}
+			return fmt.Errorf("failed to wait for CRD %s: %w", crdName, err)
+		}
+	}
+
+	log.Info("all required CRDs are available")
+	return nil
 }
