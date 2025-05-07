@@ -270,7 +270,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodeClass)
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(string(drifted)).To(Equal(ImageVersionDrift))
+				Expect(drifted).To(Equal(ImageVersionDrift))
 			})
 
 			It("should trigger drift when the image version changes", func() {
@@ -278,7 +278,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodeClass)
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(string(drifted)).To(Equal(ImageVersionDrift))
+				Expect(drifted).To(Equal(ImageVersionDrift))
 			})
 		})
 
