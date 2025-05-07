@@ -126,9 +126,8 @@ func (in *AKSNodeClass) validateImagesReadiness() error {
 	imagesCondition := in.StatusConditions().Get(ConditionTypeImagesReady)
 	if imagesCondition.IsFalse() || imagesCondition.IsUnknown() {
 		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeImagesReady, imagesCondition.GetStatus(), imagesCondition.Message)
-		// TODO: this needs to be uncommented as soon as we update core to 1.1.x, but until then would make tests, and code checks fail.
-		// } else if imagesCondition.ObservedGeneration != in.GetGeneration() {
-		// 	return fmt.Errorf("NodeClass condition %s is not considered ready as ObservedGeneration %d does not match the NodeClass' spec Generation %d", ConditionTypeImagesReady, imagesCondition.ObservedGeneration, in.GetGeneration())
+	} else if imagesCondition.ObservedGeneration != in.GetGeneration() {
+		return fmt.Errorf("NodeClass condition %s ObservedGeneration %d does not match the NodeClass Generation %d", ConditionTypeImagesReady, imagesCondition.ObservedGeneration, in.GetGeneration())
 	}
 	return nil
 }
