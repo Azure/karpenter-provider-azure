@@ -91,27 +91,6 @@ func (r *defaultResolver) resolveNodeImage(nodeImages []v1alpha2.NodeImage, inst
 	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
 }
 
-// func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultImageOutput) (string, error) {
-// 	// Note: one could argue that we could narrow the key one level further to ImageDefinition since no two AKS ImageDefinitions that are supported
-// 	// by karpenter have the same name, but for EdgeZone support this is not the case.
-// 	key := lo.Ternary(options.FromContext(ctx).UseSIG,
-// 		fmt.Sprintf(sharedImageKey, defaultImage.GalleryName, defaultImage.ImageDefinition),
-// 		fmt.Sprintf(communityImageKey, defaultImage.PublicGalleryURL, defaultImage.ImageDefinition),
-// 	)
-// 	if imageID, ok := p.imageCache.Get(key); ok {
-// 		return imageID.(string), nil
-// 	}
-
-// 	// retrieve ARM Resource ID for the image and write it to the cache
-// 	imageID, err := p.resolveImageID(ctx, defaultImage, options.FromContext(ctx).UseSIG)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	p.imageCache.Set(key, imageID, imageExpirationInterval)
-// 	log.FromContext(ctx).WithValues("image-id", imageID).Info("discovered new image id")
-// 	return imageID, nil
-// }
-
 // TODO: refactor this into kubernetesversion.go, and split into a new kubernetes provider
 func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	if version, ok := p.kubernetesVersionCache.Get(kubernetesVersionCacheKey); ok {
@@ -128,27 +107,6 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	}
 	return version, nil
 }
-
-// func (p *Provider) resolveImageID(ctx context.Context, defaultImage DefaultImageOutput, useSIG bool) (string, error) {
-// 	if useSIG {
-// 		return p.getSIGImageID(ctx, defaultImage)
-// 	}
-// 	return p.getCIGImageID(defaultImage.PublicGalleryURL, defaultImage.ImageDefinition)
-// }
-
-// func (p *Provider) getSIGImageID(ctx context.Context, imgStub DefaultImageOutput) (string, error) {
-// 	versions, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	for _, version := range versions.Values {
-// 		if imgStub.ImageDefinition == version.SKU {
-// 			imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, imgStub.GalleryResourceGroup, imgStub.GalleryName, imgStub.ImageDefinition, version.Version)
-// 			return imageID, nil
-// 		}
-// 	}
-// 	return "", fmt.Errorf("failed to get the latest version of the image %s", imgStub.ImageDefinition)
-// }
 
 // TODO (charliedmcb): refactor this into nodeimage.go and create new provider
 func (p *Provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
