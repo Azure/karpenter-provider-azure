@@ -46,7 +46,7 @@ var _ = Describe("Zone Constraints", func() {
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      "topology.kubernetes.io/zone",
 				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{env.Region + "2"},
+				Values:   []string{env.Region + "-2"},
 			},
 		})
 		env.ExpectCreated(nodePool, nodeClass)
@@ -164,7 +164,7 @@ var _ = Describe("Zone Constraints", func() {
 					{
 						Key:      "topology.kubernetes.io/zone",
 						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{env.Region + "1"},
+						Values:   []string{env.Region + "-1"},
 					},
 				},
 			},
