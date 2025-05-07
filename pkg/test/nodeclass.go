@@ -55,6 +55,26 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 }
 
 func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environment) {
+	ApplyCIGImages(nodeClass)
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
+
+	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
+	nodeClass.Status.KubernetesVersion = testK8sVersion
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
+
+	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+
+	conditions := []opstatus.Condition{}
+	for _, condition := range nodeClass.GetConditions() {
+		// Using the magic number 1, as it appears the Generation is always equal to 1 on the NodeClass in testing. If that appears to not be the case,
+		// than we should add some function for allows bumps as needed to match.
+		condition.ObservedGeneration = 1
+		conditions = append(conditions, condition)
+	}
+	nodeClass.SetConditions(conditions)
+}
+
+func ApplyCIGImages(nodeClass *v1alpha2.AKSNodeClass) {
 	cigImageVersion := "202501.02.0"
 	nodeClass.Status.Images = []v1alpha2.NodeImage{
 		{
@@ -103,22 +123,6 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 			},
 		},
 	}
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
-
-	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
-	nodeClass.Status.KubernetesVersion = testK8sVersion
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
-
-	conditions := []opstatus.Condition{}
-	for _, condition := range nodeClass.GetConditions() {
-		// Using the magic number 1, as it appears the Generation is always equal to 1 on the NodeClass in testing. If that appears to not be the case,
-		// than we should add some function for allows bumps as needed to match.
-		condition.ObservedGeneration = 1
-		conditions = append(conditions, condition)
-	}
-	nodeClass.SetConditions(conditions)
 }
 
 func AKSNodeClassFieldIndexer(ctx context.Context) func(cache.Cache) error {
