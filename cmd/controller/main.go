@@ -28,8 +28,6 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/samber/lo"
 
-	"k8s.io/client-go/kubernetes"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
@@ -44,8 +42,7 @@ import (
 func main() {
 	ctx := injection.WithOptionsOrDie(context.Background(), options.Injectables...)
 	logger := zapr.NewLogger(logging.NewLogger(ctx, "controller"))
-	client := kubernetes.NewForConfigOrDie(ctrl.GetConfigOrDie())
-	lo.Must0(operator.WaitForCRDs(ctx, client.DiscoveryClient, 2*time.Minute, logger), "failed waiting for CRDs")
+	lo.Must0(operator.WaitForCRDs(ctx, 2*time.Minute, ctrl.GetConfigOrDie(), logger), "failed waiting for CRDs")
 
 	ctx, op := operator.NewOperator(coreoperator.NewOperator())
 	aksCloudProvider := cloudprovider.New(
