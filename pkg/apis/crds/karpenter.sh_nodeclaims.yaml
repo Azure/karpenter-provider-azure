@@ -24,7 +24,7 @@ spec:
         - jsonPath: .metadata.labels.karpenter\.sh/capacity-type
           name: Capacity
           type: string
-        - jsonPath: .metadata.labels.karpenter\.azure\.com/zone
+        - jsonPath: .metadata.labels.topology\.kubernetes\.io/zone
           name: Zone
           type: string
         - jsonPath: .status.nodeName

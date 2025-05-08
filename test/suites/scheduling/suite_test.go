@@ -17,6 +17,7 @@ limitations under the License.
 package scheduling_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -79,10 +80,6 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		selectors = sets.New(
 			// we don't support Windows yet
 			corev1.LabelWindowsBuild,
-			// TODO: restore when we support zone selectors without overscaling
-			corev1.LabelTopologyZone,
-			corev1.LabelFailureDomainBetaZone,
-			"topology.disk.csi.azure.com/zone",
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1alpha2.LabelSKUGPUName,
 			// TODO: review the use of "kubernetes.azure.com/cluster"
@@ -140,12 +137,11 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			nodeSelector := map[string]string{
 				// Deprecated Labels
 				corev1.LabelFailureDomainBetaRegion: env.Region,
-				// TODO: restore these when we support zone selectors without overscaling
-				// corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
-				// "topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
-				"beta.kubernetes.io/arch": "amd64",
-				"beta.kubernetes.io/os":   "linux",
-				corev1.LabelInstanceType:  "Standard_D4s_v5",
+				corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
+				"topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
+				"beta.kubernetes.io/arch":           "amd64",
+				"beta.kubernetes.io/os":             "linux",
+				corev1.LabelInstanceType:            "Standard_D4s_v5",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
@@ -163,10 +159,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		It("should support well-known labels for topology and architecture", func() {
 			nodeSelector := map[string]string{
 				// Well Known
-				karpv1.NodePoolLabelKey:    nodePool.Name,
-				corev1.LabelTopologyRegion: env.Region,
-				// TODO: restore these when we support zone selectors without overscaling
-				// corev1.LabelTopologyZone:    fmt.Sprintf("%s-1", env.Region),
+				karpv1.NodePoolLabelKey:     nodePool.Name,
+				corev1.LabelTopologyRegion:  env.Region,
+				corev1.LabelTopologyZone:    fmt.Sprintf("%s-1", env.Region),
 				corev1.LabelOSStable:        "linux",
 				corev1.LabelArchStable:      "amd64",
 				karpv1.CapacityTypeLabelKey: karpv1.CapacityTypeOnDemand,
@@ -274,8 +269,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), 2)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
-		// TODO: restore when we support zonal topology spread without overscaling
-		PIt("should provision three nodes for a zonal topology spread", func() {
+		It("should provision three nodes for a zonal topology spread", func() {
 
 			// one pod per zone
 			podLabels := map[string]string{"test": "zonal-spread"}
@@ -292,6 +286,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							WhenUnsatisfiable: corev1.DoNotSchedule,
 							LabelSelector:     &metav1.LabelSelector{MatchLabels: podLabels},
 							MinDomains:        lo.ToPtr(int32(3)),
+							NodeTaintsPolicy:  lo.ToPtr(corev1.NodeInclusionPolicyHonor),
 						},
 					},
 				},

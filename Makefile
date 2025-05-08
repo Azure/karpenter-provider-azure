@@ -88,12 +88,9 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	go generate ./...
 	hack/boilerplate.sh
 	cp $(KARPENTER_CORE_DIR)/pkg/apis/crds/* pkg/apis/crds
-	yq -i '(.spec.versions[0].additionalPrinterColumns[] | select (.name=="Zone")) .jsonPath=".metadata.labels.karpenter\.azure\.com/zone"' \
-		pkg/apis/crds/karpenter.sh_nodeclaims.yaml
 	hack/validation/kubelet.sh
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
-	hack/validation/common.sh
 	hack/mutation/kubectl_get_ux.sh
 	cp pkg/apis/crds/* charts/karpenter-crd/templates
 	hack/github/dependabot.sh
