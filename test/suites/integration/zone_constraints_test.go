@@ -61,13 +61,6 @@ var _ = Describe("Zone Constraints", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"app": "spread-app"},
 				},
-				NodeRequirements: []corev1.NodeSelectorRequirement{
-					{
-						Key:      "karpenter.sh/registered",
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"true"},
-					},
-				},
 				PodAntiRequirements: []corev1.PodAffinityTerm{
 					{
 						LabelSelector: &metav1.LabelSelector{
@@ -113,13 +106,6 @@ var _ = Describe("Zone Constraints", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"app": "zone-spread-app"},
 				},
-				NodeRequirements: []corev1.NodeSelectorRequirement{
-					{
-						Key:      "karpenter.sh/registered",
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"true"},
-					},
-				},
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					{
 						MaxSkew:           1,
@@ -156,11 +142,6 @@ var _ = Describe("Zone Constraints", func() {
 					Labels: map[string]string{"app": "unsatisfiable-app"},
 				},
 				NodeRequirements: []corev1.NodeSelectorRequirement{
-					{
-						Key:      "karpenter.sh/registered",
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"true"},
-					},
 					{
 						Key:      "topology.kubernetes.io/zone",
 						Operator: corev1.NodeSelectorOpIn,
