@@ -20,17 +20,27 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/flowcontrol"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -212,4 +222,52 @@ func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {
 		return "", fmt.Errorf("vnet %s does not have a resource GUID", subnetParts.VNetName)
 	}
 	return *vnet.Properties.ResourceGUID, nil
+}
+
+// WaitForCRDs waits for the required CRDs to be available with a timeout
+func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config, log logr.Logger) error {
+	gvk := func(obj runtime.Object) schema.GroupVersionKind {
+		return lo.Must(apiutil.GVKForObject(obj, scheme.Scheme))
+	}
+	var requiredGVKs = []schema.GroupVersionKind{
+		gvk(&karpv1.NodePool{}),
+		gvk(&karpv1.NodeClaim{}),
+		gvk(&v1alpha2.AKSNodeClass{}),
+	}
+
+	client, err := rest.HTTPClientFor(config)
+	if err != nil {
+		return fmt.Errorf("creating kubernetes client, %w", err)
+	}
+	restMapper, err := apiutil.NewDynamicRESTMapper(config, client)
+	if err != nil {
+		return fmt.Errorf("creating dynamic rest mapper, %w", err)
+	}
+
+	log.WithValues("timeout", timeout).Info("waiting for required CRDs to be available")
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	for _, gvk := range requiredGVKs {
+		err := wait.PollUntilContextCancel(ctx, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+			if _, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
+				if meta.IsNoMatchError(err) {
+					log.V(1).WithValues("gvk", gvk).Info("waiting for CRD to be available")
+					return false, nil
+				}
+				return false, err
+			}
+			log.V(1).WithValues("gvk", gvk).Info("CRD is available")
+			return true, nil
+		})
+		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("timed out waiting for CRD %s to be available", gvk)
+			}
+			return fmt.Errorf("failed to wait for CRD %s: %w", gvk, err)
+		}
+	}
+
+	log.Info("all required CRDs are available")
+	return nil
 }
