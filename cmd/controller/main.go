@@ -56,6 +56,8 @@ func main() {
 		op.ImageProvider,
 	)
 
+	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))
+
 	cloudProvider := metrics.Decorate(aksCloudProvider)
 	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
