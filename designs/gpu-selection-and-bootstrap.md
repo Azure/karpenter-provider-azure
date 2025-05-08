@@ -1,5 +1,5 @@
 # Overview
-This document outlines all of the functional requirements for the preview AKS API for karpenter GPU Support. 
+This document outlines all of the functional requirements for the preview AKS API for karpenter GPU Support.
 
 ## GPU Provisioning Requirements for Preview
 
@@ -40,7 +40,7 @@ spec:
   limits:
     resources:
       cpu: 100
-      nvidia.com/gpu: 2 
+      nvidia.com/gpu: 2
 ```
 **Workload Example**
 ```
@@ -74,28 +74,28 @@ The way we determine these drivers is via trial and error, and there is not a gr
 For Converged drivers they are a mix of multiple drivers installing vanilla cuda drivers will fail to install with opaque errors.
 nvidia-bug-report.sh may be helpful, but usually it tells you the pci card id is incompatible.
 
-So manual trial and error, or leveraging other peoples manual trial and error, and published gpu drivers seems to be the preferred method for approaching this. 
+So manual trial and error, or leveraging other peoples manual trial and error, and published gpu drivers seems to be the preferred method for approaching this.
 see https://github.com/Azure/azhpc-extensions/blob/daaefd78df6f27012caf30f3b54c3bd6dc437652/NvidiaGPU/resources.json for the HPC list of skus and converged drivers, and the driver matrix used by HPC
 
-**Ownership:** Node SIG is responsible for ensuring successful and functional installation. Our goal is to share a bootstrap contract, and the oblication of a functional successfully bootstrapped vhd relies on the node sig. 
+**Ownership:** Node SIG is responsible for ensuring successful and functional installation. Our goal is to share a bootstrap contract, and the oblication of a functional successfully bootstrapped vhd relies on the node sig.
 Sharing between agentbaker and karpenter is an additional goal, as to which drivers are supported, and for which skus. As well as extending skewer for better GPU Support is also a goal.
 
-#### 4a. GPU Driver installation 
-The bootstrap parameter `DRIVER_VERSION` will select the driver version and `ConfigGPUDriverIfNeeded` serves the purpose of telling the VHD to install all gpu helpers such as nvidia-smi etc. 
-### 5. containerd configuration 
+#### 4a. GPU Driver installation
+The bootstrap parameter `DRIVER_VERSION` will select the driver version and `ConfigGPUDriverIfNeeded` serves the purpose of telling the VHD to install all gpu helpers such as nvidia-smi etc.
+### 5. containerd configuration
 GPU's also use a different container runtime, so we need to be able to dynamically modify the containerd configuration we pass into karpenter's bootstrapping contract to include the proper configuration of the gpu settings
 
 [plugins."io.containerd.grpc.v1.cri".containerd]
 Needs to be able to alternate between normal containerd configuration of "io.containerd.runc" and "nvidia-container-runtime" in order to properly connect with device plugin and add the capacity for "nvidia.com/gpu" to our nodes to allow for scheduling of GPU Nodes.
 
-**Note** We also need to ensure that containerd, and kubelet are using the same cgroup driver. So when leveraging cgroupsv2, we need to make sure we are setting the kubelet flag, we need to update the containerd con 
+**Note** We also need to ensure that containerd, and kubelet are using the same cgroup driver. So when leveraging cgroupsv2, we need to make sure we are setting the kubelet flag, we need to update the containerd con
 
 ### 6. Nvidia Device Plugin
 The NVIDIA device plugin for Kubernetes is designed to enable GPU support within Kubernetes clusters. Kubernetes, by default, doesn’t recognize GPUs as a native resource. However, using device plugins, one can extend Kubernetes to manage other types of hardware resources, such as GPUs from NVIDIA.
 
 We will require the customer to install the nvidia device plugin daemonset to enable GPU support through karpenter.
 
-When a node with Nvidia GPUS joins the cluster, the device plugin detects available gpus and notifies the k8s scheduler that we have a new Allocatable Resource type of `nvidia.com/gpu` along with a resource quantity that can be considered for scheduling. 
+When a node with Nvidia GPUS joins the cluster, the device plugin detects available gpus and notifies the k8s scheduler that we have a new Allocatable Resource type of `nvidia.com/gpu` along with a resource quantity that can be considered for scheduling.
 
 Note the device plugin is also responsible for the allocation of that resource and reporting that other pods can not use that resource and marking it as used by changing the allocatable capacity on the node.
 
@@ -111,7 +111,6 @@ Here are some relevant labels:
 |---------------------------------------|-------------------------------------------|
 | `karpenter.azure.com/sku-family`       | Family of the SKU (N) for GPU          |
 | `karpenter.azure.com/sku-cpu`          | Number of virtual CPUs                    |
-| `karpenter.azure.com/sku-accelerator`  | Type of accelerator (e.g., Nvidia)        |
 
 **Note:** GPU SKUs usually support only a single hypervisor generation. Explicit image selection is moot in most cases, though there are some exceptions.
 
@@ -193,4 +192,3 @@ This table will outline for each SKU, the supported OS and the driver we commit 
 | standard_nv72ads_a10_v5 | Ubuntu       | Nvidia535GridDriver   |
 | standard_nd96ams_v4     | Ubuntu       | Nvidia525CudaDriver   |
 | standard_nd96ams_a100_v4| Ubuntu       | Nvidia525CudaDriver   |
-

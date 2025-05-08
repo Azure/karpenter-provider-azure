@@ -162,7 +162,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 
 		// size parts
 		scheduling.NewRequirement(v1alpha2.LabelSKUFamily, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUAccelerator, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUVersion, corev1.NodeSelectorOpDoesNotExist),
 
 		// SKU capabilities
@@ -186,7 +185,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	setRequirementsAcceleratedNetworking(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
 	setRequirementsGPU(requirements, sku, vmsize)
-	setRequirementsAccelerator(requirements, vmsize)
 	setRequirementsVersion(requirements, vmsize)
 
 	return requirements
@@ -231,12 +229,6 @@ func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, v
 		if vmsize.AcceleratorType != nil {
 			requirements[v1alpha2.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
 		}
-	}
-}
-
-func setRequirementsAccelerator(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	if vmsize.AcceleratorType != nil {
-		requirements[v1alpha2.LabelSKUAccelerator].Insert(*vmsize.AcceleratorType)
 	}
 }
 
