@@ -68,9 +68,6 @@ var (
 		options.AllowUndefined = karpv1.WellKnownLabels.Union(RestrictedLabels)
 	}
 
-	// alternative zone label for Machine (the standard one is protected for AKS nodes)
-	AlternativeLabelTopologyZone = Group + "/zone"
-
 	HyperVGenerationV1 = "1"
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
