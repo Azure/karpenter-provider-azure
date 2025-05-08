@@ -44,7 +44,7 @@ var _ = Describe("Zone Constraints", func() {
 		// Create a node pool with zone constraints
 		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      "topology.kubernetes.io/zone",
+				Key:      corev1.LabelTopologyZone,
 				Operator: corev1.NodeSelectorOpIn,
 				Values:   []string{env.Region + "-2"},
 			},
@@ -55,16 +55,17 @@ var _ = Describe("Zone Constraints", func() {
 	It("should be respected", func() {
 		// Deploy spread pods
 		podCount := 6
+		podLabels := map[string]string{"test": "spread"}
 		spreadDep := test.Deployment(test.DeploymentOptions{
 			Replicas: int32(podCount),
 			PodOptions: test.PodOptions{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "spread-app"},
+					Labels: podLabels,
 				},
 				PodAntiRequirements: []corev1.PodAffinityTerm{
 					{
 						LabelSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"app": "spread-app"},
+							MatchLabels: podLabels,
 						},
 						TopologyKey: "kubernetes.io/hostname",
 					},
@@ -80,11 +81,11 @@ var _ = Describe("Zone Constraints", func() {
 		nodes := env.ExpectCreatedNodeCount("==", podCount)
 		for _, node := range nodes {
 			// Find the zone requirement from nodePool requirements
-			zoneConstraint := findNodeSelectorRequirementByKey(nodePool.Spec.Template.Spec.Requirements, "topology.kubernetes.io/zone")
+			zoneConstraint := findNodeSelectorRequirementByKey(nodePool.Spec.Template.Spec.Requirements, corev1.LabelTopologyZone)
 			Expect(zoneConstraint).NotTo(BeNil(), "Zone requirement not found in nodePool")
 
 			// Check that node zone is one of the allowed values
-			nodeZone := node.Labels["topology.kubernetes.io/zone"]
+			nodeZone := node.Labels[corev1.LabelTopologyZone]
 			Expect(zoneConstraint.Values).To(ContainElement(nodeZone),
 				"Node zone %s is not in the allowed zones %v", nodeZone, zoneConstraint.Values)
 		}
@@ -94,25 +95,26 @@ var _ = Describe("Zone Constraints", func() {
 	})
 
 	It("should create nodes that zone constraints can satisfy", func() {
-		zoneConstraint := findNodeSelectorRequirementByKey(nodePool.Spec.Template.Spec.Requirements, "topology.kubernetes.io/zone")
+		zoneConstraint := findNodeSelectorRequirementByKey(nodePool.Spec.Template.Spec.Requirements, corev1.LabelTopologyZone)
 		Expect(zoneConstraint).NotTo(BeNil(), "Zone requirement not found in nodePool")
 		allowedZonesCount := len(zoneConstraint.Values)
 
 		// Deploy zone spread pods, more than the allowed zones
 		podCount := allowedZonesCount * 2
+		podLabels := map[string]string{"test": "zonal-spread"}
 		zoneSpreadDep := test.Deployment(test.DeploymentOptions{
 			Replicas: int32(podCount),
 			PodOptions: test.PodOptions{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "zone-spread-app"},
+					Labels: podLabels,
 				},
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					{
 						MaxSkew:           1,
-						TopologyKey:       "topology.kubernetes.io/zone",
+						TopologyKey:       corev1.LabelTopologyZone,
 						WhenUnsatisfiable: corev1.DoNotSchedule,
 						LabelSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"app": "zone-spread-app"},
+							MatchLabels: podLabels,
 						},
 					},
 				},
@@ -135,15 +137,16 @@ var _ = Describe("Zone Constraints", func() {
 
 	It("should not create nodes if zone constraints cannot satisfy", func() {
 		// Deploy pods that nodepool constraints cannot be satisfied
+		podLabels := map[string]string{"test": "unsatisfiable"}
 		unsatisfiableDep := test.Deployment(test.DeploymentOptions{
 			Replicas: int32(3),
 			PodOptions: test.PodOptions{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "unsatisfiable-app"},
+					Labels: podLabels,
 				},
 				NodeRequirements: []corev1.NodeSelectorRequirement{
 					{
-						Key:      "topology.kubernetes.io/zone",
+						Key:      corev1.LabelTopologyZone,
 						Operator: corev1.NodeSelectorOpIn,
 						Values:   []string{env.Region + "-1"},
 					},
