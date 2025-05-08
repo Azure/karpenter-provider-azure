@@ -287,6 +287,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							WhenUnsatisfiable: corev1.DoNotSchedule,
 							LabelSelector:     &metav1.LabelSelector{MatchLabels: podLabels},
 							MinDomains:        lo.ToPtr(int32(3)),
+							NodeTaintsPolicy:  lo.ToPtr(corev1.NodeInclusionPolicyHonor),
 						},
 					},
 				},
