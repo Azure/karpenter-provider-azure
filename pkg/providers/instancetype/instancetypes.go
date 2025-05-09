@@ -38,7 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -60,7 +60,7 @@ const (
 
 type Provider interface {
 	LivenessProbe(*http.Request) error
-	List(context.Context, *v1alpha2.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
 	//UpdateInstanceTypes(ctx context.Context) error
 	//UpdateInstanceTypeOfferings(ctx context.Context) error
 }
@@ -101,7 +101,7 @@ func NewDefaultProvider(region string, cache *cache.Cache, skuClient skuclient.S
 
 // Get all instance type options
 func (p *DefaultProvider) List(
-	ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
+	ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error) {
 	kc := nodeClass.Spec.Kubelet
 
 	// Get SKUs from Azure
@@ -240,9 +240,9 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 		return true
 	}
 	switch imageFamily {
-	case v1alpha2.Ubuntu2204ImageFamily:
+	case v1beta1.Ubuntu2204ImageFamily:
 		return utils.IsNvidiaEnabledSKU(skuName)
-	case v1alpha2.AzureLinuxImageFamily:
+	case v1beta1.AzureLinuxImageFamily:
 		return utils.IsMarinerEnabledGPUSKU(skuName)
 	default:
 		return false

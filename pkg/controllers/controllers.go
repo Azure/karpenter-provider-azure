@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	nodeclaimgarbagecollection "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -59,7 +59,7 @@ func NewControllers(
 
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, instanceProvider),
-		status.NewController[*v1alpha2.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
+		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 	}
 	return controllers
 }

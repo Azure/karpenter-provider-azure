@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
 	corev1 "k8s.io/api/core/v1"
@@ -35,8 +35,8 @@ const (
 	newCIGImageVersion = "202501.02.0"
 )
 
-func getExpectedTestCommunityImages(version string) []v1alpha2.NodeImage {
-	return []v1alpha2.NodeImage{
+func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
+	return []v1beta1.NodeImage{
 		{
 			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", version),
 			Requirements: []corev1.NodeSelectorRequirement{
@@ -46,7 +46,7 @@ func getExpectedTestCommunityImages(version string) []v1alpha2.NodeImage {
 					Values:   []string{"amd64"},
 				},
 				{
-					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Key:      v1beta1.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"2"},
 				},
@@ -61,7 +61,7 @@ func getExpectedTestCommunityImages(version string) []v1alpha2.NodeImage {
 					Values:   []string{"amd64"},
 				},
 				{
-					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Key:      v1beta1.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"1"},
 				},
@@ -76,7 +76,7 @@ func getExpectedTestCommunityImages(version string) []v1alpha2.NodeImage {
 					Values:   []string{"arm64"},
 				},
 				{
-					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Key:      v1beta1.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"2"},
 				},
@@ -86,7 +86,7 @@ func getExpectedTestCommunityImages(version string) []v1alpha2.NodeImage {
 }
 
 var _ = Describe("NodeClass NodeImage Status Controller", func() {
-	var nodeClass *v1alpha2.AKSNodeClass
+	var nodeClass *v1beta1.AKSNodeClass
 	BeforeEach(func() {
 		var cigImageVersionTest = newCIGImageVersion
 		azureEnv.CommunityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
@@ -100,26 +100,26 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 		Expect(len(nodeClass.Status.Images)).To(Equal(3))
 		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(newCIGImageVersion)))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
 	})
 
 	It("should update Images and its readiness on AKSNodeClass when in an open maintenance window", func() {
 		// TODO: once maintenance window support is added we need to actually add test code here causing it to be open.
 		nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 		ExpectApplied(ctx, env.Client, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
 		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
 
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
 		Expect(len(nodeClass.Status.Images)).To(Equal(3))
 		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(newCIGImageVersion)))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
 	})
 
 	// TODO: Handle test cases where maintenance window is not open, but other update conditions trigger an update, once maintenance windows are supported.

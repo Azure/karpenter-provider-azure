@@ -12,7 +12,7 @@ Table of contents:
 
 Azure Karpenter creates a hash of the `AKSNodeClass` spec, and stores it under the annotation `karpenter.azure.com/aksnodeclass-hash`. Karpenter will then compare this hash with existing nodes it controls to see if things have drifted from the desired spec.
 
-Note: there are other conditions for Drift to occur, both within the NodePools, and NodeClass. 
+Note: there are other conditions for Drift to occur, both within the NodePools, and NodeClass.
 
 ## Test Drift
 
@@ -73,7 +73,7 @@ aks-default-fjzdc   Ready    <none>   2m24s   v1.29.9
 ```bash
 cd ~/environment/karpenter
 cat > new-nodeclass.yaml << EOF
-apiVersion: karpenter.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
     name: newnodeclass

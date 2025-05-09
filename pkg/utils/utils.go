@@ -26,7 +26,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 
 	"github.com/samber/lo"
@@ -148,7 +148,7 @@ func PrettySlice[T any](s []T, maxItems int) string {
 // GetMaxPods resolves what we should set max pods to for a given nodeclass.
 // If not specified, defaults based on network-plugin. 30 for "azure", 110 for "kubenet",
 // or 250 for "none" and network plugin mode overlay.
-func GetMaxPods(nodeClass *v1alpha2.AKSNodeClass, networkPlugin, networkPluginMode string) int32 {
+func GetMaxPods(nodeClass *v1beta1.AKSNodeClass, networkPlugin, networkPluginMode string) int32 {
 	if nodeClass.Spec.MaxPods != nil {
 		return lo.FromPtr(nodeClass.Spec.MaxPods)
 	}
