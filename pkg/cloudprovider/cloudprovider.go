@@ -109,7 +109,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
 	}
 	if nodeClassReady.IsUnknown() {
-		return nil, fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message)
+		return nil, cloudprovider.NewNodeClassNotReadyError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message))
 	}
 	if _, err = nodeClass.GetKubernetesVersion(); err != nil {
 		return nil, err
@@ -117,14 +117,14 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
-		return nil, fmt.Errorf("resolving instance types, %w", err)
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("resolving instance types, %w", err))
 	}
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 	}
 	instancePromise, err := c.instanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		return nil, fmt.Errorf("creating instance, %w", err)
+		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("creating instance, %w", err))
 	}
 
 	// Launch a single goroutine to poll the returned promise.
