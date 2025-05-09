@@ -19,7 +19,7 @@ package imagefamily
 import (
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
@@ -40,7 +40,7 @@ type AzureLinux struct {
 }
 
 func (u AzureLinux) Name() string {
-	return v1alpha2.AzureLinuxImageFamily
+	return v1beta1.AzureLinuxImageFamily
 }
 
 func (u AzureLinux) DefaultImages() []DefaultImageOutput {
@@ -53,7 +53,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			ImageDefinition:      AzureLinuxGen2ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
 			Distro: "aks-azurelinux-v2-gen2",
 		},
@@ -64,7 +64,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			ImageDefinition:      AzureLinuxGen1ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
 			),
 			Distro: "aks-azurelinux-v2",
 		},
@@ -75,7 +75,7 @@ func (u AzureLinux) DefaultImages() []DefaultImageOutput {
 			ImageDefinition:      AzureLinuxGen2ArmImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
-				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
 			Distro: "aks-azurelinux-v2-arm64-gen2",
 		},

@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
@@ -39,8 +39,8 @@ const (
 	DefaultSIGImageVersion = "202410.09.0"
 )
 
-func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
-	options := v1alpha2.AKSNodeClass{}
+func AKSNodeClass(overrides ...v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
+	options := v1beta1.AKSNodeClass{}
 	for _, override := range overrides {
 		if err := mergo.Merge(&options, override, mergo.WithOverride); err != nil {
 			panic(fmt.Sprintf("Failed to merge settings: %s", err))
@@ -52,23 +52,22 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 		options.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 	}
 	if options.Spec.ImageFamily == nil {
-		options.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2204ImageFamily)
+		options.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 	}
-	return &v1alpha2.AKSNodeClass{
+	return &v1beta1.AKSNodeClass{
 		ObjectMeta: coretest.ObjectMeta(options.ObjectMeta),
 		Spec:       options.Spec,
 		Status:     options.Status,
 	}
 }
 
-func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environment) {
+func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environment) {
 	ApplyCIGImages(nodeClass)
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
 	nodeClass.Status.KubernetesVersion = testK8sVersion
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 
 	conditions := []opstatus.Condition{}
@@ -81,12 +80,12 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 	nodeClass.SetConditions(conditions)
 }
 
-func ApplyCIGImages(nodeClass *v1alpha2.AKSNodeClass) {
+func ApplyCIGImages(nodeClass *v1beta1.AKSNodeClass) {
 	ApplyCIGImagesWithVersion(nodeClass, DefaultCIGImageVersion)
 }
 
-func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion string) {
-	nodeClass.Status.Images = []v1alpha2.NodeImage{
+func ApplyCIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, cigImageVersion string) {
+	nodeClass.Status.Images = []v1beta1.NodeImage{
 		{
 			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
@@ -96,7 +95,7 @@ func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion
 					Values:   []string{"amd64"},
 				},
 				{
-					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Key:      v1beta1.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"2"},
 				},
@@ -111,7 +110,7 @@ func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion
 					Values:   []string{"amd64"},
 				},
 				{
-					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Key:      v1beta1.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"1"},
 				},
@@ -126,7 +125,7 @@ func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion
 					Values:   []string{"arm64"},
 				},
 				{
-					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Key:      v1beta1.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"2"},
 				},
@@ -135,20 +134,20 @@ func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion
 	}
 }
 
-func ApplySIGImages(nodeClass *v1alpha2.AKSNodeClass) {
+func ApplySIGImages(nodeClass *v1beta1.AKSNodeClass) {
 	ApplySIGImagesWithVersion(nodeClass, DefaultSIGImageVersion)
 }
 
-func ApplySIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, sigImageVersion string) {
+func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion string) {
 	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
 func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
 	var images []imagefamily.DefaultImageOutput
-	if imageFamily == v1alpha2.Ubuntu2204ImageFamily {
+	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
 		images = imagefamily.Ubuntu2204{}.DefaultImages()
-	} else if imageFamily == v1alpha2.AzureLinuxImageFamily {
+	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
 		images = imagefamily.AzureLinux{}.DefaultImages()
 	}
 	nodeImages := []imagefamily.NodeImage{}
@@ -161,8 +160,8 @@ func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.
 	return nodeImages
 }
 
-func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) []v1alpha2.NodeImage {
-	return lo.Map(imageFamilyNodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
+func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) []v1beta1.NodeImage {
+	return lo.Map(imageFamilyNodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item karpv1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return item.NodeSelectorRequirement
 		})
@@ -174,7 +173,7 @@ func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) 
 			}
 			return reqs[i].Key < reqs[j].Key
 		})
-		return v1alpha2.NodeImage{
+		return v1beta1.NodeImage{
 			ID:           nodeImage.ID,
 			Requirements: reqs,
 		}
