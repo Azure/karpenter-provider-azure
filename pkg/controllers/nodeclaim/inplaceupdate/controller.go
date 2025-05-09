@@ -37,7 +37,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -82,7 +82,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
-	actualHash := nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash]
+	actualHash := nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]
 
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("goal hash is: %q, actual hash is: %q", goalHash, actualHash))
 
@@ -119,7 +119,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 	// Regardless of whether we actually changed anything in Azure, we have confirmed that
 	// the goal shape is in alignment with our expected shape, so update the annotation to reflect that
-	nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash] = goalHash
+	nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash] = goalHash
 	err = c.kubeClient.Patch(ctx, nodeClaim, client.MergeFrom(stored))
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)

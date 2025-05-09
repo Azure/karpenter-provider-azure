@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,7 +56,7 @@ func NewController(kubeClient client.Client, recorder events.Recorder) *Controll
 	}
 }
 
-func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, "nodeclass.termination")
 
 	if !nodeClass.GetDeletionTimestamp().IsZero() {
@@ -65,9 +65,9 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	return reconcile.Result{}, nil
 }
 
-func (c *Controller) finalize(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (c *Controller) finalize(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	stored := nodeClass.DeepCopy()
-	if !controllerutil.ContainsFinalizer(nodeClass, v1alpha2.TerminationFinalizer) {
+	if !controllerutil.ContainsFinalizer(nodeClass, v1beta1.TerminationFinalizer) {
 		return reconcile.Result{}, nil
 	}
 	nodeClaimList := &karpv1.NodeClaimList{}
@@ -81,7 +81,7 @@ func (c *Controller) finalize(ctx context.Context, nodeClass *v1alpha2.AKSNodeCl
 
 	// any other processing before removing NodeClass goes here
 
-	controllerutil.RemoveFinalizer(nodeClass, v1alpha2.TerminationFinalizer)
+	controllerutil.RemoveFinalizer(nodeClass, v1beta1.TerminationFinalizer)
 	if !equality.Semantic.DeepEqual(stored, nodeClass) {
 		// We use client.MergeFromWithOptimisticLock because patching a list with a JSON merge patch
 		// can cause races due to the fact that it fully replaces the list on a change
@@ -100,7 +100,7 @@ func (c *Controller) finalize(ctx context.Context, nodeClass *v1alpha2.AKSNodeCl
 func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("nodeclass.termination").
-		For(&v1alpha2.AKSNodeClass{}).
+		For(&v1beta1.AKSNodeClass{}).
 		Watches(
 			&karpv1.NodeClaim{},
 			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, o client.Object) []reconcile.Request {

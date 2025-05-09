@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	"github.com/imdario/mergo"
@@ -31,8 +31,8 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 )
 
-func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
-	options := v1alpha2.AKSNodeClass{}
+func AKSNodeClass(overrides ...v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
+	options := v1beta1.AKSNodeClass{}
 	for _, override := range overrides {
 		if err := mergo.Merge(&options, override, mergo.WithOverride); err != nil {
 			panic(fmt.Sprintf("Failed to merge settings: %s", err))
@@ -44,19 +44,19 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 		options.Spec.OSDiskSizeGB = lo.ToPtr[int32](128)
 	}
 	if options.Spec.ImageFamily == nil {
-		options.Spec.ImageFamily = lo.ToPtr(v1alpha2.Ubuntu2204ImageFamily)
+		options.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 	}
-	return &v1alpha2.AKSNodeClass{
+	return &v1beta1.AKSNodeClass{
 		ObjectMeta: coretest.ObjectMeta(options.ObjectMeta),
 		Spec:       options.Spec,
 		Status:     options.Status,
 	}
 }
 
-func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environment) {
+func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environment) {
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
 	nodeClass.Status.KubernetesVersion = testK8sVersion
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 
 	conditions := []opstatus.Condition{}

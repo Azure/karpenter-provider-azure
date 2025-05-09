@@ -32,7 +32,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -92,7 +92,7 @@ var _ = AfterSuite(func() {
 
 var _ = Describe("InstanceProvider", func() {
 
-	var nodeClass *v1alpha2.AKSNodeClass
+	var nodeClass *v1beta1.AKSNodeClass
 	var nodePool *karpv1.NodePool
 	var nodeClaim *karpv1.NodeClaim
 

@@ -32,7 +32,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
 
@@ -52,7 +52,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("GPU", func() {
 	DescribeTable("should provision one GPU node and one GPU Pod",
-		func(nodeClass *v1alpha2.AKSNodeClass) {
+		func(nodeClass *v1beta1.AKSNodeClass) {
 			// Enable NodeRepair feature gate if running in-cluster
 			if env.InClusterController {
 				// Have Node Repair enabled to validate it does not interfere with
@@ -64,7 +64,7 @@ var _ = Describe("GPU", func() {
 			nodePool := env.DefaultNodePool(nodeClass)
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1alpha2.LabelSKUFamily,
+					Key:      v1beta1.LabelSKUFamily,
 					Operator: corev1.NodeSelectorOpExists,
 				},
 			})

@@ -39,14 +39,14 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var env *azure.Environment
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 
 func TestDrift(t *testing.T) {
@@ -96,7 +96,7 @@ var _ = Describe("Drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUCPU,
+						Key:      v1beta1.LabelSKUCPU,
 						Operator: corev1.NodeSelectorOpIn,
 						Values:   []string{"8"},
 					},
@@ -158,7 +158,7 @@ var _ = Describe("Drift", func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUCPU,
+						Key:      v1beta1.LabelSKUCPU,
 						Operator: corev1.NodeSelectorOpIn,
 						Values:   []string{"8"},
 					},
@@ -439,13 +439,13 @@ var _ = Describe("Drift", func() {
 				// since this will overwrite the default requirements, add SKU family selector back into requirements
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: corev1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot}}},
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: v1alpha2.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}}},
+					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: v1beta1.LabelSKUFamily, Operator: corev1.NodeSelectorOpIn, Values: []string{"D"}}},
 				},
 			},
 		}),
 	)
-	DescribeTable("AKSNodeClass", func(nodeClassSpec v1alpha2.AKSNodeClassSpec) {
-		updatedNodeClass := test.AKSNodeClass(v1alpha2.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1alpha2.AKSNodeClass{Spec: nodeClassSpec})
+	DescribeTable("AKSNodeClass", func(nodeClassSpec v1beta1.AKSNodeClassSpec) {
+		updatedNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: nodeClassSpec})
 		updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
@@ -463,17 +463,17 @@ var _ = Describe("Drift", func() {
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 	},
 		// VNETSubnetID tested separately
-		Entry("OSDiskSizeGB", v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: to.Int32Ptr(100)}),
+		Entry("OSDiskSizeGB", v1beta1.AKSNodeClassSpec{OSDiskSizeGB: to.Int32Ptr(100)}),
 		// ImageID TBD
-		Entry("ImageFamily", v1alpha2.AKSNodeClassSpec{ImageFamily: to.StringPtr("AzureLinux")}),
-		Entry("Tags", v1alpha2.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}),
-		Entry("KubeletConfiguration", v1alpha2.AKSNodeClassSpec{
-			Kubelet: &v1alpha2.KubeletConfiguration{
+		Entry("ImageFamily", v1beta1.AKSNodeClassSpec{ImageFamily: to.StringPtr("AzureLinux")}),
+		Entry("Tags", v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}),
+		Entry("KubeletConfiguration", v1beta1.AKSNodeClassSpec{
+			Kubelet: &v1beta1.KubeletConfiguration{
 				ImageGCLowThresholdPercent:  to.Int32Ptr(10),
 				ImageGCHighThresholdPercent: to.Int32Ptr(90),
 			},
 		}),
-		Entry("MaxPods", v1alpha2.AKSNodeClassSpec{MaxPods: to.Int32Ptr(10)}),
+		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: to.Int32Ptr(10)}),
 	)
 
 	It("should update the nodepool-hash annotation on the nodepool and nodeclaim when the nodepool's nodepool-hash-version annotation does not match the controller hash version", func() {
@@ -528,23 +528,23 @@ var _ = Describe("Drift", func() {
 		env.ExpectCreated(dep, nodeClass, nodePool)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-		nodeClass = env.ExpectExists(nodeClass).(*v1alpha2.AKSNodeClass)
+		nodeClass = env.ExpectExists(nodeClass).(*v1beta1.AKSNodeClass)
 		expectedHash := nodeClass.Hash()
 
-		By(fmt.Sprintf("expect nodeclass %s and nodeclaim %s to contain %s and %s annotations", nodeClass.Name, nodeClaim.Name, v1alpha2.AnnotationAKSNodeClassHash, v1alpha2.AnnotationAKSNodeClassHashVersion))
+		By(fmt.Sprintf("expect nodeclass %s and nodeclaim %s to contain %s and %s annotations", nodeClass.Name, nodeClaim.Name, v1beta1.AnnotationAKSNodeClassHash, v1beta1.AnnotationAKSNodeClassHashVersion))
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClaim), nodeClaim)).To(Succeed())
 
-			g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
-			g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
-			g.Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
-			g.Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
+			g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, expectedHash))
+			g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
+			g.Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, expectedHash))
+			g.Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
 		}).WithTimeout(30 * time.Second).Should(Succeed())
 
 		nodeClass.Annotations = lo.Assign(nodeClass.Annotations, map[string]string{
-			v1alpha2.AnnotationAKSNodeClassHash:        "test-hash-1",
-			v1alpha2.AnnotationAKSNodeClassHashVersion: "test-hash-version-1",
+			v1beta1.AnnotationAKSNodeClassHash:        "test-hash-1",
+			v1beta1.AnnotationAKSNodeClassHashVersion: "test-hash-version-1",
 		})
 		// Updating `nodeClass.Spec.Tags` would normally trigger drift on all nodeclaims using the
 		// nodeclass. However, the aksnodeclass-hash-version does not match the controller hash version, so we will see that
@@ -553,8 +553,8 @@ var _ = Describe("Drift", func() {
 			"test-key": "test-value",
 		})
 		nodeClaim.Annotations = lo.Assign(nodePool.Annotations, map[string]string{
-			v1alpha2.AnnotationAKSNodeClassHash:        "test-hash-2",
-			v1alpha2.AnnotationAKSNodeClassHashVersion: "test-hash-version-2",
+			v1beta1.AnnotationAKSNodeClassHash:        "test-hash-2",
+			v1beta1.AnnotationAKSNodeClassHashVersion: "test-hash-version-2",
 		})
 
 		// The nodeclaim will need to be updated first, as the hash controller will only be triggered on changes to the nodeclass
@@ -566,10 +566,10 @@ var _ = Describe("Drift", func() {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClaim), nodeClaim)).To(Succeed())
 
-			g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
-			g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
-			g.Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
-			g.Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
+			g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, expectedHash))
+			g.Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
+			g.Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, expectedHash))
+			g.Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
 		}).WithTimeout(30 * time.Second).Should(Succeed())
 		env.ConsistentlyExpectNodeClaimsNotDrifted(time.Minute, nodeClaim)
 	})

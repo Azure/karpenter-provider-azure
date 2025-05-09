@@ -40,7 +40,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -232,7 +232,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 	var requiredGVKs = []schema.GroupVersionKind{
 		gvk(&karpv1.NodePool{}),
 		gvk(&karpv1.NodeClaim{}),
-		gvk(&v1alpha2.AKSNodeClass{}),
+		gvk(&v1beta1.AKSNodeClass{}),
 	}
 
 	client, err := rest.HTTPClientFor(config)

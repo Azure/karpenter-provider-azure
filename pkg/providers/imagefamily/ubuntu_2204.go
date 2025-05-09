@@ -19,7 +19,7 @@ package imagefamily
 import (
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
@@ -40,7 +40,7 @@ type Ubuntu2204 struct {
 }
 
 func (u Ubuntu2204) Name() string {
-	return v1alpha2.Ubuntu2204ImageFamily
+	return v1beta1.Ubuntu2204ImageFamily
 }
 
 func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
@@ -53,7 +53,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 			ImageDefinition:      Ubuntu2204Gen2ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
 			Distro: "aks-ubuntu-containerd-22.04-gen2",
 		},
@@ -64,7 +64,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 			ImageDefinition:      Ubuntu2204Gen1ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV1),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
 			),
 			Distro: "aks-ubuntu-containerd-22.04",
 		},
@@ -75,7 +75,7 @@ func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
 			ImageDefinition:      Ubuntu2204Gen2ArmImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
-				scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1alpha2.HyperVGenerationV2),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
 			Distro: "aks-ubuntu-arm64-containerd-22.04-gen2",
 		},

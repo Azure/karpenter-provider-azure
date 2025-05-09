@@ -37,7 +37,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -76,7 +76,7 @@ type VirtualMachinePromise struct {
 }
 
 type Provider interface {
-	BeginCreate(context.Context, *v1alpha2.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
+	BeginCreate(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
@@ -141,7 +141,7 @@ func NewDefaultProvider(
 // from the VirtualMachinePromise.Wait() function.
 func (p *DefaultProvider) BeginCreate(
 	ctx context.Context,
-	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
@@ -292,7 +292,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	}
 
 	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(
-		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
+		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
 
 	enableAcceleratedNetworking := false
 	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
@@ -370,7 +370,7 @@ type createVMOptions struct {
 	Location       string
 	SSHPublicKey   string
 	NodeIdentities []string
-	NodeClass      *v1alpha2.AKSNodeClass
+	NodeClass      *v1beta1.AKSNodeClass
 	LaunchTemplate *launchtemplate.Template
 	InstanceType   *corecloudprovider.InstanceType
 	ProvisionMode  string
@@ -533,7 +533,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
 func (p *DefaultProvider) beginLaunchInstance(
 	ctx context.Context,
-	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
@@ -725,7 +725,7 @@ func (p *DefaultProvider) applyTemplateToNic(nic *armnetwork.Interface, template
 
 func (p *DefaultProvider) getLaunchTemplate(
 	ctx context.Context,
-	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,

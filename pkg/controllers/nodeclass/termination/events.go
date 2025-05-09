@@ -23,11 +23,11 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/events"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
-func WaitingOnNodeClaimTerminationEvent(nodeClass *v1alpha2.AKSNodeClass, names []string) events.Event {
+func WaitingOnNodeClaimTerminationEvent(nodeClass *v1beta1.AKSNodeClass, names []string) events.Event {
 	return events.Event{
 		InvolvedObject: nodeClass,
 		Type:           corev1.EventTypeNormal,

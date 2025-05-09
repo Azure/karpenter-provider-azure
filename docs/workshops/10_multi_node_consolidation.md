@@ -54,7 +54,7 @@ spec:
                 kind: AKSNodeClass
                 name: default
 ---
-apiVersion: karpenter.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
     name: default

@@ -34,7 +34,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 
 	. "sigs.k8s.io/karpenter/pkg/utils/testing" //nolint:stylecheck
 
@@ -142,7 +142,7 @@ func NewClient(ctx context.Context, config *rest.Config) client.Client {
 	return c
 }
 
-func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv1.NodePool {
+func (env *Environment) DefaultNodePool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
 	nodePool := coretest.NodePool()
 	nodePool.Spec.Template.Spec.NodeClassRef = &karpv1.NodeClassReference{
 		Group: object.GVK(nodeClass).Group,
@@ -173,7 +173,7 @@ func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *karpv
 		},
 		{
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1alpha2.LabelSKUFamily,
+				Key:      v1beta1.LabelSKUFamily,
 				Operator: corev1.NodeSelectorOpIn,
 				Values:   []string{"D"},
 			},
@@ -210,7 +210,7 @@ func (env *Environment) AdaptToClusterConfig(nodePool *karpv1.NodePool) *karpv1.
 	return nodePool
 }
 
-func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *karpv1.NodePool {
+func (env *Environment) ArmNodepool(nodeClass *v1beta1.AKSNodeClass) *karpv1.NodePool {
 	nodePool := env.DefaultNodePool(nodeClass)
 	coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 		NodeSelectorRequirement: corev1.NodeSelectorRequirement{
