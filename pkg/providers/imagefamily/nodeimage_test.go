@@ -39,7 +39,7 @@ import (
 
 const (
 	customerSubscription = "12345678-1234-1234-1234-123456789012"
-	SIGSubscription      = "10945678-1234-1234-1234-123456789012"
+	sigSubscription      = "10945678-1234-1234-1234-123456789012"
 
 	cigImageVersion      = "202410.09.0"
 	laterCIGImageVersion = "202411.09.0"
@@ -74,7 +74,7 @@ func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.
 	nodeImages := []imagefamily.NodeImage{}
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{
-			ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", SIGSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
+			ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
 			Requirements: image.Requirements,
 		})
 	}
@@ -135,7 +135,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		BeforeEach(func() {
 			testOptions := options.FromContext(ctx)
 			testOptions.UseSIG = true
-			testOptions.SIGSubscriptionID = SIGSubscription
+			testOptions.SIGSubscriptionID = sigSubscription
 			testOptions.SIGAccessTokenScope = "http://valid-scope.com"
 			testOptions.SIGAccessTokenServerURL = "http://valid-url.com"
 			ctx = options.ToContext(ctx, testOptions)
