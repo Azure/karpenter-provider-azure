@@ -15,7 +15,6 @@ rule=$'self.all(x, x in
         "karpenter.azure.com/sku-networking-accelerated",
         "karpenter.azure.com/sku-storage-premium-capable",
         "karpenter.azure.com/sku-storage-ephemeralos-maxsize",
-        "karpenter.azure.com/sku-encryptionathost-capable",
         "karpenter.azure.com/sku-gpu-name",
         "karpenter.azure.com/sku-gpu-manufacturer",
         "karpenter.azure.com/sku-gpu-count"

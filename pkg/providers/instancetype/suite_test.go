@@ -627,7 +627,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
 			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 		It("should handle ZonalAllocationFailed on creating the VM", func() {
@@ -657,7 +657,7 @@ var _ = Describe("InstanceType Provider", func() {
 			By("successfully scheduling in a different zone on retry")
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(zone))
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
 		})
 
 		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
@@ -712,7 +712,7 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
 			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 		It("should launch smaller instances than optimal if larger instance launch results in Insufficient Capacity Error", func() {
@@ -890,7 +890,6 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(reqs.Has(v1alpha2.LabelSKUName)).To(BeTrue())
 
 				Expect(reqs.Has(v1alpha2.LabelSKUStoragePremiumCapable)).To(BeTrue())
-				Expect(reqs.Has(v1alpha2.LabelSKUEncryptionAtHostSupported)).To(BeTrue())
 				Expect(reqs.Has(v1alpha2.LabelSKUAcceleratedNetworking)).To(BeTrue())
 				Expect(reqs.Has(v1alpha2.LabelSKUHyperVGeneration)).To(BeTrue())
 				Expect(reqs.Has(v1alpha2.LabelSKUStorageEphemeralOSMaxSize)).To(BeTrue())
@@ -925,7 +924,6 @@ var _ = Describe("InstanceType Provider", func() {
 				v1alpha2.LabelSKUVersion:                   "4",
 				v1alpha2.LabelSKUStorageEphemeralOSMaxSize: "53.6870912",
 				v1alpha2.LabelSKUAcceleratedNetworking:     "true",
-				v1alpha2.LabelSKUEncryptionAtHostSupported: "true",
 				v1alpha2.LabelSKUStoragePremiumCapable:     "true",
 				v1alpha2.LabelSKUGPUName:                   "A100",
 				v1alpha2.LabelSKUGPUManufacturer:           "nvidia",
@@ -1412,7 +1410,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, zone))
+			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone))
 
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm).NotTo(BeNil())
@@ -1441,7 +1439,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, ""))
+			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, ""))
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
