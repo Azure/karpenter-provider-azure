@@ -36,4 +36,8 @@ const (
 
 	ProvisionModeAKSScriptless       = "aksscriptless"
 	ProvisionModeBootstrappingClient = "bootstrappingclient"
+
+	NodeClassReadinessUnknownReason    = "NodeClassReadinessUnknown"
+	InstanceTypeResolutionFailedReason = "InstanceTypeResolutionFailed"
+	CreateInstanceFailedReason         = "CreateInstanceFailed"
 )

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/object"
+	corestatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -243,7 +244,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectScheduled(ctx, env.Client, pod)
 		})
 		It("should fail to provision when LowPriorityCoresQuota errors are hit, then switch capacity type and succeed", func() {
-			LowPriorityCoresQuotaErrorMessage := "Operation could not be completed as it results in exceeding approved Low Priority Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22LowPriorityCores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:32,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22LowPriorityCores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
+			LowPriorityCoresQuotaErrorMessage := "Operation could not be completed as it results in exceeding approved Low Priority Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22LowPriorityCores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:32,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22LowPriorityCores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the 'Details' section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
 			// Create nodepool that has both ondemand and spot capacity types enabled
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -277,7 +278,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
-			familyVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 100, Current Usage: 96, Additional Required: 32, (Minimum) New Limit Required: 128. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
+			familyVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 100, Current Usage: 96, Additional Required: 32, (Minimum) New Limit Required: 128. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the 'Details' section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
 				&azcore.ResponseError{
@@ -305,7 +306,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectScheduled(ctx, env.Client, pod)
 		})
 		It("should fail to provision when VM SKU family vCPU quota limit is zero, and succeed when its gone", func() {
-			familyVCPUQuotaIsZeroErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
+			familyVCPUQuotaIsZeroErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 0, Current Usage: 0, Additional Required: 32, (Minimum) New Limit Required: 32. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the 'Details' section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
 				&azcore.ResponseError{
@@ -333,7 +334,8 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 		It("should return ICE if Total Regional Cores Quota errors are hit", func() {
-			regionalVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved Total Regional Cores quota. Additional details - Deployment Model: Resource Manager, Location: uksouth, Current Limit: 100, Current Usage: 100, Additional Required: 64, (Minimum) New Limit Required: 164. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22uksouth%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22cores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:164,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22cores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/regional-quota-requests"
+			regionalVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved Total Regional Cores quota. Additional details - Deployment Model: Resource Manager, Location: uksouth, Current Limit: 100, Current Usage: 100, Additional Required: 64, (Minimum) New Limit Required: 164. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22uksouth%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22cores%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:164,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22cores%22%7D%7D%7D%7D]%7D by specifying parameters listed in the 'Details' section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/regional-quota-requests"
+
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
 				&azcore.ResponseError{
 					ErrorCode: sdkerrors.OperationNotAllowed,
@@ -1457,6 +1459,104 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Zones).To(BeEmpty())
+		})
+	})
+
+	Context("CloudProvider Create Error Cases", func() {
+		It("should return error when NodeClass readiness is Unknown", func() {
+			nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
+		})
+
+		It("should return error when instance type resolution fails", func() {
+			// Create and set up the status controller
+			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+
+			// Set NodeClass to Ready
+			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Reconcile the NodeClass to ensure status is updated
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+			azureEnv.MockSkuClientSingleton.SKUClient.Error = fmt.Errorf("failed to list SKUs")
+
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("resolving instance types"))
+		})
+
+		It("should return error when instance creation fails", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Create a NodeClaim with valid requirements
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			// Set up the instance provider to fail
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{
+					ErrorCode: sdkerrors.OperationNotAllowed,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, "Failed to create VM"),
+					},
+				},
+			)
+
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("creating instance failed"))
 		})
 	})
 })
