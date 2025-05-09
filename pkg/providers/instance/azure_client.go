@@ -138,8 +138,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	o := options.FromContext(ctx)
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
-		url, scope := o.SIGAccessTokenServerURL, o.SIGAccessTokenScope
-		vmClientOptions, err = getVirtualMachinesClientOptions(ctx, url, scope)
+		vmClientOptions, err = getVirtualMachinesClientOptions(ctx, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		if err != nil {
 			return nil, err
 		}
