@@ -133,11 +133,18 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		return nil, err
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
-	clientOptions, err := getVirtualMachinesClientOptions(ctx)
-	if err != nil {
-		return nil, err
+
+	var vmClientOptions *armpolicy.ClientOptions
+	o := options.FromContext(ctx)
+	if o.UseSIG {
+		klog.V(1).Info("Using SIG for image versions")
+		url, scope := o.SIGAccessTokenServerURL, o.SIGAccessTokenScope
+		vmClientOptions, err = getVirtualMachinesClientOptions(ctx, url, scope)
+		if err != nil {
+			return nil, err
+		}
 	}
-	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, clientOptions)
+	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, vmClientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -176,13 +183,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		skuClient), nil
 }
 
-func getVirtualMachinesClientOptions(ctx context.Context) (*armpolicy.ClientOptions, error) {
-	useSIG := options.FromContext(ctx).UseSIG
-	if !useSIG {
-		return &armpolicy.ClientOptions{}, nil
-	}
-
-	token, err := auth.GetAuxiliaryToken(ctx)
+func getVirtualMachinesClientOptions(ctx context.Context, url string, scope string) (*armpolicy.ClientOptions, error) {
+	token, err := auth.GetAuxiliaryToken(ctx, url, scope)
 	if err != nil {
 		return &armpolicy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
 	}

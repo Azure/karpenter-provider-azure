@@ -43,9 +43,9 @@ controller:
     # managed karpenter settings
     - name: USE_SIG
       value: "false"
-    - name: AUXILIARY_TOKEN_SERVER_URL
+    - name: SIG_ACCESS_TOKEN_SERVER_URL
       value: ""
-    - name: SIG_SCOPE
+    - name: SIG_ACCESS_TOKEN_SCOPE
       value: ""
     - name: SIG_SUBSCRIPTION_ID
       value: ""

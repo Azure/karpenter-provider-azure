@@ -45,8 +45,8 @@ type OptionsFields struct {
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
-	AuxiliaryTokenServerURL *string
-	SIGScope                *string
+	SIGAccessTokenServerURL *string
+	SIGAccessTokenScope     *string
 	SIGSubscriptionID       *string
 }
 
@@ -75,7 +75,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
 		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),
 		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, ""),
-		AuxiliaryTokenServerURL:        lo.FromPtrOr(options.AuxiliaryTokenServerURL, ""),
-		SIGScope:                       lo.FromPtrOr(options.SIGScope, ""),
+		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, ""),
+		SIGAccessTokenScope:            lo.FromPtrOr(options.SIGAccessTokenScope, ""),
 	}
 }

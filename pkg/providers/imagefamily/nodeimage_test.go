@@ -136,8 +136,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 			testOptions := options.FromContext(ctx)
 			testOptions.UseSIG = true
 			testOptions.SIGSubscriptionID = SIGSubscription
-			testOptions.SIGScope = "scope"
-			testOptions.AuxiliaryTokenServerURL = "url"
+			testOptions.SIGAccessTokenScope = "http://valid-scope.com"
+			testOptions.SIGAccessTokenServerURL = "http://valid-url.com"
 			ctx = options.ToContext(ctx, testOptions)
 		})
 

@@ -80,8 +80,8 @@ type Options struct {
 	ProvisionMode              string
 	NodeBootstrappingServerURL string
 	UseSIG                     bool   // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
-	AuxiliaryTokenServerURL    string // => AuxiliaryTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
-	SIGScope                   string // => SIGScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
+	SIGAccessTokenServerURL    string // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
+	SIGAccessTokenScope        string // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
 	SIGSubscriptionID          string
 	NodeResourceGroup          string
 }
@@ -103,8 +103,8 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
 	fs.StringVar(&o.NodeResourceGroup, "node-resource-group", env.WithDefaultString("AZURE_NODE_RESOURCE_GROUP", ""), "[REQUIRED] the resource group created and managed by AKS where the nodes live")
 	fs.BoolVar(&o.UseSIG, "use-sig", env.WithDefaultBool("USE_SIG", false), "If set to true karpenter will use the AKS managed shared image galleries and the node image versions api. If set to false karpenter will use community image galleries. Only a subset of image features will be available in the community image galleries and this flag is only for the managed node provisioning addon.")
-	fs.StringVar(&o.AuxiliaryTokenServerURL, "auxiliary-token-server-url", env.WithDefaultString("AUXILIARY_TOKEN_SERVER_URL", ""), "The url for the auxiliary token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
-	fs.StringVar(&o.SIGScope, "sig-scope", env.WithDefaultString("SIG_SCOPE", ""), "The scope for the auxiliary token. Only used for AKS managed karpenter. UseSIG must be set to true for this to take effect.")
+	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The url for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
+	fs.StringVar(&o.SIGAccessTokenScope, "sig-access-token-scope", env.WithDefaultString("SIG_ACCESS_TOKEN_SCOPE", ""), "The scope for the SIG access token. Only used for AKS managed karpenter. UseSIG must be set to true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 }
 

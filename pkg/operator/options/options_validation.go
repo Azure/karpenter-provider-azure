@@ -78,10 +78,7 @@ func (o Options) validateEndpoint() error {
 	if o.ClusterEndpoint == "" {
 		return nil
 	}
-	endpoint, err := url.Parse(o.ClusterEndpoint)
-	// url.Parse() will accept a lot of input without error; make
-	// sure it's a real URL
-	if err != nil || !endpoint.IsAbs() || endpoint.Hostname() == "" {
+	if !isValidURL(o.ClusterEndpoint) {
 		return fmt.Errorf("\"%s\" not a valid clusterEndpoint URL", o.ClusterEndpoint)
 	}
 	return nil
@@ -127,15 +124,28 @@ func (o Options) validateRequiredFields() error {
 
 func (o Options) validateUseSIG() error {
 	if o.UseSIG {
-		if o.AuxiliaryTokenServerURL == "" {
-			return fmt.Errorf("auxiliary-token-server-url is required when use-sig is true")
+		if o.SIGAccessTokenServerURL == "" {
+			return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
 		}
-		if o.SIGScope == "" {
-			return fmt.Errorf("sig-scope is required when use-sig is true")
+		if o.SIGAccessTokenScope == "" {
+			return fmt.Errorf("sig-access-token-scope is required when use-sig is true")
 		}
 		if o.SIGSubscriptionID == "" {
 			return fmt.Errorf("sig-subscription-id is required when use-sig is true")
 		}
+		if !isValidURL(o.SIGAccessTokenServerURL) {
+			return fmt.Errorf("sig-access-token-server-url is not a valid URL")
+		}
+		if !isValidURL(o.SIGAccessTokenScope) {
+			return fmt.Errorf("sig-access-token-scope is not a valid URL")
+		}
 	}
 	return nil
+}
+
+func isValidURL(u string) bool {
+	endpoint, err := url.Parse(u)
+	// url.Parse() will accept a lot of input without error; make
+	// sure it's a real URL
+	return err == nil && endpoint.IsAbs() && endpoint.Hostname() != ""
 }

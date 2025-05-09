@@ -25,7 +25,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -37,17 +36,13 @@ type expireEarlyTokenCredential struct {
 	cred azcore.TokenCredential
 }
 
-func GetAuxiliaryToken(ctx context.Context) (azcore.AccessToken, error) {
+func GetAuxiliaryToken(ctx context.Context, url string, scope string) (azcore.AccessToken, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	url := options.FromContext(ctx).AuxiliaryTokenServerURL
 	if url == "" {
-		return azcore.AccessToken{}, fmt.Errorf("auxiliary token server URL is not set")
+		return azcore.AccessToken{}, fmt.Errorf("access token server URL is not set")
 	}
-
-	// TODO: this env var needs to be customized based on cloud
-	scope := options.FromContext(ctx).SIGScope
 	if scope == "" {
-		return azcore.AccessToken{}, fmt.Errorf("scope is not set")
+		return azcore.AccessToken{}, fmt.Errorf("access token scope is not set")
 	}
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -72,8 +67,7 @@ func GetAuxiliaryToken(ctx context.Context) (azcore.AccessToken, error) {
 
 	// Decode the response body into the AccessToken struct
 	var token azcore.AccessToken
-	err = json.NewDecoder(resp.Body).Decode(&token)
-	if err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
 		return azcore.AccessToken{}, fmt.Errorf("error decoding json: %w", err)
 	}
 	return token, nil
