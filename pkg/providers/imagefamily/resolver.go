@@ -63,6 +63,7 @@ type ImageFamily interface {
 		labels map[string]string,
 		caBundle *string,
 		instanceType *cloudprovider.InstanceType,
+		apiUserData *string,
 	) bootstrap.Bootstrapper
 	CustomScriptsNodeBootstrapping(
 		kubeletConfig *bootstrap.KubeletConfiguration,
@@ -127,6 +128,7 @@ func (r *defaultResolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNo
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
+			nodeClass.Spec.UserData,
 		),
 		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
 			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
@@ -173,6 +175,8 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 		return &Ubuntu2204{Options: parameters}
 	case v1alpha2.AzureLinuxImageFamily:
 		return &AzureLinux{Options: parameters}
+	case v1alpha2.CustomImageFamily:
+		return &Custom{}
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}

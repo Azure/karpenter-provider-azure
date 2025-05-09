@@ -24,6 +24,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TODO(enxebre): make this its own type, e.g. type ImageFamily string.
+const (
+	Ubuntu2204ImageFamily string = "Ubuntu2204"
+	AzureLinuxImageFamily string = "AzureLinux"
+	CustomImageFamily     string = "Custom"
+)
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 type AKSNodeClassSpec struct {
@@ -41,7 +48,7 @@ type AKSNodeClassSpec struct {
 	ImageID *string `json:"-"`
 	// ImageFamily is the image family that instances use.
 	// +kubebuilder:default=Ubuntu2204
-	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux,Custom}
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// Tags to be applied on Azure resources like instances.
 	// +optional
@@ -64,6 +71,11 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum:=250
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
+	// userData to be applied to the provisioned nodes.
+	// It must be in the appropriate format based on the AMIFamily in use.
+	// Karpenter will use this content for the VM OSProfile When the ImageFamily is "Custom".
+	// +optional
+	UserData *string `json:"userData,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
