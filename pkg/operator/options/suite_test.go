@@ -387,19 +387,6 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("sig-subscription-id")))
 		})
-		It("should fail if use-sig is enabled, but sig-subscription-id is not set", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--sig-access-token-server-url", "http://valid-server.com",
-				"--sig-access-token-scope", "http://valid-scope.com",
-				"--use-sig",
-			)
-			Expect(err).To(MatchError(ContainSubstring("sig-subscription-id")))
-		})
 		It("should fail if use-sig is enabled, but sig-access-token-server-url is invalid URL", func() {
 			err := opts.Parse(
 				fs,
