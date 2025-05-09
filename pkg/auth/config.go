@@ -78,6 +78,7 @@ func (cfg *Config) GetAzureClientConfig(authorizer autorest.Authorizer, env *azu
 		SubscriptionID:          cfg.SubscriptionID,
 		ResourceManagerEndpoint: env.ResourceManagerEndpoint,
 		Authorizer:              authorizer,
+		UserAgent:               GetUserAgentExtension(),
 	}
 
 	return azClientConfig
