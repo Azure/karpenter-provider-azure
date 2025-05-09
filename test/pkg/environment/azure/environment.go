@@ -30,7 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
@@ -84,13 +84,13 @@ func NewEnvironment(t *testing.T) *Environment {
 	return azureEnv
 }
 
-func (env *Environment) DefaultAKSNodeClass() *v1alpha2.AKSNodeClass {
+func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := test.AKSNodeClass()
 	return nodeClass
 }
 
-func (env *Environment) AZLinuxNodeClass() *v1alpha2.AKSNodeClass {
+func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := env.DefaultAKSNodeClass()
-	nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
+	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 	return nodeClass
 }

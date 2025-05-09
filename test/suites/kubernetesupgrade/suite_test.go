@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -39,7 +39,7 @@ import (
 )
 
 var env *azure.Environment
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 
 func TestDrift(t *testing.T) {

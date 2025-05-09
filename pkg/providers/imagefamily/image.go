@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
@@ -78,10 +78,10 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 }
 
 // Get returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
-func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily ImageFamily) (string, string, error) {
+func (p *Provider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily ImageFamily) (string, string, error) {
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
-		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
+		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1beta1.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
 			imageID, imageRetrievalErr := p.GetLatestImageID(ctx, defaultImage)
 			return defaultImage.Distro, imageID, imageRetrievalErr
 		}

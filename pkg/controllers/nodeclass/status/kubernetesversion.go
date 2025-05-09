@@ -25,7 +25,7 @@ import (
 	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/blang/semver/v4"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 
@@ -55,7 +55,7 @@ func NewKubernetesVersionReconciler(provider imagefamily.KubernetesVersionProvid
 func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named(kubernetesVersionReconcilerName).
-		For(&v1alpha2.AKSNodeClass{}).
+		For(&v1beta1.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter: reasonable.RateLimiter(),
 			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
@@ -69,7 +69,7 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 //  1. Newly created AKSNodeClass, will select the version discovered from the API server
 //  2. If a later kubernetes version is discovered from the API server, we will upgrade to it. [don't currently support rollback]
 //     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the Images readiness.
-func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(kubernetesVersionReconcilerName))
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("starting reconcile")
@@ -80,7 +80,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	}
 
 	// Handles case 1: init, update kubernetes status to API server version found
-	if !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == "" {
+	if !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == "" {
 		logger.Info(fmt.Sprintf("init kubernetes version: %s", goalK8sVersion))
 	} else {
 		// Check if there is an upgrade
@@ -95,7 +95,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
 			logger.Info(fmt.Sprintf("kubernetes upgrade detected: from %s (current), to %s (discovered)", currentK8sVersion.String(), newK8sVersion.String()))
-			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
 		} else if newK8sVersion.LT(currentK8sVersion) {
 			logger.Info(fmt.Sprintf("detected potential kubernetes downgrade: from %s (current), to %s (discovered)", currentK8sVersion.String(), newK8sVersion.String()))
 			// We do not currently support downgrading, so keep the kubernetes version the same
@@ -103,7 +103,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		}
 	}
 	nodeClass.Status.KubernetesVersion = goalK8sVersion
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	logger.V(1).Info("successful reconcile")
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }

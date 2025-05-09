@@ -31,7 +31,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -76,7 +76,7 @@ var _ = AfterEach(func() {
 })
 
 var _ = Describe("NodeClass Hash Controller", func() {
-	var nodeClass *v1alpha2.AKSNodeClass
+	var nodeClass *v1beta1.AKSNodeClass
 	var nodePool *karpv1.NodePool
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
@@ -94,13 +94,13 @@ var _ = Describe("NodeClass Hash Controller", func() {
 			},
 		})
 	})
-	DescribeTable("should update the drift hash when static field is updated", func(changes *v1alpha2.AKSNodeClass) {
+	DescribeTable("should update the drift hash when static field is updated", func(changes *v1beta1.AKSNodeClass) {
 		ExpectApplied(ctx, env.Client, nodeClass)
 		ExpectObjectReconciled(ctx, env.Client, hashController, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
 		expectedHash := nodeClass.Hash()
-		Expect(nodeClass.ObjectMeta.Annotations[v1alpha2.AnnotationAKSNodeClassHash]).To(Equal(expectedHash))
+		Expect(nodeClass.ObjectMeta.Annotations[v1beta1.AnnotationAKSNodeClassHash]).To(Equal(expectedHash))
 
 		Expect(mergo.Merge(nodeClass, changes, mergo.WithOverride)).To(Succeed())
 
@@ -109,18 +109,18 @@ var _ = Describe("NodeClass Hash Controller", func() {
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
 		expectedHashTwo := nodeClass.Hash()
-		Expect(nodeClass.Annotations[v1alpha2.AnnotationAKSNodeClassHash]).To(Equal(expectedHashTwo))
+		Expect(nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHash]).To(Equal(expectedHashTwo))
 		Expect(expectedHash).ToNot(Equal(expectedHashTwo))
 
 	},
-		Entry("ImageFamily Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
-		Entry("OSDiskSizeGB Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(30))}}),
-		Entry("Tags Drift", &v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}}),
+		Entry("ImageFamily Drift", &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
+		Entry("OSDiskSizeGB Drift", &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(30))}}),
+		Entry("Tags Drift", &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}}),
 	)
 	It("should update aksnodeclass-hash-version annotation when the aksnodeclass-hash-version on the NodeClass does not match with the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{
-			v1alpha2.AnnotationAKSNodeClassHash:        "abceduefed",
-			v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
+			v1beta1.AnnotationAKSNodeClassHash:        "abceduefed",
+			v1beta1.AnnotationAKSNodeClassHashVersion: "test",
 		}
 		ExpectApplied(ctx, env.Client, nodeClass)
 
@@ -129,20 +129,20 @@ var _ = Describe("NodeClass Hash Controller", func() {
 
 		expectedHash := nodeClass.Hash()
 		// Expect aksnodeclass-hash on the NodeClass to be updated
-		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
-		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
+		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, expectedHash))
+		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
 	})
 	It("should update aksnodeclass-hash-versions on all NodeClaims when the aksnodeclass-hash-version does not match with the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{
-			v1alpha2.AnnotationAKSNodeClassHash:        "abceduefed",
-			v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
+			v1beta1.AnnotationAKSNodeClassHash:        "abceduefed",
+			v1beta1.AnnotationAKSNodeClassHashVersion: "test",
 		}
 		nodeClaimOne := coretest.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				Annotations: map[string]string{
-					v1alpha2.AnnotationAKSNodeClassHash:        "123456",
-					v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
+					v1beta1.AnnotationAKSNodeClassHash:        "123456",
+					v1beta1.AnnotationAKSNodeClassHashVersion: "test",
 				},
 			},
 			Spec: karpv1.NodeClaimSpec{
@@ -157,8 +157,8 @@ var _ = Describe("NodeClass Hash Controller", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				Annotations: map[string]string{
-					v1alpha2.AnnotationAKSNodeClassHash:        "123456",
-					v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
+					v1beta1.AnnotationAKSNodeClassHash:        "123456",
+					v1beta1.AnnotationAKSNodeClassHashVersion: "test",
 				},
 			},
 			Spec: karpv1.NodeClaimSpec{
@@ -179,22 +179,22 @@ var _ = Describe("NodeClass Hash Controller", func() {
 
 		expectedHash := nodeClass.Hash()
 		// Expect aksnodeclass-hash on the NodeClaims to be updated
-		Expect(nodeClaimOne.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
-		Expect(nodeClaimOne.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
-		Expect(nodeClaimTwo.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
-		Expect(nodeClaimTwo.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
+		Expect(nodeClaimOne.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, expectedHash))
+		Expect(nodeClaimOne.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
+		Expect(nodeClaimTwo.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, expectedHash))
+		Expect(nodeClaimTwo.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
 	})
 	It("should not update aksnodeclass-hash on all NodeClaims when the aksnodeclass-hash-version matches the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{
-			v1alpha2.AnnotationAKSNodeClassHash:        "abceduefed",
-			v1alpha2.AnnotationAKSNodeClassHashVersion: "test-version",
+			v1beta1.AnnotationAKSNodeClassHash:        "abceduefed",
+			v1beta1.AnnotationAKSNodeClassHashVersion: "test-version",
 		}
 		nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				Annotations: map[string]string{
-					v1alpha2.AnnotationAKSNodeClassHash:        "1234564654",
-					v1alpha2.AnnotationAKSNodeClassHashVersion: v1alpha2.AKSNodeClassHashVersion,
+					v1beta1.AnnotationAKSNodeClassHash:        "1234564654",
+					v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
 				},
 			},
 			Spec: karpv1.NodeClaimSpec{
@@ -214,23 +214,23 @@ var _ = Describe("NodeClass Hash Controller", func() {
 		expectedHash := nodeClass.Hash()
 
 		// Expect aksnodeclass-hash on the NodeClass to be updated
-		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, expectedHash))
-		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
+		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, expectedHash))
+		Expect(nodeClass.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
 		// Expect aksnodeclass-hash on the NodeClaims to stay the same
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, "1234564654"))
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, "1234564654"))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
 	})
 	It("should not update aksnodeclass-hash on the NodeClaim if it's drifted and the aksnodeclass-hash-version does not match the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{
-			v1alpha2.AnnotationAKSNodeClassHash:        "abceduefed",
-			v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
+			v1beta1.AnnotationAKSNodeClassHash:        "abceduefed",
+			v1beta1.AnnotationAKSNodeClassHashVersion: "test",
 		}
 		nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
 				Annotations: map[string]string{
-					v1alpha2.AnnotationAKSNodeClassHash:        "123456",
-					v1alpha2.AnnotationAKSNodeClassHashVersion: "test",
+					v1beta1.AnnotationAKSNodeClassHash:        "123456",
+					v1beta1.AnnotationAKSNodeClassHashVersion: "test",
 				},
 			},
 			Spec: karpv1.NodeClaimSpec{
@@ -248,7 +248,7 @@ var _ = Describe("NodeClass Hash Controller", func() {
 		nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
 
 		// Expect aksnodeclass-hash on the NodeClaims to stay the same
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHash, "123456"))
-		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1alpha2.AnnotationAKSNodeClassHashVersion, v1alpha2.AKSNodeClassHashVersion))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHash, "123456"))
+		Expect(nodeClaim.Annotations).To(HaveKeyWithValue(v1beta1.AnnotationAKSNodeClassHashVersion, v1beta1.AKSNodeClassHashVersion))
 	})
 })

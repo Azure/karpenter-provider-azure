@@ -28,7 +28,7 @@ import (
 
 	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
@@ -113,9 +113,9 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	}
 
 	switch p.ImageFamily {
-	case v1alpha2.Ubuntu2204ImageFamily:
+	case v1beta1.Ubuntu2204ImageFamily:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case v1alpha2.AzureLinuxImageFamily:
+	case v1beta1.AzureLinuxImageFamily:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	default:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)

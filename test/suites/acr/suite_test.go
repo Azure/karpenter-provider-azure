@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
@@ -34,7 +34,7 @@ import (
 )
 
 var env *azure.Environment
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 var pauseImage string
 

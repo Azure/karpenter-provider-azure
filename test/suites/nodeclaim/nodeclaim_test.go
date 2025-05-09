@@ -17,7 +17,7 @@ limitations under the License.
 package nodeclaim_test
 
 import (
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -36,7 +36,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUFamily,
+						Key:      v1beta1.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"D"},
 					}},
@@ -56,7 +56,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		env.ExpectCreated(nodeClass, nodeClaim)
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		nodeClaim = env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-		Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.LabelSKUFamily, "D"))
+		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelSKUFamily, "D"))
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
 	It("should create a standard NodeClaim based on resource requests", func() {
@@ -135,7 +135,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 					{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUFamily,
+						Key:      v1beta1.LabelSKUFamily,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"D"},
 					}},

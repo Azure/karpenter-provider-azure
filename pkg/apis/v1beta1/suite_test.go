@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package status_test
+package v1beta1_test
 
 import (
 	"context"
@@ -22,52 +22,39 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
-	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	. "sigs.k8s.io/karpenter/pkg/utils/testing"
+
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	. "sigs.k8s.io/karpenter/pkg/test/expectations"
-	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 )
 
 var ctx context.Context
 var env *coretest.Environment
 var azureEnv *test.Environment
-var nodeClass *v1beta1.AKSNodeClass
-var controller *status.Controller
 
-func TestAKSNodeClassStatusController(t *testing.T) {
+func TestAPIs(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "AKSNodeClass_Status")
+	RunSpecs(t, "Validation")
 }
 
 var _ = BeforeSuite(func() {
-	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(test.AKSNodeClassFieldIndexer(ctx)))
-	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
+	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	azureEnv = test.NewEnvironment(ctx, env)
-
-	controller = status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider)
-})
-
-var _ = AfterSuite(func() {
-	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
-})
-
-var _ = BeforeEach(func() {
-	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	nodeClass = test.AKSNodeClass()
-	azureEnv.Reset()
 })
 
 var _ = AfterEach(func() {
 	ExpectCleanedUp(ctx, env.Client)
+})
+
+var _ = AfterSuite(func() {
+	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
 })

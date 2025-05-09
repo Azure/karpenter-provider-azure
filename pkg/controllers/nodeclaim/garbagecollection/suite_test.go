@@ -28,7 +28,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -59,7 +59,7 @@ var env *coretest.Environment
 var azureEnv *test.Environment
 var fakeClock *clock.FakeClock
 var nodePool *karpv1.NodePool
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var cluster *state.Cluster
 var cloudProvider *cloudprovider.CloudProvider
 var virtualMachineGCController *garbagecollection.VirtualMachine

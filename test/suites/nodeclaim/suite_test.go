@@ -22,13 +22,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 var env *azure.Environment
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 
 func TestNodeClaim(t *testing.T) {

@@ -31,13 +31,13 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/utils/result"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/awslabs/operatorpkg/reasonable"
 )
 
 type reconciler interface {
-	Reconcile(context.Context, *v1alpha2.AKSNodeClass) (reconcile.Result, error)
+	Reconcile(context.Context, *v1beta1.AKSNodeClass) (reconcile.Result, error)
 }
 
 type Controller struct {
@@ -56,12 +56,12 @@ func NewController(kubeClient client.Client, kubernetesVersionProvider imagefami
 	}
 }
 
-func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, "nodeclass.status")
 
-	if !controllerutil.ContainsFinalizer(nodeClass, v1alpha2.TerminationFinalizer) {
+	if !controllerutil.ContainsFinalizer(nodeClass, v1beta1.TerminationFinalizer) {
 		stored := nodeClass.DeepCopy()
-		controllerutil.AddFinalizer(nodeClass, v1alpha2.TerminationFinalizer)
+		controllerutil.AddFinalizer(nodeClass, v1beta1.TerminationFinalizer)
 		if err := c.kubeClient.Patch(ctx, nodeClass, client.MergeFrom(stored)); err != nil {
 			return reconcile.Result{}, err
 		}
@@ -96,7 +96,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("nodeclass.status").
-		For(&v1alpha2.AKSNodeClass{}).
+		For(&v1beta1.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter: reasonable.RateLimiter(),
 			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.

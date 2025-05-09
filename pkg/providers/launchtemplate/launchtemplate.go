@@ -28,7 +28,7 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -93,7 +93,7 @@ func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvi
 	}
 }
 
-func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *karpv1.NodeClaim,
+func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim,
 	instanceType *cloudprovider.InstanceType, additionalLabels map[string]string) (*Template, error) {
 	staticParameters, err := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(nodeClaim.Labels, additionalLabels))
 	if err != nil {
@@ -118,7 +118,7 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1alpha2.AKSNodeC
 	return launchTemplate, nil
 }
 
-func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass, labels map[string]string) (*parameters.StaticParameters, error) {
+func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass, labels map[string]string) (*parameters.StaticParameters, error) {
 	var arch string = karpv1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
 		arch = karpv1.ArchitectureArm64

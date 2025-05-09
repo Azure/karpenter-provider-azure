@@ -235,7 +235,7 @@ spec:
     consolidationPolicy: WhenUnderutilized
     expireAfter: Never
 ---
-apiVersion: karpenter.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: default

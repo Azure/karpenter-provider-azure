@@ -48,7 +48,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -66,7 +66,7 @@ var fakeClock *clock.FakeClock
 var recorder events.Recorder
 
 var nodePool *karpv1.NodePool
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodeClaim *karpv1.NodeClaim
 
 func TestCloudProvider(t *testing.T) {
@@ -251,7 +251,7 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should succeed with no drift when KubernetesVersionReady is not true", func() {
 				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-				nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
 				ExpectApplied(ctx, env.Client, nodeClass)
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 				Expect(err).ToNot(HaveOccurred())

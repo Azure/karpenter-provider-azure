@@ -2,7 +2,7 @@
 
 Use the following command to deploy a `NodePool`, and `AKSNodeClass` for `Disruption Controls`, where we've made the nodes `expireAfter` 2 minutes, which will make the NodePool try to remove the nodes after 2 minutes.
 
-> Note: setting `terminationGracePeriod` in addition to `expireAfter` is a good way to help define an absolute maximum lifetime of a node. The node would be deleted at `expireAfter` and finishes draining within the `terminationGracePeriod` thereafter. However, setting `terminationGracePeriod` will ignore `karpenter.sh/do-not-disrupt: "true"`, and take precedence over a pod's own `terminationGracePeriod` or blocking eviction like PDBs, so be careful using it. 
+> Note: setting `terminationGracePeriod` in addition to `expireAfter` is a good way to help define an absolute maximum lifetime of a node. The node would be deleted at `expireAfter` and finishes draining within the `terminationGracePeriod` thereafter. However, setting `terminationGracePeriod` will ignore `karpenter.sh/do-not-disrupt: "true"`, and take precedence over a pod's own `terminationGracePeriod` or blocking eviction like PDBs, so be careful using it.
 
 ```bash
 cd ~/environment/karpenter
@@ -52,7 +52,7 @@ spec:
                 kind: AKSNodeClass
                 name: default
 ---
-apiVersion: karpenter.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
     name: default
