@@ -38,7 +38,8 @@ import (
 )
 
 const (
-	subscription = "12345678-1234-1234-1234-123456789012"
+	customerSubscription = "12345678-1234-1234-1234-123456789012"
+	sigSubscription      = "10945678-1234-1234-1234-123456789012"
 
 	cigImageVersion      = "202410.09.0"
 	laterCIGImageVersion = "202411.09.0"
@@ -73,7 +74,7 @@ func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.
 	nodeImages := []imagefamily.NodeImage{}
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{
-			ID:           fmt.Sprintf("/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
+			ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
 			Requirements: image.Requirements,
 		})
 	}
@@ -100,7 +101,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 		kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
-		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, subscription, nodeImageVersionsAPI)
+		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI)
 
 		nodeClass = test.AKSNodeClass()
 		test.ApplyDefaultStatus(nodeClass, env)
@@ -132,8 +133,12 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 	Context("List SIG Images", func() {
 		BeforeEach(func() {
-			var varTrue = true
-			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{UseSIG: &varTrue}))
+			testOptions := options.FromContext(ctx)
+			testOptions.UseSIG = true
+			testOptions.SIGSubscriptionID = sigSubscription
+			testOptions.SIGAccessTokenScope = "http://valid-scope.com/.default"
+			testOptions.SIGAccessTokenServerURL = "http://valid-url.com"
+			ctx = options.ToContext(ctx, testOptions)
 		})
 
 		It("should match expected images for Ubuntu2204", func() {

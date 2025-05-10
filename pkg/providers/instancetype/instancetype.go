@@ -167,7 +167,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 		// SKU capabilities
 		scheduling.NewRequirement(v1alpha2.LabelSKUStorageEphemeralOSMaxSize, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUEncryptionAtHostSupported, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, corev1.NodeSelectorOpDoesNotExist),
 		// all additive feature initialized elsewhere
@@ -180,7 +179,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	requirements[v1alpha2.LabelSKUFamily].Insert(vmsize.Family)
 
 	setRequirementsStoragePremiumCapable(requirements, sku)
-	setRequirementsEncryptionAtHostSupported(requirements, sku)
 	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
 	setRequirementsAcceleratedNetworking(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
@@ -193,12 +191,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 func setRequirementsStoragePremiumCapable(requirements scheduling.Requirements, sku *skewer.SKU) {
 	if sku.IsPremiumIO() {
 		requirements[v1alpha2.LabelSKUStoragePremiumCapable].Insert("true")
-	}
-}
-
-func setRequirementsEncryptionAtHostSupported(requirements scheduling.Requirements, sku *skewer.SKU) {
-	if sku.IsEncryptionAtHostSupported() {
-		requirements[v1alpha2.LabelSKUEncryptionAtHostSupported].Insert("true")
 	}
 }
 
