@@ -106,6 +106,14 @@ spec:
                     - none
                     - static
                     type: string
+                  failSwapOn:
+                    description: |-
+                      failSwapOn tells the Kubelet to fail to start if swap is enabled on the node.
+                      Note: this is currently not propagated in self-hosted scenarios,
+                      as those currently configure the nodes without swap.
+                      Default: true
+                      kubebuilder:default:=true
+                    type: boolean
                   imageGCHighThresholdPercent:
                     description: |-
                       ImageGCHighThresholdPercent is the percent of disk usage after which image
