@@ -25,14 +25,15 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 
 	"github.com/samber/lo"
 
 	v1 "k8s.io/api/core/v1"
-	"knative.dev/pkg/logging"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // GetVMName parses the provider ID stored on the node to get the vmName
@@ -57,7 +58,7 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
 	if err != nil {
-		logging.FromContext(ctx).Warnf("Failed to convert resource group name to lower case in providerID %s: %v", providerID, err)
+		log.FromContext(ctx).Info(fmt.Sprintf("WARN: Failed to convert resource group name to lower case in providerID %s: %v", providerID, err))
 		// fallback to original providerID
 		return providerID
 	}

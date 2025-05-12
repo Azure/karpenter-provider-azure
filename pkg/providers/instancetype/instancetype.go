@@ -139,14 +139,14 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 		scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, sku.GetName()),
 		scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, getArchitecture(architecture)),
 		scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(corev1.Linux)),
-		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o cloudprovider.Offering, _ int) string {
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o *cloudprovider.Offering, _ int) string {
 			return o.Requirements.Get(corev1.LabelTopologyZone).Any()
 		})...),
 
 		scheduling.NewRequirement(corev1.LabelTopologyRegion, corev1.NodeSelectorOpIn, region),
 
 		// Well Known to Karpenter
-		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o cloudprovider.Offering, _ int) string {
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o *cloudprovider.Offering, _ int) string {
 			return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Any()
 		})...),
 
@@ -162,13 +162,11 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 
 		// size parts
 		scheduling.NewRequirement(v1alpha2.LabelSKUFamily, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUAccelerator, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUVersion, corev1.NodeSelectorOpDoesNotExist),
 
 		// SKU capabilities
 		scheduling.NewRequirement(v1alpha2.LabelSKUStorageEphemeralOSMaxSize, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUEncryptionAtHostSupported, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, corev1.NodeSelectorOpDoesNotExist),
 		// all additive feature initialized elsewhere
@@ -181,12 +179,10 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	requirements[v1alpha2.LabelSKUFamily].Insert(vmsize.Family)
 
 	setRequirementsStoragePremiumCapable(requirements, sku)
-	setRequirementsEncryptionAtHostSupported(requirements, sku)
 	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
 	setRequirementsAcceleratedNetworking(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
 	setRequirementsGPU(requirements, sku, vmsize)
-	setRequirementsAccelerator(requirements, vmsize)
 	setRequirementsVersion(requirements, vmsize)
 
 	return requirements
@@ -195,12 +191,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 func setRequirementsStoragePremiumCapable(requirements scheduling.Requirements, sku *skewer.SKU) {
 	if sku.IsPremiumIO() {
 		requirements[v1alpha2.LabelSKUStoragePremiumCapable].Insert("true")
-	}
-}
-
-func setRequirementsEncryptionAtHostSupported(requirements scheduling.Requirements, sku *skewer.SKU) {
-	if sku.IsEncryptionAtHostSupported() {
-		requirements[v1alpha2.LabelSKUEncryptionAtHostSupported].Insert("true")
 	}
 }
 
@@ -231,12 +221,6 @@ func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, v
 		if vmsize.AcceleratorType != nil {
 			requirements[v1alpha2.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
 		}
-	}
-}
-
-func setRequirementsAccelerator(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	if vmsize.AcceleratorType != nil {
-		requirements[v1alpha2.LabelSKUAccelerator].Insert(*vmsize.AcceleratorType)
 	}
 }
 

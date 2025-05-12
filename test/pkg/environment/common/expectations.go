@@ -124,7 +124,7 @@ func (env *Environment) ExpectStatusUpdated(objects ...client.Object) {
 }
 
 func ReplaceNodeConditions(node *corev1.Node, conds ...corev1.NodeCondition) *corev1.Node {
-	keys := sets.New[string](lo.Map(conds, func(c corev1.NodeCondition, _ int) string { return string(c.Type) })...)
+	keys := sets.New(lo.Map(conds, func(c corev1.NodeCondition, _ int) string { return string(c.Type) })...)
 	node.Status.Conditions = lo.Reject(node.Status.Conditions, func(c corev1.NodeCondition, _ int) bool {
 		return keys.Has(string(c.Type))
 	})
@@ -494,6 +494,14 @@ func (env *Environment) EventuallyExpectHealthyPodCountWithTimeout(timeout time.
 	return pods
 }
 
+func (env *Environment) ExpectHealthyPodCount(selector labels.Selector, numPods int) []*corev1.Pod {
+	GinkgoHelper()
+	By(fmt.Sprintf("expecting %d pods matching selector %s to be ready", numPods, selector.String()))
+	pods := env.Monitor.RunningPods(selector)
+	Expect(pods).To(HaveLen(numPods))
+	return pods
+}
+
 func (env *Environment) ExpectPodsMatchingSelector(selector labels.Selector) []*corev1.Pod {
 	GinkgoHelper()
 
@@ -582,6 +590,18 @@ func (env *Environment) ConsistentlyExpectNodeCount(comparator string, count int
 			fmt.Sprintf("expected %d nodes, had %d (%v) for %s", count, len(nodeList.Items), NodeNames(lo.ToSlicePtr(nodeList.Items)), duration))
 	}, duration.String()).Should(Succeed())
 	return lo.ToSlicePtr(nodeList.Items)
+}
+
+func (env *Environment) ConsistentlyExpectCreatedNodeCount(comparator string, count int, duration time.Duration) []*corev1.Node {
+	GinkgoHelper()
+	By(fmt.Sprintf("waiting for created nodes to be %s to %d", comparator, count))
+	var createdNodes []*corev1.Node
+	Consistently(func(g Gomega) {
+		createdNodes = env.Monitor.CreatedNodes()
+		g.Expect(len(createdNodes)).To(BeNumerically(comparator, count),
+			fmt.Sprintf("expected %d created nodes, had %d (%v) for %s", count, len(createdNodes), NodeNames(createdNodes), duration))
+	}, duration.String()).Should(Succeed())
+	return createdNodes
 }
 
 // ConsistentlyExpectNoDisruptions asserts that the number of tainted nodes remains the same.
@@ -1005,7 +1025,7 @@ func (env *Environment) GetDaemonSetCount(np *karpv1.NodePool) int {
 	return lo.CountBy(daemonSetList.Items, func(d appsv1.DaemonSet) bool {
 		p := &corev1.Pod{Spec: d.Spec.Template.Spec}
 		nodeClaimTemplate := pscheduling.NewNodeClaimTemplate(np)
-		if err := scheduling.Taints(nodeClaimTemplate.Spec.Taints).Tolerates(p); err != nil {
+		if err := scheduling.Taints(nodeClaimTemplate.Spec.Taints).ToleratesPod(p); err != nil {
 			return false
 		}
 		if err := nodeClaimTemplate.Requirements.Compatible(scheduling.NewPodRequirements(p), scheduling.AllowUndefinedWellKnownLabels); err != nil {
@@ -1026,7 +1046,7 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 	return coreresources.RequestsForPods(lo.FilterMap(daemonSetList.Items, func(ds appsv1.DaemonSet, _ int) (*corev1.Pod, bool) {
 		p := &corev1.Pod{Spec: ds.Spec.Template.Spec}
 		nodeClaimTemplate := pscheduling.NewNodeClaimTemplate(np)
-		if err := scheduling.Taints(nodeClaimTemplate.Spec.Taints).Tolerates(p); err != nil {
+		if err := scheduling.Taints(nodeClaimTemplate.Spec.Taints).ToleratesPod(p); err != nil {
 			return nil, false
 		}
 		if err := nodeClaimTemplate.Requirements.Compatible(scheduling.NewPodRequirements(p), scheduling.AllowUndefinedWellKnownLabels); err != nil {
@@ -1034,4 +1054,20 @@ func (env *Environment) GetDaemonSetOverhead(np *karpv1.NodePool) corev1.Resourc
 		}
 		return p, true
 	})...)
+}
+
+func (env *Environment) IsCilium() bool {
+	GinkgoHelper()
+
+	dsList := &appsv1.DaemonSetList{}
+	Expect(env.Client.List(env.Context, dsList,
+		client.InNamespace("kube-system"),
+	)).To(Succeed())
+
+	for _, ds := range dsList.Items {
+		if strings.HasPrefix(ds.Name, "cilium") {
+			return true
+		}
+	}
+	return false
 }

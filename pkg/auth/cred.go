@@ -18,11 +18,14 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // expireEarlyTokenCredential is a wrapper around the azcore.TokenCredential that
@@ -31,6 +34,43 @@ import (
 // See: https://github.com/hashicorp/terraform-provider-azurerm/issues/20834 for more details
 type expireEarlyTokenCredential struct {
 	cred azcore.TokenCredential
+}
+
+func GetAuxiliaryToken(ctx context.Context, url string, scope string) (azcore.AccessToken, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	if url == "" {
+		return azcore.AccessToken{}, fmt.Errorf("access token server URL is not set")
+	}
+	if scope == "" {
+		return azcore.AccessToken{}, fmt.Errorf("access token scope is not set")
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+	q := req.URL.Query()
+	q.Add("scope", scope)
+	req.URL.RawQuery = q.Encode()
+	req.Header.Set("User-Agent", GetUserAgentExtension())
+
+	// Send the request
+	resp, err := client.Do(req)
+	if err != nil {
+		return azcore.AccessToken{}, fmt.Errorf("error making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return azcore.AccessToken{}, fmt.Errorf("error: %s", resp.Status)
+	}
+
+	// Decode the response body into the AccessToken struct
+	var token azcore.AccessToken
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		return azcore.AccessToken{}, fmt.Errorf("error decoding json: %w", err)
+	}
+	return token, nil
 }
 
 func NewTokenWrapper(cred azcore.TokenCredential) azcore.TokenCredential {
@@ -51,7 +91,7 @@ func (w *expireEarlyTokenCredential) GetToken(ctx context.Context, options polic
 	if token.ExpiresOn.Before(twoHoursFromNow) {
 		return token, nil
 	}
-	logging.FromContext(ctx).Debug("adjusting token ExpiresOn")
+	log.FromContext(ctx).V(1).Info("adjusting token ExpiresOn")
 	// If the token expires in more than 2 hours, this means we are taking in a new token with a fresh 24h expiration time or one already in the cache that hasn't been modified by us, so we want to set that to two hours so
 	// we can refresh it early to avoid the polling bugs mentioned in the above issue
 	token.ExpiresOn = twoHoursFromNow

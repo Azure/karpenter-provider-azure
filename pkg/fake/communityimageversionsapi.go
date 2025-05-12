@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 )
 
+// TODO: no ability to simulate errors on the Pager.
 type CommunityGalleryImageVersionsAPI struct {
 	ImageVersions AtomicPtrSlice[armcompute.CommunityGalleryImageVersion]
 }

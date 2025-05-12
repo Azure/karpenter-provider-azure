@@ -17,13 +17,22 @@ limitations under the License.
 package v1alpha2
 
 import (
+	"fmt"
+
 	"github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
 )
 
-// Image contains resolved image selector values utilized for node launch
-type Image struct {
-	// ID of the image
+const (
+	ConditionTypeImagesReady            = "ImagesReady"
+	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
+)
+
+// NodeImage contains resolved image selector values utilized for node launch
+type NodeImage struct {
+	// The ID of the image. Examples:
+	// - CIG: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
+	// - SIG: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
 	// +required
 	ID string `json:"id"`
 	// Requirements of the image to be utilized on an instance type
@@ -33,13 +42,25 @@ type Image struct {
 
 // AKSNodeClassStatus contains the resolved state of the AKSNodeClass
 type AKSNodeClassStatus struct {
+	// Images contains the current set of images available to use
+	// for the NodeClass
+	// +optional
+	Images []NodeImage `json:"images,omitempty"`
+	// KubernetesVersion contains the current kubernetes version which should be
+	// used for nodes provisioned for the NodeClass
+	// +optional
+	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
 	// Conditions contains signals for health and readiness
 	// +optional
 	Conditions []status.Condition `json:"conditions,omitempty"`
 }
 
 func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
-	return status.NewReadyConditions().For(in)
+	conds := []string{
+		ConditionTypeImagesReady,
+		ConditionTypeKubernetesVersionReady,
+	}
+	return status.NewReadyConditions(conds...).For(in)
 }
 
 func (in *AKSNodeClass) GetConditions() []status.Condition {
@@ -48,4 +69,36 @@ func (in *AKSNodeClass) GetConditions() []status.Condition {
 
 func (in *AKSNodeClass) SetConditions(conditions []status.Condition) {
 	in.Status.Conditions = conditions
+}
+
+// GetKubernetesVersion returns the Status.KubernetesVersion if its up to date and valid to use, otherwise returns an error.
+func (in *AKSNodeClass) GetKubernetesVersion() (string, error) {
+	err := in.validateKubernetesVersionReadiness()
+	if err != nil {
+		return "", err
+	}
+	return in.Status.KubernetesVersion, nil
+}
+
+// validateKubernetesVersionReadiness will return nil if the the KubernetesVersion is considered valid to use,
+// otherwise will return an error detailing the reason of failure.
+//
+// Ensures
+// - The AKSNodeClass is non-nil
+// - The AKSNodeClass' KubernetesVersionReady Condition is true
+// - The Condition's ObservedGeneration is up to date with the latest Spec Generation
+// - The KubernetesVersion is initialized and non-empty
+func (in *AKSNodeClass) validateKubernetesVersionReadiness() error {
+	if in == nil {
+		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeKubernetesVersionReady)
+	}
+	kubernetesVersionCondition := in.StatusConditions().Get(ConditionTypeKubernetesVersionReady)
+	if kubernetesVersionCondition.IsFalse() || kubernetesVersionCondition.IsUnknown() {
+		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.GetStatus(), kubernetesVersionCondition.Message)
+	} else if kubernetesVersionCondition.ObservedGeneration != in.GetGeneration() {
+		return fmt.Errorf("NodeClass condition %s ObservedGeneration %d does not match the NodeClass Generation %d", ConditionTypeKubernetesVersionReady, kubernetesVersionCondition.ObservedGeneration, in.GetGeneration())
+	} else if in.Status.KubernetesVersion == "" {
+		return fmt.Errorf("NodeClass KubernetesVersion is uninitialized")
+	}
+	return nil
 }

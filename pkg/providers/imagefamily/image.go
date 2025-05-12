@@ -28,17 +28,24 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
 
+// TODO: Remove this provider, by refactoring it into the nodeimage.go provider, and resolver.go as needed
+// This is part of a shift to have the new controllers for k8s and node image version which populate status.
+// At the current point the provisioning logic isn't update itself, just the status being populated.
+// As part of the change to the actual provisioning, this provider will be refactored as mentioned above.
+// The logic the nodeimage.go provider is dependent upon will refactor into its file, and the runtime logic for
+// creation will refactor into resolver.go but dropping API retrievals for the data stored in the status instead.
 type Provider struct {
 	kubernetesVersionCache *cache.Cache
 	cm                     *pretty.ChangeMonitor
 	location               string
 	kubernetesInterface    kubernetes.Interface
 	imageCache             *cache.Cache
+	nodeImagesCache        *cache.Cache
 	imageVersionsClient    CommunityGalleryImageVersionsAPI
 	subscription           string
 	NodeImageVersions      NodeImageVersionsAPI
@@ -60,6 +67,7 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 	return &Provider{
 		kubernetesVersionCache: kubernetesVersionCache,
 		imageCache:             cache.New(imageExpirationInterval, imageCacheCleaningInterval),
+		nodeImagesCache:        cache.New(imageExpirationInterval, imageCacheCleaningInterval),
 		location:               location,
 		imageVersionsClient:    versionsClient,
 		cm:                     pretty.NewChangeMonitor(),
@@ -99,10 +107,11 @@ func (p *Provider) GetLatestImageID(ctx context.Context, defaultImage DefaultIma
 		return "", err
 	}
 	p.imageCache.Set(key, imageID, imageExpirationInterval)
-	logging.FromContext(ctx).With("image-id", imageID).Info("discovered new image id")
+	log.FromContext(ctx).WithValues("image-id", imageID).Info("discovered new image id")
 	return imageID, nil
 }
 
+// TODO: refactor this into kubernetesversion.go, and split into a new kubernetes provider
 func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	if version, ok := p.kubernetesVersionCache.Get(kubernetesVersionCacheKey); ok {
 		return version.(string), nil
@@ -114,7 +123,7 @@ func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
 	version := strings.TrimPrefix(serverVersion.GitVersion, "v") // v1.24.9 -> 1.24.9
 	p.kubernetesVersionCache.SetDefault(kubernetesVersionCacheKey, version)
 	if p.cm.HasChanged("kubernetes-version", version) {
-		logging.FromContext(ctx).With("kubernetes-version", version).Debugf("discovered kubernetes version")
+		log.FromContext(ctx).WithValues("kubernetes-version", version).V(1).Info("discovered kubernetes version")
 	}
 	return version, nil
 }
@@ -167,4 +176,9 @@ func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 
 func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
 	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
+}
+
+func (p *Provider) Reset() {
+	p.imageCache.Flush()
+	p.nodeImagesCache.Flush()
 }

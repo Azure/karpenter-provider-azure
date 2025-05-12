@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
+	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -35,7 +36,6 @@ import (
 	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	opstatus "github.com/awslabs/operatorpkg/status"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
@@ -45,7 +45,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	. "knative.dev/pkg/logging/testing"
+	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
@@ -84,7 +84,7 @@ var _ = BeforeSuite(func() {
 	fakeClock = clock.NewFakeClock(time.Now())
 	recorder = events.NewRecorder(&record.FakeRecorder{})
 	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
-	cluster = state.NewCluster(fakeClock, env.Client)
+	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	prov = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
 })
 
@@ -98,7 +98,8 @@ var _ = BeforeEach(func() {
 	ctx = options.ToContext(ctx, test.Options())
 
 	nodeClass = test.AKSNodeClass()
-	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	test.ApplyDefaultStatus(nodeClass, env)
+
 	nodePool = coretest.NodePool(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{
 			Template: karpv1.NodeClaimTemplate{
@@ -112,6 +113,7 @@ var _ = BeforeEach(func() {
 			},
 		},
 	})
+
 	nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{karpv1.NodePoolLabelKey: nodePool.Name},
@@ -177,7 +179,10 @@ var _ = Describe("CloudProvider", func() {
 				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 			})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
-			ExpectScheduled(ctx, env.Client, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			// KubeletVersion must be applied to the node to satisfy k8s drift
+			node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
+			ExpectApplied(ctx, env.Client, node)
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			input := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
@@ -186,6 +191,7 @@ var _ = Describe("CloudProvider", func() {
 			// Corresponding NodeClaim
 			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
+					NodeName:   node.Name,
 					ProviderID: utils.ResourceIDToProviderID(ctx, utils.MkVMID(rg, vmName)),
 				},
 				ObjectMeta: metav1.ObjectMeta{
@@ -196,7 +202,9 @@ var _ = Describe("CloudProvider", func() {
 				},
 				Spec: karpv1.NodeClaimSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
-						Name: nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+						Name:  nodeClass.Name,
 					},
 				},
 			})
@@ -232,6 +240,61 @@ var _ = Describe("CloudProvider", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(string(drifted)).To(Equal("ImageVersionDrift"))
+		})
+
+		Context("Kubernetes Version", func() {
+			It("should succeed with no drift when nothing changes", func() {
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("should succeed with no drift when KubernetesVersionReady is not true", func() {
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found.
+			It("shouldn't error or be drifted when KubernetesVersion is empty", func() {
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				nodeClass.Status.KubernetesVersion = ""
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("shouldn't error or be drifted when NodeName is missing", func() {
+				nodeClaim.Status.NodeName = ""
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("should error when node is not found", func() {
+				nodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("should succeed with drift true when KubernetesVersion is new", func() {
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+
+				semverCurrentK8sVersion := lo.Must(semver.ParseTolerant(nodeClass.Status.KubernetesVersion))
+				semverCurrentK8sVersion.Minor = semverCurrentK8sVersion.Minor + 1
+				nodeClass.Status.KubernetesVersion = semverCurrentK8sVersion.String()
+
+				ExpectApplied(ctx, env.Client, nodeClass)
+
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(K8sVersionDrift))
+			})
 		})
 	})
 })

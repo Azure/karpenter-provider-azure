@@ -14,25 +14,26 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package conversion
+package auth
 
 import (
-	"reflect"
-	"testing"
+	"net/http"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
-func TestOptions(t *testing.T) {
-	got := &options{}
-	WithPath("path")(got)
+// AuxiliaryTokenPolicy provides a custom policy used to authenticate
+// with shared node image galleries.
+type AuxiliaryTokenPolicy struct {
+	Token string
+}
 
-	want := &options{
-		path: "path",
-		// we can't compare wc as functions are not
-		// comparable in golang (thus it needs to be
-		// done indirectly)
-	}
+func (p *AuxiliaryTokenPolicy) Do(req *policy.Request) (*http.Response, error) {
+	req.Raw().Header.Add("x-ms-authorization-auxiliary", "Bearer "+p.Token)
+	return req.Next()
+}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Error("option was not applied")
-	}
+func NewAuxiliaryTokenPolicy(token azcore.AccessToken) AuxiliaryTokenPolicy {
+	return AuxiliaryTokenPolicy{Token: token.Token}
 }
