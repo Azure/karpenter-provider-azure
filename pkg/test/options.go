@@ -43,9 +43,11 @@ type OptionsFields struct {
 	NodeBootstrappingServerURL     *string
 	VnetGUID                       *string
 
-	// UseSIG Flags not required by the self hosted offering
-	UseSIG            *bool
-	SIGSubscriptionID *string
+	// SIG Flags not required by the self hosted offering
+	UseSIG                  *bool
+	SIGAccessTokenServerURL *string
+	SIGAccessTokenScope     *string
+	SIGSubscriptionID       *string
 }
 
 func Options(overrides ...OptionsFields) *azoptions.Options {
@@ -72,6 +74,8 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
 		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),
-		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, "10945678-1234-1234-1234-123456789012"),
+		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, ""),
+		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, ""),
+		SIGAccessTokenScope:            lo.FromPtrOr(options.SIGAccessTokenScope, ""),
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/patrickmn/go-cache"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
@@ -61,6 +62,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 
 	var nodeImages []NodeImage
 	if useSIG {
+		log.FromContext(ctx).V(1).Info("Using SIG to list node images")
 		nodeImages, err = p.listSIG(ctx, supportedImages)
 		if err != nil {
 			return []NodeImage{}, err

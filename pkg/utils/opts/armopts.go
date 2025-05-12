@@ -19,7 +19,6 @@ package opts
 import (
 	"net/http"
 	"os"
-	"time"
 
 	"log/slog"
 
@@ -47,9 +46,6 @@ func DefaultNICClientOpts() *arm.ClientOptions {
 
 func DefaultRetryOpts() policy.RetryOptions {
 	return policy.RetryOptions{
-		MaxRetries: 20,
-		// Note the default retry behavior is exponential backoff
-		RetryDelay: time.Second * 5,
 		// TODO: bsoghigian: Investigate if we want to leverage some of the status codes other than the defaults.
 		// the defaults are // StatusCodes specifies the HTTP status codes that indicate the operation should be retried.
 		// A nil slice will use the following values.
