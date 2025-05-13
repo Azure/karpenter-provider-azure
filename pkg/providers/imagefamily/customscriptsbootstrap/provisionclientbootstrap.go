@@ -107,9 +107,10 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		// EnableFIPS:              lo.ToPtr(false),                                 // Unsupported as of now
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
-		// ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
-		// Enabled: lo.ToPtr(false), // Unsupported as of now
-		// },
+		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
+			// TODO: Revisit when adding support for Azure Linux v3 and Ubuntu 24.04, this may have to be conditional then
+			Enabled: lo.ToPtr(true),
+		},
 	}
 
 	switch p.ImageFamily {
