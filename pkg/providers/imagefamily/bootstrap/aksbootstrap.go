@@ -92,132 +92,133 @@ func (a AKS) Script() (string, error) {
 // NodeBootstrapVariables carries all variables needed to bootstrap a node
 // It is used as input rendering the bootstrap script Go template (retrieved from getCustomDataTemplate)
 type NodeBootstrapVariables struct {
-	IsAKSCustomCloud                  bool     // n   (false)
-	InitAKSCustomCloudFilepath        string   // n   (static)
-	AKSCustomCloudRepoDepotEndpoint   string   // n   derived from custom cloud env?
-	AdminUsername                     string   // t   typically azureuser but can be user input
-	MobyVersion                       string   // -   unnecessary
-	TenantID                          string   // p   environment derived, unnecessary?
-	KubernetesVersion                 string   // ?   cluster/node pool specific, derived from user input
-	HyperkubeURL                      string   // -   should be unnecessary
-	KubeBinaryURL                     string   // -   necessary only for non-cached versions / static-ish
-	CredentialProviderDownloadURL     string   // -	  necessary only for non-cached versions / static-ish
-	CustomKubeBinaryURL               string   // -   unnecessary
-	KubeproxyURL                      string   // -   should be unnecessary or bug
-	APIServerPublicKey                string   // -   unique per cluster, actually not sure best way to extract? [should not be needed on agent nodes]
-	SubscriptionID                    string   // a   can be derived from environment/imds
-	ResourceGroup                     string   // a   can be derived from environment/imds
-	Location                          string   // a   can be derived from environment/imds
-	VMType                            string   // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "vmss" for now]
-	Subnet                            string   // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "aks-subnet for now]
-	NetworkSecurityGroup              string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-agentpool-<clusterid>-nsg" for now]
-	VirtualNetwork                    string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-vnet-<clusterid>" for now]
-	VirtualNetworkResourceGroup       string   // xd  derived from cluster but unnecessary (?) only used by CCM [default to empty, looks like unused]
-	RouteTable                        string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-agentpool-<clusterid>-routetable" for now]
-	PrimaryAvailabilitySet            string   // -   derived from cluster but unnecessary (?) only used by CCM
-	PrimaryScaleSet                   string   // -   derived from cluster but unnecessary (?) only used by CCM
-	ServicePrincipalClientID          string   // ad  user input
-	NetworkPlugin                     string   // x   user input (? actually derived from cluster, right?)
-	NetworkPolicy                     string   // x   user input / unique per cluster. user-specified.
-	VNETCNILinuxPluginsURL            string   // -   unnecessary [actually, currently required]
-	CNIPluginsURL                     string   // -   unnecessary [actually, currently required]
-	CloudProviderBackoff              bool     // s   BEGIN CLOUD CONFIG for azure stuff, static/derived from user inputs
-	CloudProviderBackoffMode          string   // s   [static until has to be exposed; could propagate Karpenter RL config, but won't]
-	CloudProviderBackoffRetries       string   // s
-	CloudProviderBackoffExponent      string   // s
-	CloudProviderBackoffDuration      string   // s
-	CloudProviderBackoffJitter        string   // s
-	CloudProviderRatelimit            bool     // s
-	CloudProviderRatelimitQPS         string   // s
-	CloudProviderRatelimitQPSWrite    string   // s
-	CloudProviderRatelimitBucket      string   // s
-	CloudProviderRatelimitBucketWrite string   // s
-	LoadBalancerDisableOutboundSNAT   bool     // xd  [= false for now]
-	UseManagedIdentityExtension       bool     // s   [always true, as long as we only support managed identity]
-	UseInstanceMetadata               bool     // s   [always true?]
-	LoadBalancerSKU                   string   // xd  [= "Standard" for now]
-	ExcludeMasterFromStandardLB       bool     // s   [always true?]
-	MaximumLoadbalancerRuleCount      int      // xd  END CLOUD CONFIG [will default to 250 for now]
-	ContainerRuntime                  string   // s   always containerd
-	CLITool                           string   // s   static/unnecessary
-	ContainerdDownloadURLBase         string   // -   unnecessary
-	NetworkMode                       string   // c   user input
-	UserAssignedIdentityID            string   // a   user input
-	APIServerName                     string   // x   unique per cluster
-	IsVHD                             bool     // s   static-ish
-	GPUNode                           bool     // k   derived from VM size
-	SGXNode                           bool     // -   unused
-	MIGNode                           bool     // t   user input
-	ConfigGPUDriverIfNeeded           bool     // s   depends on hardware, unnecessary for oss, but aks provisions gpu drivers
-	EnableGPUDevicePluginIfNeeded     bool     // -   deprecated/preview only, don't do this for OSS
-	TeleportdPluginDownloadURL        string   // -   user input, don't do this for OSS
-	ContainerdVersion                 string   // -   unused
-	ContainerdPackageURL              string   // -   only for testing
-	RuncVersion                       string   // -   unused
-	RuncPackageURL                    string   // -   testing only
-	EnableHostsConfigAgent            bool     // n   derived from private cluster user input...I think?
-	DisableSSH                        bool     // t   user input
-	NeedsContainerd                   bool     // s   static true
-	TeleportEnabled                   bool     // t   user input
-	ShouldConfigureHTTPProxy          bool     // c   user input
-	ShouldConfigureHTTPProxyCA        bool     // c   user input [secret]
-	HTTPProxyTrustedCA                string   // c   user input [secret]
-	ShouldConfigureCustomCATrust      bool     // c   user input
-	CustomCATrustConfigCerts          []string // c   user input [secret]
-	IsKrustlet                        bool     // t   user input
-	GPUNeedsFabricManager             bool     // v   determined by GPU hardware type
-	NeedsDockerLogin                  bool     // t   user input [still needed?]
-	IPv6DualStackEnabled              bool     // t   user input
-	OutboundCommand                   string   // s   mostly static/can be
-	EnableUnattendedUpgrades          bool     // c   user input [presumably cluster level, correct?]
-	EnsureNoDupePromiscuousBridge     bool     // k   derived {{ and NeedsContainerd IsKubenet (not HasCalicoNetworkPolicy) }} [could be computed by template ...]
-	ShouldConfigSwapFile              bool     // t   user input
-	ShouldConfigTransparentHugePage   bool     // t   user input
-	TargetCloud                       string   // n   derive from environment/user input
-	TargetEnvironment                 string   // n   derive from environment/user input
-	CustomEnvJSON                     string   // n   derive from environment/user input
-	IsCustomCloud                     bool     // n   derive from environment/user input
-	CSEHelpersFilepath                string   // s   static
-	CSEDistroHelpersFilepath          string   // s   static
-	CSEInstallFilepath                string   // s   static
-	CSEDistroInstallFilepath          string   // s   static
-	CSEConfigFilepath                 string   // s   static
-	AzurePrivateRegistryServer        string   // c   user input
-	HasCustomSearchDomain             bool     // c   user input
-	CustomSearchDomainFilepath        string   // s   static
-	HTTPProxyURLs                     string   // c   user input [presumably cluster-level]
-	HTTPSProxyURLs                    string   // c   user input [presumably cluster-level]
-	NoProxyURLs                       string   // c   user input [presumably cluster-level]
-	TLSBootstrappingEnabled           bool     // s   static true
-	SecureTLSBootstrappingEnabled     bool     // s   static false
-	DHCPv6ServiceFilepath             string   // k   derived from user input [how?]
-	DHCPv6ConfigFilepath              string   // k   derived from user input [how?]
-	THPEnabled                        string   // c   user input [presumably cluster-level][should be bool?]
-	THPDefrag                         string   // c   user input [presumably cluster-level][should be bool?]
-	ServicePrincipalFileContent       string   // s   only required for RP cluster [static: msi?]
-	KubeletClientContent              string   // -   unnecessary [if using TLS bootstrapping]
-	KubeletClientCertContent          string   // -   unnecessary
-	KubeletConfigFileEnabled          bool     // s   can be static	[should kubelet config be actually used/preferred instead of flags?]
-	KubeletConfigFileContent          string   // s   mix of user/static/RP-generated.
-	SwapFileSizeMB                    int      // t   user input
-	GPUImageSHA                       string   // s	  static sha rarely updated
-	GPUDriverVersion                  string   // k   determine by OS + GPU hardware requirements; can be determined automatically, but hard. suggest using GPU operator.
-	GPUDriverType                     string   // k
-	GPUInstanceProfile                string   // t   user-specified
-	CustomSearchDomainName            string   // c   user-specified [presumably cluster-level]
-	CustomSearchRealmUser             string   // c   user-specified [presumably cluster-level]
-	CustomSearchRealmPassword         string   // c   user-specified [presumably cluster-level]
-	MessageOfTheDay                   string   // t   user-specified [presumably node-level]
-	HasKubeletDiskType                bool     // t   user-specified [presumably node-level]
-	NeedsCgroupV2                     bool     // k   can be automatically determined
-	SysctlContent                     string   // t   user-specified
-	TLSBootstrapToken                 string   // X   nodepool or node specific. can be created automatically
-	KubeletFlags                      string   // psX unique per nodepool. partially user-specified, static, and RP-generated
-	KubeletNodeLabels                 string   // pk  node-pool specific. user-specified.
-	AzureEnvironmentFilepath          string   // s   can be made static [usually "/etc/kubernetes/azure.json", but my examples use ""?]
-	KubeCACrt                         string   // x   unique per cluster
-	ContainerdConfigContent           string   // k   determined by GPU VM size, WASM support, Kata support
-	IsKata                            bool     // n   user-specified
+	IsAKSCustomCloud                        bool     // n   (false)
+	InitAKSCustomCloudFilepath              string   // n   (static)
+	AKSCustomCloudRepoDepotEndpoint         string   // n   derived from custom cloud env?
+	AdminUsername                           string   // t   typically azureuser but can be user input
+	MobyVersion                             string   // -   unnecessary
+	TenantID                                string   // p   environment derived, unnecessary?
+	KubernetesVersion                       string   // ?   cluster/node pool specific, derived from user input
+	HyperkubeURL                            string   // -   should be unnecessary
+	KubeBinaryURL                           string   // -   necessary only for non-cached versions / static-ish
+	CredentialProviderDownloadURL           string   // -	  necessary only for non-cached versions / static-ish
+	CustomKubeBinaryURL                     string   // -   unnecessary
+	KubeproxyURL                            string   // -   should be unnecessary or bug
+	APIServerPublicKey                      string   // -   unique per cluster, actually not sure best way to extract? [should not be needed on agent nodes]
+	SubscriptionID                          string   // a   can be derived from environment/imds
+	ResourceGroup                           string   // a   can be derived from environment/imds
+	Location                                string   // a   can be derived from environment/imds
+	VMType                                  string   // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "vmss" for now]
+	Subnet                                  string   // xd  derived from cluster but unnecessary (?) only used by CCM [will default to "aks-subnet for now]
+	NetworkSecurityGroup                    string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-agentpool-<clusterid>-nsg" for now]
+	VirtualNetwork                          string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-vnet-<clusterid>" for now]
+	VirtualNetworkResourceGroup             string   // xd  derived from cluster but unnecessary (?) only used by CCM [default to empty, looks like unused]
+	RouteTable                              string   // xk  derived from cluster but unnecessary (?) only used by CCM [= "aks-agentpool-<clusterid>-routetable" for now]
+	PrimaryAvailabilitySet                  string   // -   derived from cluster but unnecessary (?) only used by CCM
+	PrimaryScaleSet                         string   // -   derived from cluster but unnecessary (?) only used by CCM
+	ServicePrincipalClientID                string   // ad  user input
+	NetworkPlugin                           string   // x   user input (? actually derived from cluster, right?)
+	NetworkPolicy                           string   // x   user input / unique per cluster. user-specified.
+	VNETCNILinuxPluginsURL                  string   // -   unnecessary [actually, currently required]
+	CNIPluginsURL                           string   // -   unnecessary [actually, currently required]
+	CloudProviderBackoff                    bool     // s   BEGIN CLOUD CONFIG for azure stuff, static/derived from user inputs
+	CloudProviderBackoffMode                string   // s   [static until has to be exposed; could propagate Karpenter RL config, but won't]
+	CloudProviderBackoffRetries             string   // s
+	CloudProviderBackoffExponent            string   // s
+	CloudProviderBackoffDuration            string   // s
+	CloudProviderBackoffJitter              string   // s
+	CloudProviderRatelimit                  bool     // s
+	CloudProviderRatelimitQPS               string   // s
+	CloudProviderRatelimitQPSWrite          string   // s
+	CloudProviderRatelimitBucket            string   // s
+	CloudProviderRatelimitBucketWrite       string   // s
+	LoadBalancerDisableOutboundSNAT         bool     // xd  [= false for now]
+	UseManagedIdentityExtension             bool     // s   [always true, as long as we only support managed identity]
+	UseInstanceMetadata                     bool     // s   [always true?]
+	LoadBalancerSKU                         string   // xd  [= "Standard" for now]
+	ExcludeMasterFromStandardLB             bool     // s   [always true?]
+	MaximumLoadbalancerRuleCount            int      // xd  END CLOUD CONFIG [will default to 250 for now]
+	ContainerRuntime                        string   // s   always containerd
+	CLITool                                 string   // s   static/unnecessary
+	ContainerdDownloadURLBase               string   // -   unnecessary
+	NetworkMode                             string   // c   user input
+	UserAssignedIdentityID                  string   // a   user input
+	APIServerName                           string   // x   unique per cluster
+	IsVHD                                   bool     // s   static-ish
+	GPUNode                                 bool     // k   derived from VM size
+	SGXNode                                 bool     // -   unused
+	MIGNode                                 bool     // t   user input
+	ConfigGPUDriverIfNeeded                 bool     // s   depends on hardware, unnecessary for oss, but aks provisions gpu drivers
+	EnableGPUDevicePluginIfNeeded           bool     // -   deprecated/preview only, don't do this for OSS
+	TeleportdPluginDownloadURL              string   // -   user input, don't do this for OSS
+	ContainerdVersion                       string   // -   unused
+	ContainerdPackageURL                    string   // -   only for testing
+	RuncVersion                             string   // -   unused
+	RuncPackageURL                          string   // -   testing only
+	EnableHostsConfigAgent                  bool     // n   derived from private cluster user input...I think?
+	DisableSSH                              bool     // t   user input
+	NeedsContainerd                         bool     // s   static true
+	TeleportEnabled                         bool     // t   user input
+	ShouldConfigureHTTPProxy                bool     // c   user input
+	ShouldConfigureHTTPProxyCA              bool     // c   user input [secret]
+	HTTPProxyTrustedCA                      string   // c   user input [secret]
+	ShouldConfigureCustomCATrust            bool     // c   user input
+	CustomCATrustConfigCerts                []string // c   user input [secret]
+	IsKrustlet                              bool     // t   user input
+	GPUNeedsFabricManager                   bool     // v   determined by GPU hardware type
+	NeedsDockerLogin                        bool     // t   user input [still needed?]
+	IPv6DualStackEnabled                    bool     // t   user input
+	OutboundCommand                         string   // s   mostly static/can be
+	EnableUnattendedUpgrades                bool     // c   user input [presumably cluster level, correct?]
+	EnsureNoDupePromiscuousBridge           bool     // k   derived {{ and NeedsContainerd IsKubenet (not HasCalicoNetworkPolicy) }} [could be computed by template ...]
+	ShouldConfigSwapFile                    bool     // t   user input
+	ShouldConfigTransparentHugePage         bool     // t   user input
+	TargetCloud                             string   // n   derive from environment/user input
+	TargetEnvironment                       string   // n   derive from environment/user input
+	CustomEnvJSON                           string   // n   derive from environment/user input
+	IsCustomCloud                           bool     // n   derive from environment/user input
+	CSEHelpersFilepath                      string   // s   static
+	CSEDistroHelpersFilepath                string   // s   static
+	CSEInstallFilepath                      string   // s   static
+	CSEDistroInstallFilepath                string   // s   static
+	CSEConfigFilepath                       string   // s   static
+	AzurePrivateRegistryServer              string   // c   user input
+	HasCustomSearchDomain                   bool     // c   user input
+	CustomSearchDomainFilepath              string   // s   static
+	HTTPProxyURLs                           string   // c   user input [presumably cluster-level]
+	HTTPSProxyURLs                          string   // c   user input [presumably cluster-level]
+	NoProxyURLs                             string   // c   user input [presumably cluster-level]
+	TLSBootstrappingEnabled                 bool     // s   static true
+	SecureTLSBootstrappingEnabled           bool     // s   static false
+	EnableKubeletServingCertificateRotation bool     // s   static false
+	DHCPv6ServiceFilepath                   string   // k   derived from user input [how?]
+	DHCPv6ConfigFilepath                    string   // k   derived from user input [how?]
+	THPEnabled                              string   // c   user input [presumably cluster-level][should be bool?]
+	THPDefrag                               string   // c   user input [presumably cluster-level][should be bool?]
+	ServicePrincipalFileContent             string   // s   only required for RP cluster [static: msi?]
+	KubeletClientContent                    string   // -   unnecessary [if using TLS bootstrapping]
+	KubeletClientCertContent                string   // -   unnecessary
+	KubeletConfigFileEnabled                bool     // s   can be static	[should kubelet config be actually used/preferred instead of flags?]
+	KubeletConfigFileContent                string   // s   mix of user/static/RP-generated.
+	SwapFileSizeMB                          int      // t   user input
+	GPUImageSHA                             string   // s	  static sha rarely updated
+	GPUDriverVersion                        string   // k   determine by OS + GPU hardware requirements; can be determined automatically, but hard. suggest using GPU operator.
+	GPUDriverType                           string   // k
+	GPUInstanceProfile                      string   // t   user-specified
+	CustomSearchDomainName                  string   // c   user-specified [presumably cluster-level]
+	CustomSearchRealmUser                   string   // c   user-specified [presumably cluster-level]
+	CustomSearchRealmPassword               string   // c   user-specified [presumably cluster-level]
+	MessageOfTheDay                         string   // t   user-specified [presumably node-level]
+	HasKubeletDiskType                      bool     // t   user-specified [presumably node-level]
+	NeedsCgroupV2                           bool     // k   can be automatically determined
+	SysctlContent                           string   // t   user-specified
+	TLSBootstrapToken                       string   // X   nodepool or node specific. can be created automatically
+	KubeletFlags                            string   // psX unique per nodepool. partially user-specified, static, and RP-generated
+	KubeletNodeLabels                       string   // pk  node-pool specific. user-specified.
+	AzureEnvironmentFilepath                string   // s   can be made static [usually "/etc/kubernetes/azure.json", but my examples use ""?]
+	KubeCACrt                               string   // x   unique per cluster
+	ContainerdConfigContent                 string   // k   determined by GPU VM size, WASM support, Kata support
+	IsKata                                  bool     // n   user-specified
 }
 
 func (a AKS) aksBootstrapScript() (string, error) {
