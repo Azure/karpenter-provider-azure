@@ -122,7 +122,9 @@ func getEmptyMWConfigMap() *corev1.ConfigMap {
 }
 
 var _ = Describe("NodeClass NodeImage Status Controller", func() {
+
 	var nodeClass *v1alpha2.AKSNodeClass
+
 	BeforeEach(func() {
 		var cigImageVersionTest = newCIGImageVersion
 		azureEnv.CommunityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
@@ -134,9 +136,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(len(nodeClass.Status.Images)).To(Equal(3))
-		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(newCIGImageVersion)))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+		ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 	})
 
 	It("should update Images and its readiness on AKSNodeClass when aksControlPlane is false", func() {
@@ -153,9 +153,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(len(nodeClass.Status.Images)).To(Equal(3))
-		Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(newCIGImageVersion)))
-		Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+		ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 	})
 
 	When("aksControlPlane is true", func() {
@@ -166,6 +164,13 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			BeforeEach(func() {
 				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, true)
+
+				// Setup NodeClass
+				nodeClass.Status.KubernetesVersion = testK8sVersion
+				nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
+
+				nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
+				nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
 			})
 
 			When("SYSTEM_NAMESPACE is set", func() {
@@ -174,78 +179,40 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				})
 
 				It("Should not update NodeImages when ConfigMap is missing", func() {
-					nodeClass.Status.KubernetesVersion = testK8sVersion
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-					nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
-
 					_, err := imageReconciler.Reconcile(ctx, nodeClass)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(len(nodeClass.Status.Images)).To(Equal(3))
-					Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
-					Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
 				})
 
 				It("Should not update NodeImages when maintenane window is not open", func() {
-					nodeClass.Status.KubernetesVersion = testK8sVersion
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-					nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
-
 					ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
 
 					_, err := imageReconciler.Reconcile(ctx, nodeClass)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(len(nodeClass.Status.Images)).To(Equal(3))
-					Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
-					Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
 				})
 
 				It("Should update NodeImages when ConfigMap is empty (maintenane window undefined)", func() {
-					nodeClass.Status.KubernetesVersion = testK8sVersion
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-					nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
-
 					ExpectApplied(ctx, env.Client, getEmptyMWConfigMap())
 
 					_, err := imageReconciler.Reconcile(ctx, nodeClass)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(len(nodeClass.Status.Images)).To(Equal(3))
-					Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(newCIGImageVersion)))
-					Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+					ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 				})
 
 				It("Should update NodeImages when maintenane window is open", func() {
-					nodeClass.Status.KubernetesVersion = testK8sVersion
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-					nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
-
 					ExpectApplied(ctx, env.Client, getOpenMWConfigMap())
 
 					_, err := imageReconciler.Reconcile(ctx, nodeClass)
 					Expect(err).ToNot(HaveOccurred())
 
-					Expect(len(nodeClass.Status.Images)).To(Equal(3))
-					Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(newCIGImageVersion)))
-					Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+					ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 				})
 
 				It("Should error when ConfigMap is malformed (missing endtime)", func() {
-					nodeClass.Status.KubernetesVersion = testK8sVersion
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-					nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
-
 					configMap := getOpenMWConfigMap()
 					delete(configMap.Data, "aksManagedNodeOSUpgradeSchedule-end")
 					ExpectApplied(ctx, env.Client, configMap)
@@ -254,18 +221,10 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("unexpected state, with incomplete maintenance window data for channel aksManagedNodeOSUpgradeSchedule"))
 
-					Expect(len(nodeClass.Status.Images)).To(Equal(3))
-					Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
-					Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
 				})
 
 				It("Should error when ConfigMap is malformed (invalid timestamp)", func() {
-					nodeClass.Status.KubernetesVersion = testK8sVersion
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-					nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
-
 					configMap := getOpenMWConfigMap()
 					configMap.Data["aksManagedNodeOSUpgradeSchedule-end"] = "invalid-timestamp"
 					ExpectApplied(ctx, env.Client, configMap)
@@ -274,9 +233,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("error parsing maintenance window end time for channel aksManagedNodeOSUpgradeSchedule"))
 
-					Expect(len(nodeClass.Status.Images)).To(Equal(3))
-					Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
-					Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
 				})
 			})
 
@@ -286,23 +243,21 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				})
 
 				It("Should return an error", func() {
-					nodeClass.Status.KubernetesVersion = testK8sVersion
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-					nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-					nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
-
 					_, err := imageReconciler.Reconcile(ctx, nodeClass)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("SYSTEM_NAMESPACE not set"))
 
-					Expect(len(nodeClass.Status.Images)).To(Equal(3))
-					Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(oldcigImageVersion)))
-					Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
 				})
 			})
 		})
 	})
-
-	// TODO: Handle test cases where maintenance window is not open, but other update conditions trigger an update, once maintenance windows are supported.
 })
+
+func ExpectReadyWithCIGImages(nodeClass *v1alpha2.AKSNodeClass, version string) {
+	GinkgoHelper()
+
+	Expect(len(nodeClass.Status.Images)).To(Equal(3))
+	Expect(nodeClass.Status.Images).To(HaveExactElements(getExpectedTestCommunityImages(version)))
+	Expect(nodeClass.StatusConditions().IsTrue(v1alpha2.ConditionTypeImagesReady)).To(BeTrue())
+}
