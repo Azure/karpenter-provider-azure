@@ -30,6 +30,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/blang/semver/v4"
+	"github.com/samber/lo"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -42,6 +44,11 @@ var env *coretest.Environment
 var azureEnv *test.Environment
 var nodeClass *v1alpha2.AKSNodeClass
 var controller *status.Controller
+
+var (
+	testK8sVersion string
+	oldK8sVersion  string
+)
 
 func TestAKSNodeClassStatusController(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -66,6 +73,11 @@ var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	nodeClass = test.AKSNodeClass()
 	azureEnv.Reset()
+
+	testK8sVersion = lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
+	semverTestK8sVersion := lo.Must(semver.ParseTolerant(testK8sVersion))
+	semverTestK8sVersion.Minor = semverTestK8sVersion.Minor - 1
+	oldK8sVersion = semverTestK8sVersion.String()
 })
 
 var _ = AfterEach(func() {
