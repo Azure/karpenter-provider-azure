@@ -112,7 +112,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
-			Enabled: to.Ptr(enableArtifactStreaming),
+			Enabled: lo.ToPtr(enableArtifactStreaming),
 		},
 	}
 
