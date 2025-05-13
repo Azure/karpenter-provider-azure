@@ -186,19 +186,22 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 		return false, fmt.Errorf("error getting maintenance window configmap, %w", err)
 	}
 	if len(mwConfigMap.Data) == 0 {
+		// An empty configmap means there's no maintenance windows defined, and its up to us when to preform maintenance
 		return true, nil
 	}
-	nextNodeOSMWStartStr, ok := mwConfigMap.Data[fmt.Sprintf(configMapStartTimeFormat, nodeOSMaintenanceWindowChannel)]
-	if !ok {
+
+	nextNodeOSMWStartStr, okStart := mwConfigMap.Data[fmt.Sprintf(configMapStartTimeFormat, nodeOSMaintenanceWindowChannel)]
+	nextNodeOSMWEndStr, okEnd := mwConfigMap.Data[fmt.Sprintf(configMapEndTimeFormat, nodeOSMaintenanceWindowChannel)]
+	if !okStart && !okEnd {
+		// No maintenance window defined for aksManagedNodeOSUpgradeSchedule, so its up to us when to preform maintenance
 		return true, nil
+	} else if (okStart && !okEnd) || (!okStart && okEnd) {
+		return false, fmt.Errorf("Unexpected state, with incomplete maintenance window data for channel %s", nodeOSMaintenanceWindowChannel)
 	}
+
 	nextNodeOSMWStart, err := time.Parse(time.RFC3339, nextNodeOSMWStartStr)
 	if err != nil {
 		return false, fmt.Errorf("error parsing maintenance window start time for channel %s, %w", nodeOSMaintenanceWindowChannel, err)
-	}
-	nextNodeOSMWEndStr, ok := mwConfigMap.Data[fmt.Sprintf(configMapEndTimeFormat, nodeOSMaintenanceWindowChannel)]
-	if !ok {
-		return true, nil
 	}
 	nextNodeOSMWEnd, err := time.Parse(time.RFC3339, nextNodeOSMWEndStr)
 	if err != nil {
