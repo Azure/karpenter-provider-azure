@@ -82,6 +82,7 @@ type Options struct {
 	UseSIG                     bool   // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
 	SIGAccessTokenServerURL    string // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
 	SIGAccessTokenScope        string // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
+	AKSControlPlane            bool
 	SIGSubscriptionID          string
 	NodeResourceGroup          string
 }
@@ -106,6 +107,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGAccessTokenScope, "sig-access-token-scope", env.WithDefaultString("SIG_ACCESS_TOKEN_SCOPE", ""), "The scope for the SIG access token. Only used for AKS managed karpenter. UseSIG must be set to true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
+	fs.BoolVar(&o.AKSControlPlane, "aks-control-plane", env.WithDefaultBool("AKS_CONTROL_PLANE", false), "Used to signal that Karpenter is running in Managed AKS, as NAP, with certain features only currently available in that environment.") // Note (charliedmcb): I think this should be more explicate about NAP only, as certain features enabled this way will not work in self-hosted at the moment.
 }
 
 func (o Options) GetAPIServerName() string {

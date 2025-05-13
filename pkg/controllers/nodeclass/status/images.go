@@ -19,11 +19,15 @@ package status
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -42,17 +46,30 @@ import (
 
 const (
 	nodeImageReconcilerName = "nodeclass.images"
+
+	// ConfigMap consts
+	nodeOSMaintenanceWindowChannel = "aksManagedNodeOSUpgradeSchedule"
+	configMapStartTimeFormat       = "%s-start"
+	configMapEndTimeFormat         = "%s-end"
 )
 
 type NodeImageReconciler struct {
-	nodeImageProvider imagefamily.NodeImageProvider
-	cm                *pretty.ChangeMonitor
+	nodeImageProvider            imagefamily.NodeImageProvider
+	inClusterKubernetesInterface kubernetes.Interface
+	aksControlPlane              bool
+	cm                           *pretty.ChangeMonitor
 }
 
-func NewNodeImageReconciler(provider imagefamily.NodeImageProvider) *NodeImageReconciler {
+func NewNodeImageReconciler(
+	provider imagefamily.NodeImageProvider,
+	inClusterKubernetesInterface kubernetes.Interface,
+	aksControlPlane bool,
+) *NodeImageReconciler {
 	return &NodeImageReconciler{
-		nodeImageProvider: provider,
-		cm:                pretty.NewChangeMonitor(),
+		nodeImageProvider:            provider,
+		inClusterKubernetesInterface: inClusterKubernetesInterface,
+		aksControlPlane:              aksControlPlane,
+		cm:                           pretty.NewChangeMonitor(),
 	}
 }
 
@@ -119,7 +136,14 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
 	// for initialization, based off an underlying customer operation, or a different update we're
 	// dependant upon which would have already been preformed within its required maintenance Window.
-	shouldUpdate := imageVersionsUnready(nodeClass) || isMaintenanceWindowOpen()
+	shouldUpdate := imageVersionsUnready(nodeClass)
+	if !shouldUpdate && r.aksControlPlane {
+		// Case 4: Check if the maintenance window is open
+		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("checking maintenance window, %w", err)
+		}
+	}
 	if !shouldUpdate {
 		// Scenario B: Calculate any partial update based on image selectors, or newly supports SKUs
 		goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
@@ -147,9 +171,43 @@ func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
 }
 
 // Handles case 4: check if the maintenance window is open
-func isMaintenanceWindowOpen() bool {
-	// TODO: need to add the actual logic for handling maintenance windows once it is in the ConfigMap.
-	return true
+func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
+	systemNamespace := strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
+	if systemNamespace == "" {
+		return false, fmt.Errorf("SYSTEM_NAMESPACE not set")
+	}
+
+	mwConfigMap, err := r.inClusterKubernetesInterface.CoreV1().ConfigMaps(systemNamespace).Get(ctx, "upcoming-maintenance-window", metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Note: the feature rollout here is still in progress, so we don't want to fail under this case currently.
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting maintenance window configmap, %w", err)
+	}
+	if len(mwConfigMap.Data) == 0 {
+		return true, nil
+	}
+	nextNodeOSMWStartStr, ok := mwConfigMap.Data[fmt.Sprintf(configMapStartTimeFormat, nodeOSMaintenanceWindowChannel)]
+	if !ok {
+		return true, nil
+	}
+	nextNodeOSMWStart, err := time.Parse(time.RFC3339, nextNodeOSMWStartStr)
+	if err != nil {
+		return false, fmt.Errorf("error parsing maintenance window start time for channel %s, %w", nodeOSMaintenanceWindowChannel, err)
+	}
+	nextNodeOSMWEndStr, ok := mwConfigMap.Data[fmt.Sprintf(configMapEndTimeFormat, nodeOSMaintenanceWindowChannel)]
+	if !ok {
+		return true, nil
+	}
+	nextNodeOSMWEnd, err := time.Parse(time.RFC3339, nextNodeOSMWEndStr)
+	if err != nil {
+		return false, fmt.Errorf("error parsing maintenance window end time for channel %s, %w", nodeOSMaintenanceWindowChannel, err)
+	}
+
+	now := time.Now().UTC()
+
+	return now.After(nextNodeOSMWStart.UTC()) && now.Before(nextNodeOSMWEnd.UTC()), nil
 }
 
 // overrideAnyGoalStateVersionsWithExisting: will look over all the discovered images, and choose to either keep the existing version if already found in the status
