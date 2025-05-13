@@ -137,7 +137,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	// for initialization, based off an underlying customer operation, or a different update we're
 	// dependant upon which would have already been preformed within its required maintenance Window.
 	shouldUpdate := imageVersionsUnready(nodeClass)
-	if !shouldUpdate && r.aksControlPlane {
+	if !shouldUpdate {
 		// Case 4: Check if the maintenance window is open
 		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
 		if err != nil {
@@ -172,6 +172,10 @@ func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
 
 // Handles case 4: check if the maintenance window is open
 func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
+	if !r.aksControlPlane {
+		// Note: when aksControlPlane is false, continuous upgrade is enabled without checking the maintenane windows.
+		return true, nil
+	}
 	systemNamespace := strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
 	if systemNamespace == "" {
 		return false, fmt.Errorf("SYSTEM_NAMESPACE not set")
@@ -196,7 +200,7 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 		// No maintenance window defined for aksManagedNodeOSUpgradeSchedule, so its up to us when to preform maintenance
 		return true, nil
 	} else if (okStart && !okEnd) || (!okStart && okEnd) {
-		return false, fmt.Errorf("Unexpected state, with incomplete maintenance window data for channel %s", nodeOSMaintenanceWindowChannel)
+		return false, fmt.Errorf("unexpected state, with incomplete maintenance window data for channel %s", nodeOSMaintenanceWindowChannel)
 	}
 
 	nextNodeOSMWStart, err := time.Parse(time.RFC3339, nextNodeOSMWStartStr)
@@ -226,14 +230,16 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
 func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) []v1alpha2.NodeImage {
 	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.Images)
-	discoveredBaseIDMapping := mapImageBasesToImages(discoveredImages)
 
 	updatedImages := []v1alpha2.NodeImage{}
-	for discoveredBaseImageID, discoveredImage := range discoveredBaseIDMapping {
+	// Note: we have to range over the discovered images here, instead of converting to a baseIDMapping, to keep the ordering consistent
+	for i := range discoveredImages {
+		discoveredImage := discoveredImages[i]
+		discoveredBaseImageID := trimVersionSuffix(discoveredImage.ID)
 		if existingImage, ok := existingBaseIDMapping[discoveredBaseImageID]; ok {
 			updatedImages = append(updatedImages, *existingImage)
 		} else {
-			updatedImages = append(updatedImages, *discoveredImage)
+			updatedImages = append(updatedImages, discoveredImage)
 		}
 	}
 	return updatedImages
