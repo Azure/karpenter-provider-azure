@@ -182,7 +182,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 			})
 
-			It("Should not update NodeImages when maintenane window is not open", func() {
+			It("Should not update NodeImages when maintenance window is not open", func() {
 				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
 
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
@@ -191,7 +191,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
 			})
 
-			It("Should update NodeImages when ConfigMap is empty (maintenane window undefined)", func() {
+			It("Should update NodeImages when ConfigMap is empty (maintenance window undefined)", func() {
 				ExpectApplied(ctx, env.Client, getEmptyMWConfigMap())
 
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
@@ -200,7 +200,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 			})
 
-			It("Should update NodeImages when maintenane window is open", func() {
+			It("Should update NodeImages when maintenance window is open", func() {
 				ExpectApplied(ctx, env.Client, getOpenMWConfigMap())
 
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
