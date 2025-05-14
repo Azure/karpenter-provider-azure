@@ -39,10 +39,10 @@ import (
 )
 
 const (
-	NodeClassDrift    cloudprovider.DriftReason = "NodeClassDrift"
-	K8sVersionDrift   cloudprovider.DriftReason = "K8sVersionDrift"
-	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift" // TODO (chmcbrid): should we change this to ImageDrift, since it covers more than just "ImageVersion"?
-	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
+	NodeClassDrift  cloudprovider.DriftReason = "NodeClassDrift"
+	K8sVersionDrift cloudprovider.DriftReason = "K8sVersionDrift"
+	ImageDrift      cloudprovider.DriftReason = "ImageDrift"
+	SubnetDrift     cloudprovider.DriftReason = "SubnetDrift"
 
 	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
 	NoDrift cloudprovider.DriftReason = ""
@@ -194,8 +194,8 @@ func (c *CloudProvider) isImageVersionDrifted(
 		}
 	}
 
-	logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as actual image id %s was not found in the set of currently available node images", ImageVersionDrift, vmImageID))
-	return ImageVersionDrift, nil
+	logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as actual image id %s was not found in the set of currently available node images", ImageDrift, vmImageID))
+	return ImageDrift, nil
 }
 
 // isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
