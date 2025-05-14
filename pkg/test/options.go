@@ -42,6 +42,7 @@ type OptionsFields struct {
 	ProvisionMode                  *string
 	NodeBootstrappingServerURL     *string
 	VnetGUID                       *string
+	KubeletIdentityClientID        *string
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -62,6 +63,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		ClusterEndpoint:                lo.FromPtrOr(options.ClusterEndpoint, "https://test-cluster"),
 		ClusterID:                      lo.FromPtrOr(options.ClusterID, "00000000"),
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
+		KubeletIdentityClientID:        lo.FromPtrOr(options.KubeletIdentityClientID, "12345678-1234-1234-1234-123456789012"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
 		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
 		NetworkPluginMode:              lo.FromPtrOr(options.NetworkPluginMode, "overlay"),
@@ -73,6 +75,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SubnetID:                       lo.FromPtrOr(options.SubnetID, "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
+		NodeBootstrappingServerURL:     lo.FromPtrOr(options.NodeBootstrappingServerURL, ""),
 		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),
 		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, ""),
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, ""),
