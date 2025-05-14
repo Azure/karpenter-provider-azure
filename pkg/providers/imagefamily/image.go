@@ -79,7 +79,11 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 
 // TODO (charliedmcb): refactor this into resolver.go
 // resolveNodeImage returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
+//
+// Preconditions:
+// - nodeImages is sorted by priority order
 func (r *defaultResolver) resolveNodeImage(nodeImages []v1alpha2.NodeImage, instanceType *cloudprovider.InstanceType) (string, error) {
+	// nodeImages are sorted by priority order, so we can return the first one that matches
 	for _, availableImage := range nodeImages {
 		if err := instanceType.Requirements.Compatible(
 			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),
