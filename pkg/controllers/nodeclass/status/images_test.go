@@ -139,8 +139,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 	})
 
-	It("should update Images and its readiness on AKSNodeClass when aksControlPlane is false", func() {
-		// Note: when aksControlPlane is false, continuous upgrade is enabled without checking the maintenane windows.
+	It("should update Images and its readiness on AKSNodeClass", func() {
 		nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
 		nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
 
@@ -156,103 +155,100 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 		ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 	})
 
-	When("aksControlPlane is true", func() {
-		Context("NodeImageReconciler direct tests", func() {
+	Context("NodeImageReconciler direct tests", func() {
+		BeforeEach(func() {
+			// Setup NodeClass
+			nodeClass.Status.KubernetesVersion = testK8sVersion
+			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
+
+			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
+			nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
+		})
+
+		When("SYSTEM_NAMESPACE is set", func() {
+			var (
+				imageReconciler *status.NodeImageReconciler
+			)
+
 			BeforeEach(func() {
-				// Setup NodeClass
-				nodeClass.Status.KubernetesVersion = testK8sVersion
-				nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
-
-				nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
-				nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
+				os.Setenv("SYSTEM_NAMESPACE", "kube-system")
+				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
 			})
 
-			When("SYSTEM_NAMESPACE is set", func() {
-				var (
-					imageReconciler *status.NodeImageReconciler
-				)
+			It("Should update NodeImages when ConfigMap is missing (fail open)", func() {
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
 
-				BeforeEach(func() {
-					os.Setenv("SYSTEM_NAMESPACE", "kube-system")
-					imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, true)
-				})
-
-				It("Should not update NodeImages when ConfigMap is missing", func() {
-					_, err := imageReconciler.Reconcile(ctx, nodeClass)
-					Expect(err).ToNot(HaveOccurred())
-
-					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
-				})
-
-				It("Should not update NodeImages when maintenane window is not open", func() {
-					ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
-
-					_, err := imageReconciler.Reconcile(ctx, nodeClass)
-					Expect(err).ToNot(HaveOccurred())
-
-					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
-				})
-
-				It("Should update NodeImages when ConfigMap is empty (maintenane window undefined)", func() {
-					ExpectApplied(ctx, env.Client, getEmptyMWConfigMap())
-
-					_, err := imageReconciler.Reconcile(ctx, nodeClass)
-					Expect(err).ToNot(HaveOccurred())
-
-					ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
-				})
-
-				It("Should update NodeImages when maintenane window is open", func() {
-					ExpectApplied(ctx, env.Client, getOpenMWConfigMap())
-
-					_, err := imageReconciler.Reconcile(ctx, nodeClass)
-					Expect(err).ToNot(HaveOccurred())
-
-					ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
-				})
-
-				It("Should error when ConfigMap is malformed (missing endtime)", func() {
-					configMap := getOpenMWConfigMap()
-					delete(configMap.Data, "aksManagedNodeOSUpgradeSchedule-end")
-					ExpectApplied(ctx, env.Client, configMap)
-
-					_, err := imageReconciler.Reconcile(ctx, nodeClass)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("unexpected state, with incomplete maintenance window data for channel aksManagedNodeOSUpgradeSchedule"))
-
-					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
-				})
-
-				It("Should error when ConfigMap is malformed (invalid timestamp)", func() {
-					configMap := getOpenMWConfigMap()
-					configMap.Data["aksManagedNodeOSUpgradeSchedule-end"] = "invalid-timestamp"
-					ExpectApplied(ctx, env.Client, configMap)
-
-					_, err := imageReconciler.Reconcile(ctx, nodeClass)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("error parsing maintenance window end time for channel aksManagedNodeOSUpgradeSchedule"))
-
-					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
-				})
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 			})
 
-			When("SYSTEM_NAMESPACE is not set", func() {
-				var (
-					imageReconciler *status.NodeImageReconciler
-				)
+			It("Should not update NodeImages when maintenane window is not open", func() {
+				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
 
-				BeforeEach(func() {
-					os.Unsetenv("SYSTEM_NAMESPACE")
-					imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, true)
-				})
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
 
-				It("Should return an error", func() {
-					_, err := imageReconciler.Reconcile(ctx, nodeClass)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("SYSTEM_NAMESPACE not set"))
+				ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
+			})
 
-					ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
-				})
+			It("Should update NodeImages when ConfigMap is empty (maintenane window undefined)", func() {
+				ExpectApplied(ctx, env.Client, getEmptyMWConfigMap())
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+			})
+
+			It("Should update NodeImages when maintenane window is open", func() {
+				ExpectApplied(ctx, env.Client, getOpenMWConfigMap())
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
+			})
+
+			It("Should error when ConfigMap is malformed (missing endtime)", func() {
+				configMap := getOpenMWConfigMap()
+				delete(configMap.Data, "aksManagedNodeOSUpgradeSchedule-end")
+				ExpectApplied(ctx, env.Client, configMap)
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unexpected state, with incomplete maintenance window data for channel aksManagedNodeOSUpgradeSchedule"))
+
+				ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
+			})
+
+			It("Should error when ConfigMap is malformed (invalid timestamp)", func() {
+				configMap := getOpenMWConfigMap()
+				configMap.Data["aksManagedNodeOSUpgradeSchedule-end"] = "invalid-timestamp"
+				ExpectApplied(ctx, env.Client, configMap)
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("error parsing maintenance window end time for channel aksManagedNodeOSUpgradeSchedule"))
+
+				ExpectReadyWithCIGImages(nodeClass, oldcigImageVersion)
+			})
+		})
+
+		When("SYSTEM_NAMESPACE is not set", func() {
+			var (
+				imageReconciler *status.NodeImageReconciler
+			)
+
+			BeforeEach(func() {
+				os.Unsetenv("SYSTEM_NAMESPACE")
+				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+			})
+
+			It("Should update NodeImages (fail open)", func() {
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
 			})
 		})
 	})

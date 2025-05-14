@@ -57,7 +57,6 @@ const (
 type NodeImageReconciler struct {
 	nodeImageProvider            imagefamily.NodeImageProvider
 	inClusterKubernetesInterface kubernetes.Interface
-	aksControlPlane              bool
 	systemNamespace              string
 	cm                           *pretty.ChangeMonitor
 }
@@ -65,14 +64,12 @@ type NodeImageReconciler struct {
 func NewNodeImageReconciler(
 	provider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
-	aksControlPlane bool,
 ) *NodeImageReconciler {
 	systemNamespace := strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
 
 	return &NodeImageReconciler{
 		nodeImageProvider:            provider,
 		inClusterKubernetesInterface: inClusterKubernetesInterface,
-		aksControlPlane:              aksControlPlane,
 		systemNamespace:              systemNamespace,
 		cm:                           pretty.NewChangeMonitor(),
 	}
@@ -181,19 +178,16 @@ func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
 // range from the ConfigMap into its own helper function using channel as a parameter.
 // nolint: gocyclo
 func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
-	if !r.aksControlPlane {
-		// Note: when aksControlPlane is false, continuous upgrade is enabled without checking the maintenane windows.
-		return true, nil
-	}
 	if r.systemNamespace == "" {
-		return false, fmt.Errorf("SYSTEM_NAMESPACE not set")
+		// We fail open here, since the default case should be to upgrade
+		return true, nil
 	}
 
 	mwConfigMap, err := r.inClusterKubernetesInterface.CoreV1().ConfigMaps(r.systemNamespace).Get(ctx, maintenanceWindowConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Note: the feature rollout here is still in progress, so we don't want to fail under this case currently.
-			return false, nil
+			// We fail open here, since the default case should be to upgrade
+			return true, nil
 		}
 		return false, fmt.Errorf("error getting maintenance window configmap, %w", err)
 	}

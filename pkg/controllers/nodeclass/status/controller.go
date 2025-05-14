@@ -53,13 +53,12 @@ func NewController(
 	kubernetesVersionProvider imagefamily.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
-	aksControlPlane bool,
 ) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
-		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface, aksControlPlane),
+		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 	}
 }
 
