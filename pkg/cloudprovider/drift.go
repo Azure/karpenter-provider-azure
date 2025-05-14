@@ -183,7 +183,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", nil //nolint:nilerr
 	}
 	if len(nodeImages) == 0 {
-		// Note: this case shouldn't happen, since if there are node nodeImages, the ConditionTypeImagesReady should be false.
+		// Note: this case shouldn't happen, since if there are no nodeImages, the ConditionTypeImagesReady should be false.
 		//     However, if it would happen, we want this to error, as it means the NodeClass is in a state it can't provision nodes.
 		return "", fmt.Errorf("no images exist for the given constraints")
 	}
