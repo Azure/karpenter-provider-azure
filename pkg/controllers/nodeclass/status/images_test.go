@@ -157,7 +157,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	})
 
 	When("aksControlPlane is true", func() {
-		Context("KubernetesVersionReconciler direct tests", func() {
+		Context("NodeImageReconciler direct tests", func() {
 			var (
 				imageReconciler *status.NodeImageReconciler
 			)

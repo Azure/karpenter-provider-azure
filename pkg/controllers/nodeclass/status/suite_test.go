@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 
@@ -82,4 +83,5 @@ var _ = BeforeEach(func() {
 
 var _ = AfterEach(func() {
 	ExpectCleanedUp(ctx, env.Client)
+	expectations.ExpectCleanUp(ctx, env.Client)
 })
