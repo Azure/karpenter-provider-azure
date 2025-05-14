@@ -91,12 +91,12 @@ func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion
 			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
-					Key:      "kubernetes.io/arch",
+					Key:      corev1.LabelArchStable,
 					Operator: "In",
 					Values:   []string{"amd64"},
 				},
 				{
-					Key:      "karpenter.azure.com/sku-hyperv-generation",
+					Key:      v1alpha2.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"2"},
 				},
@@ -106,12 +106,12 @@ func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion
 			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204containerd/versions/%s", cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
-					Key:      "kubernetes.io/arch",
+					Key:      corev1.LabelArchStable,
 					Operator: "In",
 					Values:   []string{"amd64"},
 				},
 				{
-					Key:      "karpenter.azure.com/sku-hyperv-generation",
+					Key:      v1alpha2.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"1"},
 				},
@@ -121,12 +121,12 @@ func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion
 			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2arm64containerd/versions/%s", cigImageVersion),
 			Requirements: []corev1.NodeSelectorRequirement{
 				{
-					Key:      "kubernetes.io/arch",
+					Key:      corev1.LabelArchStable,
 					Operator: "In",
 					Values:   []string{"arm64"},
 				},
 				{
-					Key:      "karpenter.azure.com/sku-hyperv-generation",
+					Key:      v1alpha2.LabelSKUHyperVGeneration,
 					Operator: "In",
 					Values:   []string{"2"},
 				},
