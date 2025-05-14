@@ -58,6 +58,7 @@ type NodeImageReconciler struct {
 	nodeImageProvider            imagefamily.NodeImageProvider
 	inClusterKubernetesInterface kubernetes.Interface
 	aksControlPlane              bool
+	systemNamespace              string
 	cm                           *pretty.ChangeMonitor
 }
 
@@ -66,10 +67,13 @@ func NewNodeImageReconciler(
 	inClusterKubernetesInterface kubernetes.Interface,
 	aksControlPlane bool,
 ) *NodeImageReconciler {
+	systemNamespace := strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
+
 	return &NodeImageReconciler{
 		nodeImageProvider:            provider,
 		inClusterKubernetesInterface: inClusterKubernetesInterface,
 		aksControlPlane:              aksControlPlane,
+		systemNamespace:              systemNamespace,
 		cm:                           pretty.NewChangeMonitor(),
 	}
 }
@@ -181,12 +185,11 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 		// Note: when aksControlPlane is false, continuous upgrade is enabled without checking the maintenane windows.
 		return true, nil
 	}
-	systemNamespace := strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
-	if systemNamespace == "" {
+	if r.systemNamespace == "" {
 		return false, fmt.Errorf("SYSTEM_NAMESPACE not set")
 	}
 
-	mwConfigMap, err := r.inClusterKubernetesInterface.CoreV1().ConfigMaps(systemNamespace).Get(ctx, maintenanceWindowConfigMapName, metav1.GetOptions{})
+	mwConfigMap, err := r.inClusterKubernetesInterface.CoreV1().ConfigMaps(r.systemNamespace).Get(ctx, maintenanceWindowConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Note: the feature rollout here is still in progress, so we don't want to fail under this case currently.
