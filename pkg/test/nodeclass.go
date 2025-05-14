@@ -19,16 +19,24 @@ package test
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	"github.com/imdario/mergo"
 	"github.com/samber/lo"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
+)
+
+const (
+	DefaultCIGImageVersion = "202501.02.0"
+	DefaultSIGImageVersion = "202410.09.0"
 )
 
 func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
@@ -54,9 +62,13 @@ func AKSNodeClass(overrides ...v1alpha2.AKSNodeClass) *v1alpha2.AKSNodeClass {
 }
 
 func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environment) {
+	ApplyCIGImages(nodeClass)
+	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
+
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
 	nodeClass.Status.KubernetesVersion = testK8sVersion
 	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
+
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 
 	conditions := []opstatus.Condition{}
@@ -67,6 +79,106 @@ func ApplyDefaultStatus(nodeClass *v1alpha2.AKSNodeClass, env *coretest.Environm
 		conditions = append(conditions, condition)
 	}
 	nodeClass.SetConditions(conditions)
+}
+
+func ApplyCIGImages(nodeClass *v1alpha2.AKSNodeClass) {
+	ApplyCIGImagesWithVersion(nodeClass, DefaultCIGImageVersion)
+}
+
+func ApplyCIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, cigImageVersion string) {
+	nodeClass.Status.Images = []v1alpha2.NodeImage{
+		{
+			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/%s", cigImageVersion),
+			Requirements: []corev1.NodeSelectorRequirement{
+				{
+					Key:      corev1.LabelArchStable,
+					Operator: "In",
+					Values:   []string{"amd64"},
+				},
+				{
+					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Operator: "In",
+					Values:   []string{"2"},
+				},
+			},
+		},
+		{
+			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204containerd/versions/%s", cigImageVersion),
+			Requirements: []corev1.NodeSelectorRequirement{
+				{
+					Key:      corev1.LabelArchStable,
+					Operator: "In",
+					Values:   []string{"amd64"},
+				},
+				{
+					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Operator: "In",
+					Values:   []string{"1"},
+				},
+			},
+		},
+		{
+			ID: fmt.Sprintf("/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2arm64containerd/versions/%s", cigImageVersion),
+			Requirements: []corev1.NodeSelectorRequirement{
+				{
+					Key:      corev1.LabelArchStable,
+					Operator: "In",
+					Values:   []string{"arm64"},
+				},
+				{
+					Key:      v1alpha2.LabelSKUHyperVGeneration,
+					Operator: "In",
+					Values:   []string{"2"},
+				},
+			},
+		},
+	}
+}
+
+func ApplySIGImages(nodeClass *v1alpha2.AKSNodeClass) {
+	ApplySIGImagesWithVersion(nodeClass, DefaultSIGImageVersion)
+}
+
+func ApplySIGImagesWithVersion(nodeClass *v1alpha2.AKSNodeClass, sigImageVersion string) {
+	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)
+	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
+}
+
+func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
+	var images []imagefamily.DefaultImageOutput
+	if imageFamily == v1alpha2.Ubuntu2204ImageFamily {
+		images = imagefamily.Ubuntu2204{}.DefaultImages()
+	} else if imageFamily == v1alpha2.AzureLinuxImageFamily {
+		images = imagefamily.AzureLinux{}.DefaultImages()
+	}
+	nodeImages := []imagefamily.NodeImage{}
+	for _, image := range images {
+		nodeImages = append(nodeImages, imagefamily.NodeImage{
+			ID:           fmt.Sprintf("/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
+			Requirements: image.Requirements,
+		})
+	}
+	return nodeImages
+}
+
+func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) []v1alpha2.NodeImage {
+	return lo.Map(imageFamilyNodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
+		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item karpv1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
+			return item.NodeSelectorRequirement
+		})
+
+		// sorted for consistency
+		sort.Slice(reqs, func(i, j int) bool {
+			if len(reqs[i].Key) != len(reqs[j].Key) {
+				return len(reqs[i].Key) < len(reqs[j].Key)
+			}
+			return reqs[i].Key < reqs[j].Key
+		})
+		return v1alpha2.NodeImage{
+			ID:           nodeImage.ID,
+			Requirements: reqs,
+		}
+	})
 }
 
 func AKSNodeClassFieldIndexer(ctx context.Context) func(cache.Cache) error {
