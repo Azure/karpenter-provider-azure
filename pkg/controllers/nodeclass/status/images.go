@@ -48,6 +48,7 @@ const (
 	nodeImageReconcilerName = "nodeclass.images"
 
 	// ConfigMap consts
+	maintenanceWindowConfigMapName = "upcoming-maintenance-window"
 	nodeOSMaintenanceWindowChannel = "aksManagedNodeOSUpgradeSchedule"
 	configMapStartTimeFormat       = "%s-start"
 	configMapEndTimeFormat         = "%s-end"
@@ -185,7 +186,7 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 		return false, fmt.Errorf("SYSTEM_NAMESPACE not set")
 	}
 
-	mwConfigMap, err := r.inClusterKubernetesInterface.CoreV1().ConfigMaps(systemNamespace).Get(ctx, "upcoming-maintenance-window", metav1.GetOptions{})
+	mwConfigMap, err := r.inClusterKubernetesInterface.CoreV1().ConfigMaps(systemNamespace).Get(ctx, maintenanceWindowConfigMapName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Note: the feature rollout here is still in progress, so we don't want to fail under this case currently.
