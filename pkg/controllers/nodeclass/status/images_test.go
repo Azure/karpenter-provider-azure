@@ -158,13 +158,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 	When("aksControlPlane is true", func() {
 		Context("NodeImageReconciler direct tests", func() {
-			var (
-				imageReconciler *status.NodeImageReconciler
-			)
-
 			BeforeEach(func() {
-				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, true)
-
 				// Setup NodeClass
 				nodeClass.Status.KubernetesVersion = testK8sVersion
 				nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeKubernetesVersionReady)
@@ -174,8 +168,13 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 
 			When("SYSTEM_NAMESPACE is set", func() {
+				var (
+					imageReconciler *status.NodeImageReconciler
+				)
+
 				BeforeEach(func() {
 					os.Setenv("SYSTEM_NAMESPACE", "kube-system")
+					imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, true)
 				})
 
 				It("Should not update NodeImages when ConfigMap is missing", func() {
@@ -238,8 +237,13 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 			})
 
 			When("SYSTEM_NAMESPACE is not set", func() {
+				var (
+					imageReconciler *status.NodeImageReconciler
+				)
+
 				BeforeEach(func() {
 					os.Unsetenv("SYSTEM_NAMESPACE")
+					imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface, true)
 				})
 
 				It("Should return an error", func() {
