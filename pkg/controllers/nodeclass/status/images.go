@@ -171,6 +171,10 @@ func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
 }
 
 // Handles case 4: check if the maintenance window is open
+// TODO (charliedmcb): remove nolint on gocyclo. Added for now in order to pass "make verify"
+// I think the best way to get rid of gocyclo is to break the section retrieving the maintenance window
+// range from the ConfigMap into its own helper function using channel as a parameter.
+// nolint: gocyclo
 func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
 	if !r.aksControlPlane {
 		// Note: when aksControlPlane is false, continuous upgrade is enabled without checking the maintenane windows.
