@@ -152,13 +152,13 @@ func (c *CloudProvider) isImageVersionDrifted(
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
 		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
-		//     However, we may want to collect this with the over errors up a level as to not block over drift conditions.
+		//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
 		return "", err
 	}
 	if vm == nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
 		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
-		//     However, we may want to collect this with the over errors up a level as to not block over drift conditions.
+		//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
 		return "", fmt.Errorf("vm with id %s missing", id)
 	}
 
@@ -166,7 +166,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		vm.Properties.StorageProfile == nil ||
 		vm.Properties.StorageProfile.ImageReference == nil {
 		// TODO (charliedmcb): this seems like an error case to me, but maybe not one to hard fail on? Is it even possible?
-		//     We may want to collect this with the over errors up a level as to not block over drift conditions.
+		//     We may want to collect this with the other errors up a level as to not block other drift conditions.
 		return "", nil
 	}
 	CIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
