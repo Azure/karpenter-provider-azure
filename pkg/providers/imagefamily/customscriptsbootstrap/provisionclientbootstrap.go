@@ -80,6 +80,10 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	labels := lo.Assign(map[string]string{}, p.Labels)
 	getAgentbakerGeneratedLabels(p.ResourceGroup, labels)
 
+	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, and for Azure Linux v3
+	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
+		(p.ImageFamily == v1alpha2.Ubuntu2204ImageFamily || p.ImageFamily == v1alpha2.AzureLinuxImageFamily)
+
 	provisionProfile := &models.ProvisionProfile{
 		Name:                     lo.ToPtr(""),
 		Architecture:             lo.ToPtr(lo.Ternary(p.Arch == karpv1.ArchitectureAmd64, "x64", "Arm64")),
@@ -107,9 +111,9 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		// EnableFIPS:              lo.ToPtr(false),                                 // Unsupported as of now
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
-		// ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
-		// Enabled: lo.ToPtr(false), // Unsupported as of now
-		// },
+		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
+			Enabled: lo.ToPtr(enableArtifactStreaming),
+		},
 	}
 
 	switch p.ImageFamily {
