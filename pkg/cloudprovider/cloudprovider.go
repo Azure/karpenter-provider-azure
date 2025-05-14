@@ -111,10 +111,14 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if nodeClassReady.IsUnknown() {
 		return nil, fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message)
 	}
+	// Note: we make a call for GetKubernetesVersion here, as it has an internal check for the kubernetes version readiness KubernetesVersionReady,
+	//     where we don't want to proceed if it is unready.
 	if _, err = nodeClass.GetKubernetesVersion(); err != nil {
 		return nil, err
 	}
-	if _, err := nodeClass.GetImages(); err != nil {
+	// Note: we make a call for GetImages here, as it has an internal check for the image's readiness ImagesReady, where we don't
+	//     want to proceed if they are unready.
+	if _, err = nodeClass.GetImages(); err != nil {
 		return nil, err
 	}
 
