@@ -156,6 +156,7 @@ type KubeletConfiguration struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories={karpenter,nap},shortName={aksnc,aksncs}
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="use v1beta1.AKSNodeClass instead"
 type AKSNodeClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
