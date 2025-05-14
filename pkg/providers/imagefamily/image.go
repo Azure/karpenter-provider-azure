@@ -79,6 +79,10 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 
 // Get returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
 func (p *Provider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, instanceType *cloudprovider.InstanceType, imageFamily ImageFamily) (string, string, error) {
+	if nodeClass.Spec.ImageID != nil {
+		return "", *nodeClass.Spec.ImageID, nil
+	}
+
 	defaultImages := imageFamily.DefaultImages()
 	for _, defaultImage := range defaultImages {
 		if err := instanceType.Requirements.Compatible(defaultImage.Requirements, v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels); err == nil {
