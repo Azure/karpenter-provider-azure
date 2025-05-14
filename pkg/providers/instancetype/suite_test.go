@@ -65,6 +65,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -800,6 +801,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 	})
+
 	Context("Provider List MaxPods", func() {
 		BeforeEach(func() {
 			ctx = options.ToContext(ctx, test.Options())
@@ -867,6 +869,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(110))
 		})
 	})
+
 	Context("Provider List", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
 		var err error
@@ -1008,7 +1011,10 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
+			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider)
+
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
@@ -1040,12 +1046,15 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 	})
+
 	Context("ImageProvider + Image Family", func() {
 		DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
 			options := test.Options(test.OptionsFields{
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
+			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider)
+
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -1055,6 +1064,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}})
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
@@ -1077,6 +1087,7 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
+				statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider)
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -1085,6 +1096,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Values:   []string{instanceType},
 					}})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectScheduled(ctx, env.Client, pod)
@@ -1115,6 +1127,7 @@ var _ = Describe("InstanceType Provider", func() {
 				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 		)
 	})
+
 	Context("Instance Types", func() {
 		It("should support provisioning with no labels", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)

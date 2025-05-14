@@ -102,3 +102,32 @@ func (in *AKSNodeClass) validateKubernetesVersionReadiness() error {
 	}
 	return nil
 }
+
+// GetImages returns the Status.Images if its up to date and valid to use, otherwise returns an error.
+func (in *AKSNodeClass) GetImages() ([]NodeImage, error) {
+	err := in.validateImagesReadiness()
+	if err != nil {
+		return []NodeImage{}, err
+	}
+	return in.Status.Images, nil
+}
+
+// validateImagesReadiness will return nil if the the Images are considered valid to use,
+// otherwise will return an error detailing the reason of failure.
+//
+// Ensures
+// - The AKSNodeClass is non-nil
+// - The AKSNodeClass' ConditionTypeImagesReady Condition is true
+// - The Condition's ObservedGeneration is up to date with the latest Spec Generation
+func (in *AKSNodeClass) validateImagesReadiness() error {
+	if in == nil {
+		return fmt.Errorf("NodeClass is nil, condition %s is not true", ConditionTypeImagesReady)
+	}
+	imagesCondition := in.StatusConditions().Get(ConditionTypeImagesReady)
+	if imagesCondition.IsFalse() || imagesCondition.IsUnknown() {
+		return fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", ConditionTypeImagesReady, imagesCondition.GetStatus(), imagesCondition.Message)
+	} else if imagesCondition.ObservedGeneration != in.GetGeneration() {
+		return fmt.Errorf("NodeClass condition %s ObservedGeneration %d does not match the NodeClass Generation %d", ConditionTypeImagesReady, imagesCondition.ObservedGeneration, in.GetGeneration())
+	}
+	return nil
+}
