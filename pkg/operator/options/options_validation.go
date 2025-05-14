@@ -20,14 +20,15 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"go.uber.org/multierr"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
-func (o Options) Validate() error {
+func (o *Options) Validate() error {
 	validate := validator.New()
 	return multierr.Combine(
 		o.validateRequiredFields(),
@@ -42,14 +43,14 @@ func (o Options) Validate() error {
 	)
 }
 
-func (o Options) validateVNETGUID() error {
+func (o *Options) validateVNETGUID() error {
 	if o.VnetGUID != "" && uuid.Validate(o.VnetGUID) != nil {
 		return fmt.Errorf("vnet-guid %s is malformed", o.VnetGUID)
 	}
 	return nil
 }
 
-func (o Options) validateNetworkingOptions() error {
+func (o *Options) validateNetworkingOptions() error {
 	if o.NetworkPlugin != consts.NetworkPluginAzure && o.NetworkPlugin != consts.NetworkPluginNone {
 		return fmt.Errorf("network-plugin %v is invalid. network-plugin must equal 'azure' or 'none'", o.NetworkPlugin)
 	}
@@ -66,7 +67,7 @@ func (o Options) validateNetworkingOptions() error {
 	return nil
 }
 
-func (o Options) validateVnetSubnetID() error {
+func (o *Options) validateVnetSubnetID() error {
 	_, err := utils.GetVnetSubnetIDComponents(o.SubnetID)
 	if err != nil {
 		return fmt.Errorf("vnet-subnet-id is invalid: %w", err)
@@ -74,7 +75,7 @@ func (o Options) validateVnetSubnetID() error {
 	return nil
 }
 
-func (o Options) validateEndpoint() error {
+func (o *Options) validateEndpoint() error {
 	if o.ClusterEndpoint == "" {
 		return nil
 	}
@@ -84,14 +85,14 @@ func (o Options) validateEndpoint() error {
 	return nil
 }
 
-func (o Options) validateVMMemoryOverheadPercent() error {
+func (o *Options) validateVMMemoryOverheadPercent() error {
 	if o.VMMemoryOverheadPercent < 0 {
 		return fmt.Errorf("vm-memory-overhead-percent cannot be negative")
 	}
 	return nil
 }
 
-func (o Options) validateProvisionMode() error {
+func (o *Options) validateProvisionMode() error {
 	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
@@ -103,7 +104,7 @@ func (o Options) validateProvisionMode() error {
 	return nil
 }
 
-func (o Options) validateRequiredFields() error {
+func (o *Options) validateRequiredFields() error {
 	if o.ClusterEndpoint == "" {
 		return fmt.Errorf("missing field, cluster-endpoint")
 	}
@@ -119,10 +120,13 @@ func (o Options) validateRequiredFields() error {
 	if o.SubnetID == "" {
 		return fmt.Errorf("missing field, vnet-subnet-id")
 	}
+	if o.NodeResourceGroup == "" {
+		return fmt.Errorf("missing field, node-resource-group")
+	}
 	return nil
 }
 
-func (o Options) validateUseSIG() error {
+func (o *Options) validateUseSIG() error {
 	if o.UseSIG {
 		if o.SIGAccessTokenServerURL == "" {
 			return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
