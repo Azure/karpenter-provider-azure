@@ -329,7 +329,7 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			// TODO (charliedmcb): Do we need to test "shouldn't error or be drifted when node is deleting"?
-			//     This case is tricker since we can't directly setup the DeletionTimestamp on the node,
+			//     This case is tricker since we can't directly set the DeletionTimestamp on the node,
 			//     and instead need to setup a finalizer and delete the node from my understanding.
 
 			It("should succeed with drift true when KubernetesVersion is new", func() {
