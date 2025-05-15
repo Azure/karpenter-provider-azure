@@ -117,7 +117,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 			// We do not return an error here as its expected within the lifecycle of the nodeclaims registration.
 			// Core's checks only for Launched status which means we've started the create, but the node doesn't nessicarially exist yet
 			// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
-			return cloudprovider.DriftReason(nodeClaim.Status.ProviderID), nil
+			return "", nil
 		}
 		if nodeclaimutils.IsDuplicateNodeError(err) {
 			logger.V(1).Info("WARN: Duplicate node error, invariant violated.")
