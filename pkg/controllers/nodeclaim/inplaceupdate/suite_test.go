@@ -36,6 +36,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/testutils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -230,7 +231,7 @@ var _ = Describe("In Place Update Controller", func() {
 	BeforeEach(func() {
 		vmName = "vm-a"
 		vm = &armcompute.VirtualMachine{
-			ID:   lo.ToPtr(utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+			ID:   lo.ToPtr(testutils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
 			Name: lo.ToPtr(vmName),
 		}
 

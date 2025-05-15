@@ -23,7 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/testutils"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
@@ -98,7 +98,7 @@ func checkVM(vm instance.Resource, rg string) error {
 	if !ok {
 		return fmt.Errorf("VM is missing name")
 	}
-	expectedID := utils.MkVMID(rg, name.(string))
+	expectedID := testutils.MkVMID(rg, name.(string))
 	id, ok := vm["id"]
 	if !ok {
 		return fmt.Errorf("VM is missing id")

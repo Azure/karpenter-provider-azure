@@ -71,6 +71,6 @@ func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(_ context.Context, res
 }
 
 func mkVMExtensionID(resourceGroupName, vmName, extensionName string) string {
-	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s/extensions/%s"
+	const idFormat = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s/extensions/%s"
 	return fmt.Sprintf(idFormat, resourceGroupName, vmName, extensionName)
 }

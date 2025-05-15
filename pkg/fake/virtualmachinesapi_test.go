@@ -42,7 +42,7 @@ func TestComputeAPI_BeginCreateOrUpdate(t *testing.T) {
 		t.Errorf("Unexpected nil vm")
 		return
 	}
-	if vm.ID == nil || *(vm.ID) != "/subscriptions/subscriptionID/resourceGroups/resourceGroupName/providers/Microsoft.Compute/virtualMachines/vmName" {
+	if vm.ID == nil || *(vm.ID) != "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/resourceGroupName/providers/Microsoft.Compute/virtualMachines/vmName" {
 		t.Errorf("Unexpected vm.ID %v", vm.ID)
 	}
 }

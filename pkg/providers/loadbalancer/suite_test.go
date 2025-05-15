@@ -81,9 +81,9 @@ var _ = Describe("LoadBalancer Provider", func() {
 
 			Expect(pools.IPv4PoolIDs).To(HaveLen(3))
 			Expect(pools.IPv6PoolIDs).To(HaveLen(0))
-			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
-			Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
+			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
+			Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 		})
 
 		It("should not return IPV6 pools", func() {
@@ -102,9 +102,9 @@ var _ = Describe("LoadBalancer Provider", func() {
 
 			Expect(pools.IPv4PoolIDs).To(HaveLen(3))
 			Expect(pools.IPv6PoolIDs).To(HaveLen(0))
-			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
-			Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
+			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
+			Expect(pools.IPv4PoolIDs[2]).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 		})
 
 		It("should not return IP-based pools", func() {
@@ -126,8 +126,8 @@ var _ = Describe("LoadBalancer Provider", func() {
 
 			Expect(pools.IPv4PoolIDs).To(HaveLen(2))
 			Expect(pools.IPv6PoolIDs).To(HaveLen(0))
-			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+			Expect(pools.IPv4PoolIDs[0]).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
+			Expect(pools.IPv4PoolIDs[1]).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 		})
 	})
 })

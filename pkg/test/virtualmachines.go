@@ -67,7 +67,7 @@ func VirtualMachine(overrides ...VirtualMachineOptions) *armcompute.VirtualMachi
 
 	// Construct the basic VM
 	vm := &armcompute.VirtualMachine{
-		ID:         lo.ToPtr(fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Compute/virtualMachines/%s", options.Name)),
+		ID:         lo.ToPtr(fmt.Sprintf("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Compute/virtualMachines/%s", options.Name)),
 		Name:       lo.ToPtr(options.Name),
 		Location:   lo.ToPtr(options.Location),
 		Properties: options.Properties,
