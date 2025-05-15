@@ -78,6 +78,7 @@ func main() {
 			// TODO: refactor so we are passing in kubernetesVersionProvider and nodeImageProvider. Currently ImageProvider just implements both.
 			op.ImageProvider,
 			op.ImageProvider,
+			op.InClusterKubernetesInterface,
 		)...).
 		Start(ctx)
 }
