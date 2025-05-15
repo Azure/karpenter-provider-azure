@@ -19,18 +19,22 @@ package status
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -42,24 +46,39 @@ import (
 
 const (
 	nodeImageReconcilerName = "nodeclass.images"
+
+	// ConfigMap consts
+	maintenanceWindowConfigMapName = "upcoming-maintenance-window"
+	nodeOSMaintenanceWindowChannel = "aksManagedNodeOSUpgradeSchedule"
+	configMapStartTimeFormat       = "%s-start"
+	configMapEndTimeFormat         = "%s-end"
 )
 
 type NodeImageReconciler struct {
-	nodeImageProvider imagefamily.NodeImageProvider
-	cm                *pretty.ChangeMonitor
+	nodeImageProvider            imagefamily.NodeImageProvider
+	inClusterKubernetesInterface kubernetes.Interface
+	systemNamespace              string
+	cm                           *pretty.ChangeMonitor
 }
 
-func NewNodeImageReconciler(provider imagefamily.NodeImageProvider) *NodeImageReconciler {
+func NewNodeImageReconciler(
+	provider imagefamily.NodeImageProvider,
+	inClusterKubernetesInterface kubernetes.Interface,
+) *NodeImageReconciler {
+	systemNamespace := strings.TrimSpace(os.Getenv("SYSTEM_NAMESPACE"))
+
 	return &NodeImageReconciler{
-		nodeImageProvider: provider,
-		cm:                pretty.NewChangeMonitor(),
+		nodeImageProvider:            provider,
+		inClusterKubernetesInterface: inClusterKubernetesInterface,
+		systemNamespace:              systemNamespace,
+		cm:                           pretty.NewChangeMonitor(),
 	}
 }
 
 func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named(nodeImageReconcilerName).
-		For(&v1alpha2.AKSNodeClass{}).
+		For(&v1beta1.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter: reasonable.RateLimiter(),
 			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
@@ -87,7 +106,7 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 // and clean approach while allowing us to extend future capabilities off of it. Additionally, while the decision to
 // store Requirements adds minor bloat, it also provides extra visibility into the avilaible images and how their
 // selection will work, which is seen as worth the tradeoff.
-func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("starting reconcile")
@@ -96,7 +115,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
-	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
+	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return item.NodeSelectorRequirement
 		})
@@ -108,7 +127,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 			}
 			return reqs[i].Key < reqs[j].Key
 		})
-		return v1alpha2.NodeImage{
+		return v1beta1.NodeImage{
 			ID:           nodeImage.ID,
 			Requirements: reqs,
 		}
@@ -119,7 +138,14 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	// Note: We want to handle cases 1-3 regardless of maintenance window state, since they are either
 	// for initialization, based off an underlying customer operation, or a different update we're
 	// dependant upon which would have already been preformed within its required maintenance Window.
-	shouldUpdate := imageVersionsUnready(nodeClass) || isMaintenanceWindowOpen()
+	shouldUpdate := imageVersionsUnready(nodeClass)
+	if !shouldUpdate {
+		// Case 4: Check if the maintenance window is open
+		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("checking maintenance window, %w", err)
+		}
+	}
 	if !shouldUpdate {
 		// Scenario B: Calculate any partial update based on image selectors, or newly supports SKUs
 		goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
@@ -127,13 +153,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 
 	if len(goalImages) == 0 {
 		nodeClass.Status.Images = nil
-		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
 		logger.Info("no node images")
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
 	nodeClass.Status.Images = goalImages
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	logger.V(1).Info("success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -142,14 +168,55 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 // Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet
 // Handles case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
-func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
-	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeImagesReady).IsTrue()
+func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
+	return !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()
 }
 
 // Handles case 4: check if the maintenance window is open
-func isMaintenanceWindowOpen() bool {
-	// TODO: need to add the actual logic for handling maintenance windows once it is in the ConfigMap.
-	return true
+// TODO (charliedmcb): remove nolint on gocyclo. Added for now in order to pass "make verify"
+// I think the best way to get rid of gocyclo is to break the section retrieving the maintenance window
+// range from the ConfigMap into its own helper function using channel as a parameter.
+// nolint: gocyclo
+func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
+	if r.systemNamespace == "" {
+		// We fail open here, since the default case should be to upgrade
+		return true, nil
+	}
+
+	mwConfigMap, err := r.inClusterKubernetesInterface.CoreV1().ConfigMaps(r.systemNamespace).Get(ctx, maintenanceWindowConfigMapName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// We fail open here, since the default case should be to upgrade
+			return true, nil
+		}
+		return false, fmt.Errorf("error getting maintenance window configmap, %w", err)
+	}
+	if len(mwConfigMap.Data) == 0 {
+		// An empty configmap means there's no maintenance windows defined, and its up to us when to preform maintenance
+		return true, nil
+	}
+
+	nextNodeOSMWStartStr, okStart := mwConfigMap.Data[fmt.Sprintf(configMapStartTimeFormat, nodeOSMaintenanceWindowChannel)]
+	nextNodeOSMWEndStr, okEnd := mwConfigMap.Data[fmt.Sprintf(configMapEndTimeFormat, nodeOSMaintenanceWindowChannel)]
+	if !okStart && !okEnd {
+		// No maintenance window defined for aksManagedNodeOSUpgradeSchedule, so its up to us when to preform maintenance
+		return true, nil
+	} else if (okStart && !okEnd) || (!okStart && okEnd) {
+		return false, fmt.Errorf("unexpected state, with incomplete maintenance window data for channel %s", nodeOSMaintenanceWindowChannel)
+	}
+
+	nextNodeOSMWStart, err := time.Parse(time.RFC3339, nextNodeOSMWStartStr)
+	if err != nil {
+		return false, fmt.Errorf("error parsing maintenance window start time for channel %s, %w", nodeOSMaintenanceWindowChannel, err)
+	}
+	nextNodeOSMWEnd, err := time.Parse(time.RFC3339, nextNodeOSMWEndStr)
+	if err != nil {
+		return false, fmt.Errorf("error parsing maintenance window end time for channel %s, %w", nodeOSMaintenanceWindowChannel, err)
+	}
+
+	now := time.Now().UTC()
+
+	return now.After(nextNodeOSMWStart.UTC()) && now.Before(nextNodeOSMWEnd.UTC()), nil
 }
 
 // overrideAnyGoalStateVersionsWithExisting: will look over all the discovered images, and choose to either keep the existing version if already found in the status
@@ -163,23 +230,25 @@ func isMaintenanceWindowOpen() bool {
 //   - Note: I think this should be re-assessed if this is the exact behavior we want to give users before any actual new SKU support is released.
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
-func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) []v1alpha2.NodeImage {
+func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1beta1.AKSNodeClass, discoveredImages []v1beta1.NodeImage) []v1beta1.NodeImage {
 	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.Images)
-	discoveredBaseIDMapping := mapImageBasesToImages(discoveredImages)
 
-	updatedImages := []v1alpha2.NodeImage{}
-	for discoveredBaseImageID, discoveredImage := range discoveredBaseIDMapping {
+	updatedImages := []v1beta1.NodeImage{}
+	// Note: we have to range over the discovered images here, instead of converting to a baseIDMapping, to keep the ordering consistent
+	for i := range discoveredImages {
+		discoveredImage := discoveredImages[i]
+		discoveredBaseImageID := trimVersionSuffix(discoveredImage.ID)
 		if existingImage, ok := existingBaseIDMapping[discoveredBaseImageID]; ok {
 			updatedImages = append(updatedImages, *existingImage)
 		} else {
-			updatedImages = append(updatedImages, *discoveredImage)
+			updatedImages = append(updatedImages, discoveredImage)
 		}
 	}
 	return updatedImages
 }
 
-func mapImageBasesToImages(images []v1alpha2.NodeImage) map[string]*v1alpha2.NodeImage {
-	imagesBaseMapping := map[string]*v1alpha2.NodeImage{}
+func mapImageBasesToImages(images []v1beta1.NodeImage) map[string]*v1beta1.NodeImage {
+	imagesBaseMapping := map[string]*v1beta1.NodeImage{}
 	for i := range images {
 		baseID := trimVersionSuffix(images[i].ID)
 		imagesBaseMapping[baseID] = &images[i]

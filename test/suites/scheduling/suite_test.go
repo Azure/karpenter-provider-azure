@@ -17,6 +17,7 @@ limitations under the License.
 package scheduling_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -30,7 +31,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -39,7 +40,7 @@ import (
 )
 
 var env *azure.Environment
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 
 func TestScheduling(t *testing.T) {
@@ -68,7 +69,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		nodePool = test.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1alpha2.LabelSKUFamily,
+					Key:      v1beta1.LabelSKUFamily,
 					Operator: corev1.NodeSelectorOpExists,
 				},
 			},
@@ -79,15 +80,10 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		selectors = sets.New(
 			// we don't support Windows yet
 			corev1.LabelWindowsBuild,
-			// TODO: restore when we support zone selectors without overscaling
-			corev1.LabelTopologyZone,
-			corev1.LabelFailureDomainBetaZone,
-			"topology.disk.csi.azure.com/zone",
-			// these are both unreliable and redundant, should be removed from support; won't be tested
-			v1alpha2.LabelSKUAccelerator,
-			v1alpha2.LabelSKUGPUName,
+			// VM SKU with GPU we are using does not populate this; won't be tested
+			v1beta1.LabelSKUGPUName,
 			// TODO: review the use of "kubernetes.azure.com/cluster"
-			v1alpha2.AKSLabelCluster,
+			v1beta1.AKSLabelCluster,
 		)
 	})
 	AfterAll(func() {
@@ -114,15 +110,14 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				karpv1.NodePoolLabelKey:        nodePool.Name,
 				corev1.LabelInstanceTypeStable: "Standard_D2s_v3",
 				// Well Known to Azure
-				v1alpha2.LabelSKUName:                      "Standard_D2s_v3",
-				v1alpha2.LabelSKUFamily:                    "D",
-				v1alpha2.LabelSKUVersion:                   "3",
-				v1alpha2.LabelSKUCPU:                       "2",
-				v1alpha2.LabelSKUMemory:                    "8192",
-				v1alpha2.LabelSKUAcceleratedNetworking:     "true",
-				v1alpha2.LabelSKUStoragePremiumCapable:     "true",
-				v1alpha2.LabelSKUStorageEphemeralOSMaxSize: "53.6870912", // TODO: should not be float?
-				v1alpha2.LabelSKUEncryptionAtHostSupported: "true",
+				v1beta1.LabelSKUName:                      "Standard_D2s_v3",
+				v1beta1.LabelSKUFamily:                    "D",
+				v1beta1.LabelSKUVersion:                   "3",
+				v1beta1.LabelSKUCPU:                       "2",
+				v1beta1.LabelSKUMemory:                    "8192",
+				v1beta1.LabelSKUAcceleratedNetworking:     "true",
+				v1beta1.LabelSKUStoragePremiumCapable:     "true",
+				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53.6870912", // TODO: should not be float?
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
@@ -141,12 +136,11 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			nodeSelector := map[string]string{
 				// Deprecated Labels
 				corev1.LabelFailureDomainBetaRegion: env.Region,
-				// TODO: restore these when we support zone selectors without overscaling
-				// corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
-				// "topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
-				"beta.kubernetes.io/arch": "amd64",
-				"beta.kubernetes.io/os":   "linux",
-				corev1.LabelInstanceType:  "Standard_D4s_v5",
+				corev1.LabelFailureDomainBetaZone:   fmt.Sprintf("%s-1", env.Region),
+				"topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
+				"beta.kubernetes.io/arch":           "amd64",
+				"beta.kubernetes.io/os":             "linux",
+				corev1.LabelInstanceType:            "Standard_D4s_v5",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
@@ -164,10 +158,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		It("should support well-known labels for topology and architecture", func() {
 			nodeSelector := map[string]string{
 				// Well Known
-				karpv1.NodePoolLabelKey:    nodePool.Name,
-				corev1.LabelTopologyRegion: env.Region,
-				// TODO: restore these when we support zone selectors without overscaling
-				// corev1.LabelTopologyZone:    fmt.Sprintf("%s-1", env.Region),
+				karpv1.NodePoolLabelKey:     nodePool.Name,
+				corev1.LabelTopologyRegion:  env.Region,
+				corev1.LabelTopologyZone:    fmt.Sprintf("%s-1", env.Region),
 				corev1.LabelOSStable:        "linux",
 				corev1.LabelArchStable:      "amd64",
 				karpv1.CapacityTypeLabelKey: karpv1.CapacityTypeOnDemand,
@@ -188,8 +181,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		// note: this test can fail on subscription that don't have quota for GPU SKUs
 		It("should support well-known labels for a gpu (nvidia)", func() {
 			nodeSelector := map[string]string{
-				v1alpha2.LabelSKUGPUManufacturer: "nvidia",
-				v1alpha2.LabelSKUGPUCount:        "1",
+				v1beta1.LabelSKUGPUManufacturer: "nvidia",
+				v1beta1.LabelSKUGPUCount:        "1",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
@@ -275,8 +268,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), 2)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
-		// TODO: restore when we support zonal topology spread without overscaling
-		PIt("should provision three nodes for a zonal topology spread", func() {
+		It("should provision three nodes for a zonal topology spread", func() {
 
 			// one pod per zone
 			podLabels := map[string]string{"test": "zonal-spread"}
@@ -293,6 +285,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							WhenUnsatisfiable: corev1.DoNotSchedule,
 							LabelSelector:     &metav1.LabelSelector{MatchLabels: podLabels},
 							MinDomains:        lo.ToPtr(int32(3)),
+							NodeTaintsPolicy:  lo.ToPtr(corev1.NodeInclusionPolicyHonor),
 						},
 					},
 				},
@@ -411,13 +404,13 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 
 				test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUCPU,
+						Key:      v1beta1.LabelSKUCPU,
 						Operator: corev1.NodeSelectorOpIn,
 						Values:   []string{"4", "8"},
 					},
 				}, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUFamily,
+						Key:      v1beta1.LabelSKUFamily,
 						Operator: corev1.NodeSelectorOpNotIn,
 						Values:   []string{"D"},
 					},
@@ -438,7 +431,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				env.ExpectCreated(nodePool, nodeClass, dsBufferPod, pod)
 				env.EventuallyExpectHealthy(pod)
 				node := env.ExpectCreatedNodeCount("==", 1)[0]
-				Expect(node.ObjectMeta.GetLabels()[v1alpha2.LabelSKUCPU]).To(Equal(expectedNodeCPU))
+				Expect(node.ObjectMeta.GetLabels()[v1beta1.LabelSKUCPU]).To(Equal(expectedNodeCPU))
 			},
 			Entry("sidecar requirements + later init requirements do exceed container requirements", "8", corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("400m")},

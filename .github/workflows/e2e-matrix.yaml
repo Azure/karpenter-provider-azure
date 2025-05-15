@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [Scheduling, Utilization, GPU, Drift, Integration, NodeClaim, Chaos, ACR, KubernetesUpgrade]
+        suite: [Scheduling, Utilization, GPU, Drift, Integration, NodeClaim, Consolidation, Chaos, ACR, KubernetesUpgrade]
     permissions:
       contents: read
       id-token: write

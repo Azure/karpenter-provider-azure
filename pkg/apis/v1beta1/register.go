@@ -14,9 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v1beta1
 
-// Annotations
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+)
+
+const Group = "karpenter.azure.com"
+
 var (
-	AnnotationInPlaceUpdateHash = Group + "/in-place-update-hash"
+	SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: "v1beta1"}
+	SchemeBuilder      = runtime.NewSchemeBuilder(func(scheme *runtime.Scheme) error {
+		scheme.AddKnownTypes(SchemeGroupVersion,
+			&AKSNodeClass{},
+			&AKSNodeClassList{},
+		)
+		metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
+		return nil
+	})
 )

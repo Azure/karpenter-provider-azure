@@ -21,7 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -38,7 +38,8 @@ import (
 )
 
 const (
-	subscription = "12345678-1234-1234-1234-123456789012"
+	customerSubscription = "12345678-1234-1234-1234-123456789012"
+	sigSubscription      = "10945678-1234-1234-1234-123456789012"
 
 	cigImageVersion      = "202410.09.0"
 	laterCIGImageVersion = "202411.09.0"
@@ -48,9 +49,9 @@ const (
 
 func getExpectedTestCIGImages(imageFamily string, version string) []imagefamily.NodeImage {
 	var images []imagefamily.DefaultImageOutput
-	if imageFamily == v1alpha2.Ubuntu2204ImageFamily {
+	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
 		images = imagefamily.Ubuntu2204{}.DefaultImages()
-	} else if imageFamily == v1alpha2.AzureLinuxImageFamily {
+	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
 		images = imagefamily.AzureLinux{}.DefaultImages()
 	}
 	nodeImages := []imagefamily.NodeImage{}
@@ -65,15 +66,15 @@ func getExpectedTestCIGImages(imageFamily string, version string) []imagefamily.
 
 func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
 	var images []imagefamily.DefaultImageOutput
-	if imageFamily == v1alpha2.Ubuntu2204ImageFamily {
+	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
 		images = imagefamily.Ubuntu2204{}.DefaultImages()
-	} else if imageFamily == v1alpha2.AzureLinuxImageFamily {
+	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
 		images = imagefamily.AzureLinux{}.DefaultImages()
 	}
 	nodeImages := []imagefamily.NodeImage{}
 	for _, image := range images {
 		nodeImages = append(nodeImages, imagefamily.NodeImage{
-			ID:           fmt.Sprintf("/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
+			ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
 			Requirements: image.Requirements,
 		})
 	}
@@ -87,7 +88,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider
-		nodeClass         *v1alpha2.AKSNodeClass
+		nodeClass         *v1beta1.AKSNodeClass
 	)
 
 	BeforeEach(func() {
@@ -100,7 +101,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 		kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
-		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, subscription, nodeImageVersionsAPI)
+		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI)
 
 		nodeClass = test.AKSNodeClass()
 		test.ApplyDefaultStatus(nodeClass, env)
@@ -108,10 +109,10 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 	Context("List CIG Images", func() {
 		It("should fail if KubernetesVersionReady is false", func() {
-			nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeKubernetesVersionReady, "KubernetesVersionFalseForTesting", "tesitng false kubernetes version status")
+			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "KubernetesVersionFalseForTesting", "tesitng false kubernetes version status")
 			_, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).To(HaveOccurred())
-			Expect(err).To(Equal(fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", v1alpha2.ConditionTypeKubernetesVersionReady, "False", "tesitng false kubernetes version status")))
+			Expect(err).To(Equal(fmt.Errorf("NodeClass condition %s, is in Ready=%s, %s", v1beta1.ConditionTypeKubernetesVersionReady, "False", "tesitng false kubernetes version status")))
 		})
 
 		It("should match expected images for Ubuntu2204", func() {
@@ -121,7 +122,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		})
 
 		It("should match expected images for AzureLinux", func() {
-			var imageFamily = v1alpha2.AzureLinuxImageFamily
+			var imageFamily = v1beta1.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
@@ -132,8 +133,12 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 	Context("List SIG Images", func() {
 		BeforeEach(func() {
-			var varTrue = true
-			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{UseSIG: &varTrue}))
+			testOptions := options.FromContext(ctx)
+			testOptions.UseSIG = true
+			testOptions.SIGSubscriptionID = sigSubscription
+			testOptions.SIGAccessTokenScope = "http://valid-scope.com/.default"
+			testOptions.SIGAccessTokenServerURL = "http://valid-url.com"
+			ctx = options.ToContext(ctx, testOptions)
 		})
 
 		It("should match expected images for Ubuntu2204", func() {
@@ -143,7 +148,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		})
 
 		It("should match expected images for AzureLinux", func() {
-			var imageFamily = v1alpha2.AzureLinuxImageFamily
+			var imageFamily = v1beta1.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
@@ -176,7 +181,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 			var laterCIGImageVersionTest = laterCIGImageVersion
 			communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &laterCIGImageVersionTest})
 
-			var imageFamily = v1alpha2.AzureLinuxImageFamily
+			var imageFamily = v1beta1.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
 
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)

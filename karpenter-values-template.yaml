@@ -39,6 +39,10 @@ controller:
     # managed karpenter settings
     - name: USE_SIG
       value: "false"
+    - name: SIG_ACCESS_TOKEN_SERVER_URL
+      value: ""
+    - name: SIG_ACCESS_TOKEN_SCOPE
+      value: ""
     - name: SIG_SUBSCRIPTION_ID
       value: ""
 serviceAccount:

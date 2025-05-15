@@ -20,14 +20,27 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
+	"k8s.io/client-go/util/flowcontrol"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -54,6 +67,11 @@ func init() {
 type Operator struct {
 	*operator.Operator
 
+	// InClusterKubernetesInterface is a Kubernetes client that can be used to talk to the APIServer
+	// of the cluster where the Karpenter pod is running. This is usually the same as operator.KubernetesInterface,
+	// but may be different if Karpenter is running in a different cluster than the one it manages.
+	InClusterKubernetesInterface kubernetes.Interface
+
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	ImageProvider          *imagefamily.Provider
@@ -76,6 +94,12 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
+
+	// These options are set similarly to those used by operator.KubernetesInterface
+	inClusterConfig := lo.Must(rest.InClusterConfig())
+	inClusterConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
+	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
+	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
@@ -107,8 +131,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.TenantID,
 		azConfig.SubscriptionID,
 		azConfig.ResourceGroup,
-		azConfig.KubeletIdentityClientID,
-		azConfig.NodeResourceGroup,
+		options.FromContext(ctx).KubeletIdentityClientID,
+		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.Location,
 		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
@@ -123,7 +147,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
-		azConfig.NodeResourceGroup,
+		options.FromContext(ctx).NodeResourceGroup,
 	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,
@@ -132,21 +156,22 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		loadBalancerProvider,
 		unavailableOfferingsCache,
 		azConfig.Location,
-		azConfig.NodeResourceGroup,
+		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
 	)
 
 	return ctx, &Operator{
-		Operator:                  operator,
-		UnavailableOfferingsCache: unavailableOfferingsCache,
-		ImageProvider:             imageProvider,
-		ImageResolver:             imageResolver,
-		LaunchTemplateProvider:    launchTemplateProvider,
-		PricingProvider:           pricingProvider,
-		InstanceTypesProvider:     instanceTypeProvider,
-		InstanceProvider:          instanceProvider,
-		LoadBalancerProvider:      loadBalancerProvider,
+		Operator:                     operator,
+		InClusterKubernetesInterface: inClusterClient,
+		UnavailableOfferingsCache:    unavailableOfferingsCache,
+		ImageProvider:                imageProvider,
+		ImageResolver:                imageResolver,
+		LaunchTemplateProvider:       launchTemplateProvider,
+		PricingProvider:              pricingProvider,
+		InstanceTypesProvider:        instanceTypeProvider,
+		InstanceProvider:             instanceProvider,
+		LoadBalancerProvider:         loadBalancerProvider,
 	}
 }
 
@@ -197,4 +222,52 @@ func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {
 		return "", fmt.Errorf("vnet %s does not have a resource GUID", subnetParts.VNetName)
 	}
 	return *vnet.Properties.ResourceGUID, nil
+}
+
+// WaitForCRDs waits for the required CRDs to be available with a timeout
+func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config, log logr.Logger) error {
+	gvk := func(obj runtime.Object) schema.GroupVersionKind {
+		return lo.Must(apiutil.GVKForObject(obj, scheme.Scheme))
+	}
+	var requiredGVKs = []schema.GroupVersionKind{
+		gvk(&karpv1.NodePool{}),
+		gvk(&karpv1.NodeClaim{}),
+		gvk(&v1beta1.AKSNodeClass{}),
+	}
+
+	client, err := rest.HTTPClientFor(config)
+	if err != nil {
+		return fmt.Errorf("creating kubernetes client, %w", err)
+	}
+	restMapper, err := apiutil.NewDynamicRESTMapper(config, client)
+	if err != nil {
+		return fmt.Errorf("creating dynamic rest mapper, %w", err)
+	}
+
+	log.WithValues("timeout", timeout).Info("waiting for required CRDs to be available")
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	for _, gvk := range requiredGVKs {
+		err := wait.PollUntilContextCancel(ctx, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+			if _, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
+				if meta.IsNoMatchError(err) {
+					log.V(1).WithValues("gvk", gvk).Info("waiting for CRD to be available")
+					return false, nil
+				}
+				return false, err
+			}
+			log.V(1).WithValues("gvk", gvk).Info("CRD is available")
+			return true, nil
+		})
+		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				return fmt.Errorf("timed out waiting for CRD %s to be available", gvk)
+			}
+			return fmt.Errorf("failed to wait for CRD %s: %w", gvk, err)
+		}
+	}
+
+	log.Info("all required CRDs are available")
+	return nil
 }
