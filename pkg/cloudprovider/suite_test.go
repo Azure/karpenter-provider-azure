@@ -19,6 +19,7 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -76,7 +77,7 @@ func TestCloudProvider(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(coretest.NodeProviderIDFieldIndexer(ctx)))
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
 	ctx, stop = context.WithCancel(ctx)
@@ -193,8 +194,13 @@ var _ = Describe("CloudProvider", func() {
 			// Corresponding NodeClaim
 			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
-					NodeName:   node.Name,
-					ProviderID: utils.ResourceIDToProviderID(ctx, utils.MkVMID(rg, vmName)),
+					NodeName: node.Name,
+					// TODO (charliedmcb): switch back to use MkVMID, and update the test subscription usage to all use the same sub const 12345678-1234-1234-1234-123456789012
+					//     We currently need this work around for the List nodes call to work in Drift, since the VM ID is overridden here (which uses the sub id in the instance provider):
+					//     https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/pkg/providers/instance/instance.go#L604
+					//     which has the sub const 12345678-1234-1234-1234-123456789012 passed in here:
+					//     https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/pkg/test/environment.go#L152
+					ProviderID: utils.ResourceIDToProviderID(ctx, fmt.Sprintf("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", rg, vmName)),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -315,12 +321,16 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(NoDrift))
 			})
 
-			It("should error when node is not found", func() {
+			It("shouldn't error or be drifted when node is not found", func() {
 				nodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-				Expect(err).To(HaveOccurred())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(drifted).To(Equal(NoDrift))
 			})
+
+			// TODO (charliedmcb): Do we need to test "shouldn't error or be drifted when node is deleting"?
+			//     This case is tricker since we can't directly setup the DeletionTimestamp on the node,
+			//     and instead need to setup a finalizer and delete the node from my understanding.
 
 			It("should succeed with drift true when KubernetesVersion is new", func() {
 				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
