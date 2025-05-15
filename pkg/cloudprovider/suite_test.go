@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -328,9 +329,24 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(NoDrift))
 			})
 
-			// TODO (charliedmcb): Do we need to test "shouldn't error or be drifted when node is deleting"?
-			//     This case is tricker since we can't directly set the DeletionTimestamp on the node,
-			//     and instead need to setup a finalizer and delete the node from my understanding.
+			It("shouldn't error or be drifted when node is deleting", func() {
+				node := ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+				node.Finalizers = append(node.Finalizers, test.TestingFinalizer)
+				ExpectApplied(ctx, env.Client, node)
+				Expect(env.Client.Delete(ctx, node)).ToNot(HaveOccurred())
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+
+				// cleanup
+				node = ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+				deepCopy := node.DeepCopy()
+				node.Finalizers = lo.Reject(node.Finalizers, func(finalizer string, _ int) bool {
+					return finalizer == test.TestingFinalizer
+				})
+				env.Client.Patch(ctx, node, client.StrategicMergeFrom(deepCopy))
+				ExpectDeleted(ctx, env.Client, node)
+			})
 
 			It("should succeed with drift true when KubernetesVersion is new", func() {
 				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
