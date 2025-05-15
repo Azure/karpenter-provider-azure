@@ -122,7 +122,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		if nodeclaimutils.IsDuplicateNodeError(err) {
 			logger.V(1).Info("WARN: Duplicate node error, invariant violated.")
 		}
-		return "case 2", err
+		return "", err
 	}
 	if !n.DeletionTimestamp.IsZero() {
 		// We do not need to check for drift if the node is being deleted.
