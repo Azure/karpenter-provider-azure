@@ -72,7 +72,7 @@ func Interface(overrides ...InterfaceOptions) *armnetwork.Interface {
 	}
 
 	nic := &armnetwork.Interface{
-		ID:         lo.ToPtr(fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/networkInterfaces/%s", options.Name)),
+		ID:         lo.ToPtr(fmt.Sprintf("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/networkInterfaces/%s", options.Name)),
 		Name:       &options.Name,
 		Location:   &options.Location,
 		Properties: options.Properties,

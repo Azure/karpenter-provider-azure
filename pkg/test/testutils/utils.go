@@ -14,23 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// TODO (chmcbrid): move this to the subfolder testutils
-package test
+package testutils
 
 import (
-	"github.com/samber/lo"
-	k8srand "k8s.io/apimachinery/pkg/util/rand"
+	"fmt"
 )
 
-// RandomName returns a pseudo-random resource name with a given prefix.
-func RandomName(prefix string) string {
-	// You could make this more robust by including additional random characters.
-	return prefix + "-" + k8srand.String(10)
-}
-
-func ManagedTags(nodepoolName string) map[string]*string {
-	return map[string]*string{
-		"karpenter.sh_cluster":  lo.ToPtr("test-cluster"),
-		"karpenter.sh_nodepool": lo.ToPtr(nodepoolName),
-	}
+func MkVMID(resourceGroupName string, vmName string) string {
+	const idFormat = "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s"
+	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
 }

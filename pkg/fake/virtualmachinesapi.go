@@ -31,7 +31,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/testutils"
 	"github.com/samber/lo"
 )
 
@@ -107,7 +107,7 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGrou
 		// TODO: may have to clone ...
 		// TODO: subscription ID?
 		vm := input.VM
-		id := utils.MkVMID(input.ResourceGroupName, input.VMName)
+		id := testutils.MkVMID(input.ResourceGroupName, input.VMName)
 		vm.ID = to.StringPtr(id)
 
 		// Check store for existing vm by name
@@ -162,7 +162,7 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 		Options:           options,
 	}
 	return c.VirtualMachineUpdateBehavior.Invoke(input, func(input *VirtualMachineUpdateInput) (*armcompute.VirtualMachinesClientUpdateResponse, error) {
-		id := utils.MkVMID(input.ResourceGroupName, input.VMName)
+		id := testutils.MkVMID(input.ResourceGroupName, input.VMName)
 
 		instance, ok := c.Instances.Load(id)
 		if !ok {
@@ -205,7 +205,7 @@ func (c *VirtualMachinesAPI) Get(_ context.Context, resourceGroupName string, vm
 		Options:           options,
 	}
 	return c.VirtualMachineGetBehavior.Invoke(input, func(input *VirtualMachineGetInput) (armcompute.VirtualMachinesClientGetResponse, error) {
-		instance, ok := c.Instances.Load(utils.MkVMID(input.ResourceGroupName, input.VMName))
+		instance, ok := c.Instances.Load(testutils.MkVMID(input.ResourceGroupName, input.VMName))
 		if !ok {
 			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
 		}
@@ -222,7 +222,7 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 		Options:           options,
 	}
 	return c.VirtualMachineDeleteBehavior.Invoke(input, func(input *VirtualMachineDeleteInput) (*armcompute.VirtualMachinesClientDeleteResponse, error) {
-		c.Instances.Delete(utils.MkVMID(input.ResourceGroupName, input.VMName))
+		c.Instances.Delete(testutils.MkVMID(input.ResourceGroupName, input.VMName))
 		return &armcompute.VirtualMachinesClientDeleteResponse{}, nil
 	})
 }

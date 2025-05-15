@@ -107,7 +107,7 @@ func (c *NetworkInterfacesAPI) BeginDelete(_ context.Context, resourceGroupName 
 }
 
 func mkNetworkInterfaceID(resourceGroupName, interfaceName string) string {
-	const subscriptionID = "subscriptionID" // not important for fake
+	const subscriptionID = "12345678-1234-1234-1234-123456789012"
 	const idFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkInterfaces/%s"
 	return fmt.Sprintf(idFormat, subscriptionID, resourceGroupName, interfaceName)
 }

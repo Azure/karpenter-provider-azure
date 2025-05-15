@@ -72,6 +72,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/testutils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -198,7 +199,7 @@ var _ = Describe("InstanceType Provider", func() {
 			vmName := instance.GenerateResourceName(nodeClaim.Name)
 			vm := &armcompute.VirtualMachine{
 				Name:     lo.ToPtr(vmName),
-				ID:       lo.ToPtr(utils.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+				ID:       lo.ToPtr(testutils.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
 				Location: lo.ToPtr(fake.Region),
 				Zones:    []*string{lo.ToPtr("fantasy-zone")}, // Makes sure we do not get a match from the existing set of zones
 				Properties: &armcompute.VirtualMachineProperties{
@@ -1406,9 +1407,9 @@ var _ = Describe("InstanceType Provider", func() {
 
 			backendPools := iface.Properties.IPConfigurations[0].Properties.LoadBalancerBackendAddressPools
 			Expect(backendPools).To(HaveLen(3))
-			Expect(lo.FromPtr(backendPools[0].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
-			Expect(lo.FromPtr(backendPools[1].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
-			Expect(lo.FromPtr(backendPools[2].ID)).To(Equal("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
+			Expect(lo.FromPtr(backendPools[0].ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/kubernetes"))
+			Expect(lo.FromPtr(backendPools[1].ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes/backendAddressPools/aksOutboundBackendPool"))
+			Expect(lo.FromPtr(backendPools[2].ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/loadBalancers/kubernetes-internal/backendAddressPools/kubernetes"))
 		})
 	})
 

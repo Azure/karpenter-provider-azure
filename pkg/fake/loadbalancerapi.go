@@ -91,14 +91,14 @@ func (api *LoadBalancersAPI) NewListPager(_ string, _ *armnetwork.LoadBalancersC
 }
 
 func MakeLoadBalancerID(resourceGroupName, loadBalancerName string) string {
-	const subscriptionID = "subscriptionID" // not important for fake
+	const subscriptionID = "12345678-1234-1234-1234-123456789012"
 	const idFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/loadBalancers/%s"
 
 	return fmt.Sprintf(idFormat, subscriptionID, resourceGroupName, loadBalancerName)
 }
 
 func MakeBackendAddressPoolID(resourceGroupName, loadBalancerName string, backendAddressPoolName string) string {
-	const subscriptionID = "subscriptionID" // not important for fake
+	const subscriptionID = "12345678-1234-1234-1234-123456789012"
 	const idFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/loadBalancers/%s/backendAddressPools/%s"
 
 	return fmt.Sprintf(idFormat, subscriptionID, resourceGroupName, loadBalancerName, backendAddressPoolName)
