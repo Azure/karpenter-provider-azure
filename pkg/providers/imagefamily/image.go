@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
@@ -82,12 +82,12 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 //
 // Preconditions:
 // - nodeImages is sorted by priority order
-func (r *defaultResolver) resolveNodeImage(nodeImages []v1alpha2.NodeImage, instanceType *cloudprovider.InstanceType) (string, error) {
+func (r *defaultResolver) resolveNodeImage(nodeImages []v1beta1.NodeImage, instanceType *cloudprovider.InstanceType) (string, error) {
 	// nodeImages are sorted by priority order, so we can return the first one that matches
 	for _, availableImage := range nodeImages {
 		if err := instanceType.Requirements.Compatible(
 			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),
-			v1alpha2.AllowUndefinedWellKnownAndRestrictedLabels,
+			v1beta1.AllowUndefinedWellKnownAndRestrictedLabels,
 		); err == nil {
 			return availableImage.ID, nil
 		}

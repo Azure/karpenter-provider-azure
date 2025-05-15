@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/utils/pod"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,stylecheck
@@ -61,7 +61,7 @@ var (
 		&schedulingv1.PriorityClass{},
 		&corev1.Node{},
 		&karpv1.NodeClaim{},
-		&v1alpha2.AKSNodeClass{},
+		&v1beta1.AKSNodeClass{},
 	}
 )
 
@@ -116,7 +116,7 @@ func (env *Environment) EventuallyExpectNoProvisionablePods() {
 }
 
 func (env *Environment) ExpectNoNodePoolOrAKSNodeClass() {
-	for _, obj := range []client.Object{&karpv1.NodePool{}, &v1alpha2.AKSNodeClass{}} {
+	for _, obj := range []client.Object{&karpv1.NodePool{}, &v1beta1.AKSNodeClass{}} {
 		metaList := &metav1.PartialObjectMetadataList{}
 		gvk := lo.Must(apiutil.GVKForObject(obj, env.Client.Scheme()))
 		metaList.SetGroupVersionKind(gvk)

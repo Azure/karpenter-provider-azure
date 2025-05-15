@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -41,7 +41,7 @@ import (
 type Resolver interface {
 	Resolve(
 		ctx context.Context,
-		nodeClass *v1alpha2.AKSNodeClass,
+		nodeClass *v1beta1.AKSNodeClass,
 		nodeClaim *karpv1.NodeClaim,
 		instanceType *cloudprovider.InstanceType,
 		staticParameters *template.StaticParameters) (*template.Parameters, error)
@@ -90,7 +90,7 @@ func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolv
 // Resolve fills in dynamic launch template parameters
 func (r *defaultResolver) Resolve(
 	ctx context.Context,
-	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters,
@@ -172,7 +172,7 @@ func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
 	return "", fmt.Errorf("no distro found for image id %s", imageID)
 }
 
-func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) *bootstrap.KubeletConfiguration {
+func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *bootstrap.KubeletConfiguration {
 	kubeletConfig := &bootstrap.KubeletConfiguration{}
 
 	if nodeClass.Spec.Kubelet != nil {
@@ -196,9 +196,9 @@ func getSupportedImages(familyName *string) []DefaultImageOutput {
 
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
-	case v1alpha2.Ubuntu2204ImageFamily:
+	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
-	case v1alpha2.AzureLinuxImageFamily:
+	case v1beta1.AzureLinuxImageFamily:
 		return &AzureLinux{Options: parameters}
 	default:
 		return &Ubuntu2204{Options: parameters}
@@ -206,7 +206,7 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 }
 
 func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
-	reqs := instanceType.Requirements.Get(v1alpha2.LabelSKUStorageEphemeralOSMaxSize).Values()
+	reqs := instanceType.Requirements.Get(v1beta1.LabelSKUStorageEphemeralOSMaxSize).Values()
 	if len(reqs) == 0 || len(reqs) > 1 {
 		return 0
 	}
@@ -219,7 +219,7 @@ func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
 }
 
 // setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
-func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1alpha2.AKSNodeClass) bool {
+func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) bool {
 	// use ephemeral disk if it is large enough
 	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
 }
