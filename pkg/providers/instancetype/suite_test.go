@@ -1483,7 +1483,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
 			claim, err := cloudProvider.Create(ctx, nodeClaim)
 			Expect(err).To(HaveOccurred())
-			Expect(err).To(BeAssignableToTypeOf(corecloudprovider.CreateError{}))
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 			Expect(claim).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
 		})
@@ -1518,7 +1518,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			claim, err := cloudProvider.Create(ctx, nodeClaim)
 			Expect(err).To(HaveOccurred())
-			Expect(err).To(BeAssignableToTypeOf(corecloudprovider.CreateError{}))
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 			Expect(claim).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("resolving instance types"))
 		})
@@ -1554,7 +1554,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 			claim, err := cloudProvider.Create(ctx, nodeClaim)
 			Expect(err).To(HaveOccurred())
-			Expect(err).To(BeAssignableToTypeOf(corecloudprovider.CreateError{}))
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 			Expect(claim).To(BeNil())
 			Expect(err.Error()).To(ContainSubstring("creating instance failed"))
 		})
