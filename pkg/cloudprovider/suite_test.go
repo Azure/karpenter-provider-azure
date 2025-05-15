@@ -344,7 +344,7 @@ var _ = Describe("CloudProvider", func() {
 				node.Finalizers = lo.Reject(node.Finalizers, func(finalizer string, _ int) bool {
 					return finalizer == test.TestingFinalizer
 				})
-				env.Client.Patch(ctx, node, client.StrategicMergeFrom(deepCopy))
+				Expect(env.Client.Patch(ctx, node, client.StrategicMergeFrom(deepCopy))).NotTo(HaveOccurred())
 				ExpectDeleted(ctx, env.Client, node)
 			})
 
