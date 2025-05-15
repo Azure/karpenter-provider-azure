@@ -21,8 +21,6 @@ import (
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	"github.com/blang/semver/v4"
-	"github.com/samber/lo"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -30,18 +28,9 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
-var (
-	testK8sVersion string
-	oldK8sVersion  string
-)
-
 var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 	var nodeClass *v1alpha2.AKSNodeClass
 	BeforeEach(func() {
-		testK8sVersion = lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
-		semverTestK8sVersion := lo.Must(semver.ParseTolerant(testK8sVersion))
-		semverTestK8sVersion.Minor = semverTestK8sVersion.Minor - 1
-		oldK8sVersion = semverTestK8sVersion.String()
 		nodeClass = test.AKSNodeClass()
 	})
 

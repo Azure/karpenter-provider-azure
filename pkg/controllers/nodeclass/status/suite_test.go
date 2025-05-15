@@ -30,6 +30,9 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"github.com/blang/semver/v4"
+	"github.com/samber/lo"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,6 +46,11 @@ var azureEnv *test.Environment
 var nodeClass *v1alpha2.AKSNodeClass
 var controller *status.Controller
 
+var (
+	testK8sVersion string
+	oldK8sVersion  string
+)
+
 func TestAKSNodeClassStatusController(t *testing.T) {
 	ctx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
@@ -55,7 +63,7 @@ var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, test.Options())
 	azureEnv = test.NewEnvironment(ctx, env)
 
-	controller = status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider)
+	controller = status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 })
 
 var _ = AfterSuite(func() {
@@ -66,8 +74,14 @@ var _ = BeforeEach(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	nodeClass = test.AKSNodeClass()
 	azureEnv.Reset()
+
+	testK8sVersion = lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()
+	semverTestK8sVersion := lo.Must(semver.ParseTolerant(testK8sVersion))
+	semverTestK8sVersion.Minor = semverTestK8sVersion.Minor - 1
+	oldK8sVersion = semverTestK8sVersion.String()
 })
 
 var _ = AfterEach(func() {
 	ExpectCleanedUp(ctx, env.Client)
+	expectations.ExpectCleanUp(ctx, env.Client)
 })

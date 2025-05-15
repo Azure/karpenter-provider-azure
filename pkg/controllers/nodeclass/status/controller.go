@@ -21,6 +21,7 @@ import (
 
 	"go.uber.org/multierr"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/client-go/kubernetes"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -47,12 +48,17 @@ type Controller struct {
 	nodeImage         *NodeImageReconciler
 }
 
-func NewController(kubeClient client.Client, kubernetesVersionProvider imagefamily.KubernetesVersionProvider, nodeImageProvider imagefamily.NodeImageProvider) *Controller {
+func NewController(
+	kubeClient client.Client,
+	kubernetesVersionProvider imagefamily.KubernetesVersionProvider,
+	nodeImageProvider imagefamily.NodeImageProvider,
+	inClusterKubernetesInterface kubernetes.Interface,
+) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
-		nodeImage:         NewNodeImageReconciler(nodeImageProvider),
+		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 	}
 }
 
