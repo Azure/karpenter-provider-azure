@@ -28,7 +28,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
 
@@ -61,13 +61,13 @@ var _ = Describe("Utilization", func() {
 	})
 })
 
-func ExpectProvisionPodPerNode(getNodeClass func() *v1alpha2.AKSNodeClass, getNodePool func(*v1alpha2.AKSNodeClass) *karpv1.NodePool) {
+func ExpectProvisionPodPerNode(getNodeClass func() *v1beta1.AKSNodeClass, getNodePool func(*v1beta1.AKSNodeClass) *karpv1.NodePool) {
 	GinkgoHelper()
 	nodeClass := getNodeClass()
 	nodePool := getNodePool(nodeClass)
 	test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 		NodeSelectorRequirement: v1.NodeSelectorRequirement{
-			Key:      v1alpha2.LabelSKUCPU,
+			Key:      v1beta1.LabelSKUCPU,
 			Operator: v1.NodeSelectorOpLt,
 			Values:   []string{"3"},
 		}})

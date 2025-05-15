@@ -66,7 +66,7 @@ type Options struct {
 	VMMemoryOverheadPercent        float64
 	ClusterID                      string
 	KubeletClientTLSBootstrapToken string // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
-	SSHPublicKey                   string // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1alpha2.AKSNodeClass?
+	SSHPublicKey                   string // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
 
 	NetworkPlugin     string // => NetworkPlugin in bootstrap
 	NetworkPolicy     string // => NetworkPolicy in bootstrap

@@ -34,7 +34,7 @@ import (
 	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -78,7 +78,7 @@ func NewNodeImageReconciler(
 func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named(nodeImageReconcilerName).
-		For(&v1alpha2.AKSNodeClass{}).
+		For(&v1beta1.AKSNodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter: reasonable.RateLimiter(),
 			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
@@ -106,7 +106,7 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 // and clean approach while allowing us to extend future capabilities off of it. Additionally, while the decision to
 // store Requirements adds minor bloat, it also provides extra visibility into the avilaible images and how their
 // selection will work, which is seen as worth the tradeoff.
-func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (reconcile.Result, error) {
+func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("starting reconcile")
@@ -115,7 +115,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
 	}
-	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1alpha2.NodeImage {
+	goalImages := lo.Map(nodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item v1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
 			return item.NodeSelectorRequirement
 		})
@@ -127,7 +127,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 			}
 			return reqs[i].Key < reqs[j].Key
 		})
-		return v1alpha2.NodeImage{
+		return v1beta1.NodeImage{
 			ID:           nodeImage.ID,
 			Requirements: reqs,
 		}
@@ -153,13 +153,13 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 
 	if len(goalImages) == 0 {
 		nodeClass.Status.Images = nil
-		nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
 		logger.Info("no node images")
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
 	nodeClass.Status.Images = goalImages
-	nodeClass.StatusConditions().SetTrue(v1alpha2.ConditionTypeImagesReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	logger.V(1).Info("success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -168,8 +168,8 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1alpha2
 // Handles case 1: This is a new AKSNodeClass, where images haven't been populated yet
 // Handles case 2: This is indirectly handling k8s version image bump, since k8s version sets this status to false
 // Handles case 3: Note: like k8s we would also indirectly handle node features that required an image version bump, but none required atm.
-func imageVersionsUnready(nodeClass *v1alpha2.AKSNodeClass) bool {
-	return !nodeClass.StatusConditions().Get(v1alpha2.ConditionTypeImagesReady).IsTrue()
+func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
+	return !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsTrue()
 }
 
 // Handles case 4: check if the maintenance window is open
@@ -230,10 +230,10 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 //   - Note: I think this should be re-assessed if this is the exact behavior we want to give users before any actual new SKU support is released.
 //
 // TODO: Need longer term design for handling newly supported versions, and other image selectors.
-func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1alpha2.AKSNodeClass, discoveredImages []v1alpha2.NodeImage) []v1alpha2.NodeImage {
+func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1beta1.AKSNodeClass, discoveredImages []v1beta1.NodeImage) []v1beta1.NodeImage {
 	existingBaseIDMapping := mapImageBasesToImages(nodeClass.Status.Images)
 
-	updatedImages := []v1alpha2.NodeImage{}
+	updatedImages := []v1beta1.NodeImage{}
 	// Note: we have to range over the discovered images here, instead of converting to a baseIDMapping, to keep the ordering consistent
 	for i := range discoveredImages {
 		discoveredImage := discoveredImages[i]
@@ -247,8 +247,8 @@ func overrideAnyGoalStateVersionsWithExisting(nodeClass *v1alpha2.AKSNodeClass, 
 	return updatedImages
 }
 
-func mapImageBasesToImages(images []v1alpha2.NodeImage) map[string]*v1alpha2.NodeImage {
-	imagesBaseMapping := map[string]*v1alpha2.NodeImage{}
+func mapImageBasesToImages(images []v1beta1.NodeImage) map[string]*v1beta1.NodeImage {
+	imagesBaseMapping := map[string]*v1beta1.NodeImage{}
 	for i := range images {
 		baseID := trimVersionSuffix(images[i].ID)
 		imagesBaseMapping[baseID] = &images[i]
