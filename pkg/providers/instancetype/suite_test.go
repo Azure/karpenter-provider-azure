@@ -377,7 +377,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		It("should not include SKUs marked as restricted", func() {
 			isRestricted := func(instanceType *corecloudprovider.InstanceType) bool {
-				return instancetype.RestrictedVMSizes.Has(instanceType.Name)
+				return instancetype.AKSRestrictedVMSizes.Has(instanceType.Name)
 			}
 			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(isRestricted, Equal(true))))
 			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(isRestricted, Equal(true))))

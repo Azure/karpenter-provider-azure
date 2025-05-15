@@ -269,7 +269,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
-	skus := cache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines))
+	skus := cache.List(ctx, skewer.IncludesFilter(getKarpenterWorkingSKUs()))
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Discovered %d SKUs", len(skus)))
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
@@ -319,7 +319,7 @@ func (p *DefaultProvider) hasMinimumMemory(sku *skewer.SKU) bool {
 
 // instances AKS does not support
 func (p *DefaultProvider) isUnsupportedByAKS(sku *skewer.SKU) bool {
-	return RestrictedVMSizes.Has(sku.GetName())
+	return AKSRestrictedVMSizes.Has(sku.GetName())
 }
 
 // GPU SKUs AKS does not support
