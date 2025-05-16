@@ -75,7 +75,7 @@ var (
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
 
-	LabelSKUName    = Group + "/sku-name"    // Standard_A1_v2
+	LabelSKUName    = Group + "/sku-name"    // Standard_A1_v2 (equivalent to instance-type, offered as the SKU nomenclature is more familiar to Azure customers)
 	LabelSKUFamily  = Group + "/sku-family"  // A
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
