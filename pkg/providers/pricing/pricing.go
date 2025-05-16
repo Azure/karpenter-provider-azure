@@ -143,6 +143,10 @@ func (p *Provider) OnDemandPrice(instanceType string) (float64, bool) {
 	defer p.mu.RUnlock()
 	price, ok := p.onDemandPrices[instanceType]
 	if !ok {
+		// if we don't have a price, check if it's a known SKU with missing price
+		if price, ok = skusWithMissingPrice[instanceType]; ok {
+			return price, true
+		}
 		return 0.0, false
 	}
 	return price, true
@@ -155,6 +159,10 @@ func (p *Provider) SpotPrice(instanceType string) (float64, bool) {
 	defer p.mu.RUnlock()
 	price, ok := p.spotPrices[instanceType]
 	if !ok {
+		// if we don't have a price, check if it's a known SKU with missing price
+		if price, ok = skusWithMissingPrice[instanceType]; ok {
+			return price, true
+		}
 		return 0.0, false
 	}
 	return price, true
