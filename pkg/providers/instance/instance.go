@@ -59,9 +59,12 @@ var (
 		string(armcompute.VirtualMachinePriorityTypesRegular): karpv1.CapacityTypeOnDemand,
 	}
 
-	SubscriptionQuotaReachedReason = "SubscriptionQuotaReached"
-	ZonalAllocationFailureReason   = "ZonalAllocationFailure"
-	SKUNotAvailableReason          = "SKUNotAvailable"
+	SubscriptionQuotaReachedReason              = "SubscriptionQuotaReached"
+	AllocationFailureReason                     = "AllocationFailure"
+	ZonalAllocationFailureReason                = "ZonalAllocationFailure"
+	OverconstrainedZonalAllocationFailureReason = "OverconstrainedZonalAllocationFailure"
+	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
+	SKUNotAvailableReason                       = "SKUNotAvailable"
 
 	SubscriptionQuotaReachedTTL = 1 * time.Hour
 	SKUNotAvailableSpotTTL      = 1 * time.Hour
@@ -699,6 +702,41 @@ func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType
 		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot)
 
 		return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
+	}
+	// AllocationFailure means that VM allocation to the dedicated host has failed. But it can also mean "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."
+	if sdkerrors.AllocationFailureOccurred(err) {
+		// instanceType.Offerings contains multiple entries for one zone, but we only care that zone appears at least once, this avoids extra calls to MarkUnavailable
+		zonesToBlock := make(map[string]struct{})
+		for _, offering := range instanceType.Offerings {
+			offeringZone := getOfferingZone(offering)
+			zonesToBlock[offeringZone] = struct{}{}
+		}
+		for zone := range zonesToBlock {
+			p.unavailableOfferings.MarkUnavailable(ctx, AllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand)
+			p.unavailableOfferings.MarkUnavailable(ctx, AllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot)
+		}
+
+		return fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", instanceType.Name)
+	}
+	// OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
+	if sdkerrors.OverconstrainedZonalAllocationFailureOccurred(err) {
+		log.FromContext(ctx).WithValues("zone", zone, "capacity-type", capacityType, "vm size", instanceType.Name).Error(err, "")
+		p.unavailableOfferings.MarkUnavailable(ctx, OverconstrainedZonalAllocationFailureReason, instanceType.Name, zone, capacityType)
+
+		return fmt.Errorf("unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)", zone, capacityType, instanceType.Name)
+	}
+	// OverconstrainedAllocationFailure means that all zones cannot accommodate the selected size and capacity combination.
+	if sdkerrors.OverconstrainedAllocationFailureOccurred(err) {
+		log.FromContext(ctx).WithValues("capacity-type", capacityType, "vm size", instanceType.Name).Error(err, "")
+		// mark the instance type as unavailable for all offerings/zones for the capacity type
+		for _, offering := range instanceType.Offerings {
+			if getOfferingCapacityType(offering) != capacityType {
+				continue
+			}
+			p.unavailableOfferings.MarkUnavailable(ctx, SKUNotAvailableReason, instanceType.Name, getOfferingZone(offering), capacityType)
+		}
+
+		return fmt.Errorf("unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)", capacityType, instanceType.Name)
 	}
 	if sdkerrors.RegionalQuotaHasBeenReached(err) {
 		log.FromContext(ctx).Error(err, "")
