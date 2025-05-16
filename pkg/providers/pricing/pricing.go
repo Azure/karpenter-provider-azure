@@ -311,3 +311,7 @@ func (p *Provider) Reset() {
 	p.onDemandPrices = staticPricing
 	p.onDemandUpdateTime = initialPriceUpdate
 }
+
+func Regions() []string {
+	return lo.Keys(initialOnDemandPrices)
+}
