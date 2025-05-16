@@ -155,8 +155,8 @@ type KubeletConfiguration struct {
 // AKSNodeClass is the Schema for the AKSNodeClass API
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories={karpenter,nap},shortName={aksnc,aksncs}
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="use v1beta1.AKSNodeClass instead"
 type AKSNodeClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

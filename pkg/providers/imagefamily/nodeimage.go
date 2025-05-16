@@ -20,10 +20,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/patrickmn/go-cache"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
@@ -33,11 +34,11 @@ type NodeImage struct {
 }
 
 type NodeImageProvider interface {
-	List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]NodeImage, error)
+	List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error)
 }
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
-func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) ([]NodeImage, error) {
+func (p *Provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
 	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 	if err != nil {
 		return []NodeImage{}, err
@@ -61,6 +62,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass) (
 
 	var nodeImages []NodeImage
 	if useSIG {
+		log.FromContext(ctx).V(1).Info("Using SIG to list node images")
 		nodeImages, err = p.listSIG(ctx, supportedImages)
 		if err != nil {
 			return []NodeImage{}, err

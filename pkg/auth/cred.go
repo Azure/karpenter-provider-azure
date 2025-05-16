@@ -18,6 +18,9 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -31,6 +34,43 @@ import (
 // See: https://github.com/hashicorp/terraform-provider-azurerm/issues/20834 for more details
 type expireEarlyTokenCredential struct {
 	cred azcore.TokenCredential
+}
+
+func GetAuxiliaryToken(ctx context.Context, url string, scope string) (azcore.AccessToken, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	if url == "" {
+		return azcore.AccessToken{}, fmt.Errorf("access token server URL is not set")
+	}
+	if scope == "" {
+		return azcore.AccessToken{}, fmt.Errorf("access token scope is not set")
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+	q := req.URL.Query()
+	q.Add("scope", scope)
+	req.URL.RawQuery = q.Encode()
+	req.Header.Set("User-Agent", GetUserAgentExtension())
+
+	// Send the request
+	resp, err := client.Do(req)
+	if err != nil {
+		return azcore.AccessToken{}, fmt.Errorf("error making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return azcore.AccessToken{}, fmt.Errorf("error: %s", resp.Status)
+	}
+
+	// Decode the response body into the AccessToken struct
+	var token azcore.AccessToken
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		return azcore.AccessToken{}, fmt.Errorf("error decoding json: %w", err)
+	}
+	return token, nil
 }
 
 func NewTokenWrapper(cred azcore.TokenCredential) azcore.TokenCredential {

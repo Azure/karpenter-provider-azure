@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/object"
+	corestatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -63,8 +64,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -119,7 +121,7 @@ var _ = AfterSuite(func() {
 })
 
 var _ = Describe("InstanceType Provider", func() {
-	var nodeClass *v1alpha2.AKSNodeClass
+	var nodeClass *v1beta1.AKSNodeClass
 	var nodePool *karpv1.NodePool
 
 	BeforeEach(func() {
@@ -197,7 +199,7 @@ var _ = Describe("InstanceType Provider", func() {
 			vmName := instance.GenerateResourceName(nodeClaim.Name)
 			vm := &armcompute.VirtualMachine{
 				Name:     lo.ToPtr(vmName),
-				ID:       lo.ToPtr(utils.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+				ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
 				Location: lo.ToPtr(fake.Region),
 				Zones:    []*string{lo.ToPtr("fantasy-zone")}, // Makes sure we do not get a match from the existing set of zones
 				Properties: &armcompute.VirtualMachineProperties{
@@ -376,7 +378,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		It("should not include SKUs marked as restricted", func() {
 			isRestricted := func(instanceType *corecloudprovider.InstanceType) bool {
-				return instancetype.RestrictedVMSizes.Has(instanceType.Name)
+				return instancetype.AKSRestrictedVMSizes.Has(instanceType.Name)
 			}
 			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(isRestricted, Equal(true))))
 			Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(isRestricted, Equal(true))))
@@ -486,7 +488,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("Nodepool with KubeletConfig", func() {
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
-			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
@@ -549,7 +551,7 @@ var _ = Describe("InstanceType Provider", func() {
 			)))
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
-			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
@@ -579,7 +581,7 @@ var _ = Describe("InstanceType Provider", func() {
 			))
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
-			nodeClass.Spec.Kubelet = &v1alpha2.KubeletConfiguration{
+			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 				CPUCFSQuota:                 lo.ToPtr(true),
@@ -627,7 +629,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
 			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 		It("should handle ZonalAllocationFailed on creating the VM", func() {
@@ -657,7 +659,7 @@ var _ = Describe("InstanceType Provider", func() {
 			By("successfully scheduling in a different zone on retry")
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(zone))
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
 		})
 
 		DescribeTable("Should not return unavailable offerings", func(azEnv *test.Environment) {
@@ -712,7 +714,7 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels[v1alpha2.AlternativeLabelTopologyZone]).ToNot(Equal(fakeZone1))
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
 			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
 		It("should launch smaller instances than optimal if larger instance launch results in Insufficient Capacity Error", func() {
@@ -800,6 +802,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 		})
 	})
+
 	Context("Provider List MaxPods", func() {
 		BeforeEach(func() {
 			ctx = options.ToContext(ctx, test.Options())
@@ -867,6 +870,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectCapacityPodsToMatchMaxPods(instanceTypes, int32(110))
 		})
 	})
+
 	Context("Provider List", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
 		var err error
@@ -887,13 +891,12 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(reqs.Has(v1.LabelOSStable)).To(BeTrue())
 				Expect(reqs.Has(v1.LabelInstanceTypeStable)).To(BeTrue())
 
-				Expect(reqs.Has(v1alpha2.LabelSKUName)).To(BeTrue())
+				Expect(reqs.Has(v1beta1.LabelSKUName)).To(BeTrue())
 
-				Expect(reqs.Has(v1alpha2.LabelSKUStoragePremiumCapable)).To(BeTrue())
-				Expect(reqs.Has(v1alpha2.LabelSKUEncryptionAtHostSupported)).To(BeTrue())
-				Expect(reqs.Has(v1alpha2.LabelSKUAcceleratedNetworking)).To(BeTrue())
-				Expect(reqs.Has(v1alpha2.LabelSKUHyperVGeneration)).To(BeTrue())
-				Expect(reqs.Has(v1alpha2.LabelSKUStorageEphemeralOSMaxSize)).To(BeTrue())
+				Expect(reqs.Has(v1beta1.LabelSKUStoragePremiumCapable)).To(BeTrue())
+				Expect(reqs.Has(v1beta1.LabelSKUAcceleratedNetworking)).To(BeTrue())
+				Expect(reqs.Has(v1beta1.LabelSKUHyperVGeneration)).To(BeTrue())
+				Expect(reqs.Has(v1beta1.LabelSKUStorageEphemeralOSMaxSize)).To(BeTrue())
 			}
 		})
 
@@ -920,18 +923,17 @@ var _ = Describe("InstanceType Provider", func() {
 				v1.LabelArchStable:          "amd64",
 				karpv1.CapacityTypeLabelKey: "on-demand",
 				// Well Known to AKS
-				v1alpha2.LabelSKUName:                      "Standard_NC24ads_A100_v4",
-				v1alpha2.LabelSKUFamily:                    "N",
-				v1alpha2.LabelSKUVersion:                   "4",
-				v1alpha2.LabelSKUStorageEphemeralOSMaxSize: "53.6870912",
-				v1alpha2.LabelSKUAcceleratedNetworking:     "true",
-				v1alpha2.LabelSKUEncryptionAtHostSupported: "true",
-				v1alpha2.LabelSKUStoragePremiumCapable:     "true",
-				v1alpha2.LabelSKUGPUName:                   "A100",
-				v1alpha2.LabelSKUGPUManufacturer:           "nvidia",
-				v1alpha2.LabelSKUGPUCount:                  "1",
-				v1alpha2.LabelSKUCPU:                       "24",
-				v1alpha2.LabelSKUMemory:                    "8192",
+				v1beta1.LabelSKUName:                      "Standard_NC24ads_A100_v4",
+				v1beta1.LabelSKUFamily:                    "N",
+				v1beta1.LabelSKUVersion:                   "4",
+				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53.6870912",
+				v1beta1.LabelSKUAcceleratedNetworking:     "true",
+				v1beta1.LabelSKUStoragePremiumCapable:     "true",
+				v1beta1.LabelSKUGPUName:                   "A100",
+				v1beta1.LabelSKUGPUManufacturer:           "nvidia",
+				v1beta1.LabelSKUGPUCount:                  "1",
+				v1beta1.LabelSKUCPU:                       "24",
+				v1beta1.LabelSKUMemory:                    "8192",
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
 				v1.LabelFailureDomainBetaZone:      fakeZone1,
@@ -941,7 +943,7 @@ var _ = Describe("InstanceType Provider", func() {
 				"topology.disk.csi.azure.com/zone": fakeZone1,
 				v1.LabelWindowsBuild:               "window",
 				// Cluster Label
-				v1alpha2.AKSLabelCluster: "test-cluster",
+				v1beta1.AKSLabelCluster: "test-cluster",
 			}
 
 			// Ensure that we're exercising all well known labels
@@ -972,26 +974,26 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(normalNode.Name).To(Equal("Standard_D2_v2"))
 			Expect(gpuNode.Name).To(Equal("Standard_NC24ads_A100_v4"))
 
-			Expect(normalNode.Requirements.Get(v1alpha2.LabelSKUName).Values()).To(ConsistOf("Standard_D2_v2"))
-			Expect(gpuNode.Requirements.Get(v1alpha2.LabelSKUName).Values()).To(ConsistOf("Standard_NC24ads_A100_v4"))
+			Expect(normalNode.Requirements.Get(v1beta1.LabelSKUName).Values()).To(ConsistOf("Standard_D2_v2"))
+			Expect(gpuNode.Requirements.Get(v1beta1.LabelSKUName).Values()).To(ConsistOf("Standard_NC24ads_A100_v4"))
 
-			Expect(normalNode.Requirements.Get(v1alpha2.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1alpha2.HyperVGenerationV1))
-			Expect(gpuNode.Requirements.Get(v1alpha2.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1alpha2.HyperVGenerationV2))
+			Expect(normalNode.Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV1))
+			Expect(gpuNode.Requirements.Get(v1beta1.LabelSKUHyperVGeneration).Values()).To(ConsistOf(v1beta1.HyperVGenerationV2))
 
-			Expect(normalNode.Requirements.Get(v1alpha2.LabelSKUVersion).Values()).To(ConsistOf("2"))
-			Expect(gpuNode.Requirements.Get(v1alpha2.LabelSKUVersion).Values()).To(ConsistOf("4"))
+			Expect(normalNode.Requirements.Get(v1beta1.LabelSKUVersion).Values()).To(ConsistOf("2"))
+			Expect(gpuNode.Requirements.Get(v1beta1.LabelSKUVersion).Values()).To(ConsistOf("4"))
 
 			// CPU (requirements and capacity)
-			Expect(normalNode.Requirements.Get(v1alpha2.LabelSKUCPU).Values()).To(ConsistOf("2"))
+			Expect(normalNode.Requirements.Get(v1beta1.LabelSKUCPU).Values()).To(ConsistOf("2"))
 			Expect(normalNode.Capacity.Cpu().Value()).To(Equal(int64(2)))
-			Expect(gpuNode.Requirements.Get(v1alpha2.LabelSKUCPU).Values()).To(ConsistOf("24"))
+			Expect(gpuNode.Requirements.Get(v1beta1.LabelSKUCPU).Values()).To(ConsistOf("24"))
 			Expect(gpuNode.Capacity.Cpu().Value()).To(Equal(int64(24)))
 
 			// Memory (requirements and capacity)
-			Expect(normalNode.Requirements.Get(v1alpha2.LabelSKUMemory).Values()).To(ConsistOf(fmt.Sprint(7 * 1024))) // 7GiB in MiB
-			Expect(normalNode.Capacity.Memory().Value()).To(Equal(int64(7 * 1024 * 1024 * 1024)))                     // 7GiB in bytes
-			Expect(gpuNode.Requirements.Get(v1alpha2.LabelSKUMemory).Values()).To(ConsistOf(fmt.Sprint(220 * 1024)))  // 220GiB in MiB
-			Expect(gpuNode.Capacity.Memory().Value()).To(Equal(int64(220 * 1024 * 1024 * 1024)))                      // 220GiB in bytes
+			Expect(normalNode.Requirements.Get(v1beta1.LabelSKUMemory).Values()).To(ConsistOf(fmt.Sprint(7 * 1024))) // 7GiB in MiB
+			Expect(normalNode.Capacity.Memory().Value()).To(Equal(int64(7 * 1024 * 1024 * 1024)))                    // 7GiB in bytes
+			Expect(gpuNode.Requirements.Get(v1beta1.LabelSKUMemory).Values()).To(ConsistOf(fmt.Sprint(220 * 1024)))  // 220GiB in MiB
+			Expect(gpuNode.Capacity.Memory().Value()).To(Equal(int64(220 * 1024 * 1024 * 1024)))                     // 220GiB in bytes
 
 			// GPU -- Number of GPUs
 			gpuQuantity, ok := gpuNode.Capacity["nvidia.com/gpu"]
@@ -1010,7 +1012,10 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
+			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
@@ -1042,12 +1047,15 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 
 	})
+
 	Context("ImageProvider + Image Family", func() {
 		DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
 			options := test.Options(test.OptionsFields{
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
+			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -1057,6 +1065,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}})
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
@@ -1070,15 +1079,16 @@ var _ = Describe("InstanceType Provider", func() {
 
 		},
 
-			Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-			Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-			Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-			Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-			Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-			Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
+			Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
 		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
+				statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -1087,6 +1097,7 @@ var _ = Describe("InstanceType Provider", func() {
 						Values:   []string{instanceType},
 					}})
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectScheduled(ctx, env.Client, pod)
@@ -1104,19 +1115,20 @@ var _ = Describe("InstanceType Provider", func() {
 				azureEnv.Reset()
 			},
 			Entry("Gen2, Gen1 instance type with AKSUbuntu image family",
-				"Standard_D2_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen1 instance type with AKSUbuntu image family",
-				"Standard_D2_v3", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("ARM instance type with AKSUbuntu image family",
-				"Standard_D16plds_v5", v1alpha2.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
+				"Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen2 instance type with AzureLinux image family",
-				"Standard_D2_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("Gen1 instance type with AzureLinux image family",
-				"Standard_D2_v3", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("ARM instance type with AzureLinux image family",
-				"Standard_D16plds_v5", v1alpha2.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 		)
 	})
+
 	Context("Instance Types", func() {
 		It("should support provisioning with no labels", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1263,7 +1275,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Verify that the node the pod was scheduled on has GPU resource and labels set
 			Expect(node.Status.Allocatable).To(HaveKeyWithValue(v1.ResourceName("nvidia.com/gpu"), resource.MustParse("1")))
 			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-name", "T4"))
-			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-manufacturer", v1alpha2.ManufacturerNvidia))
+			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-manufacturer", v1beta1.ManufacturerNvidia))
 			Expect(node.Labels).To(HaveKeyWithValue("karpenter.azure.com/sku-gpu-count", "1"))
 		})
 	})
@@ -1412,7 +1424,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, zone))
+			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, zone))
 
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm).NotTo(BeNil())
@@ -1441,11 +1453,109 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 
 			node := ExpectScheduled(ctx, env.Client, pod)
-			Expect(node.Labels).To(HaveKeyWithValue(v1alpha2.AlternativeLabelTopologyZone, ""))
+			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelTopologyZone, ""))
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Zones).To(BeEmpty())
+		})
+	})
+
+	Context("CloudProvider Create Error Cases", func() {
+		It("should return error when NodeClass readiness is Unknown", func() {
+			nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
+		})
+
+		It("should return error when instance type resolution fails", func() {
+			// Create and set up the status controller
+			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+
+			// Set NodeClass to Ready
+			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Reconcile the NodeClass to ensure status is updated
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+			azureEnv.MockSkuClientSingleton.SKUClient.Error = fmt.Errorf("failed to list SKUs")
+
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("resolving instance types"))
+		})
+
+		It("should return error when instance creation fails", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Create a NodeClaim with valid requirements
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			// Set up the instance provider to fail
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{
+					ErrorCode: sdkerrors.OperationNotAllowed,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, "Failed to create VM"),
+					},
+				},
+			)
+
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("creating instance failed"))
 		})
 	})
 })

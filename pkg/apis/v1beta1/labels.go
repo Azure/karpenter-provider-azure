@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha2
+package v1beta1
 
 import (
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -38,8 +38,6 @@ func init() {
 
 		LabelSKUStoragePremiumCapable,
 		LabelSKUStorageEphemeralOSMaxSize,
-
-		LabelSKUEncryptionAtHostSupported,
 
 		LabelSKUGPUName,
 		LabelSKUGPUManufacturer,
@@ -68,9 +66,6 @@ var (
 		options.AllowUndefined = karpv1.WellKnownLabels.Union(RestrictedLabels)
 	}
 
-	// alternative zone label for Machine (the standard one is protected for AKS nodes)
-	AlternativeLabelTopologyZone = Group + "/zone"
-
 	HyperVGenerationV1 = "1"
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
@@ -87,8 +82,6 @@ var (
 
 	LabelSKUStoragePremiumCapable     = Group + "/sku-storage-premium-capable"     // sku.IsPremiumIO
 	LabelSKUStorageEphemeralOSMaxSize = Group + "/sku-storage-ephemeralos-maxsize" // calculated as max(sku.CachedDiskBytes, sku.MaxResourceVolumeMB)
-
-	LabelSKUEncryptionAtHostSupported = Group + "/sku-encryptionathost-capable" // sku.EncryptionAtHostSupported
 
 	// GPU labels
 	LabelSKUGPUName         = Group + "/sku-gpu-name"         // e.g. A100 (GPU name / accelerator type we parse from vmSize)

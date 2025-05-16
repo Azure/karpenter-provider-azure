@@ -37,7 +37,7 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -76,7 +76,7 @@ type VirtualMachinePromise struct {
 }
 
 type Provider interface {
-	BeginCreate(context.Context, *v1alpha2.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
+	BeginCreate(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
@@ -141,7 +141,7 @@ func NewDefaultProvider(
 // from the VirtualMachinePromise.Wait() function.
 func (p *DefaultProvider) BeginCreate(
 	ctx context.Context,
-	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
@@ -257,8 +257,8 @@ func (p *DefaultProvider) DeleteNic(ctx context.Context, nicName string) error {
 }
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
-func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string) (err error) {
-	vmExt := p.getAKSIdentifyingExtension()
+func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string, tags map[string]*string) (err error) {
+	vmExt := p.getAKSIdentifyingExtension(tags)
 	vmExtName := *vmExt.Name
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine AKS identifying extension for %s", vmName))
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
@@ -270,8 +270,8 @@ func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmN
 	return nil
 }
 
-func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool) error {
-	vmExt := p.getCSExtension(cse, isWindows)
+func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool, tags map[string]*string) error {
+	vmExt := p.getCSExtension(cse, isWindows, tags)
 	vmExtName := *vmExt.Name
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine CSE for %s", vmName))
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
@@ -292,7 +292,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	}
 
 	skuAcceleratedNetworkingRequirements := scheduling.NewRequirements(
-		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
+		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpIn, "true"))
 
 	enableAcceleratedNetworking := false
 	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
@@ -370,7 +370,7 @@ type createVMOptions struct {
 	Location       string
 	SSHPublicKey   string
 	NodeIdentities []string
-	NodeClass      *v1alpha2.AKSNodeClass
+	NodeClass      *v1beta1.AKSNodeClass
 	LaunchTemplate *launchtemplate.Template
 	InstanceType   *corecloudprovider.InstanceType
 	ProvisionMode  string
@@ -533,7 +533,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
 func (p *DefaultProvider) beginLaunchInstance(
 	ctx context.Context,
-	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
@@ -621,14 +621,14 @@ func (p *DefaultProvider) beginLaunchInstance(
 			}
 
 			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows)
+				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
 				if err != nil {
 					// An error here is handled by CloudProvider create and calls instanceProvider.Delete (which cleans up the azure resources)
 					return err
 				}
 			}
 
-			err = p.createAKSIdentifyingExtension(ctx, resourceName)
+			err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
 			if err != nil {
 				return err
 			}
@@ -725,7 +725,7 @@ func (p *DefaultProvider) applyTemplateToNic(nic *armnetwork.Interface, template
 
 func (p *DefaultProvider) getLaunchTemplate(
 	ctx context.Context,
-	nodeClass *v1alpha2.AKSNodeClass,
+	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
@@ -842,7 +842,7 @@ func GetCapacityType(instance *armcompute.VirtualMachine) string {
 	return ""
 }
 
-func (p *DefaultProvider) getAKSIdentifyingExtension() *armcompute.VirtualMachineExtension {
+func (p *DefaultProvider) getAKSIdentifyingExtension(tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType                  = "Microsoft.Compute/virtualMachines/extensions"
 		aksIdentifyingExtensionName      = "computeAksLinuxBilling"
@@ -861,12 +861,13 @@ func (p *DefaultProvider) getAKSIdentifyingExtension() *armcompute.VirtualMachin
 			Type:                    lo.ToPtr(aksIdentifyingExtensionTypeLinux),
 		},
 		Type: lo.ToPtr(vmExtensionType),
+		Tags: tags,
 	}
 
 	return vmExtension
 }
 
-func (p *DefaultProvider) getCSExtension(cse string, isWindows bool) *armcompute.VirtualMachineExtension {
+func (p *DefaultProvider) getCSExtension(cse string, isWindows bool, tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType     = "Microsoft.Compute/virtualMachines/extensions"
 		cseNameWindows      = "windows-cse-agent-karpenter"
@@ -893,6 +894,7 @@ func (p *DefaultProvider) getCSExtension(cse string, isWindows bool) *armcompute
 				"commandToExecute": cse,
 			},
 		},
+		Tags: tags,
 	}
 }
 
