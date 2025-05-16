@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/awslabs/operatorpkg/object"
+	corestatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1564,6 +1565,104 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm.Zones).To(BeEmpty())
+		})
+	})
+
+	Context("CloudProvider Create Error Cases", func() {
+		It("should return error when NodeClass readiness is Unknown", func() {
+			nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("resolving NodeClass readiness, NodeClass is in Ready=Unknown"))
+		})
+
+		It("should return error when instance type resolution fails", func() {
+			// Create and set up the status controller
+			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+
+			// Set NodeClass to Ready
+			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Reconcile the NodeClass to ensure status is updated
+			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+			azureEnv.MockSkuClientSingleton.SKUClient.Error = fmt.Errorf("failed to list SKUs")
+
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("resolving instance types"))
+		})
+
+		It("should return error when instance creation fails", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Create a NodeClaim with valid requirements
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						karpv1.NodePoolLabelKey: nodePool.Name,
+					},
+				},
+				Spec: karpv1.NodeClaimSpec{
+					NodeClassRef: &karpv1.NodeClassReference{
+						Name:  nodeClass.Name,
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+					},
+				},
+			})
+
+			// Set up the instance provider to fail
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{
+					ErrorCode: sdkerrors.OperationNotAllowed,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(sdkerrors.OperationNotAllowed, "Failed to create VM"),
+					},
+				},
+			)
+
+			claim, err := cloudProvider.Create(ctx, nodeClaim)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
+			Expect(claim).To(BeNil())
+			Expect(err.Error()).To(ContainSubstring("creating instance failed"))
 		})
 	})
 })
