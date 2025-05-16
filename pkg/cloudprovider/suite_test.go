@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -194,7 +195,7 @@ var _ = Describe("CloudProvider", func() {
 			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
 					NodeName:   node.Name,
-					ProviderID: utils.ResourceIDToProviderID(ctx, utils.MkVMID(rg, vmName)),
+					ProviderID: utils.ResourceIDToProviderID(ctx, fake.MkVMID(rg, vmName)),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
