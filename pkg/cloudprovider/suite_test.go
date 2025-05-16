@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -48,7 +49,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -66,7 +67,7 @@ var fakeClock *clock.FakeClock
 var recorder events.Recorder
 
 var nodePool *karpv1.NodePool
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 var nodeClaim *karpv1.NodeClaim
 
 func TestCloudProvider(t *testing.T) {
@@ -169,6 +170,8 @@ var _ = Describe("CloudProvider", func() {
 		Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 		Expect(cloudProviderMachine).To(BeNil())
 	})
+
+	// TODO (chmcbrid): split Drift tests into their own test file drift_test.go
 	Context("Drift", func() {
 		var nodeClaim *karpv1.NodeClaim
 		var pod *v1.Pod
@@ -192,7 +195,7 @@ var _ = Describe("CloudProvider", func() {
 			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
 					NodeName:   node.Name,
-					ProviderID: utils.ResourceIDToProviderID(ctx, utils.MkVMID(rg, vmName)),
+					ProviderID: utils.ResourceIDToProviderID(ctx, fake.MkVMID(rg, vmName)),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -209,37 +212,75 @@ var _ = Describe("CloudProvider", func() {
 				},
 			})
 		})
+
 		It("should not fail if nodeClass does not exist", func() {
 			ExpectDeleted(ctx, env.Client, nodeClass)
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
+
 		It("should not fail if nodePool does not exist", func() {
 			ExpectDeleted(ctx, env.Client, nodePool)
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
+
 		It("should not return drifted if the NodeClaim is valid", func() {
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
+
 		It("should error drift if NodeClaim doesn't have provider id", func() {
 			nodeClaim.Status = karpv1.NodeClaimStatus{}
 			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 			Expect(err).To(HaveOccurred())
 			Expect(drifted).To(BeEmpty())
 		})
-		It("should trigger drift when the image gallery changes to SIG", func() {
-			options := test.Options(test.OptionsFields{
-				UseSIG: lo.ToPtr(true),
+
+		Context("Node Image Drift", func() {
+			It("should succeed with no drift when nothing changes", func() {
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
 			})
-			ctx = options.ToContext(ctx)
-			drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(string(drifted)).To(Equal("ImageVersionDrift"))
+
+			It("should succeed with no drift when ConditionTypeImagesReady is not true", func() {
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNoLongerReady", "test when images aren't ready")
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			// Note: this case shouldn't be able to happen in practice since if Images is empty ConditionTypeImagesReady should be false.
+			It("should error when Images are empty", func() {
+				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
+				nodeClass.Status.Images = []v1beta1.NodeImage{}
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("should trigger drift when the image gallery changes to SIG", func() {
+				test.ApplySIGImages(nodeClass)
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(ImageDrift))
+			})
+
+			It("should trigger drift when the image version changes", func() {
+				test.ApplyCIGImagesWithVersion(nodeClass, "202503.02.0")
+				ExpectApplied(ctx, env.Client, nodeClass)
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(ImageDrift))
+			})
 		})
 
 		Context("Kubernetes Version", func() {
@@ -251,7 +292,7 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should succeed with no drift when KubernetesVersionReady is not true", func() {
 				nodeClass = ExpectExists(ctx, env.Client, nodeClass)
-				nodeClass.StatusConditions().SetFalse(v1alpha2.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
+				nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
 				ExpectApplied(ctx, env.Client, nodeClass)
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
 				Expect(err).ToNot(HaveOccurred())

@@ -17,13 +17,13 @@ limitations under the License.
 package bootstrap
 
 import (
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type KubeletConfiguration struct {
-	v1alpha2.KubeletConfiguration
+	v1beta1.KubeletConfiguration
 
 	// MaxPods is the maximum number of pods that can run on a worker node instance.
 	MaxPods int32

@@ -32,8 +32,9 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -230,7 +231,7 @@ var _ = Describe("In Place Update Controller", func() {
 	BeforeEach(func() {
 		vmName = "vm-a"
 		vm = &armcompute.VirtualMachine{
-			ID:   lo.ToPtr(utils.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+			ID:   lo.ToPtr(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
 			Name: lo.ToPtr(vmName),
 		}
 
@@ -256,7 +257,7 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Force the goal hash into annotations here, which should prevent the reconciler from doing anything on Azure
-			nodeClaim.Annotations = map[string]string{v1alpha2.AnnotationInPlaceUpdateHash: hash}
+			nodeClaim.Annotations = map[string]string{v1beta1.AnnotationInPlaceUpdateHash: hash}
 
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
@@ -264,8 +265,8 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineUpdateBehavior.Calls()).To(Equal(0))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
-			Expect(nodeClaim.Annotations).To(HaveKey(v1alpha2.AnnotationInPlaceUpdateHash))
-			Expect(nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
 		})
 	})
 
@@ -283,8 +284,8 @@ var _ = Describe("In Place Update Controller", func() {
 
 			// The nodeClaim should have the InPlaceUpdateHash annotation
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
-			Expect(nodeClaim.Annotations).To(HaveKey(v1alpha2.AnnotationInPlaceUpdateHash))
-			Expect(nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
 		})
 
 		It("should add a hash annotation to NodeClaim and update VM if there are missing identities", func() {
@@ -310,8 +311,8 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedVM.Identity.UserAssignedIdentities).To(HaveKey("/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1"))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
-			Expect(nodeClaim.Annotations).To(HaveKey(v1alpha2.AnnotationInPlaceUpdateHash))
-			Expect(nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
 		})
 
 		It("should not call Azure if the expected identities already exist on the VM", func() {
@@ -328,8 +329,8 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineUpdateBehavior.Calls()).To(Equal(0))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
-			Expect(nodeClaim.Annotations).To(HaveKey(v1alpha2.AnnotationInPlaceUpdateHash))
-			Expect(nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
 		})
 
 		It("should not clear existing identities on VM", func() {
@@ -361,8 +362,8 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedVM.Identity.UserAssignedIdentities).To(HaveKey("/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myotheridentity"))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
-			Expect(nodeClaim.Annotations).To(HaveKey(v1alpha2.AnnotationInPlaceUpdateHash))
-			Expect(nodeClaim.Annotations[v1alpha2.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
 		})
 	})
 })

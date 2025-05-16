@@ -34,7 +34,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -56,7 +56,7 @@ func TestConsolidation(t *testing.T) {
 	RunSpecs(t, "Consolidation")
 }
 
-var nodeClass *v1alpha2.AKSNodeClass
+var nodeClass *v1beta1.AKSNodeClass
 
 var _ = BeforeEach(func() {
 	nodeClass = env.DefaultAKSNodeClass()
@@ -247,7 +247,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUCPU,
+						Key:      v1beta1.LabelSKUCPU,
 						Operator: corev1.NodeSelectorOpIn,
 						Values:   []string{"8"},
 					},
@@ -309,7 +309,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1alpha2.LabelSKUCPU,
+						Key:      v1beta1.LabelSKUCPU,
 						Operator: corev1.NodeSelectorOpIn,
 						Values:   []string{"4", "8"},
 					},
@@ -504,14 +504,14 @@ var _ = Describe("Consolidation", Ordered, func() {
 								},
 								{
 									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      v1alpha2.LabelSKUCPU,
+										Key:      v1beta1.LabelSKUCPU,
 										Operator: corev1.NodeSelectorOpIn,
 										Values:   []string{"2", "4", "8"},
 									},
 								},
 								{
 									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      v1alpha2.LabelSKUFamily,
+										Key:      v1beta1.LabelSKUFamily,
 										Operator: corev1.NodeSelectorOpNotIn,
 										// remove some cheap burstable types so we have more control over what gets provisioned
 										Values: []string{"B"},
@@ -599,14 +599,14 @@ var _ = Describe("Consolidation", Ordered, func() {
 								},
 								{
 									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      v1alpha2.LabelSKUCPU,
+										Key:      v1beta1.LabelSKUCPU,
 										Operator: corev1.NodeSelectorOpIn,
 										Values:   []string{"2", "8"},
 									},
 								},
 								{
 									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      v1alpha2.LabelSKUFamily,
+										Key:      v1beta1.LabelSKUFamily,
 										Operator: corev1.NodeSelectorOpNotIn,
 										// remove some cheap burstable types so we have more control over what gets provisioned
 										Values: []string{"B"},
@@ -753,14 +753,14 @@ var _ = Describe("Consolidation", Ordered, func() {
 							},
 							{
 								NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-									Key:      v1alpha2.LabelSKUCPU,
+									Key:      v1beta1.LabelSKUCPU,
 									Operator: corev1.NodeSelectorOpIn,
 									Values:   []string{"2"},
 								},
 							},
 							{
 								NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-									Key:      v1alpha2.LabelSKUFamily,
+									Key:      v1beta1.LabelSKUFamily,
 									Operator: corev1.NodeSelectorOpNotIn,
 									// remove some cheap burstable types so we have more control over what gets provisioned
 									Values: []string{"B"},
@@ -829,7 +829,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			},
 			karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1alpha2.LabelSKUCPU,
+					Key:      v1beta1.LabelSKUCPU,
 					Operator: corev1.NodeSelectorOpIn,
 					Values:   []string{"2"},
 				},
