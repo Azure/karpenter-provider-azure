@@ -115,7 +115,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
 	}
 	if nodeClassReady.IsUnknown() {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", truncateMessage(nodeClassReady.Message)), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
 	}
 	// Note: we make a call for GetKubernetesVersion here, as it has an internal check for the kubernetes version readiness KubernetesVersionReady,
 	//     where we don't want to proceed if it is unready.
@@ -130,14 +130,14 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %s", truncateMessage(err.Error())), InstanceTypeResolutionFailedReason, err.Error())
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, truncateMessage(err.Error()))
 	}
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 	}
 	instancePromise, err := c.instanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %s", truncateMessage(err.Error())), CreateInstanceFailedReason, err.Error())
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
 
 	// Launch a single goroutine to poll the returned promise.
