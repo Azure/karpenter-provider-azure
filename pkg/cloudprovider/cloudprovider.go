@@ -41,7 +41,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 
 	"github.com/samber/lo"
@@ -60,6 +59,12 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
+)
+
+const (
+	NodeClassReadinessUnknownReason    = "NodeClassReadinessUnknown"
+	InstanceTypeResolutionFailedReason = "InstanceTypeResolutionFailed"
+	CreateInstanceFailedReason         = "CreateInstanceFailed"
 )
 
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
@@ -110,7 +115,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
 	}
 	if nodeClassReady.IsUnknown() {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), consts.NodeClassReadinessUnknownReason, nodeClassReady.Message)
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
 	}
 	// Note: we make a call for GetKubernetesVersion here, as it has an internal check for the kubernetes version readiness KubernetesVersionReady,
 	//     where we don't want to proceed if it is unready.
@@ -125,14 +130,14 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	instanceTypes, err := c.resolveInstanceTypes(ctx, nodeClaim, nodeClass)
 	if err != nil {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), consts.InstanceTypeResolutionFailedReason, err.Error())
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving instance types, %w", err), InstanceTypeResolutionFailedReason, err.Error())
 	}
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 	}
 	instancePromise, err := c.instanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), consts.CreateInstanceFailedReason, err.Error())
+		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, err.Error())
 	}
 
 	// Launch a single goroutine to poll the returned promise.
