@@ -60,6 +60,7 @@ var (
 	}
 
 	SubscriptionQuotaReachedReason              = "SubscriptionQuotaReached"
+	AllocationFailureReason                     = "AllocationFailure"
 	ZonalAllocationFailureReason                = "ZonalAllocationFailure"
 	OverconstrainedZonalAllocationFailureReason = "OverconstrainedZonalAllocationFailure"
 	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
@@ -702,14 +703,17 @@ func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType
 
 		return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
 	}
-	// TODO - should we be handling this error? Block specific VM Size in all zones?
 	// AllocationFailure means that VM allocation to the dedicated host has failed. But it can also mean "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."
 	if sdkerrors.AllocationFailureOccurred(err) {
-		// TODO - this gives us duplicate keys that we try to mark in cache, can probably refactor it to avoid unnecessary work
+		// instanceType.Offerings contains multiple entries for one zone, but we only care that zone appears at least once, this avoids extra calls to MarkUnavailable
+		zonesToBlock := make(map[string]struct{})
 		for _, offering := range instanceType.Offerings {
 			offeringZone := getOfferingZone(offering)
-			p.unavailableOfferings.MarkUnavailable(ctx, SKUNotAvailableReason, instanceType.Name, offeringZone, karpv1.CapacityTypeOnDemand)
-			p.unavailableOfferings.MarkUnavailable(ctx, SKUNotAvailableReason, instanceType.Name, offeringZone, karpv1.CapacityTypeSpot)
+			zonesToBlock[offeringZone] = struct{}{}
+		}
+		for zone := range zonesToBlock {
+			p.unavailableOfferings.MarkUnavailable(ctx, AllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand)
+			p.unavailableOfferings.MarkUnavailable(ctx, AllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot)
 		}
 
 		return fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", instanceType.Name)
