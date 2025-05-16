@@ -22,10 +22,10 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// getKarpenterWorkingSKUs returns a the list of SKUs that are
+// GetKarpenterWorkingSKUs returns a the list of SKUs that are
 // allowed to be used by Karpenter. This is a subset of the
 // SKUs that are available in Azure.
-func getKarpenterWorkingSKUs() []skewer.SKU {
+func GetKarpenterWorkingSKUs() []skewer.SKU {
 	workingSKUs := []skewer.SKU{}
 	for _, sku := range allAzureVMSkus {
 		var exclude bool
@@ -143,7 +143,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_B12ms"),
 	},
 	{
-		Name: ptr.To("Standard_B16als_v2"),
+		Name: ptr.To("Standard_B16also_v2"),
 	},
 	{
 		Name: ptr.To("Standard_B16as_v2"),
@@ -176,7 +176,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_B20ms"),
 	},
 	{
-		Name: ptr.To("Standard_B2als_v2"),
+		Name: ptr.To("Standard_B2also_v2"),
 	},
 	{
 		Name: ptr.To("Standard_B2as_v2"),
@@ -209,7 +209,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_B2ts_v2"),
 	},
 	{
-		Name: ptr.To("Standard_B32als_v2"),
+		Name: ptr.To("Standard_B32also_v2"),
 	},
 	{
 		Name: ptr.To("Standard_B32as_v2"),
@@ -221,7 +221,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_B32s_v2"),
 	},
 	{
-		Name: ptr.To("Standard_B4als_v2"),
+		Name: ptr.To("Standard_B4also_v2"),
 	},
 	{
 		Name: ptr.To("Standard_B4as_v2"),
@@ -242,7 +242,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_B4s_v2"),
 	},
 	{
-		Name: ptr.To("Standard_B8als_v2"),
+		Name: ptr.To("Standard_B8also_v2"),
 	},
 	{
 		Name: ptr.To("Standard_B8as_v2"),
@@ -326,7 +326,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D16alds_v6"),
 	},
 	{
-		Name: ptr.To("Standard_D16als_v6"),
+		Name: ptr.To("Standard_D16also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_D16as_v4"),
@@ -434,7 +434,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D2alds_v6"),
 	},
 	{
-		Name: ptr.To("Standard_D2als_v6"),
+		Name: ptr.To("Standard_D2also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_D2as_v4"),
@@ -539,7 +539,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D32alds_v6"),
 	},
 	{
-		Name: ptr.To("Standard_D32als_v6"),
+		Name: ptr.To("Standard_D32also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_D32as_v4"),
@@ -644,7 +644,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D48alds_v6"),
 	},
 	{
-		Name: ptr.To("Standard_D48als_v6"),
+		Name: ptr.To("Standard_D48also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_D48as_v4"),
@@ -740,7 +740,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D4alds_v6"),
 	},
 	{
-		Name: ptr.To("Standard_D4als_v6"),
+		Name: ptr.To("Standard_D4also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_D4as_v4"),
@@ -848,7 +848,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D64alds_v6"),
 	},
 	{
-		Name: ptr.To("Standard_D64als_v6"),
+		Name: ptr.To("Standard_D64also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_D64as_v4"),
@@ -944,7 +944,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D8alds_v6"),
 	},
 	{
-		Name: ptr.To("Standard_D8als_v6"),
+		Name: ptr.To("Standard_D8also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_D8as_v4"),
@@ -1040,7 +1040,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_D96alds_v6"),
 	},
 	{
-		Name: ptr.To("Standard_D96als_v6"),
+		Name: ptr.To("Standard_D96also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_D96as_v4"),
@@ -2519,7 +2519,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F16"),
 	},
 	{
-		Name: ptr.To("Standard_F16als_v6"),
+		Name: ptr.To("Standard_F16also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_F16ams_v6"),
@@ -2540,7 +2540,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F2"),
 	},
 	{
-		Name: ptr.To("Standard_F2als_v6"),
+		Name: ptr.To("Standard_F2also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_F2ams_v6"),
@@ -2555,7 +2555,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F2s_v2"),
 	},
 	{
-		Name: ptr.To("Standard_F32als_v6"),
+		Name: ptr.To("Standard_F32also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_F32ams_v6"),
@@ -2570,7 +2570,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F4"),
 	},
 	{
-		Name: ptr.To("Standard_F48als_v6"),
+		Name: ptr.To("Standard_F48also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_F48ams_v6"),
@@ -2582,7 +2582,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F48s_v2"),
 	},
 	{
-		Name: ptr.To("Standard_F4als_v6"),
+		Name: ptr.To("Standard_F4also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_F4ams_v6"),
@@ -2597,7 +2597,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F4s_v2"),
 	},
 	{
-		Name: ptr.To("Standard_F64als_v6"),
+		Name: ptr.To("Standard_F64also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_F64ams_v6"),
@@ -2615,7 +2615,7 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_F8"),
 	},
 	{
-		Name: ptr.To("Standard_F8als_v6"),
+		Name: ptr.To("Standard_F8also_v6"),
 	},
 	{
 		Name: ptr.To("Standard_F8ams_v6"),
