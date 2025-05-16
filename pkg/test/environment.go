@@ -54,7 +54,7 @@ type Environment struct {
 	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
 	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
-	MockSkuClientSignalton      *fake.MockSkuClientSingleton
+	MockSkuClientSingleton      *fake.MockSkuClientSingleton
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 
@@ -160,7 +160,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NetworkInterfacesAPI:        networkInterfacesAPI,
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
-		MockSkuClientSignalton:      skuClientSingleton,
+		MockSkuClientSingleton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
@@ -187,10 +187,11 @@ func (env *Environment) Reset() {
 	env.NetworkInterfacesAPI.Reset()
 	env.LoadBalancersAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
-	env.MockSkuClientSignalton.Reset()
+	env.MockSkuClientSingleton.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
 	env.ImageProvider.Reset()
+	env.MockSkuClientSingleton.SKUClient.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.InstanceTypeCache.Flush()

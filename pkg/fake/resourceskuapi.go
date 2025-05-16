@@ -47,14 +47,19 @@ var _ skewer.ResourceClient = &ResourceSKUsAPI{}
 type ResourceSKUsAPI struct {
 	Location string
 	// skewer.ResourceClient
+	Error error
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
 func (s *ResourceSKUsAPI) Reset() {
 	//c.ResourceSKUsBehavior.Reset()
+	s.Error = nil
 }
 
 func (s *ResourceSKUsAPI) ListComplete(_ context.Context, _, _ string) (compute.ResourceSkusResultIterator, error) {
+	if s.Error != nil {
+		return compute.ResourceSkusResultIterator{}, s.Error
+	}
 	resourceSkus := ResourceSkus[s.Location]
 	return compute.NewResourceSkusResultIterator(
 		compute.NewResourceSkusResultPage(
