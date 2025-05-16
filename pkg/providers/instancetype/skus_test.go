@@ -16,21 +16,21 @@ limitations under the License.
 
 package instancetype
 
-import "k8s.io/apimachinery/pkg/util/sets"
-
-var (
-	RestrictedVMSizes = sets.New(
-		"Standard_A0",
-		"Standard_A1",
-		"Standard_A1_v2",
-		"Standard_B1s",
-		"Standard_B1ms",
-		"Standard_F1",
-		"Standard_F1s",
-		"Basic_A0",
-		"Basic_A1",
-		"Basic_A2",
-		"Basic_A3",
-		"Basic_A4",
-	)
+import (
+	"testing"
 )
+
+func TestGetKarpenterWorkingSKUs(t *testing.T) {
+	for _, sku := range getKarpenterWorkingSKUs() {
+		for _, aksRestrictedSKU := range AKSRestrictedVMSizes.UnsortedList() {
+			if aksRestrictedSKU == *sku.Name {
+				t.Errorf("AKS restricted SKU %s should not be in the list of SKUs", aksRestrictedSKU)
+			}
+		}
+		for _, karpenterRestrictedSKU := range karpenterRestrictedVMSKUs.UnsortedList() {
+			if karpenterRestrictedSKU == *sku.Name {
+				t.Errorf("Karpenter restricted SKU %s should not be in the list of SKUs", karpenterRestrictedSKU)
+			}
+		}
+	}
+}

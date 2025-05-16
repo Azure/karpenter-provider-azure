@@ -23,14 +23,16 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 )
 
 var ctx context.Context
@@ -60,6 +62,8 @@ var _ = Describe("Options", func() {
 		"SIG_ACCESS_TOKEN_SERVER_URL",
 		"SIG_ACCESS_TOKEN_SCOPE",
 		"SIG_SUBSCRIPTION_ID",
+		"AZURE_NODE_RESOURCE_GROUP",
+		"KUBELET_IDENTITY_CLIENT_ID",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -109,13 +113,15 @@ var _ = Describe("Options", func() {
 			os.Setenv("SIG_ACCESS_TOKEN_SCOPE", "http://valid-scope.com/.default")
 			os.Setenv("SIG_SUBSCRIPTION_ID", "my-subscription-id")
 			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
+			os.Setenv("AZURE_NODE_RESOURCE_GROUP", "my-node-rg")
+			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "2345678-1234-1234-1234-123456789012")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
 			opts.AddFlags(fs)
 			err := opts.Parse(fs)
 			Expect(err).ToNot(HaveOccurred())
-			expectOptionsEqual(opts, test.Options(test.OptionsFields{
+			expectedOpts := test.Options(test.OptionsFields{
 				ClusterName:                    lo.ToPtr("env-cluster"),
 				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
@@ -123,6 +129,7 @@ var _ = Describe("Options", func() {
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
 				NetworkPlugin:                  lo.ToPtr("none"),
+				NetworkPluginMode:              lo.ToPtr(""),
 				NetworkPolicy:                  lo.ToPtr("env-network-policy"),
 				SubnetID:                       lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"),
 				NodeIdentities:                 []string{"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2"},
@@ -133,7 +140,10 @@ var _ = Describe("Options", func() {
 				SIGAccessTokenServerURL:        lo.ToPtr("http://valid-server.com"),
 				SIGAccessTokenScope:            lo.ToPtr("http://valid-scope.com/.default"),
 				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
-			}))
+				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
+				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
+			})
+			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
 		})
 	})
 	Context("Validation", func() {
@@ -225,6 +235,17 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("missing field, vnet-subnet-id")))
 		})
+		It("should fail validation when nodeResourceGroup not included", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+			)
+			Expect(err).To(MatchError(ContainSubstring("missing field, node-resource-group")))
+		})
 		It("should fail validation when VNet SubnetID is invalid (not absolute)", func() {
 			err := opts.Parse(
 				fs,
@@ -295,6 +316,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "azure",
 				"--network-plugin-mode", "",
+				"--node-resource-group", "my-node-rg",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -308,6 +330,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--network-plugin", "none",
 				"--network-plugin-mode", "",
+				"--node-resource-group", "my-node-rg",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -322,6 +345,7 @@ var _ = Describe("Options", func() {
 				"--network-plugin", "azure",
 				"--network-plugin-mode", "overlay",
 				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
+				"--node-resource-group", "my-node-rg",
 			)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -417,16 +441,3 @@ var _ = Describe("Options", func() {
 		})
 	})
 })
-
-func expectOptionsEqual(optsA *options.Options, optsB *options.Options) {
-	GinkgoHelper()
-	Expect(optsA.ClusterName).To(Equal(optsB.ClusterName))
-	Expect(optsA.ClusterEndpoint).To(Equal(optsB.ClusterEndpoint))
-	Expect(optsA.VMMemoryOverheadPercent).To(Equal(optsB.VMMemoryOverheadPercent))
-	Expect(optsA.ClusterID).To(Equal(optsB.ClusterID))
-	Expect(optsA.KubeletClientTLSBootstrapToken).To(Equal(optsB.KubeletClientTLSBootstrapToken))
-	Expect(optsA.SSHPublicKey).To(Equal(optsB.SSHPublicKey))
-	Expect(optsA.NetworkPlugin).To(Equal(optsB.NetworkPlugin))
-	Expect(optsA.NetworkPolicy).To(Equal(optsB.NetworkPolicy))
-	Expect(optsA.NodeIdentities).To(Equal(optsB.NodeIdentities))
-}

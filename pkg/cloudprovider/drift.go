@@ -23,9 +23,8 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
@@ -40,16 +39,16 @@ import (
 )
 
 const (
-	NodeClassDrift    cloudprovider.DriftReason = "NodeClassDrift"
-	K8sVersionDrift   cloudprovider.DriftReason = "K8sVersionDrift"
-	ImageVersionDrift cloudprovider.DriftReason = "ImageVersionDrift"
-	SubnetDrift       cloudprovider.DriftReason = "SubnetDrift"
+	NodeClassDrift  cloudprovider.DriftReason = "NodeClassDrift"
+	K8sVersionDrift cloudprovider.DriftReason = "K8sVersionDrift"
+	ImageDrift      cloudprovider.DriftReason = "ImageDrift"
+	SubnetDrift     cloudprovider.DriftReason = "SubnetDrift"
 
 	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
 	NoDrift cloudprovider.DriftReason = ""
 )
 
-func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	// First check if the node class is statically staticFieldsDrifted to save on API calls.
 	if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
 		return staticFieldsDrifted, nil
@@ -61,7 +60,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	if k8sVersionDrifted != "" {
 		return k8sVersionDrifted, nil
 	}
-	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim)
+	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim, nodeClass)
 	if err != nil {
 		return "", err
 	}
@@ -78,11 +77,11 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	return "", nil
 }
 
-func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) cloudprovider.DriftReason {
-	nodeClassHash, foundNodeClassHash := nodeClass.Annotations[v1alpha2.AnnotationAKSNodeClassHash]
-	nodeClassHashVersion, foundNodeClassHashVersion := nodeClass.Annotations[v1alpha2.AnnotationAKSNodeClassHashVersion]
-	nodeClaimHash, foundNodeClaimHash := nodeClaim.Annotations[v1alpha2.AnnotationAKSNodeClassHash]
-	nodeClaimHashVersion, foundNodeClaimHashVersion := nodeClaim.Annotations[v1alpha2.AnnotationAKSNodeClassHashVersion]
+func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) cloudprovider.DriftReason {
+	nodeClassHash, foundNodeClassHash := nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHash]
+	nodeClassHashVersion, foundNodeClassHashVersion := nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHashVersion]
+	nodeClaimHash, foundNodeClaimHash := nodeClaim.Annotations[v1beta1.AnnotationAKSNodeClassHash]
+	nodeClaimHashVersion, foundNodeClaimHashVersion := nodeClaim.Annotations[v1beta1.AnnotationAKSNodeClassHashVersion]
 
 	if !foundNodeClassHash || !foundNodeClaimHash || !foundNodeClassHashVersion || !foundNodeClaimHashVersion {
 		return ""
@@ -94,7 +93,7 @@ func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, node
 	return lo.Ternary(nodeClassHash != nodeClaimHash, NodeClassDrift, "")
 }
 
-func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
 
 	k8sVersion, err := nodeClass.GetKubernetesVersion()
@@ -139,51 +138,68 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 // Feel reassessing this within the future with a potential minor refactor would be best to fix the gocyclo.
 // nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
-	ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
+	ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be fine/impossible.
 		return "", err
 	}
 
 	vm, err := c.instanceProvider.Get(ctx, id)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
+		//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
 		return "", err
 	}
 	if vm == nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
+		//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
 		return "", fmt.Errorf("vm with id %s missing", id)
 	}
 
 	if vm.Properties == nil ||
 		vm.Properties.StorageProfile == nil ||
 		vm.Properties.StorageProfile.ImageReference == nil {
+		// TODO (charliedmcb): this seems like an error case to me, but maybe not one to hard fail on? Is it even possible?
+		//     We may want to collect this with the other errors up a level as to not block other drift conditions.
 		return "", nil
 	}
 	CIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
 	SIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
 	vmImageID := lo.Ternary(SIGID != "", SIGID, CIGID)
 
-	var imageStub imagefamily.DefaultImageOutput
-	imageStub.PopulateImageTraitsFromID(vmImageID)
-
-	expectedImageID, err := c.imageProvider.GetLatestImageID(ctx, imageStub)
+	nodeImages, err := nodeClass.GetImages()
+	// Note: this differs from AWS, as they don't check for status readiness during Drift.
 	if err != nil {
-		return "", err
+		// Note: we don't consider this a hard failure for drift if the Images are not ready to use, so we ignore returning the error here.
+		// The stored Images must be ready to use if we are to calculate potential Drift based on them.
+		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
+		logger.Info(fmt.Sprintf("WARN: NodeImage readiness invalid when checking drift: %s", err))
+		return "", nil //nolint:nilerr
+	}
+	if len(nodeImages) == 0 {
+		// Note: this case shouldn't happen, since if there are no nodeImages, the ConditionTypeImagesReady should be false.
+		//     However, if it would happen, we want this to error, as it means the NodeClass is in a state it can't provision nodes.
+		return "", fmt.Errorf("no images exist for the given constraints")
 	}
 
-	if vmImageID != expectedImageID {
-		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, with expected image id %s, and actual image id %s", ImageVersionDrift, expectedImageID, vmImageID))
-		return ImageVersionDrift, nil
+	for _, availableImage := range nodeImages {
+		if availableImage.ID == vmImageID {
+			return "", nil
+		}
 	}
-	return "", nil
+
+	logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as actual image id %s was not found in the set of currently available node images", ImageDrift, vmImageID))
+	return ImageDrift, nil
 }
 
 // isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
-func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1alpha2.AKSNodeClass) (cloudprovider.DriftReason, error) {
+func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	expectedSubnet := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
 	nicName := instance.GenerateResourceName(nodeClaim.Name)
 

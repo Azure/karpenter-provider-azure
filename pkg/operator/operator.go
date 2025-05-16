@@ -40,7 +40,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
@@ -131,8 +131,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.TenantID,
 		azConfig.SubscriptionID,
 		azConfig.ResourceGroup,
-		azConfig.KubeletIdentityClientID,
-		azConfig.NodeResourceGroup,
+		options.FromContext(ctx).KubeletIdentityClientID,
+		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.Location,
 		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
@@ -147,7 +147,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
-		azConfig.NodeResourceGroup,
+		options.FromContext(ctx).NodeResourceGroup,
 	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,
@@ -156,7 +156,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		loadBalancerProvider,
 		unavailableOfferingsCache,
 		azConfig.Location,
-		azConfig.NodeResourceGroup,
+		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
 	)
@@ -232,7 +232,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 	var requiredGVKs = []schema.GroupVersionKind{
 		gvk(&karpv1.NodePool{}),
 		gvk(&karpv1.NodeClaim{}),
-		gvk(&v1alpha2.AKSNodeClass{}),
+		gvk(&v1beta1.AKSNodeClass{}),
 	}
 
 	client, err := rest.HTTPClientFor(config)
