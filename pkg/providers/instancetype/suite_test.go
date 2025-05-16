@@ -198,7 +198,7 @@ var _ = Describe("InstanceType Provider", func() {
 			vmName := instance.GenerateResourceName(nodeClaim.Name)
 			vm := &armcompute.VirtualMachine{
 				Name:     lo.ToPtr(vmName),
-				ID:       lo.ToPtr(utils.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+				ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
 				Location: lo.ToPtr(fake.Region),
 				Zones:    []*string{lo.ToPtr("fantasy-zone")}, // Makes sure we do not get a match from the existing set of zones
 				Properties: &armcompute.VirtualMachineProperties{
