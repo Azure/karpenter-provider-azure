@@ -30,12 +30,9 @@ import (
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1 "k8s.io/api/core/v1"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	nodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 )
 
 const (
@@ -114,16 +111,24 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		return "", nil
 	}
 
-	n := &v1.Node{}
-	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, n); err != nil {
-		// Core's check for Launched status should currently prevent us from getting here before the node exists because of the LRO block on Create:
-		// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
-		// However, in my opinion, we should look at updating this logic to ignore NotFound errors as we fix the LRO issue.
-		// Shouldn't cause an issue to my awareness, but could be noisy.
-		// TODO: re-evaluate ignoring NotFound error, and using core's library for nodeclaims. Similar to usage here:
-		// https://github.com/kubernetes-sigs/karpenter/blob/bbe6bd27e65d88fe55376b6c3c2c828312c105c4/pkg/controllers/nodeclaim/lifecycle/registration.go#L53
+	n, err := nodeclaimutils.NodeForNodeClaim(ctx, c.kubeClient, nodeClaim)
+	if err != nil {
+		if nodeclaimutils.IsNodeNotFoundError(err) {
+			// We do not return an error here as its expected within the lifecycle of the nodeclaims registration.
+			// Core's checks only for Launched status which means we've started the create, but the node doesn't nessicarially exist yet
+			// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
+			return "", nil
+		}
+		if nodeclaimutils.IsDuplicateNodeError(err) {
+			logger.V(1).Info("WARN: Duplicate node error, invariant violated.")
+		}
 		return "", err
 	}
+	if !n.DeletionTimestamp.IsZero() {
+		// We do not need to check for drift if the node is being deleted.
+		return "", nil
+	}
+
 	nodeK8sVersion := strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")
 
 	if nodeK8sVersion != k8sVersion {
