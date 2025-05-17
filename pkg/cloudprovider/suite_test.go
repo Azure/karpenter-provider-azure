@@ -23,9 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
-
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
 	. "github.com/onsi/ginkgo/v2"
@@ -33,20 +30,18 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
-
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -54,7 +49,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 var ctx context.Context
@@ -176,6 +171,8 @@ var _ = Describe("CloudProvider", func() {
 	Context("Drift", func() {
 		var nodeClaim *karpv1.NodeClaim
 		var pod *v1.Pod
+		var node *v1.Node
+
 		BeforeEach(func() {
 			instanceType := "Standard_D2_v2"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -183,9 +180,15 @@ var _ = Describe("CloudProvider", func() {
 				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 			})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
-			node := ExpectScheduled(ctx, env.Client, pod)
+			node = ExpectScheduled(ctx, env.Client, pod)
 			// KubeletVersion must be applied to the node to satisfy k8s drift
 			node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
+			node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2" // random UUID
+			// Context must have same kubelet client id
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				KubeletIdentityClientID: lo.ToPtr(node.Labels[v1beta1.AKSLabelKubeletIdentityClientID]),
+			}))
+
 			ExpectApplied(ctx, env.Client, node)
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -330,7 +333,7 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			It("shouldn't error or be drifted when node is deleting", func() {
-				node := ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+				node = ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
 				node.Finalizers = append(node.Finalizers, test.TestingFinalizer)
 				ExpectApplied(ctx, env.Client, node)
 				Expect(env.Client.Delete(ctx, node)).ToNot(HaveOccurred())
@@ -362,5 +365,26 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(K8sVersionDrift))
 			})
 		})
+
+		Context("Kubelet Client ID", func() {
+			It("should NOT trigger drift if node doesn't have kubelet client ID label", func() {
+				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "" // Not set
+
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(BeEmpty())
+			})
+
+			It("should trigger drift if node kubelet client ID doesn't match options", func() {
+				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					KubeletIdentityClientID: lo.ToPtr("3824ff7a-93b6-40af-b861-2eb621ba437a"), // a different random UUID
+				}))
+
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(KubeletIdentityDrift))
+			})
+		})
+
 	})
 })
