@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/samber/lo"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -49,6 +51,16 @@ func (env *Environment) GetVMByName(vmName string) armcompute.VirtualMachine {
 	response, err := env.vmClient.Get(env.Context, env.NodeResourceGroup, vmName, nil)
 	Expect(err).ToNot(HaveOccurred())
 	return response.VirtualMachine
+}
+
+func (env *Environment) SimulateVMEviction(nodeName string) {
+	GinkgoHelper()
+	vm := env.GetVM(nodeName)
+	Expect(vm.Name).ToNot(BeNil())
+	vmName := lo.FromPtr(vm.Name)
+
+	_, err := env.vmClient.SimulateEviction(env.Context, env.NodeResourceGroup, vmName, &armcompute.VirtualMachinesClientSimulateEvictionOptions{})
+	Expect(err).ToNot(HaveOccurred())
 }
 
 func (env *Environment) GetNetworkInterface(nicName string) armnetwork.Interface {
