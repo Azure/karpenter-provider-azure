@@ -157,48 +157,49 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		ShouldConfigureCustomCATrust:      false,                  // cd
 		CustomCATrustConfigCerts:          []string{},             // cd
 
-		OutboundCommand:                 "curl -v --insecure --proxy-insecure https://mcr.microsoft.com/v2/", // s
-		EnableUnattendedUpgrades:        false,                                                               // cd
-		IsKrustlet:                      false,                                                               // td
-		ShouldConfigSwapFile:            false,                                                               // td
-		ShouldConfigTransparentHugePage: false,                                                               // td
-		TargetCloud:                     "AzurePublicCloud",                                                  // n
-		TargetEnvironment:               "AzurePublicCloud",                                                  // n
-		CustomEnvJSON:                   "",                                                                  // n
-		IsCustomCloud:                   false,                                                               // n
-		CSEHelpersFilepath:              "/opt/azure/containers/provision_source.sh",                         // s
-		CSEDistroHelpersFilepath:        "/opt/azure/containers/provision_source_distro.sh",                  // s
-		CSEInstallFilepath:              "/opt/azure/containers/provision_installs.sh",                       // s
-		CSEDistroInstallFilepath:        "/opt/azure/containers/provision_installs_distro.sh",                // s
-		CSEConfigFilepath:               "/opt/azure/containers/provision_configs.sh",                        // s
-		AzurePrivateRegistryServer:      "",                                                                  // cd
-		HasCustomSearchDomain:           false,                                                               // cd
-		CustomSearchDomainFilepath:      "/opt/azure/containers/setup-custom-search-domains.sh",              // s
-		HTTPProxyURLs:                   "",                                                                  // cd
-		HTTPSProxyURLs:                  "",                                                                  // cd
-		NoProxyURLs:                     "",                                                                  // cd
-		TLSBootstrappingEnabled:         true,                                                                // s
-		SecureTLSBootstrappingEnabled:   false,                                                               // s
-		THPEnabled:                      "",                                                                  // cd
-		THPDefrag:                       "",                                                                  // cd
-		ServicePrincipalFileContent:     base64.StdEncoding.EncodeToString([]byte("msi")),                    // s
-		KubeletClientContent:            "",                                                                  // -
-		KubeletClientCertContent:        "",                                                                  // -
-		KubeletConfigFileEnabled:        false,                                                               // s
-		KubeletConfigFileContent:        "",                                                                  // s
-		SwapFileSizeMB:                  0,                                                                   // td
-		GPUInstanceProfile:              "",                                                                  // td
-		CustomSearchDomainName:          "",                                                                  // cd
-		CustomSearchRealmUser:           "",                                                                  // cd
-		CustomSearchRealmPassword:       "",                                                                  // cd
-		MessageOfTheDay:                 "",                                                                  // td
-		HasKubeletDiskType:              false,                                                               // td
-		SysctlContent:                   base64.StdEncoding.EncodeToString(sysctlContent),                    // td
-		KubeletFlags:                    "",                                                                  // psX
-		AzureEnvironmentFilepath:        "",                                                                  // s
-		ContainerdConfigContent:         "",                                                                  // kd
-		IsKata:                          false,                                                               // n
-		NeedsCgroupV2:                   true,                                                                // s only static for karpenter
-		EnsureNoDupePromiscuousBridge:   false,                                                               // s karpenter does not support kubenet
+		OutboundCommand:                         "curl -v --insecure --proxy-insecure https://mcr.microsoft.com/v2/", // s
+		EnableUnattendedUpgrades:                false,                                                               // cd
+		IsKrustlet:                              false,                                                               // td
+		ShouldConfigSwapFile:                    false,                                                               // td
+		ShouldConfigTransparentHugePage:         false,                                                               // td
+		TargetCloud:                             "AzurePublicCloud",                                                  // n
+		TargetEnvironment:                       "AzurePublicCloud",                                                  // n
+		CustomEnvJSON:                           "",                                                                  // n
+		IsCustomCloud:                           false,                                                               // n
+		CSEHelpersFilepath:                      "/opt/azure/containers/provision_source.sh",                         // s
+		CSEDistroHelpersFilepath:                "/opt/azure/containers/provision_source_distro.sh",                  // s
+		CSEInstallFilepath:                      "/opt/azure/containers/provision_installs.sh",                       // s
+		CSEDistroInstallFilepath:                "/opt/azure/containers/provision_installs_distro.sh",                // s
+		CSEConfigFilepath:                       "/opt/azure/containers/provision_configs.sh",                        // s
+		AzurePrivateRegistryServer:              "",                                                                  // cd
+		HasCustomSearchDomain:                   false,                                                               // cd
+		CustomSearchDomainFilepath:              "/opt/azure/containers/setup-custom-search-domains.sh",              // s
+		HTTPProxyURLs:                           "",                                                                  // cd
+		HTTPSProxyURLs:                          "",                                                                  // cd
+		NoProxyURLs:                             "",                                                                  // cd
+		TLSBootstrappingEnabled:                 true,                                                                // s
+		SecureTLSBootstrappingEnabled:           false,                                                               // s
+		EnableKubeletServingCertificateRotation: false,                                                               // s
+		THPEnabled:                              "",                                                                  // cd
+		THPDefrag:                               "",                                                                  // cd
+		ServicePrincipalFileContent:             base64.StdEncoding.EncodeToString([]byte("msi")),                    // s
+		KubeletClientContent:                    "",                                                                  // -
+		KubeletClientCertContent:                "",                                                                  // -
+		KubeletConfigFileEnabled:                false,                                                               // s
+		KubeletConfigFileContent:                "",                                                                  // s
+		SwapFileSizeMB:                          0,                                                                   // td
+		GPUInstanceProfile:                      "",                                                                  // td
+		CustomSearchDomainName:                  "",                                                                  // cd
+		CustomSearchRealmUser:                   "",                                                                  // cd
+		CustomSearchRealmPassword:               "",                                                                  // cd
+		MessageOfTheDay:                         "",                                                                  // td
+		HasKubeletDiskType:                      false,                                                               // td
+		SysctlContent:                           base64.StdEncoding.EncodeToString(sysctlContent),                    // td
+		KubeletFlags:                            "",                                                                  // psX
+		AzureEnvironmentFilepath:                "",                                                                  // s
+		ContainerdConfigContent:                 "",                                                                  // kd
+		IsKata:                                  false,                                                               // n
+		NeedsCgroupV2:                           true,                                                                // s only static for karpenter
+		EnsureNoDupePromiscuousBridge:           false,                                                               // s karpenter does not support kubenet
 	}
 }
