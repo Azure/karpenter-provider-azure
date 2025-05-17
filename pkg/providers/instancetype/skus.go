@@ -22,10 +22,10 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// getKarpenterWorkingSKUs returns a the list of SKUs that are
+// GetKarpenterWorkingSKUs returns a the list of SKUs that are
 // allowed to be used by Karpenter. This is a subset of the
 // SKUs that are available in Azure.
-func getKarpenterWorkingSKUs() []skewer.SKU {
+func GetKarpenterWorkingSKUs() []skewer.SKU {
 	workingSKUs := []skewer.SKU{}
 	for _, sku := range allAzureVMSkus {
 		var exclude bool
