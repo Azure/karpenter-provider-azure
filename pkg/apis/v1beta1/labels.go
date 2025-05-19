@@ -94,7 +94,8 @@ var (
 	// AKS labels
 	AKSLabelDomain = "kubernetes.azure.com"
 
-	AKSLabelCluster = AKSLabelDomain + "/cluster"
+	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
+	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"

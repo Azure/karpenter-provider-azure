@@ -23,74 +23,76 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/samber/lo"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	v1 "k8s.io/api/core/v1"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	nodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 )
 
 const (
-	NodeClassDrift  cloudprovider.DriftReason = "NodeClassDrift"
-	K8sVersionDrift cloudprovider.DriftReason = "K8sVersionDrift"
-	ImageDrift      cloudprovider.DriftReason = "ImageDrift"
-	SubnetDrift     cloudprovider.DriftReason = "SubnetDrift"
+	NodeClassDrift       cloudprovider.DriftReason = "NodeClassDrift"
+	K8sVersionDrift      cloudprovider.DriftReason = "K8sVersionDrift"
+	ImageDrift           cloudprovider.DriftReason = "ImageDrift"
+	SubnetDrift          cloudprovider.DriftReason = "SubnetDrift"
+	KubeletIdentityDrift cloudprovider.DriftReason = "KubeletIdentityDrift"
 
 	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
 	NoDrift cloudprovider.DriftReason = ""
 )
 
 func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
-	// First check if the node class is statically staticFieldsDrifted to save on API calls.
-	if staticFieldsDrifted := c.areStaticFieldsDrifted(nodeClaim, nodeClass); staticFieldsDrifted != "" {
-		return staticFieldsDrifted, nil
+	// TODO: if we find more expensive checks, such as reading VMs or NICs from Azure, are being duplicated between checks, we should
+	//       produce a lazy at-most-once that allows a check to cache a value for later checks to read.
+	checks := []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
+		c.areStaticFieldsDrifted,
+		c.isK8sVersionDrifted,
+		c.isKubeletIdentityDrifted,
+		c.isImageVersionDrifted,
+		c.isSubnetDrifted,
 	}
-	k8sVersionDrifted, err := c.isK8sVersionDrifted(ctx, nodeClaim, nodeClass)
-	if err != nil {
-		return "", err
+	for _, check := range checks {
+		driftReason, err := check(ctx, nodeClaim, nodeClass)
+		if err != nil {
+			return "", err
+		}
+		if driftReason != "" {
+			return driftReason, nil
+		}
 	}
-	if k8sVersionDrifted != "" {
-		return k8sVersionDrifted, nil
-	}
-	imageVersionDrifted, err := c.isImageVersionDrifted(ctx, nodeClaim, nodeClass)
-	if err != nil {
-		return "", err
-	}
-	if imageVersionDrifted != "" {
-		return imageVersionDrifted, nil
-	}
-	subnetDrifted, err := c.isSubnetDrifted(ctx, nodeClaim, nodeClass)
-	if err != nil {
-		return "", err
-	}
-	if subnetDrifted != "" {
-		return subnetDrifted, nil
-	}
+
 	return "", nil
 }
 
-func (c *CloudProvider) areStaticFieldsDrifted(nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) cloudprovider.DriftReason {
+func (c *CloudProvider) areStaticFieldsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	logger := log.FromContext(ctx)
+
 	nodeClassHash, foundNodeClassHash := nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHash]
 	nodeClassHashVersion, foundNodeClassHashVersion := nodeClass.Annotations[v1beta1.AnnotationAKSNodeClassHashVersion]
 	nodeClaimHash, foundNodeClaimHash := nodeClaim.Annotations[v1beta1.AnnotationAKSNodeClassHash]
 	nodeClaimHashVersion, foundNodeClaimHashVersion := nodeClaim.Annotations[v1beta1.AnnotationAKSNodeClassHashVersion]
 
 	if !foundNodeClassHash || !foundNodeClaimHash || !foundNodeClassHashVersion || !foundNodeClaimHashVersion {
-		return ""
+		return "", nil
 	}
 	// validate that the hash version for the AKSNodeClass is the same as the NodeClaim before evaluating for static drift
 	if nodeClassHashVersion != nodeClaimHashVersion {
-		return ""
+		return "", nil
 	}
-	return lo.Ternary(nodeClassHash != nodeClaimHash, NodeClassDrift, "")
+
+	if nodeClassHash != nodeClaimHash {
+		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as nodeClassHash (%s) != nodeClaimHash (%s)", NodeClassDrift, nodeClassHash, nodeClaimHash))
+		return NodeClassDrift, nil
+	}
+
+	return "", nil
 }
 
 func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
@@ -106,26 +108,12 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		return "", nil //nolint:nilerr
 	}
 
-	nodeName := nodeClaim.Status.NodeName
-	if nodeName == "" {
-		// We do not return an error here as its expected within the lifecycle of the nodeclaims registration.
-		// Drift can be called for a nodeclaim once its launched, but .Status.NodeName is only filled out after the node is registered:
-		// https://github.com/kubernetes-sigs/karpenter/blob/8b9ea2e7cd10acdb40bccdf91a153a2e69b71107/pkg/controllers/nodeclaim/lifecycle/registration.go#L83
-		return "", nil
-	}
-
-	n := &v1.Node{}
-	if err := c.kubeClient.Get(ctx, client.ObjectKey{Name: nodeName}, n); err != nil {
-		// Core's check for Launched status should currently prevent us from getting here before the node exists because of the LRO block on Create:
-		// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
-		// However, in my opinion, we should look at updating this logic to ignore NotFound errors as we fix the LRO issue.
-		// Shouldn't cause an issue to my awareness, but could be noisy.
-		// TODO: re-evaluate ignoring NotFound error, and using core's library for nodeclaims. Similar to usage here:
-		// https://github.com/kubernetes-sigs/karpenter/blob/bbe6bd27e65d88fe55376b6c3c2c828312c105c4/pkg/controllers/nodeclaim/lifecycle/registration.go#L53
+	node, err := c.getNodeForDrift(ctx, nodeClaim)
+	if err != nil || node == nil {
 		return "", err
 	}
-	nodeK8sVersion := strings.TrimPrefix(n.Status.NodeInfo.KubeletVersion, "v")
 
+	nodeK8sVersion := strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")
 	if nodeK8sVersion != k8sVersion {
 		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion))
 		return K8sVersionDrift, nil
@@ -138,7 +126,10 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 // Feel reassessing this within the future with a potential minor refactor would be best to fix the gocyclo.
 // nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
-	ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	ctx context.Context,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
 
 	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
@@ -219,6 +210,63 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.N
 		return SubnetDrift, nil
 	}
 	return "", nil
+}
+
+// isKubeletIdentityDrifted returns drift if the kubelet identity has drifted
+func (c *CloudProvider) isKubeletIdentityDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, _ *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	opts := options.FromContext(ctx)
+	logger := log.FromContext(ctx)
+
+	node, err := c.getNodeForDrift(ctx, nodeClaim)
+	if err != nil || node == nil {
+		return "", err
+	}
+
+	kubeletIdentityClientID := node.Labels[v1beta1.AKSLabelKubeletIdentityClientID]
+	// The kubelet identity label is supposed to be set on every node, but prior to
+	// 1.4.0 it was not set by Karpenter. In order to avoid rolling all existing nodes,
+	// we don't count a missing kubelet identity as drift. This situation should resolve itself as
+	// image version and Kubernetes version drift is performed.
+	// TODO: This short-circuit should be removed post 1.4.0 (~2025-07-01)
+	if kubeletIdentityClientID == "" {
+		return "", nil
+	}
+
+	if kubeletIdentityClientID != opts.KubeletIdentityClientID {
+		logger.V(1).Info(
+			fmt.Sprintf("drift triggered for %s, with expected kubelet identity client id %s, and actual kubelet identity client id %s",
+				KubeletIdentityDrift,
+				opts.KubeletIdentityClientID,
+				kubeletIdentityClientID),
+		)
+		return KubeletIdentityDrift, nil
+	}
+
+	return "", nil
+}
+
+func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1.Node, error) {
+	logger := log.FromContext(ctx)
+
+	n, err := nodeclaimutils.NodeForNodeClaim(ctx, c.kubeClient, nodeClaim)
+	if err != nil {
+		if nodeclaimutils.IsNodeNotFoundError(err) {
+			// We do not return an error here as its expected within the lifecycle of the nodeclaims registration.
+			// Core's checks only for Launched status which means we've started the create, but the node doesn't nessicarially exist yet
+			// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
+			return nil, nil
+		}
+		if nodeclaimutils.IsDuplicateNodeError(err) {
+			logger.V(1).Info("WARN: Duplicate node error, invariant violated.")
+		}
+		return nil, err
+	}
+	if !n.DeletionTimestamp.IsZero() {
+		// We do not need to check for drift if the node is being deleted.
+		return nil, nil
+	}
+
+	return n, nil
 }
 
 func getSubnetFromPrimaryIPConfig(nic *armnetwork.Interface) string {

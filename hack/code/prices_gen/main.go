@@ -38,12 +38,14 @@ var regions = []string{
 	"australiacentral2",
 	"australiaeast",
 	"australiasoutheast",
+	"austriaeast",
 	"brazilsouth",
 	"brazilsoutheast",
 	"canadacentral",
 	"canadaeast",
 	"centralindia",
 	"centralus",
+	"chilecentral",
 	"eastasia",
 	"eastus",
 	"eastus2",
@@ -51,12 +53,18 @@ var regions = []string{
 	"francesouth",
 	"germanynorth",
 	"germanywestcentral",
+	"indonesiacentral",
+	"israelcentral",
+	"italynorth",
 	"japaneast",
 	"japanwest",
 	"jioindiacentral",
 	"jioindiawest",
 	"koreacentral",
 	"koreasouth",
+	"malaysiawest",
+	"mexicocentral",
+	"newzealandnorth",
 	"northcentralus",
 	"northeurope",
 	"norwayeast",
@@ -68,6 +76,7 @@ var regions = []string{
 	"southcentralus",
 	"southeastasia",
 	"southindia",
+	"spaincentral",
 	"swedencentral",
 	"swedensouth",
 	"switzerlandnorth",
@@ -130,7 +139,7 @@ func generatePricing(filePath string) {
 					log.Println("started wait loop for pricing update on region", region)
 				} else if attempts%10 == 0 {
 					log.Printf("waiting on pricing update on region %s...\n", region)
-				} else if time.Now().Sub(updateStarted) >= time.Minute*2 {
+				} else if time.Since(updateStarted) >= time.Minute*2 {
 					log.Fatalf("failed to update region %s within 2 minutes", region)
 				}
 				time.Sleep(1 * time.Second)
@@ -143,7 +152,7 @@ func generatePricing(filePath string) {
 	}
 	for _, region := range regions {
 		pricingProviderChan := pricingProviderByRegion[region]
-		var pricingProvider *pricing.Provider = <-pricingProviderChan
+		var pricingProvider = <-pricingProviderChan
 		log.Println("writing output for", region)
 		instanceTypes := pricingProvider.InstanceTypes()
 		sort.Strings(instanceTypes)

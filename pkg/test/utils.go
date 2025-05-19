@@ -21,6 +21,13 @@ import (
 	k8srand "k8s.io/apimachinery/pkg/util/rand"
 )
 
+const (
+	// Note (charliedmcb): this already exists in test/pkg/environment/common
+	// https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/test/pkg/environment/common/setup.go#L47
+	// However, I'd prefer to keep our unit test dependants self-contained instead of depending upon the e2e testing package.
+	TestingFinalizer = "testing/finalizer"
+)
+
 // RandomName returns a pseudo-random resource name with a given prefix.
 func RandomName(prefix string) string {
 	// You could make this more robust by including additional random characters.

@@ -27,6 +27,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 )
@@ -109,5 +110,34 @@ var _ = Describe("Pricing", func() {
 		price, ok = p.SpotPrice("Standard_D14")
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically("==", 1.13))
+	})
+
+	It("each supported instance type should have pricing at least somewhere", func() {
+
+		// for now just print the names of the SKUs that don't have pricing
+		fmt.Println("\nSKUs that don't have pricing:")
+
+		regions := pricing.Regions()
+		skus := instancetype.GetKarpenterWorkingSKUs()
+		providers := []*pricing.Provider{}
+		for _, region := range regions {
+			providers = append(providers, pricing.NewProvider(ctx, fakePricingAPI, region, make(chan struct{})))
+		}
+		for _, sku := range skus {
+			foundPricingForSKU := false
+			for _, provider := range providers {
+				if price, ok := provider.OnDemandPrice(*sku.Name); ok && price > 0 {
+					foundPricingForSKU = true
+					break
+				}
+				if price, ok := provider.SpotPrice(*sku.Name); ok && price > 0 {
+					foundPricingForSKU = true
+					break
+				}
+			}
+			if !foundPricingForSKU {
+				fmt.Printf("%s\n", *sku.Name)
+			}
+		}
 	})
 })

@@ -21,7 +21,7 @@ import (
 )
 
 func TestGetKarpenterWorkingSKUs(t *testing.T) {
-	for _, sku := range getKarpenterWorkingSKUs() {
+	for _, sku := range GetKarpenterWorkingSKUs() {
 		for _, aksRestrictedSKU := range AKSRestrictedVMSizes.UnsortedList() {
 			if aksRestrictedSKU == *sku.Name {
 				t.Errorf("AKS restricted SKU %s should not be in the list of SKUs", aksRestrictedSKU)

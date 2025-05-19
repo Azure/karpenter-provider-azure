@@ -28,9 +28,11 @@ import (
 
 	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
@@ -77,8 +79,11 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		return "", "", fmt.Errorf("windows is not supported")
 	}
 
-	labels := lo.Assign(map[string]string{}, p.Labels)
-	getAgentbakerGeneratedLabels(p.ResourceGroup, labels)
+	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
+	// Note that while we set the Kubelet identity label here, the actual kubelet identity that is set in the bootstrapping
+	// script is configured by the NPS service. That means the label can be set to the older client ID if the client ID
+	// changed recently. This is OK because drift will correct it.
+	labels.AddAgentBakerGeneratedLabels(p.ResourceGroup, options.FromContext(ctx).KubeletIdentityClientID, nodeLabels)
 
 	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, and for Azure Linux v3
 	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
@@ -90,7 +95,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		OsType:                   lo.ToPtr(lo.Ternary(p.IsWindows, models.OSTypeWindows, models.OSTypeLinux)),
 		VMSize:                   lo.ToPtr(p.InstanceType.Name),
 		Distro:                   lo.ToPtr(p.ImageDistro),
-		CustomNodeLabels:         labels,
+		CustomNodeLabels:         nodeLabels,
 		OrchestratorVersion:      lo.ToPtr(p.KubernetesVersion),
 		VnetSubnetID:             lo.ToPtr(p.SubnetID),
 		StorageProfile:           lo.ToPtr(p.StorageProfile),
@@ -222,32 +227,6 @@ func (p *ProvisionClientBootstrap) getNodeBootstrappingFromClient(ctx context.Co
 	customDataWithBootstrapToken := base64.StdEncoding.EncodeToString([]byte(decodedCustomDataWithBootstrapToken))
 
 	return customDataWithBootstrapToken, cseWithBootstrapToken, nil
-}
-
-func getAgentbakerGeneratedLabels(nodeResourceGroup string, nodeLabels map[string]string) {
-	// Delegatable defaulting?
-	nodeLabels["kubernetes.azure.com/role"] = "agent"
-	nodeLabels["kubernetes.azure.com/cluster"] = normalizeResourceGroupNameForLabel(nodeResourceGroup)
-}
-
-func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
-	truncated := resourceGroupName
-	truncated = strings.ReplaceAll(truncated, "(", "-")
-	truncated = strings.ReplaceAll(truncated, ")", "-")
-	const maxLen = 63
-	if len(truncated) > maxLen {
-		truncated = truncated[0:maxLen]
-	}
-
-	if strings.HasSuffix(truncated, "-") ||
-		strings.HasSuffix(truncated, "_") ||
-		strings.HasSuffix(truncated, ".") {
-		if len(truncated) > 62 {
-			return truncated[0:len(truncated)-1] + "z"
-		}
-		return truncated + "z"
-	}
-	return truncated
 }
 
 func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory float64) float64 {

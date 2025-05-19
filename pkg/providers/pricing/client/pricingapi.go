@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	apiVersion = "2021-10-01-preview"
+	apiVersion = "2023-01-01-preview"
 	pricingURL = "https://prices.azure.com/api/retail/prices?api-version=" + apiVersion
 )
 
