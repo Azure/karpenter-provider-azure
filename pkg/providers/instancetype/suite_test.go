@@ -1119,7 +1119,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1161,7 +1161,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1195,7 +1195,7 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-				statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -1402,7 +1402,7 @@ var _ = Describe("InstanceType Provider", func() {
 			customData = ExpectDecodedCustomData(azureEnv)
 			kubeletFlags = ExpectKubeletFlagsPassed(customData)
 
-			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
+			k8sVersion, err := azureEnv.KubernetesVersionProvider.KubeServerVersion(ctx)
 			Expect(err).To(BeNil())
 			minorVersion = semver.MustParse(k8sVersion).Minor
 			credentialProviderURL = bootstrap.CredentialProviderURL(k8sVersion, "amd64")
@@ -1596,7 +1596,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		It("should return error when instance type resolution fails", func() {
 			// Create and set up the status controller
-			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 
 			// Set NodeClass to Ready
 			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)

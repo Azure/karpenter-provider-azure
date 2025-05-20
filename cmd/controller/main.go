@@ -76,7 +76,7 @@ func main() {
 			aksCloudProvider,
 			op.InstanceProvider,
 			// TODO: refactor so we are passing in kubernetesVersionProvider and nodeImageProvider. Currently ImageProvider just implements both.
-			op.ImageProvider,
+			op.KubernetesVersionProvider,
 			op.ImageProvider,
 			op.InClusterKubernetesInterface,
 		)...).
