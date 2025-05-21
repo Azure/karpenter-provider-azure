@@ -65,13 +65,14 @@ type Environment struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	// Providers
-	InstanceTypesProvider  instancetype.Provider
-	InstanceProvider       instance.Provider
-	PricingProvider        *pricing.Provider
-	ImageProvider          *imagefamily.Provider
-	ImageResolver          imagefamily.Resolver
-	LaunchTemplateProvider *launchtemplate.Provider
-	LoadBalancerProvider   *loadbalancer.Provider
+	InstanceTypesProvider     instancetype.Provider
+	InstanceProvider          instance.Provider
+	PricingProvider           *pricing.Provider
+	KubernetesVersionProvider imagefamily.KubernetesVersionProvider
+	ImageProvider             *imagefamily.Provider
+	ImageResolver             imagefamily.Resolver
+	LaunchTemplateProvider    *launchtemplate.Provider
+	LoadBalancerProvider      *loadbalancer.Provider
 
 	// Settings
 	nonZonal bool
@@ -108,6 +109,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
+	kubernetesVersionProvider := imagefamily.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider)
 	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
@@ -168,13 +170,14 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		UnavailableOfferingsCache: unavailableOfferingsCache,
 		LoadBalancerCache:         loadBalancerCache,
 
-		InstanceTypesProvider:  instanceTypesProvider,
-		InstanceProvider:       instanceProvider,
-		PricingProvider:        pricingProvider,
-		ImageProvider:          imageFamilyProvider,
-		ImageResolver:          imageFamilyResolver,
-		LaunchTemplateProvider: launchTemplateProvider,
-		LoadBalancerProvider:   loadBalancerProvider,
+		InstanceTypesProvider:     instanceTypesProvider,
+		InstanceProvider:          instanceProvider,
+		PricingProvider:           pricingProvider,
+		KubernetesVersionProvider: kubernetesVersionProvider,
+		ImageProvider:             imageFamilyProvider,
+		ImageResolver:             imageFamilyResolver,
+		LaunchTemplateProvider:    launchTemplateProvider,
+		LoadBalancerProvider:      loadBalancerProvider,
 
 		nonZonal: nonZonal,
 	}
