@@ -34,6 +34,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
 )
 
@@ -50,7 +51,7 @@ type Controller struct {
 
 func NewController(
 	kubeClient client.Client,
-	kubernetesVersionProvider imagefamily.KubernetesVersionProvider,
+	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
 ) *Controller {
