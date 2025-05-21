@@ -44,11 +44,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: ./.github/actions/install-deps
       - run: make vulncheck
-      - uses: github/codeql-action/init@60168efe1c415ce0f5521ea06d5c2062adbeed1b # v3.28.17
+      - uses: github/codeql-action/init@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
         with:
           languages: go
-      - uses: github/codeql-action/autobuild@60168efe1c415ce0f5521ea06d5c2062adbeed1b # v3.28.17
-      - uses: github/codeql-action/analyze@60168efe1c415ce0f5521ea06d5c2062adbeed1b # v3.28.17
+      - uses: github/codeql-action/autobuild@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
+      - uses: github/codeql-action/analyze@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
 
   # Javascript is added here for evaluating Github Action vulnerabilities
   # https://github.blog/2023-08-09-four-tips-to-keep-your-github-actions-workflows-secure/#2-enable-code-scanning-for-workflows
@@ -61,7 +61,7 @@ jobs:
       security-events: write # github/codeql-action/init@v2
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: github/codeql-action/init@60168efe1c415ce0f5521ea06d5c2062adbeed1b # v3.28.17
+      - uses: github/codeql-action/init@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
         with:
           languages: javascript
           config: |
@@ -72,4 +72,4 @@ jobs:
             paths:
               - '.github/workflows'
               - '.github/actions'
-      - uses: github/codeql-action/analyze@60168efe1c415ce0f5521ea06d5c2062adbeed1b # v3.28.17
+      - uses: github/codeql-action/analyze@ff0a06e83cb2de871e5a09832bc6a81e7276941f # v3.28.18
