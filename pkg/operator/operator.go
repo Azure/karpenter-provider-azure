@@ -74,13 +74,14 @@ type Operator struct {
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
-	ImageProvider          *imagefamily.Provider
-	ImageResolver          imagefamily.Resolver
-	LaunchTemplateProvider *launchtemplate.Provider
-	PricingProvider        *pricing.Provider
-	InstanceTypesProvider  instancetype.Provider
-	InstanceProvider       *instance.DefaultProvider
-	LoadBalancerProvider   *loadbalancer.Provider
+	KubernetesVersionProvider imagefamily.KubernetesVersionProvider
+	ImageProvider             *imagefamily.Provider
+	ImageResolver             imagefamily.Resolver
+	LaunchTemplateProvider    *launchtemplate.Provider
+	PricingProvider           *pricing.Provider
+	InstanceTypesProvider     instancetype.Provider
+	InstanceProvider          *instance.DefaultProvider
+	LoadBalancerProvider      *loadbalancer.Provider
 }
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
@@ -109,6 +110,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		operator.Elected(),
 	)
 
+	kubernetesVersionProvider := imagefamily.NewKubernetesVersionProvider(
+		operator.KubernetesInterface,
+		cache.New(azurecache.KubernetesVersionTTL,
+			azurecache.DefaultCleanupInterval),
+	)
 	imageProvider := imagefamily.NewProvider(
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
@@ -165,6 +171,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,
+		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,
 		ImageResolver:                imageResolver,
 		LaunchTemplateProvider:       launchTemplateProvider,

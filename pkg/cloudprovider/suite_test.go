@@ -19,10 +19,9 @@ package cloudprovider
 // TODO v1beta1 extra refactor into suite_test.go / cloudprovider_test.go
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
-
-	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/blang/semver/v4"
@@ -31,21 +30,18 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
-
+	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -53,7 +49,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
-	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 var ctx context.Context
@@ -77,7 +73,7 @@ func TestCloudProvider(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(coretest.NodeProviderIDFieldIndexer(ctx)))
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
 	ctx, stop = context.WithCancel(ctx)
@@ -175,6 +171,8 @@ var _ = Describe("CloudProvider", func() {
 	Context("Drift", func() {
 		var nodeClaim *karpv1.NodeClaim
 		var pod *v1.Pod
+		var node *v1.Node
+
 		BeforeEach(func() {
 			instanceType := "Standard_D2_v2"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -182,9 +180,15 @@ var _ = Describe("CloudProvider", func() {
 				NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 			})
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
-			node := ExpectScheduled(ctx, env.Client, pod)
+			node = ExpectScheduled(ctx, env.Client, pod)
 			// KubeletVersion must be applied to the node to satisfy k8s drift
 			node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion
+			node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "61f71907-753f-4802-a901-47361c3664f2" // random UUID
+			// Context must have same kubelet client id
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				KubeletIdentityClientID: lo.ToPtr(node.Labels[v1beta1.AKSLabelKubeletIdentityClientID]),
+			}))
+
 			ExpectApplied(ctx, env.Client, node)
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -194,8 +198,13 @@ var _ = Describe("CloudProvider", func() {
 			// Corresponding NodeClaim
 			nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 				Status: karpv1.NodeClaimStatus{
-					NodeName:   node.Name,
-					ProviderID: utils.ResourceIDToProviderID(ctx, fake.MkVMID(rg, vmName)),
+					NodeName: node.Name,
+					// TODO (charliedmcb): switch back to use MkVMID, and update the test subscription usage to all use the same sub const 12345678-1234-1234-1234-123456789012
+					//     We currently need this work around for the List nodes call to work in Drift, since the VM ID is overridden here (which uses the sub id in the instance provider):
+					//     https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/pkg/providers/instance/instance.go#L604
+					//     which has the sub const 12345678-1234-1234-1234-123456789012 passed in here:
+					//     https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/pkg/test/environment.go#L152
+					ProviderID: utils.ResourceIDToProviderID(ctx, fmt.Sprintf("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", rg, vmName)),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -316,11 +325,30 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(NoDrift))
 			})
 
-			It("should error when node is not found", func() {
+			It("shouldn't error or be drifted when node is not found", func() {
 				nodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
 				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
-				Expect(err).To(HaveOccurred())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(drifted).To(Equal(NoDrift))
+			})
+
+			It("shouldn't error or be drifted when node is deleting", func() {
+				node = ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+				node.Finalizers = append(node.Finalizers, test.TestingFinalizer)
+				ExpectApplied(ctx, env.Client, node)
+				Expect(env.Client.Delete(ctx, node)).ToNot(HaveOccurred())
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(NoDrift))
+
+				// cleanup
+				node = ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+				deepCopy := node.DeepCopy()
+				node.Finalizers = lo.Reject(node.Finalizers, func(finalizer string, _ int) bool {
+					return finalizer == test.TestingFinalizer
+				})
+				Expect(env.Client.Patch(ctx, node, client.StrategicMergeFrom(deepCopy))).NotTo(HaveOccurred())
+				ExpectDeleted(ctx, env.Client, node)
 			})
 
 			It("should succeed with drift true when KubernetesVersion is new", func() {
@@ -337,5 +365,26 @@ var _ = Describe("CloudProvider", func() {
 				Expect(drifted).To(Equal(K8sVersionDrift))
 			})
 		})
+
+		Context("Kubelet Client ID", func() {
+			It("should NOT trigger drift if node doesn't have kubelet client ID label", func() {
+				node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "" // Not set
+
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(BeEmpty())
+			})
+
+			It("should trigger drift if node kubelet client ID doesn't match options", func() {
+				ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+					KubeletIdentityClientID: lo.ToPtr("3824ff7a-93b6-40af-b861-2eb621ba437a"), // a different random UUID
+				}))
+
+				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(drifted).To(Equal(KubeletIdentityDrift))
+			})
+		})
+
 	})
 })

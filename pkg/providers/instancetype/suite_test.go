@@ -277,6 +277,113 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(nodes.Items[0].Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 		})
 
+		It("should fail to provision when OverconstrainedZonalAllocation errors are hit, then switch zone and succeed", func() {
+			OverconstrainedZonalAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again."
+			// Create nodepool that has both ondemand and spot capacity types enabled
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot},
+				}})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Set the OverconstrainedZonalAllocation error to be returned when creating the vm
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{
+					ErrorCode: sdkerrors.OverconstrainedZonalAllocationRequest,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(sdkerrors.OverconstrainedZonalAllocationRequest, OverconstrainedZonalAllocationErrorMessage),
+					},
+				},
+			)
+
+			// Create a pod that should fail to schedule
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			// ensure that initial zone was made unavailable
+			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+			Expect(err).ToNot(HaveOccurred())
+			ExpectUnavailable(azureEnv, "Standard_D2_v3", zone, karpv1.CapacityTypeSpot)
+
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(zone))
+		})
+
+		It("should fail to provision when OverconstrainedAllocation errors are hit, then switch capacity type and succeed", func() {
+			OverconstrainedAllocationErrorMessage := "Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive."
+			// Create nodepool that has both ondemand and spot capacity types enabled
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      karpv1.CapacityTypeLabelKey,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot},
+				}})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Set the OverconstrainedAllocationError error to be returned when creating the vm
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{
+					ErrorCode: sdkerrors.OverconstrainedAllocationRequest,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(sdkerrors.OverconstrainedAllocationRequest, OverconstrainedAllocationErrorMessage),
+					},
+				},
+			)
+
+			// Create a pod that should fail to schedule
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+		})
+
+		It("should fail to provision when AllocationFailure errors are hit, then switch VM size and succeed", func() {
+			// Create nodepool that has both ondemand and spot capacity types enabled
+			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      "node.kubernetes.io/instance-type",
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v3", "Standard_D64s_v3"},
+				}})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			// Set the OverconstrainedZonalAllocation error to be returned when creating the vm
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
+				&azcore.ResponseError{
+					ErrorCode: sdkerrors.AllocationFailed,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(sdkerrors.AllocationFailed, "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."),
+					},
+				},
+			)
+
+			// Create a pod that should fail to schedule
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			// ensure that initial VM size was made unavailable
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			initialVMSize := *vm.Properties.HardwareProfile.VMSize
+			zone, err := utils.GetZone(&vm)
+			Expect(err).ToNot(HaveOccurred())
+			ExpectUnavailable(azureEnv, string(initialVMSize), zone, karpv1.CapacityTypeSpot)
+
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+			Expect(node.Labels[v1.LabelInstanceTypeStable]).ToNot(Equal(string(initialVMSize)))
+		})
+
 		It("should fail to provision when VM SKU family vCPU quota exceeded error is returned, and succeed when it is gone", func() {
 			familyVCPUQuotaExceededErrorMessage := "Operation could not be completed as it results in exceeding approved standardDLSv5Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: westus2, Current Limit: 100, Current Usage: 96, Additional Required: 32, (Minimum) New Limit Required: 128. Submit a request for Quota increase at https://aka.ms/ProdportalCRP/#blade/Microsoft_Azure_Capacity/UsageAndQuota.ReactView/Parameters/%7B%22subscriptionId%22:%(redacted)%22,%22command%22:%22openQuotaApprovalBlade%22,%22quotas%22:[%7B%22location%22:%22westus2%22,%22providerId%22:%22Microsoft.Compute%22,%22resourceName%22:%22standardDLSv5Family%22,%22quotaRequest%22:%7B%22properties%22:%7B%22limit%22:128,%22unit%22:%22Count%22,%22name%22:%7B%22value%22:%22standardDLSv5Family%22%7D%7D%7D%7D]%7D by specifying parameters listed in the ‘Details’ section for deployment to succeed. Please read more about quota limits at https://docs.microsoft.com/en-us/azure/azure-supportability/per-vm-quota-requests"
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1012,7 +1119,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1054,7 +1161,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1088,7 +1195,7 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-				statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -1295,7 +1402,7 @@ var _ = Describe("InstanceType Provider", func() {
 			customData = ExpectDecodedCustomData(azureEnv)
 			kubeletFlags = ExpectKubeletFlagsPassed(customData)
 
-			k8sVersion, err := azureEnv.ImageProvider.KubeServerVersion(ctx)
+			k8sVersion, err := azureEnv.KubernetesVersionProvider.KubeServerVersion(ctx)
 			Expect(err).To(BeNil())
 			minorVersion = semver.MustParse(k8sVersion).Minor
 			credentialProviderURL = bootstrap.CredentialProviderURL(k8sVersion, "amd64")
@@ -1489,7 +1596,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		It("should return error when instance type resolution fails", func() {
 			// Create and set up the status controller
-			statusController := status.NewController(env.Client, azureEnv.ImageProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
 
 			// Set NodeClass to Ready
 			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)

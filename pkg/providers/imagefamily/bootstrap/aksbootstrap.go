@@ -26,6 +26,7 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -308,7 +309,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	// merge and stringify labels
 	kubeletLabels := lo.Assign(getBaseKubeletNodeLabels(), a.Labels)
-	getAgentbakerGeneratedLabels(a.ResourceGroup, kubeletLabels)
+	labels.AddAgentBakerGeneratedLabels(a.ResourceGroup, a.KubeletIdentityClientID, kubeletLabels)
 
 	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
 	nbv.Subnet = subnetParts.SubnetName
@@ -367,31 +368,6 @@ func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, er
 		return "", fmt.Errorf("error executing custom data template: %w", err)
 	}
 	return buffer.String(), nil
-}
-
-func getAgentbakerGeneratedLabels(nodeResourceGroup string, nodeLabels map[string]string) {
-	nodeLabels["kubernetes.azure.com/role"] = "agent"
-	nodeLabels["kubernetes.azure.com/cluster"] = normalizeResourceGroupNameForLabel(nodeResourceGroup)
-}
-
-func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
-	truncated := resourceGroupName
-	truncated = strings.ReplaceAll(truncated, "(", "-")
-	truncated = strings.ReplaceAll(truncated, ")", "-")
-	const maxLen = 63
-	if len(truncated) > maxLen {
-		truncated = truncated[0:maxLen]
-	}
-
-	if strings.HasSuffix(truncated, "-") ||
-		strings.HasSuffix(truncated, "_") ||
-		strings.HasSuffix(truncated, ".") {
-		if len(truncated) > 62 {
-			return truncated[0:len(truncated)-1] + "z"
-		}
-		return truncated + "z"
-	}
-	return truncated
 }
 
 func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
