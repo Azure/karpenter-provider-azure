@@ -19,7 +19,6 @@ package imagefamily
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -27,7 +26,6 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
@@ -52,8 +50,6 @@ type Provider struct {
 }
 
 const (
-	kubernetesVersionCacheKey = "kubernetesVersion"
-
 	imageExpirationInterval    = time.Hour * 24 * 3
 	imageCacheCleaningInterval = time.Hour * 1
 
@@ -93,23 +89,6 @@ func (r *defaultResolver) resolveNodeImage(nodeImages []v1beta1.NodeImage, insta
 		}
 	}
 	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
-}
-
-// TODO: refactor this into kubernetesversion.go, and split into a new kubernetes provider
-func (p *Provider) KubeServerVersion(ctx context.Context) (string, error) {
-	if version, ok := p.kubernetesVersionCache.Get(kubernetesVersionCacheKey); ok {
-		return version.(string), nil
-	}
-	serverVersion, err := p.kubernetesInterface.Discovery().ServerVersion()
-	if err != nil {
-		return "", err
-	}
-	version := strings.TrimPrefix(serverVersion.GitVersion, "v") // v1.24.9 -> 1.24.9
-	p.kubernetesVersionCache.SetDefault(kubernetesVersionCacheKey, version)
-	if p.cm.HasChanged("kubernetes-version", version) {
-		log.FromContext(ctx).WithValues("kubernetes-version", version).V(1).Info("discovered kubernetes version")
-	}
-	return version, nil
 }
 
 // TODO (charliedmcb): refactor this into nodeimage.go and create new provider
