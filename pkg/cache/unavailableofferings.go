@@ -69,7 +69,7 @@ func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType st
 
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
 func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, ttl time.Duration) {
-	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", karpv1.CapacityTypeSpot, UnavailableOfferingsTTL)
+	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", karpv1.CapacityTypeSpot, ttl)
 }
 
 // MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL
