@@ -19,6 +19,7 @@ package options
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -39,6 +40,7 @@ func (o *Options) Validate() error {
 		o.validateVnetSubnetID(),
 		o.validateProvisionMode(),
 		o.validateUseSIG(),
+		o.validateAdminUsername(),
 		validate.Struct(o),
 	)
 }
@@ -144,6 +146,23 @@ func (o *Options) validateUseSIG() error {
 			return fmt.Errorf("sig-access-token-scope is not a valid URL")
 		}
 	}
+	return nil
+}
+
+func (o *Options) validateAdminUsername() error {
+	if len(o.AdminUsername) > 32 {
+		return fmt.Errorf("admin-username cannot be longer than 32 characters")
+	}
+
+	// Must start with a letter and only contain letters, numbers, hyphens, and underscores
+	match, err := regexp.MatchString("^[A-Za-z][-A-Za-z0-9_]*$", o.AdminUsername)
+	if err != nil {
+		return fmt.Errorf("error validating admin-username: %w", err)
+	}
+	if !match {
+		return fmt.Errorf("admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")
+	}
+
 	return nil
 }
 
