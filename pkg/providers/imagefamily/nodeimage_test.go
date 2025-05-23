@@ -20,21 +20,19 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/patrickmn/go-cache"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	coretest "sigs.k8s.io/karpenter/pkg/test"
-	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 )
 
 const (
@@ -83,8 +81,6 @@ func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.
 
 var _ = Describe("NodeImageProvider tests", func() {
 	var (
-		env *coretest.Environment
-
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider
@@ -92,12 +88,11 @@ var _ = Describe("NodeImageProvider tests", func() {
 	)
 
 	BeforeEach(func() {
-		env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(test.AKSNodeClassFieldIndexer(ctx)))
 		ctx = coreoptions.ToContext(ctx, coretest.Options())
 		ctx = options.ToContext(ctx, test.Options())
 
 		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}
-		var cigImageVersionTest = cigImageVersion
+		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 		kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
@@ -122,7 +117,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		})
 
 		It("should match expected images for AzureLinux", func() {
-			var imageFamily = v1beta1.AzureLinuxImageFamily
+			imageFamily := v1beta1.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
@@ -148,7 +143,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		})
 
 		It("should match expected images for AzureLinux", func() {
-			var imageFamily = v1beta1.AzureLinuxImageFamily
+			imageFamily := v1beta1.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
@@ -164,7 +159,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
 
 			communityImageVersionsAPI.Reset()
-			var laterCIGImageVersionTest = laterCIGImageVersion
+			laterCIGImageVersionTest := laterCIGImageVersion
 			communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &laterCIGImageVersionTest})
 
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
@@ -178,10 +173,10 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion)))
 
 			communityImageVersionsAPI.Reset()
-			var laterCIGImageVersionTest = laterCIGImageVersion
+			laterCIGImageVersionTest := laterCIGImageVersion
 			communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &laterCIGImageVersionTest})
 
-			var imageFamily = v1beta1.AzureLinuxImageFamily
+			imageFamily := v1beta1.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
 
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)

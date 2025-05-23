@@ -18,6 +18,7 @@ package options
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -61,31 +62,31 @@ func (s *nodeIdentitiesValue) String() string { return strings.Join(*s, ",") }
 type optionsKey struct{}
 
 type Options struct {
-	ClusterName                    string
-	ClusterEndpoint                string // => APIServerName in bootstrap, except needs to be w/o https/port
-	VMMemoryOverheadPercent        float64
-	ClusterID                      string
-	KubeletClientTLSBootstrapToken string // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
-	SSHPublicKey                   string // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
+	ClusterName                    string  `json:"clusterName,omitempty"`
+	ClusterEndpoint                string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
+	VMMemoryOverheadPercent        float64 `json:"vmMemoryOverheadPercent,omitempty"`
+	ClusterID                      string  `json:"clusterId,omitempty"`
+	KubeletClientTLSBootstrapToken string  `json:"-"` // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
+	SSHPublicKey                   string  `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
 
-	NetworkPlugin     string // => NetworkPlugin in bootstrap
-	NetworkPolicy     string // => NetworkPolicy in bootstrap
-	NetworkPluginMode string // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
-	NetworkDataplane  string
+	NetworkPlugin     string `json:"networkPlugin,omitempty"`     // => NetworkPlugin in bootstrap
+	NetworkPolicy     string `json:"networkPolicy,omitempty"`     // => NetworkPolicy in bootstrap
+	NetworkPluginMode string `json:"networkPluginMode,omitempty"` // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
+	NetworkDataplane  string `json:"networkDataplane,omitempty"`
 
-	NodeIdentities          []string // => Applied onto each VM
-	KubeletIdentityClientID string   // => Flows to bootstrap and used in drift
-	VnetGUID                string   // resource guid used by azure cni for identifying the right vnet
-	SubnetID                string   // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
+	NodeIdentities          []string `json:"nodeIdentities,omitempty"`          // => Applied onto each VM
+	KubeletIdentityClientID string   `json:"kubeletIdentityClientID,omitempty"` // => Flows to bootstrap and used in drift
+	VnetGUID                string   `json:"vnetGuid,omitempty"`                // resource guid used by azure cni for identifying the right vnet
+	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 	setFlags                map[string]bool
 
-	ProvisionMode              string
-	NodeBootstrappingServerURL string
-	UseSIG                     bool   // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
-	SIGAccessTokenServerURL    string // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
-	SIGAccessTokenScope        string // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
-	SIGSubscriptionID          string
-	NodeResourceGroup          string
+	ProvisionMode              string `json:"provisionMode,omitempty"`
+	NodeBootstrappingServerURL string `json:"-"`
+	UseSIG                     bool   `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+	SIGAccessTokenServerURL    string `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
+	SIGAccessTokenScope        string `json:"-"`                // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
+	SIGSubscriptionID          string `json:"sigSubscriptionId,omitempty"`
+	NodeResourceGroup          string `json:"nodeResourceGroup,omitempty"`
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -145,6 +146,15 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 	o.ClusterID = getAKSClusterID(o.GetAPIServerName())
 
 	return nil
+}
+
+func (o *Options) String() string {
+	json, err := json.Marshal(o)
+	if err != nil {
+		return "couldn't marshal options JSON"
+	}
+
+	return string(json)
 }
 
 func (o *Options) ToContext(ctx context.Context) context.Context {
