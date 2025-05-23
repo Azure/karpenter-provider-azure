@@ -67,6 +67,7 @@ type Options struct {
 	VMMemoryOverheadPercent        float64 `json:"vmMemoryOverheadPercent,omitempty"`
 	ClusterID                      string  `json:"clusterId,omitempty"`
 	KubeletClientTLSBootstrapToken string  `json:"-"` // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
+	AdminUsername                  string  `json:"-"`
 	SSHPublicKey                   string  `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
 
 	NetworkPlugin     string `json:"networkPlugin,omitempty"`     // => NetworkPlugin in bootstrap
@@ -94,6 +95,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.ClusterEndpoint, "cluster-endpoint", env.WithDefaultString("CLUSTER_ENDPOINT", ""), "[REQUIRED] The external kubernetes cluster endpoint for new nodes to connect with.")
 	fs.Float64Var(&o.VMMemoryOverheadPercent, "vm-memory-overhead-percent", utils.WithDefaultFloat64("VM_MEMORY_OVERHEAD_PERCENT", 0.075), "The VM memory overhead as a percent that will be subtracted from the total memory for all instance types.")
 	fs.StringVar(&o.KubeletClientTLSBootstrapToken, "kubelet-bootstrap-token", env.WithDefaultString("KUBELET_BOOTSTRAP_TOKEN", ""), "[REQUIRED] The bootstrap token for new nodes to join the cluster.")
+	fs.StringVar(&o.AdminUsername, "admin-username", env.WithDefaultString("LINUX_ADMIN_USERNAME", "azureuser"), "The admin username for Linux VMs.")
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
 	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", consts.NetworkPluginAzure), "The network plugin used by the cluster.")
 	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", consts.NetworkPluginModeOverlay), "network plugin mode of the cluster.")

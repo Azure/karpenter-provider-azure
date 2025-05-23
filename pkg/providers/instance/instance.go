@@ -372,6 +372,7 @@ type createVMOptions struct {
 	CapacityType   string
 	Location       string
 	SSHPublicKey   string
+	AdminUsername  string
 	NodeIdentities []string
 	NodeClass      *v1beta1.AKSNodeClass
 	LaunchTemplate *launchtemplate.Template
@@ -417,7 +418,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			},
 
 			OSProfile: &armcompute.OSProfile{
-				AdminUsername: lo.ToPtr("azureuser"),
+				AdminUsername: lo.ToPtr(opts.AdminUsername),
 				ComputerName:  &opts.VMName,
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
 					DisablePasswordAuthentication: lo.ToPtr(true),
@@ -425,7 +426,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 						PublicKeys: []*armcompute.SSHPublicKey{
 							{
 								KeyData: lo.ToPtr(opts.SSHPublicKey),
-								Path:    lo.ToPtr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
+								Path:    lo.ToPtr("/home/" + opts.AdminUsername + "/.ssh/authorized_keys"),
 							},
 						},
 					},
@@ -588,6 +589,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 		CapacityType:   capacityType,
 		Location:       p.location,
 		SSHPublicKey:   options.FromContext(ctx).SSHPublicKey,
+		AdminUsername:  options.FromContext(ctx).AdminUsername,
 		NodeIdentities: options.FromContext(ctx).NodeIdentities,
 		NodeClass:      nodeClass,
 		LaunchTemplate: launchTemplate,
