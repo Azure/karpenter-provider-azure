@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	armpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -134,16 +133,18 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
 
-	var vmClientOptions *armpolicy.ClientOptions
+	// deep copy the options to avoid modifying the original
+	var vmClientOptions = *opts
 	o := options.FromContext(ctx)
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
-		vmClientOptions, err = getVirtualMachinesClientOptions(ctx, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
+		auxOptions, err := getAuxiliaryTokenPolicyOptions(ctx, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		if err != nil {
 			return nil, err
 		}
+		vmClientOptions.ClientOptions = auxOptions
 	}
-	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, vmClientOptions)
+	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -182,16 +183,14 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		skuClient), nil
 }
 
-func getVirtualMachinesClientOptions(ctx context.Context, url string, scope string) (*armpolicy.ClientOptions, error) {
+func getAuxiliaryTokenPolicyOptions(ctx context.Context, url string, scope string) (policy.ClientOptions, error) {
 	token, err := auth.GetAuxiliaryToken(ctx, url, scope)
 	if err != nil {
-		return &armpolicy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
+		return policy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
 	}
 	auxPolicy := auth.NewAuxiliaryTokenPolicy(token)
 	log.FromContext(ctx).V(1).Info("Will use auxiliary token policy for creating virtual machines")
-	return &armpolicy.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			PerRetryPolicies: []policy.Policy{&auxPolicy},
-		},
+	return policy.ClientOptions{
+		PerRetryPolicies: []policy.Policy{&auxPolicy},
 	}, nil
 }
