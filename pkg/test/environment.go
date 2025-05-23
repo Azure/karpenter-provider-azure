@@ -33,6 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
@@ -68,7 +69,7 @@ type Environment struct {
 	InstanceTypesProvider     instancetype.Provider
 	InstanceProvider          instance.Provider
 	PricingProvider           *pricing.Provider
-	KubernetesVersionProvider imagefamily.KubernetesVersionProvider
+	KubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
 	ImageProvider             *imagefamily.Provider
 	ImageResolver             imagefamily.Resolver
 	LaunchTemplateProvider    *launchtemplate.Provider
@@ -109,7 +110,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
-	kubernetesVersionProvider := imagefamily.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
+	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider)
 	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
