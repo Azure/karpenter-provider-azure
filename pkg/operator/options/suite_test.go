@@ -64,6 +64,7 @@ var _ = Describe("Options", func() {
 		"SIG_SUBSCRIPTION_ID",
 		"AZURE_NODE_RESOURCE_GROUP",
 		"KUBELET_IDENTITY_CLIENT_ID",
+		"LINUX_ADMIN_USERNAME",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -115,6 +116,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
 			os.Setenv("AZURE_NODE_RESOURCE_GROUP", "my-node-rg")
 			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "2345678-1234-1234-1234-123456789012")
+			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -127,6 +129,7 @@ var _ = Describe("Options", func() {
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
 				ClusterID:                      lo.ToPtr("46593302"),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
+				AdminUsername:                  lo.ToPtr("customadminusername"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
 				NetworkPlugin:                  lo.ToPtr("none"),
 				NetworkPluginMode:              lo.ToPtr(""),
@@ -438,6 +441,64 @@ var _ = Describe("Options", func() {
 				"--use-sig",
 			)
 			Expect(err).To(MatchError(ContainSubstring("sig-access-token-scope")))
+		})
+	})
+
+	Context("Admin Username Validation", func() {
+		It("should fail when admin-username is too long", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--admin-username", "thisusernameiswaytoolongtobevalid1234567890",
+			)
+			Expect(err).To(MatchError(ContainSubstring("admin-username cannot be longer than 32 characters")))
+		})
+
+		It("should fail when admin-username doesn't start with a letter", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--admin-username", "1user",
+			)
+			Expect(err).To(MatchError(ContainSubstring("admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")))
+		})
+
+		It("should fail when admin-username contains invalid characters", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--admin-username", "user@name",
+			)
+			Expect(err).To(MatchError(ContainSubstring("admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")))
+		})
+
+		It("should succeed with valid admin-username", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--admin-username", "valid-user-123",
+			)
+			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 })
