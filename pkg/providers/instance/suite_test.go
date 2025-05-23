@@ -291,4 +291,30 @@ var _ = Describe("InstanceProvider", func() {
 		Expect(len(interfaces)).To(Equal(1))
 		Expect(interfaces[0].Name).To(Equal(managedNic.Name))
 	})
+	It("should create VM with custom Linux admin username", func() {
+		customUsername := "customuser"
+		ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+			AdminUsername: lo.ToPtr(customUsername),
+		}))
+
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+
+		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+
+		// Verify the custom username was propagated
+		Expect(vm.Properties.OSProfile.AdminUsername).ToNot(BeNil())
+		Expect(*vm.Properties.OSProfile.AdminUsername).To(Equal(customUsername))
+
+		// Verify SSH key path uses the custom username
+		Expect(vm.Properties.OSProfile.LinuxConfiguration).ToNot(BeNil())
+		Expect(vm.Properties.OSProfile.LinuxConfiguration.SSH).ToNot(BeNil())
+		Expect(vm.Properties.OSProfile.LinuxConfiguration.SSH.PublicKeys).To(HaveLen(1))
+		expectedPath := "/home/" + customUsername + "/.ssh/authorized_keys"
+		Expect(*vm.Properties.OSProfile.LinuxConfiguration.SSH.PublicKeys[0].Path).To(Equal(expectedPath))
+	})
 })
