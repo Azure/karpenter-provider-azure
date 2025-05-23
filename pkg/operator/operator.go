@@ -53,6 +53,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
@@ -74,7 +75,7 @@ type Operator struct {
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
-	KubernetesVersionProvider imagefamily.KubernetesVersionProvider
+	KubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
 	ImageProvider             *imagefamily.Provider
 	ImageResolver             imagefamily.Resolver
 	LaunchTemplateProvider    *launchtemplate.Provider
@@ -110,7 +111,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		operator.Elected(),
 	)
 
-	kubernetesVersionProvider := imagefamily.NewKubernetesVersionProvider(
+	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
 			azurecache.DefaultCleanupInterval),
