@@ -107,6 +107,7 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 
 vulncheck: ## Verify code vulnerabilities
 	@govulncheck ./pkg/...
+	@trivy filesystem --ignore-unfixed --scanners vuln --exit-code 1 go.mod
 
 licenses: download ## Verifies dependency licenses
 	! go-licenses csv ./... | grep -v -e 'MIT' -e 'Apache-2.0' -e 'BSD-3-Clause' -e 'BSD-2-Clause' -e 'ISC' -e 'MPL-2.0'

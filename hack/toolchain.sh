@@ -7,6 +7,7 @@ KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
 main() {
     tools
     kubebuilder
+    gettrivy
 }
 
 tools() {
@@ -47,6 +48,15 @@ kubebuilder() {
             wget -P $KUBEBUILDER_ASSETS https://dl.k8s.io/v1.25.16/bin/linux/"${arch}"/${binary}
             chmod +x $KUBEBUILDER_ASSETS/$binary
         done
+    fi
+}
+
+gettrivy() {
+    if ! command -v trivy &> /dev/null; then
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install -y trivy
     fi
 }
 
