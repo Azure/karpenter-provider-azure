@@ -262,15 +262,17 @@ func CredentialProviderURL(kubernetesVersion, arch string) string {
 	var credentialProviderVersion string
 	switch minorVersion {
 	case 29:
-		credentialProviderVersion = "1.29.13"
+		credentialProviderVersion = "1.29.15"
 	case 30:
-		credentialProviderVersion = "1.30.10"
+		credentialProviderVersion = "1.30.12"
 	case 31:
-		credentialProviderVersion = "1.31.4"
+		credentialProviderVersion = "1.31.6"
 	case 32:
+		credentialProviderVersion = "1.32.5"
+	case 33:
 		fallthrough // to default, which is same as latest
 	default:
-		credentialProviderVersion = "1.32.3"
+		credentialProviderVersion = "1.33.0"
 	}
 
 	return fmt.Sprintf("%s/cloud-provider-azure/v%s/binaries/azure-acr-credential-provider-linux-%s-v%s.tar.gz", globalAKSMirror, credentialProviderVersion, arch, credentialProviderVersion)
