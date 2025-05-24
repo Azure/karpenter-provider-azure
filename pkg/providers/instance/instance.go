@@ -67,7 +67,7 @@ var (
 	SKUNotAvailableReason                       = "SKUNotAvailable"
 
 	SubscriptionQuotaReachedTTL = 1 * time.Hour
-	AllocationFailureTTL        = 15 * time.Minute
+	AllocationFailureTTL        = 1 * time.Hour
 	SKUNotAvailableSpotTTL      = 1 * time.Hour
 	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
 )
