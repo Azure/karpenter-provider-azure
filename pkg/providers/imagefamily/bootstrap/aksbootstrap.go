@@ -397,6 +397,9 @@ func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
 	}
+	if kubeletConfig.DNSServiceIP != "" {
+		args["--cluster-dns"] = kubeletConfig.DNSServiceIP
+	}
 
 	return args
 }
