@@ -60,6 +60,16 @@ buildAndPublish() {
   date_epoch="$(dateEpoch)"
   build_date="$(buildDate "${date_epoch}")"
 
+  # Check if image tag already exists
+  if crane manifest "${oci_repo}/controller:${version}" > /dev/null 2>&1; then
+    echo "Image tag ${oci_repo}/controller:${version} already exists. Aborting."
+    exit 1
+  fi
+  if crane manifest "${oci_repo}/controller:${version}-aks" > /dev/null 2>&1; then
+    echo "Image tag ${oci_repo}/controller:${version}-aks already exists. Aborting."
+    exit 1
+  fi
+
   img="$(GOFLAGS=${GOFLAGS:-} \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"     ./cmd/controller)"

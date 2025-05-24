@@ -30,21 +30,26 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 	"sigs.k8s.io/karpenter/pkg/operator/logging"
-	"sigs.k8s.io/karpenter/pkg/operator/options"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 )
 
 func main() {
-	ctx := injection.WithOptionsOrDie(context.Background(), options.Injectables...)
+	ctx := injection.WithOptionsOrDie(context.Background(), coreoptions.Injectables...)
 	logger := zapr.NewLogger(logging.NewLogger(ctx, "controller"))
 	lo.Must0(operator.WaitForCRDs(ctx, 2*time.Minute, ctrl.GetConfigOrDie(), logger), "failed waiting for CRDs")
 
 	ctx, op := operator.NewOperator(coreoperator.NewOperator())
+
+	// TODO: Consider also dumping at least some core options
+	logger.V(0).Info("Initial options", "options", options.FromContext(ctx).String())
+
 	aksCloudProvider := cloudprovider.New(
 		op.InstanceTypesProvider,
 		op.InstanceProvider,

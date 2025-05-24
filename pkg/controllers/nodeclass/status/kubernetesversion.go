@@ -27,7 +27,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -41,11 +41,11 @@ const (
 )
 
 type KubernetesVersionReconciler struct {
-	kubernetesVersionProvider imagefamily.KubernetesVersionProvider
+	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
 	cm                        *pretty.ChangeMonitor
 }
 
-func NewKubernetesVersionReconciler(provider imagefamily.KubernetesVersionProvider) *KubernetesVersionReconciler {
+func NewKubernetesVersionReconciler(provider kubernetesversion.KubernetesVersionProvider) *KubernetesVersionReconciler {
 	return &KubernetesVersionReconciler{
 		kubernetesVersionProvider: provider,
 		cm:                        pretty.NewChangeMonitor(),
