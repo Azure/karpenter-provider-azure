@@ -50,9 +50,15 @@ func TestDrift(t *testing.T) {
 	RunSpecs(t, "KubernetesUpgrade")
 }
 
+const testAzureLinux = true // TODO: find a better way to parameterize this test for image family, withut duplicating
+
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	if testAzureLinux {
+		nodeClass = env.AZLinuxNodeClass()
+	} else {
+		nodeClass = env.DefaultAKSNodeClass()
+	}
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -114,5 +120,36 @@ var _ = Describe("KubernetesUpgrade", func() {
 		By(fmt.Sprintf("new nodes having upgraded kubernetes version: %s", kubernetesUpgradeVersion))
 		node = env.ExpectCreatedNodeCount("==", 1)[0]
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(kubernetesUpgradeVersion))
+
+		if !testAzureLinux {
+			return
+		}
+
+		By("verifying correct Azure Linux version for the upgraded node")
+		vm := env.GetVM(node.Name)
+		Expect(vm.Properties).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.ImageReference).ToNot(BeNil())
+
+		// Get image ID from either Shared Gallery or Community Gallery
+		var imageID string
+		if vm.Properties.StorageProfile.ImageReference.ID != nil {
+			imageID = *vm.Properties.StorageProfile.ImageReference.ID
+		} else if vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID != nil {
+			imageID = *vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID
+		}
+		Expect(imageID).ToNot(BeEmpty())
+
+		// Since K8s version >= 1.32.0 we should be using Azure Linux 3
+		k8sVersion, err := semver.Parse(strings.TrimPrefix(kubernetesUpgradeVersion, "v"))
+		Expect(err).ToNot(HaveOccurred())
+
+		if k8sVersion.GE(semver.Version{Major: 1, Minor: 32}) {
+			// For Azure Linux 3, the image definition should contain azurelinux3
+			Expect(imageID).To(ContainSubstring("azurelinux3"), "Expected Azure Linux 3 for K8s version >= 1.32")
+		} else {
+			// For Azure Linux (gen 1), the image definition should not contain azurelinux3
+			Expect(imageID).ToNot(ContainSubstring("azurelinux3"), "Expected Azure Linux 1 for K8s version < 1.32")
+		}
 	})
 })
