@@ -38,7 +38,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
@@ -463,17 +463,17 @@ var _ = Describe("Drift", func() {
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 	},
 		// VNETSubnetID tested separately
-		Entry("OSDiskSizeGB", v1beta1.AKSNodeClassSpec{OSDiskSizeGB: to.Int32Ptr(100)}),
+		Entry("OSDiskSizeGB", v1beta1.AKSNodeClassSpec{OSDiskSizeGB: to.Ptr(int32(100))}),
 		// ImageID TBD
-		Entry("ImageFamily", v1beta1.AKSNodeClassSpec{ImageFamily: to.StringPtr("AzureLinux")}),
+		Entry("ImageFamily", v1beta1.AKSNodeClassSpec{ImageFamily: to.Ptr("AzureLinux")}),
 		Entry("Tags", v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}),
 		Entry("KubeletConfiguration", v1beta1.AKSNodeClassSpec{
 			Kubelet: &v1beta1.KubeletConfiguration{
-				ImageGCLowThresholdPercent:  to.Int32Ptr(10),
-				ImageGCHighThresholdPercent: to.Int32Ptr(90),
+				ImageGCLowThresholdPercent:  to.Ptr(int32(10)),
+				ImageGCHighThresholdPercent: to.Ptr(int32(90)),
 			},
 		}),
-		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: to.Int32Ptr(10)}),
+		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: to.Ptr(int32(10))}),
 	)
 
 	It("should update the nodepool-hash annotation on the nodepool and nodeclaim when the nodepool's nodepool-hash-version annotation does not match the controller hash version", func() {

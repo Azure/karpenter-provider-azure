@@ -24,8 +24,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
 
@@ -73,9 +73,9 @@ func (c *NetworkInterfacesAPI) BeginCreateOrUpdate(_ context.Context, resourceGr
 
 	return c.NetworkInterfacesCreateOrUpdateBehavior.Invoke(input, func(input *NetworkInterfaceCreateOrUpdateInput) (*armnetwork.InterfacesClientCreateOrUpdateResponse, error) {
 		iface := input.Interface
-		iface.Name = to.StringPtr(input.InterfaceName)
+		iface.Name = to.Ptr(input.InterfaceName)
 		id := mkNetworkInterfaceID(input.ResourceGroupName, input.InterfaceName)
-		iface.ID = to.StringPtr(id)
+		iface.ID = to.Ptr(id)
 		c.NetworkInterfaces.Store(id, iface)
 		return &armnetwork.InterfacesClientCreateOrUpdateResponse{
 			Interface: iface,

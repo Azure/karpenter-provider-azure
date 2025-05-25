@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/go-autorest/autorest/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -225,7 +225,7 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 // with format acceptable to ARM (no / in keys, pointer to strings as values)
 func mergeTags(tags ...map[string]string) (result map[string]*string) {
 	return lo.MapEntries(lo.Assign(tags...), func(key string, value string) (string, *string) {
-		return strings.ReplaceAll(key, "/", "_"), to.StringPtr(value)
+		return strings.ReplaceAll(key, "/", "_"), to.Ptr(value)
 	})
 }
 
