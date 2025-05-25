@@ -150,17 +150,17 @@ func (o *Options) validateUseSIG() error {
 }
 
 func (o *Options) validateAdminUsername() error {
-	if len(o.AdminUsername) > 32 {
-		return fmt.Errorf("admin-username cannot be longer than 32 characters")
+	if len(o.LinuxAdminUsername) > 32 {
+		return fmt.Errorf("linux-admin-username cannot be longer than 32 characters")
 	}
 
 	// Must start with a letter and only contain letters, numbers, hyphens, and underscores
-	match, err := regexp.MatchString("^[A-Za-z][-A-Za-z0-9_]*$", o.AdminUsername)
+	match, err := regexp.MatchString("^[A-Za-z][-A-Za-z0-9_]*$", o.LinuxAdminUsername)
 	if err != nil {
-		return fmt.Errorf("error validating admin-username: %w", err)
+		return fmt.Errorf("error validating linux-admin-username: %w", err)
 	}
 	if !match {
-		return fmt.Errorf("admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")
+		return fmt.Errorf("linux-admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")
 	}
 
 	return nil

@@ -294,7 +294,7 @@ var _ = Describe("InstanceProvider", func() {
 	It("should create VM with custom Linux admin username", func() {
 		customUsername := "customuser"
 		ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
-			AdminUsername: lo.ToPtr(customUsername),
+			LinuxAdminUsername: lo.ToPtr(customUsername),
 		}))
 
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)

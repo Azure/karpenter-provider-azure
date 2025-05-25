@@ -367,19 +367,19 @@ func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *crea
 
 // createVMOptions contains all the parameters needed to create a VM
 type createVMOptions struct {
-	VMName         string
-	NicReference   string
-	Zone           string
-	CapacityType   string
-	Location       string
-	SSHPublicKey   string
-	AdminUsername  string
-	NodeIdentities []string
-	NodeClass      *v1beta1.AKSNodeClass
-	LaunchTemplate *launchtemplate.Template
-	InstanceType   *corecloudprovider.InstanceType
-	ProvisionMode  string
-	UseSIG         bool
+	VMName             string
+	NicReference       string
+	Zone               string
+	CapacityType       string
+	Location           string
+	SSHPublicKey       string
+	LinuxAdminUsername string
+	NodeIdentities     []string
+	NodeClass          *v1beta1.AKSNodeClass
+	LaunchTemplate     *launchtemplate.Template
+	InstanceType       *corecloudprovider.InstanceType
+	ProvisionMode      string
+	UseSIG             bool
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -419,7 +419,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			},
 
 			OSProfile: &armcompute.OSProfile{
-				AdminUsername: lo.ToPtr(opts.AdminUsername),
+				AdminUsername: lo.ToPtr(opts.LinuxAdminUsername),
 				ComputerName:  &opts.VMName,
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
 					DisablePasswordAuthentication: lo.ToPtr(true),
@@ -427,7 +427,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 						PublicKeys: []*armcompute.SSHPublicKey{
 							{
 								KeyData: lo.ToPtr(opts.SSHPublicKey),
-								Path:    lo.ToPtr("/home/" + opts.AdminUsername + "/.ssh/authorized_keys"),
+								Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
 							},
 						},
 					},
@@ -584,19 +584,19 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}
 
 	result, err := p.createVirtualMachine(ctx, &createVMOptions{
-		VMName:         resourceName,
-		NicReference:   nicReference,
-		Zone:           zone,
-		CapacityType:   capacityType,
-		Location:       p.location,
-		SSHPublicKey:   options.FromContext(ctx).SSHPublicKey,
-		AdminUsername:  options.FromContext(ctx).AdminUsername,
-		NodeIdentities: options.FromContext(ctx).NodeIdentities,
-		NodeClass:      nodeClass,
-		LaunchTemplate: launchTemplate,
-		InstanceType:   instanceType,
-		ProvisionMode:  p.provisionMode,
-		UseSIG:         options.FromContext(ctx).UseSIG,
+		VMName:             resourceName,
+		NicReference:       nicReference,
+		Zone:               zone,
+		CapacityType:       capacityType,
+		Location:           p.location,
+		SSHPublicKey:       options.FromContext(ctx).SSHPublicKey,
+		LinuxAdminUsername: options.FromContext(ctx).LinuxAdminUsername,
+		NodeIdentities:     options.FromContext(ctx).NodeIdentities,
+		NodeClass:          nodeClass,
+		LaunchTemplate:     launchTemplate,
+		InstanceType:       instanceType,
+		ProvisionMode:      p.provisionMode,
+		UseSIG:             options.FromContext(ctx).UseSIG,
 	})
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)

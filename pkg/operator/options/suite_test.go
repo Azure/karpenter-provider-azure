@@ -129,7 +129,7 @@ var _ = Describe("Options", func() {
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
 				ClusterID:                      lo.ToPtr("46593302"),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
-				AdminUsername:                  lo.ToPtr("customadminusername"),
+				LinuxAdminUsername:             lo.ToPtr("customadminusername"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
 				NetworkPlugin:                  lo.ToPtr("none"),
 				NetworkPluginMode:              lo.ToPtr(""),
@@ -445,7 +445,7 @@ var _ = Describe("Options", func() {
 	})
 
 	Context("Admin Username Validation", func() {
-		It("should fail when admin-username is too long", func() {
+		It("should fail when linux-admin-username is too long", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -454,12 +454,12 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--admin-username", "thisusernameiswaytoolongtobevalid1234567890",
+				"--linux-admin-username", "thisusernameiswaytoolongtobevalid1234567890",
 			)
-			Expect(err).To(MatchError(ContainSubstring("admin-username cannot be longer than 32 characters")))
+			Expect(err).To(MatchError(ContainSubstring("linux-admin-username cannot be longer than 32 characters")))
 		})
 
-		It("should fail when admin-username doesn't start with a letter", func() {
+		It("should fail when linux-admin-username doesn't start with a letter", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -468,12 +468,12 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--admin-username", "1user",
+				"--linux-admin-username", "1user",
 			)
-			Expect(err).To(MatchError(ContainSubstring("admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")))
+			Expect(err).To(MatchError(ContainSubstring("linux-admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")))
 		})
 
-		It("should fail when admin-username contains invalid characters", func() {
+		It("should fail when linux-admin-username contains invalid characters", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -482,12 +482,12 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--admin-username", "user@name",
+				"--linux-admin-username", "user@name",
 			)
-			Expect(err).To(MatchError(ContainSubstring("admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")))
+			Expect(err).To(MatchError(ContainSubstring("linux-admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")))
 		})
 
-		It("should succeed with valid admin-username", func() {
+		It("should succeed with valid linux-admin-username", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -496,7 +496,7 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--admin-username", "valid-user-123",
+				"--linux-admin-username", "valid-user-123",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
