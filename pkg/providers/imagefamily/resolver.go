@@ -20,7 +20,9 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
+	"github.com/blang/semver/v4"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -99,8 +101,12 @@ func (r *defaultResolver) Resolve(
 	if err != nil {
 		return nil, err
 	}
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return nil, err
+	}
 
-	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
+	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, kubernetesVersion, staticParameters)
 	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
@@ -188,21 +194,36 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string) []DefaultImageOutput {
+func getSupportedImages(familyName *string, kubernetesVersion string) []DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
-	imageFamily := getImageFamily(familyName, nil)
+	imageFamily := getImageFamily(familyName, kubernetesVersion, nil)
 	return imageFamily.DefaultImages()
 }
 
-func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
+func getImageFamily(familyName *string, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.AzureLinuxImageFamily:
+		if useAzureLinux3(kubernetesVersion) {
+			return &AzureLinux3{Options: parameters}
+		}
 		return &AzureLinux{Options: parameters}
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}
+}
+
+// useAzureLinux3 checks if the Kubernetes version is 1.32.0 or higher,
+// which is when Azure Linux 3 support starts
+func useAzureLinux3(kubernetesVersion string) bool {
+	// Parse version, stripping any 'v' prefix if present
+	version, err := semver.Parse(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		// If we can't parse the version, default to AzureLinux (false)
+		return false
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 32})
 }
 
 func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
