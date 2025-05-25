@@ -30,6 +30,7 @@ type OptionsFields struct {
 	ClusterEndpoint                *string
 	ClusterID                      *string
 	KubeletClientTLSBootstrapToken *string
+	LinuxAdminUsername             *string
 	SSHPublicKey                   *string
 	NetworkPlugin                  *string
 	NetworkPluginMode              *string
@@ -65,6 +66,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		KubeletClientTLSBootstrapToken: lo.FromPtrOr(options.KubeletClientTLSBootstrapToken, "test-token"),
 		KubeletIdentityClientID:        lo.FromPtrOr(options.KubeletIdentityClientID, "12345678-1234-1234-1234-123456789012"),
 		SSHPublicKey:                   lo.FromPtrOr(options.SSHPublicKey, "test-ssh-public-key"),
+		LinuxAdminUsername:             lo.FromPtrOr(options.LinuxAdminUsername, "azureuser"),
 		NetworkPlugin:                  lo.FromPtrOr(options.NetworkPlugin, "azure"),
 		NetworkPluginMode:              lo.FromPtrOr(options.NetworkPluginMode, "overlay"),
 		NetworkPolicy:                  lo.FromPtrOr(options.NetworkPolicy, "cilium"),
