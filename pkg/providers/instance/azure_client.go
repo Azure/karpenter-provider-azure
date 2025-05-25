@@ -103,9 +103,6 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	var err error
 	if cfg.Cloud != "" {
 		env = azclient.EnvironmentFromName(cfg.Cloud)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	azClient, err := NewAZClient(ctx, cfg, env)

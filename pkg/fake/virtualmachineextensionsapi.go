@@ -19,9 +19,9 @@ package fake
 import (
 	"context"
 	"fmt"
+	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
@@ -63,7 +63,7 @@ func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(_ context.Context, res
 
 	return c.VirtualMachineExtensionsCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineExtensionCreateOrUpdateInput) (*armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse, error) {
 		result := input.VirtualMachineExtension
-		result.ID = to.Ptr(mkVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName))
+		result.ID = lo.ToPtr(mkVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName))
 		return &armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse{
 			VirtualMachineExtension: result,
 		}, nil
