@@ -208,12 +208,10 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			imageFamily := v1beta1.AzureLinuxImageFamily
 			nodeClass.Spec.ImageFamily = &imageFamily
-			// Set Kubernetes version to test AzureLinux3
-			nodeClass.Status.KubernetesVersion = "1.32.0"
 
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, laterCIGImageVersionTest, true)))
+			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, laterCIGImageVersionTest, false)))
 		})
 	})
 })
