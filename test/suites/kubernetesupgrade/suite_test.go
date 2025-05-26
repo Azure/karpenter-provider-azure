@@ -50,7 +50,7 @@ func TestDrift(t *testing.T) {
 	RunSpecs(t, "KubernetesUpgrade")
 }
 
-const testAzureLinux = true // TODO: find a better way to parameterize this test for image family, withut duplicating
+const testAzureLinux = true // TODO: find a better way to parameterize this test for image family, without duplicating logic
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
