@@ -19,8 +19,9 @@ package fake
 import (
 	"context"
 	"fmt"
-	"github.com/samber/lo"
 	"sync"
+
+	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"

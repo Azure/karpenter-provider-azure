@@ -19,6 +19,7 @@ package fake
 import (
 	"context"
 	"fmt"
+
 	"github.com/samber/lo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"

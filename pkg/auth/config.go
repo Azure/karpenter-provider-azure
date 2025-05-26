@@ -19,8 +19,9 @@ package auth
 import (
 	"fmt"
 	"os"
-	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"strings"
+
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 
 	"github.com/Azure/go-autorest/autorest"
 )

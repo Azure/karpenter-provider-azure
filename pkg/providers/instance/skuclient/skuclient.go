@@ -18,9 +18,10 @@ package skuclient
 
 import (
 	"context"
-	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sync"
 	"time"
+
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
