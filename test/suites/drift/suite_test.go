@@ -468,8 +468,8 @@ var _ = Describe("Drift", func() {
 		Entry("Tags", v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}),
 		Entry("KubeletConfiguration", v1beta1.AKSNodeClassSpec{
 			Kubelet: &v1beta1.KubeletConfiguration{
-				ImageGCLowThresholdPercent:  lo.ToPtr(int32(10)),
-				ImageGCHighThresholdPercent: lo.ToPtr(int32(90)),
+				ImageGCLowThresholdPercent:  lo.ToPtr[int32](10),
+				ImageGCHighThresholdPercent: lo.ToPtr[int32](90),
 			},
 		}),
 		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(10))}),
