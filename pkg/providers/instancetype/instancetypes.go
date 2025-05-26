@@ -115,8 +115,8 @@ func (p *DefaultProvider) List(
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
-		lo.FromPtrOr(nodeClass.Spec.ImageFamily, ""),
-		lo.FromPtrOr(nodeClass.Spec.OSDiskSizeGB, 0),
+		lo.FromPtr(nodeClass.Spec.ImageFamily),
+		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
