@@ -28,7 +28,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	v1beta1 "github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -497,6 +500,72 @@ func TestHandleResponseErrors(t *testing.T) {
 			for _, info := range tc.expectedAvailableOfferingsInformation {
 				if testProvider.unavailableOfferings.IsUnavailable(info.instanceTypeName, info.zone, info.capacityType) {
 					t.Errorf("Expected offering %s in zone %s with capacity type %s to not be marked as unavailable", info.instanceTypeName, info.zone, info.capacityType)
+				}
+			}
+		})
+	}
+}
+
+func TestSetVMPropertiesOSDiskEncryptionSet(t *testing.T) {
+	desID := "/subscriptions/xxx/resourceGroups/yyy/providers/Microsoft.Compute/diskEncryptionSets/my-des"
+	tc := []struct {
+		name                    string
+		diskEncryptionSetID     *string
+		expectEncryptionSet     bool
+		expectedEncryptionSetID string
+	}{
+		{
+			name:                    "With Disk Encryption Set",
+			diskEncryptionSetID:     &desID,
+			expectEncryptionSet:     true,
+			expectedEncryptionSetID: desID,
+		},
+		{
+			name:                "Without Disk Encryption Set",
+			diskEncryptionSetID: nil,
+			expectEncryptionSet: false,
+		},
+		{
+			name:                "Empty Disk Encryption Set",
+			diskEncryptionSetID: lo.ToPtr(""),
+			expectEncryptionSet: false,
+		},
+	}
+
+	for _, c := range tc {
+		t.Run(c.name, func(t *testing.T) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskDiskEncryptionSetID: c.diskEncryptionSetID,
+					OSDiskSizeGB:              lo.ToPtr(int32(128)),
+				},
+			}
+			opts := &createVMOptions{
+				VMName:       "testvm",
+				NicReference: "nic-id",
+				Zone:         "1",
+				CapacityType: "on-demand",
+				Location:     "westus2",
+				SSHPublicKey: "ssh-rsa AAA...",
+				NodeClass:    nodeClass,
+				LaunchTemplate: &launchtemplate.Template{
+					StorageProfile: "Managed",
+					Tags:           map[string]*string{},
+				},
+				InstanceType: &cloudprovider.InstanceType{Name: "Standard_D2s_v3"},
+			}
+			vm := newVMObject(opts)
+			managedDisk := vm.Properties.StorageProfile.OSDisk.ManagedDisk
+			if c.expectEncryptionSet {
+				if managedDisk == nil ||
+					managedDisk.DiskEncryptionSet == nil ||
+					managedDisk.DiskEncryptionSet.ID == nil ||
+					*managedDisk.DiskEncryptionSet.ID != c.expectedEncryptionSetID {
+					t.Errorf("Expected DiskEncryptionSet ID %q, got %+v", c.expectedEncryptionSetID, managedDisk)
+				}
+			} else {
+				if managedDisk != nil && managedDisk.DiskEncryptionSet != nil {
+					t.Errorf("Did not expect DiskEncryptionSet to be set, got %+v", managedDisk)
 				}
 			}
 		})

@@ -445,6 +445,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Tags:  opts.LaunchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate.StorageProfile)
+	setVMPropertiesOSDiskDiskEncryptionSet(vm.Properties, opts.NodeClass.Spec.OSDiskDiskEncryptionSetID)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 
@@ -465,6 +466,16 @@ func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties
 			// placement (cache/resource) is left to CRP
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
+	}
+}
+
+func setVMPropertiesOSDiskDiskEncryptionSet(vmProperties *armcompute.VirtualMachineProperties, diskEncryptionSetID *string) {
+	if diskEncryptionSetID != nil && *diskEncryptionSetID != "" {
+		vmProperties.StorageProfile.OSDisk.ManagedDisk = &armcompute.ManagedDiskParameters{
+			DiskEncryptionSet: &armcompute.DiskEncryptionSetParameters{
+				ID: lo.ToPtr(*diskEncryptionSetID),
+			},
+		}
 	}
 }
 

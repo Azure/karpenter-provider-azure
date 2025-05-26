@@ -98,6 +98,11 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.OSDiskDiskEncryptionSetID != nil {
+		in, out := &in.OSDiskDiskEncryptionSetID, &out.OSDiskDiskEncryptionSetID
+		*out = new(string)
+		**out = **in
+	}
 	if in.ImageID != nil {
 		in, out := &in.ImageID, &out.ImageID
 		*out = new(string)
