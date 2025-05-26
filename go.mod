@@ -19,7 +19,7 @@ require (
 	github.com/Azure/skewer v0.0.20
 	github.com/Pallinder/go-randomdata v1.2.0
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
-	github.com/awslabs/operatorpkg v0.0.0-20250320000002-b05af0f15c68
+	github.com/awslabs/operatorpkg v0.0.0-20250425180727-b22281cd8057
 	github.com/blang/semver/v4 v4.0.0
 	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
@@ -50,7 +50,7 @@ require (
 	k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e
 	sigs.k8s.io/cloud-provider-azure v1.32.4
 	sigs.k8s.io/controller-runtime v0.20.4
-	sigs.k8s.io/karpenter v1.4.0
+	sigs.k8s.io/karpenter v1.5.0
 )
 
 require (
