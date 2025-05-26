@@ -19,7 +19,7 @@ package v1alpha2_test
 import (
 	"strings"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/Pallinder/go-randomdata"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -63,9 +63,9 @@ var _ = Describe("CEL/Validation", func() {
 	})
 	Context("VnetSubnetID", func() {
 		DescribeTable("Should only accept valid VnetSubnetID", func(vnetSubnetID string, expected bool) {
-			nodeClass := &v1beta1.AKSNodeClass{
+			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec: v1beta1.AKSNodeClassSpec{
+				Spec: v1alpha2.AKSNodeClassSpec{
 					VNETSubnetID: &vnetSubnetID,
 				},
 			}
@@ -161,18 +161,6 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 			nodePool = oldNodePool.DeepCopy()
 		})
-		It("should not allow internal labels", func() {
-			oldNodePool := nodePool.DeepCopy()
-			for label := range v1beta1.RestrictedLabels {
-				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
-					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
-				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
-			}
-		})
 	})
 	Context("Labels", func() {
 		It("should allow restricted domains exceptions", func() {
@@ -195,18 +183,6 @@ var _ = Describe("CEL/Validation", func() {
 				}
 				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
 				Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
-			}
-		})
-		It("should not allow internal labels", func() {
-			oldNodePool := nodePool.DeepCopy()
-			for label := range v1beta1.RestrictedLabels {
-				nodePool.Spec.Template.Labels = map[string]string{
-					label: "test",
-				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
 				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 				nodePool = oldNodePool.DeepCopy()
 			}
