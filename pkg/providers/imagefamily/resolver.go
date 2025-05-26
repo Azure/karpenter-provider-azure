@@ -205,7 +205,7 @@ func getImageFamily(familyName *string, kubernetesVersion string, parameters *te
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.AzureLinuxImageFamily:
-		if useAzureLinux3(kubernetesVersion) {
+		if UseAzureLinux3(kubernetesVersion) {
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
@@ -214,9 +214,9 @@ func getImageFamily(familyName *string, kubernetesVersion string, parameters *te
 	}
 }
 
-// useAzureLinux3 checks if the Kubernetes version is 1.32.0 or higher,
+// UseAzureLinux3 checks if the Kubernetes version is 1.32.0 or higher,
 // which is when Azure Linux 3 support starts
-func useAzureLinux3(kubernetesVersion string) bool {
+func UseAzureLinux3(kubernetesVersion string) bool {
 	// Parse version, stripping any 'v' prefix if present
 	version, err := semver.Parse(strings.TrimPrefix(kubernetesVersion, "v"))
 	if err != nil {
