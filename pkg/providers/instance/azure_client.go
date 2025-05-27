@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
+
 	armpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -28,7 +30,6 @@ import (
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -99,16 +100,13 @@ func NewAZClientFromAPI(
 
 func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	// Defaulting env to Azure Public Cloud.
-	env := azure.PublicCloud
+	env := azclient.PublicCloud
 	var err error
 	if cfg.Cloud != "" {
-		env, err = azure.EnvironmentFromName(cfg.Cloud)
-		if err != nil {
-			return nil, err
-		}
+		env = azclient.EnvironmentFromName(cfg.Cloud)
 	}
 
-	azClient, err := NewAZClient(ctx, cfg, &env)
+	azClient, err := NewAZClient(ctx, cfg, env)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +114,7 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	return azClient, nil
 }
 
-func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) (*AZClient, error) {
+func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment) (*AZClient, error) {
 	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
