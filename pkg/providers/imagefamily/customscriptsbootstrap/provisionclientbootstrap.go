@@ -27,7 +27,9 @@ import (
 	"time"
 
 	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -178,6 +180,19 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 
 func (p *ProvisionClientBootstrap) getNodeBootstrappingFromClient(ctx context.Context, provisionProfile *models.ProvisionProfile, provisionHelperValues *models.ProvisionHelperValues, bootstrapToken string) (string, string, error) {
 	transport := httptransport.New(options.FromContext(ctx).NodeBootstrappingServerURL, "/", []string{"http"})
+
+	// Add Authorization Bearer token header
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return "", "", err
+	}
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://management.azure.com/.default"},
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get token: %w", err)
+	}
+	transport.DefaultAuthentication = httptransport.BearerToken(token.Token)
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	loggingClient := restlogger.NewLoggingClient(logger)
