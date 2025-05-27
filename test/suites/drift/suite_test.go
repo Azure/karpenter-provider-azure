@@ -462,7 +462,7 @@ var _ = Describe("Drift", func() {
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 	},
 		// VNETSubnetID tested separately
-		Entry("OSDiskSizeGB", v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(100))}),
+		Entry("OSDiskSizeGB", v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr[int32](100)}),
 		// ImageID TBD
 		Entry("ImageFamily", v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}),
 		Entry("Tags", v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}),
