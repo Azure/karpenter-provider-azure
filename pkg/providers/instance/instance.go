@@ -44,6 +44,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -95,15 +96,16 @@ type Provider interface {
 var _ Provider = (*DefaultProvider)(nil)
 
 type DefaultProvider struct {
-	location               string
-	azClient               *AZClient
-	instanceTypeProvider   instancetype.Provider
-	launchTemplateProvider *launchtemplate.Provider
-	loadBalancerProvider   *loadbalancer.Provider
-	resourceGroup          string
-	subscriptionID         string
-	unavailableOfferings   *cache.UnavailableOfferings
-	provisionMode          string
+	location                     string
+	azClient                     *AZClient
+	instanceTypeProvider         instancetype.Provider
+	launchTemplateProvider       *launchtemplate.Provider
+	loadBalancerProvider         *loadbalancer.Provider
+	networkSecurityGroupProvider *networksecuritygroup.Provider
+	resourceGroup                string
+	subscriptionID               string
+	unavailableOfferings         *cache.UnavailableOfferings
+	provisionMode                string
 
 	vmListQuery, nicListQuery string
 }
@@ -113,6 +115,7 @@ func NewDefaultProvider(
 	instanceTypeProvider instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,
+	networkSecurityGroupProvider *networksecuritygroup.Provider,
 	offeringsCache *cache.UnavailableOfferings,
 	location string,
 	resourceGroup string,
@@ -120,15 +123,16 @@ func NewDefaultProvider(
 	provisionMode string,
 ) *DefaultProvider {
 	return &DefaultProvider{
-		azClient:               azClient,
-		instanceTypeProvider:   instanceTypeProvider,
-		launchTemplateProvider: launchTemplateProvider,
-		loadBalancerProvider:   loadBalancerProvider,
-		location:               location,
-		resourceGroup:          resourceGroup,
-		subscriptionID:         subscriptionID,
-		unavailableOfferings:   offeringsCache,
-		provisionMode:          provisionMode,
+		azClient:                     azClient,
+		instanceTypeProvider:         instanceTypeProvider,
+		launchTemplateProvider:       launchTemplateProvider,
+		loadBalancerProvider:         loadBalancerProvider,
+		networkSecurityGroupProvider: networkSecurityGroupProvider,
+		location:                     location,
+		resourceGroup:                resourceGroup,
+		subscriptionID:               subscriptionID,
+		unavailableOfferings:         offeringsCache,
+		provisionMode:                provisionMode,
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
