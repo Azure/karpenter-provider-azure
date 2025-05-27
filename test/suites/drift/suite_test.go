@@ -472,7 +472,7 @@ var _ = Describe("Drift", func() {
 				ImageGCHighThresholdPercent: lo.ToPtr[int32](90),
 			},
 		}),
-		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(10))}),
+		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr[int32](10)}),
 	)
 
 	It("should update the nodepool-hash annotation on the nodepool and nodeclaim when the nodepool's nodepool-hash-version annotation does not match the controller hash version", func() {
