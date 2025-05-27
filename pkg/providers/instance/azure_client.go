@@ -18,15 +18,9 @@ package instance
 
 import (
 	"context"
-	"fmt"
 
-<<<<<<< HEAD
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 
-	armpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/policy"
-=======
->>>>>>> 6e09f55 (Update VM client options to get default ops + aux token ops)
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
@@ -39,7 +33,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 	klog "k8s.io/klog/v2"
@@ -139,16 +132,16 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
 
-	// deep copy the options to avoid modifying the original
+	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	o := options.FromContext(ctx)
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
-		auxOptions, err := getAuxiliaryTokenPolicyOptions(ctx, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
+		auxPolicy, err := auth.GetAuxiliaryTokenPolicy(ctx, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		if err != nil {
 			return nil, err
 		}
-		vmClientOptions.ClientOptions = auxOptions
+		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
 	if err != nil {
@@ -194,16 +187,4 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
 		skuClient), nil
-}
-
-func getAuxiliaryTokenPolicyOptions(ctx context.Context, url string, scope string) (policy.ClientOptions, error) {
-	token, err := auth.GetAuxiliaryToken(ctx, url, scope)
-	if err != nil {
-		return policy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
-	}
-	auxPolicy := auth.NewAuxiliaryTokenPolicy(token)
-	log.FromContext(ctx).V(1).Info("Will use auxiliary token policy for creating virtual machines")
-	return policy.ClientOptions{
-		PerRetryPolicies: []policy.Policy{&auxPolicy},
-	}, nil
 }
