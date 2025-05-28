@@ -101,8 +101,7 @@ func NewNodeBootstrappingClient(ctx context.Context, subscriptionID string, reso
 }
 
 // Get implements the NodeBootstrappingAPI interface.
-// It retrieves node bootstrapping data from the Azure API using a cached token when available
-// to reduce the number of token acquisition calls.
+// It retrieves node bootstrapping data (CSE and base64-encoded CustomData), but omits the TLS bootstrap token.
 func (c *NodeBootstrappingClient) Get(
 	ctx context.Context,
 	parameters *models.ProvisionValues,

@@ -41,6 +41,7 @@ import (
 
 // NodeBootstrappingProvider defines an interface for retrieving node bootstrapping data
 type NodeBootstrappingProvider interface {
+	// Get retrieves the CSE and base64-encoded CustomData for node bootstrapping, but omits the bootstrap token.
 	Get(ctx context.Context, parameters *models.ProvisionValues) (string, string, error)
 }
 
