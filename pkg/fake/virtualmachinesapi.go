@@ -29,7 +29,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/samber/lo"
 )
@@ -107,7 +106,7 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGrou
 		// TODO: subscription ID?
 		vm := input.VM
 		id := MkVMID(input.ResourceGroupName, input.VMName)
-		vm.ID = to.StringPtr(id)
+		vm.ID = lo.ToPtr(id)
 
 		// Check store for existing vm by name
 		existingVM, ok := c.Instances.Load(id)
@@ -141,7 +140,7 @@ ERROR CODE: PropertyChangeNotAllowed
 			return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{VirtualMachine: existingVM.(armcompute.VirtualMachine)}, nil
 		}
 
-		vm.Name = to.StringPtr(input.VMName)
+		vm.Name = lo.ToPtr(input.VMName)
 		if vm.Properties == nil {
 			vm.Properties = &armcompute.VirtualMachineProperties{}
 		}

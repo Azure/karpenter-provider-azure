@@ -1006,6 +1006,15 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(reqs.Has(v1beta1.LabelSKUStorageEphemeralOSMaxSize)).To(BeTrue())
 			}
 		})
+		It("boolean requirements should have a value, either 'true' or 'false'", func() {
+			for _, instanceType := range instanceTypes {
+				reqs := instanceType.Requirements
+				Expect(reqs.Get(v1beta1.LabelSKUStoragePremiumCapable).Values()).To(HaveLen(1))
+				Expect(reqs.Get(v1beta1.LabelSKUStoragePremiumCapable).Values()[0]).To(SatisfyAny(Equal("true"), Equal("false")))
+				Expect(reqs.Get(v1beta1.LabelSKUAcceleratedNetworking).Values()).To(HaveLen(1))
+				Expect(reqs.Get(v1beta1.LabelSKUAcceleratedNetworking).Values()[0]).To(SatisfyAny(Equal("true"), Equal("false")))
+			}
+		})
 
 		It("should have all compute capacity", func() {
 			for _, instanceType := range instanceTypes {

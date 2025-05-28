@@ -166,8 +166,8 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 
 		// SKU capabilities
 		scheduling.NewRequirement(v1beta1.LabelSKUStorageEphemeralOSMaxSize, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1beta1.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsPremiumIO())),
+		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsAcceleratedNetworkingSupported())),
 		scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpDoesNotExist),
 		// all additive feature initialized elsewhere
 	)
@@ -178,9 +178,7 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	// size parts
 	requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
 
-	setRequirementsStoragePremiumCapable(requirements, sku)
 	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
-	setRequirementsAcceleratedNetworking(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
 	setRequirementsGPU(requirements, sku, vmsize)
 	setRequirementsVersion(requirements, vmsize)
@@ -188,21 +186,9 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	return requirements
 }
 
-func setRequirementsStoragePremiumCapable(requirements scheduling.Requirements, sku *skewer.SKU) {
-	if sku.IsPremiumIO() {
-		requirements[v1beta1.LabelSKUStoragePremiumCapable].Insert("true")
-	}
-}
-
 func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
 	if sku.IsEphemeralOSDiskSupported() && vmsize.Series != "Dlds_v5" { // Dlds_v5 does not support ephemeral OS disk, contrary to what it claims
 		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(MaxEphemeralOSDiskSizeGB(sku)))
-	}
-}
-
-func setRequirementsAcceleratedNetworking(requirements scheduling.Requirements, sku *skewer.SKU) {
-	if sku.IsAcceleratedNetworkingSupported() {
-		requirements[v1beta1.LabelSKUAcceleratedNetworking].Insert("true")
 	}
 }
 
