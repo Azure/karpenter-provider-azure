@@ -22,6 +22,7 @@ runs:
         path: |
           /usr/local/kubebuilder/bin
           ~/go/bin
+          /usr/bin/trivy
         key: ${{ runner.os }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
