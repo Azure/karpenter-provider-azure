@@ -20,7 +20,9 @@ import (
 	"encoding/json"
 	"hash/fnv"
 	"strconv"
+	"strings"
 
+	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -52,7 +54,7 @@ func HashFromVM(vm *armcompute.VirtualMachine) (string, error) {
 	identities := sets.Set[string]{}
 	if vm.Identity != nil {
 		for ident := range vm.Identity.UserAssignedIdentities {
-			identities.Insert(ident)
+			identities.Insert(strings.ToLower(ident))
 		}
 	}
 
@@ -66,7 +68,9 @@ func HashFromVM(vm *armcompute.VirtualMachine) (string, error) {
 // HashFromNodeClaim calculates an inplace update hash from the specified machine and options
 func HashFromNodeClaim(options *options.Options, _ *karpv1.NodeClaim) (string, error) {
 	hashStruct := &inPlaceUpdateFields{
-		Identities: sets.New(options.NodeIdentities...),
+		Identities: sets.New(lo.Map(options.NodeIdentities, func(ident string, _ int) string {
+			return strings.ToLower(ident)
+		})...),
 	}
 
 	return hashStruct.CalculateHash()

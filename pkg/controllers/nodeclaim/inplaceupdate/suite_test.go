@@ -110,6 +110,36 @@ var _ = Describe("Unit tests", func() {
 			Expect(hash1).To(Equal(hash2))
 			Expect(hash2).To(Equal(hash3))
 		})
+		It("should not depend on identity case", func() {
+			vm1 := &armcompute.VirtualMachine{
+				Identity: &armcompute.VirtualMachineIdentity{
+					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
+						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
+						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2": {},
+						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3": {},
+					},
+				},
+			}
+
+			vm2 := &armcompute.VirtualMachine{
+				Identity: &armcompute.VirtualMachineIdentity{
+					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
+						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myID2": {}, // capitalized 'ID'
+						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
+						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3": {},
+					},
+				},
+			}
+
+			hash1, err := inplaceupdate.HashFromVM(vm1)
+			Expect(err).ToNot(HaveOccurred())
+
+			hash2, err := inplaceupdate.HashFromVM(vm2)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(hash1).To(Equal(hash2))
+		})
+
 	})
 
 	Context("HashFromNodeClaim", func() {
@@ -142,6 +172,27 @@ var _ = Describe("Unit tests", func() {
 
 			Expect(hash1).To(Equal(hash2))
 			Expect(hash2).To(Equal(hash3))
+		})
+		It("should not depend on identity case", func() {
+			options := test.Options()
+			options.NodeIdentities = []string{
+				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
+				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
+				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
+			}
+
+			hash1, err := inplaceupdate.HashFromNodeClaim(options, nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			options.NodeIdentities = []string{
+				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myID2", // capitalized 'ID'
+				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
+				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
+			}
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(hash1).To(Equal(hash2))
 		})
 	})
 
