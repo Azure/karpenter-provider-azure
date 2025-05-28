@@ -21,12 +21,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+type AuxiliaryTokenServer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // AuxiliaryTokenPolicy provides a custom policy used to authenticate
 // with shared node image galleries.
@@ -39,8 +44,17 @@ func (p *AuxiliaryTokenPolicy) Do(req *policy.Request) (*http.Response, error) {
 	return req.Next()
 }
 
-func GetAuxiliaryTokenPolicy(ctx context.Context, url string, scope string) (policy.Policy, error) {
-	token, err := getAuxiliaryToken(url, scope)
+func AddAuxiliaryTokenPolicyClientOptions(ctx context.Context, client AuxiliaryTokenServer, opts *options.Options, clientOptions *arm.ClientOptions) error {
+	auxPolicy, err := getAuxiliaryTokenPolicy(ctx, client, opts.SIGAccessTokenServerURL, opts.SIGAccessTokenScope)
+	if err != nil {
+		return fmt.Errorf("failed to add auxiliary token policy to virtual machine client options: %w", err)
+	}
+	clientOptions.ClientOptions.PerRetryPolicies = append(clientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
+	return nil
+}
+
+func getAuxiliaryTokenPolicy(ctx context.Context, client AuxiliaryTokenServer, url string, scope string) (*AuxiliaryTokenPolicy, error) {
+	token, err := getAuxiliaryToken(client, url, scope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get auxiliary token: %w", err)
 	}
@@ -49,7 +63,7 @@ func GetAuxiliaryTokenPolicy(ctx context.Context, url string, scope string) (pol
 	return &auxPolicy, nil
 }
 
-func getAuxiliaryToken(url string, scope string) (azcore.AccessToken, error) {
+func getAuxiliaryToken(client AuxiliaryTokenServer, url string, scope string) (azcore.AccessToken, error) {
 	if url == "" {
 		return azcore.AccessToken{}, fmt.Errorf("access token server URL is not set")
 	}
@@ -68,7 +82,6 @@ func getAuxiliaryToken(url string, scope string) (azcore.AccessToken, error) {
 	req.Header.Set("User-Agent", GetUserAgentExtension())
 
 	// Send the request
-	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return azcore.AccessToken{}, fmt.Errorf("error making request: %w", err)
