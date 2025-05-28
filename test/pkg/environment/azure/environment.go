@@ -32,6 +32,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
@@ -56,10 +57,15 @@ type Environment struct {
 	ClusterName          string
 	ClusterResourceGroup string
 
-	vmClient                *armcompute.VirtualMachinesClient
-	VNETClient              *armnetwork.VirtualNetworksClient
-	InterfacesClient        *armnetwork.InterfacesClient
-	AKSManagedClusterClient *containerservice.ManagedClustersClient
+	tracker *azure.Tracker
+
+	// These should be unexported and access should be through the Environment methods
+	// Any create calls should make sure they also register the created resources with the Environment's tracker
+	// to ensure they are cleaned up after the test.
+	vmClient             *armcompute.VirtualMachinesClient
+	vnetClient           *armnetwork.VirtualNetworksClient
+	interfacesClient     *armnetwork.InterfacesClient
+	managedClusterClient *containerservice.ManagedClustersClient
 }
 
 func NewEnvironment(t *testing.T) *Environment {
@@ -70,6 +76,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		ClusterResourceGroup: lo.Must(os.LookupEnv("AZURE_RESOURCE_GROUP")),
 		ACRName:              lo.Must(os.LookupEnv("AZURE_ACR_NAME")),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
+		tracker:              azure.NewTracker(),
 	}
 
 	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
@@ -78,9 +85,9 @@ func NewEnvironment(t *testing.T) *Environment {
 
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
 	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.VNETClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.InterfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.AKSManagedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
 	return azureEnv
 }
 
