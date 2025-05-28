@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
@@ -70,6 +71,7 @@ type AZClient struct {
 
 	NodeImageVersionsClient imagefamily.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamily.CommunityGalleryImageVersionsAPI
+	NodeBootstrappingClient imagefamily.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
 	SKUClient                   skuclient.SkuClient
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
@@ -85,6 +87,7 @@ func NewAZClientFromAPI(
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI,
 	nodeImageVersionsClient imagefamily.NodeImageVersionsAPI,
+	nodeBootstrappingClient imagefamily.NodeBootstrappingAPI,
 	skuClient skuclient.SkuClient,
 ) *AZClient {
 	return &AZClient{
@@ -94,6 +97,7 @@ func NewAZClientFromAPI(
 		networkInterfacesClient:        interfacesClient,
 		ImageVersionsClient:            imageVersionsClient,
 		NodeImageVersionsClient:        nodeImageVersionsClient,
+		NodeBootstrappingClient:        nodeBootstrappingClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
@@ -181,6 +185,21 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
 
+	var nodeBootstrappingClient imagefamily.NodeBootstrappingAPI = nil
+	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+		nodeBootstrappingClient, err = imagefamily.NewNodeBootstrappingClient(
+			ctx,
+			cfg.SubscriptionID,
+			cfg.ResourceGroup,
+			o.ClusterName,
+			cred,
+			o.NodeBootstrappingServerURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create node bootstrapping client: %w", err)
+		}
+		klog.V(5).Infof("Created bootstrapping client %v, using a token credential", nodeBootstrappingClient)
+	}
+
 	return NewAZClientFromAPI(virtualMachinesClient,
 		azureResourceGraphClient,
 		extensionsClient,
@@ -189,5 +208,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
+		nodeBootstrappingClient,
 		skuClient), nil
 }
