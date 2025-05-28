@@ -22,6 +22,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
@@ -81,4 +82,9 @@ type NodeImageVersionsResponse struct {
 
 type NodeImageVersionsAPI interface {
 	List(ctx context.Context, location, subscription string) (NodeImageVersionsResponse, error)
+}
+
+// NodeBootstrappingAPI defines the interface for retrieving node bootstrapping data
+type NodeBootstrappingAPI interface {
+	Get(ctx context.Context, parameters *models.ProvisionValues) (string, string, error)
 }
