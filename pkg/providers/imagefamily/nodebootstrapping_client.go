@@ -34,28 +34,19 @@ import (
 	"github.com/go-openapi/strfmt"
 )
 
-// tokenCache provides a thread-safe cache for Azure tokens to reduce the frequency of token requests.
-// This is important for performance as token acquisition can be an expensive operation,
-// especially when called frequently during provisioning.
 type tokenCache struct {
 	mu            sync.Mutex         // Mutex to ensure thread-safety
 	token         azcore.AccessToken // The cached token
 	refreshAfter  time.Time          // Time after which we should refresh the token
-	refreshBuffer time.Duration      // Buffer time before actual expiration to refresh the token (default: 5 minutes)
+	refreshBuffer time.Duration      // Buffer time before actual expiration to refresh the token
 }
 
 // getToken returns a cached token if valid, otherwise fetches a new one using the provided credential.
 // This method ensures we only request new tokens when necessary, reducing API calls to Azure AD.
 // The method is thread-safe and can be called concurrently from multiple goroutines.
-//
-// Parameters:
-//   - ctx: Context for the token request
-//   - credential: The Azure credential used to acquire tokens
-//   - scopes: The OAuth scopes required for the token
-//
-// Returns:
-//   - azcore.AccessToken: The valid token (either from cache or freshly acquired)
-//   - error: Any error encountered during token acquisition
+// NOTE: as of time time, for managed identity, token caching exists in the implementation beneath GetToken(...):
+// https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/b4b8bfc9569042572ccb82b648ea509075fadb74/apps/managedidentity/managedidentity.go#L318
+// However, this is never made clear in the interface of this layer nor its documentation, thus relying on that assumption may not be perfect, which is why this layer of caching is still implemented.
 func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCredential, scopes []string) (azcore.AccessToken, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -105,7 +96,7 @@ func NewNodeBootstrappingClient(ctx context.Context, subscriptionID string, reso
 		resourceGroupName: resourceGroupName,
 		resourceName:      resourceName,
 		credential:        credential,
-		tokenCache:        &tokenCache{refreshBuffer: 1 * time.Hour}, // XPMT: log/check standard token time?
+		tokenCache:        &tokenCache{refreshBuffer: 1 * time.Hour}, // Token expiry is typically 24h
 	}, nil
 }
 
