@@ -124,6 +124,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		azConfig.SubscriptionID,
 		azClient.NodeImageVersionsClient,
+		azClient.NodeBootstrappingClient,
 	)
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),

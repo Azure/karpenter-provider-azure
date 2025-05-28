@@ -72,6 +72,7 @@ type ImageFamily interface {
 		instanceType *cloudprovider.InstanceType,
 		imageDistro string,
 		storageProfile string,
+		nodeBootstrappingClient NodeBootstrappingAPI,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
@@ -152,6 +153,7 @@ func (r *defaultResolver) Resolve(
 			instanceType,
 			imageDistro,
 			storageProfile,
+			r.imageProvider.NodeBootstrapping,
 		),
 		ImageID:        imageID,
 		StorageProfile: storageProfile,
