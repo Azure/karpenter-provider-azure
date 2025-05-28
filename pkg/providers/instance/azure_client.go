@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
@@ -72,8 +73,9 @@ type AZClient struct {
 	NodeImageVersionsClient imagefamily.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamily.CommunityGalleryImageVersionsAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
-	SKUClient           skuclient.SkuClient
-	LoadBalancersClient loadbalancer.LoadBalancersAPI
+	SKUClient                   skuclient.SkuClient
+	LoadBalancersClient         loadbalancer.LoadBalancersAPI
+	NetworkSecurityGroupsClient networksecuritygroup.API
 }
 
 func NewAZClientFromAPI(
@@ -82,6 +84,7 @@ func NewAZClientFromAPI(
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
+	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI,
 	nodeImageVersionsClient imagefamily.NodeImageVersionsAPI,
 	skuClient skuclient.SkuClient,
@@ -95,6 +98,7 @@ func NewAZClientFromAPI(
 		NodeImageVersionsClient:        nodeImageVersionsClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
+		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
 	}
 }
 
@@ -166,6 +170,12 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	}
 	klog.V(5).Infof("Created load balancers client %v, using a token credential", loadBalancersClient)
 
+	networkSecurityGroupsClient, err := armnetwork.NewSecurityGroupsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+	klog.V(5).Infof("Created nsg client %v, using a token credential", networkSecurityGroupsClient)
+
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
@@ -175,6 +185,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		extensionsClient,
 		interfacesClient,
 		loadBalancersClient,
+		networkSecurityGroupsClient,
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
 		skuClient), nil

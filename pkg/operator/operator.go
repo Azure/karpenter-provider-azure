@@ -56,6 +56,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
@@ -156,11 +157,16 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
 		options.FromContext(ctx).NodeResourceGroup,
 	)
+	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
+		azClient.NetworkSecurityGroupsClient,
+		options.FromContext(ctx).NodeResourceGroup,
+	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,
 		instanceTypeProvider,
 		launchTemplateProvider,
 		loadBalancerProvider,
+		networkSecurityGroupProvider,
 		unavailableOfferingsCache,
 		azConfig.Location,
 		options.FromContext(ctx).NodeResourceGroup,
