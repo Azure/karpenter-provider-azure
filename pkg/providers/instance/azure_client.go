@@ -121,12 +121,14 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 }
 
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment) (*AZClient, error) {
-	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
+	opts := armopts.DefaultArmOpts()
+	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: opts.ClientOptions,
+	})
 	if err != nil {
 		return nil, err
 	}
 	cred := auth.NewTokenWrapper(defaultAzureCred)
-	opts := armopts.DefaultArmOpts()
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
