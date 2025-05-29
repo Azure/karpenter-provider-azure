@@ -21,9 +21,10 @@ import (
 	"sync"
 	"time"
 
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
+
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/skewer"
 	"github.com/jongio/azidext/go/azidext"
@@ -40,7 +41,7 @@ type SkuClient interface {
 
 type skuClient struct {
 	cfg *auth.Config
-	env *azure.Environment
+	env *azclient.Environment
 
 	mu       sync.RWMutex
 	instance compute.ResourceSkusClient
@@ -68,7 +69,7 @@ func (sc *skuClient) updateInstance() {
 	sc.instance = skuClient
 }
 
-func NewSkuClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) SkuClient {
+func NewSkuClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment) SkuClient {
 	sc := &skuClient{
 		cfg: cfg,
 		env: env,

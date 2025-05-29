@@ -1,4 +1,4 @@
-defaultBaseImage: mcr.microsoft.com/cbl-mariner/distroless/minimal:2.0-nonroot
+defaultBaseImage: mcr.microsoft.com/azurelinux/distroless/minimal:3.0@sha256:55f0a7c5b19fa727de1d4845c83b34f82fad159df4692768510a8eb6f0fd9e06
 defaultPlatforms:
   - linux/arm64
   - linux/amd64
