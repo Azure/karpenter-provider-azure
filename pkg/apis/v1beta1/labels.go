@@ -99,6 +99,8 @@ var (
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
+
+	LabelSKUEphemeralOSDiskSupported = Group + "/sku-ephemeral-os-disk-supported" // "true" if SKU supports ephemeral OS disk
 )
 
 const (

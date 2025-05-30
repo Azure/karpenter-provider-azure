@@ -87,7 +87,6 @@ type DefaultProvider struct {
 
 func NewDefaultProvider(region string, cache *cache.Cache, skuClient skuclient.SkuClient, pricingProvider *pricing.Provider, offeringsCache *kcache.UnavailableOfferings) *DefaultProvider {
 	return &DefaultProvider{
-		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
 		region:               region,
 		skuClient:            skuClient,
 		pricingProvider:      pricingProvider,
@@ -353,6 +352,7 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 	if sku == nil {
 		return 0
 	}
+
 	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
 	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
 
@@ -361,6 +361,8 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 	if maxDiskBytes == 0 {
 		return 0
 	}
+	fmt.Println("maxCached", maxCachedDiskBytes)
+	fmt.Println("maxResourceVolume", maxResourceVolumeBytes)
 	// convert bytes to GB
 	return maxDiskBytes / float64(units.Gigabyte)
 }
