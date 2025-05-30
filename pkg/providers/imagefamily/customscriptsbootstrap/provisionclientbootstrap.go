@@ -20,35 +20,30 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"log/slog"
 	"math"
-	"os"
 	"strings"
-	"time"
 
-	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
-	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
-	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	v1 "k8s.io/api/core/v1"
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-
-	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-
-	httptransport "github.com/go-openapi/runtime/client"
-	"github.com/go-openapi/strfmt"
-	"github.com/samber/lo"
-
 	"k8s.io/apimachinery/pkg/api/resource"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
+
+// NodeBootstrappingProvider defines an interface for retrieving node bootstrapping data
+type NodeBootstrappingProvider interface {
+	// Get retrieves the CSE and base64-encoded CustomData for node bootstrapping, but omits the bootstrap token.
+	Get(ctx context.Context, parameters *models.ProvisionValues) (string, string, error)
+}
 
 type ProvisionClientBootstrap struct {
 	ClusterName                    string
@@ -68,6 +63,7 @@ type ProvisionClientBootstrap struct {
 	InstanceType                   *cloudprovider.InstanceType
 	StorageProfile                 string
 	ImageFamily                    string
+	NodeBootstrapping              NodeBootstrappingProvider
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -177,45 +173,23 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 }
 
 func (p *ProvisionClientBootstrap) getNodeBootstrappingFromClient(ctx context.Context, provisionProfile *models.ProvisionProfile, provisionHelperValues *models.ProvisionHelperValues, bootstrapToken string) (string, string, error) {
-	transport := httptransport.New(options.FromContext(ctx).NodeBootstrappingServerURL, "/", []string{"http"})
+	if p.NodeBootstrapping == nil {
+		return "", "", fmt.Errorf("nodeBootstrapping provider is not initialized")
+	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	loggingClient := restlogger.NewLoggingClient(logger)
-	transport.Transport = loggingClient.Transport
-
-	client := client.New(transport, strfmt.Default)
-
-	params := operations.NewNodeBootstrappingGetParams()
-	params.ResourceGroupName = p.ClusterResourceGroup
-	params.ResourceName = p.ClusterName
-	params.SubscriptionID = p.SubscriptionID
 	provisionValues := &models.ProvisionValues{
 		ProvisionProfile:      provisionProfile,
 		ProvisionHelperValues: provisionHelperValues,
 	}
-	params.Parameters = provisionValues
 
-	params.WithTimeout(30 * time.Second)
-	params.Context = ctx
-
-	resp, err := client.Operations.NodeBootstrappingGet(params)
+	customDataWithoutBootstrapToken, cseWithoutBootstrapToken, err := p.NodeBootstrapping.Get(
+		ctx,
+		provisionValues,
+	)
 	if err != nil {
 		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisited along with retriable status on the server side.
 		return "", "", err
 	}
-
-	if resp.Payload == nil {
-		return "", "", fmt.Errorf("no payload in response")
-	}
-	if resp.Payload.Cse == nil || *resp.Payload.Cse == "" {
-		return "", "", fmt.Errorf("no CSE in response")
-	}
-	if resp.Payload.CustomData == nil || *resp.Payload.CustomData == "" {
-		return "", "", fmt.Errorf("no CustomData in response")
-	}
-
-	cseWithoutBootstrapToken := *resp.Payload.Cse
-	customDataWithoutBootstrapToken := *resp.Payload.CustomData
 
 	cseWithBootstrapToken := strings.ReplaceAll(cseWithoutBootstrapToken, "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken)
 
