@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -195,7 +196,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 			cfg.ResourceGroup,
 			o.ClusterName,
 			cred,
-			o.NodeBootstrappingServerURL)
+			o.NodeBootstrappingServerURL,
+			1*time.Hour)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create node bootstrapping client: %w", err)
 		}
