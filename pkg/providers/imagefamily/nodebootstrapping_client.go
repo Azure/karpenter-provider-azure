@@ -38,13 +38,13 @@ type tokenCache struct {
 	mu            sync.Mutex         // Mutex to ensure thread-safety
 	token         azcore.AccessToken // The cached token
 	refreshAfter  time.Time          // Time after which we should refresh the token
-	refreshBuffer time.Duration      // Buffer time before actual expiration to refresh the token
+	refreshBuffer time.Duration      // Buffer time before actual expiration to refresh the token, won't be used if the original token expiry is less than this buffer
 }
 
 // getToken returns a cached token if valid, otherwise fetches a new one using the provided credential.
-// This method ensures we only request new tokens when necessary, reducing API calls to Azure AD.
 // The method is thread-safe and can be called concurrently from multiple goroutines.
-// NOTE: as of time time, for managed identity, token caching exists in the implementation beneath GetToken(...):
+//
+// NOTE: as of this time, for managed identity, token caching exists in the implementation beneath GetToken(...):
 // https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/b4b8bfc9569042572ccb82b648ea509075fadb74/apps/managedidentity/managedidentity.go#L318
 // However, this is never made clear in the interface of this layer nor its documentation, thus relying on that assumption may not be perfect, which is why this layer of caching is still implemented.
 func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCredential, scopes []string) (azcore.AccessToken, error) {
@@ -70,14 +70,17 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 
 	// Set refresh time to be slightly before the actual expiration
 	// This ensures we don't try to use a token that's about to expire
-	t.refreshAfter = tokenObj.ExpiresOn.Add(-t.refreshBuffer)
+	// But if original token expiry is less than the buffer, do nothing
+	if tokenObj.ExpiresOn.Before(time.Now().Add(t.refreshBuffer)) {
+		t.refreshAfter = tokenObj.ExpiresOn
+	} else {
+		t.refreshAfter = tokenObj.ExpiresOn.Add(-t.refreshBuffer)
+	}
 
 	return t.token, nil
 }
 
 // NodeBootstrappingClient implements the NodeBootstrappingAPI interface using the swagger-generated client.
-// It provides node bootstrapping data from Azure and includes token caching to reduce the frequency of
-// token acquisition calls, which can be expensive when performed repeatedly.
 type NodeBootstrappingClient struct {
 	serverURL         string
 	subscriptionID    string
@@ -88,15 +91,15 @@ type NodeBootstrappingClient struct {
 }
 
 // NewNodeBootstrappingClient creates a new NodeBootstrappingClient with token caching enabled.
-// The token cache uses a 5-minute buffer before token expiration to refresh tokens.
-func NewNodeBootstrappingClient(ctx context.Context, subscriptionID string, resourceGroupName string, resourceName string, credential azcore.TokenCredential, serverURL string) (*NodeBootstrappingClient, error) {
+// tokenCacheRefreshBuffer is the duration before the token's expiration when a new token should be requested. If the fetched token's expiration is less than this buffer, it will not be used.
+func NewNodeBootstrappingClient(ctx context.Context, subscriptionID string, resourceGroupName string, resourceName string, credential azcore.TokenCredential, serverURL string, tokenCacheRefreshBuffer time.Duration) (*NodeBootstrappingClient, error) {
 	return &NodeBootstrappingClient{
 		serverURL:         serverURL,
 		subscriptionID:    subscriptionID,
 		resourceGroupName: resourceGroupName,
 		resourceName:      resourceName,
 		credential:        credential,
-		tokenCache:        &tokenCache{refreshBuffer: 1 * time.Hour}, // Token expiry is typically 24h
+		tokenCache:        &tokenCache{refreshBuffer: tokenCacheRefreshBuffer},
 	}, nil
 }
 
