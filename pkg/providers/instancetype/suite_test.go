@@ -311,7 +311,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// ensure that initial zone was made unavailable
 			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
-			ExpectUnavailable(azureEnv, "Standard_D2_v3", zone, karpv1.CapacityTypeSpot)
+			ExpectUnavailable(azureEnv, "Standard_D2_v3", "D", zone, karpv1.CapacityTypeSpot, 2)
 
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -381,7 +381,7 @@ var _ = Describe("InstanceType Provider", func() {
 			initialVMSize := *vm.Properties.HardwareProfile.VMSize
 			zone, err := utils.GetZone(&vm)
 			Expect(err).ToNot(HaveOccurred())
-			ExpectUnavailable(azureEnv, string(initialVMSize), zone, karpv1.CapacityTypeSpot)
+			ExpectUnavailable(azureEnv, string(initialVMSize), "D", zone, karpv1.CapacityTypeSpot, 2)
 
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -765,8 +765,8 @@ var _ = Describe("InstanceType Provider", func() {
 			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
 			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeSpot)).To(BeTrue())
-			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", "D2", zone, karpv1.CapacityTypeSpot, 2)).To(BeTrue())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", "D2", zone, karpv1.CapacityTypeOnDemand, 2)).To(BeTrue())
 
 			By("successfully scheduling in a different zone on retry")
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -885,7 +885,7 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 
 		Context("SkuNotAvailable", func() {
-			AssertUnavailable := func(sku string, capacityType string) {
+			AssertUnavailable := func(sku, skuFamily, capacityType string, cpuCores int64) {
 				// fake a SKU not available error
 				azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
 					&azcore.ResponseError{ErrorCode: sdkerrors.SKUNotAvailableErrorCode},
@@ -901,16 +901,16 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 				for _, zoneID := range []string{"1", "2", "3"} {
-					ExpectUnavailable(azureEnv, sku, utils.MakeZone(fake.Region, zoneID), capacityType)
+					ExpectUnavailable(azureEnv, sku, skuFamily, utils.MakeZone(fake.Region, zoneID), capacityType, cpuCores)
 				}
 			}
 
 			It("should mark SKU as unavailable in all zones for Spot", func() {
-				AssertUnavailable("Standard_D2_v2", karpv1.CapacityTypeSpot)
+				AssertUnavailable("Standard_D2_v2", "D", karpv1.CapacityTypeSpot, 2)
 			})
 
 			It("should mark SKU as unavailable in all zones for OnDemand", func() {
-				AssertUnavailable("Standard_D2_v2", karpv1.CapacityTypeOnDemand)
+				AssertUnavailable("Standard_D2_v2", "D", karpv1.CapacityTypeOnDemand, 2)
 			})
 		})
 	})

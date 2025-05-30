@@ -32,9 +32,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func ExpectUnavailable(env *test.Environment, instanceType string, zone string, capacityType string) {
+func ExpectUnavailable(env *test.Environment, instanceType, skuFamily, zone, capacityType string, cpuCount int64) {
 	GinkgoHelper()
-	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, zone, capacityType)).To(BeTrue())
+	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, skuFamily, zone, capacityType, cpuCount)).To(BeTrue())
 }
 
 func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {
