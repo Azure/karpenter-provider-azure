@@ -60,7 +60,7 @@ func (env *Environment) GetVMByName(vmName string) armcompute.VirtualMachine {
 func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 	GinkgoHelper()
 	Eventually(func() bool {
-		pager := env.InterfacesClient.NewListPager(env.NodeResourceGroup, nil)
+		pager := env.interfacesClient.NewListPager(env.NodeResourceGroup, nil)
 		for pager.More() {
 			resp, err := pager.NextPage(env.Context)
 			if err != nil {
@@ -81,15 +81,26 @@ func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 
 func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Interface) {
 	GinkgoHelper()
-	poller, err := env.InterfacesClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, lo.FromPtr(networkInterface.Name), networkInterface, nil)
+	poller, err := env.interfacesClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, lo.FromPtr(networkInterface.Name), networkInterface, nil)
 	Expect(err).ToNot(HaveOccurred())
-	_, err = poller.PollUntilDone(env.Context, nil)
+	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
+	env.tracker.Add(lo.FromPtr(resp.Interface.ID), func() error {
+		deletePoller, err := env.interfacesClient.BeginDelete(env.Context, env.NodeResourceGroup, lo.FromPtr(networkInterface.Name), nil)
+		if err != nil {
+			return fmt.Errorf("failed to delete network interface %s: %w", lo.FromPtr(networkInterface.Name), err)
+		}
+		_, err = deletePoller.PollUntilDone(env.Context, nil)
+		if err != nil {
+			return fmt.Errorf("failed to delete network interface %s: %w", lo.FromPtr(networkInterface.Name), err)
+		}
+		return nil
+	})
 }
 
 func (env *Environment) GetClusterSubnet() *armnetwork.Subnet {
 	GinkgoHelper()
-	vnet, err := firstVNETInRG(env.Context, env.VNETClient, env.VNETResourceGroup)
+	vnet, err := firstVNETInRG(env.Context, env.vnetClient, env.VNETResourceGroup)
 	Expect(err).ToNot(HaveOccurred())
 	return vnet.Properties.Subnets[0]
 }
@@ -111,14 +122,14 @@ func firstVNETInRG(ctx context.Context, client *armnetwork.VirtualNetworksClient
 
 func (env *Environment) ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster() []*containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem {
 	GinkgoHelper()
-	upgradeProfile, err := env.AKSManagedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
+	upgradeProfile, err := env.managedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
 	Expect(err).ToNot(HaveOccurred())
 	return upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades
 }
 
 func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion string) containerservice.ManagedCluster {
 	GinkgoHelper()
-	managedClusterResponse, err := env.AKSManagedClusterClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
+	managedClusterResponse, err := env.managedClusterClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
 	Expect(err).ToNot(HaveOccurred())
 	managedCluster := managedClusterResponse.ManagedCluster
 
@@ -126,7 +137,8 @@ func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgrad
 	// https://learn.microsoft.com/en-us/rest/api/aks/managed-clusters/get?view=rest-aks-2025-01-01&tabs=HTTP
 	By(fmt.Sprintf("upgrading from kubernetes version %s to kubernetes version %s", *managedCluster.Properties.CurrentKubernetesVersion, kubernetesUpgradeVersion))
 	managedCluster.Properties.KubernetesVersion = &kubernetesUpgradeVersion
-	poller, err := env.AKSManagedClusterClient.BeginCreateOrUpdate(env.Context, env.ClusterResourceGroup, env.ClusterName, managedCluster, nil)
+	// Note that this is an update not a create so we don't need to add it to the tracker
+	poller, err := env.managedClusterClient.BeginCreateOrUpdate(env.Context, env.ClusterResourceGroup, env.ClusterName, managedCluster, nil)
 	Expect(err).ToNot(HaveOccurred())
 	res, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
