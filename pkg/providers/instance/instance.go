@@ -308,6 +308,14 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
 		enableAcceleratedNetworking = true
 	}
+
+	var nsgRef *armnetwork.SecurityGroup
+	if opts.NetworkSecurityGroupID != "" {
+		nsgRef = &armnetwork.SecurityGroup{
+			ID: &opts.NetworkSecurityGroupID,
+		}
+	}
+
 	nic := armnetwork.Interface{
 		Location: lo.ToPtr(p.location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
@@ -322,6 +330,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 					},
 				},
 			},
+			NetworkSecurityGroup:        nsgRef,
 			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
 			EnableIPForwarding:          lo.ToPtr(false),
 		},
@@ -350,13 +359,14 @@ func GenerateResourceName(nodeClaimName string) string {
 }
 
 type createNICOptions struct {
-	NICName           string
-	BackendPools      *loadbalancer.BackendAddressPools
-	InstanceType      *corecloudprovider.InstanceType
-	LaunchTemplate    *launchtemplate.Template
-	NetworkPlugin     string
-	NetworkPluginMode string
-	MaxPods           int32
+	NICName                string
+	BackendPools           *loadbalancer.BackendAddressPools
+	InstanceType           *corecloudprovider.InstanceType
+	LaunchTemplate         *launchtemplate.Template
+	NetworkPlugin          string
+	NetworkPluginMode      string
+	MaxPods                int32
+	NetworkSecurityGroupID string
 }
 
 func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
@@ -542,6 +552,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
+// nolint: gocyclo
 func (p *DefaultProvider) beginLaunchInstance(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -569,6 +580,20 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
+
+	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
+	if err != nil {
+		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
+	}
+	var nsgID string
+	if !isAKSManagedVNET {
+		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("getting managed network security group: %w", err)
+		}
+		nsgID = lo.FromPtr(nsg.ID)
+	}
+
 	// TODO: Not returning after launching this LRO because
 	// TODO: doing so would bypass the capacity and other errors that are currently handled by
 	// TODO: core pkg/controllers/nodeclaim/lifecycle/controller.go - in particular, there are metrics/events
@@ -576,13 +601,14 @@ func (p *DefaultProvider) beginLaunchInstance(
 	nicReference, err := p.createNetworkInterface(
 		ctx,
 		&createNICOptions{
-			NICName:           resourceName,
-			NetworkPlugin:     networkPlugin,
-			NetworkPluginMode: networkPluginMode,
-			MaxPods:           utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
-			LaunchTemplate:    launchTemplate,
-			BackendPools:      backendPools,
-			InstanceType:      instanceType,
+			NICName:                resourceName,
+			NetworkPlugin:          networkPlugin,
+			NetworkPluginMode:      networkPluginMode,
+			MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
+			LaunchTemplate:         launchTemplate,
+			BackendPools:           backendPools,
+			InstanceType:           instanceType,
+			NetworkSecurityGroupID: nsgID,
 		},
 	)
 	if err != nil {
