@@ -44,22 +44,22 @@ func TestUnavailableOfferings(t *testing.T) {
 	u := NewUnavailableOfferingsWithCache(c)
 
 	// test that an offering is not marked as unavailable initially
-	assertOfferingAvailable(t, u, "D2s_v3", "D3", "westus-2", 2, "should not be marked as unavailable initially")
+	assertOfferingAvailable(t, u, "D2s_v3", "D3", "westus-1", 2, "should not be marked as unavailable initially")
 
 	// mark the offering as unavailable
 	u.MarkUnavailableWithTTL(context.TODO(), "test reason", "D2s_v3", "westus-1", "spot", time.Second)
 
 	// test that the offering is now marked as unavailable
-	assertOfferingUnavailable(t, u, "D2s_v3", "D3", "westus-2", 2, "should be marked as unavailable after being marked as such")
+	assertOfferingUnavailable(t, u, "D2s_v3", "D3", "westus-1", 2, "should be marked as unavailable after being marked as such")
 
 	// test that the same VM SKU in a different zone is still available
-	assertOfferingAvailable(t, u, "D2s_v3", "D3", "westus-1", 2, "should be available in a different zone")
+	assertOfferingAvailable(t, u, "D2s_v3", "D3", "westus-2", 2, "should be available in a different zone")
 
 	// wait for the cache entry to expire
 	time.Sleep(time.Second)
 
 	// test that the offering is no longer marked as unavailable
-	assertOfferingAvailable(t, u, "D2s_v3", "D3", "westus-2", 2, "should not be marked as unavailable after cache entry has expired")
+	assertOfferingAvailable(t, u, "D2s_v3", "D3", "westus-1", 2, "should not be marked as unavailable after cache entry has expired")
 }
 
 func TestUnavailableOfferingsVMFamilyLevel(t *testing.T) {
