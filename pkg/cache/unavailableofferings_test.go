@@ -30,7 +30,7 @@ func TestUnavailableOfferings(t *testing.T) {
 	u := NewUnavailableOfferingsWithCache(c)
 
 	// test that an offering is not marked as unavailable initially
-	if u.IsUnavailable("NV16as_v4", "westus", "spot") {
+	if u.IsUnavailable("NV16as_v4", "NV", "westus", "spot", 16) {
 		t.Error("Offering should not be marked as unavailable initially")
 	}
 
@@ -38,7 +38,7 @@ func TestUnavailableOfferings(t *testing.T) {
 	u.MarkUnavailableWithTTL(context.TODO(), "test reason", "NV16as_v4", "westus", "spot", time.Second)
 
 	// test that the offering is now marked as unavailable
-	if !u.IsUnavailable("NV16as_v4", "westus", "spot") {
+	if !u.IsUnavailable("NV16as_v4", "NV", "westus", "spot", 16) {
 		t.Error("Offering should be marked as unavailable after being marked as such")
 	}
 
@@ -46,7 +46,7 @@ func TestUnavailableOfferings(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// test that the offering is no longer marked as unavailable
-	if u.IsUnavailable("NV16as_v4", "westus", "spot") {
+	if u.IsUnavailable("NV16as_v4", "NV", "westus", "spot", 16) {
 		t.Error("Offering should not be marked as unavailable after cache entry has expired")
 	}
 }

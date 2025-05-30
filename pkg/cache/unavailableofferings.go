@@ -31,6 +31,11 @@ var (
 	spotKey = key("", "", karpv1.CapacityTypeSpot)
 )
 
+const (
+	// wholeVMFamilyBlockedSentinel means that entire SKU family is blocked, not just certain instance types within it (we might block certain instance types that have more than specific amount of CPUs, but allow others)
+	wholeVMFamilyBlockedSentinel = -1
+)
+
 // UnavailableOfferings stores any offerings that return ICE (insufficient capacity errors) when
 // attempting to launch the capacity. These offerings are ignored as long as they are in the cache on
 // GetInstanceTypes responses
@@ -57,12 +62,20 @@ func NewUnavailableOfferings() *UnavailableOfferings {
 }
 
 // IsUnavailable returns true if the offering appears in the cache
-func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
+func (u *UnavailableOfferings) IsUnavailable(instanceType, versionedSKUFamily, zone, capacityType string, cpuCount int64) bool {
+	// first check if the offering is marked as unavailable for spot capacity - sometimes we blanket mark all spot offerings as unavailable
 	if capacityType == karpv1.CapacityTypeSpot {
 		if _, found := u.cache.Get(spotKey); found {
 			return true
 		}
 	}
+
+	// check if there offering is marked as unavailable on vm family level
+	if u.IsFamilyUnavailable(versionedSKUFamily, capacityType, zone, cpuCount) {
+		return true
+	}
+
+	// lastly check if the offering is marked as unavailable for the specific instance type, zone and capacity type
 	_, found := u.cache.Get(key(instanceType, zone, capacityType))
 	return found
 }
@@ -90,6 +103,60 @@ func (u *UnavailableOfferings) MarkUnavailable(ctx context.Context, unavailableR
 	u.MarkUnavailableWithTTL(ctx, unavailableReason, instanceType, zone, capacityType, UnavailableOfferingsTTL)
 }
 
+func (u *UnavailableOfferings) IsFamilyUnavailable(versionedSKUFamily, capacityType, zone string, cpuCount int64) bool {
+	// Check if VM family is blocked in the specific zone
+	if val, found := u.cache.Get(skuFamilyKey(versionedSKUFamily, capacityType, zone)); found {
+		if maxCPU, ok := val.(int64); ok {
+			if maxCPU == wholeVMFamilyBlockedSentinel {
+				// Entire VM family is blocked in this zone
+				return true
+			}
+			// VM sizes from this family are blocked for CPU counts >= maxCPU in this zone
+			return cpuCount >= maxCPU
+		}
+	}
+	return false
+}
+
+// MarkFamilyUnavailableWithTTL marks a VM family with custom TTL in a specific zone
+func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context, versionedSKUFamily, capacityType, zone string, maxAllowedCPUCount int64, ttl time.Duration) {
+	key := skuFamilyKey(versionedSKUFamily, capacityType, zone)
+
+	// Check if we already have a more restrictive limit
+	if existing, found := u.cache.Get(key); found {
+		if existingMaxAllowedCPUCount, ok := existing.(int64); ok {
+			// If entire family is already blocked, don't override
+			if existingMaxAllowedCPUCount == wholeVMFamilyBlockedSentinel {
+				return
+			}
+			// If new limit would be less restrictive, keep the existing one
+			if maxAllowedCPUCount != wholeVMFamilyBlockedSentinel && existingMaxAllowedCPUCount <= maxAllowedCPUCount {
+				return
+			}
+		}
+	}
+
+	log.FromContext(ctx).WithValues(
+		"family", versionedSKUFamily,
+		"capacity-type", capacityType,
+		"zone", zone,
+		"max-cpu", maxAllowedCPUCount,
+		"ttl", ttl).V(1).Info("marking VM family unavailable in zone")
+
+	u.cache.Set(key, maxAllowedCPUCount, ttl)
+	atomic.AddUint64(&u.SeqNum, 1)
+}
+
+// MarkWholeVMFamilyUnavailable marks an entire VM family as unavailable in a specific zone
+func (u *UnavailableOfferings) MarkWholeVMFamilyUnavailable(ctx context.Context, family, capacityType, zone string) {
+	u.MarkFamilyUnavailableWithTTL(ctx, family, capacityType, zone, wholeVMFamilyBlockedSentinel, UnavailableOfferingsTTL)
+}
+
+// MarkVMFamilyUnavailableAtCPUCount marks a VM family as unavailable for CPU counts above the threshold in a specific zone
+func (u *UnavailableOfferings) MarkVMFamilyUnavailableAtCPUCount(ctx context.Context, family, capacityType, zone string, maxCPUCount int64) {
+	u.MarkFamilyUnavailableWithTTL(ctx, family, capacityType, zone, maxCPUCount, UnavailableOfferingsTTL)
+}
+
 func (u *UnavailableOfferings) Flush() {
 	u.cache.Flush()
 	atomic.AddUint64(&u.SeqNum, 1)
@@ -98,4 +165,9 @@ func (u *UnavailableOfferings) Flush() {
 // key returns the cache key for all offerings in the cache
 func key(instanceType string, zone string, capacityType string) string {
 	return fmt.Sprintf("%s:%s:%s", capacityType, instanceType, zone)
+}
+
+// skuFamilyKey returns the cache key for VM family blocks in a specific zone
+func skuFamilyKey(versionedSKUFamily, capacityType, zone string) string {
+	return fmt.Sprintf("skuFamily:%s:%s:%s", capacityType, versionedSKUFamily, zone)
 }

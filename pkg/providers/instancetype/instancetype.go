@@ -212,15 +212,26 @@ func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, v
 
 // setRequirementsVersion sets the SKU version label, dropping "v" prefix and backfilling "1"
 func setRequirementsVersion(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	version := "1"
-	if vmsize.Version != "" {
-		if !(vmsize.Version[0] == 'V' || vmsize.Version[0] == 'v') {
-			// should never happen; don't capture in label (won't be available for selection by version)
-			return
-		}
-		version = vmsize.Version[1:]
+	version := parseVMSizeVersion(vmsize.Version)
+	if version != "" {
+		requirements[v1beta1.LabelSKUVersion].Insert(version)
 	}
-	requirements[v1beta1.LabelSKUVersion].Insert(version)
+}
+
+// parseVMSizeVersion normalizes the vm size type version string.
+// Returns the version string without "v" prefix, defaults to "1" if no version is specified
+// Returns empty string if version format is invalid
+func parseVMSizeVersion(vmSizeVersion string) string {
+	if vmSizeVersion == "" {
+		return "1"
+	}
+
+	if !(vmSizeVersion[0] == 'V' || vmSizeVersion[0] == 'v') {
+		// Invalid version format - should never happen
+		return ""
+	}
+
+	return vmSizeVersion[1:]
 }
 
 func getArchitecture(architecture string) string {
