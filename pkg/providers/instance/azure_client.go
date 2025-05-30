@@ -193,7 +193,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 			cfg.SubscriptionID,
 			cfg.ResourceGroup,
 			o.ClusterName,
-			cred,
 			o.NodeBootstrappingServerURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create node bootstrapping client: %w", err)
