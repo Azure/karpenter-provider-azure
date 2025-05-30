@@ -57,6 +57,13 @@ func (env *Environment) GetVMByName(vmName string) armcompute.VirtualMachine {
 	return response.VirtualMachine
 }
 
+func (env *Environment) GetNetworkInterface(nicName string) armnetwork.Interface {
+	GinkgoHelper()
+	nic, err := env.interfacesClient.Get(env.Context, env.NodeResourceGroup, nicName, nil)
+	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Failed to get NIC %s in resource group %s", nicName, env.NodeResourceGroup))
+	return nic.Interface
+}
+
 func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 	GinkgoHelper()
 	Eventually(func() bool {
@@ -98,10 +105,16 @@ func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Inter
 	})
 }
 
-func (env *Environment) GetClusterSubnet() *armnetwork.Subnet {
+func (env *Environment) GetClusterVNET() *armnetwork.VirtualNetwork {
 	GinkgoHelper()
 	vnet, err := firstVNETInRG(env.Context, env.vnetClient, env.VNETResourceGroup)
 	Expect(err).ToNot(HaveOccurred())
+	return vnet
+}
+
+func (env *Environment) GetClusterSubnet() *armnetwork.Subnet {
+	GinkgoHelper()
+	vnet := env.GetClusterVNET()
 	return vnet.Properties.Subnets[0]
 }
 
@@ -174,4 +187,24 @@ func (env *Environment) K8sMinorVersion() int {
 	version, err := strconv.Atoi(strings.Split(env.K8sVersion(), ".")[1])
 	Expect(err).ToNot(HaveOccurred())
 	return version
+}
+
+func (env *Environment) ExpectCreatedSubnet(vnetName string, subnet *armnetwork.Subnet) {
+	GinkgoHelper()
+	poller, err := env.subnetClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, vnetName, lo.FromPtr(subnet.Name), *subnet, nil)
+	Expect(err).ToNot(HaveOccurred())
+	resp, err := poller.PollUntilDone(env.Context, nil)
+	Expect(err).ToNot(HaveOccurred())
+	*subnet = resp.Subnet
+	env.tracker.Add(lo.FromPtr(resp.ID), func() error {
+		deletePoller, err := env.subnetClient.BeginDelete(env.Context, env.NodeResourceGroup, vnetName, lo.FromPtr(subnet.Name), nil)
+		if err != nil {
+			return fmt.Errorf("failed to delete subnet %s: %w", lo.FromPtr(subnet.Name), err)
+		}
+		_, err = deletePoller.PollUntilDone(env.Context, nil)
+		if err != nil {
+			return fmt.Errorf("failed to delete subnet %s: %w", lo.FromPtr(subnet.Name), err)
+		}
+		return nil
+	})
 }

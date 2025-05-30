@@ -64,6 +64,7 @@ type Environment struct {
 	// to ensure they are cleaned up after the test.
 	vmClient             *armcompute.VirtualMachinesClient
 	vnetClient           *armnetwork.VirtualNetworksClient
+	subnetClient         *armnetwork.SubnetsClient
 	interfacesClient     *armnetwork.InterfacesClient
 	managedClusterClient *containerservice.ManagedClustersClient
 }
@@ -86,6 +87,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
 	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
 	return azureEnv
