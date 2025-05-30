@@ -40,7 +40,8 @@ const (
 // attempting to launch the capacity. These offerings are ignored as long as they are in the cache on
 // GetInstanceTypes responses
 type UnavailableOfferings struct {
-	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{}
+	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{} - for single instance types
+	// key: skuFamily:<capacityType>:<versionedSKUFamily>:<zone>, value: int64 - for VM families, where int64 is the maximum CPU count allowed for this family in this zone (or -1 if the entire family is unavailable)
 	cache  *cache.Cache
 	SeqNum uint64
 }
