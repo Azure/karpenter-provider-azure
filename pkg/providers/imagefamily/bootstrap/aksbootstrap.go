@@ -372,6 +372,7 @@ func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, er
 	return buffer.String(), nil
 }
 
+// nolint: gocyclo
 func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	args := make(map[string]string)
 
