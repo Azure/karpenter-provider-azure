@@ -18,7 +18,13 @@ package bootstrap
 
 import (
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"testing"
+	"time"
 )
 
 func TestKubeBinaryURL(t *testing.T) {
@@ -121,5 +127,63 @@ func TestGetCredentialProviderURL(t *testing.T) {
 		if url != tt.url {
 			t.Errorf("for version %s expected %s, got %s", tt.version, tt.url, url)
 		}
+	}
+}
+
+func TestKubeletConfigMap(t *testing.T) {
+	kubeletConfiguration := KubeletConfiguration{
+		KubeletConfiguration: v1beta1.KubeletConfiguration{
+			CPUManagerPolicy:            "static",
+			CPUCFSQuota:                 lo.ToPtr(true),
+			CPUCFSQuotaPeriod:           metav1.Duration{},
+			ImageGCHighThresholdPercent: lo.ToPtr[int32](42),
+			ImageGCLowThresholdPercent:  lo.ToPtr[int32](24),
+			TopologyManagerPolicy:       "best-effort",
+			AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
+			ContainerLogMaxSize:         "42Mi",
+			ContainerLogMaxFiles:        lo.ToPtr[int32](13),
+			PodPidsLimit:                lo.ToPtr[int64](99),
+		},
+		MaxPods: 0,
+		SystemReserved: map[string]string{
+			"cpu": "200m",
+		},
+		KubeReserved: map[string]string{
+			"cpu": "400m",
+		},
+		EvictionHard: map[string]string{
+			"memory.available": "100Mi",
+		},
+		EvictionSoft: map[string]string{
+			"memory.available": "99Mi",
+		},
+		EvictionSoftGracePeriod: map[string]metav1.Duration{
+			"memory.available": {Duration: 90 * time.Second},
+		},
+		EvictionMaxPodGracePeriod: to.Ptr[int32](11),
+	}
+
+	expectedKubeletConfigs := map[string]string{
+		"--allowed-unsafe-sysctls":        "Allowed,Unsafe,Sysctls",
+		"--max-pods":                      "0",
+		"--cpu-cfs-quota":                 "true",
+		"--image-gc-high-threshold":       "42",
+		"--image-gc-low-threshold":        "24",
+		"--cpu-manager-policy":            "static",
+		"--topology-manager-policy":       "best-effort",
+		"--container-log-max-files":       "13",
+		"--container-log-max-size":        "42Mi",
+		"--pod-max-pids":                  "99",
+		"--system-reserved":               "cpu=200m",               // TODO: test multiple resource
+		"--kube-reserved":                 "cpu=400m",               // TODO: test multiple resource
+		"--eviction-hard":                 "memory.available<100Mi", // TODO: test multiple resource
+		"--eviction-soft":                 "memory.available<99Mi",  // TODO: test multiple resource
+		"--eviction-soft-grace-period":    "memory.available=1m30s",
+		"--eviction-max-pod-grace-period": "11",
+	}
+	actualKubeletConfig := KubeletConfigToMap(&kubeletConfiguration)
+
+	for k, v := range expectedKubeletConfigs {
+		assert.Equal(t, v, actualKubeletConfig[k], fmt.Sprintf("parameter mismatch for %s", k))
 	}
 }
