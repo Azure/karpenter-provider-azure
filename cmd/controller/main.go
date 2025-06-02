@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
+	"github.com/awslabs/operatorpkg/controller"
 	"github.com/go-logr/zapr"
 	"github.com/samber/lo"
 
@@ -33,6 +34,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
+	metricsnode "sigs.k8s.io/karpenter/pkg/controllers/metrics/node"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
@@ -64,7 +66,7 @@ func main() {
 	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
 	op.
-		WithControllers(ctx, corecontrollers.NewControllers(
+		WithControllers(ctx, lo.Reject(corecontrollers.NewControllers(
 			ctx,
 			op.Manager,
 			op.Clock,
@@ -72,7 +74,11 @@ func main() {
 			op.EventRecorder,
 			cloudProvider,
 			clusterState,
-		)...).
+		), func(c controller.Controller, _ int) bool {
+			// temp exclude node.metrics controller, due to high memory allocation
+			_, isMetricsNodeController := c.(*metricsnode.Controller)
+			return isMetricsNodeController
+		})...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
 			op.Manager,
