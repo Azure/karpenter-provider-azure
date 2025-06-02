@@ -39,7 +39,7 @@ func ExpectUnavailable(env *test.Environment, instanceType string, zone string, 
 	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, zone, capacityType)).To(BeTrue())
 }
 
-func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {
+func ExpectKubeletFlags(_ *test.Environment, customData string, expectedFlags map[string]string) {
 	GinkgoHelper()
 	kubeletFlags := customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 	for flag, value := range expectedFlags {
