@@ -33,6 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type tokenCache struct {
@@ -53,10 +54,16 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	log.FromContext(ctx).Info("XPMT: getToken(): begins")
 	// Check if we have a cached token that is still valid
 	if t.token.Token != "" && time.Now().Before(t.refreshAfter) {
 		// Return the cached token if it's still valid
 		return t.token, nil
+	}
+	if t.token.Token != "" {
+		log.FromContext(ctx).Info("XPMT: getToken(): cached token is expired: refreshAfter=%s; ExpiresOn=%s, RefreshOn=%s", t.refreshAfter, t.token.ExpiresOn, t.token.RefreshOn)
+	} else {
+		log.FromContext(ctx).Info("XPMT: getToken(): no cached token present, fetching a new one")
 	}
 
 	// Token is expired or not present, get a new one
@@ -67,6 +74,8 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 		return azcore.AccessToken{}, fmt.Errorf("failed to get token: %w", err)
 	}
 
+	log.FromContext(ctx).Info("XPMT: getToken(): fetched new token: ExpiresOn=%s, RefreshOn=%s", tokenObj.ExpiresOn, tokenObj.RefreshOn)
+
 	// Store the token with its expiration
 	t.token = tokenObj
 
@@ -74,6 +83,7 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 	if tokenObj.RefreshOn.IsZero() {
 		defaultRefreshBuffer := 5 * time.Minute
 		t.refreshAfter = tokenObj.ExpiresOn.Add(-defaultRefreshBuffer)
+		log.FromContext(ctx).Info("XPMT: getToken(): no RefreshOn provided, using default buffer: refreshAfter=%s", t.refreshAfter)
 	} else {
 		// Use the RefreshOn time if provided, otherwise define our own buffer
 		t.refreshAfter = tokenObj.RefreshOn
@@ -114,6 +124,7 @@ func (c *NodeBootstrappingClient) Get(
 
 	// Add Authorization Bearer token header using cached token if available
 	// This reduces the frequency of token acquisition calls, which can be expensive
+	xpmtStartTime := time.Now()
 	token, err := c.tokenCache.getToken(ctx, c.credential)
 	if err != nil {
 		return types.NodeBootstrapping{}, fmt.Errorf("failed to get token: %w", err)
@@ -142,6 +153,8 @@ func (c *NodeBootstrappingClient) Get(
 	if err != nil {
 		return types.NodeBootstrapping{}, err
 	}
+	xpmtEndTime := time.Now()
+	log.FromContext(ctx).Info("XPMT: NodeBootstrappingClient.Get(): request completed, duration=%s", xpmtEndTime.Sub(xpmtStartTime))
 
 	if resp.Payload == nil {
 		return types.NodeBootstrapping{}, fmt.Errorf("no payload in response")
