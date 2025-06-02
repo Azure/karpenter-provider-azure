@@ -23,15 +23,15 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type AuxiliaryTokenServer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
+
+var _ policy.Policy = &AuxiliaryTokenPolicy{}
 
 // AuxiliaryTokenPolicy provides a custom policy used to authenticate
 // with shared node image galleries.
@@ -44,16 +44,7 @@ func (p *AuxiliaryTokenPolicy) Do(req *policy.Request) (*http.Response, error) {
 	return req.Next()
 }
 
-func AddAuxiliaryTokenPolicyClientOptions(ctx context.Context, client AuxiliaryTokenServer, opts *options.Options, clientOptions *arm.ClientOptions) error {
-	auxPolicy, err := getAuxiliaryTokenPolicy(ctx, client, opts.SIGAccessTokenServerURL, opts.SIGAccessTokenScope)
-	if err != nil {
-		return fmt.Errorf("failed to add auxiliary token policy to virtual machine client options: %w", err)
-	}
-	clientOptions.ClientOptions.PerRetryPolicies = append(clientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
-	return nil
-}
-
-func getAuxiliaryTokenPolicy(ctx context.Context, client AuxiliaryTokenServer, url string, scope string) (*AuxiliaryTokenPolicy, error) {
+func NewAuxiliaryTokenPolicy(ctx context.Context, client AuxiliaryTokenServer, url string, scope string) (*AuxiliaryTokenPolicy, error) {
 	token, err := getAuxiliaryToken(client, url, scope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get auxiliary token: %w", err)

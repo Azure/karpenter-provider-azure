@@ -140,10 +140,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
 		client := &http.Client{Timeout: 10 * time.Second}
-		err := auth.AddAuxiliaryTokenPolicyClientOptions(ctx, client, o, &vmClientOptions)
+		auxPolicy, err := auth.NewAuxiliaryTokenPolicy(ctx, client, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		if err != nil {
 			return nil, err
 		}
+		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
 	if err != nil {

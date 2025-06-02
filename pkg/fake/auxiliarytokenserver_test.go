@@ -22,7 +22,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 	"github.com/stretchr/testify/assert"
 )
@@ -60,17 +59,14 @@ func Test_AddAuxiliaryTokenPolicyClientOptions(t *testing.T) {
 	tokenServer := &AuxiliaryTokenServer{}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := options.Options{
-				SIGAccessTokenServerURL: tt.url,
-				SIGAccessTokenScope:     tt.scope,
-			}
 			clientOpts := armopts.DefaultArmOpts()
 			vmClientOpts := *clientOpts
-			err := auth.AddAuxiliaryTokenPolicyClientOptions(context.Background(), tokenServer, &opts, &vmClientOpts)
+			auxPolicy, err := auth.NewAuxiliaryTokenPolicy(context.Background(), tokenServer, tt.url, tt.scope)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getAuxiliaryToken() error = %v, wantErr: %v", err, tt.wantErr)
 				return
 			}
+			vmClientOpts.ClientOptions.PerRetryPolicies = append(vmClientOpts.ClientOptions.PerRetryPolicies, auxPolicy)
 			if tt.wantErr {
 				assert.ErrorContains(t, err, tt.errString)
 			} else {
