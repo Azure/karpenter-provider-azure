@@ -3,7 +3,7 @@ module github.com/Azure/karpenter-provider-azure
 go 1.24.2
 
 require (
-	github.com/Azure/aks-middleware v0.0.35
+	github.com/Azure/aks-middleware v0.0.36
 	github.com/Azure/azure-kusto-go v0.16.1
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/azure-sdk-for-go-extensions v0.1.9
@@ -20,7 +20,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/awslabs/operatorpkg v0.0.0-20250425180727-b22281cd8057
 	github.com/blang/semver/v4 v4.0.0
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/zapr v1.3.0
 	github.com/go-openapi/errors v0.22.1
 	github.com/go-openapi/runtime v0.28.0
