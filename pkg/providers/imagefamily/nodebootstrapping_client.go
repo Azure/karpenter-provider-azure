@@ -49,6 +49,7 @@ type tokenCache struct {
 // https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/b4b8bfc9569042572ccb82b648ea509075fadb74/apps/managedidentity/managedidentity.go#L318
 // However, this is never made clear in the interface of this layer nor its documentation, thus relying on that assumption may not be perfect, which is a reason why this layer of caching is still implemented.
 // In addition, all azure-sdk-for-go clients also implement their caching as shown above, which means there are at least two layers of caching in most clients.
+// And for the potential issue in https://github.com/Azure/karpenter-provider-azure/pull/391, this implementation, in parity with Azure clients, should also receive the fix from that PR (and beyond).
 func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCredential, scopes []string) (azcore.AccessToken, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -72,7 +73,7 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 
 	// Inspired by https://github.com/Azure/azure-sdk-for-go/blob/f72e2ad4f23b02eba6387dc31580c0e66333f2ae/sdk/azcore/runtime/policy_bearer_token.go#L54-L61
 	if tokenObj.RefreshOn.IsZero() {
-		defaultRefreshBuffer := 1 * time.Hour
+		defaultRefreshBuffer := 5 * time.Minute
 		t.refreshAfter = tokenObj.ExpiresOn.Add(-defaultRefreshBuffer)
 	} else {
 		// Use the RefreshOn time if provided, otherwise define our own buffer
