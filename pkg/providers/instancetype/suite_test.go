@@ -546,6 +546,44 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
 			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
 		})
+		It("should fail to provision if ephemeral disk ask for is too large", func() {
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+					Operator: v1.NodeSelectorOpGt,
+					Values:   []string{"100000"},
+				},
+			}) // No InstanceType will match this requirement
+			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](100001)
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+		})
+
+		It("should select an ephemeral disk if LabelSKUStorageEphemeralOSMaxSize is set", func() {
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+					Operator: v1.NodeSelectorOpGt,
+					Values:   []string{"0"},
+				},
+			})
+			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+			Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
+			Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(30)))
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
+		})
 
 		It("should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class", func() {
 			// Create a Nodepool that selects a sku that supports ephemeral
@@ -590,6 +628,29 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
 			Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(128)))
 			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		})
+		It("should fail to provision Standard_E4d_v5 if asked for ephemeral storage", func() {
+			originalEnv := azureEnv
+			azureEnv = test.NewRegionalEnvironment(ctx, env, "southcentralus", true)
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+					Operator: v1.NodeSelectorOpGt,
+					Values:   []string{"0"},
+				},
+			},
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      "node.kubernetes.io/instance-type",
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_E4d_v5"}, // E4d_v5 does not support ephemeral disk
+					},
+				})
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+			azureEnv = originalEnv
 		})
 	})
 
@@ -1042,7 +1103,7 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.LabelSKUName:                      "Standard_NC24ads_A100_v4",
 				v1beta1.LabelSKUFamily:                    "N",
 				v1beta1.LabelSKUVersion:                   "4",
-				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53.6870912",
+				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUGPUName:                   "A100",
