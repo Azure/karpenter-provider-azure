@@ -1147,7 +1147,7 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.LabelSKUName:                      "Standard_NC24ads_A100_v4",
 				v1beta1.LabelSKUFamily:                    "N",
 				v1beta1.LabelSKUVersion:                   "4",
-				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53.6870912",
+				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUGPUName:                   "A100",
@@ -1176,6 +1176,7 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
 			for _, pod := range pods {
+				fmt.Println(pod.Spec.NodeSelector)
 				ExpectScheduled(ctx, env.Client, pod)
 			}
 		})
