@@ -448,5 +448,5 @@ func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
 
 func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 	sizeGB, _ := MaxEphemeralOSDiskSizeGB(sku)
-	return *nodeClass.Spec.OSDiskSizeGB <= int32(sizeGB) // use ephemeral disk if it is large enough
+	return *nodeClass.Spec.OSDiskSizeGB <= sizeGB // use ephemeral disk if it is large enough
 }
