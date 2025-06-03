@@ -601,9 +601,16 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("Nodepool with KubeletConfig", func() {
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUManagerPolicy:            "static",
+				CPUCFSQuota:                 lo.ToPtr(true),
+				CPUCFSQuotaPeriod:           metav1.Duration{},
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-				CPUCFSQuota:                 lo.ToPtr(true),
+				TopologyManagerPolicy:       "best-effort",
+				AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
+				ContainerLogMaxSize:         "42Mi",
+				ContainerLogMaxFiles:        lo.ToPtr[int32](13),
+				PodPidsLimit:                lo.ToPtr[int64](99),
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -619,6 +626,12 @@ var _ = Describe("InstanceType Provider", func() {
 				"image-gc-low-threshold":  "20",
 				"cpu-cfs-quota":           "true",
 				"max-pods":                "250",
+				"topology-manager-policy": "best-effort",
+				"container-log-max-size":  "42Mi",
+				"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
+				"cpu-manager-policy":      "static",
+				"container-log-max-files": "13",
+				"pod-max-pids":            "99",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
@@ -664,9 +677,16 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUManagerPolicy:            "static",
+				CPUCFSQuota:                 lo.ToPtr(true),
+				CPUCFSQuotaPeriod:           metav1.Duration{},
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-				CPUCFSQuota:                 lo.ToPtr(true),
+				TopologyManagerPolicy:       "best-effort",
+				AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
+				ContainerLogMaxSize:         "42Mi",
+				ContainerLogMaxFiles:        lo.ToPtr[int32](13),
+				PodPidsLimit:                lo.ToPtr[int64](99),
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -681,6 +701,12 @@ var _ = Describe("InstanceType Provider", func() {
 				"image-gc-low-threshold":  "20",
 				"image-gc-high-threshold": "30",
 				"cpu-cfs-quota":           "true",
+				"topology-manager-policy": "best-effort",
+				"container-log-max-size":  "42Mi",
+				"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
+				"cpu-manager-policy":      "static",
+				"container-log-max-files": "13",
+				"pod-max-pids":            "99",
 			}
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
 			Expect(customData).To(SatisfyAny( // AKS default
@@ -694,9 +720,16 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUManagerPolicy:            "static",
+				CPUCFSQuota:                 lo.ToPtr(true),
+				CPUCFSQuotaPeriod:           metav1.Duration{},
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-				CPUCFSQuota:                 lo.ToPtr(true),
+				TopologyManagerPolicy:       "best-effort",
+				AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
+				ContainerLogMaxSize:         "42Mi",
+				ContainerLogMaxFiles:        lo.ToPtr[int32](13),
+				PodPidsLimit:                lo.ToPtr[int64](99),
 			}
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(15))
 
@@ -712,6 +745,12 @@ var _ = Describe("InstanceType Provider", func() {
 				"image-gc-low-threshold":  "20",
 				"image-gc-high-threshold": "30",
 				"cpu-cfs-quota":           "true",
+				"topology-manager-policy": "best-effort",
+				"container-log-max-size":  "42Mi",
+				"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
+				"cpu-manager-policy":      "static",
+				"container-log-max-files": "13",
+				"pod-max-pids":            "99",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
