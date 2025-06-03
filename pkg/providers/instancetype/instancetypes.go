@@ -33,6 +33,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -60,6 +61,9 @@ const (
 type Provider interface {
 	LivenessProbe(*http.Request) error
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+
+	// Return Azure Skewer Representation of the instance type
+	Get(context.Context, *v1beta1.AKSNodeClass, string) (*skewer.SKU, error)
 	//UpdateInstanceTypes(ctx context.Context) error
 	//UpdateInstanceTypeOfferings(ctx context.Context) error
 }
@@ -161,6 +165,17 @@ func (p *DefaultProvider) List(
 
 func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
 	return p.pricingProvider.LivenessProbe(req)
+}
+
+func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, instanceType string) (*skewer.SKU, error) {
+	skus, err := p.getInstanceTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if sku, ok := skus[instanceType]; ok {
+		return sku, nil
+	}
+	return nil, fmt.Errorf("instance type %s not found", instanceType)
 }
 
 // instanceTypeZones generates the set of all supported zones for a given SKU
@@ -349,9 +364,9 @@ func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 // For Ephemeral disk creation, CRP will use the larger of the two values to ensure we have enough space for the ephemeral disk.
 // Note that generally only older SKUs use the Temp Disk space for ephemeral disks, and newer SKUs use the Cached Disk in most cases.
 // The ephemeral OS disk is created with the free space of the larger of the two values in that place.
-func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
+func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) (sizeGB float64, placement armcompute.DiffDiskPlacement) {
 	if sku == nil {
-		return 0
+		return 0, armcompute.DiffDiskPlacementResourceDisk
 	}
 	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
 	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
@@ -359,10 +374,10 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
 	maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
 	maxDiskBytes := math.Max(float64(maxCachedDiskBytes), float64(maxResourceVolumeBytes))
 	if maxDiskBytes == 0 {
-		return 0
+		return 0, armcompute.DiffDiskPlacementResourceDisk
 	}
-	// convert bytes to GB
-	return maxDiskBytes / float64(units.Gigabyte)
+
+	return maxDiskBytes / float64(units.Gigabyte), lo.Ternary(maxDiskBytes == float64(maxResourceVolumeBytes), armcompute.DiffDiskPlacementResourceDisk, armcompute.DiffDiskPlacementCacheDisk)
 }
 
 var (
@@ -430,4 +445,9 @@ func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
 	}
 
 	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
+}
+
+func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	sizeGB, _ := MaxEphemeralOSDiskSizeGB(sku)
+	return *nodeClass.Spec.OSDiskSizeGB <= int32(sizeGB) // use ephemeral disk if it is large enough
 }
