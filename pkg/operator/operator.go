@@ -126,9 +126,17 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.SubscriptionID,
 		azClient.NodeImageVersionsClient,
 	)
+	instanceTypeProvider := instancetype.NewDefaultProvider(
+		azConfig.Location,
+		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
+		azClient.SKUClient,
+		pricingProvider,
+		unavailableOfferingsCache,
+	)
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
 		imageProvider,
+		instanceTypeProvider,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -144,13 +152,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
-	)
-	instanceTypeProvider := instancetype.NewDefaultProvider(
-		azConfig.Location,
-		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
-		azClient.SKUClient,
-		pricingProvider,
-		unavailableOfferingsCache,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
