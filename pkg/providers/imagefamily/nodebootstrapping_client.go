@@ -61,7 +61,7 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 		return t.token, nil
 	}
 	if t.token.Token != "" {
-		log.FromContext(ctx).Info("XPMT: getToken(): cached token is expired: refreshAfter=%s; ExpiresOn=%s, RefreshOn=%s", t.refreshAfter, t.token.ExpiresOn, t.token.RefreshOn)
+		log.FromContext(ctx).Info(fmt.Sprintf("XPMT: getToken(): cached token is expired: refreshAfter=%s; ExpiresOn=%s, RefreshOn=%s", t.refreshAfter, t.token.ExpiresOn, t.token.RefreshOn))
 	} else {
 		log.FromContext(ctx).Info("XPMT: getToken(): no cached token present, fetching a new one")
 	}
@@ -74,7 +74,7 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 		return azcore.AccessToken{}, fmt.Errorf("failed to get token: %w", err)
 	}
 
-	log.FromContext(ctx).Info("XPMT: getToken(): fetched new token: ExpiresOn=%s, RefreshOn=%s", tokenObj.ExpiresOn, tokenObj.RefreshOn)
+	log.FromContext(ctx).Info(fmt.Sprintf("XPMT: getToken(): fetched new token: ExpiresOn=%s, RefreshOn=%s", tokenObj.ExpiresOn, tokenObj.RefreshOn))
 
 	// Store the token with its expiration
 	t.token = tokenObj
@@ -83,7 +83,7 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 	if tokenObj.RefreshOn.IsZero() {
 		defaultRefreshBuffer := 5 * time.Minute
 		t.refreshAfter = tokenObj.ExpiresOn.Add(-defaultRefreshBuffer)
-		log.FromContext(ctx).Info("XPMT: getToken(): no RefreshOn provided, using default buffer: refreshAfter=%s", t.refreshAfter)
+		log.FromContext(ctx).Info(fmt.Sprintf("XPMT: getToken(): no RefreshOn provided, using default buffer: refreshAfter=%s", t.refreshAfter))
 	} else {
 		// Use the RefreshOn time if provided, otherwise define our own buffer
 		t.refreshAfter = tokenObj.RefreshOn
@@ -154,7 +154,7 @@ func (c *NodeBootstrappingClient) Get(
 		return types.NodeBootstrapping{}, err
 	}
 	xpmtEndTime := time.Now()
-	log.FromContext(ctx).Info("XPMT: NodeBootstrappingClient.Get(): request completed, duration=%s", xpmtEndTime.Sub(xpmtStartTime))
+	log.FromContext(ctx).Info(fmt.Sprintf("XPMT: NodeBootstrappingClient.Get(): request completed, duration=%s", xpmtEndTime.Sub(xpmtStartTime)))
 
 	if resp.Payload == nil {
 		return types.NodeBootstrapping{}, fmt.Errorf("no payload in response")
