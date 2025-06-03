@@ -19,7 +19,6 @@ package test
 import (
 	"context"
 
-	gomegaformat "github.com/onsi/gomega/format"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 
@@ -43,9 +42,6 @@ import (
 
 func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
-
-	// Configuing this here because it's commonly imported and has an init already
-	gomegaformat.CharactersAroundMismatchToInclude = 40
 }
 
 const (
@@ -83,8 +79,7 @@ type Environment struct {
 	NetworkSecurityGroupProvider *networksecuritygroup.Provider
 
 	// Settings
-	nonZonal       bool
-	SubscriptionID string
+	nonZonal bool
 }
 
 func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment {
@@ -109,7 +104,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
-	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -121,9 +115,9 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
-	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI)
-	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, nodeBootstrappingAPI)
+	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI)
 	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
+	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageFamilyResolver,
@@ -157,7 +151,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
 		nodeImageVersionsAPI,
-		nodeBootstrappingAPI,
 		skuClientSingleton,
 	)
 	instanceProvider := instance.NewDefaultProvider(
@@ -199,8 +192,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancerProvider:         loadBalancerProvider,
 		NetworkSecurityGroupProvider: networkSecurityGroupProvider,
 
-		nonZonal:       nonZonal,
-		SubscriptionID: subscription,
+		nonZonal: nonZonal,
 	}
 }
 
