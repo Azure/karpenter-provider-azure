@@ -53,8 +53,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
@@ -74,13 +76,14 @@ type Operator struct {
 
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
-	ImageProvider          *imagefamily.Provider
-	ImageResolver          imagefamily.Resolver
-	LaunchTemplateProvider *launchtemplate.Provider
-	PricingProvider        *pricing.Provider
-	InstanceTypesProvider  instancetype.Provider
-	InstanceProvider       *instance.DefaultProvider
-	LoadBalancerProvider   *loadbalancer.Provider
+	KubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
+	ImageProvider             *imagefamily.Provider
+	ImageResolver             imagefamily.Resolver
+	LaunchTemplateProvider    *launchtemplate.Provider
+	PricingProvider           *pricing.Provider
+	InstanceTypesProvider     instancetype.Provider
+	InstanceProvider          *instance.DefaultProvider
+	LoadBalancerProvider      *loadbalancer.Provider
 }
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
@@ -109,6 +112,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		operator.Elected(),
 	)
 
+	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(
+		operator.KubernetesInterface,
+		cache.New(azurecache.KubernetesVersionTTL,
+			azurecache.DefaultCleanupInterval),
+	)
 	imageProvider := imagefamily.NewProvider(
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
@@ -149,11 +157,16 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),
 		options.FromContext(ctx).NodeResourceGroup,
 	)
+	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
+		azClient.NetworkSecurityGroupsClient,
+		options.FromContext(ctx).NodeResourceGroup,
+	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,
 		instanceTypeProvider,
 		launchTemplateProvider,
 		loadBalancerProvider,
+		networkSecurityGroupProvider,
 		unavailableOfferingsCache,
 		azConfig.Location,
 		options.FromContext(ctx).NodeResourceGroup,
@@ -165,6 +178,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		Operator:                     operator,
 		InClusterKubernetesInterface: inClusterClient,
 		UnavailableOfferingsCache:    unavailableOfferingsCache,
+		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageProvider,
 		ImageResolver:                imageResolver,
 		LaunchTemplateProvider:       launchTemplateProvider,

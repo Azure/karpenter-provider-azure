@@ -18,6 +18,7 @@ package options
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -61,31 +62,32 @@ func (s *nodeIdentitiesValue) String() string { return strings.Join(*s, ",") }
 type optionsKey struct{}
 
 type Options struct {
-	ClusterName                    string
-	ClusterEndpoint                string // => APIServerName in bootstrap, except needs to be w/o https/port
-	VMMemoryOverheadPercent        float64
-	ClusterID                      string
-	KubeletClientTLSBootstrapToken string // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
-	SSHPublicKey                   string // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
+	ClusterName                    string  `json:"clusterName,omitempty"`
+	ClusterEndpoint                string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
+	VMMemoryOverheadPercent        float64 `json:"vmMemoryOverheadPercent,omitempty"`
+	ClusterID                      string  `json:"clusterId,omitempty"`
+	KubeletClientTLSBootstrapToken string  `json:"-"` // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
+	LinuxAdminUsername             string  `json:"-"`
+	SSHPublicKey                   string  `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
 
-	NetworkPlugin     string // => NetworkPlugin in bootstrap
-	NetworkPolicy     string // => NetworkPolicy in bootstrap
-	NetworkPluginMode string // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
-	NetworkDataplane  string
+	NetworkPlugin     string `json:"networkPlugin,omitempty"`     // => NetworkPlugin in bootstrap
+	NetworkPolicy     string `json:"networkPolicy,omitempty"`     // => NetworkPolicy in bootstrap
+	NetworkPluginMode string `json:"networkPluginMode,omitempty"` // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
+	NetworkDataplane  string `json:"networkDataplane,omitempty"`
 
-	NodeIdentities          []string // => Applied onto each VM
-	KubeletIdentityClientID string   // => Flows to bootstrap and used in drift
-	VnetGUID                string   // resource guid used by azure cni for identifying the right vnet
-	SubnetID                string   // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
+	NodeIdentities          []string `json:"nodeIdentities,omitempty"`          // => Applied onto each VM
+	KubeletIdentityClientID string   `json:"kubeletIdentityClientID,omitempty"` // => Flows to bootstrap and used in drift
+	VnetGUID                string   `json:"vnetGuid,omitempty"`                // resource guid used by azure cni for identifying the right vnet
+	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 	setFlags                map[string]bool
 
-	ProvisionMode              string
-	NodeBootstrappingServerURL string
-	UseSIG                     bool   // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
-	SIGAccessTokenServerURL    string // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
-	SIGAccessTokenScope        string // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
-	SIGSubscriptionID          string
-	NodeResourceGroup          string
+	ProvisionMode              string `json:"provisionMode,omitempty"`
+	NodeBootstrappingServerURL string `json:"-"`
+	UseSIG                     bool   `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+	SIGAccessTokenServerURL    string `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
+	SIGAccessTokenScope        string `json:"-"`                // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
+	SIGSubscriptionID          string `json:"sigSubscriptionId,omitempty"`
+	NodeResourceGroup          string `json:"nodeResourceGroup,omitempty"`
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -93,13 +95,14 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.ClusterEndpoint, "cluster-endpoint", env.WithDefaultString("CLUSTER_ENDPOINT", ""), "[REQUIRED] The external kubernetes cluster endpoint for new nodes to connect with.")
 	fs.Float64Var(&o.VMMemoryOverheadPercent, "vm-memory-overhead-percent", utils.WithDefaultFloat64("VM_MEMORY_OVERHEAD_PERCENT", 0.075), "The VM memory overhead as a percent that will be subtracted from the total memory for all instance types.")
 	fs.StringVar(&o.KubeletClientTLSBootstrapToken, "kubelet-bootstrap-token", env.WithDefaultString("KUBELET_BOOTSTRAP_TOKEN", ""), "[REQUIRED] The bootstrap token for new nodes to join the cluster.")
+	fs.StringVar(&o.LinuxAdminUsername, "linux-admin-username", env.WithDefaultString("LINUX_ADMIN_USERNAME", "azureuser"), "The admin username for Linux VMs.")
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
 	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", consts.NetworkPluginAzure), "The network plugin used by the cluster.")
 	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", consts.NetworkPluginModeOverlay), "network plugin mode of the cluster.")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
 	fs.StringVar(&o.NetworkDataplane, "network-dataplane", env.WithDefaultString("NETWORK_DATAPLANE", "cilium"), "The network dataplane used by the cluster.")
 	fs.StringVar(&o.VnetGUID, "vnet-guid", env.WithDefaultString("VNET_GUID", ""), "The vnet guid of the clusters vnet, only required by azure cni with overlay + byo vnet")
-	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
+	fs.StringVar(&o.SubnetID, "vnet-subnet-id", env.WithDefaultString("VNET_SUBNET_ID", ""), "[REQUIRED] The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.")
 	fs.Var(newNodeIdentitiesValue(env.WithDefaultString("NODE_IDENTITIES", ""), &o.NodeIdentities), "node-identities", "User assigned identities for nodes.")
 	fs.StringVar(&o.ProvisionMode, "provision-mode", env.WithDefaultString("PROVISION_MODE", consts.ProvisionModeAKSScriptless), "[UNSUPPORTED] The provision mode for the cluster.")
 	fs.StringVar(&o.NodeBootstrappingServerURL, "nodebootstrapping-server-url", env.WithDefaultString("NODEBOOTSTRAPPING_SERVER_URL", ""), "[UNSUPPORTED] The url for the node bootstrapping provider server.")
@@ -145,6 +148,15 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 	o.ClusterID = getAKSClusterID(o.GetAPIServerName())
 
 	return nil
+}
+
+func (o *Options) String() string {
+	json, err := json.Marshal(o)
+	if err != nil {
+		return "couldn't marshal options JSON"
+	}
+
+	return string(json)
 }
 
 func (o *Options) ToContext(ctx context.Context) context.Context {

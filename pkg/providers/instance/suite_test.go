@@ -18,6 +18,7 @@ package instance_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -91,7 +92,6 @@ var _ = AfterSuite(func() {
 })
 
 var _ = Describe("InstanceProvider", func() {
-
 	var nodeClass *v1beta1.AKSNodeClass
 	var nodePool *karpv1.NodePool
 	var nodeClaim *karpv1.NodeClaim
@@ -138,7 +138,7 @@ var _ = Describe("InstanceProvider", func() {
 		ExpectCleanedUp(ctx, env.Client)
 	})
 
-	var ZonalAndNonZonalRegions = []TableEntry{
+	ZonalAndNonZonalRegions := []TableEntry{
 		Entry("zonal", azureEnv, cloudProvider),
 		Entry("non-zonal", azureEnvNonZonal, cloudProviderNonZonal),
 	}
@@ -198,7 +198,6 @@ var _ = Describe("InstanceProvider", func() {
 				"max-pods": "30",
 			}
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-
 		})
 		It("should include 1 ip config for Azure CNI Overlay", func() {
 			ctx = options.ToContext(
@@ -227,7 +226,6 @@ var _ = Describe("InstanceProvider", func() {
 				"max-pods": "250",
 			}
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
-
 		})
 		It("should set the number of secondary ips equal to max pods (NodeSubnet)", func() {
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(11))
@@ -245,6 +243,7 @@ var _ = Describe("InstanceProvider", func() {
 			Expect(len(nic.Properties.IPConfigurations)).To(Equal(11))
 		})
 	})
+
 	It("should create VM and NIC with valid ARM tags", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
@@ -290,5 +289,79 @@ var _ = Describe("InstanceProvider", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(len(interfaces)).To(Equal(1))
 		Expect(interfaces[0].Name).To(Equal(managedNic.Name))
+	})
+
+	It("should create VM with custom Linux admin username", func() {
+		customUsername := "customuser"
+		ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+			LinuxAdminUsername: lo.ToPtr(customUsername),
+		}))
+
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+
+		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+
+		// Verify the custom username was propagated
+		Expect(vm.Properties.OSProfile.AdminUsername).ToNot(BeNil())
+		Expect(*vm.Properties.OSProfile.AdminUsername).To(Equal(customUsername))
+
+		// Verify SSH key path uses the custom username
+		Expect(vm.Properties.OSProfile.LinuxConfiguration).ToNot(BeNil())
+		Expect(vm.Properties.OSProfile.LinuxConfiguration.SSH).ToNot(BeNil())
+		Expect(vm.Properties.OSProfile.LinuxConfiguration.SSH.PublicKeys).To(HaveLen(1))
+		expectedPath := "/home/" + customUsername + "/.ssh/authorized_keys"
+		Expect(*vm.Properties.OSProfile.LinuxConfiguration.SSH.PublicKeys[0].Path).To(Equal(expectedPath))
+	})
+
+	It("should attach nsg to nic when in BYO VNET mode", func() {
+		ctx = options.ToContext(
+			ctx,
+			test.Options(test.OptionsFields{
+				SubnetID: lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"), // different RG
+			}))
+		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, "aks-agentpool-00000000-nsg")
+		azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
+
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+
+		Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+		Expect(nic).ToNot(BeNil())
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, options.FromContext(ctx).ClusterID)
+		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
+		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
+	})
+
+	It("should attach nsg to nic when NodeClass VNET specified", func() {
+		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet") // different RG
+
+		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, "aks-agentpool-00000000-nsg")
+		azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
+
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+
+		Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
+		Expect(nic).ToNot(BeNil())
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, options.FromContext(ctx).ClusterID)
+		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
+		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
 	})
 })

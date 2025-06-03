@@ -65,11 +65,6 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 	return providerIDLowerRG
 }
 
-func MkVMID(resourceGroupName string, vmName string) string {
-	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s"
-	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
-}
-
 // WithDefaultFloat64 returns the float64 value of the supplied environment variable or, if not present,
 // the supplied default value. If the float64 conversion fails, returns the default
 func WithDefaultFloat64(key string, def float64) float64 {
@@ -162,4 +157,24 @@ func GetMaxPods(nodeClass *v1beta1.AKSNodeClass, networkPlugin, networkPluginMod
 	default:
 		return consts.DefaultKubernetesMaxPods
 	}
+}
+
+var managedVNETPattern = regexp.MustCompile(`(?i)^aks-vnet-\d{8}$`)
+
+const managedSubnetName = "aks-subnet"
+
+// IsAKSManagedVNET determines if the vnet managed or not.
+// Note: You can "trick" this function if you really try by (for example) createding a VNET that looks like
+// an AKS managed VNET, with the same resource group as the MC RG, in a different subscription, or by creating
+// your own VNET in the MC RG whose name matches the AKS pattern but the VNET is actually yours rather than ours.
+func IsAKSManagedVNET(nodeResourceGroup string, subnetID string) (bool, error) {
+	// TODO: I kinda think we should be using arm.ParseResourceID rather than rolling our own
+	id, err := GetVnetSubnetIDComponents(subnetID)
+	if err != nil {
+		return false, err
+	}
+
+	return managedVNETPattern.MatchString(id.VNetName) &&
+		strings.EqualFold(nodeResourceGroup, id.ResourceGroupName) &&
+		strings.EqualFold(id.SubnetName, managedSubnetName), nil
 }

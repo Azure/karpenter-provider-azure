@@ -44,6 +44,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -59,11 +60,15 @@ var (
 		string(armcompute.VirtualMachinePriorityTypesRegular): karpv1.CapacityTypeOnDemand,
 	}
 
-	SubscriptionQuotaReachedReason = "SubscriptionQuotaReached"
-	ZonalAllocationFailureReason   = "ZonalAllocationFailure"
-	SKUNotAvailableReason          = "SKUNotAvailable"
+	SubscriptionQuotaReachedReason              = "SubscriptionQuotaReached"
+	AllocationFailureReason                     = "AllocationFailure"
+	ZonalAllocationFailureReason                = "ZonalAllocationFailure"
+	OverconstrainedZonalAllocationFailureReason = "OverconstrainedZonalAllocationFailure"
+	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
+	SKUNotAvailableReason                       = "SKUNotAvailable"
 
 	SubscriptionQuotaReachedTTL = 1 * time.Hour
+	AllocationFailureTTL        = 1 * time.Hour
 	SKUNotAvailableSpotTTL      = 1 * time.Hour
 	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
 )
@@ -91,15 +96,16 @@ type Provider interface {
 var _ Provider = (*DefaultProvider)(nil)
 
 type DefaultProvider struct {
-	location               string
-	azClient               *AZClient
-	instanceTypeProvider   instancetype.Provider
-	launchTemplateProvider *launchtemplate.Provider
-	loadBalancerProvider   *loadbalancer.Provider
-	resourceGroup          string
-	subscriptionID         string
-	unavailableOfferings   *cache.UnavailableOfferings
-	provisionMode          string
+	location                     string
+	azClient                     *AZClient
+	instanceTypeProvider         instancetype.Provider
+	launchTemplateProvider       *launchtemplate.Provider
+	loadBalancerProvider         *loadbalancer.Provider
+	networkSecurityGroupProvider *networksecuritygroup.Provider
+	resourceGroup                string
+	subscriptionID               string
+	unavailableOfferings         *cache.UnavailableOfferings
+	provisionMode                string
 
 	vmListQuery, nicListQuery string
 }
@@ -109,6 +115,7 @@ func NewDefaultProvider(
 	instanceTypeProvider instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,
+	networkSecurityGroupProvider *networksecuritygroup.Provider,
 	offeringsCache *cache.UnavailableOfferings,
 	location string,
 	resourceGroup string,
@@ -116,15 +123,16 @@ func NewDefaultProvider(
 	provisionMode string,
 ) *DefaultProvider {
 	return &DefaultProvider{
-		azClient:               azClient,
-		instanceTypeProvider:   instanceTypeProvider,
-		launchTemplateProvider: launchTemplateProvider,
-		loadBalancerProvider:   loadBalancerProvider,
-		location:               location,
-		resourceGroup:          resourceGroup,
-		subscriptionID:         subscriptionID,
-		unavailableOfferings:   offeringsCache,
-		provisionMode:          provisionMode,
+		azClient:                     azClient,
+		instanceTypeProvider:         instanceTypeProvider,
+		launchTemplateProvider:       launchTemplateProvider,
+		loadBalancerProvider:         loadBalancerProvider,
+		networkSecurityGroupProvider: networkSecurityGroupProvider,
+		location:                     location,
+		resourceGroup:                resourceGroup,
+		subscriptionID:               subscriptionID,
+		unavailableOfferings:         offeringsCache,
+		provisionMode:                provisionMode,
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
@@ -298,6 +306,14 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	if err := opts.InstanceType.Requirements.Compatible(skuAcceleratedNetworkingRequirements); err == nil {
 		enableAcceleratedNetworking = true
 	}
+
+	var nsgRef *armnetwork.SecurityGroup
+	if opts.NetworkSecurityGroupID != "" {
+		nsgRef = &armnetwork.SecurityGroup{
+			ID: &opts.NetworkSecurityGroupID,
+		}
+	}
+
 	nic := armnetwork.Interface{
 		Location: lo.ToPtr(p.location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
@@ -312,6 +328,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 					},
 				},
 			},
+			NetworkSecurityGroup:        nsgRef,
 			EnableAcceleratedNetworking: lo.ToPtr(enableAcceleratedNetworking),
 			EnableIPForwarding:          lo.ToPtr(false),
 		},
@@ -340,13 +357,14 @@ func GenerateResourceName(nodeClaimName string) string {
 }
 
 type createNICOptions struct {
-	NICName           string
-	BackendPools      *loadbalancer.BackendAddressPools
-	InstanceType      *corecloudprovider.InstanceType
-	LaunchTemplate    *launchtemplate.Template
-	NetworkPlugin     string
-	NetworkPluginMode string
-	MaxPods           int32
+	NICName                string
+	BackendPools           *loadbalancer.BackendAddressPools
+	InstanceType           *corecloudprovider.InstanceType
+	LaunchTemplate         *launchtemplate.Template
+	NetworkPlugin          string
+	NetworkPluginMode      string
+	MaxPods                int32
+	NetworkSecurityGroupID string
 }
 
 func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
@@ -363,18 +381,19 @@ func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *crea
 
 // createVMOptions contains all the parameters needed to create a VM
 type createVMOptions struct {
-	VMName         string
-	NicReference   string
-	Zone           string
-	CapacityType   string
-	Location       string
-	SSHPublicKey   string
-	NodeIdentities []string
-	NodeClass      *v1beta1.AKSNodeClass
-	LaunchTemplate *launchtemplate.Template
-	InstanceType   *corecloudprovider.InstanceType
-	ProvisionMode  string
-	UseSIG         bool
+	VMName             string
+	NicReference       string
+	Zone               string
+	CapacityType       string
+	Location           string
+	SSHPublicKey       string
+	LinuxAdminUsername string
+	NodeIdentities     []string
+	NodeClass          *v1beta1.AKSNodeClass
+	LaunchTemplate     *launchtemplate.Template
+	InstanceType       *corecloudprovider.InstanceType
+	ProvisionMode      string
+	UseSIG             bool
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -414,7 +433,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			},
 
 			OSProfile: &armcompute.OSProfile{
-				AdminUsername: lo.ToPtr("azureuser"),
+				AdminUsername: lo.ToPtr(opts.LinuxAdminUsername),
 				ComputerName:  &opts.VMName,
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
 					DisablePasswordAuthentication: lo.ToPtr(true),
@@ -422,7 +441,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 						PublicKeys: []*armcompute.SSHPublicKey{
 							{
 								KeyData: lo.ToPtr(opts.SSHPublicKey),
-								Path:    lo.ToPtr("/home/" + "azureuser" + "/.ssh/authorized_keys"),
+								Path:    lo.ToPtr("/home/" + opts.LinuxAdminUsername + "/.ssh/authorized_keys"),
 							},
 						},
 					},
@@ -531,6 +550,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
+// nolint: gocyclo
 func (p *DefaultProvider) beginLaunchInstance(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -558,6 +578,20 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
+
+	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
+	if err != nil {
+		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
+	}
+	var nsgID string
+	if !isAKSManagedVNET {
+		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("getting managed network security group: %w", err)
+		}
+		nsgID = lo.FromPtr(nsg.ID)
+	}
+
 	// TODO: Not returning after launching this LRO because
 	// TODO: doing so would bypass the capacity and other errors that are currently handled by
 	// TODO: core pkg/controllers/nodeclaim/lifecycle/controller.go - in particular, there are metrics/events
@@ -565,13 +599,14 @@ func (p *DefaultProvider) beginLaunchInstance(
 	nicReference, err := p.createNetworkInterface(
 		ctx,
 		&createNICOptions{
-			NICName:           resourceName,
-			NetworkPlugin:     networkPlugin,
-			NetworkPluginMode: networkPluginMode,
-			MaxPods:           utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
-			LaunchTemplate:    launchTemplate,
-			BackendPools:      backendPools,
-			InstanceType:      instanceType,
+			NICName:                resourceName,
+			NetworkPlugin:          networkPlugin,
+			NetworkPluginMode:      networkPluginMode,
+			MaxPods:                utils.GetMaxPods(nodeClass, networkPlugin, networkPluginMode),
+			LaunchTemplate:         launchTemplate,
+			BackendPools:           backendPools,
+			InstanceType:           instanceType,
+			NetworkSecurityGroupID: nsgID,
 		},
 	)
 	if err != nil {
@@ -579,18 +614,19 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}
 
 	result, err := p.createVirtualMachine(ctx, &createVMOptions{
-		VMName:         resourceName,
-		NicReference:   nicReference,
-		Zone:           zone,
-		CapacityType:   capacityType,
-		Location:       p.location,
-		SSHPublicKey:   options.FromContext(ctx).SSHPublicKey,
-		NodeIdentities: options.FromContext(ctx).NodeIdentities,
-		NodeClass:      nodeClass,
-		LaunchTemplate: launchTemplate,
-		InstanceType:   instanceType,
-		ProvisionMode:  p.provisionMode,
-		UseSIG:         options.FromContext(ctx).UseSIG,
+		VMName:             resourceName,
+		NicReference:       nicReference,
+		Zone:               zone,
+		CapacityType:       capacityType,
+		Location:           p.location,
+		SSHPublicKey:       options.FromContext(ctx).SSHPublicKey,
+		LinuxAdminUsername: options.FromContext(ctx).LinuxAdminUsername,
+		NodeIdentities:     options.FromContext(ctx).NodeIdentities,
+		NodeClass:          nodeClass,
+		LaunchTemplate:     launchTemplate,
+		InstanceType:       instanceType,
+		ProvisionMode:      p.provisionMode,
+		UseSIG:             options.FromContext(ctx).UseSIG,
 	})
 	if err != nil {
 		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
@@ -695,10 +731,45 @@ func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType
 	}
 	if sdkerrors.ZonalAllocationFailureOccurred(err) {
 		log.FromContext(ctx).WithValues("zone", zone).Error(err, "")
-		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand)
-		p.unavailableOfferings.MarkUnavailable(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot)
+		p.unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
+		p.unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
 
 		return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
+	}
+	// AllocationFailure means that VM allocation to the dedicated host has failed. But it can also mean "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."
+	if sdkerrors.AllocationFailureOccurred(err) {
+		// instanceType.Offerings contains multiple entries for one zone, but we only care that zone appears at least once, this avoids extra calls to MarkUnavailable
+		zonesToBlock := make(map[string]struct{})
+		for _, offering := range instanceType.Offerings {
+			offeringZone := getOfferingZone(offering)
+			zonesToBlock[offeringZone] = struct{}{}
+		}
+		for zone := range zonesToBlock {
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, AllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, AllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
+		}
+
+		return fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", instanceType.Name)
+	}
+	// OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
+	if sdkerrors.OverconstrainedZonalAllocationFailureOccurred(err) {
+		log.FromContext(ctx).WithValues("zone", zone, "capacity-type", capacityType, "vm size", instanceType.Name).Error(err, "")
+		p.unavailableOfferings.MarkUnavailableWithTTL(ctx, OverconstrainedZonalAllocationFailureReason, instanceType.Name, zone, capacityType, AllocationFailureTTL)
+
+		return fmt.Errorf("unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)", zone, capacityType, instanceType.Name)
+	}
+	// OverconstrainedAllocationFailure means that all zones cannot accommodate the selected size and capacity combination.
+	if sdkerrors.OverconstrainedAllocationFailureOccurred(err) {
+		log.FromContext(ctx).WithValues("capacity-type", capacityType, "vm size", instanceType.Name).Error(err, "")
+		// mark the instance type as unavailable for all offerings/zones for the capacity type
+		for _, offering := range instanceType.Offerings {
+			if getOfferingCapacityType(offering) != capacityType {
+				continue
+			}
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SKUNotAvailableReason, instanceType.Name, getOfferingZone(offering), capacityType, AllocationFailureTTL)
+		}
+
+		return fmt.Errorf("unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)", capacityType, instanceType.Name)
 	}
 	if sdkerrors.RegionalQuotaHasBeenReached(err) {
 		log.FromContext(ctx).Error(err, "")

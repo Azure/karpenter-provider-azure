@@ -33,7 +33,6 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -116,8 +115,8 @@ func (p *DefaultProvider) List(
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
-		to.String(nodeClass.Spec.ImageFamily),
-		to.Int32(nodeClass.Spec.OSDiskSizeGB),
+		lo.FromPtr(nodeClass.Spec.ImageFamily),
+		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
@@ -269,7 +268,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
-	skus := cache.List(ctx, skewer.IncludesFilter(getKarpenterWorkingSKUs()))
+	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
 	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Discovered %d SKUs", len(skus)))
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
