@@ -19,6 +19,7 @@ package test
 import (
 	"context"
 
+	gomegaformat "github.com/onsi/gomega/format"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 
@@ -42,6 +43,9 @@ import (
 
 func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
+
+	// Configuing this here because it's commonly imported and has an init already
+	gomegaformat.CharactersAroundMismatchToInclude = 40
 }
 
 const (
@@ -79,7 +83,8 @@ type Environment struct {
 	NetworkSecurityGroupProvider *networksecuritygroup.Provider
 
 	// Settings
-	nonZonal bool
+	nonZonal       bool
+	SubscriptionID string
 }
 
 func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment {
@@ -192,7 +197,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancerProvider:         loadBalancerProvider,
 		NetworkSecurityGroupProvider: networkSecurityGroupProvider,
 
-		nonZonal: nonZonal,
+		nonZonal:       nonZonal,
+		SubscriptionID: subscription,
 	}
 }
 

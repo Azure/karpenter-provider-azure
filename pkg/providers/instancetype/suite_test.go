@@ -147,6 +147,10 @@ var _ = Describe("InstanceType Provider", func() {
 		clusterNonZonal.Reset()
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
+
+		// Populate the expected cluster NSG
+		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, fmt.Sprintf("aks-agentpool-%s-nsg", options.FromContext(ctx).ClusterID))
+		azureEnv.NetworkSecurityGroupAPI.NSGs.Store(nsg.ID, nsg)
 	})
 
 	AfterEach(func() {
@@ -160,7 +164,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectScheduled(ctx, env.Client, pod)
 			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 			Expect(nic).NotTo(BeNil())
-			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub"))
+			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet"))
 		})
 		It("should produce all required azure cni labels", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -171,7 +175,7 @@ var _ = Describe("InstanceType Provider", func() {
 			decodedString := ExpectDecodedCustomData(azureEnv)
 			Expect(decodedString).To(SatisfyAll(
 				ContainSubstring("kubernetes.azure.com/ebpf-dataplane=cilium"),
-				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
+				ContainSubstring("kubernetes.azure.com/network-subnet=aks-subnet"),
 				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
 				ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
@@ -183,6 +187,7 @@ var _ = Describe("InstanceType Provider", func() {
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
+
 			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
 			Expect(nic).NotTo(BeNil())
 			Expect(lo.FromPtr(nic.Interface.Properties.IPConfigurations[0].Properties.Subnet.ID)).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet"))
@@ -713,7 +718,7 @@ var _ = Describe("InstanceType Provider", func() {
 			customData := ExpectDecodedCustomData(azureEnv)
 			// Since the network plugin is not "azure" it should not include the following kubeletLabels
 			Expect(customData).To(Not(SatisfyAny(
-				ContainSubstring("kubernetes.azure.com/network-subnet=karpentersub"),
+				ContainSubstring("kubernetes.azure.com/network-subnet=aks-subnet"),
 				ContainSubstring("kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c"),
 				ContainSubstring("kubernetes.azure.com/podnetwork-type=overlay"),
 			)))
@@ -1538,7 +1543,7 @@ var _ = Describe("InstanceType Provider", func() {
 			"none",
 			sets.New(
 				"kubernetes.azure.com/azure-cni-overlay=true",
-				"kubernetes.azure.com/network-subnet=karpentersub",
+				"kubernetes.azure.com/network-subnet=aks-subnet",
 				"kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c",
 				"kubernetes.azure.com/podnetwork-type=overlay",
 			)),
@@ -1550,7 +1555,7 @@ var _ = Describe("InstanceType Provider", func() {
 			"none",
 			sets.New(
 				"kubernetes.azure.com/azure-cni-overlay=true",
-				"kubernetes.azure.com/network-subnet=karpentersub",
+				"kubernetes.azure.com/network-subnet=aks-subnet",
 				"kubernetes.azure.com/nodenetwork-vnetguid=a519e60a-cac0-40b2-b883-084477fe6f5c",
 				"kubernetes.azure.com/podnetwork-type=overlay",
 				"kubernetes.azure.com/ebpf-dataplane=cilium",
