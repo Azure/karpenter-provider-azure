@@ -586,7 +586,7 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	FContext("Ephemeral Disk", func() {
+	Context("Ephemeral Disk", func() {
 		It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
 			// Create a NodePool that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
