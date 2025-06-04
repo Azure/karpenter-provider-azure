@@ -14,19 +14,48 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package integration_test
+package interruption_test
 
 import (
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-	"github.com/samber/lo"
+	"testing"
 
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
+	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
+
+var env *azure.Environment
+var nodeClass *v1beta1.AKSNodeClass
+var nodePool *karpv1.NodePool
+
+func TestInterruption(t *testing.T) {
+	RegisterFailHandler(Fail)
+	BeforeSuite(func() {
+		env = azure.NewEnvironment(t)
+	})
+	AfterSuite(func() {
+		env.Stop()
+	})
+	RunSpecs(t, "Interruption")
+}
+
+var _ = BeforeEach(func() {
+	env.BeforeEach()
+	nodeClass = env.DefaultAKSNodeClass()
+	nodePool = env.DefaultNodePool(nodeClass)
+})
+var _ = AfterEach(func() { env.Cleanup() })
+var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Spot", func() {
 	BeforeEach(func() {
