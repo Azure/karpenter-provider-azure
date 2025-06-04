@@ -4,6 +4,8 @@ go 1.24.4
 
 require github.com/Azure/skewer v0.0.20
 
+require github.com/Azure/skewer v0.0.20
+
 require (
 	github.com/Azure/aks-middleware v0.0.36
 	github.com/Azure/azure-kusto-go v0.16.1
