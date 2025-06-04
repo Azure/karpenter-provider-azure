@@ -61,7 +61,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -81,11 +81,11 @@ var ctx context.Context
 var testOptions *options.Options
 var stop context.CancelFunc
 var env *coretest.Environment
-var azureEnv, azureEnvNonZonal *test.Environment
+var azureEnv, azureEnvNonZonal, azureEnvSouthCentralUS *test.Environment
 var fakeClock *clock.FakeClock
-var coreProvisioner, coreProvisionerNonZonal *provisioning.Provisioner
-var cluster, clusterNonZonal *state.Cluster
-var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
+var coreProvisioner, coreProvisionerNonZonal, coreProvisionerSouthCentralUS *provisioning.Provisioner
+var cluster, clusterNonZonal, clusterSouthCentralUS *state.Cluster
+var cloudProvider, cloudProviderNonZonal, cloudProviderSouthCentralUS *cloudprovider.CloudProvider
 
 var fakeZone1 = utils.MakeZone(fake.Region, "1")
 
@@ -102,15 +102,19 @@ func TestAzure(t *testing.T) {
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
+	azureEnvSouthCentralUS = test.NewRegionalEnvironment(ctx, env, "southcentralus", true)
 
 	fakeClock = &clock.FakeClock{}
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+	cloudProviderSouthCentralUS = cloudprovider.New(azureEnvSouthCentralUS.InstanceTypesProvider, azureEnvSouthCentralUS.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvSouthCentralUS.ImageProvider)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
+	clusterSouthCentralUS = state.NewCluster(fakeClock, env.Client, cloudProviderSouthCentralUS)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal, fakeClock)
+	coreProvisionerSouthCentralUS = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderSouthCentralUS, clusterSouthCentralUS, fakeClock)
 
 	RunSpecs(t, "Provider/Azure")
 }
@@ -589,6 +593,19 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("Ephemeral Disk", func() {
+		var originalOptions *options.Options
+		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					UseSIG: lo.ToPtr(true),
+				}))
+		})
+
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, originalOptions)
+		})
 		It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
 			// Create a NodePool that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
@@ -695,9 +712,31 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(128)))
 			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
 		})
-		It("should fail to provision Standard_E4d_v5 if asked for ephemeral storage", func() {
-			originalEnv := azureEnv
-			azureEnv = test.NewRegionalEnvironment(ctx, env, "southcentralus", true)
+		It("should select NvmeDisk for v6 skus with maxNvmeDiskSize > 0", func() {
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      "node.kubernetes.io/instance-type",
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D128ds_v6"},
+				}})
+			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](100)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, clusterSouthCentralUS, cloudProviderSouthCentralUS, coreProvisionerSouthCentralUS, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			vm := azureEnvSouthCentralUS.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementNvmeDisk))
+		})
+		It("should provision Standard_E4d_v5 if asked for ephemeral storage with temp disk", func() {
+			// Standard_E4d_v5 should show up in the list of instance types, but should not be supported
+			instanceTypes, err := azureEnvSouthCentralUS.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).To(ContainElement(WithTransform(func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }, Equal("Standard_E4d_v5"))))
+
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
@@ -714,9 +753,13 @@ var _ = Describe("InstanceType Provider", func() {
 				})
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-			ExpectNotScheduled(ctx, env.Client, pod)
-			azureEnv = originalEnv
+			ExpectProvisioned(ctx, env.Client, clusterSouthCentralUS, cloudProviderSouthCentralUS, coreProvisionerSouthCentralUS, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			vm := azureEnvSouthCentralUS.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
 		})
 	})
 
