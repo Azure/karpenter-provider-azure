@@ -134,7 +134,6 @@ az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
-	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
 	@echo Consider "make az-configure-values"!
 
 az-perm-sig: ## Create role assignments when testing with SIG images
