@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package interruption_test
+package spot_test
 
 import (
 	"testing"
@@ -38,7 +38,7 @@ var env *azure.Environment
 var nodeClass *v1beta1.AKSNodeClass
 var nodePool *karpv1.NodePool
 
-func TestInterruption(t *testing.T) {
+func TestSpot(t *testing.T) {
 	RegisterFailHandler(Fail)
 	BeforeSuite(func() {
 		env = azure.NewEnvironment(t)
@@ -46,7 +46,7 @@ func TestInterruption(t *testing.T) {
 	AfterSuite(func() {
 		env.Stop()
 	})
-	RunSpecs(t, "Interruption")
+	RunSpecs(t, "Spot")
 }
 
 var _ = BeforeEach(func() {
