@@ -1683,9 +1683,10 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(workingSKUs).ToNot(BeEmpty())
 
 			// Test with a few specific SKUs
-			testSKUs := []string{"Standard_D2_v2", "Standard_D4_v2", "Standard_D8_v2"}
+			testSKUs := []string{"Standard_A2", "Standard_B1s"}
 
 			for _, skuName := range testSKUs {
+				fmt.Println("Current SKU:", skuName)
 				skuNodePool := coretest.NodePool(karpv1.NodePool{
 					Spec: karpv1.NodePoolSpec{
 						Template: karpv1.NodeClaimTemplate{
