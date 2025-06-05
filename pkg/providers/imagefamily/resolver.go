@@ -19,12 +19,12 @@ package imagefamily
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -52,7 +52,8 @@ var _ Resolver = &defaultResolver{}
 
 // defaultResolver is able to fill-in dynamic launch template parameters
 type defaultResolver struct {
-	imageProvider *Provider
+	imageProvider        *Provider
+	instanceTypeProvider instancetype.Provider
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -81,9 +82,10 @@ type ImageFamily interface {
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
-func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolver {
+func NewDefaultResolver(_ client.Client, imageProvider *Provider, instanceTypeProvider instancetype.Provider) *defaultResolver {
 	return &defaultResolver{
-		imageProvider: imageProvider,
+		imageProvider:        imageProvider,
+		instanceTypeProvider: instanceTypeProvider,
 	}
 }
 
@@ -130,9 +132,9 @@ func (r *defaultResolver) Resolve(
 		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
 	}
 
-	storageProfile := "ManagedDisks"
-	if useEphemeralDisk(instanceType, nodeClass) {
-		storageProfile = "Ephemeral"
+	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
+	if err != nil {
+		return nil, err
 	}
 
 	template := &template.Parameters{
@@ -151,14 +153,33 @@ func (r *defaultResolver) Resolve(
 			staticParameters.Labels,
 			instanceType,
 			imageDistro,
-			storageProfile,
+			diskType,
 		),
-		ImageID:        imageID,
-		StorageProfile: storageProfile,
-		IsWindows:      false, // TODO(Windows)
+		StorageProfileDiskType:  diskType,
+		StorageProfilePlacement: placement,
+
+		// TODO: We could potentially use the instance type to do defaulting like
+		// traditional AKS, so putting this here along with the other settings
+		StorageProfileSizeGB: float64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)),
+		ImageID:              imageID,
+		IsWindows:            false, // TODO(Windows)
 	}
 
 	return template, nil
+}
+
+func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement armcompute.DiffDiskPlacement, err error) {
+	sku, err := r.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	if err != nil {
+		return "", "", err
+	}
+
+	_, placement = instancetype.MaxEphemeralOSDiskSizeGB(sku)
+
+	if instancetype.UseEphemeralDisk(sku, nodeClass) {
+		return "Ephemeral", placement, nil
+	}
+	return "ManagedDisks", placement, nil
 }
 
 func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
@@ -203,23 +224,4 @@ func getImageFamily(familyName *string, parameters *template.StaticParameters) I
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}
-}
-
-func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
-	reqs := instanceType.Requirements.Get(v1beta1.LabelSKUStorageEphemeralOSMaxSize).Values()
-	if len(reqs) == 0 || len(reqs) > 1 {
-		return 0
-	}
-	maxSize, err := strconv.ParseFloat(reqs[0], 32)
-	if err != nil {
-		return 0
-	}
-	// decimal places are truncated, so we round down
-	return int32(maxSize)
-}
-
-// setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
-func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) bool {
-	// use ephemeral disk if it is large enough
-	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
 }
