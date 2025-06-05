@@ -1,0 +1,11 @@
+---
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: cmk-enabled
+  annotations:
+    kubernetes.io/description: "AKSNodeClass using a customer-managed key for OS disk encryption"
+spec:
+  imageFamily: Ubuntu2204
+  # Replace the value below with your actual Disk Encryption Set resource ID
+  osDiskDiskEncryptionSetID: "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/diskEncryptionSets/<des-name>"
