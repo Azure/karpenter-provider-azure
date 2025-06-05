@@ -75,7 +75,7 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("SKU Scaling", func() {
-	It("should scale up and down with different SKUs", func() {
+	It("should scale up and down with different SKUs from each family", func() {
 		// Verify that we have SKUs to test
 		Expect(testSKUs).ToNot(BeEmpty(), "No SKUs found to test")
 
