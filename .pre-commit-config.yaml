@@ -1,10 +1,10 @@
 repos:
 - repo: https://github.com/gitleaks/gitleaks
-  rev: v8.18.1
+  rev: v8.24.2
   hooks:
   - id: gitleaks
 - repo: https://github.com/golangci/golangci-lint
-  rev: v1.55.2
+  rev: v1.64.8
   hooks:
   - id: golangci-lint
 - repo: https://github.com/jumanjihouse/pre-commit-hooks
@@ -12,11 +12,12 @@ repos:
   hooks:
   - id: shellcheck
 - repo: https://github.com/crate-ci/typos
-  rev: v1.17.2
+  rev: v1.31.1
   hooks:
   - id: typos
+    args: [--write-changes, --force-exclude, --exclude, go.mod]
 - repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.5.0
+  rev: v5.0.0
   hooks:
   - id: end-of-file-fixer
   - id: trailing-whitespace

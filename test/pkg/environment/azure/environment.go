@@ -17,99 +17,89 @@ limitations under the License.
 package azure
 
 import (
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/kubernetes/scheme"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 func init() {
-	lo.Must0(apis.AddToScheme(scheme.Scheme))
-	corev1beta1.NormalizedLabels = lo.Assign(corev1beta1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": v1.LabelTopologyZone})
+	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": v1.LabelTopologyZone})
+	coretest.DefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.6"
 }
 
-const WindowsDefaultImage = "mcr.microsoft.com/oss/kubernetes/pause:3.9"
+const (
+	CiliumAgentNotReadyTaint    = "node.cilium.io/agent-not-ready"
+	EphemeralInitContainerImage = "alpine"
+)
 
 type Environment struct {
 	*common.Environment
-	Region string
+
+	NodeResourceGroup    string
+	Region               string
+	SubscriptionID       string
+	VNETResourceGroup    string
+	ACRName              string
+	ClusterName          string
+	ClusterResourceGroup string
+
+	tracker *azure.Tracker
+
+	// These should be unexported and access should be through the Environment methods
+	// Any create calls should make sure they also register the created resources with the Environment's tracker
+	// to ensure they are cleaned up after the test.
+	vmClient             *armcompute.VirtualMachinesClient
+	vnetClient           *armnetwork.VirtualNetworksClient
+	subnetClient         *armnetwork.SubnetsClient
+	interfacesClient     *armnetwork.InterfacesClient
+	managedClusterClient *containerservice.ManagedClustersClient
 }
 
 func NewEnvironment(t *testing.T) *Environment {
-	env := common.NewEnvironment(t)
-
-	return &Environment{
-		Region:      "westus2",
-		Environment: env,
+	azureEnv := &Environment{
+		Environment:          common.NewEnvironment(t),
+		SubscriptionID:       lo.Must(os.LookupEnv("AZURE_SUBSCRIPTION_ID")),
+		ClusterName:          lo.Must(os.LookupEnv("AZURE_CLUSTER_NAME")),
+		ClusterResourceGroup: lo.Must(os.LookupEnv("AZURE_RESOURCE_GROUP")),
+		ACRName:              lo.Must(os.LookupEnv("AZURE_ACR_NAME")),
+		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
+		tracker:              azure.NewTracker(),
 	}
+
+	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
+	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
+	azureEnv.NodeResourceGroup = defaultNodeRG
+
+	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
+	return azureEnv
 }
 
-func (env *Environment) DefaultNodePool(nodeClass *v1alpha2.AKSNodeClass) *corev1beta1.NodePool {
-	nodePool := coretest.NodePool()
-	nodePool.Spec.Template.Spec.NodeClassRef = &corev1beta1.NodeClassReference{
-		Name: nodeClass.Name,
-	}
-	nodePool.Spec.Template.Spec.Requirements = []corev1beta1.NodeSelectorRequirementWithMinValues{
-		{NodeSelectorRequirement: v1.NodeSelectorRequirement{
-			Key:      v1.LabelOSStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{string(v1.Linux)},
-		}},
-		{
-			NodeSelectorRequirement: v1.NodeSelectorRequirement{
-				Key:      corev1beta1.CapacityTypeLabelKey,
-				Operator: v1.NodeSelectorOpIn,
-				Values:   []string{corev1beta1.CapacityTypeOnDemand},
-			}},
-		{
-			NodeSelectorRequirement: v1.NodeSelectorRequirement{
-				Key:      v1.LabelArchStable,
-				Operator: v1.NodeSelectorOpIn,
-				Values:   []string{corev1beta1.ArchitectureAmd64},
-			}},
-		{
-			NodeSelectorRequirement: v1.NodeSelectorRequirement{
-				Key:      v1alpha2.LabelSKUFamily,
-				Operator: v1.NodeSelectorOpIn,
-				Values:   []string{"D"},
-			}},
-	}
-	nodePool.Spec.Disruption.ConsolidateAfter = &corev1beta1.NillableDuration{}
-	nodePool.Spec.Disruption.ExpireAfter.Duration = nil
-	nodePool.Spec.Limits = corev1beta1.Limits(v1.ResourceList{
-		v1.ResourceCPU:    resource.MustParse("100"),
-		v1.ResourceMemory: resource.MustParse("1000Gi"),
-	})
-	return nodePool
-}
-
-func (env *Environment) ArmNodepool(nodeClass *v1alpha2.AKSNodeClass) *corev1beta1.NodePool {
-	nodePool := env.DefaultNodePool(nodeClass)
-	coretest.ReplaceRequirements(nodePool, corev1beta1.NodeSelectorRequirementWithMinValues{
-		NodeSelectorRequirement: v1.NodeSelectorRequirement{
-			Key:      v1.LabelArchStable,
-			Operator: v1.NodeSelectorOpIn,
-			Values:   []string{corev1beta1.ArchitectureArm64},
-		}})
-	return nodePool
-}
-
-func (env *Environment) DefaultAKSNodeClass() *v1alpha2.AKSNodeClass {
+func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := test.AKSNodeClass()
 	return nodeClass
 }
 
-func (env *Environment) AZLinuxNodeClass() *v1alpha2.AKSNodeClass {
+func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := env.DefaultAKSNodeClass()
-	nodeClass.Spec.ImageFamily = lo.ToPtr(v1alpha2.AzureLinuxImageFamily)
+	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 	return nodeClass
 }

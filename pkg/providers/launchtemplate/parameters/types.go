@@ -18,6 +18,7 @@ package parameters
 
 import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 )
 
 // StaticParameters define the static launch template parameters
@@ -28,10 +29,11 @@ type StaticParameters struct {
 	Arch                           string
 	GPUNode                        bool
 	GPUDriverVersion               string
+	GPUDriverType                  string
 	GPUImageSHA                    string
 	TenantID                       string
 	SubscriptionID                 string
-	UserAssignedIdentityID         string
+	KubeletIdentityClientID        string
 	Location                       string
 	ResourceGroup                  string
 	ClusterID                      string
@@ -40,9 +42,8 @@ type StaticParameters struct {
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
-
-	// VNET
-	SubnetID string
+	SubnetID                       string
+	ClusterResourceGroup           string
 
 	Tags   map[string]string
 	Labels map[string]string
@@ -51,6 +52,9 @@ type StaticParameters struct {
 // Parameters adds the dynamically generated launch template parameters
 type Parameters struct {
 	*StaticParameters
-	UserData bootstrap.Bootstrapper
-	ImageID  string
+	ScriptlessCustomData           bootstrap.Bootstrapper
+	CustomScriptsNodeBootstrapping customscriptsbootstrap.Bootstrapper
+	ImageID                        string
+	StorageProfile                 string
+	IsWindows                      bool
 }

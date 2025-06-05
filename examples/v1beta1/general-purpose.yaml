@@ -9,8 +9,22 @@ metadata:
 spec:
   disruption:
     expireAfter: Never
+    budgets:
+    - nodes: 30%
+  # Optional: Uncomment if you want to put a cap on the max resources available for provisioning
+  # limits:
+  #   cpu: "30"
   template:
+    metadata:
+      labels:
+        # required for Karpenter to predict overhead from cilium DaemonSet
+        kubernetes.azure.com/ebpf-dataplane: cilium
     spec:
+      startupTaints:
+        # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+        - key: node.cilium.io/agent-not-ready
+          effect: NoExecute
+          value: "true"
       requirements:
         - key: kubernetes.io/arch
           operator: In
@@ -24,10 +38,15 @@ spec:
         - key: karpenter.azure.com/sku-family
           operator: In
           values: [D]
+        # Optional: Uncomment if you want to add a restriction on max sku cpus.
+        #           Useful for ensuring karpneter provisions multiple nodes for feature testing.
+        # - key: karpenter.azure.com/sku-cpu
+        #   operator: Lt
+        #   values: ["3"]
       nodeClassRef:
         name: default
 ---
-apiVersion: karpenter.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: default

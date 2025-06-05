@@ -13,7 +13,6 @@ updates:
         patterns:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
-          - "knative.dev/*"
         exclude-patterns:
           - "sigs.k8s.io/karpenter"
       go-deps:
@@ -22,7 +21,6 @@ updates:
         exclude-patterns:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
-          - "knative.dev/*"
   - package-ecosystem: docker
     directory: /.devcontainer
     schedule:
@@ -117,6 +115,14 @@ updates:
           - '*'
   - package-ecosystem: github-actions
     directory: .github/actions/e2e/install-karpenter
+    schedule:
+      interval: weekly
+    groups:
+      action-deps:
+        patterns:
+          - '*'
+  - package-ecosystem: github-actions
+    directory: .github/actions/install-deps
     schedule:
       interval: weekly
     groups:

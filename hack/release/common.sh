@@ -60,12 +60,31 @@ buildAndPublish() {
   date_epoch="$(dateEpoch)"
   build_date="$(buildDate "${date_epoch}")"
 
+  # Check if image tag already exists
+  if crane manifest "${oci_repo}/controller:${version}" > /dev/null 2>&1; then
+    echo "Image tag ${oci_repo}/controller:${version} already exists. Aborting."
+    exit 1
+  fi
+  if crane manifest "${oci_repo}/controller:${version}-aks" > /dev/null 2>&1; then
+    echo "Image tag ${oci_repo}/controller:${version}-aks already exists. Aborting."
+    exit 1
+  fi
+
   img="$(GOFLAGS=${GOFLAGS:-} \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"     ./cmd/controller)"
   img_nap="$(GOFLAGS="${GOFLAGS:-} -tags=ccp" \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"-aks ./cmd/controller)"
+
+  if ! trivy image --ignore-unfixed --exit-code 1 "${img}"; then
+    echo "Trivy scan failed for ${img}. Aborting."
+    exit 1
+  fi
+  if ! trivy image --ignore-unfixed --exit-code 1 "${img_nap}"; then
+    echo "Trivy scan failed for ${img_nap}. Aborting."
+    exit 1
+  fi
 
   # img format is "repo:tag@digest"
   img_repo="$(echo "${img}" | cut -d "@" -f 1 | cut -d ":" -f 1)"

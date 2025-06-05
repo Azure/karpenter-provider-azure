@@ -10,7 +10,7 @@ linters:
     - bidichk
     - errorlint
     - errcheck
-    - exportloopref
+    - copyloopvar
     - gosec
     - revive
     - stylecheck
@@ -33,8 +33,9 @@ linters-settings:
   gocyclo:
     min-complexity: 11
   govet:
-    enable:
-      - shadow
+    enable-all: true
+    disable:
+      - fieldalignment
   revive:
     rules:
     - name: dot-imports

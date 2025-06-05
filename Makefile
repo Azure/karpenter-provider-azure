@@ -7,7 +7,7 @@ GOFLAGS ?= $(LDFLAGS)
 WITH_GOFLAGS = GOFLAGS="$(GOFLAGS)"
 
 # # CR for local builds of Karpenter
-KARPENTER_NAMESPACE ?= karpenter
+KARPENTER_NAMESPACE ?= kube-system
 
 # Common Directories
 # TODO: revisit testing tools (temporarily excluded here, for make verify)
@@ -23,44 +23,19 @@ help: ## Display help
 
 presubmit: verify test ## Run all steps in the developer loop
 
-ci-test: battletest coverage ## Runs tests and submits coverage
+ci-test: test coverage ## Runs tests and submits coverage
 
-ci-non-test: verify vulncheck ## Runs checks other than tests
+ci-non-test: verify licenses vulncheck ## Runs checks other than tests
 
 test: ## Run tests
-	ginkgo -v --focus="${FOCUS}" ./pkg/$(shell echo $(TEST_SUITE) | tr A-Z a-z)
-
-battletest: ## Run randomized, racing, code-covered tests
-	ginkgo -v \
-		-race \
+	ginkgo -vv \
 		-cover -coverprofile=coverage.out -output-dir=. -coverpkg=./pkg/... \
 		--focus="${FOCUS}" \
 		--randomize-all \
-		-tags random_test_delay \
 		./pkg/...
 
-e2etests: ## Run the e2e suite against your local cluster
-	# Notes:
-	# -p: the number of programs, such as build commands or test binaries, that can be run in parallel?
-	# -count 1: prevents caching
-	# -timeout: If a test binary runs longer than TEST_TIMEOUT, panic
-	# -v: verbose output
-	cd test && CLUSTER_NAME=${CLUSTER_NAME} go test \
-		-p 1 \
-		-count 1 \
-		-timeout ${TEST_TIMEOUT} \
-		-v \
-		./suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
-		--ginkgo.focus="${FOCUS}" \
-		--ginkgo.timeout=${TEST_TIMEOUT} \
-		--ginkgo.grace-period=3m \
-		--ginkgo.vv
-
-benchmark:
-	go test -tags=test_performance -run=NoTests -bench=. ./...
-
 deflake: ## Run randomized, racing, code-covered tests to deflake failures
-	for i in $(shell seq 1 5); do make battletest || exit 1; done
+	for i in $(shell seq 1 5); do make test || exit 1; done
 
 deflake-until-it-fails: ## Run randomized, racing tests until the test fails to catch flakes
 	ginkgo \
@@ -71,18 +46,53 @@ deflake-until-it-fails: ## Run randomized, racing tests until the test fails to 
 		-v \
 		./pkg/...
 
+e2etests: ## Run the e2e suite against your local cluster
+	# Notes:
+	# -p: the number of programs, such as build commands or test binaries, that can be run in parallel?
+	# -count 1: prevents caching
+	# -timeout: If a test binary runs longer than TEST_TIMEOUT, panic
+	# -v: verbose output
+	cd test && AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} go test \
+		-p 1 \
+		-count 1 \
+		-timeout ${TEST_TIMEOUT} \
+		-v \
+		./suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
+		--ginkgo.focus="${FOCUS}" \
+		--ginkgo.timeout=${TEST_TIMEOUT} \
+		--ginkgo.grace-period=3m \
+		--ginkgo.vv
+
+upstream-e2etests:
+	AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} \
+	go test \
+		-count 1 \
+		-timeout 1h \
+		-v \
+		$(KARPENTER_CORE_DIR)/test/suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
+		--ginkgo.focus="${FOCUS}" \
+		--ginkgo.timeout=1h \
+		--ginkgo.grace-period=5m \
+		--ginkgo.vv \
+		--default-nodeclass="$(shell pwd)/test/pkg/environment/azure/default_aksnodeclass.yaml" \
+		--default-nodepool="$(shell pwd)/test/pkg/environment/azure/default_nodepool.yaml"
+
+benchmark:
+	go test -tags=test_performance -run=NoTests -bench=. ./...
+
 coverage:
 	go tool cover -html coverage.out -o coverage.html
 
 verify: toolchain tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
 	cp $(KARPENTER_CORE_DIR)/pkg/apis/crds/* pkg/apis/crds
-	yq -i '(.spec.versions[0].additionalPrinterColumns[] | select (.name=="Zone")) .jsonPath=".metadata.labels.karpenter\.azure\.com/zone"' \
-		pkg/apis/crds/karpenter.sh_nodeclaims.yaml
+	hack/validation/kubelet.sh
 	hack/validation/labels.sh
 	hack/validation/requirements.sh
-	hack/validation/common.sh
+	hack/mutation/kubectl_get_ux.sh
+	cp pkg/apis/crds/* charts/karpenter-crd/templates
 	hack/github/dependabot.sh
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
 	@git diff --quiet ||\
@@ -97,6 +107,10 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 
 vulncheck: ## Verify code vulnerabilities
 	@govulncheck ./pkg/...
+	@trivy filesystem --ignore-unfixed --scanners vuln --exit-code 1 go.mod
+
+licenses: download ## Verifies dependency licenses
+	! go-licenses csv ./... | grep -v -e 'MIT' -e 'Apache-2.0' -e 'BSD-3-Clause' -e 'BSD-2-Clause' -e 'ISC' -e 'MPL-2.0'
 
 codegen: ## Auto generate files based on Azure API responses
 	./hack/codegen.sh
@@ -116,7 +130,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help test battletest e2etests verify tidy download codegen toolchain vulncheck snapshot release
+.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
 
 define newline
 

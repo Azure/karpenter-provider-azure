@@ -19,10 +19,21 @@ package utils
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
+	"strings"
 
-	"knative.dev/pkg/logging"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+
+	"github.com/samber/lo"
+
+	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // GetVMName parses the provider ID stored on the node to get the vmName
@@ -47,14 +58,123 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
 	if err != nil {
-		logging.FromContext(ctx).Warnf("Failed to convert resource group name to lower case in providerID %s: %v", providerID, err)
+		log.FromContext(ctx).Info(fmt.Sprintf("WARN: Failed to convert resource group name to lower case in providerID %s: %v", providerID, err))
 		// fallback to original providerID
 		return providerID
 	}
 	return providerIDLowerRG
 }
 
-func MkVMID(resourceGroupName string, vmName string) string {
-	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s"
-	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
+// WithDefaultFloat64 returns the float64 value of the supplied environment variable or, if not present,
+// the supplied default value. If the float64 conversion fails, returns the default
+func WithDefaultFloat64(key string, def float64) float64 {
+	val, ok := os.LookupEnv(key)
+	if !ok {
+		return def
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return def
+	}
+	return f
+}
+
+func ImageReferenceToString(imageRef *armcompute.ImageReference) string {
+	// Check for Custom Image
+	if imageRef.ID != nil && *imageRef.ID != "" {
+		return *imageRef.ID
+	}
+
+	// Check for Community Image
+	if imageRef.CommunityGalleryImageID != nil && *imageRef.CommunityGalleryImageID != "" {
+		return *imageRef.CommunityGalleryImageID
+	}
+
+	// Check for Shared Gallery Image
+	if imageRef.SharedGalleryImageID != nil && *imageRef.SharedGalleryImageID != "" {
+		return *imageRef.SharedGalleryImageID
+	}
+
+	// Check for Platform Image and use standard string representation
+	if imageRef.Publisher != nil && imageRef.Offer != nil && imageRef.SKU != nil && imageRef.Version != nil {
+		// Use the standard format: Publisher:Offer:Sku:Version
+		return fmt.Sprintf("%s:%s:%s:%s",
+			*imageRef.Publisher, *imageRef.Offer, *imageRef.SKU, *imageRef.Version)
+	}
+
+	return ""
+}
+
+func IsVMDeleting(vm armcompute.VirtualMachine) bool {
+	if vm.Properties != nil && vm.Properties.ProvisioningState != nil {
+		return *vm.Properties.ProvisioningState == "Deleting"
+	}
+	return false
+}
+
+// StringMap returns the string map representation of the resource list
+func StringMap(list v1.ResourceList) map[string]string {
+	if list == nil {
+		return nil
+	}
+	m := make(map[string]string)
+	for k, v := range list {
+		m[k.String()] = v.String()
+	}
+	return m
+}
+
+// PrettySlice truncates a slice after a certain number of max items to ensure
+// that the Slice isn't too long
+func PrettySlice[T any](s []T, maxItems int) string {
+	var sb strings.Builder
+	for i, elem := range s {
+		if i > maxItems-1 {
+			fmt.Fprintf(&sb, " and %d other(s)", len(s)-i)
+			break
+		} else if i > 0 {
+			fmt.Fprint(&sb, ", ")
+		}
+		fmt.Fprint(&sb, elem)
+	}
+	return sb.String()
+}
+
+// GetMaxPods resolves what we should set max pods to for a given nodeclass.
+// If not specified, defaults based on network-plugin. 30 for "azure", 110 for "kubenet",
+// or 250 for "none" and network plugin mode overlay.
+func GetMaxPods(nodeClass *v1beta1.AKSNodeClass, networkPlugin, networkPluginMode string) int32 {
+	if nodeClass.Spec.MaxPods != nil {
+		return lo.FromPtr(nodeClass.Spec.MaxPods)
+	}
+	switch {
+	case networkPlugin == consts.NetworkPluginNone:
+		return consts.DefaultNetPluginNoneMaxPods
+	case networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.NetworkPluginModeOverlay:
+		return consts.DefaultOverlayMaxPods
+	case networkPlugin == consts.NetworkPluginAzure && networkPluginMode == consts.NetworkPluginModeNone:
+		return consts.DefaultNodeSubnetMaxPods
+	default:
+		return consts.DefaultKubernetesMaxPods
+	}
+}
+
+var managedVNETPattern = regexp.MustCompile(`(?i)^aks-vnet-\d{8}$`)
+
+const managedSubnetName = "aks-subnet"
+
+// IsAKSManagedVNET determines if the vnet managed or not.
+// Note: You can "trick" this function if you really try by (for example) createding a VNET that looks like
+// an AKS managed VNET, with the same resource group as the MC RG, in a different subscription, or by creating
+// your own VNET in the MC RG whose name matches the AKS pattern but the VNET is actually yours rather than ours.
+func IsAKSManagedVNET(nodeResourceGroup string, subnetID string) (bool, error) {
+	// TODO: I kinda think we should be using arm.ParseResourceID rather than rolling our own
+	id, err := GetVnetSubnetIDComponents(subnetID)
+	if err != nil {
+		return false, err
+	}
+
+	return managedVNETPattern.MatchString(id.VNetName) &&
+		strings.EqualFold(nodeResourceGroup, id.ResourceGroupName) &&
+		strings.EqualFold(id.SubnetName, managedSubnetName), nil
 }

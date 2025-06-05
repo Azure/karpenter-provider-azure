@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
 	"k8s.io/apimachinery/pkg/api/errors"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,8 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
-	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 type NodeClaimController struct {
@@ -44,12 +44,8 @@ func NewNodeClaimController(kubeClient client.Client) *NodeClaimController {
 	}
 }
 
-func (c *NodeClaimController) Name() string {
-	return "nodeclaim"
-}
-
 func (c *NodeClaimController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	nc := &corev1beta1.NodeClaim{}
+	nc := &karpv1.NodeClaim{}
 	if err := c.kubeClient.Get(ctx, req.NamespacedName, nc); err != nil {
 		if errors.IsNotFound(err) {
 			fmt.Printf("[DELETED %s] NODECLAIM %s\n", time.Now().Format(time.RFC3339), req.NamespacedName.String())
@@ -60,25 +56,26 @@ func (c *NodeClaimController) Reconcile(ctx context.Context, req reconcile.Reque
 	return reconcile.Result{}, nil
 }
 
-func (c *NodeClaimController) GetInfo(nc *corev1beta1.NodeClaim) string {
+func (c *NodeClaimController) GetInfo(nc *karpv1.NodeClaim) string {
 	return fmt.Sprintf("ready=%t launched=%t registered=%t initialized=%t",
-		nc.StatusConditions().IsHappy(),
-		nc.StatusConditions().GetCondition(corev1beta1.Launched).IsTrue(),
-		nc.StatusConditions().GetCondition(corev1beta1.Registered).IsTrue(),
-		nc.StatusConditions().GetCondition(corev1beta1.Initialized).IsTrue(),
+		nc.StatusConditions().Root().IsTrue(),
+		nc.StatusConditions().Get(karpv1.ConditionTypeLaunched).IsTrue(),
+		nc.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue(),
+		nc.StatusConditions().Get(karpv1.ConditionTypeInitialized).IsTrue(),
 	)
 }
 
-func (c *NodeClaimController) Builder(_ context.Context, m manager.Manager) corecontroller.Builder {
-	return corecontroller.Adapt(controllerruntime.
-		NewControllerManagedBy(m).
-		For(&corev1beta1.NodeClaim{}).
+func (c *NodeClaimController) Register(_ context.Context, m manager.Manager) error {
+	return controllerruntime.NewControllerManagedBy(m).
+		Named("nodeclaim").
+		For(&karpv1.NodeClaim{}).
 		WithEventFilter(predicate.Funcs{
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				oldNodeClaim := e.ObjectOld.(*corev1beta1.NodeClaim)
-				newNodeClaim := e.ObjectNew.(*corev1beta1.NodeClaim)
+				oldNodeClaim := e.ObjectOld.(*karpv1.NodeClaim)
+				newNodeClaim := e.ObjectNew.(*karpv1.NodeClaim)
 				return c.GetInfo(oldNodeClaim) != c.GetInfo(newNodeClaim)
 			},
 		}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 10}))
+		WithOptions(controller.Options{MaxConcurrentReconciles: 10, SkipNameValidation: lo.ToPtr(true)}).
+		Complete(c)
 }

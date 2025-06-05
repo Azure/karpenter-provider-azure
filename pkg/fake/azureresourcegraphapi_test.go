@@ -23,7 +23,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
@@ -32,7 +31,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 	resourceGroup := "test_managed_cluster_rg"
 	subscriptionID := "test_sub"
 	virtualMachinesAPI := &VirtualMachinesAPI{}
-	azureResourceGraphAPI := &AzureResourceGraphAPI{AzureResourceGraphBehavior{VirtualMachinesAPI: virtualMachinesAPI, ResourceGroup: resourceGroup}}
+	azureResourceGraphAPI := NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, nil)
 	cases := []struct {
 		testName      string
 		vmNames       []string
@@ -61,13 +60,13 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.testName, func(t *testing.T) {
 			for _, name := range c.vmNames {
-				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags})
+				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags, Zones: []*string{lo.ToPtr("1")}})
 				if err != nil {
 					t.Errorf("Unexpected error %v", err)
 					return
 				}
 			}
-			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetListQueryBuilder(resourceGroup).String())
+			queryRequest := instance.NewQueryRequest(&subscriptionID, instance.GetVMListQueryBuilder(resourceGroup).String())
 			data, err := instance.GetResourceData(context.Background(), azureResourceGraphAPI, *queryRequest)
 			if err != nil {
 				t.Errorf("Unexpected error %v", err)
@@ -88,6 +87,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 					}
 				}
 			}
+			virtualMachinesAPI.Reset()
 		})
 	}
 }
@@ -97,7 +97,7 @@ func checkVM(vm instance.Resource, rg string) error {
 	if !ok {
 		return fmt.Errorf("VM is missing name")
 	}
-	expectedID := utils.MkVMID(rg, name.(string))
+	expectedID := MkVMID(rg, name.(string))
 	id, ok := vm["id"]
 	if !ok {
 		return fmt.Errorf("VM is missing id")

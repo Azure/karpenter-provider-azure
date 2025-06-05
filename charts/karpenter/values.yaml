@@ -27,7 +27,9 @@ serviceMonitor:
   enabled: false
   # -- Additional labels for the ServiceMonitor.
   additionalLabels: {}
-  # -- Endpoint configuration for the ServiceMonitor.
+  # -- Configuration on `http-metrics` endpoint for the ServiceMonitor.
+  # Not to be used to add additional endpoints.
+  # See the Prometheus operator documentation for configurable fields https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#endpoint
   endpointConfig: {}
 # -- Number of replicas.
 replicas: 2
@@ -44,6 +46,9 @@ podAnnotations: {}
 podDisruptionBudget:
   name: karpenter
   maxUnavailable: 1
+# -- SecurityContext for the pod.
+podSecurityContext:
+  fsGroup: 65532
 # -- PriorityClass name for the pod.
 priorityClassName: system-cluster-critical
 # -- Override the default termination grace period for the pod.
@@ -52,7 +57,7 @@ terminationGracePeriodSeconds:
 # This is required when using a custom CNI.
 hostNetwork: false
 # -- Configure the DNS Policy for the pod
-dnsPolicy: Default
+dnsPolicy: ClusterFirst
 # -- Configure DNS Config for the pod
 dnsConfig: {}
 #  options:
@@ -76,31 +81,23 @@ affinity:
 topologySpreadConstraints:
   - maxSkew: 1
     topologyKey: topology.kubernetes.io/zone
-    whenUnsatisfiable: ScheduleAnyway
+    whenUnsatisfiable: DoNotSchedule
 # -- Tolerations to allow the pod to be scheduled to nodes with taints.
 tolerations:
   - key: CriticalAddonsOnly
     operator: Exists
 # -- Additional volumes for the pod.
 extraVolumes: []
-# - name:
-#   projected:
-#     defaultMode: 420
-#     sources:
-#     - serviceAccountToken:
-#         audience:
-#         expirationSeconds: 86400
-#         path: token
+
 controller:
   image:
     # -- Repository path to the controller image.
     repository: mcr.microsoft.com/aks/karpenter/controller
     # -- Tag of the controller image.
-    tag: v0.32.1
+    tag:
     # -- SHA256 digest of the controller image.
     # digest:
-
-    digest: sha256:e35e315face303a784e137c5af5683f4421fa8537f1ea70cacdc1673f7f08b28
+    digest: sha256:dd095cdcf857c3812f2084a7b20294932f461b0bff912acf58d592faa032fbef
   # -- Additional environment variables for the controller pod.
   env: []
   # - name:
@@ -130,40 +127,26 @@ controller:
   sidecarVolumeMounts: []
   metrics:
     # -- The container port to use for metrics.
-    port: 8000
+    port: 8080
   healthProbe:
     # -- The container port to use for http health probe.
     port: 8081
 webhook:
   # -- Whether to enable the webhooks and webhook permissions.
-  enabled: false
+  enabled: true
   # -- The container port to use for the webhook.
   port: 8443
   metrics:
     # -- The container port to use for webhook metrics.
     port: 8001
-# -- Global log level
-logLevel: debug
-# -- Log configuration (Deprecated: Logging configuration will be dropped by v1, use logLevel instead)
-logConfig:
-  # -- Whether to enable provisioning and mounting the log ConfigMap
-  enabled: true
-  # -- Log outputPaths - defaults to stdout only
-  outputPaths:
-    - stdout
-  # -- Log errorOutputPaths - defaults to stderr only
-  errorOutputPaths:
-    - stderr
-  # -- Log encoding - defaults to json - must be one of 'json', 'console'
-  logEncoding: json
-  # -- Component-based log configuration
-  logLevel:
-    # -- Global log level, defaults to 'debug'
-    global: debug
-    # -- Controller log level, defaults to 'debug'
-    controller: debug
-    # -- Error log level, defaults to 'error'
-    webhook: error
+# -- Global log level, defaults to 'info'
+logLevel: info
+# -- Log outputPaths - defaults to stdout only
+logOutputPaths:
+  - stdout
+# -- Log errorOutputPaths - defaults to stderr only
+logErrorOutputPaths:
+  - stderr
 # -- Global Settings to configure Karpenter
 settings:
   # -- The maximum length of a batch window. The longer this is, the more pods we can consider for provisioning at one
@@ -173,29 +156,24 @@ settings:
   # faster than this time, the batching window will be extended up to the maxDuration. If they arrive slower, the pods
   # will be batched separately.
   batchIdleDuration: 1s
-  # -- Azure-specific configuration values
-  azure:
-    # -- Cluster name.
-    clusterName: ""
-    # -- Cluster endpoint.
-    clusterEndpoint: ""
-    # -- Kubelet client TLS bootstrap token.
-    kubeletClientTLSBootstrapToken: ""
-    # -- SSH public key.
-    sshPublicKey: ""
-    # -- Network plugin.
-    networkPlugin: "azure"
-    # -- Network policy.
-    networkPolicy: ""
-    # -- The VM memory overhead as a percent that will be subtracted from the total memory for all instance types
-    vmMemoryOverheadPercent: 0.075
-    # -- The global tags to use on all Azure infrastructure resources (VMs, etc.)
-    # TODO: not propagated yet ...
-    tags:
+  # -- Cluster CA bundle for TLS configuration of provisioned nodes. If not set, this is taken from the controller's TLS configuration for the API server.
+  clusterCABundle: ""
+  # -- Cluster name.
+  clusterName: ""
+  # -- Cluster endpoint.
+  clusterEndpoint: ""
+  # -- The VM memory overhead as a percent that will be subtracted from the total memory for all instance types
+  vmMemoryOverheadPercent: 0.075
+  # -- The global tags to use on all Azure infrastructure resources (VMs, etc.)
+  # TODO: not propagated yet ...
+  tags:
+
   # -- Feature Gate configuration values. Feature Gates will follow the same graduation process and requirements as feature gates
   # in Kubernetes. More information here https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features
   featureGates:
-    # -- drift is in ALPHA and is disabled by default.
-    # Setting drift to true enables the drift disruption method to watch for drift between currently deployed nodes
-    # and the desired state of nodes set in provisioners and node templates
-    drift: true
+    # -- spotToSpotConsolidation is ALPHA and is disabled by default.
+    # Setting this to true will enable spot replacement consolidation for both single and multi-node consolidation.
+    spotToSpotConsolidation: false
+    # -- nodeRepair is ALPHA and is disabled by default.
+    # Setting this to true will enable node repair.
+    nodeRepair: false

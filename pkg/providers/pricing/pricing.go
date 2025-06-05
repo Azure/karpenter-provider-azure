@@ -19,15 +19,17 @@ package pricing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 	"github.com/samber/lo"
-	"knative.dev/pkg/logging"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 )
 
 // pricingUpdatePeriod is how often we try to update our pricing information after the initial update on startup
@@ -82,7 +84,7 @@ func NewProvider(ctx context.Context, pricing client.PricingAPI, region string, 
 		pricing:    pricing,
 		cm:         pretty.NewChangeMonitor(),
 	}
-	ctx = logging.WithLogger(ctx, logging.FromContext(ctx).Named("pricing"))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("pricing"))
 
 	go func() {
 		// perform an initial price update at startup
@@ -141,6 +143,10 @@ func (p *Provider) OnDemandPrice(instanceType string) (float64, bool) {
 	defer p.mu.RUnlock()
 	price, ok := p.onDemandPrices[instanceType]
 	if !ok {
+		// if we don't have a price, check if it's a known SKU with missing price
+		if price, ok = skusWithMissingPrice[instanceType]; ok {
+			return price, true
+		}
 		return 0.0, false
 	}
 	return price, true
@@ -153,16 +159,27 @@ func (p *Provider) SpotPrice(instanceType string) (float64, bool) {
 	defer p.mu.RUnlock()
 	price, ok := p.spotPrices[instanceType]
 	if !ok {
+		// if we don't have a price, check if it's a known SKU with missing price
+		if price, ok = skusWithMissingPrice[instanceType]; ok {
+			return price, true
+		}
 		return 0.0, false
 	}
 	return price, true
 }
 
 func (p *Provider) updatePricing(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+
 	prices := map[client.Item]bool{}
 	err := p.fetchPricing(ctx, processPage(prices))
 	if err != nil {
-		logging.FromContext(ctx).Errorf("error fetching updated pricing for region %s, %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err, err.lastOnDemandUpdateTime.Format(time.RFC3339), err.lastSpotUpdateTime.Format(time.RFC3339))
+		if ctx.Err() != nil {
+			return
+		}
+		log.FromContext(ctx).Error(err, fmt.Sprintf("error fetching updated pricing for region %s, using existing pricing data, on-demand: %s, spot: %s", p.region, err.lastOnDemandUpdateTime.Format(time.RFC3339), err.lastSpotUpdateTime.Format(time.RFC3339)))
 		return
 	}
 
@@ -173,7 +190,7 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		if err := p.UpdateOnDemandPricing(ctx, onDemandPrices); err != nil {
-			logging.FromContext(ctx).Errorf("error updating on-demand pricing for region %s, %s, using existing pricing data from %s", p.region, err, err.lastOnDemandUpdateTime.Format(time.RFC3339))
+			log.FromContext(ctx).Error(err, fmt.Sprintf("error updating on-demand pricing for region %s, using existing pricing data from %s", p.region, err.lastOnDemandUpdateTime.Format(time.RFC3339)))
 		}
 	}()
 
@@ -181,7 +198,7 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		if err := p.UpdateSpotPricing(ctx, spotPrices); err != nil {
-			logging.FromContext(ctx).Errorf("error updating spot pricing for region %s, %s, using existing pricing data from %s", p.region, err, err.lastSpotUpdateTime.Format(time.RFC3339))
+			log.FromContext(ctx).Error(err, fmt.Sprintf("error updating spot pricing for region %s, using existing pricing data from %s", p.region, err.lastSpotUpdateTime.Format(time.RFC3339)))
 		}
 	}()
 
@@ -198,7 +215,7 @@ func (p *Provider) UpdateOnDemandPricing(ctx context.Context, onDemandPrices map
 	p.onDemandPrices = lo.Assign(onDemandPrices)
 	p.onDemandUpdateTime = time.Now()
 	if p.cm.HasChanged("on-demand-prices", p.onDemandPrices) {
-		logging.FromContext(ctx).With("instance-type-count", len(p.onDemandPrices)).Infof("updated on-demand pricing for region %s", p.region)
+		log.FromContext(ctx).WithValues("instance-type-count", len(p.onDemandPrices)).Info(fmt.Sprintf("updated on-demand pricing for region %s", p.region))
 	}
 	return nil
 }
@@ -264,7 +281,7 @@ func (p *Provider) UpdateSpotPricing(ctx context.Context, spotPrices map[string]
 	p.spotPrices = lo.Assign(spotPrices)
 	p.spotUpdateTime = time.Now()
 	if p.cm.HasChanged("spot-prices", p.spotPrices) {
-		logging.FromContext(ctx).With("instance-type-count", len(p.spotPrices)).Infof("updated spot pricing for region %s", p.region)
+		log.FromContext(ctx).WithValues("instance-type-count", len(p.spotPrices)).Info(fmt.Sprintf("updated spot pricing for region %s", p.region))
 	}
 	return nil
 }
@@ -301,4 +318,8 @@ func (p *Provider) Reset() {
 	defer p.mu.Unlock()
 	p.onDemandPrices = staticPricing
 	p.onDemandUpdateTime = initialPriceUpdate
+}
+
+func Regions() []string {
+	return lo.Keys(initialOnDemandPrices)
 }

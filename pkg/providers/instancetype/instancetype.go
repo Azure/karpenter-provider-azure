@@ -23,13 +23,12 @@ import (
 
 	"github.com/Azure/skewer"
 	"github.com/samber/lo"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"knative.dev/pkg/ptr"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 
@@ -118,13 +117,13 @@ func (t TaxBrackets) Calculate(amount float64) float64 {
 	return tax
 }
 
-func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSizeType, kc *corev1beta1.KubeletConfiguration, region string,
-	offerings cloudprovider.Offerings, nodeClass *v1alpha2.AKSNodeClass, architecture string) *cloudprovider.InstanceType {
+func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSizeType, kc *v1beta1.KubeletConfiguration, region string,
+	offerings cloudprovider.Offerings, nodeClass *v1beta1.AKSNodeClass, architecture string) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(sku, vmsize, architecture, offerings, region),
 		Offerings:    offerings,
-		Capacity:     computeCapacity(ctx, sku, kc, nodeClass),
+		Capacity:     computeCapacity(ctx, sku, nodeClass),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
 			KubeReserved:      KubeReservedResources(lo.Must(sku.VCPU()), lo.Must(sku.Memory())),
 			SystemReserved:    SystemReservedResources(),
@@ -137,109 +136,77 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	offerings cloudprovider.Offerings, region string) scheduling.Requirements {
 	requirements := scheduling.NewRequirements(
 		// Well Known Upstream
-		scheduling.NewRequirement(v1.LabelInstanceTypeStable, v1.NodeSelectorOpIn, sku.GetName()),
-		scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, getArchitecture(architecture)),
-		scheduling.NewRequirement(v1.LabelOSStable, v1.NodeSelectorOpIn, string(v1.Linux)),
-		scheduling.NewRequirement(
-			v1.LabelTopologyZone,
-			v1.NodeSelectorOpIn,
-			lo.Map(offerings.Available(),
-				func(o cloudprovider.Offering, _ int) string { return o.Zone })...),
-		scheduling.NewRequirement(v1.LabelTopologyRegion, v1.NodeSelectorOpIn, region),
+		scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, sku.GetName()),
+		scheduling.NewRequirement(corev1.LabelArchStable, corev1.NodeSelectorOpIn, getArchitecture(architecture)),
+		scheduling.NewRequirement(corev1.LabelOSStable, corev1.NodeSelectorOpIn, string(corev1.Linux)),
+		scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o *cloudprovider.Offering, _ int) string {
+			return o.Requirements.Get(corev1.LabelTopologyZone).Any()
+		})...),
+
+		scheduling.NewRequirement(corev1.LabelTopologyRegion, corev1.NodeSelectorOpIn, region),
 
 		// Well Known to Karpenter
-		scheduling.NewRequirement(
-			corev1beta1.CapacityTypeLabelKey,
-			v1.NodeSelectorOpIn,
-			lo.Map(offerings.Available(), func(o cloudprovider.Offering, _ int) string { return o.CapacityType })...),
+		scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, lo.Map(offerings.Available(), func(o *cloudprovider.Offering, _ int) string {
+			return o.Requirements.Get(karpv1.CapacityTypeLabelKey).Any()
+		})...),
 
 		// Well Known to Azure
-		scheduling.NewRequirement(v1alpha2.LabelSKUCPU, v1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),
-		scheduling.NewRequirement(v1alpha2.LabelSKUMemory, v1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
-		scheduling.NewRequirement(v1alpha2.LabelSKUGPUCount, v1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
-		scheduling.NewRequirement(v1alpha2.LabelSKUGPUManufacturer, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUGPUName, v1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),
+		scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
+		scheduling.NewRequirement(v1beta1.LabelSKUGPUCount, corev1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
+		scheduling.NewRequirement(v1beta1.LabelSKUGPUManufacturer, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUGPUName, corev1.NodeSelectorOpDoesNotExist),
 
 		// composites
-		scheduling.NewRequirement(v1alpha2.LabelSKUName, v1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
 
 		// size parts
-		scheduling.NewRequirement(v1alpha2.LabelSKUFamily, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUAccelerator, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUVersion, v1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUFamily, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUVersion, corev1.NodeSelectorOpDoesNotExist),
 
 		// SKU capabilities
-		scheduling.NewRequirement(v1alpha2.LabelSKUStorageEphemeralOSMaxSize, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUStoragePremiumCapable, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUEncryptionAtHostSupported, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUAcceleratedNetworking, v1.NodeSelectorOpDoesNotExist),
-		scheduling.NewRequirement(v1alpha2.LabelSKUHyperVGeneration, v1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUStorageEphemeralOSMaxSize, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUStoragePremiumCapable, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsPremiumIO())),
+		scheduling.NewRequirement(v1beta1.LabelSKUAcceleratedNetworking, corev1.NodeSelectorOpIn, fmt.Sprint(sku.IsAcceleratedNetworkingSupported())),
+		scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, corev1.NodeSelectorOpDoesNotExist),
 		// all additive feature initialized elsewhere
 	)
 
 	// composites
-	requirements[v1alpha2.LabelSKUName].Insert(sku.GetName())
+	requirements[v1beta1.LabelSKUName].Insert(sku.GetName())
 
 	// size parts
-	requirements[v1alpha2.LabelSKUFamily].Insert(vmsize.Family)
+	requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
 
-	setRequirementsStoragePremiumCapable(requirements, sku)
-	setRequirementsEncryptionAtHostSupported(requirements, sku)
 	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
-	setRequirementsAcceleratedNetworking(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
 	setRequirementsGPU(requirements, sku, vmsize)
-	setRequirementsAccelerator(requirements, vmsize)
 	setRequirementsVersion(requirements, vmsize)
 
 	return requirements
 }
 
-func setRequirementsStoragePremiumCapable(requirements scheduling.Requirements, sku *skewer.SKU) {
-	if sku.IsPremiumIO() {
-		requirements[v1alpha2.LabelSKUStoragePremiumCapable].Insert("true")
-	}
-}
-
-func setRequirementsEncryptionAtHostSupported(requirements scheduling.Requirements, sku *skewer.SKU) {
-	if sku.IsEncryptionAtHostSupported() {
-		requirements[v1alpha2.LabelSKUEncryptionAtHostSupported].Insert("true")
-	}
-}
-
 func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
 	if sku.IsEphemeralOSDiskSupported() && vmsize.Series != "Dlds_v5" { // Dlds_v5 does not support ephemeral OS disk, contrary to what it claims
-		requirements[v1alpha2.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(MaxEphemeralOSDiskSizeGB(sku)))
-	}
-}
-
-func setRequirementsAcceleratedNetworking(requirements scheduling.Requirements, sku *skewer.SKU) {
-	if sku.IsAcceleratedNetworkingSupported() {
-		requirements[v1alpha2.LabelSKUAcceleratedNetworking].Insert("true")
+		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(MaxEphemeralOSDiskSizeGB(sku)))
 	}
 }
 
 func setRequirementsHyperVGeneration(requirements scheduling.Requirements, sku *skewer.SKU) {
 	if sku.IsHyperVGen1Supported() {
-		requirements[v1alpha2.LabelSKUHyperVGeneration].Insert(v1alpha2.HyperVGenerationV1)
+		requirements[v1beta1.LabelSKUHyperVGeneration].Insert(v1beta1.HyperVGenerationV1)
 	}
 	if sku.IsHyperVGen2Supported() {
-		requirements[v1alpha2.LabelSKUHyperVGeneration].Insert(v1alpha2.HyperVGenerationV2)
+		requirements[v1beta1.LabelSKUHyperVGeneration].Insert(v1beta1.HyperVGenerationV2)
 	}
 }
 
 func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
 	if utils.IsNvidiaEnabledSKU(sku.GetName()) {
-		requirements[v1alpha2.LabelSKUGPUManufacturer].Insert(v1alpha2.ManufacturerNvidia)
+		requirements[v1beta1.LabelSKUGPUManufacturer].Insert(v1beta1.ManufacturerNvidia)
 		if vmsize.AcceleratorType != nil {
-			requirements[v1alpha2.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
+			requirements[v1beta1.LabelSKUGPUName].Insert(*vmsize.AcceleratorType)
 		}
-	}
-}
-
-func setRequirementsAccelerator(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	if vmsize.AcceleratorType != nil {
-		requirements[v1alpha2.LabelSKUAccelerator].Insert(*vmsize.AcceleratorType)
 	}
 }
 
@@ -253,23 +220,23 @@ func setRequirementsVersion(requirements scheduling.Requirements, vmsize *skewer
 		}
 		version = vmsize.Version[1:]
 	}
-	requirements[v1alpha2.LabelSKUVersion].Insert(version)
+	requirements[v1beta1.LabelSKUVersion].Insert(version)
 }
 
 func getArchitecture(architecture string) string {
-	if value, ok := v1alpha2.AzureToKubeArchitectures[architecture]; ok {
+	if value, ok := v1beta1.AzureToKubeArchitectures[architecture]; ok {
 		return value
 	}
 	return architecture // unrecognized
 }
 
-func computeCapacity(ctx context.Context, sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration, nodeClass *v1alpha2.AKSNodeClass) v1.ResourceList {
-	return v1.ResourceList{
-		v1.ResourceCPU:                    *cpu(sku),
-		v1.ResourceMemory:                 *memory(ctx, sku),
-		v1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
-		v1.ResourcePods:                   *pods(sku, kc),
-		v1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
+func computeCapacity(ctx context.Context, sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) corev1.ResourceList {
+	return corev1.ResourceList{
+		corev1.ResourceCPU:                    *cpu(sku),
+		corev1.ResourceMemory:                 *memoryWithoutOverhead(ctx, sku),
+		corev1.ResourceEphemeralStorage:       *ephemeralStorage(nodeClass),
+		corev1.ResourcePods:                   *pods(ctx, nodeClass),
+		corev1.ResourceName("nvidia.com/gpu"): *gpuNvidiaCount(sku),
 	}
 }
 
@@ -298,56 +265,50 @@ func memoryMiB(sku *skewer.SKU) int64 {
 	return int64(memoryGiB(sku) * 1024)
 }
 
-func memory(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
-	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(memoryGiB(sku))))
-	// Account for VM overhead in calculation
-	memory.Sub(resource.MustParse(fmt.Sprintf("%dMi", int64(math.Ceil(
-		float64(memory.Value())*options.FromContext(ctx).VMMemoryOverheadPercent/1024/1024)))))
+func memoryWithoutOverhead(ctx context.Context, sku *skewer.SKU) *resource.Quantity {
+	return CalculateMemoryWithoutOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, memoryGiB(sku))
+}
+
+func CalculateMemoryWithoutOverhead(vmMemoryOverheadPercent float64, skuMemoryGiB float64) *resource.Quantity {
+	// Consistency in abstractions could be improved here (e.g., units, returning types)
+	memory := resources.Quantity(fmt.Sprintf("%dGi", int64(skuMemoryGiB)))
+	memory.Sub(*resource.NewQuantity(int64(math.Ceil(
+		float64(memory.Value())*vmMemoryOverheadPercent)), resource.DecimalSI))
 	return memory
 }
 
-func ephemeralStorage(nodeClass *v1alpha2.AKSNodeClass) *resource.Quantity {
+func ephemeralStorage(nodeClass *v1beta1.AKSNodeClass) *resource.Quantity {
 	return resource.NewScaledQuantity(int64(lo.FromPtr(nodeClass.Spec.OSDiskSizeGB)), resource.Giga)
 }
 
-func pods(sku *skewer.SKU, kc *corev1beta1.KubeletConfiguration) *resource.Quantity {
-	// TODO: fine-tune pods calc
-	var count int64
-	switch {
-	case kc != nil && kc.MaxPods != nil:
-		count = int64(ptr.Int32Value(kc.MaxPods))
-	default:
-		count = 110
-	}
-	if kc != nil && ptr.Int32Value(kc.PodsPerCore) > 0 {
-		count = lo.Min([]int64{int64(ptr.Int32Value(kc.PodsPerCore)) * cpu(sku).Value(), count})
-	}
-	return resources.Quantity(fmt.Sprint(count))
+func pods(ctx context.Context, nc *v1beta1.AKSNodeClass) *resource.Quantity {
+	networkPlugin, networkPluginMode := options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode
+	return resource.NewQuantity(int64(utils.GetMaxPods(nc, networkPlugin, networkPluginMode)), resource.DecimalSI)
 }
 
-func SystemReservedResources() v1.ResourceList {
+func SystemReservedResources() corev1.ResourceList {
 	// AKS does not set system-reserved values and only CPU and memory are considered
 	// https://learn.microsoft.com/en-us/azure/aks/concepts-clusters-workloads#resource-reservations
-	return v1.ResourceList{
-		v1.ResourceCPU:    resource.Quantity{},
-		v1.ResourceMemory: resource.Quantity{},
+	return corev1.ResourceList{
+		corev1.ResourceCPU:    resource.Quantity{},
+		corev1.ResourceMemory: resource.Quantity{},
 	}
 }
 
-func KubeReservedResources(vcpus int64, memoryGib float64) v1.ResourceList {
+func KubeReservedResources(vcpus int64, memoryGib float64) corev1.ResourceList {
 	reservedMemoryMi := int64(1024 * reservedMemoryTaxGi.Calculate(memoryGib))
 	reservedCPUMilli := int64(1000 * reservedCPUTaxVCPU.Calculate(float64(vcpus)))
 
-	resources := v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
-		v1.ResourceMemory: *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
+	resources := corev1.ResourceList{
+		corev1.ResourceCPU:    *resource.NewScaledQuantity(reservedCPUMilli, resource.Milli),
+		corev1.ResourceMemory: *resource.NewQuantity(reservedMemoryMi*1024*1024, resource.BinarySI),
 	}
 
 	return resources
 }
 
-func EvictionThreshold() v1.ResourceList {
-	return v1.ResourceList{
-		v1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
+func EvictionThreshold() corev1.ResourceList {
+	return corev1.ResourceList{
+		corev1.ResourceMemory: resource.MustParse(DefaultMemoryAvailable),
 	}
 }

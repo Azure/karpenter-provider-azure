@@ -19,26 +19,37 @@ limitations under the License.
 package main
 
 import (
-	"github.com/samber/lo"
+	"context"
+	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
+	"github.com/go-logr/zapr"
+	"github.com/samber/lo"
 
-	altOperator "github.com/Azure/karpenter-provider-azure/pkg/alt/karpenter-core/pkg/operator"
-	controllers "github.com/Azure/karpenter-provider-azure/pkg/controllers"
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider/metrics"
 	corecontrollers "sigs.k8s.io/karpenter/pkg/controllers"
-
-	// Note the absence of corewebhooks: these pull in knative webhook-related packages and informers in init()
-	// We don't give cluster-level roles when running in AKS managed mode, so their informers will produce errors and halt all other operations
-	// corewebhooks "sigs.k8s.io/karpenter/pkg/webhooks"
-
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
+	coreoperator "sigs.k8s.io/karpenter/pkg/operator"
+	"sigs.k8s.io/karpenter/pkg/operator/injection"
+	"sigs.k8s.io/karpenter/pkg/operator/logging"
+	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 )
 
 func main() {
-	//ctx, op := operator.NewOperator(coreoperator.NewOperator())
-	ctx, op := operator.NewOperator(altOperator.NewOperator())
+	ctx := injection.WithOptionsOrDie(context.Background(), coreoptions.Injectables...)
+	logger := zapr.NewLogger(logging.NewLogger(ctx, "controller"))
+	lo.Must0(operator.WaitForCRDs(ctx, 2*time.Minute, ctrl.GetConfigOrDie(), logger), "failed waiting for CRDs")
+
+	ctx, op := operator.NewOperator(coreoperator.NewOperator())
+
+	// TODO: Consider also dumping at least some core options
+	logger.V(0).Info("Initial options", "options", options.FromContext(ctx).String())
+
 	aksCloudProvider := cloudprovider.New(
 		op.InstanceTypesProvider,
 		op.InstanceProvider,
@@ -48,23 +59,31 @@ func main() {
 	)
 
 	lo.Must0(op.AddHealthzCheck("cloud-provider", aksCloudProvider.LivenessProbe))
+
 	cloudProvider := metrics.Decorate(aksCloudProvider)
+	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
 	op.
 		WithControllers(ctx, corecontrollers.NewControllers(
+			ctx,
+			op.Manager,
 			op.Clock,
 			op.GetClient(),
-			state.NewCluster(op.Clock, op.GetClient(), cloudProvider),
 			op.EventRecorder,
 			cloudProvider,
+			clusterState,
 		)...).
-		// WithWebhooks(ctx, corewebhooks.NewWebhooks()...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
+			op.Manager,
 			op.GetClient(),
+			op.EventRecorder,
 			aksCloudProvider,
 			op.InstanceProvider,
+			// TODO: still need to refactor ImageProvider side of things.
+			op.KubernetesVersionProvider,
+			op.ImageProvider,
+			op.InClusterKubernetesInterface,
 		)...).
-		// WithWebhooks(ctx, corewebhooks.NewWebhooks()...).
 		Start(ctx)
 }

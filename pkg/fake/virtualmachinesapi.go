@@ -17,7 +17,11 @@ limitations under the License.
 package fake
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"net/http"
 	"sync"
 	"time"
 
@@ -25,9 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 )
 
@@ -94,18 +96,51 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGrou
 		VM:                parameters,
 		Options:           options,
 	}
+	// BeginCreateOrUpdate should fail, if the vm exists in the cache, and we are attempting to change properties for zone
 
 	return c.VirtualMachineCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineCreateOrUpdateInput) (*armcompute.VirtualMachinesClientCreateOrUpdateResponse, error) {
-		// example of input validation
 		//if input.ResourceGroupName == "" {
 		//	return nil, errors.New("ResourceGroupName is required")
 		//}
 		// TODO: may have to clone ...
 		// TODO: subscription ID?
 		vm := input.VM
-		id := utils.MkVMID(input.ResourceGroupName, input.VMName)
-		vm.ID = to.StringPtr(id)
-		vm.Name = to.StringPtr(input.VMName)
+		id := MkVMID(input.ResourceGroupName, input.VMName)
+		vm.ID = lo.ToPtr(id)
+
+		// Check store for existing vm by name
+		existingVM, ok := c.Instances.Load(id)
+		if ok {
+			incomingZone := vm.Zones[0] // Note: this assumes at least 1 zone and only one zone is put on our vm
+			existingZone := existingVM.(armcompute.VirtualMachine).Zones[0]
+			if incomingZone != existingZone {
+				// Currently only returning for zones, but osProfile.customData will also return this error
+				errCode := "PropertyChangeNotAllowed"
+				msg := `Creating virtual machine "aks-default-4984v" failed: PUT https://management.azure.com/subscriptions/****/resourceGroups/****/providers/Microsoft.Compute/virtualMachines/aks-default-4984v
+--------------------------------------------------------------------------------
+RESPONSE 409: 409 Conflict
+ERROR CODE: PropertyChangeNotAllowed
+--------------------------------------------------------------------------------
+{
+  "error": {
+    "code": "PropertyChangeNotAllowed",
+    "message": "Changing property 'zones' is not allowed.",
+    "target": "zones"
+  }
+}
+--------------------------------------------------------------------------------`
+				return nil, &azcore.ResponseError{
+					ErrorCode: errCode,
+					RawResponse: &http.Response{
+						Body: createSDKErrorBody(errCode, msg),
+					},
+				}
+			}
+			// Use existing vm rather than restoring
+			return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{VirtualMachine: existingVM.(armcompute.VirtualMachine)}, nil
+		}
+
+		vm.Name = lo.ToPtr(input.VMName)
 		if vm.Properties == nil {
 			vm.Properties = &armcompute.VirtualMachineProperties{}
 		}
@@ -113,9 +148,7 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGrou
 			vm.Properties.TimeCreated = lo.ToPtr(time.Now()) // TODO: use simulated time?
 		}
 		c.Instances.Store(id, vm)
-		return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{
-			VirtualMachine: vm,
-		}, nil
+		return &armcompute.VirtualMachinesClientCreateOrUpdateResponse{VirtualMachine: vm}, nil
 	})
 }
 
@@ -127,7 +160,7 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 		Options:           options,
 	}
 	return c.VirtualMachineUpdateBehavior.Invoke(input, func(input *VirtualMachineUpdateInput) (*armcompute.VirtualMachinesClientUpdateResponse, error) {
-		id := utils.MkVMID(input.ResourceGroupName, input.VMName)
+		id := MkVMID(input.ResourceGroupName, input.VMName)
 
 		instance, ok := c.Instances.Load(id)
 		if !ok {
@@ -170,7 +203,7 @@ func (c *VirtualMachinesAPI) Get(_ context.Context, resourceGroupName string, vm
 		Options:           options,
 	}
 	return c.VirtualMachineGetBehavior.Invoke(input, func(input *VirtualMachineGetInput) (armcompute.VirtualMachinesClientGetResponse, error) {
-		instance, ok := c.Instances.Load(utils.MkVMID(input.ResourceGroupName, input.VMName))
+		instance, ok := c.Instances.Load(MkVMID(input.ResourceGroupName, input.VMName))
 		if !ok {
 			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
 		}
@@ -187,7 +220,16 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 		Options:           options,
 	}
 	return c.VirtualMachineDeleteBehavior.Invoke(input, func(input *VirtualMachineDeleteInput) (*armcompute.VirtualMachinesClientDeleteResponse, error) {
-		c.Instances.Delete(utils.MkVMID(input.ResourceGroupName, input.VMName))
+		c.Instances.Delete(MkVMID(input.ResourceGroupName, input.VMName))
 		return &armcompute.VirtualMachinesClientDeleteResponse{}, nil
 	})
+}
+
+func createSDKErrorBody(code, message string) io.ReadCloser {
+	return io.NopCloser(bytes.NewReader([]byte(fmt.Sprintf(`{"error":{"code": "%s", "message": "%s"}}`, code, message))))
+}
+
+func MkVMID(resourceGroupName string, vmName string) string {
+	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s"
+	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
 }

@@ -18,48 +18,61 @@ package imagefamily
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 
-	core "k8s.io/api/core/v1"
-	"knative.dev/pkg/logging"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
-	corev1beta1 "sigs.k8s.io/karpenter/pkg/apis/v1beta1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/utils/resources"
 )
 
-const (
-	networkPluginAzure   = "azure"
-	networkPluginKubenet = "kubenet"
+type Resolver interface {
+	Resolve(
+		ctx context.Context,
+		nodeClass *v1beta1.AKSNodeClass,
+		nodeClaim *karpv1.NodeClaim,
+		instanceType *cloudprovider.InstanceType,
+		staticParameters *template.StaticParameters) (*template.Parameters, error)
+}
 
-	// defaultKubernetesMaxPodsAzure is the maximum number of pods to run on a node for Azure CNI Overlay.
-	defaultKubernetesMaxPodsAzure = 250
-	// defaultKubernetesMaxPodsKubenet is the maximum number of pods to run on a node for Kubenet.
-	defaultKubernetesMaxPodsKubenet = 100
-	// defaultKubernetesMaxPods is the maximum number of pods on a node.
-	defaultKubernetesMaxPods = 110
-)
+// assert that defaultResolver implements Resolver interface
+var _ Resolver = &defaultResolver{}
 
-// Resolver is able to fill-in dynamic launch template parameters
-type Resolver struct {
+// defaultResolver is able to fill-in dynamic launch template parameters
+type defaultResolver struct {
 	imageProvider *Provider
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
 type ImageFamily interface {
-	UserData(
-		kubeletConfig *corev1beta1.KubeletConfiguration,
-		taints []core.Taint,
+	ScriptlessCustomData(
+		kubeletConfig *bootstrap.KubeletConfiguration,
+		taints []corev1.Taint,
 		labels map[string]string,
 		caBundle *string,
 		instanceType *cloudprovider.InstanceType,
 	) bootstrap.Bootstrapper
+	CustomScriptsNodeBootstrapping(
+		kubeletConfig *bootstrap.KubeletConfiguration,
+		taints []corev1.Taint,
+		startupTaints []corev1.Taint,
+		labels map[string]string,
+		instanceType *cloudprovider.InstanceType,
+		imageDistro string,
+		storageProfile string,
+	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
@@ -67,66 +80,146 @@ type ImageFamily interface {
 	DefaultImages() []DefaultImageOutput
 }
 
-// New constructs a new launch template Resolver
-func New(_ client.Client, imageProvider *Provider) *Resolver {
-	return &Resolver{
+// NewDefaultResolver constructs a new launch template Resolver
+func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolver {
+	return &defaultResolver{
 		imageProvider: imageProvider,
 	}
 }
 
 // Resolve fills in dynamic launch template parameters
-func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, nodeClaim *corev1beta1.NodeClaim, instanceType *cloudprovider.InstanceType,
-	staticParameters *template.StaticParameters) (*template.Parameters, error) {
+func (r *defaultResolver) Resolve(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceType *cloudprovider.InstanceType,
+	staticParameters *template.StaticParameters,
+) (*template.Parameters, error) {
+	nodeImages, err := nodeClass.GetImages()
+	if err != nil {
+		return nil, err
+	}
+
 	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
-	imageID, err := r.imageProvider.Get(ctx, nodeClass, instanceType, imageFamily)
+	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
 	}
 
-	kubeletConfig := nodeClaim.Spec.Kubelet
-	if kubeletConfig == nil {
-		kubeletConfig = &corev1beta1.KubeletConfiguration{}
+	log.FromContext(ctx).Info(fmt.Sprintf("Resolved image %s for instance type %s", imageID, instanceType.Name))
+
+	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
+	imageDistro, err := mapToImageDistro(imageID, imageFamily)
+	if err != nil {
+		return nil, err
 	}
 
-	// TODO: revisit computeResources and maxPods implementation
-	kubeletConfig.KubeReserved = resources.StringMap(instanceType.Overhead.KubeReserved)
-	kubeletConfig.SystemReserved = resources.StringMap(instanceType.Overhead.SystemReserved)
-	kubeletConfig.EvictionHard = map[string]string{
-		instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
-	kubeletConfig.MaxPods = lo.ToPtr(getMaxPods(staticParameters.NetworkPlugin))
-	logging.FromContext(ctx).Infof("Resolved image %s for instance type %s", imageID, instanceType.Name)
+	generalTaints := nodeClaim.Spec.Taints
+	startupTaints := nodeClaim.Spec.StartupTaints
+	allTaints := lo.Flatten([][]corev1.Taint{
+		generalTaints,
+		startupTaints,
+	})
+
+	// Ensure UnregisteredNoExecuteTaint is present
+	if _, found := lo.Find(allTaints, func(t corev1.Taint) bool { // Allow UnregisteredNoExecuteTaint to be in non-startup taints(?)
+		return t.MatchTaint(&karpv1.UnregisteredNoExecuteTaint)
+	}); !found {
+		startupTaints = append(startupTaints, karpv1.UnregisteredNoExecuteTaint)
+		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
+	}
+
+	storageProfile := "ManagedDisks"
+	if useEphemeralDisk(instanceType, nodeClass) {
+		storageProfile = "Ephemeral"
+	}
+
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
-		UserData: imageFamily.UserData(
-			kubeletConfig,
-			append(nodeClaim.Spec.Taints, nodeClaim.Spec.StartupTaints...),
+		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
+			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
+			allTaints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
-		ImageID: imageID,
+		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
+			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
+			generalTaints,
+			startupTaints,
+			staticParameters.Labels,
+			instanceType,
+			imageDistro,
+			storageProfile,
+		),
+		ImageID:        imageID,
+		StorageProfile: storageProfile,
+		IsWindows:      false, // TODO(Windows)
 	}
 
 	return template, nil
 }
 
+func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
+	var imageInfo DefaultImageOutput
+	imageInfo.PopulateImageTraitsFromID(imageID)
+	for _, defaultImage := range imageFamily.DefaultImages() {
+		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
+			return defaultImage.Distro, nil
+		}
+	}
+	return "", fmt.Errorf("no distro found for image id %s", imageID)
+}
+
+func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *bootstrap.KubeletConfiguration {
+	kubeletConfig := &bootstrap.KubeletConfiguration{}
+
+	if nodeClass.Spec.Kubelet != nil {
+		kubeletConfig.KubeletConfiguration = *nodeClass.Spec.Kubelet
+	}
+
+	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)
+
+	// TODO: revisit computeResources implementation
+	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
+	kubeletConfig.SystemReserved = utils.StringMap(instanceType.Overhead.SystemReserved)
+	kubeletConfig.EvictionHard = map[string]string{instancetype.MemoryAvailable: instanceType.Overhead.EvictionThreshold.Memory().String()}
+	return kubeletConfig
+}
+
+func getSupportedImages(familyName *string) []DefaultImageOutput {
+	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
+	imageFamily := getImageFamily(familyName, nil)
+	return imageFamily.DefaultImages()
+}
+
 func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
-	case v1alpha2.Ubuntu2204ImageFamily:
+	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
-	case v1alpha2.AzureLinuxImageFamily:
+	case v1beta1.AzureLinuxImageFamily:
 		return &AzureLinux{Options: parameters}
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}
 }
 
-func getMaxPods(networkPlugin string) int32 {
-	if networkPlugin == networkPluginAzure {
-		return defaultKubernetesMaxPodsAzure
-	} else if networkPlugin == networkPluginKubenet {
-		return defaultKubernetesMaxPodsKubenet
+func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
+	reqs := instanceType.Requirements.Get(v1beta1.LabelSKUStorageEphemeralOSMaxSize).Values()
+	if len(reqs) == 0 || len(reqs) > 1 {
+		return 0
 	}
-	return defaultKubernetesMaxPods
+	maxSize, err := strconv.ParseFloat(reqs[0], 32)
+	if err != nil {
+		return 0
+	}
+	// decimal places are truncated, so we round down
+	return int32(maxSize)
+}
+
+// setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
+func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) bool {
+	// use ephemeral disk if it is large enough
+	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
 }

@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	corecontroller "sigs.k8s.io/karpenter/pkg/operator/controller"
 	"sigs.k8s.io/karpenter/pkg/utils/pod"
 )
 
@@ -47,12 +46,8 @@ func NewPodController(kubeClient client.Client) *PodController {
 	}
 }
 
-func (c *PodController) Name() string {
-	return "pod"
-}
-
 func (c *PodController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	p := &v1.Pod{}
+	p := &corev1.Pod{}
 	if err := c.kubeClient.Get(ctx, req.NamespacedName, p); err != nil {
 		if errors.IsNotFound(err) {
 			fmt.Printf("[DELETED %s] POD %s\n", time.Now().Format(time.RFC3339), req.NamespacedName.String())
@@ -63,7 +58,7 @@ func (c *PodController) Reconcile(ctx context.Context, req reconcile.Request) (r
 	return reconcile.Result{}, nil
 }
 
-func (c *PodController) GetInfo(p *v1.Pod) string {
+func (c *PodController) GetInfo(p *corev1.Pod) string {
 	var containerInfo strings.Builder
 	for _, c := range p.Status.ContainerStatuses {
 		if containerInfo.Len() > 0 {
@@ -75,21 +70,22 @@ func (c *PodController) GetInfo(p *v1.Pod) string {
 		pod.IsProvisionable(p), p.Status.Phase, p.Spec.NodeName, p.OwnerReferences, containerInfo.String())
 }
 
-func (c *PodController) Builder(_ context.Context, m manager.Manager) corecontroller.Builder {
-	return corecontroller.Adapt(controllerruntime.
-		NewControllerManagedBy(m).
-		For(&v1.Pod{}).
+func (c *PodController) Register(_ context.Context, m manager.Manager) error {
+	return controllerruntime.NewControllerManagedBy(m).
+		Named("pod").
+		For(&corev1.Pod{}).
 		WithEventFilter(predicate.And(
 			predicate.Funcs{
 				UpdateFunc: func(e event.UpdateEvent) bool {
-					oldPod := e.ObjectOld.(*v1.Pod)
-					newPod := e.ObjectNew.(*v1.Pod)
+					oldPod := e.ObjectOld.(*corev1.Pod)
+					newPod := e.ObjectNew.(*corev1.Pod)
 					return c.GetInfo(oldPod) != c.GetInfo(newPod)
 				},
 			},
 			predicate.NewPredicateFuncs(func(o client.Object) bool {
-				return o.GetNamespace() != "kube-system" && o.GetNamespace() != "karpenter"
+				return o.GetNamespace() != "kube-system"
 			}),
 		)).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 10}))
+		WithOptions(controller.Options{MaxConcurrentReconciles: 10, SkipNameValidation: lo.ToPtr(true)}).
+		Complete(c)
 }

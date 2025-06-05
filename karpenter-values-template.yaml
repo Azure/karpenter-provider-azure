@@ -2,15 +2,12 @@
 replicas: 1 # for better debugging experience
 controller:
   env:
-    - name: FEATURE_GATES
-      value: Drift=true
-    - name: LEADER_ELECT # disable leader election for better debugging / troubleshooting experience
-      value: "false"
+    - name: DISABLE_LEADER_ELECTION # disable leader election for better debugging / troubleshooting experience
+      value: "true"
     # disable HTTP/2 to reduce ARM throttling on large-scale tests;
     # with this in place write (and read) QPS can be increased too
     #- name: GODEBUG
     #  value: http2client=0
-
     # options
     - name: CLUSTER_NAME
       value: ${CLUSTER_NAME}
@@ -21,11 +18,15 @@ controller:
     - name: SSH_PUBLIC_KEY
       value: "${SSH_PUBLIC_KEY}"
     - name: NETWORK_PLUGIN
-      value: "azure"
+      value: ${NETWORK_PLUGIN}
+    - name: NETWORK_PLUGIN_MODE
+      value: ${NETWORK_PLUGIN_MODE}
     - name: NETWORK_POLICY
-      value: ""
+      value: ${NETWORK_POLICY}
     - name: VNET_SUBNET_ID
       value: ${VNET_SUBNET_ID}
+    - name: VNET_GUID
+      value: ${VNET_GUID}
     - name: NODE_IDENTITIES
       value: ${NODE_IDENTITIES}
 
@@ -34,18 +35,24 @@ controller:
       value: ${AZURE_SUBSCRIPTION_ID}
     - name: LOCATION
       value: ${AZURE_LOCATION}
-    # settings for managed workload identity
-    - name: ARM_USE_CREDENTIAL_FROM_ENVIRONMENT
-      value: "true"
-    - name: ARM_USE_MANAGED_IDENTITY_EXTENSION
-      value: "false"
-    - name: ARM_USER_ASSIGNED_IDENTITY_ID
+    - name: KUBELET_IDENTITY_CLIENT_ID
       value: ""
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}
+
+    # managed karpenter settings
+    - name: USE_SIG
+      value: "false"
+    - name: SIG_ACCESS_TOKEN_SERVER_URL
+      value: ""
+    - name: SIG_ACCESS_TOKEN_SCOPE
+      value: ""
+    - name: SIG_SUBSCRIPTION_ID
+      value: ""
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:
     azure.workload.identity/client-id: ${KARPENTER_USER_ASSIGNED_CLIENT_ID}
 podLabels:
   azure.workload.identity/use: "true"
+logLevel: ${LOG_LEVEL}
