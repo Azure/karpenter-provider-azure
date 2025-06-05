@@ -75,11 +75,12 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("SKU Scaling", func() {
-	It("should scale up and down with different SKUs from each family", func() {
-		// Verify that we have SKUs to test
-		Expect(testSKUs).ToNot(BeEmpty(), "No SKUs found to test")
+	// Verify that we have SKUs to test
+	Expect(testSKUs).ToNot(BeEmpty(), "No SKUs found to test")
 
-		for _, skuName := range testSKUs {
+	for _, skuName := range testSKUs {
+		skuName := skuName // Create a new variable to avoid closure issues
+		It("should scale up and down with SKU "+skuName, func() {
 			// Create a NodePool with specific SKU requirement
 			skuNodePool := test.NodePool(karpv1.NodePool{
 				Spec: karpv1.NodePoolSpec{
@@ -130,6 +131,6 @@ var _ = Describe("SKU Scaling", func() {
 			env.ExpectDeleted(pod, skuNodePool)
 			env.EventuallyExpectNotFound(pod, skuNodePool)
 			env.EventuallyExpectNotFound(node)
-		}
-	})
+		})
+	}
 })
