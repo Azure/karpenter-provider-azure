@@ -20,6 +20,13 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
 
+E2E_KUBECONFIG_TMP ?= /tmp/karpenter-e2e-kubeconfig
+E2E_KUBECONFIG_PATH ?= $(E2E_KUBECONFIG_TMP)
+E2E_SUITE ?= nodeclaim
+E2E_POD_NAME ?= karpenter-e2e-$(E2E_SUITE)
+E2E_SECRET_NAME ?= kubeconfig-$(E2E_POD_NAME)
+E2E_NAMESPACE ?= kube-system
+
 .DEFAULT_GOAL := help	# make without arguments will show help
 
 az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
@@ -82,6 +89,13 @@ az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mod
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
 		--enable-oidc-issuer --enable-workload-identity
+	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+
+az-mkaks-nap: az-mkacr 
+	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+		--enable-oidc-issuer --enable-workload-identity --node-provisioning-mode Auto
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
@@ -393,3 +407,28 @@ az-swagger-generate-clients-raw:
 az-swagger-generate-clients: az-swagger-generate-clients-raw
 	hack/boilerplate.sh
 	make tidy
+
+e2e-karpenter-pod: e2e-karpenter-kubeconfig-secret e2e-karpenter-apply-pod
+
+e2e-karpenter-kubeconfig-secret:
+	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --file $(E2E_KUBECONFIG_TMP) --overwrite-existing
+	kubectl -n $(E2E_NAMESPACE) delete secret $(E2E_SECRET_NAME) --ignore-not-found
+	kubectl -n $(E2E_NAMESPACE) create secret generic $(E2E_SECRET_NAME) --from-file=config=$(E2E_KUBECONFIG_TMP)
+
+e2e-karpenter-apply-pod:
+	@echo "Applying Karpenter E2E pod for suite $(E2E_SUITE)"
+	ENV_AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
+	ENV_AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
+	ENV_AZURE_LOCATION=$(AZURE_LOCATION) \
+	ENV_AZURE_ACR_NAME=$(AZURE_ACR_NAME) \
+	ENV_AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
+	ENV_SUITE=$(E2E_SUITE) \
+	ENV_POD_NAME=$(E2E_POD_NAME) \
+	ENV_SECRET_NAME=$(E2E_SECRET_NAME) \
+	envsubst < hack/e2e/karpenter-e2e-pod.yaml.tpl > /tmp/karpenter-e2e-pod.yaml
+	kubectl -n $(E2E_NAMESPACE) apply -f /tmp/karpenter-e2e-pod.yaml
+
+e2e-karpenter-delete:
+	kubectl -n $(E2E_NAMESPACE) delete pod $(E2E_POD_NAME) --ignore-not-found
+	kubectl -n $(E2E_NAMESPACE) delete secret $(E2E_SECRET_NAME) --ignore-not-found
+	rm -f $(E2E_KUBECONFIG_TMP)
