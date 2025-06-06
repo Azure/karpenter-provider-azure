@@ -49,8 +49,7 @@ type tokenCache struct {
 // https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/b4b8bfc9569042572ccb82b648ea509075fadb74/apps/managedidentity/managedidentity.go#L318
 // However, this is never made clear in the interface of this layer nor its documentation, thus relying on that assumption may not be perfect, which is a reason why this layer of caching is still implemented.
 // In addition, all azure-sdk-for-go clients also implement their caching as shown above, which means there are at least two layers of caching in most clients.
-// And for the potential issue in https://github.com/Azure/karpenter-provider-azure/pull/391, this implementation, in parity with Azure clients, should also receive the fix from that PR (and beyond).
-func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCredential, scopes []string) (azcore.AccessToken, error) {
+func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCredential) (azcore.AccessToken, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -62,7 +61,7 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 
 	// Token is expired or not present, get a new one
 	tokenObj, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: scopes,
+		Scopes: []string{"https://management.azure.com/.default"},
 	})
 	if err != nil {
 		return azcore.AccessToken{}, fmt.Errorf("failed to get token: %w", err)
@@ -115,8 +114,7 @@ func (c *NodeBootstrappingClient) Get(
 
 	// Add Authorization Bearer token header using cached token if available
 	// This reduces the frequency of token acquisition calls, which can be expensive
-	scopes := []string{"https://management.azure.com/.default"}
-	token, err := c.tokenCache.getToken(ctx, c.credential, scopes)
+	token, err := c.tokenCache.getToken(ctx, c.credential)
 	if err != nil {
 		return types.NodeBootstrapping{}, fmt.Errorf("failed to get token: %w", err)
 	}
