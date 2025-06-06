@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
+	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -131,6 +132,6 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.Kube
 		InstanceType:                   instanceType,
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
-		NodeBootstrapping:              nodeBootstrappingClient,
+		NodeBootstrappingProvider:      nodeBootstrappingClient,
 	}
 }

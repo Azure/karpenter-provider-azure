@@ -25,6 +25,7 @@ import (
 
 	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
@@ -52,11 +53,11 @@ func NewNodeBootstrappingClient(ctx context.Context, subscriptionID string, reso
 }
 
 // Get implements the NodeBootstrappingAPI interface.
-// It retrieves node bootstrapping data (CSE and base64-encoded CustomData), but omits the TLS bootstrap token.
+// It retrieves node bootstrapping data (CSE and base64-encoded CustomData), but may omit the TLS bootstrap token.
 func (c *NodeBootstrappingClient) Get(
 	ctx context.Context,
 	parameters *models.ProvisionValues,
-) (string, string, error) {
+) (NodeBootstrapping, error) {
 	transport := httptransport.New(c.serverURL, "/", []string{"http"})
 
 	// Middleware logging
@@ -79,18 +80,21 @@ func (c *NodeBootstrappingClient) Get(
 
 	resp, err := client.Operations.NodeBootstrappingGet(params)
 	if err != nil {
-		return "", "", err
+		return NodeBootstrapping{}, err
 	}
 
 	if resp.Payload == nil {
-		return "", "", fmt.Errorf("no payload in response")
+		return NodeBootstrapping{}, fmt.Errorf("no payload in response")
 	}
 	if resp.Payload.Cse == nil || *resp.Payload.Cse == "" {
-		return "", "", fmt.Errorf("no CSE in response")
+		return NodeBootstrapping{}, fmt.Errorf("no CSE in response")
 	}
 	if resp.Payload.CustomData == nil || *resp.Payload.CustomData == "" {
-		return "", "", fmt.Errorf("no CustomData in response")
+		return NodeBootstrapping{}, fmt.Errorf("no CustomData in response")
 	}
 
-	return *resp.Payload.CustomData, *resp.Payload.Cse, nil
+	return NodeBootstrapping{
+		CustomDataEncodedDehydratable: *resp.Payload.CustomData,
+		CSEDehydratable:               *resp.Payload.Cse,
+	}, nil
 }

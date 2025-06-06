@@ -20,16 +20,17 @@ import (
 	"context"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 )
 
 // TODO: no ability to simulate errors in the List call.
 type NodeImageVersionsAPI struct {
 }
 
-var _ imagefamily.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
+var _ types.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
 
 var (
-	NodeImageVersions = []imagefamily.NodeImageVersion{
+	NodeImageVersions = []types.NodeImageVersion{
 		{
 			FullName: "AKSUbuntu-1804gpucontainerd-202410.09.0",
 			OS:       "AKSUbuntu",
@@ -375,8 +376,8 @@ var (
 	}
 )
 
-func (n NodeImageVersionsAPI) List(_ context.Context, _, _ string) (imagefamily.NodeImageVersionsResponse, error) {
-	return imagefamily.NodeImageVersionsResponse{
+func (n NodeImageVersionsAPI) List(_ context.Context, _, _ string) (types.NodeImageVersionsResponse, error) {
+	return types.NodeImageVersionsResponse{
 		Values: imagefamily.FilteredNodeImages(NodeImageVersions),
 	}, nil
 }

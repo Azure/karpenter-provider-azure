@@ -18,20 +18,109 @@ package fake
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 )
 
-// TODO
+// NodeBootstrappingAPI implements a fake version of the imagefamily.types.NodeBootstrappingAPI
+// for testing purposes.
 type NodeBootstrappingAPI struct {
-	// Customize these fields to mock specific responses
-	CustomData string
-	CSE        string
+	SimulateDown bool
 }
 
-var _ imagefamily.NodeBootstrappingAPI = &NodeBootstrappingAPI{}
+// Ensure NodeBootstrappingAPI implements the types.NodeBootstrappingAPI interface
+var _ types.NodeBootstrappingAPI = &NodeBootstrappingAPI{}
 
-func (n NodeBootstrappingAPI) Get(_ context.Context, _ *models.ProvisionValues) (string, string, error) {
-	return n.CustomData, n.CSE, nil
+// Get implements the NodeBootstrappingAPI interface for testing
+func (n *NodeBootstrappingAPI) Get(ctx context.Context, params *models.ProvisionValues) (types.NodeBootstrapping, error) {
+	if n.SimulateDown {
+		return types.NodeBootstrapping{}, fmt.Errorf("InternalServerError; NodeBootstrappingAPI is down")
+	}
+	if err := validateProvisionProfile(params.ProvisionProfile); err != nil {
+		return types.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
+	}
+
+	if err := validateProvisionHelperValues(params.ProvisionHelperValues); err != nil {
+		return types.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
+	}
+
+	return types.NodeBootstrapping{
+		CSEDehydratable:               fmt.Sprintf("CORRECT_CSE_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *params),
+		CustomDataEncodedDehydratable: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("CORRECT_CUSTOM_DATA_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *params))),
+	}, nil
+}
+
+func validateProvisionProfile(p *models.ProvisionProfile) error {
+	if p == nil {
+		return fmt.Errorf("ProvisionProfile cannot be empty")
+	}
+
+	if p.Name == nil {
+		return fmt.Errorf("missing field: Name cannot be empty")
+	}
+
+	if p.VMSize == nil {
+		return fmt.Errorf("missing field: VMSize cannot be empty")
+	}
+
+	if p.OsType == nil {
+		return fmt.Errorf("missing field: OsType cannot be empty")
+	}
+
+	if p.OsSku == nil {
+		return fmt.Errorf("missing field: OsSku cannot be empty")
+	}
+
+	if p.StorageProfile == nil {
+		return fmt.Errorf("missing field: StorageProfile cannot be empty")
+	}
+
+	if p.Distro == nil {
+		return fmt.Errorf("missing field: Distro cannot be empty")
+	}
+
+	if p.OrchestratorVersion == nil {
+		return fmt.Errorf("missing field: OrchestratorVersion cannot be empty")
+	}
+
+	if p.VnetCidrs == nil {
+		return fmt.Errorf("missing field: VnetCidrs cannot be empty")
+	}
+
+	if p.VnetSubnetID == nil {
+		return fmt.Errorf("missing field: VnetSubnetID cannot be empty")
+	}
+
+	if p.Mode == nil {
+		return fmt.Errorf("missing field: Mode cannot be empty")
+	}
+
+	if p.Architecture == nil {
+		return fmt.Errorf("missing field: Architecture cannot be empty")
+	}
+
+	if p.MaxPods == nil {
+		return fmt.Errorf("missing field: MaxPods cannot be empty")
+	}
+
+	return nil
+}
+
+func validateProvisionHelperValues(p *models.ProvisionHelperValues) error {
+	if p == nil {
+		return fmt.Errorf("ProvisionHelperValues cannot be empty")
+	}
+
+	if p.SkuCPU == nil {
+		return fmt.Errorf("missing field: SkuCPU cannot be empty")
+	}
+
+	if p.SkuMemory == nil {
+		return fmt.Errorf("missing field: SkuMemory cannot be empty")
+	}
+
+	return nil
 }

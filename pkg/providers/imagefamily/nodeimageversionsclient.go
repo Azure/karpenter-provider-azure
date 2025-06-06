@@ -26,6 +26,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 )
 
 type NodeImageVersionsClient struct {

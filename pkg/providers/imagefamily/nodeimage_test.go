@@ -23,7 +23,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/patrickmn/go-cache"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -45,16 +46,16 @@ const (
 	sigImageVersion = "202410.09.0"
 )
 
-func getExpectedTestCIGImages(imageFamily string, version string) []imagefamily.NodeImage {
-	var images []imagefamily.DefaultImageOutput
+func getExpectedTestCIGImages(imageFamily string, version string) []NodeImage {
+	var images []DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages()
+		images = Ubuntu2204{}.DefaultImages()
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
-		images = imagefamily.AzureLinux{}.DefaultImages()
+		images = AzureLinux{}.DefaultImages()
 	}
-	nodeImages := []imagefamily.NodeImage{}
+	nodeImages := []NodeImage{}
 	for _, image := range images {
-		nodeImages = append(nodeImages, imagefamily.NodeImage{
+		nodeImages = append(nodeImages, NodeImage{
 			ID:           fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", image.PublicGalleryURL, image.ImageDefinition, version),
 			Requirements: image.Requirements,
 		})
@@ -62,16 +63,16 @@ func getExpectedTestCIGImages(imageFamily string, version string) []imagefamily.
 	return nodeImages
 }
 
-func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
-	var images []imagefamily.DefaultImageOutput
+func getExpectedTestSIGImages(imageFamily string, version string) []NodeImage {
+	var images []DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages()
+		images = Ubuntu2204{}.DefaultImages()
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
-		images = imagefamily.AzureLinux{}.DefaultImages()
+		images = AzureLinux{}.DefaultImages()
 	}
-	nodeImages := []imagefamily.NodeImage{}
+	nodeImages := []NodeImage{}
 	for _, image := range images {
-		nodeImages = append(nodeImages, imagefamily.NodeImage{
+		nodeImages = append(nodeImages, NodeImage{
 			ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
 			Requirements: image.Requirements,
 		})
@@ -83,7 +84,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 	var (
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
 
-		nodeImageProvider imagefamily.NodeImageProvider
+		nodeImageProvider NodeImageProvider
 		nodeClass         *v1beta1.AKSNodeClass
 	)
 
@@ -97,7 +98,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 		nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 		kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
-		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, nodeBootstrappingAPI)
+		nodeImageProvider = NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, nodeBootstrappingAPI)
 
 		nodeClass = test.AKSNodeClass()
 		test.ApplyDefaultStatus(nodeClass, env)

@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
+	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -153,7 +154,7 @@ func (r *defaultResolver) Resolve(
 			instanceType,
 			imageDistro,
 			storageProfile,
-			r.imageProvider.NodeBootstrapping,
+			r.imageProvider.NodeBootstrappingProvider,
 		),
 		ImageID:        imageID,
 		StorageProfile: storageProfile,

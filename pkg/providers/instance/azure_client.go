@@ -34,6 +34,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
@@ -70,9 +71,9 @@ type AZClient struct {
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
 
-	NodeImageVersionsClient imagefamily.NodeImageVersionsAPI
-	ImageVersionsClient     imagefamily.CommunityGalleryImageVersionsAPI
-	NodeBootstrappingClient imagefamily.NodeBootstrappingAPI
+	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
+	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
+	NodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
 	SKUClient                   skuclient.SkuClient
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
@@ -86,9 +87,9 @@ func NewAZClientFromAPI(
 	interfacesClient NetworkInterfacesAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
-	imageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI,
-	nodeImageVersionsClient imagefamily.NodeImageVersionsAPI,
-	nodeBootstrappingClient imagefamily.NodeBootstrappingAPI,
+	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
+	nodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI,
+	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
 	skuClient skuclient.SkuClient,
 ) *AZClient {
 	return &AZClient{
@@ -186,7 +187,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
 
-	var nodeBootstrappingClient imagefamily.NodeBootstrappingAPI = nil
+	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI = nil
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		nodeBootstrappingClient, err = imagefamily.NewNodeBootstrappingClient(
 			ctx,
