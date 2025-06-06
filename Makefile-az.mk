@@ -95,10 +95,20 @@ az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mod
 az-mkaks-nap: az-mkacr 
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity --node-provisioning-mode Auto
+		--enable-oidc-issuer --enable-workload-identity --node-provisioning-mode Auto 
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
+# To use specific preview features before they are released to the CLI, such as default nodepools 
+az-mkaks-nap-rest: az-mkacr
+	ENV_AZURE_LOCATION=$(AZURE_LOCATION) \
+	envsubst < hack/e2e/aks-cluster-create.json.tpl > /tmp/aks-cluster-create.json
+	az rest --method put \
+	  --url "https://management.azure.com/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)/providers/Microsoft.ContainerService/managedClusters/$(AZURE_CLUSTER_NAME)?api-version=2025-03-02-preview" \
+	  --body @/tmp/aks-cluster-create.json
+
+az-mkaks-nap-rest-get-creds:
+	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 
 az-mkvnet: ## Create a VNet with address range of 10.1.0.0/16
 	az network vnet create --name $(CUSTOM_VNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) --address-prefixes "10.1.0.0/16"
@@ -408,7 +418,7 @@ az-swagger-generate-clients: az-swagger-generate-clients-raw
 	hack/boilerplate.sh
 	make tidy
 
-e2e-karpenter-pod: e2e-karpenter-kubeconfig-secret e2e-karpenter-apply-pod
+e2e-karpenter-pod: az-taintnodes e2e-karpenter-kubeconfig-secret e2e-karpenter-apply-pod
 
 e2e-karpenter-kubeconfig-secret:
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --file $(E2E_KUBECONFIG_TMP) --overwrite-existing
