@@ -84,6 +84,7 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	return customDataHydrated, cseHydrated, nil
 }
 
+// nolint: gocyclo
 func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context) (*models.ProvisionValues, error) {
 	if p.IsWindows {
 		// TODO(Windows)

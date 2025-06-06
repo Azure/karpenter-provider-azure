@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
@@ -39,7 +38,6 @@ type NodeBootstrappingClient struct {
 	subscriptionID    string
 	resourceGroupName string
 	resourceName      string
-	credential        azcore.TokenCredential
 }
 
 // NewNodeBootstrappingClient creates a new NodeBootstrappingClient with token caching enabled.

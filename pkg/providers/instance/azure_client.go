@@ -18,7 +18,6 @@ package instance
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -122,17 +121,21 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	return azClient, nil
 }
 
+// nolint: gocyclo
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment) (*AZClient, error) {
+	o := options.FromContext(ctx)
 	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
 	}
 	cred := auth.NewTokenWrapper(defaultAzureCred)
 	opts := armopts.DefaultArmOpts()
+
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
+	klog.V(5).Infof("Created virtual machine extensions client %v using token credential", extensionsClient)
 
 	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
@@ -142,7 +145,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
-	o := options.FromContext(ctx)
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
 		client := &http.Client{Timeout: 10 * time.Second}
@@ -157,6 +159,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		return nil, err
 	}
 	klog.V(5).Infof("Created virtual machines client %v, using a token credential", virtualMachinesClient)
+
 	azureResourceGraphClient, err := armresourcegraph.NewClient(cred, opts)
 	if err != nil {
 		return nil, err
@@ -196,7 +199,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 			o.ClusterName,
 			o.NodeBootstrappingServerURL)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create node bootstrapping client: %w", err)
+			return nil, err
 		}
 		klog.V(5).Infof("Created bootstrapping client %v, using a token credential", nodeBootstrappingClient)
 	}

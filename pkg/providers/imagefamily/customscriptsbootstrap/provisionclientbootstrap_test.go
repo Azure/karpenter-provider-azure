@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"testing"
+	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -27,9 +28,11 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -46,14 +49,14 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                       "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                           karpv1.ArchitectureAmd64,
-				SubscriptionID:                 "sub-id",
-				ClusterResourceGroup:           "cluster-rg",
-				ResourceGroup:                  "rg",
-				KubeletClientTLSBootstrapToken: "abc.123456",
-				KubernetesVersion:              "1.26.0",
-				ImageDistro:                    "AKSUbuntu",
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                      false,
 				StorageProfile:                 "ManagedDisks",
 				ImageFamily:                    v1beta1.Ubuntu2204ImageFamily,
@@ -73,14 +76,14 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                       "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                           karpv1.ArchitectureAmd64,
-				SubscriptionID:                 "sub-id",
-				ClusterResourceGroup:           "cluster-rg",
-				ResourceGroup:                  "rg",
-				KubeletClientTLSBootstrapToken: "abc.123456",
-				KubernetesVersion:              "1.26.0",
-				ImageDistro:                    "AKSUbuntu",
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                      false,
 				StorageProfile:                 "ManagedDisks",
 				ImageFamily:                    v1beta1.Ubuntu2204ImageFamily,
@@ -100,15 +103,15 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                       "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                           karpv1.ArchitectureAmd64,
-				SubscriptionID:                 "sub-id",
-				ClusterResourceGroup:           "cluster-rg",
-				ResourceGroup:                  "rg",
-				KubeletClientTLSBootstrapToken: "abc.123456",
-				KubernetesVersion:              "1.26.0",
-				ImageDistro:                    "AKSWindows",
-				IsWindows:                      true, // This will cause an error
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-windows-dummy",
+				IsWindows:                      true,
 				StorageProfile:                 "ManagedDisks",
 				ImageFamily:                    "Windows",
 				InstanceType: &cloudprovider.InstanceType{
@@ -126,14 +129,14 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:                    "test-cluster",
 				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                       "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                           karpv1.ArchitectureAmd64,
-				SubscriptionID:                 "sub-id",
-				ClusterResourceGroup:           "cluster-rg",
-				ResourceGroup:                  "rg",
-				KubeletClientTLSBootstrapToken: "abc.123456",
-				KubernetesVersion:              "1.26.0",
-				ImageDistro:                    "AKSUbuntu",
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                      false,
 				StorageProfile:                 "ManagedDisks",
 				ImageFamily:                    v1beta1.Ubuntu2204ImageFamily,
@@ -157,7 +160,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 			// Setup context with options
 			ctx := options.ToContext(context.Background(), &options.Options{
 				VMMemoryOverheadPercent: 0.075,
-				KubeletIdentityClientID: "kubelet-client-id",
+				KubeletIdentityClientID: "test-kubelet-client-id",
 			})
 
 			// Apply mocks/setup
@@ -177,15 +180,14 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 			assert.NotEmpty(t, customData)
 			assert.NotEmpty(t, cse)
 
-			// For successful cases, verify that the bootstrap token was injected
-			if tt.bootstrapper.KubeletClientTLSBootstrapToken != "" {
-				assert.Contains(t, cse, tt.bootstrapper.KubeletClientTLSBootstrapToken)
+			// Verify that the bootstrap token template is not present in the output
+			// This ensures proper hydration or that no token template was needed
+			assert.NotContains(t, cse, "{{.TokenID}}.{{.TokenSecret}}")
 
-				// Decode customData and check token is present
-				decodedCustomData, err := base64.StdEncoding.DecodeString(customData)
-				assert.NoError(t, err)
-				assert.Contains(t, string(decodedCustomData), tt.bootstrapper.KubeletClientTLSBootstrapToken)
-			}
+			// Check CustomData has no token template
+			decodedCustomData, err := base64.StdEncoding.DecodeString(customData)
+			assert.NoError(t, err)
+			assert.NotContains(t, string(decodedCustomData), "{{.TokenID}}.{{.TokenSecret}}")
 		})
 	}
 }
@@ -202,11 +204,11 @@ func TestConstructProvisionValues(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:               "test-cluster",
 				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                      karpv1.ArchitectureAmd64,
-				ResourceGroup:             "rg",
-				KubernetesVersion:         "1.26.0",
-				ImageDistro:               "AKSUbuntu",
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                 false,
 				StorageProfile:            "ManagedDisks",
 				ImageFamily:               v1beta1.Ubuntu2204ImageFamily,
@@ -231,9 +233,9 @@ func TestConstructProvisionValues(t *testing.T) {
 				assert.Equal(t, models.OSTypeLinux, *profile.OsType)
 				assert.Equal(t, models.OSSKUUbuntu, *profile.OsSku)
 				assert.Equal(t, "Standard_D2s_v3", *profile.VMSize)
-				assert.Equal(t, "AKSUbuntu", *profile.Distro)
-				assert.Equal(t, "1.26.0", *profile.OrchestratorVersion)
-				assert.Equal(t, "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", *profile.VnetSubnetID)
+				assert.Equal(t, "aks-ubuntu-containerd-22.04-gen2", *profile.Distro)
+				assert.Equal(t, "1.31.0", *profile.OrchestratorVersion)
+				assert.Equal(t, "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", *profile.VnetSubnetID)
 				assert.Equal(t, "ManagedDisks", *profile.StorageProfile)
 				assert.Equal(t, int32(110), *profile.MaxPods)
 				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
@@ -249,11 +251,11 @@ func TestConstructProvisionValues(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:               "test-cluster",
 				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                      karpv1.ArchitectureAmd64,
-				ResourceGroup:             "rg",
-				KubernetesVersion:         "1.26.0",
-				ImageDistro:               "AKSAzureLinux",
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-azurelinux-v2-gen2",
 				IsWindows:                 false,
 				StorageProfile:            "ManagedDisks",
 				ImageFamily:               v1beta1.AzureLinuxImageFamily,
@@ -274,7 +276,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				// Check Profile
 				profile := values.ProvisionProfile
 				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
-				assert.Equal(t, "AKSAzureLinux", *profile.Distro)
+				assert.Equal(t, "aks-azurelinux-v2-gen2", *profile.Distro)
 
 				// Check system mode
 				assert.Equal(t, models.AgentPoolModeSystem, *profile.Mode)
@@ -288,11 +290,11 @@ func TestConstructProvisionValues(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:               "test-cluster",
 				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                      karpv1.ArchitectureAmd64,
-				ResourceGroup:             "rg",
-				KubernetesVersion:         "1.26.0",
-				ImageDistro:               "AKSWindows",
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-windows",
 				IsWindows:                 true, // This should cause an error
 				StorageProfile:            "ManagedDisks",
 				ImageFamily:               "Windows",
@@ -312,11 +314,11 @@ func TestConstructProvisionValues(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:               "test-cluster",
 				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                      karpv1.ArchitectureAmd64,
-				ResourceGroup:             "rg",
-				KubernetesVersion:         "1.26.0",
-				ImageDistro:               "AKSUbuntu",
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                 false,
 				StorageProfile:            "ManagedDisks",
 				ImageFamily:               v1beta1.Ubuntu2204ImageFamily,
@@ -342,11 +344,11 @@ func TestConstructProvisionValues(t *testing.T) {
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:               "test-cluster",
 				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
-				SubnetID:                  "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                      karpv1.ArchitectureArm64,
-				ResourceGroup:             "rg",
-				KubernetesVersion:         "1.26.0",
-				ImageDistro:               "AKSUbuntu",
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-arm64-containerd-22.04-gen2",
 				IsWindows:                 false,
 				StorageProfile:            "ManagedDisks",
 				ImageFamily:               v1beta1.Ubuntu2204ImageFamily,
@@ -367,6 +369,72 @@ func TestConstructProvisionValues(t *testing.T) {
 				assert.False(t, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
 			},
 		},
+		{
+			name: "With custom kubelet config",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName: "test-cluster",
+				KubeletConfig: &bootstrap.KubeletConfiguration{
+					MaxPods: int32(110),
+					KubeletConfiguration: v1beta1.KubeletConfiguration{
+						CPUManagerPolicy:            "static",
+						CPUCFSQuota:                 lo.ToPtr(true),
+						CPUCFSQuotaPeriod:           metav1.Duration{Duration: 100 * time.Millisecond},
+						TopologyManagerPolicy:       "single-numa-node",
+						ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
+						ImageGCLowThresholdPercent:  lo.ToPtr(int32(75)),
+						ContainerLogMaxSize:         "100Mi",
+						ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
+						PodPidsLimit:                lo.ToPtr(int64(1024)),
+						AllowedUnsafeSysctls:        []string{"kernel.msg*", "net.ipv4.route.min_pmtu"},
+					},
+				},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                 false,
+				StorageProfile:            "ManagedDisks",
+				ImageFamily:               v1beta1.Ubuntu2204ImageFamily,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D8s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("8"),
+						v1.ResourceMemory: resource.MustParse("32Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				// Validate that CustomKubeletConfig was properly set
+				assert.NotNil(t, values.ProvisionProfile.CustomKubeletConfig)
+
+				// CPU config
+				assert.True(t, *values.ProvisionProfile.CustomKubeletConfig.CPUCfsQuota)
+				assert.Equal(t, "100ms", *values.ProvisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod)
+				assert.Equal(t, "static", *values.ProvisionProfile.CustomKubeletConfig.CPUManagerPolicy)
+
+				// Topology manager
+				assert.Equal(t, "single-numa-node", *values.ProvisionProfile.CustomKubeletConfig.TopologyManagerPolicy)
+
+				// Image GC
+				assert.Equal(t, int32(85), *values.ProvisionProfile.CustomKubeletConfig.ImageGcHighThreshold)
+				assert.Equal(t, int32(75), *values.ProvisionProfile.CustomKubeletConfig.ImageGcLowThreshold)
+
+				// Container logs
+				assert.Equal(t, int32(100), *values.ProvisionProfile.CustomKubeletConfig.ContainerLogMaxSizeMB)
+				assert.Equal(t, int32(10), *values.ProvisionProfile.CustomKubeletConfig.ContainerLogMaxFiles)
+
+				// Pod PIDs
+				assert.Equal(t, int32(1024), *values.ProvisionProfile.CustomKubeletConfig.PodMaxPids)
+
+				// Sysctls
+				assert.Len(t, values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls, 2)
+				assert.Contains(t, values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls, "kernel.msg*")
+				assert.Contains(t, values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls, "net.ipv4.route.min_pmtu")
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -374,7 +442,7 @@ func TestConstructProvisionValues(t *testing.T) {
 			// Setup context with options
 			ctx := options.ToContext(context.Background(), &options.Options{
 				VMMemoryOverheadPercent: 0.075,
-				KubeletIdentityClientID: "kubelet-client-id",
+				KubeletIdentityClientID: "test-kubelet-client-id",
 			})
 
 			// Call the function
