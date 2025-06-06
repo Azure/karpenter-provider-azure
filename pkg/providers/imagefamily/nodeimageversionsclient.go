@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type NodeImageVersionsClient struct {
@@ -51,6 +52,7 @@ func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscripti
 	if err != nil {
 		return types.NodeImageVersionsResponse{}, err
 	}
+	log.FromContext(ctx).Info(fmt.Sprintf("XPMT: NIV getToken(): ExpiresOn=%s, RefreshOn=%s", token.ExpiresOn, token.RefreshOn))
 
 	req, err := http.NewRequestWithContext(context.Background(), "GET", resourceURL, nil)
 	if err != nil {
