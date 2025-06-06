@@ -23,7 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
+	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
@@ -45,10 +45,10 @@ type Provider struct {
 	kubernetesInterface       kubernetes.Interface
 	imageCache                *cache.Cache
 	nodeImagesCache           *cache.Cache
-	imageVersionsClient       CommunityGalleryImageVersionsAPI
+	imageVersionsClient       types.CommunityGalleryImageVersionsAPI
 	subscription              string
-	NodeImageVersions         NodeImageVersionsAPI
-	NodeBootstrappingProvider NodeBootstrappingAPI
+	NodeImageVersions         types.NodeImageVersionsAPI
+	NodeBootstrappingProvider types.NodeBootstrappingAPI
 }
 
 const (
@@ -61,7 +61,7 @@ const (
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
-func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient NodeImageVersionsAPI, nodeBootstrappingClient NodeBootstrappingAPI) *Provider {
+func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeBootstrappingClient types.NodeBootstrappingAPI) *Provider {
 	return &Provider{
 		kubernetesVersionCache:    kubernetesVersionCache,
 		imageCache:                cache.New(imageExpirationInterval, imageCacheCleaningInterval),

@@ -25,7 +25,7 @@ import (
 
 	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
+	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
@@ -57,7 +57,7 @@ func NewNodeBootstrappingClient(ctx context.Context, subscriptionID string, reso
 func (c *NodeBootstrappingClient) Get(
 	ctx context.Context,
 	parameters *models.ProvisionValues,
-) (NodeBootstrapping, error) {
+) (types.NodeBootstrapping, error) {
 	transport := httptransport.New(c.serverURL, "/", []string{"http"})
 
 	// Middleware logging
@@ -80,20 +80,20 @@ func (c *NodeBootstrappingClient) Get(
 
 	resp, err := client.Operations.NodeBootstrappingGet(params)
 	if err != nil {
-		return NodeBootstrapping{}, err
+		return types.NodeBootstrapping{}, err
 	}
 
 	if resp.Payload == nil {
-		return NodeBootstrapping{}, fmt.Errorf("no payload in response")
+		return types.NodeBootstrapping{}, fmt.Errorf("no payload in response")
 	}
 	if resp.Payload.Cse == nil || *resp.Payload.Cse == "" {
-		return NodeBootstrapping{}, fmt.Errorf("no CSE in response")
+		return types.NodeBootstrapping{}, fmt.Errorf("no CSE in response")
 	}
 	if resp.Payload.CustomData == nil || *resp.Payload.CustomData == "" {
-		return NodeBootstrapping{}, fmt.Errorf("no CustomData in response")
+		return types.NodeBootstrapping{}, fmt.Errorf("no CustomData in response")
 	}
 
-	return NodeBootstrapping{
+	return types.NodeBootstrapping{
 		CustomDataEncodedDehydratable: *resp.Payload.CustomData,
 		CSEDehydratable:               *resp.Payload.Cse,
 	}, nil
