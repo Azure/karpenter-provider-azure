@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	. "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	"k8s.io/client-go/kubernetes"
@@ -38,16 +39,16 @@ import (
 // The logic the nodeimage.go provider is dependent upon will refactor into its file, and the runtime logic for
 // creation will refactor into resolver.go but dropping API retrievals for the data stored in the status instead.
 type Provider struct {
-	kubernetesVersionCache *cache.Cache
-	cm                     *pretty.ChangeMonitor
-	location               string
-	kubernetesInterface    kubernetes.Interface
-	imageCache             *cache.Cache
-	nodeImagesCache        *cache.Cache
-	imageVersionsClient    CommunityGalleryImageVersionsAPI
-	subscription           string
-	NodeImageVersions      NodeImageVersionsAPI
-	NodeBootstrapping      NodeBootstrappingAPI
+	kubernetesVersionCache    *cache.Cache
+	cm                        *pretty.ChangeMonitor
+	location                  string
+	kubernetesInterface       kubernetes.Interface
+	imageCache                *cache.Cache
+	nodeImagesCache           *cache.Cache
+	imageVersionsClient       CommunityGalleryImageVersionsAPI
+	subscription              string
+	NodeImageVersions         NodeImageVersionsAPI
+	NodeBootstrappingProvider NodeBootstrappingAPI
 }
 
 const (
@@ -62,16 +63,16 @@ const (
 
 func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient NodeImageVersionsAPI, nodeBootstrappingClient NodeBootstrappingAPI) *Provider {
 	return &Provider{
-		kubernetesVersionCache: kubernetesVersionCache,
-		imageCache:             cache.New(imageExpirationInterval, imageCacheCleaningInterval),
-		nodeImagesCache:        cache.New(imageExpirationInterval, imageCacheCleaningInterval),
-		location:               location,
-		imageVersionsClient:    versionsClient,
-		cm:                     pretty.NewChangeMonitor(),
-		kubernetesInterface:    kubernetesInterface,
-		subscription:           subscription,
-		NodeImageVersions:      nodeImageVersionsClient,
-		NodeBootstrapping:      nodeBootstrappingClient,
+		kubernetesVersionCache:    kubernetesVersionCache,
+		imageCache:                cache.New(imageExpirationInterval, imageCacheCleaningInterval),
+		nodeImagesCache:           cache.New(imageExpirationInterval, imageCacheCleaningInterval),
+		location:                  location,
+		imageVersionsClient:       versionsClient,
+		cm:                        pretty.NewChangeMonitor(),
+		kubernetesInterface:       kubernetesInterface,
+		subscription:              subscription,
+		NodeImageVersions:         nodeImageVersionsClient,
+		NodeBootstrappingProvider: nodeBootstrappingClient,
 	}
 }
 

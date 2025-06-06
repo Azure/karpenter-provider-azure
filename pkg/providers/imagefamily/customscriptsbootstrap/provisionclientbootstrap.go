@@ -18,10 +18,8 @@ package customscriptsbootstrap
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/samber/lo"
@@ -30,20 +28,14 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
-
-// NodeBootstrappingProvider defines an interface for retrieving node bootstrapping data
-type NodeBootstrappingProvider interface {
-	// Get retrieves the CSE and base64-encoded CustomData for node bootstrapping, but omits the bootstrap token.
-	Get(ctx context.Context, parameters *models.ProvisionValues) (string, string, error)
-}
 
 type ProvisionClientBootstrap struct {
 	ClusterName                    string
@@ -63,16 +55,39 @@ type ProvisionClientBootstrap struct {
 	InstanceType                   *cloudprovider.InstanceType
 	StorageProfile                 string
 	ImageFamily                    string
-	NodeBootstrapping              NodeBootstrappingProvider
+	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
 
 // nolint gocyclo - will be refactored later
 func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (string, string, error) {
+	provisionValues, err := p.ConstructProvisionValues(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("constructProvisionValues failed with error: %w", err)
+	}
+
+	if p.NodeBootstrappingProvider == nil {
+		return "", "", fmt.Errorf("nodeBootstrapping provider is not initialized")
+	}
+	nodeBootstrapping, err := p.NodeBootstrappingProvider.Get(ctx, provisionValues)
+	if err != nil {
+		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisited along with retriable status on the server side.
+		return "", "", fmt.Errorf("nodeBootstrapping.Get failed with error: %w", err)
+	}
+
+	customDataHydrated, cseHydrated, err := hydrateBootstrapTokenIfNeeded(nodeBootstrapping.CustomDataEncodedDehydratable, nodeBootstrapping.CSEDehydratable, p.KubeletClientTLSBootstrapToken)
+	if err != nil {
+		return "", "", fmt.Errorf("hydrateBootstrapTokenIfNeeded failed with error: %w", err)
+	}
+
+	return customDataHydrated, cseHydrated, nil
+}
+
+func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context) (*models.ProvisionValues, error) {
 	if p.IsWindows {
 		// TODO(Windows)
-		return "", "", fmt.Errorf("windows is not supported")
+		return nil, fmt.Errorf("windows is not supported")
 	}
 
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
@@ -169,67 +184,8 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		SkuMemory: lo.ToPtr(math.Ceil(reverseVMMemoryOverhead(options.FromContext(ctx).VMMemoryOverheadPercent, p.InstanceType.Capacity.Memory().AsApproximateFloat64()) / 1024 / 1024 / 1024)),
 	}
 
-	return p.getNodeBootstrappingFromClient(ctx, provisionProfile, provisionHelperValues, p.KubeletClientTLSBootstrapToken)
-}
-
-func (p *ProvisionClientBootstrap) getNodeBootstrappingFromClient(ctx context.Context, provisionProfile *models.ProvisionProfile, provisionHelperValues *models.ProvisionHelperValues, bootstrapToken string) (string, string, error) {
-	if p.NodeBootstrapping == nil {
-		return "", "", fmt.Errorf("nodeBootstrapping provider is not initialized")
-	}
-
-	provisionValues := &models.ProvisionValues{
+	return &models.ProvisionValues{
 		ProvisionProfile:      provisionProfile,
 		ProvisionHelperValues: provisionHelperValues,
-	}
-
-	customDataWithoutBootstrapToken, cseWithoutBootstrapToken, err := p.NodeBootstrapping.Get(
-		ctx,
-		provisionValues,
-	)
-	if err != nil {
-		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisited along with retriable status on the server side.
-		return "", "", err
-	}
-
-	cseWithBootstrapToken := strings.ReplaceAll(cseWithoutBootstrapToken, "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken)
-
-	decodedCustomDataWithoutBootstrapTokenInBytes, err := base64.StdEncoding.DecodeString(customDataWithoutBootstrapToken)
-	if err != nil {
-		return "", "", err
-	}
-	decodedCustomDataWithBootstrapToken := strings.ReplaceAll(string(decodedCustomDataWithoutBootstrapTokenInBytes), "{{.TokenID}}.{{.TokenSecret}}", bootstrapToken)
-	customDataWithBootstrapToken := base64.StdEncoding.EncodeToString([]byte(decodedCustomDataWithBootstrapToken))
-
-	return customDataWithBootstrapToken, cseWithBootstrapToken, nil
-}
-
-func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory float64) float64 {
-	// This is not the best way to do it... But will be refactored later, given that retrieving the original memory properly might involves some restructure.
-	// Due to the fact that it is abstracted behind the cloudprovider interface.
-	return adjustedMemory / (1 - vmMemoryOverheadPercent)
-}
-
-func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
-	q, err := resource.ParseQuantity(containerLogMaxSize)
-	if err == nil {
-		// This could be improved later
-		return lo.ToPtr(int32(math.Round(q.AsApproximateFloat64() / 1024 / 1024)))
-	}
-	return nil
-}
-
-func convertPodMaxPids(podPidsLimit *int64) *int32 {
-	if podPidsLimit != nil {
-		podPidsLimitInt64 := *podPidsLimit
-		if podPidsLimitInt64 > int64(math.MaxInt32) {
-			// This could be improved later
-			return lo.ToPtr(int32(math.MaxInt32))
-		} else if podPidsLimitInt64 < 0 {
-			// This as well
-			return lo.ToPtr(int32(-1))
-		} else {
-			return lo.ToPtr(int32(podPidsLimitInt64)) // golint:ignore G115 already check overflow
-		}
-	}
-	return nil
+	}, nil
 }
