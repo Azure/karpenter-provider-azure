@@ -18,23 +18,23 @@ package instance
 
 import (
 	"context"
-	"fmt"
+	"net/http"
+	"time"
 
-	armpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 	klog "k8s.io/klog/v2"
@@ -71,8 +71,9 @@ type AZClient struct {
 	NodeImageVersionsClient imagefamily.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamily.CommunityGalleryImageVersionsAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
-	SKUClient           skuclient.SkuClient
-	LoadBalancersClient loadbalancer.LoadBalancersAPI
+	SKUClient                   skuclient.SkuClient
+	LoadBalancersClient         loadbalancer.LoadBalancersAPI
+	NetworkSecurityGroupsClient networksecuritygroup.API
 }
 
 func NewAZClientFromAPI(
@@ -81,6 +82,7 @@ func NewAZClientFromAPI(
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
+	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI,
 	nodeImageVersionsClient imagefamily.NodeImageVersionsAPI,
 	skuClient skuclient.SkuClient,
@@ -94,21 +96,19 @@ func NewAZClientFromAPI(
 		NodeImageVersionsClient:        nodeImageVersionsClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
+		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
 	}
 }
 
 func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	// Defaulting env to Azure Public Cloud.
-	env := azure.PublicCloud
+	env := azclient.PublicCloud
 	var err error
 	if cfg.Cloud != "" {
-		env, err = azure.EnvironmentFromName(cfg.Cloud)
-		if err != nil {
-			return nil, err
-		}
+		env = azclient.EnvironmentFromName(cfg.Cloud)
 	}
 
-	azClient, err := NewAZClient(ctx, cfg, &env)
+	azClient, err := NewAZClient(ctx, cfg, env)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	return azClient, nil
 }
 
-func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) (*AZClient, error) {
+func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment) (*AZClient, error) {
 	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
@@ -134,16 +134,19 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	}
 	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
 
-	var vmClientOptions *armpolicy.ClientOptions
+	// copy the options to avoid modifying the original
+	var vmClientOptions = *opts
 	o := options.FromContext(ctx)
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
-		vmClientOptions, err = getVirtualMachinesClientOptions(ctx, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
+		client := &http.Client{Timeout: 10 * time.Second}
+		auxPolicy, err := auth.NewAuxiliaryTokenPolicy(ctx, client, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		if err != nil {
 			return nil, err
 		}
+		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
-	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, vmClientOptions)
+	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +171,12 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 	}
 	klog.V(5).Infof("Created load balancers client %v, using a token credential", loadBalancersClient)
 
+	networkSecurityGroupsClient, err := armnetwork.NewSecurityGroupsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+	klog.V(5).Infof("Created nsg client %v, using a token credential", networkSecurityGroupsClient)
+
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
@@ -177,21 +186,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) 
 		extensionsClient,
 		interfacesClient,
 		loadBalancersClient,
+		networkSecurityGroupsClient,
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
 		skuClient), nil
-}
-
-func getVirtualMachinesClientOptions(ctx context.Context, url string, scope string) (*armpolicy.ClientOptions, error) {
-	token, err := auth.GetAuxiliaryToken(ctx, url, scope)
-	if err != nil {
-		return &armpolicy.ClientOptions{}, fmt.Errorf("failed to get auxiliary token: %w", err)
-	}
-	auxPolicy := auth.NewAuxiliaryTokenPolicy(token)
-	log.FromContext(ctx).V(1).Info("Will use auxiliary token policy for creating virtual machines")
-	return &armpolicy.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			PerRetryPolicies: []policy.Policy{&auxPolicy},
-		},
-	}, nil
 }
