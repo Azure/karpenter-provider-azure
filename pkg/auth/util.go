@@ -19,9 +19,9 @@ package auth
 import (
 	"fmt"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/utils/project"
+	"sigs.k8s.io/karpenter/pkg/operator"
 )
 
 func GetUserAgentExtension() string {
-	return fmt.Sprintf("karpenter-aks/v%s", project.Version)
+	return fmt.Sprintf("karpenter-aks/v%s", operator.Version)
 }
