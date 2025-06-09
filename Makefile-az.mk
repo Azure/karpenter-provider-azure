@@ -31,6 +31,8 @@ az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay     az-cre
 az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest    az-create-federated-cred az-perm               az-perm-acr az-configure-values
 	$(MAKE) az-mon-deploy
 	$(MAKE) az-pprof-enable
+	yq -i '.manifests.helm.releases[0].overrides.controller.resources.requests = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
+	yq -i '.manifests.helm.releases[0].overrides.controller.resources.limits   = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
 	$(MAKE) az-run
 	$(MAKE) az-taintsystemnodes
 	kubectl apply -f examples/v1/perftest.yaml
