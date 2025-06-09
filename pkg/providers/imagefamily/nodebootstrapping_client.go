@@ -41,21 +41,20 @@ type tokenCache struct {
 	refreshAfter time.Time          // Time after which we should refresh the token
 }
 
-// getToken returns a cached token if valid, otherwise fetches a new one using the provided credential.
-// The method is thread-safe and can be called concurrently from multiple goroutines.
-// Inspired by https://github.com/Azure/azure-sdk-for-go/blob/f72e2ad4f23b02eba6387dc31580c0e66333f2ae/sdk/internal/temporal/resource.go#L78-L140
+// This simple, short-lived caching is mainly to prevent excessive token fetches on a large scale up, rather than guaranteeing the optimal number of calls and 100% valid token.
 //
-// NOTE: as of this time, for managed identity, token caching exists in the implementation beneath GetToken(...):
+// As of this time, for managed identity, token caching exists in the implementation beneath MSAL GetToken(...) as below. This means our caching is not needed if MSAL GetToken(...) caching is valid.
 // https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/b4b8bfc9569042572ccb82b648ea509075fadb74/apps/managedidentity/managedidentity.go#L318
-// However, this is never made clear in the interface of this layer nor its documentation, thus relying on that assumption may not be perfect, which is a reason why this layer of caching is still implemented.
-// In addition, all azure-sdk-for-go clients also implement their caching as shown above, which means there are at least two layers of caching in most clients.
+// However, this is never made clear in the interface of this layer nor its documentation, thus relying on that assumption may not be perfect.
+// Alternatively, we could try to pair our cache implementation with what's in Azure clients as below. However, the cost makes it arguably not worth it, given the current circumstances.
+// https://github.com/Azure/azure-sdk-for-go/blob/f72e2ad4f23b02eba6387dc31580c0e66333f2ae/sdk/internal/temporal/resource.go#L78-L140
 func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCredential) (azcore.AccessToken, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	timeNow := time.Now()
 
 	// Check if we have a cached token that is still valid
-	if t.token.Token != "" && time.Now().Before(t.refreshAfter) {
-		// Return the cached token if it's still valid
+	if t.token.Token != "" && timeNow.Before(t.refreshAfter) {
 		return t.token, nil
 	}
 
@@ -70,13 +69,13 @@ func (t *tokenCache) getToken(ctx context.Context, credential azcore.TokenCreden
 	// Store the token with its expiration
 	t.token = tokenObj
 
-	// Inspired by https://github.com/Azure/azure-sdk-for-go/blob/f72e2ad4f23b02eba6387dc31580c0e66333f2ae/sdk/azcore/runtime/policy_bearer_token.go#L54-L61
-	if tokenObj.RefreshOn.IsZero() {
-		defaultRefreshBuffer := 5 * time.Minute
-		t.refreshAfter = tokenObj.ExpiresOn.Add(-defaultRefreshBuffer)
-	} else {
-		// Use the RefreshOn time if provided, otherwise define our own buffer
+	defaultRefreshAfter := timeNow.Add(1 * time.Minute)
+	if !tokenObj.RefreshOn.IsZero() && tokenObj.RefreshOn.Before(defaultRefreshAfter) {
 		t.refreshAfter = tokenObj.RefreshOn
+	} else if tokenObj.ExpiresOn.Before(defaultRefreshAfter) {
+		t.refreshAfter = tokenObj.ExpiresOn
+	} else {
+		t.refreshAfter = defaultRefreshAfter
 	}
 
 	return t.token, nil
@@ -113,7 +112,6 @@ func (c *NodeBootstrappingClient) Get(
 	transport := httptransport.New(c.serverURL, "/", []string{"http"})
 
 	// Add Authorization Bearer token header using cached token if available
-	// This reduces the frequency of token acquisition calls, which can be expensive
 	token, err := c.tokenCache.getToken(ctx, c.credential)
 	if err != nil {
 		return types.NodeBootstrapping{}, fmt.Errorf("failed to get token: %w", err)
