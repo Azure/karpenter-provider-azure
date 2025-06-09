@@ -347,7 +347,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlags = lo.Assign(kubeletFlags, map[string]string{"--register-with-taints": strings.Join(taintStrs, ",")})
 	}
 
-	nodeclaimKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
+	nodeclaimKubeletConfig := kubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
 
 	// stringify kubelet flags (including taints)
@@ -373,7 +373,7 @@ func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, er
 }
 
 // nolint: gocyclo
-func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
+func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	args := make(map[string]string)
 
 	if kubeletConfig == nil {

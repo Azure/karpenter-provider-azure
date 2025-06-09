@@ -182,7 +182,7 @@ func TestKubeletConfigMap(t *testing.T) {
 		"--eviction-soft-grace-period":    "memory.available=1m30s",
 		"--eviction-max-pod-grace-period": "11",
 	}
-	actualKubeletConfig := KubeletConfigToMap(&kubeletConfiguration)
+	actualKubeletConfig := kubeletConfigToMap(&kubeletConfiguration)
 
 	for k, v := range expectedKubeletConfigs {
 		assert.Equal(t, v, actualKubeletConfig[k], fmt.Sprintf("parameter mismatch for %s", k))
