@@ -28,11 +28,9 @@ manifests:
           controller:
             resources:
               requests:
-                cpu: 4
-                memory: 3Gi
+                cpu: 200m
               limits:
-                cpu: 4
-                memory: 3Gi
+                cpu: 500m
           podAnnotations:
             profiles.grafana.com/memory.scrape: "true"
             profiles.grafana.com/memory.port_name: "http-metrics"
