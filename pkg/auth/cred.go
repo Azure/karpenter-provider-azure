@@ -53,7 +53,7 @@ func (w *expireEarlyTokenCredential) GetToken(ctx context.Context, options polic
 		log.FromContext(ctx).Info(fmt.Sprintf("XPMT: ExpiresOn=%s (RefreshOn=%s) is before two hours from now=%s, not adjusting", token.ExpiresOn, token.RefreshOn, twoHoursFromNow))
 		return token, nil
 	}
-	log.FromContext(ctx).Info(fmt.Sprintf("XPMT: adjusting ExpiresOn (RefreshOn=%s) from %s to %s", token.ExpiresOn, token.RefreshOn, twoHoursFromNow))
+	log.FromContext(ctx).Info(fmt.Sprintf("XPMT: adjusting ExpiresOn (RefreshOn=%s) from %s to %s", token.RefreshOn, token.ExpiresOn, twoHoursFromNow))
 	// If the token expires in more than 2 hours, this means we are taking in a new token with a fresh 24h expiration time or one already in the cache that hasn't been modified by us, so we want to set that to two hours so
 	// we can refresh it early to avoid the polling bugs mentioned in the above issue
 	token.ExpiresOn = twoHoursFromNow
