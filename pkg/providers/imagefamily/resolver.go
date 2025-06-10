@@ -20,9 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
-	"github.com/blang/semver/v4"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -212,18 +210,6 @@ func getImageFamily(familyName *string, kubernetesVersion string, parameters *te
 	default:
 		return &Ubuntu2204{Options: parameters}
 	}
-}
-
-// UseAzureLinux3 checks if the Kubernetes version is 1.32.0 or higher,
-// which is when Azure Linux 3 support starts
-func UseAzureLinux3(kubernetesVersion string) bool {
-	// Parse version, stripping any 'v' prefix if present
-	version, err := semver.Parse(strings.TrimPrefix(kubernetesVersion, "v"))
-	if err != nil {
-		// If we can't parse the version, default to AzureLinux (false)
-		return false
-	}
-	return version.GE(semver.Version{Major: 1, Minor: 32})
 }
 
 func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
