@@ -135,7 +135,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
+			azLinuxImages := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion, kubernetesVersion)
+			Expect(foundImages).To(ContainElements(azLinuxImages))
 		})
 
 		It("should match expected images for AzureLinux with version < 1.32", func() {
@@ -144,7 +145,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion, "1.31.0")))
+			azLinuxV2Images := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion, "1.31.0")
+			Expect(foundImages).To(ContainElements(azLinuxV2Images))
 		})
 
 		It("should match expected images for AzureLinux with version >= 1.32", func() {
@@ -153,7 +155,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(foundImages).To(ContainElements(getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion, "1.32.0")))
+			azLinuxV3Images := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion, "1.32.0")
+			Expect(foundImages).To(ContainElements(azLinuxV3Images))
 		})
 	})
 
