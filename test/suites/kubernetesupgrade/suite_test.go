@@ -50,9 +50,15 @@ func TestDrift(t *testing.T) {
 	RunSpecs(t, "KubernetesUpgrade")
 }
 
+const testAzureLinux = true // TODO: find a better way to parameterize this test for image family, without duplicating logic
+
 var _ = BeforeEach(func() {
 	env.BeforeEach()
-	nodeClass = env.DefaultAKSNodeClass()
+	if testAzureLinux {
+		nodeClass = env.AZLinuxNodeClass()
+	} else {
+		nodeClass = env.DefaultAKSNodeClass()
+	}
 	nodePool = env.DefaultNodePool(nodeClass)
 })
 var _ = AfterEach(func() { env.Cleanup() })
@@ -114,5 +120,17 @@ var _ = Describe("KubernetesUpgrade", func() {
 		By(fmt.Sprintf("new nodes having upgraded kubernetes version: %s", kubernetesUpgradeVersion))
 		node = env.ExpectCreatedNodeCount("==", 1)[0]
 		Expect(strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")).To(Equal(kubernetesUpgradeVersion))
+
+		if testAzureLinux {
+			By("verifying correct Azure Linux version for the upgraded node")
+			k8sVersion, err := semver.Parse(kubernetesUpgradeVersion)
+			Expect(err).ToNot(HaveOccurred())
+			osImage := node.Status.NodeInfo.OSImage
+			if k8sVersion.GE(semver.Version{Major: 1, Minor: 32}) {
+				Expect(osImage).To(ContainSubstring("Microsoft Azure Linux 3.0"))
+			} else {
+				Expect(osImage).To(ContainSubstring("CBL-Mariner"))
+			}
+		}
 	})
 })
