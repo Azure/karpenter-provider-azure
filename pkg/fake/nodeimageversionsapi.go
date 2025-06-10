@@ -28,7 +28,7 @@ type NodeImageVersionsAPI struct {
 
 var _ imagefamily.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
 
-// Note: use "az-codegen-nodeimageversions" to generate data for this file
+// Note: use "make az-codegen-nodeimageversions" to generate data for this file
 // (will require update of some tests that use this data)
 var (
 	NodeImageVersions = []imagefamily.NodeImageVersion{
