@@ -28,6 +28,17 @@ az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-cre
 
 az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay     az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
+az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest    az-create-federated-cred az-perm               az-perm-acr az-configure-values
+	$(MAKE) az-mon-deploy
+	$(MAKE) az-pprof-enable
+	yq -i '.manifests.helm.releases[0].overrides.controller.resources.requests = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
+	yq -i '.manifests.helm.releases[0].overrides.controller.resources.limits   = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
+	$(MAKE) az-run
+	$(MAKE) az-taintsystemnodes
+	kubectl apply -f examples/v1/perftest.yaml
+	kubectl apply -f examples/workloads/inflate.yaml
+	# make az-mon-access
+
 az-all-custom-vnet:  az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm-subnet-custom az-perm-acr az-configure-values az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 az-all-user:	     az-login                        az-mkaks-user                                                                   az-configure-values             az-helm-install-snapshot az-run-sample ## Provision the cluster and deploy Karpenter snapshot release
 # TODO: az-all-savm case is not currently built to support workload identity, need to re-evaluate
@@ -71,7 +82,7 @@ az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
 
-az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane cilium, --network-plugin cilium, and --network-plugin-mode overlay)
+az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane cilium, --network-plugin azure, and --network-plugin-mode overlay)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
 		--enable-oidc-issuer --enable-workload-identity
@@ -85,6 +96,13 @@ az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mod
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
+az-mkaks-perftest: az-mkacr ## Create test AKS cluster (with Azure Overlay, larger system pool VMs and larger pod-cidr)
+	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+		--enable-managed-identity --node-count 2 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
+		--enable-oidc-issuer --enable-workload-identity \
+		--node-vm-size Standard_D16s_v6 --pod-cidr "10.128.0.0/11"
+	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
 az-mkvnet: ## Create a VNet with address range of 10.1.0.0/16
 	az network vnet create --name $(CUSTOM_VNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) --address-prefixes "10.1.0.0/16"
@@ -134,7 +152,6 @@ az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
-	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)    --role "Network Contributor" # in some case we create vnet here
 	@echo Consider "make az-configure-values"!
 
 az-perm-sig: ## Create role assignments when testing with SIG images
@@ -218,17 +235,21 @@ az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 	kubectl create namespace monitoring || true
 	helm install --namespace monitoring prometheus prometheus-community/prometheus \
 		--values hack/monitoring/prometheus-values.yaml
+	helm install --namespace monitoring pyroscope grafana-charts/pyroscope \
+		--set pyroscope.extraArgs.'usage-stats\.enabled'=false
 	helm install --namespace monitoring grafana grafana-charts/grafana \
-		--values hack/monitoring/grafana-values.yaml
+		--values hack/monitoring/grafana-values.yaml \
+		--set env.GF_AUTH_ANONYMOUS_ENABLED=true \
+		--set env.GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
 
 az-mon-access: ## Get Grafana admin password and forward port
-	kubectl get secret --namespace monitoring grafana -o jsonpath="{.data.admin-password}" | base64 --decode; echo
 	@echo Consider running port forward outside of codespace ...
 	$(eval POD_NAME=$(shell kubectl get pods --namespace monitoring -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=grafana" -o jsonpath="{.items[0].metadata.name}"))
 	kubectl port-forward --namespace monitoring $(POD_NAME) 3000
 
 az-mon-cleanup: ## Delete monitoring stack
 	helm delete --namespace monitoring grafana
+	helm delete --namespace monitoring pyroscope
 	helm delete --namespace monitoring prometheus
 
 az-mkgohelper: ## Build and configure custom go-helper-image for skaffold
@@ -256,6 +277,8 @@ az-rmnodeclaims: ## kubectl delete all nodeclaims; don't wait for finalizers (us
 
 az-taintsystemnodes: ## Taint all system nodepool nodes
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --selector='kubernetes.azure.com/mode=system' --overwrite
+az-untaintsystemnodes: ## Untaint all system nodepool nodes
+	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --selector='kubernetes.azure.com/mode=system' --overwrite
 
 az-taintnodes:
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
@@ -351,7 +374,7 @@ az-klogs-pretty: ## Pretty Print Karpenter logs
 	kubectl logs -n "${KARPENTER_NAMESPACE}" $(POD) | jq "."
 
 az-kevents: ## Karpenter events
-	kubectl get events -A --field-selector source=karpenter
+	kubectl get events -A --field-selector source=karpenter --watch
 
 az-node-viewer: ## Watch nodes using aks-node-viewer
 	aks-node-viewer # --node-selector "karpenter.sh/nodepool" --resources cpu,memory
@@ -362,11 +385,15 @@ az-argvmlist: ## List current VMs owned by Karpenter
 	| jq '.data[] | .id'
 
 az-pprof-enable: ## Enable profiling
-	yq -i '.manifests.helm.releases[0].overrides.controller.env += [{"name":"ENABLE_PROFILING","value":"true"}]' skaffold.yaml
+	yq -i '.controller.env += [{"name":"ENABLE_PROFILING","value":"true"}]' karpenter-values.yaml
 
+# remove -source_path=/go/pkg/mod to focus source on provider
+SOURCE=-source_path=/go/pkg/mod -trim_path=github.com/Azure/karpenter-provider-azure
 az-pprof: ## Profile
-	kubectl port-forward service/karpenter -n "${KARPENTER_NAMESPACE}" 8000 &
-	sleep 2 && go tool pprof -http 0.0.0.0:9000 localhost:8000/debug/pprof/heap
+	kubectl port-forward service/karpenter -n "${KARPENTER_NAMESPACE}" 8080 &
+	sleep 2
+	go tool pprof $(SOURCE) -http 0.0.0.0:9000 localhost:8080/debug/pprof/heap
+	#go tool pprof $(SOURCE) -http 0.0.0.0:9001 localhost:8080/debug/pprof/profile?seconds=30
 
 az-mkaks-user: az-mkrg ## Create compatible AKS cluster, the way we tell users to
 	hack/deploy/create-cluster.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) "${KARPENTER_NAMESPACE}"

@@ -20,6 +20,8 @@ import (
 	//nolint:revive,stylecheck
 	"fmt"
 
+	. "github.com/onsi/gomega"
+
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -44,6 +46,9 @@ func (env *Environment) BeforeEach() {
 func (env *Environment) Cleanup() {
 	env.Environment.Cleanup()
 	env.Environment.CleanupObjects(CleanableObjects...)
+
+	err := env.tracker.Cleanup()
+	Expect(err).ToNot(HaveOccurred(), "Failed to clean up Azure resources")
 }
 
 func (env *Environment) AfterEach() {
