@@ -43,10 +43,10 @@ var (
 			Version:  "17763.2019.221114",
 		},
 		{
-			FullName: "AKSAzureLinux-V3-202409.23.0",
+			FullName: "AKSAzureLinux-V3-202410.09.0",
 			OS:       "AKSAzureLinux",
 			SKU:      "V3",
-			Version:  "202409.23.0",
+			Version:  "202410.09.0",
 		},
 		{
 			FullName: "AKSUbuntu-2204gen2containerd-202410.09.0",
@@ -103,10 +103,10 @@ var (
 			Version:  "202410.09.0",
 		},
 		{
-			FullName: "AKSAzureLinux-V3gen2-202409.23.0",
+			FullName: "AKSAzureLinux-V3gen2-202410.09.0",
 			OS:       "AKSAzureLinux",
 			SKU:      "V3gen2",
-			Version:  "202409.23.0",
+			Version:  "202410.09.0",
 		},
 		{
 			FullName: "AKSUbuntu-2204gen2arm64containerd-202410.09.0",
@@ -235,10 +235,10 @@ var (
 			Version:  "202405.20.0",
 		},
 		{
-			FullName: "AKSAzureLinux-V3gen2arm64-202409.23.0",
+			FullName: "AKSAzureLinux-V3gen2arm64-202410.09.0",
 			OS:       "AKSAzureLinux",
 			SKU:      "V3gen2arm64",
-			Version:  "202409.23.0",
+			Version:  "202410.09.0",
 		},
 		{
 			FullName: "AKSAzureLinux-V3fips-202409.23.0",
