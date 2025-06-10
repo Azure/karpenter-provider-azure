@@ -4,6 +4,8 @@ tolerations:
   - key: CriticalAddonsOnly
     operator: Exists
     effect: NoSchedule
+plugins:
+  - grafana-pyroscope-app
 datasources:
   datasources.yaml:
     apiVersion: 1
@@ -13,6 +15,10 @@ datasources:
       version: 1
       url: http://prometheus-server:80
       access: proxy
+    - name: Pyroscope
+      type: grafana-pyroscope-datasource
+      uid: pyroscope-test
+      url: http://pyroscope:4040/
 dashboardProviders:
   dashboardproviders.yaml:
     apiVersion: 1
@@ -28,6 +34,22 @@ dashboardProviders:
 dashboards:
   default:
     capacity-dashboard:
-      url: https://karpenter.sh/v1.0/getting-started/getting-started-with-karpenter/karpenter-capacity-dashboard.json
+      url: https://karpenter.sh/v1.5/getting-started/getting-started-with-karpenter/karpenter-capacity-dashboard.json
     performance-dashboard:
-      url: https://karpenter.sh/v1.0/getting-started/getting-started-with-karpenter/karpenter-performance-dashboard.json
+      url: https://karpenter.sh/v1.5/getting-started/getting-started-with-karpenter/karpenter-performance-dashboard.json
+    karpenter-overview:
+      #url: https://raw.githubusercontent.com/adinhodovic/kubernetes-autoscaling-mixin/refs/heads/main/dashboards_out/kubernetes-autoscaling-mixin-karpenter-over.json
+      gnetId: 22171
+      datasource: Prometheus
+    karpenter-activity:
+      # url: https://raw.githubusercontent.com/adinhodovic/kubernetes-autoscaling-mixin/refs/heads/main/dashboards_out/kubernetes-autoscaling-mixin-karpenter-act.json
+      gnetId: 22172
+      datasource: Prometheus
+    karpenter-performance:
+      #url: https://raw.githubusercontent.com/adinhodovic/kubernetes-autoscaling-mixin/refs/heads/main/dashboards_out/kubernetes-autoscaling-mixin-karpenter-perf.json
+      gnetId: 22173
+      datasource: Prometheus
+    k8s-views-pods:
+      url: https://raw.githubusercontent.com/dotdc/grafana-dashboards-kubernetes/refs/heads/master/dashboards/k8s-views-pods.json
+    go-runtime:
+      url: https://raw.githubusercontent.com/grafana/jsonnet-libs/refs/heads/master/go-runtime-mixin/dashboards/go-runtime.json
