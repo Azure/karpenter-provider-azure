@@ -99,8 +99,12 @@ func (r *defaultResolver) Resolve(
 	if err != nil {
 		return nil, err
 	}
+	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+	if err != nil {
+		return nil, err
+	}
 
-	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, staticParameters)
+	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, kubernetesVersion, staticParameters)
 	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
@@ -188,17 +192,20 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string) []DefaultImageOutput {
+func getSupportedImages(familyName *string, kubernetesVersion string) []DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
-	imageFamily := getImageFamily(familyName, nil)
+	imageFamily := getImageFamily(familyName, kubernetesVersion, nil)
 	return imageFamily.DefaultImages()
 }
 
-func getImageFamily(familyName *string, parameters *template.StaticParameters) ImageFamily {
+func getImageFamily(familyName *string, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.AzureLinuxImageFamily:
+		if UseAzureLinux3(kubernetesVersion) {
+			return &AzureLinux3{Options: parameters}
+		}
 		return &AzureLinux{Options: parameters}
 	default:
 		return &Ubuntu2204{Options: parameters}
