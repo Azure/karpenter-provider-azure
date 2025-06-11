@@ -47,8 +47,8 @@ type Provider struct {
 	nodeImagesCache           *cache.Cache
 	imageVersionsClient       types.CommunityGalleryImageVersionsAPI
 	subscription              string
-	NodeImageVersions         types.NodeImageVersionsAPI
-	NodeBootstrappingProvider types.NodeBootstrappingAPI
+	nodeImageVersionsProvider types.NodeImageVersionsAPI
+	nodeBootstrappingProvider types.NodeBootstrappingAPI
 }
 
 const (
@@ -69,8 +69,8 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 		cm:                        pretty.NewChangeMonitor(),
 		kubernetesInterface:       kubernetesInterface,
 		subscription:              subscription,
-		NodeImageVersions:         nodeImageVersionsClient,
-		NodeBootstrappingProvider: nodeBootstrappingClient,
+		nodeImageVersionsProvider: nodeImageVersionsClient,
+		nodeBootstrappingProvider: nodeBootstrappingClient,
 	}
 }
 

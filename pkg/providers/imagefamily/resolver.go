@@ -158,7 +158,7 @@ func (r *defaultResolver) Resolve(
 			instanceType,
 			imageDistro,
 			storageProfile,
-			r.imageProvider.NodeBootstrappingProvider,
+			r.imageProvider.nodeBootstrappingProvider,
 		),
 		ImageID:        imageID,
 		StorageProfile: storageProfile,

@@ -81,7 +81,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 
 func (p *Provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
-	retrievedLatestImages, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
+	retrievedLatestImages, err := p.nodeImageVersionsProvider.List(ctx, p.location, p.subscription)
 	if err != nil {
 		return nil, err
 	}
