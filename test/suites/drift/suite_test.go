@@ -126,7 +126,7 @@ var _ = Describe("Drift", func() {
 			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaims := env.EventuallyExpectLaunchedNodeClaimCount("==", 3)
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 3)
 			nodes := env.EventuallyExpectCreatedNodeCount("==", 3)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
@@ -188,7 +188,7 @@ var _ = Describe("Drift", func() {
 			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", 3)
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 3)
 			nodes := env.EventuallyExpectCreatedNodeCount("==", 3)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
@@ -255,8 +255,8 @@ var _ = Describe("Drift", func() {
 
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			originalNodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", numPods)
 			originalNodes := env.EventuallyExpectCreatedNodeCount("==", numPods)
+			originalNodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", numPods)
 
 			// Check that all deployment pods are online
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
@@ -380,8 +380,9 @@ var _ = Describe("Drift", func() {
 		updatedNodePool = env.AdaptToClusterConfig(updatedNodePool)
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
+
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
 		node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 		env.ExpectCreatedOrUpdated(updatedNodePool)
@@ -450,8 +451,9 @@ var _ = Describe("Drift", func() {
 		updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
-		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
+
 		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
 		node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 		env.ExpectCreatedOrUpdated(updatedNodeClass)
@@ -594,9 +596,9 @@ var _ = Describe("Drift", func() {
 			env.ExpectCreated(dep, nodeClass, nodePool)
 
 			By("deploying multiple replicas, pod per node")
+			startingNodeClaimState := env.EventuallyExpectRegisteredNodeClaimCount("==", int(numPods))
 			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
-			startingNodeClaimState := env.EventuallyExpectRegisteredNodeClaimCount("==", int(numPods))
 			By("drifting the nodeClaim with bad configuration that never registers")
 			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
 			env.ExpectCreatedOrUpdated(nodeClass)

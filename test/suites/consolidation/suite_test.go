@@ -160,10 +160,10 @@ var _ = Describe("Consolidation", Ordered, func() {
 			}
 			env.ExpectCreated(nodeClass, nodePool, job)
 
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			pods := env.EventuallyExpectHealthyPodCount(selector, int(1))
 
-			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
 			// pods are healthy, which means the job has started its 30s sleep
 			nodeClaim := env.ExpectExists(nodeClaims[0]).(*karpv1.NodeClaim)
 			lastPodEventTime := nodeClaim.Status.LastPodEventTime
@@ -372,7 +372,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 
 			env.ExpectCreated(nodeClass, nodePool, deployments[0], deployments[1], deployments[2], deployments[3], deployments[4])
 
-			originalNodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", 5)
+			originalNodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 5)
 			originalNodes := env.EventuallyExpectCreatedNodeCount("==", 5)
 
 			// Check that all daemonsets and deployment pods are online

@@ -81,7 +81,8 @@ var _ = Describe("Subnets", func() {
 		Expect(nic.Properties.IPConfigurations[0].Properties.Subnet).ToNot(BeNil())
 		Expect(nic.Properties.IPConfigurations[0].Properties.Subnet.ID).To(Equal(subnet.ID))
 
-		// TODO: Unblock when 1.4.1 is released
+		// TODO: Unblock when remote controlplane has the v1.5.0 version which includes the
+		// NSG provider
 		if env.InClusterController {
 			// The NIC should have the right NSG
 			Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
