@@ -347,10 +347,10 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlags = lo.Assign(kubeletFlags, map[string]string{"--register-with-taints": strings.Join(taintStrs, ",")})
 	}
 
-	nodeclaimKubeletConfig := KubeletConfigToMap(a.KubeletConfig)
+	nodeclaimKubeletConfig := kubeletConfigToMap(a.KubeletConfig)
 	kubeletFlags = lo.Assign(kubeletFlags, nodeclaimKubeletConfig)
 
-	// striginify kubelet flags (including taints)
+	// stringify kubelet flags (including taints)
 	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), " ")
@@ -372,7 +372,8 @@ func getCustomDataFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, er
 	return buffer.String(), nil
 }
 
-func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
+// nolint: gocyclo
+func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	args := make(map[string]string)
 
 	if kubeletConfig == nil {
@@ -398,6 +399,24 @@ func KubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	}
 	if kubeletConfig.CPUCFSQuota != nil {
 		args["--cpu-cfs-quota"] = fmt.Sprintf("%t", lo.FromPtr(kubeletConfig.CPUCFSQuota))
+	}
+	if kubeletConfig.CPUManagerPolicy != "" {
+		args["--cpu-manager-policy"] = kubeletConfig.CPUManagerPolicy
+	}
+	if kubeletConfig.TopologyManagerPolicy != "" {
+		args["--topology-manager-policy"] = kubeletConfig.TopologyManagerPolicy
+	}
+	if kubeletConfig.ContainerLogMaxSize != "" {
+		args["--container-log-max-size"] = kubeletConfig.ContainerLogMaxSize
+	}
+	if kubeletConfig.ContainerLogMaxFiles != nil {
+		args["--container-log-max-files"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ContainerLogMaxFiles))
+	}
+	if kubeletConfig.PodPidsLimit != nil {
+		args["--pod-max-pids"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.PodPidsLimit))
+	}
+	if len(kubeletConfig.AllowedUnsafeSysctls) > 0 {
+		args["--allowed-unsafe-sysctls"] = strings.Join(kubeletConfig.AllowedUnsafeSysctls, ",")
 	}
 
 	return args
