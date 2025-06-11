@@ -109,7 +109,6 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
-	logger.V(1).Info("starting reconcile")
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
@@ -141,7 +140,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	shouldUpdate := imageVersionsUnready(nodeClass)
 	if !shouldUpdate {
 		// Case 4: Check if the maintenance window is open
-		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
+		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx, nodeClass.Name)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("checking maintenance window, %w", err)
 		}
@@ -154,14 +153,17 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if len(goalImages) == 0 {
 		nodeClass.Status.Images = nil
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
-		logger.Info("no node images")
+		logger.Info("no available node images")
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-
-	logger.V(1).Info("success")
+	// Note: the ChangeMonitor uses SlicesAsSets=true. However, we do actually care about the ordering of the Images, meaning we'll
+	//     miss logging potential updates on the ordering. Although, this is unexpected to occur.
+	if r.cm.HasChanged(fmt.Sprintf("nodeclass-%s-images", nodeClass.Name), nodeClass.Status.Images) {
+		logger.WithValues("images", nodeClass.Status.Images).Info("new available images updated for nodeclass")
+	}
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
@@ -177,7 +179,8 @@ func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 // I think the best way to get rid of gocyclo is to break the section retrieving the maintenance window
 // range from the ConfigMap into its own helper function using channel as a parameter.
 // nolint: gocyclo
-func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
+func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context, nodeClassName string) (bool, error) {
+	logger := log.FromContext(ctx)
 	if r.systemNamespace == "" {
 		// We fail open here, since the default case should be to upgrade
 		return true, nil
@@ -190,6 +193,11 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 			return true, nil
 		}
 		return false, fmt.Errorf("error getting maintenance window configmap, %w", err)
+	}
+	// Monitoring the entire ConfigMap's data might catch more data changes than we care about. However, I think it makes sense to monitor
+	//     here as catches the entire spread of cases we care about, and will give us direct insight on the raw data.
+	if r.cm.HasChanged(fmt.Sprintf("nodeclass-%s-mwdata", nodeClassName), mwConfigMap.Data) {
+		logger.WithValues("maintenancewindowdata", mwConfigMap.Data).Info("new maintenance window data discovered")
 	}
 	if len(mwConfigMap.Data) == 0 {
 		// An empty configmap means there's no maintenance windows defined, and its up to us when to preform maintenance
