@@ -161,7 +161,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	//     miss logging potential updates on the ordering. Although, this is unexpected to occur.
 	//     https://github.com/kubernetes-sigs/karpenter/blob/349487633193bced541ad05bb76d02e633e73473/pkg/utils/pretty/changemonitor.go#L42
 	if r.cm.HasChanged(fmt.Sprintf("nodeclass-%s-images", nodeClass.Name), goalImages) {
-		logger.WithValues("existingimages", nodeClass.Status.Images).WithValues("newimages", goalImages).Info("new available images updated for nodeclass")
+		logger.WithValues("existingImages", nodeClass.Status.Images).WithValues("newImages", goalImages).Info("new available images updated for nodeclass")
 	}
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
