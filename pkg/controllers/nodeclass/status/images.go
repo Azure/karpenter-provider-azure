@@ -159,6 +159,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
+	// We care about the ordering of the slices here, as it translates to priority during selection, so not treating them as sets
 	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
 		logger.WithValues("existingImages", nodeClass.Status.Images).WithValues("newImages", goalImages).Info("new available images updated for nodeclass")
 	}
