@@ -68,6 +68,7 @@ func getExpectedTestCIGImages(imageFamily string, version string, kubernetesVers
 	return nodeImages
 }
 
+//nolint:unparam // might always be using the same version in test, but could change in the future
 func getExpectedTestSIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
