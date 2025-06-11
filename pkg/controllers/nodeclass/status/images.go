@@ -140,7 +140,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	shouldUpdate := imageVersionsUnready(nodeClass)
 	if !shouldUpdate {
 		// Case 4: Check if the maintenance window is open
-		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx, nodeClass.Name)
+		shouldUpdate, err = r.isMaintenanceWindowOpen(ctx)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("checking maintenance window, %w", err)
 		}
@@ -180,7 +180,7 @@ func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 // I think the best way to get rid of gocyclo is to break the section retrieving the maintenance window
 // range from the ConfigMap into its own helper function using channel as a parameter.
 // nolint: gocyclo
-func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context, nodeClassName string) (bool, error) {
+func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
 	logger := log.FromContext(ctx)
 	if r.systemNamespace == "" {
 		// We fail open here, since the default case should be to upgrade
@@ -197,7 +197,7 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context, nodeC
 	}
 	// Monitoring the entire ConfigMap's data might catch more data changes than we care about. However, I think it makes sense to monitor
 	//     here as it does catch the entire spread of cases we care about, and will give us direct insight on the raw data.
-	if r.cm.HasChanged("nodeclass-mwdata", mwConfigMap.Data) {
+	if r.cm.HasChanged("nodeclass-maintenancewindowdata", mwConfigMap.Data) {
 		logger.WithValues("maintenanceWindowData", mwConfigMap.Data).Info("new maintenance window data discovered")
 	}
 	if len(mwConfigMap.Data) == 0 {
