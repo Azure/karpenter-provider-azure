@@ -81,9 +81,12 @@ var _ = Describe("Subnets", func() {
 		Expect(nic.Properties.IPConfigurations[0].Properties.Subnet).ToNot(BeNil())
 		Expect(nic.Properties.IPConfigurations[0].Properties.Subnet.ID).To(Equal(subnet.ID))
 
-		// The NIC should have the right NSG
-		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
-		Expect(nic.Properties.NetworkSecurityGroup.ID).ToNot(BeNil())
-		Expect(*nic.Properties.NetworkSecurityGroup.ID).To(MatchRegexp(`aks-agentpool-\d{8}-nsg`))
+		// TODO: Unblock when 1.4.1 is released
+		if env.InClusterController {
+			// The NIC should have the right NSG
+			Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
+			Expect(nic.Properties.NetworkSecurityGroup.ID).ToNot(BeNil())
+			Expect(*nic.Properties.NetworkSecurityGroup.ID).To(MatchRegexp(`aks-agentpool-\d{8}-nsg`))
+		}
 	})
 })
