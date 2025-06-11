@@ -197,7 +197,7 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context, nodeC
 	}
 	// Monitoring the entire ConfigMap's data might catch more data changes than we care about. However, I think it makes sense to monitor
 	//     here as it does catch the entire spread of cases we care about, and will give us direct insight on the raw data.
-	if r.cm.HasChanged(fmt.Sprintf("nodeclass-%s-mwdata", nodeClassName), mwConfigMap.Data) {
+	if r.cm.HasChanged("nodeclass-mwdata", mwConfigMap.Data) {
 		logger.WithValues("maintenancewindowdata", mwConfigMap.Data).Info("new maintenance window data discovered")
 	}
 	if len(mwConfigMap.Data) == 0 {
