@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/mitchellh/hashstructure/v2"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -177,4 +178,15 @@ func IsAKSManagedVNET(nodeResourceGroup string, subnetID string) (bool, error) {
 	return managedVNETPattern.MatchString(id.VNetName) &&
 		strings.EqualFold(nodeResourceGroup, id.ResourceGroupName) &&
 		strings.EqualFold(id.SubnetName, managedSubnetName), nil
+}
+
+// HasChanged returns if the given value has changed, given the existing and new instance
+//
+// This option is accessible in place of using a ChangeMonitor, when there's access to both
+// the existing and new data.
+func HasChanged(existing, new any, options *hashstructure.HashOptions) bool {
+	// In the case of errors, the zero value from hashing will be compared, similar to ChangeMonitor
+	existingHV, _ := hashstructure.Hash(existing, hashstructure.FormatV2, options)
+	newHV, _ := hashstructure.Hash(new, hashstructure.FormatV2, options)
+	return existingHV != newHV
 }
