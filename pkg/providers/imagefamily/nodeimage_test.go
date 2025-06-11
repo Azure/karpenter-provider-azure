@@ -40,10 +40,10 @@ const (
 	customerSubscription = "12345678-1234-1234-1234-123456789012"
 	sigSubscription      = "10945678-1234-1234-1234-123456789012"
 
-	cigImageVersion      = "202410.09.0"
-	laterCIGImageVersion = "202411.09.0"
+	cigImageVersion      = "202505.27.0"
+	laterCIGImageVersion = "202605.27.0"
 
-	sigImageVersion = "202410.09.0"
+	sigImageVersion = "202505.27.0"
 )
 
 func getExpectedTestCIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
