@@ -90,20 +90,18 @@ func defaultCreateInstanceType(offerings ...struct{ zone, capacityType string })
 }
 
 type offeringToCheck struct {
-	instanceTypeName   string
-	versionedSKUFamily string
-	zone               string
-	capacityType       string
-	cpuCoreCount       int64
+	instanceTypeName string
+	zone             string
+	capacityType     string
+	cpuCoreCount     int64
 }
 
-func offeringInformation(zone, capacityType, instanceTypeName, versionedSKUFamily string, cpuCoreCount int64) offeringToCheck {
+func offeringInformation(zone, capacityType, instanceTypeName string, cpuCoreCount int64) offeringToCheck {
 	return offeringToCheck{
-		instanceTypeName:   instanceTypeName,
-		zone:               zone,
-		capacityType:       capacityType,
-		versionedSKUFamily: versionedSKUFamily,
-		cpuCoreCount:       cpuCoreCount,
+		instanceTypeName: instanceTypeName,
+		zone:             zone,
+		capacityType:     capacityType,
+		cpuCoreCount:     cpuCoreCount,
 	}
 }
 
