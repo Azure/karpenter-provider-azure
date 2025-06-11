@@ -71,7 +71,7 @@ func (r *KubernetesVersionReconciler) Register(_ context.Context, m manager.Mana
 //     - Note: We will indirectly trigger an upgrade to latest image version as well, by resetting the Images readiness.
 func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(kubernetesVersionReconcilerName))
-	logger := log.FromContext(ctx).WithValues("existingkubernetesversion", nodeClass.Status.KubernetesVersion)
+	logger := log.FromContext(ctx).WithValues("existingKubernetesVersion", nodeClass.Status.KubernetesVersion)
 
 	goalK8sVersion, err := r.kubernetesVersionProvider.KubeServerVersion(ctx)
 	if err != nil {
