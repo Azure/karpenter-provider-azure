@@ -161,6 +161,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 	// Note: the ChangeMonitor uses SlicesAsSets=true. However, we do actually care about the ordering of the Images, meaning we'll
 	//     miss logging potential updates on the ordering. Although, this is unexpected to occur.
+	//     https://github.com/kubernetes-sigs/karpenter/blob/349487633193bced541ad05bb76d02e633e73473/pkg/utils/pretty/changemonitor.go#L42
 	if r.cm.HasChanged(fmt.Sprintf("nodeclass-%s-images", nodeClass.Name), nodeClass.Status.Images) {
 		logger.WithValues("images", nodeClass.Status.Images).Info("new available images updated for nodeclass")
 	}
@@ -195,7 +196,7 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context, nodeC
 		return false, fmt.Errorf("error getting maintenance window configmap, %w", err)
 	}
 	// Monitoring the entire ConfigMap's data might catch more data changes than we care about. However, I think it makes sense to monitor
-	//     here as catches the entire spread of cases we care about, and will give us direct insight on the raw data.
+	//     here as it does catch the entire spread of cases we care about, and will give us direct insight on the raw data.
 	if r.cm.HasChanged(fmt.Sprintf("nodeclass-%s-mwdata", nodeClassName), mwConfigMap.Data) {
 		logger.WithValues("maintenancewindowdata", mwConfigMap.Data).Info("new maintenance window data discovered")
 	}
