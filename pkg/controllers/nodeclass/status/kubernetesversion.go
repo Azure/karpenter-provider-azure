@@ -104,7 +104,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 	nodeClass.Status.KubernetesVersion = goalK8sVersion
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	if r.cm.HasChanged(fmt.Sprintf("nodeclass-%s-kubernetesversion", nodeClass.Name), nodeClass.Status.KubernetesVersion) {
-		logger.WithValues("newkubernetesversion", nodeClass.Status.KubernetesVersion).Info("new kubernetes version updated for nodeclass")
+		logger.WithValues("newKubernetesVersion", nodeClass.Status.KubernetesVersion).Info("new kubernetes version updated for nodeclass")
 	}
 	return reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}, nil
 }
