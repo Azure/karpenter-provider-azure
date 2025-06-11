@@ -93,7 +93,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 			}
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", 1)
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
@@ -160,10 +160,10 @@ var _ = Describe("Consolidation", Ordered, func() {
 			}
 			env.ExpectCreated(nodeClass, nodePool, job)
 
-			nodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", 1)
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			pods := env.EventuallyExpectHealthyPodCount(selector, int(1))
 
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
 			// pods are healthy, which means the job has started its 30s sleep
 			nodeClaim := env.ExpectExists(nodeClaims[0]).(*karpv1.NodeClaim)
 			lastPodEventTime := nodeClaim.Status.LastPodEventTime
