@@ -310,43 +310,9 @@ az aks delete --name "${CLUSTER_NAME}" --resource-group "${RG}"
 
 ---
 
-## Using Customer Managed Keys (CMK) for OS Disk Encryption
+## Customer Managed Keys (CMK) for OS Disk Encryption
 
-Karpenter supports encrypting the OS disk of provisioned nodes with your own Azure Customer Managed Key (CMK). This is achieved by specifying a Disk Encryption Set resource ID in your `AKSNodeClass`.
-
-### Prerequisites
-
-- You must have created an Azure Key Vault, a key, and a Disk Encryption Set (DES) with purge protection enabled.
-- The Karpenter managed identity must have the necessary permissions on the Key Vault and DES.
-- The Makefile provides automation for these steps (see `az-cmk-all` target).
-
-### Example
-
-```yaml
-apiVersion: karpenter.azure.com/v1beta1
-kind: AKSNodeClass
-metadata:
-  name: cmk-enabled
-spec:
-  imageFamily: Ubuntu2204
-  # Replace with your actual Disk Encryption Set resource ID
-  osDiskDiskEncryptionSetID: "/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Compute/diskEncryptionSets/<des-name>"
-```
-
-If `osDiskDiskEncryptionSetID` is not specified, Microsoft-managed keys will be used by default.
-
-### Automating CMK Resource Creation
-
-You can use the Makefile to automate the creation of the required Azure resources:
-
-```bash
-# Optionally override the Key Vault name if needed
-make az-cmk-all AZURE_KEYVAULT_NAME=mycustomkv
-```
-
-If the Key Vault name is unavailable due to purge protection retention, specify a different name using the `AZURE_KEYVAULT_NAME` environment variable.
-
-See [`examples/v1beta1/cmk-enabled.yaml`](examples/v1beta1/cmk-enabled.yaml) and [`Makefile-az.mk](Makefile-az.mk) for a complete example of using a customer-managed key for OS disk encryption.
+See [docs/cmk-os-disk-encryption.md](docs/cmk-os-disk-encryption.md) for instructions on using Customer Managed Keys for OS disk encryption.
 
 ---
 

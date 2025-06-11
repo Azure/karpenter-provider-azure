@@ -468,8 +468,15 @@ spec:
                 type: integer
               osDiskDiskEncryptionSetID:
                 description: |-
-                  OSDiskDiskEncryptionSetID is the Azure resource ID of the Disk Encryption Set to use for encrypting the OS disk with a customer-managed key (CMK).
-                  If not specified, Microsoft-managed keys will be used.
+                  OSDiskDiskEncryptionSetID is the Azure resource ID of the Disk Encryption Set (DES) to use for encrypting the OS disk with a customer-managed key (CMK).
+                  When specified, the OS disk of nodes provisioned by this AKSNodeClass will be encrypted using your own key, managed via Azure Key Vault and referenced by the Disk Encryption Set.
+                  This enables enhanced control over disk encryption and key lifecycle, as described in the official Azure documentation:
+                  https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#customer-managed-keys
+                  https://learn.microsoft.com/en-us/azure/aks/azure-disk-customer-managed-keys
+
+                  For more details and step-by-step instructions, see [docs/cmk-os-disk-encryption.md](https://github.com/Azure/karpenter-provider-azure/blob/main/docs/cmk-os-disk-encryption.md).
+
+                  If not specified, Microsoft-managed keys will be used for disk encryption (the Azure default).
                 type: string
               osDiskSizeGB:
                 default: 128
