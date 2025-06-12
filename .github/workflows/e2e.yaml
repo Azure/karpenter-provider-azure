@@ -101,7 +101,7 @@ jobs:
         run: az account set --subscription ${{ secrets.E2E_SUBSCRIPTION_ID }}
       - name: install skaffold
         run: |
-          curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.16.0/skaffold-linux-amd64
+          curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64
           install skaffold /usr/local/bin/
       - name: generate rg name
         run: |
