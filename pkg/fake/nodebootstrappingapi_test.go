@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -76,43 +77,26 @@ func TestNodeBootstrappingAPI_Get_MissingProvisionHelperValues(t *testing.T) {
 }
 
 // Helper functions
-
 func createValidProvisionProfile() *models.ProvisionProfile {
-	name := "test-node"
-	vmSize := "Standard_D2s_v3"
-	osType := models.OSTypeLinux
-	osSku := models.OSSKUAzureLinux
-	storageProfile := "ManagedDisks"
-	distro := "AzureLinux"
-	orchestratorVersion := "1.26.0"
-	vnetCidrs := []string{"10.0.0.0/8"}
-	vnetSubnetID := "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"
-	mode := models.AgentPoolModeSystem
-	architecture := "amd64"
-	maxPods := int32(110)
-
 	return &models.ProvisionProfile{
-		Name:                &name,
-		VMSize:              &vmSize,
-		OsType:              &osType,
-		OsSku:               &osSku,
-		StorageProfile:      &storageProfile,
-		Distro:              &distro,
-		OrchestratorVersion: &orchestratorVersion,
-		VnetCidrs:           vnetCidrs,
-		VnetSubnetID:        &vnetSubnetID,
-		Mode:                &mode,
-		Architecture:        &architecture,
-		MaxPods:             &maxPods,
+		Name:                lo.ToPtr("test-node"),
+		VMSize:              lo.ToPtr("Standard_D2s_v3"),
+		OsType:              lo.ToPtr(models.OSTypeLinux),
+		OsSku:               lo.ToPtr(models.OSSKUAzureLinux),
+		StorageProfile:      lo.ToPtr("ManagedDisks"),
+		Distro:              lo.ToPtr("AzureLinux"),
+		OrchestratorVersion: lo.ToPtr("1.31.0"),
+		VnetCidrs:           []string{"10.0.0.0/8"},
+		VnetSubnetID:        lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"),
+		Mode:                lo.ToPtr(models.AgentPoolModeSystem),
+		Architecture:        lo.ToPtr("amd64"),
+		MaxPods:             lo.ToPtr(int32(110)),
 	}
 }
 
 func createValidProvisionHelperValues() *models.ProvisionHelperValues {
-	skuCPU := float64(2)
-	skuMemory := float64(8192)
-
 	return &models.ProvisionHelperValues{
-		SkuCPU:    &skuCPU,
-		SkuMemory: &skuMemory,
+		SkuCPU:    lo.ToPtr(float64(2)),
+		SkuMemory: lo.ToPtr(float64(8192)),
 	}
 }

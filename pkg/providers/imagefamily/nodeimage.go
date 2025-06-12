@@ -45,7 +45,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 		return []NodeImage{}, err
 	}
 
-	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily)
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, kubernetesVersion)
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 
@@ -81,7 +81,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 
 func (p *Provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
-	retrievedLatestImages, err := p.NodeImageVersions.List(ctx, p.location, p.subscription)
+	retrievedLatestImages, err := p.nodeImageVersionsProvider.List(ctx, p.location, p.subscription)
 	if err != nil {
 		return nil, err
 	}

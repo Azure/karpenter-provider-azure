@@ -79,6 +79,10 @@ type NodeBootstrappingAPI interface {
 }
 
 type NodeBootstrapping struct {
+	// CustomDataEncodedDehydratable is the base64 encoded custom data, which might contains template strings for TLS bootstrap token in the format of `{{.TokenID}}.{{.TokenSecret}}`
+	// It is to be used in VM creation
 	CustomDataEncodedDehydratable string
-	CSEDehydratable               string
+	// CSEDehydratable is CSE script, which might contains template strings for TLS bootstrap token in the format of `{{.TokenID}}.{{.TokenSecret}}`
+	// It is to be used in VM CSE creation
+	CSEDehydratable string
 }
