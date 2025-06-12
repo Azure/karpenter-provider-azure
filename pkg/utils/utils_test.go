@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/mitchellh/hashstructure/v2"
 	. "github.com/onsi/gomega"
 )
 
@@ -91,4 +92,33 @@ func TestIsAKSManagedVNET(t *testing.T) {
 			}
 		})
 	}
+}
+func TestHasChanged_SimpleCases(t *testing.T) {
+	g := NewWithT(t)
+
+	// Case: Has not changed (same int)
+	g.Expect(utils.HasChanged(42, 42, nil)).To(BeFalse())
+
+	// Case: Has changed (different int)
+	g.Expect(utils.HasChanged(42, 43, nil)).To(BeTrue())
+
+	// Case: Has not changed (same string)
+	g.Expect(utils.HasChanged("azure", "azure", nil)).To(BeFalse())
+
+	// Case: Has changed (different string)
+	g.Expect(utils.HasChanged("azure", "cloud", nil)).To(BeTrue())
+}
+
+func TestHasChanged_SliceOrderWithSlicesAsSets(t *testing.T) {
+	g := NewWithT(t)
+
+	a := []int{1, 2, 3}
+	b := []int{3, 2, 1}
+
+	// By default, order matters
+	g.Expect(utils.HasChanged(a, b, nil)).To(BeTrue())
+
+	// With SlicesAsSets, order does not matter
+	opts := &hashstructure.HashOptions{SlicesAsSets: true}
+	g.Expect(utils.HasChanged(a, b, opts)).To(BeFalse())
 }

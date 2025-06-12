@@ -32,10 +32,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/awslabs/operatorpkg/reasonable"
+	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -109,7 +111,6 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
-	logger.V(1).Info("starting reconcile")
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
@@ -154,14 +155,16 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	if len(goalImages) == 0 {
 		nodeClass.Status.Images = nil
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNotFound", "ImageSelectors did not match any Images")
-		logger.Info("no node images")
+		logger.Info("no available node images")
 		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 
+	// We care about the ordering of the slices here, as it translates to priority during selection, so not treating them as sets
+	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
+		logger.WithValues("existingImages", nodeClass.Status.Images).WithValues("newImages", goalImages).Info("new available images updated for nodeclass")
+	}
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-
-	logger.V(1).Info("success")
 	return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
@@ -178,6 +181,7 @@ func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 // range from the ConfigMap into its own helper function using channel as a parameter.
 // nolint: gocyclo
 func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
+	logger := log.FromContext(ctx)
 	if r.systemNamespace == "" {
 		// We fail open here, since the default case should be to upgrade
 		return true, nil
@@ -190,6 +194,16 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 			return true, nil
 		}
 		return false, fmt.Errorf("error getting maintenance window configmap, %w", err)
+	}
+	// Monitoring the entire ConfigMap's data might catch more data changes than we care about. However, I think it makes sense to monitor
+	//     here as it does catch the entire spread of cases we care about, and will give us direct insight on the raw data.
+	// Note: we don't need to add the nodeclass name into the monitoring here, as we actually want the entries to collide, since
+	//     maintenance windows are a cluster level concept, rather that a nodeclass level type, meaning we'd have repeat redundant info
+	//     if scoping to the nodeclass.
+	// TODO: In the longer run, the maintenance window handling should be factored out into a sharable provider, rather than being contained
+	//     within the image controller itself.
+	if r.cm.HasChanged("nodeclass-maintenancewindowdata", mwConfigMap.Data) {
+		logger.WithValues("maintenanceWindowData", mwConfigMap.Data).Info("new maintenance window data discovered")
 	}
 	if len(mwConfigMap.Data) == 0 {
 		// An empty configmap means there's no maintenance windows defined, and its up to us when to preform maintenance
