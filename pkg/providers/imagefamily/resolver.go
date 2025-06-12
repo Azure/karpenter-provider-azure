@@ -53,7 +53,7 @@ var _ Resolver = &defaultResolver{}
 
 // defaultResolver is able to fill-in dynamic launch template parameters
 type defaultResolver struct {
-	imageProvider *Provider
+	nodeBootstrappingProvider types.NodeBootstrappingAPI
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -83,9 +83,9 @@ type ImageFamily interface {
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
-func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolver {
+func NewDefaultResolver(_ client.Client, nodeBootstrappingClient types.NodeBootstrappingAPI) *defaultResolver {
 	return &defaultResolver{
-		imageProvider: imageProvider,
+		nodeBootstrappingProvider: nodeBootstrappingClient,
 	}
 }
 
@@ -158,7 +158,7 @@ func (r *defaultResolver) Resolve(
 			instanceType,
 			imageDistro,
 			storageProfile,
-			r.imageProvider.nodeBootstrappingProvider,
+			r.nodeBootstrappingProvider,
 		),
 		ImageID:        imageID,
 		StorageProfile: storageProfile,
