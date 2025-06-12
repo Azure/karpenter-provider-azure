@@ -310,6 +310,12 @@ az aks delete --name "${CLUSTER_NAME}" --resource-group "${RG}"
 
 ---
 
+## Customer Managed Keys (CMK) for OS Disk Encryption
+
+See [docs/cmk-os-disk-encryption.md](docs/cmk-os-disk-encryption.md) for instructions on using Customer Managed Keys for OS disk encryption.
+
+---
+
 ### Source Attribution
 
 Notice: Files in this source code originated from a fork of https://github.com/aws/karpenter

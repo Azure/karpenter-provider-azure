@@ -36,6 +36,10 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Minimum=30
 	// osDiskSizeGB is the size of the OS disk in GB.
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
+	// OSDiskDiskEncryptionSetID is the Azure resource ID of the Disk Encryption Set to use for encrypting the OS disk with a customer-managed key (CMK).
+	// If not specified, Microsoft-managed keys will be used.
+	// +optional
+	OSDiskDiskEncryptionSetID *string `json:"osDiskDiskEncryptionSetID,omitempty"`
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
