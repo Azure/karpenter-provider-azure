@@ -93,21 +93,19 @@ type offeringToCheck struct {
 	instanceTypeName string
 	zone             string
 	capacityType     string
-	cpuCoreCount     int64
 }
 
-func offeringInformation(zone, capacityType, instanceTypeName string, cpuCoreCount int64) offeringToCheck {
+func offeringInformation(zone, capacityType, instanceTypeName string) offeringToCheck {
 	return offeringToCheck{
 		instanceTypeName: instanceTypeName,
 		zone:             zone,
 		capacityType:     capacityType,
-		cpuCoreCount:     cpuCoreCount,
 	}
 }
 
 // Helper to create default offering information for testing, for errors where we don't block specific families of VM SKUs
 func defaultTestOfferingInfo(zone, capacityType string) offeringToCheck {
-	return offeringInformation(zone, capacityType, responseErrorTestInstanceName, "D3", 2)
+	return offeringInformation(zone, capacityType, responseErrorTestInstanceName)
 }
 
 func createResponseError(errorCode, errorMessage string) error {
@@ -222,16 +220,16 @@ func TestHandleResponseErrors(t *testing.T) {
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
 				// an example of a VM SKU from the same family, that has same or higher number of vCPUs as the one that failed to allocate
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName, "D3", 4),
-				offeringInformation(testZone2, karpv1.CapacityTypeSpot, responseErrorTestInstanceName, "D3", 4),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName),
+				offeringInformation(testZone2, karpv1.CapacityTypeSpot, responseErrorTestInstanceName),
 			},
 			expectedAvailableOfferingsInformation: []offeringToCheck{
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
 				// an example of a VM SKU from the same family, that has same or higher number of vCPUs as the one that failed to allocate, but in a different zone than the one that failed
-				offeringInformation(testZone3, karpv1.CapacityTypeSpot, responseErrorTestInstanceName, "D3", 4),
-				offeringInformation(testZone3, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName, "D3", 4),
+				offeringInformation(testZone3, karpv1.CapacityTypeSpot, responseErrorTestInstanceName),
+				offeringInformation(testZone3, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName),
 				// an example of a VM SKU from the same family but different version(!), that has same or higher number of vCPUs as the one that failed to allocate - should still be available in the same zone
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4", "D4", 2),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4"),
 			},
 		},
 		{
