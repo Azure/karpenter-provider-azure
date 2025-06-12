@@ -19,8 +19,10 @@ package instancetype
 import (
 	"context"
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -60,6 +62,8 @@ const (
 type Provider interface {
 	LivenessProbe(*http.Request) error
 	List(context.Context, *v1alpha2.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+	// Return Azure Skewer Representation of the instance type
+	Get(context.Context, *v1alpha2.AKSNodeClass, string) (*skewer.SKU, error)
 	//UpdateInstanceTypes(ctx context.Context) error
 	//UpdateInstanceTypeOfferings(ctx context.Context) error
 }
@@ -96,6 +100,16 @@ func NewDefaultProvider(region string, cache *cache.Cache, skuClient skuclient.S
 		cm:                   pretty.NewChangeMonitor(),
 		instanceTypesSeqNum:  0,
 	}
+}
+func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass, instanceType string) (*skewer.SKU, error) {
+	skus, err := p.getInstanceTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if sku, ok := skus[instanceType]; ok {
+		return sku, nil
+	}
+	return nil, fmt.Errorf("instance type %s not found", instanceType)
 }
 
 // Get all instance type options
@@ -348,20 +362,57 @@ func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 // For Ephemeral disk creation, CRP will use the larger of the two values to ensure we have enough space for the ephemeral disk.
 // Note that generally only older SKUs use the Temp Disk space for ephemeral disks, and newer SKUs use the Cached Disk in most cases.
 // The ephemeral OS disk is created with the free space of the larger of the two values in that place.
-func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
+func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) (sizeGB float64, placement armcompute.DiffDiskPlacement) {
 	if sku == nil {
-		return 0
+		return 0, ""
 	}
-	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
-	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
+	diskPlacementType, err := sku.GetCapabilityString("SupportedEphemeralOSDiskPlacements")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(diskPlacementType)
+	fmt.Println(sku.GetName())
+	fmt.Println("*******************************************")
+	if diskPlacementType == "ResourceDisk" {
+		maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
+		maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
 
-	maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
-	maxDiskBytes := math.Max(float64(maxCachedDiskBytes), float64(maxResourceVolumeBytes))
-	if maxDiskBytes == 0 {
-		return 0
+		maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
+		maxDiskBytes := math.Max(float64(maxCachedDiskBytes), float64(maxResourceVolumeBytes))
+		if maxDiskBytes == 0 {
+			return 0, ""
+		}
+		// convert bytes to GB
+		fmt.Println(maxDiskBytes / float64(units.Gigabyte))
+		fmt.Println("*******************************************")
+		return maxDiskBytes / float64(units.Gigabyte), armcompute.DiffDiskPlacement(diskPlacementType)
+	} else if diskPlacementType == "NvmeDisk" {
+		maNvmeDiskMB, _ := sku.GetCapabilityString("NvmeSizePerDiskInMiB")
+		maxResourceVolumeMB, _ := strconv.Atoi(maNvmeDiskMB)
+
+		maxDiskBytes := int64(maxResourceVolumeMB) * int64(units.Mebibyte)
+		if maxDiskBytes == 0 {
+			return 0, ""
+		}
+		// convert bytes to GB
+		fmt.Println(float64(maxDiskBytes) / float64(units.Gigabyte))
+		fmt.Println("*******************************************")
+		return float64(maxDiskBytes) / float64(units.Gigabyte), armcompute.DiffDiskPlacement(diskPlacementType)
+	} else if diskPlacementType == "ResourceDisk,CacheDisk" {
+		maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
+		maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
+
+		maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
+		maxDiskBytes := maxResourceVolumeBytes - maxCachedDiskBytes
+		if maxDiskBytes == 0 {
+			return 0, ""
+		}
+		// convert bytes to GB
+		fmt.Println(float64(maxDiskBytes) / float64(units.Gigabyte))
+		fmt.Println("*******************************************")
+		return float64(maxDiskBytes) / float64(units.Gigabyte), armcompute.DiffDiskPlacement(diskPlacementType)
 	}
-	// convert bytes to GB
-	return maxDiskBytes / float64(units.Gigabyte)
+	return 0, ""
 }
 
 var (

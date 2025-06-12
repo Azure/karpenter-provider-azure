@@ -90,7 +90,13 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		operator.Elected(),
 	)
-
+	instanceTypeProvider := instancetype.NewDefaultProvider(
+		azConfig.Location,
+		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
+		azClient.SKUClient,
+		pricingProvider,
+		unavailableOfferingsCache,
+	)
 	imageProvider := imagefamily.NewProvider(
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
@@ -103,6 +109,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	imageResolver := imagefamily.New(
 		operator.GetClient(),
 		imageProvider,
+		instanceTypeProvider,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -119,13 +126,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
 	)
-	instanceTypeProvider := instancetype.NewDefaultProvider(
-		azConfig.Location,
-		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
-		azClient.SKUClient,
-		pricingProvider,
-		unavailableOfferingsCache,
-	)
+
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
 		cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval),

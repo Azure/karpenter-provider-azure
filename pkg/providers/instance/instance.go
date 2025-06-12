@@ -408,7 +408,7 @@ func newVMObject(
 		Zones: utils.MakeVMZone(zone),
 		Tags:  launchTemplate.Tags,
 	}
-	setVMPropertiesOSDiskType(vm.Properties, launchTemplate.StorageProfile)
+	setVMPropertiesOSDiskType(vm.Properties, launchTemplate)
 	//setImageReference(vm.Properties, launchTemplate.ImageID, useSIG)
 	setVMPropertiesBillingProfile(vm.Properties, capacityType)
 
@@ -422,11 +422,13 @@ func newVMObject(
 }
 
 // setVMPropertiesOSDiskType enables ephemeral os disk for instance types that support it
-func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, storageProfile string) {
-	if storageProfile == "Ephemeral" {
+func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, launchTemplate *launchtemplate.Template) {
+	diskType, placement, sizeGB := launchTemplate.StorageProfileDiskType, launchTemplate.StorageProfilePlacement, launchTemplate.StorageProfileSizeGB
+	if diskType == "Ephemeral" {
+		vmProperties.StorageProfile.OSDisk.DiskSizeGB = lo.ToPtr(int32(sizeGB))
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
-			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
-			// placement (cache/resource) is left to CRP
+			Option:    lo.ToPtr(armcompute.DiffDiskOptionsLocal),
+			Placement: lo.ToPtr(placement),
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
 	}

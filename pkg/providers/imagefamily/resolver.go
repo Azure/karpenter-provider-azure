@@ -39,7 +39,8 @@ import (
 
 // Resolver is able to fill-in dynamic launch template parameters
 type Resolver struct {
-	imageProvider *Provider
+	imageProvider        *Provider
+	instanceTypeProvider instancetype.Provider
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -68,9 +69,10 @@ type ImageFamily interface {
 }
 
 // New constructs a new launch template Resolver
-func New(_ client.Client, imageProvider *Provider) *Resolver {
+func New(_ client.Client, imageProvider *Provider, instanceTypeProvider instancetype.Provider) *Resolver {
 	return &Resolver{
-		imageProvider: imageProvider,
+		imageProvider:        imageProvider,
+		instanceTypeProvider: instanceTypeProvider,
 	}
 }
 
@@ -102,11 +104,16 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
 	}
 
-	storageProfile := "ManagedDisks"
+	diskType := "ManagedDisks"
 	if useEphemeralDisk(instanceType, nodeClass) {
-		storageProfile = "Ephemeral"
+		diskType = "Ephemeral"
 	}
-
+	sku, err := r.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	diskSize, placement := instancetype.MaxEphemeralOSDiskSizeGB(sku)
+	//diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
+	if err != nil {
+		return nil, err
+	}
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
@@ -123,11 +130,17 @@ func (r Resolver) Resolve(ctx context.Context, nodeClass *v1alpha2.AKSNodeClass,
 			staticParameters.Labels,
 			instanceType,
 			imageDistro,
-			storageProfile,
+			diskType,
 		),
-		ImageID:        imageID,
-		StorageProfile: storageProfile,
-		IsWindows:      false, // TODO(Windows)
+		ImageID:                 imageID,
+		StorageProfileDiskType:  diskType,
+		StorageProfilePlacement: placement,
+
+		// TODO: We could potentially use the instance type to do defaulting like
+		// traditional AKS, so putting this here along with the other settings
+		StorageProfileSizeGB: diskSize,
+
+		IsWindows: false, // TODO(Windows)
 	}
 
 	return template, nil
