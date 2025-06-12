@@ -138,16 +138,14 @@ func (p *Provider) cacheKey(supportedImages []DefaultImageOutput, k8sVersion str
 	return fmt.Sprintf("%016x", hash), nil
 }
 
-// TODO (charliedmcb): refactor this into nodeimage.go and create new provider
 func (p *Provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
 	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
 	if err != nil {
 		return "", err
 	}
-	return BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
+	return buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
 }
 
-// TODO (charliedmcb): refactor this into nodeimage.go and create new provider
 func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
 	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
 	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
@@ -165,7 +163,6 @@ func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 	return lo.FromPtr(topImageVersionCandidate.Name), nil
 }
 
-// TODO (charliedmcb): refactor this into nodeimage.go and create new provider
-func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
+func buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
 	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
 }
