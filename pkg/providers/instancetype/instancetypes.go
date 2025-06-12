@@ -192,10 +192,10 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 	for zone := range zones {
-		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
-		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
-		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeOnDemand)
-		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeSpot)
+		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(sku.GetName())
+		spotPrice, spotOk := p.pricingProvider.SpotPrice(sku.GetName())
+		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku.GetName(), sku.GetFamilyName()+parseVMSizeVersion(getVMSizeVersion(sku)), zone, karpv1.CapacityTypeOnDemand, vcpuCount(sku))
+		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku.GetName(), sku.GetFamilyName()+getVMSizeVersion(sku), zone, karpv1.CapacityTypeSpot, vcpuCount(sku))
 
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
@@ -231,6 +231,14 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 		*/
 	}
 	return offerings
+}
+
+func getVMSizeVersion(sku *skewer.SKU) string {
+	vmSize, err := sku.GetVMSize()
+	if err != nil {
+		return ""
+	}
+	return vmSize.Version
 }
 
 func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFamily string) bool {
