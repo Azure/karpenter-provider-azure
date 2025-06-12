@@ -18,7 +18,7 @@ package launchtemplate
 
 import (
 	"context"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"strconv"
 	"strings"
 

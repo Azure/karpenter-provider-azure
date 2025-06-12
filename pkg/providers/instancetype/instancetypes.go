@@ -19,7 +19,7 @@ package instancetype
 import (
 	"context"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"math"
 	"net/http"
 	"strconv"
@@ -368,11 +368,8 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) (sizeGB float64, placement armcom
 	}
 	diskPlacementType, err := sku.GetCapabilityString("SupportedEphemeralOSDiskPlacements")
 	if err != nil {
-		fmt.Println(err)
+		fmt.Errorf("fetching DiskPlacement:, %w", err)
 	}
-	fmt.Println(diskPlacementType)
-	fmt.Println(sku.GetName())
-	fmt.Println("*******************************************")
 	if diskPlacementType == "ResourceDisk" {
 		maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
 		maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
@@ -383,9 +380,7 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) (sizeGB float64, placement armcom
 			return 0, ""
 		}
 		// convert bytes to GB
-		fmt.Println(maxDiskBytes / float64(units.Gigabyte))
-		fmt.Println("*******************************************")
-		return maxDiskBytes / float64(units.Gigabyte), armcompute.DiffDiskPlacement(diskPlacementType)
+		return maxDiskBytes / float64(units.Gibibyte), armcompute.DiffDiskPlacement(diskPlacementType)
 	} else if diskPlacementType == "NvmeDisk" {
 		maNvmeDiskMB, _ := sku.GetCapabilityString("NvmeSizePerDiskInMiB")
 		maxResourceVolumeMB, _ := strconv.Atoi(maNvmeDiskMB)
@@ -395,9 +390,7 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) (sizeGB float64, placement armcom
 			return 0, ""
 		}
 		// convert bytes to GB
-		fmt.Println(float64(maxDiskBytes) / float64(units.Gigabyte))
-		fmt.Println("*******************************************")
-		return float64(maxDiskBytes) / float64(units.Gigabyte), armcompute.DiffDiskPlacement(diskPlacementType)
+		return float64(maxDiskBytes) / float64(units.Gibibyte), armcompute.DiffDiskPlacement(diskPlacementType)
 	} else if diskPlacementType == "ResourceDisk,CacheDisk" {
 		maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
 		maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
@@ -408,9 +401,7 @@ func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) (sizeGB float64, placement armcom
 			return 0, ""
 		}
 		// convert bytes to GB
-		fmt.Println(float64(maxDiskBytes) / float64(units.Gigabyte))
-		fmt.Println("*******************************************")
-		return float64(maxDiskBytes) / float64(units.Gigabyte), armcompute.DiffDiskPlacement(diskPlacementType)
+		return float64(maxDiskBytes) / float64(units.Gibibyte), armcompute.DiffDiskPlacement(diskPlacementType)
 	}
 	return 0, ""
 }
