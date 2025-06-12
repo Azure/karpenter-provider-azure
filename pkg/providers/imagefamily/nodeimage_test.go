@@ -24,6 +24,7 @@ import (
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
@@ -47,7 +48,7 @@ const (
 )
 
 func getExpectedTestCIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
-	var images []imagefamily.DefaultImageOutput
+	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
 		images = imagefamily.Ubuntu2204{}.DefaultImages()
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
@@ -69,7 +70,7 @@ func getExpectedTestCIGImages(imageFamily string, version string, kubernetesVers
 
 //nolint:unparam // might always be using the same version in test, but could change in the future
 func getExpectedTestSIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
-	var images []imagefamily.DefaultImageOutput
+	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
 		images = imagefamily.Ubuntu2204{}.DefaultImages()
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
@@ -106,8 +107,9 @@ var _ = Describe("NodeImageProvider tests", func() {
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
+		nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 		kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
-		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI)
+		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, nodeBootstrappingAPI)
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
 		nodeClass = test.AKSNodeClass()

@@ -23,6 +23,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
 	"github.com/imdario/mergo"
@@ -144,7 +145,7 @@ func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion 
 }
 
 func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
-	var images []imagefamily.DefaultImageOutput
+	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
 		images = imagefamily.Ubuntu2204{}.DefaultImages()
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {

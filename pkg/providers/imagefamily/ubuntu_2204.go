@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
+	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -43,9 +44,9 @@ func (u Ubuntu2204) Name() string {
 	return v1beta1.Ubuntu2204ImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages() []DefaultImageOutput {
+func (u Ubuntu2204) DefaultImages() []types.DefaultImageOutput {
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
-	return []DefaultImageOutput{
+	return []types.DefaultImageOutput{
 		{
 			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
 			GalleryResourceGroup: AKSUbuntuResourceGroup,
@@ -114,7 +115,7 @@ func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string) customscriptsbootstrap.Bootstrapper {
+func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string, nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,
@@ -131,5 +132,6 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.Kube
 		InstanceType:                   instanceType,
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
+		NodeBootstrappingProvider:      nodeBootstrappingClient,
 	}
 }

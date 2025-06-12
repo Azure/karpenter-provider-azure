@@ -26,7 +26,6 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -61,15 +60,10 @@ func createOfferingType(zone, capacityType string) struct{ zone, capacityType st
 	}
 }
 
-func createInstanceType(instanceName, skuFamily, skuVersion, skuCPU string, offerings ...struct{ zone, capacityType string }) *cloudprovider.InstanceType {
+func createInstanceType(instanceName string, offerings ...struct{ zone, capacityType string }) *cloudprovider.InstanceType {
 	it := &cloudprovider.InstanceType{
 		Name:      instanceName,
 		Offerings: []*cloudprovider.Offering{},
-		Requirements: scheduling.NewRequirements(
-			scheduling.NewRequirement(v1beta1.LabelSKUFamily, corev1.NodeSelectorOpIn, skuFamily),
-			scheduling.NewRequirement(v1beta1.LabelSKUVersion, corev1.NodeSelectorOpIn, skuVersion),
-			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, skuCPU),
-		),
 	}
 
 	for _, o := range offerings {
@@ -86,30 +80,26 @@ func createInstanceType(instanceName, skuFamily, skuVersion, skuCPU string, offe
 
 // Helper to create a default instance type for testing, for errors where we don't block specific families of VM SKUs
 func defaultCreateInstanceType(offerings ...struct{ zone, capacityType string }) *cloudprovider.InstanceType {
-	return createInstanceType(responseErrorTestInstanceName, "D", "3", "2", offerings...)
+	return createInstanceType(responseErrorTestInstanceName, offerings...)
 }
 
 type offeringToCheck struct {
-	instanceTypeName   string
-	versionedSKUFamily string
-	zone               string
-	capacityType       string
-	cpuCoreCount       int64
+	instanceTypeName string
+	zone             string
+	capacityType     string
 }
 
-func offeringInformation(zone, capacityType, instanceTypeName, versionedSKUFamily string, cpuCoreCount int64) offeringToCheck {
+func offeringInformation(zone, capacityType, instanceTypeName string) offeringToCheck {
 	return offeringToCheck{
-		instanceTypeName:   instanceTypeName,
-		zone:               zone,
-		capacityType:       capacityType,
-		versionedSKUFamily: versionedSKUFamily,
-		cpuCoreCount:       cpuCoreCount,
+		instanceTypeName: instanceTypeName,
+		zone:             zone,
+		capacityType:     capacityType,
 	}
 }
 
 // Helper to create default offering information for testing, for errors where we don't block specific families of VM SKUs
 func defaultTestOfferingInfo(zone, capacityType string) offeringToCheck {
-	return offeringInformation(zone, capacityType, responseErrorTestInstanceName, "D3", 2)
+	return offeringInformation(zone, capacityType, responseErrorTestInstanceName)
 }
 
 func createResponseError(errorCode, errorMessage string) error {
@@ -219,21 +209,16 @@ func TestHandleResponseErrors(t *testing.T) {
 			capacityType: karpv1.CapacityTypeOnDemand,
 			responseErr:  createResponseError(sdkerrors.ZoneAllocationFailed, ""),
 			expectedErr:  fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", testZone2),
-			// For zonal allocation, we will block all VM SKUs that have same or higher number of vCPUs as the one that failed to allocate
+			// For zonal allocation failure, we block specific instance type for both capacity types in the zone that failed to allocate
 			expectedUnavailableOfferingsInformation: []offeringToCheck{
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
-				// an example of a VM SKU from the same family, that has same or higher number of vCPUs as the one that failed to allocate
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName, "D3", 4),
-				offeringInformation(testZone2, karpv1.CapacityTypeSpot, responseErrorTestInstanceName, "D3", 4),
 			},
 			expectedAvailableOfferingsInformation: []offeringToCheck{
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
-				// an example of a VM SKU from the same family, that has same or higher number of vCPUs as the one that failed to allocate, but in a different zone than the one that failed
-				offeringInformation(testZone3, karpv1.CapacityTypeSpot, responseErrorTestInstanceName, "D3", 4),
-				offeringInformation(testZone3, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName, "D3", 4),
-				// an example of a VM SKU from the same family but different version(!), that has same or higher number of vCPUs as the one that failed to allocate - should still be available in the same zone
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4", "D4", 2),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				// an example of a VM SKU from the same family but different version(!)
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4"),
 			},
 		},
 		{
