@@ -22,7 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 )
 
 // TODO: no ability to simulate errors on the Pager.
@@ -31,7 +31,7 @@ type CommunityGalleryImageVersionsAPI struct {
 }
 
 // assert that the fake implements the interface
-var _ imagefamily.CommunityGalleryImageVersionsAPI = &CommunityGalleryImageVersionsAPI{}
+var _ imagefamilytypes.CommunityGalleryImageVersionsAPI = &CommunityGalleryImageVersionsAPI{}
 
 // NewListPager returns a new pager to return the next page of CommunityGalleryImageVersionsClientListResponse
 func (c *CommunityGalleryImageVersionsAPI) NewListPager(_ string, _ string, _ string, _ *armcompute.CommunityGalleryImageVersionsClientListOptions) *runtime.Pager[armcompute.CommunityGalleryImageVersionsClientListResponse] {

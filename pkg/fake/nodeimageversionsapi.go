@@ -20,18 +20,19 @@ import (
 	"context"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 )
 
 // TODO: no ability to simulate errors in the List call.
 type NodeImageVersionsAPI struct {
 }
 
-var _ imagefamily.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
+var _ types.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
 
 // Note: use "make az-codegen-nodeimageversions" to generate data for this file
 // (will require update of some tests that use this data)
 var (
-	NodeImageVersions = []imagefamily.NodeImageVersion{
+	NodeImageVersions = []types.NodeImageVersion{
 		{
 			FullName: "AKSAzureLinux-V2fips-202505.27.0",
 			OS:       "AKSAzureLinux",
@@ -419,8 +420,8 @@ var (
 	}
 )
 
-func (n NodeImageVersionsAPI) List(_ context.Context, _, _ string) (imagefamily.NodeImageVersionsResponse, error) {
-	return imagefamily.NodeImageVersionsResponse{
+func (n NodeImageVersionsAPI) List(_ context.Context, _, _ string) (types.NodeImageVersionsResponse, error) {
+	return types.NodeImageVersionsResponse{
 		Values: imagefamily.FilteredNodeImages(NodeImageVersions),
 	}, nil
 }
