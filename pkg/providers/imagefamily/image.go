@@ -48,7 +48,6 @@ type Provider struct {
 	imageVersionsClient       types.CommunityGalleryImageVersionsAPI
 	subscription              string
 	nodeImageVersionsProvider types.NodeImageVersionsAPI
-	nodeBootstrappingProvider types.NodeBootstrappingAPI
 }
 
 const (
@@ -59,7 +58,7 @@ const (
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
-func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeBootstrappingClient types.NodeBootstrappingAPI) *Provider {
+func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCache *cache.Cache, versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI) *Provider {
 	return &Provider{
 		kubernetesVersionCache:    kubernetesVersionCache,
 		imageCache:                cache.New(imageExpirationInterval, imageCacheCleaningInterval),
@@ -70,7 +69,6 @@ func NewProvider(kubernetesInterface kubernetes.Interface, kubernetesVersionCach
 		kubernetesInterface:       kubernetesInterface,
 		subscription:              subscription,
 		nodeImageVersionsProvider: nodeImageVersionsClient,
-		nodeBootstrappingProvider: nodeBootstrappingClient,
 	}
 }
 
