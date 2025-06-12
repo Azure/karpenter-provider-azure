@@ -19,6 +19,7 @@ package fake
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/samber/lo"
 
@@ -37,7 +38,7 @@ type VirtualMachineExtensionCreateOrUpdateInput struct {
 
 type VirtualMachineExtensionsBehavior struct {
 	VirtualMachineExtensionsCreateOrUpdateBehavior MockedLRO[VirtualMachineExtensionCreateOrUpdateInput, armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse]
-	// not keeping track of extensions
+	Extensions                                     sync.Map
 }
 
 // assert that ComputeAPI implements ARMComputeAPI
@@ -51,6 +52,10 @@ type VirtualMachineExtensionsAPI struct {
 // Reset must be called between tests otherwise tests will pollute each other.
 func (c *VirtualMachineExtensionsAPI) Reset() {
 	c.VirtualMachineExtensionsCreateOrUpdateBehavior.Reset()
+	c.Extensions.Range(func(k, v any) bool {
+		c.Extensions.Delete(k)
+		return true
+	})
 }
 
 func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(_ context.Context, resourceGroupName, vmName, extensionName string, extension armcompute.VirtualMachineExtension, options *armcompute.VirtualMachineExtensionsClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse], error) {
@@ -65,6 +70,7 @@ func (c *VirtualMachineExtensionsAPI) BeginCreateOrUpdate(_ context.Context, res
 	return c.VirtualMachineExtensionsCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineExtensionCreateOrUpdateInput) (*armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse, error) {
 		result := input.VirtualMachineExtension
 		result.ID = lo.ToPtr(mkVMExtensionID(input.ResourceGroupName, input.VirtualMachineName, input.VirtualMachineExtensionName))
+		c.Extensions.Store(input.VirtualMachineExtensionName, result) // only store latest, but could be improved
 		return &armcompute.VirtualMachineExtensionsClientCreateOrUpdateResponse{
 			VirtualMachineExtension: result,
 		}, nil

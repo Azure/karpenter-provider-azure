@@ -22,7 +22,9 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -58,6 +60,32 @@ func ExpectDecodedCustomData(env *test.Environment) string {
 	decodedString := string(decodedBytes[:])
 
 	return decodedString
+}
+
+func ExpectCSEProvisioned(env *test.Environment) armcompute.VirtualMachineExtension {
+	GinkgoHelper()
+	var cse armcompute.VirtualMachineExtension
+
+	// CSE provisioning is asynchronous, starting after VM creation LRO completes
+	Eventually(func() bool {
+		GinkgoHelper()
+		cseRaw, ok := env.VirtualMachineExtensionsAPI.Extensions.Load("cse-agent-karpenter")
+		if ok {
+			cse = cseRaw.(armcompute.VirtualMachineExtension)
+			return true
+		}
+		return false
+	}).Should((BeTrue()), "Expected CSE extension to be created")
+
+	return cse
+}
+
+func ExpectCSENotProvisioned(env *test.Environment) {
+	GinkgoHelper()
+
+	time.Sleep(1 * time.Second)
+	_, ok := env.VirtualMachineExtensionsAPI.Extensions.Load("cse-agent-karpenter")
+	Expect(ok).To(BeFalse(), "Expected CSE extension should not be created, but it was found")
 }
 
 // ExpectCleanUp handled the cleanup of all Objects we need within testing that core does not

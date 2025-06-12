@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
+	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	template "github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -53,7 +54,7 @@ var _ Resolver = &defaultResolver{}
 
 // defaultResolver is able to fill-in dynamic launch template parameters
 type defaultResolver struct {
-	imageProvider *Provider
+	nodeBootstrappingProvider types.NodeBootstrappingAPI
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -73,18 +74,19 @@ type ImageFamily interface {
 		instanceType *cloudprovider.InstanceType,
 		imageDistro string,
 		storageProfile string,
+		nodeBootstrappingClient types.NodeBootstrappingAPI,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
 	// Our Release pipeline ensures all images are released together within 24 hours of each other for community image gallery, so selecting based on image feature priorities, then by date, and not vice-versa is acceptable.
-	DefaultImages() []DefaultImageOutput
+	DefaultImages() []types.DefaultImageOutput
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
-func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolver {
+func NewDefaultResolver(_ client.Client, nodeBootstrappingClient types.NodeBootstrappingAPI) *defaultResolver {
 	return &defaultResolver{
-		imageProvider: imageProvider,
+		nodeBootstrappingProvider: nodeBootstrappingClient,
 	}
 }
 
@@ -157,6 +159,7 @@ func (r *defaultResolver) Resolve(
 			instanceType,
 			imageDistro,
 			storageProfile,
+			r.nodeBootstrappingProvider,
 		),
 		ImageID:        imageID,
 		StorageProfile: storageProfile,
@@ -167,7 +170,7 @@ func (r *defaultResolver) Resolve(
 }
 
 func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
-	var imageInfo DefaultImageOutput
+	var imageInfo types.DefaultImageOutput
 	imageInfo.PopulateImageTraitsFromID(imageID)
 	for _, defaultImage := range imageFamily.DefaultImages() {
 		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
@@ -193,7 +196,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string, kubernetesVersion string) []DefaultImageOutput {
+func getSupportedImages(familyName *string, kubernetesVersion string) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
 	imageFamily := getImageFamily(familyName, kubernetesVersion, nil)
 	return imageFamily.DefaultImages()

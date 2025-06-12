@@ -66,6 +66,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -155,6 +156,64 @@ var _ = Describe("InstanceType Provider", func() {
 
 	AfterEach(func() {
 		ExpectCleanedUp(ctx, env.Client)
+	})
+	Context("Bootstrapping client", func() {
+		// Suggestion: ideally, we want to reuse all tests with just ProvisionMode changed to BootstrappingClient. It needs refactor to allow efficient reuse.
+		// However, not all tests are applicable. E.g., custom data tests are not useful as it is faked, unlike Scriptless.
+		BeforeEach(func() {
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
+			}))
+			azureEnv = test.NewEnvironment(ctx, env)
+			fakeClock = &clock.FakeClock{}
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
+		})
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, test.Options())
+			azureEnv = test.NewEnvironment(ctx, env)
+			fakeClock = &clock.FakeClock{}
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
+		})
+		It("should provision the node and CSE", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectCSEProvisioned(azureEnv)
+
+			ExpectScheduled(ctx, env.Client, pod)
+		})
+		It("should not reattempt creation of a vm thats been created before, and also not CSE", func() {
+			// This test is more like a sanity check of the current intended behavior. The design of the behavior can be changed if intended.
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
+				},
+				Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
+			})
+			vmName := instance.GenerateResourceName(nodeClaim.Name)
+			vm := &armcompute.VirtualMachine{
+				Name:     lo.ToPtr(vmName),
+				ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+				Location: lo.ToPtr(fake.Region),
+				Zones:    []*string{lo.ToPtr("fantasy-zone")},
+				Properties: &armcompute.VirtualMachineProperties{
+					TimeCreated: lo.ToPtr(time.Now()),
+					HardwareProfile: &armcompute.HardwareProfile{
+						VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
+					},
+				},
+			}
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			_, err := cloudProvider.Create(ctx, nodeClaim) // Async routine can still be ran in the background after this point
+			Expect(err).ToNot(HaveOccurred())
+
+			ExpectCSENotProvisioned(azureEnv)
+		})
 	})
 	Context("Subnet", func() {
 		It("should use the VNET_SUBNET_ID", func() {

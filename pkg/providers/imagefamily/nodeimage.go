@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
@@ -80,7 +81,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 	return nodeImages, nil
 }
 
-func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOutput) ([]NodeImage, error) {
+func (p *Provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
 	retrievedLatestImages, err := p.nodeImageVersions.List(ctx, p.location, p.subscription)
 	if err != nil {
@@ -88,7 +89,7 @@ func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOu
 	}
 
 	for _, supportedImage := range supportedImages {
-		var nextImage *NodeImageVersion
+		var nextImage *types.NodeImageVersion
 		for _, retrievedLatestImage := range retrievedLatestImages.Values {
 			if supportedImage.ImageDefinition == retrievedLatestImage.SKU {
 				nextImage = &retrievedLatestImage
@@ -109,7 +110,7 @@ func (p *Provider) listSIG(ctx context.Context, supportedImages []DefaultImageOu
 	return nodeImages, nil
 }
 
-func (p *Provider) listCIG(_ context.Context, supportedImages []DefaultImageOutput) ([]NodeImage, error) {
+func (p *Provider) listCIG(_ context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
 	for _, supportedImage := range supportedImages {
 		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
@@ -125,7 +126,7 @@ func (p *Provider) listCIG(_ context.Context, supportedImages []DefaultImageOutp
 	return nodeImages, nil
 }
 
-func (p *Provider) cacheKey(supportedImages []DefaultImageOutput, k8sVersion string) (string, error) {
+func (p *Provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string) (string, error) {
 	// Note: the kubernetes version is part of the cache key here, because we bump images on kubernetes upgrade meaning
 	// we want to ensure if there is a kubernetes change we'll get fresh images if there are any.
 	hash, err := hashstructure.Hash([]interface{}{

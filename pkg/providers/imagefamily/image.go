@@ -19,6 +19,7 @@ package imagefamily
 import (
 	"time"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/patrickmn/go-cache"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 )
@@ -35,8 +36,8 @@ type Provider struct {
 	subscription string
 	location     string
 
-	imageVersionsClient CommunityGalleryImageVersionsAPI
-	nodeImageVersions   NodeImageVersionsAPI
+	imageVersionsClient types.CommunityGalleryImageVersionsAPI
+	nodeImageVersions   types.NodeImageVersionsAPI
 
 	nodeImagesCache *cache.Cache
 	cm              *pretty.ChangeMonitor
@@ -50,7 +51,7 @@ const (
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
-func NewProvider(versionsClient CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient NodeImageVersionsAPI) *Provider {
+func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI) *Provider {
 	return &Provider{
 		subscription:        subscription,
 		location:            location,
