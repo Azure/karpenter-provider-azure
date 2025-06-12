@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package imagefamily
+package types
 
 import (
 	"context"
@@ -22,18 +22,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
-)
-
-const (
-	AKSUbuntuPublicGalleryURL     = "AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2"
-	AKSAzureLinuxPublicGalleryURL = "AKSAzureLinux-f7c7cda5-1c9a-4bdc-a222-9614c968580b"
-
-	AKSUbuntuResourceGroup     = "AKS-Ubuntu"
-	AKSAzureLinuxResourceGroup = "AKS-AzureLinux"
-
-	AKSUbuntuGalleryName     = "AKSUbuntu"
-	AKSAzureLinuxGalleryName = "AKSAzureLinux"
 )
 
 // DefaultImageOutput is a stub describing our desired image with an image's name and requirements to run that image
@@ -81,4 +71,18 @@ type NodeImageVersionsResponse struct {
 
 type NodeImageVersionsAPI interface {
 	List(ctx context.Context, location, subscription string) (NodeImageVersionsResponse, error)
+}
+
+// NodeBootstrappingAPI defines the interface for retrieving node bootstrapping data
+type NodeBootstrappingAPI interface {
+	Get(ctx context.Context, parameters *models.ProvisionValues) (NodeBootstrapping, error)
+}
+
+type NodeBootstrapping struct {
+	// CustomDataEncodedDehydratable is the base64 encoded custom data, which might contains template strings for TLS bootstrap token in the format of `{{.TokenID}}.{{.TokenSecret}}`
+	// It is to be used in VM creation
+	CustomDataEncodedDehydratable string
+	// CSEDehydratable is CSE script, which might contains template strings for TLS bootstrap token in the format of `{{.TokenID}}.{{.TokenSecret}}`
+	// It is to be used in VM CSE creation
+	CSEDehydratable string
 }
