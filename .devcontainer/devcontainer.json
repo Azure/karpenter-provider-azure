@@ -74,6 +74,6 @@
 		"ghcr.io/devcontainers/features/azure-cli:1": {},
 		"ghcr.io/devcontainers-extra/features/pre-commit:2": {},
 		"ghcr.io/froazin/devcontainer-features/shellcheck:0": {},
-		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" }
+		"ghcr.io/rio/features/skaffold:2": { "version": "v2.16.0" }
 	}
 }
