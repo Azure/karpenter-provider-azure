@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	imageExpirationInterval    = time.Hour * 24 * 3
-	imageCacheCleaningInterval = time.Hour * 1
+	ImageExpirationInterval    = time.Hour * 24 * 3
+	ImageCacheCleaningInterval = time.Hour * 1
 
 	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
 	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
@@ -61,13 +61,13 @@ type provider struct {
 	cm              *pretty.ChangeMonitor
 }
 
-func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI) *provider {
+func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI, nodeImagesCache *cache.Cache) *provider {
 	return &provider{
 		subscription:        subscription,
 		location:            location,
 		imageVersionsClient: versionsClient,
 		nodeImageVersions:   nodeImageVersionsClient,
-		nodeImagesCache:     cache.New(imageExpirationInterval, imageCacheCleaningInterval),
+		nodeImagesCache:     nodeImagesCache,
 		cm:                  pretty.NewChangeMonitor(),
 	}
 }
@@ -198,8 +198,4 @@ func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 
 func buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
 	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
-}
-
-func (p *provider) Reset() {
-	p.nodeImagesCache.Flush()
 }

@@ -122,6 +122,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		azConfig.SubscriptionID,
 		azClient.NodeImageVersionsClient,
+		cache.New(imagefamily.ImageExpirationInterval,
+			imagefamily.ImageCacheCleaningInterval),
 	)
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),

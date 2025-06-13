@@ -67,6 +67,7 @@ type Environment struct {
 
 	// Cache
 	KubernetesVersionCache    *cache.Cache
+	NodeImagesCache           *cache.Cache
 	InstanceTypeCache         *cache.Cache
 	LoadBalancerCache         *cache.Cache
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
@@ -76,7 +77,7 @@ type Environment struct {
 	InstanceProvider             instance.Provider
 	PricingProvider              *pricing.Provider
 	KubernetesVersionProvider    kubernetesversion.KubernetesVersionProvider
-	ImageProvider                TestNodeImageProvider
+	ImageProvider                imagefamily.NodeImageProvider
 	ImageResolver                imagefamily.Resolver
 	LaunchTemplateProvider       *launchtemplate.Provider
 	LoadBalancerProvider         *loadbalancer.Provider
@@ -114,6 +115,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
 	kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
+	nodeImagesCache := cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval)
 	instanceTypeCache := cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval)
 	loadBalancerCache := cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval)
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
@@ -121,7 +123,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
-	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI)
+	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, nodeBootstrappingAPI)
 	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
@@ -185,6 +187,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		PricingAPI:                  pricingAPI,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
+		NodeImagesCache:           nodeImagesCache,
 		InstanceTypeCache:         instanceTypeCache,
 		UnavailableOfferingsCache: unavailableOfferingsCache,
 		LoadBalancerCache:         loadBalancerCache,
@@ -215,10 +218,10 @@ func (env *Environment) Reset() {
 	env.MockSkuClientSingleton.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
-	env.ImageProvider.Reset()
 	env.MockSkuClientSingleton.SKUClient.Reset()
 
 	env.KubernetesVersionCache.Flush()
+	env.NodeImagesCache.Flush()
 	env.InstanceTypeCache.Flush()
 	env.UnavailableOfferingsCache.Flush()
 	env.LoadBalancerCache.Flush()
