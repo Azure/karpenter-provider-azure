@@ -75,6 +75,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/skewer"
 )
 
 var ctx context.Context
@@ -87,6 +88,8 @@ var cluster, clusterNonZonal *state.Cluster
 var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
 
 var fakeZone1 = utils.MakeZone(fake.Region, "1")
+
+var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("D_v3")}
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -370,7 +373,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// ensure that initial zone was made unavailable
 			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
-			ExpectUnavailable(azureEnv, "Standard_D2_v3", zone, karpv1.CapacityTypeSpot)
+			ExpectUnavailable(azureEnv, defaultTestSKU, zone, karpv1.CapacityTypeSpot)
 
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -440,7 +443,7 @@ var _ = Describe("InstanceType Provider", func() {
 			initialVMSize := *vm.Properties.HardwareProfile.VMSize
 			zone, err := utils.GetZone(&vm)
 			Expect(err).ToNot(HaveOccurred())
-			ExpectUnavailable(azureEnv, string(initialVMSize), zone, karpv1.CapacityTypeSpot)
+			ExpectUnavailable(azureEnv, &skewer.SKU{Name: lo.ToPtr(string(initialVMSize))}, zone, karpv1.CapacityTypeSpot)
 
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -846,6 +849,7 @@ var _ = Describe("InstanceType Provider", func() {
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
 				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
 			)
+			skuToCheck := &skewer.SKU{Name: lo.ToPtr("Standard_D2_v2")}
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
@@ -863,8 +867,8 @@ var _ = Describe("InstanceType Provider", func() {
 			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
 			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeSpot)).To(BeTrue())
-			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
+			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
 
 			By("successfully scheduling in a different zone on retry")
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -983,14 +987,14 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 
 		Context("SkuNotAvailable", func() {
-			AssertUnavailable := func(sku string, capacityType string) {
+			AssertUnavailable := func(sku *skewer.SKU, capacityType string) {
 				// fake a SKU not available error
 				azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
 					&azcore.ResponseError{ErrorCode: sdkerrors.SKUNotAvailableErrorCode},
 				)
 				coretest.ReplaceRequirements(nodePool,
 					karpv1.NodeSelectorRequirementWithMinValues{
-						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku}}},
+						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}}},
 					karpv1.NodeSelectorRequirementWithMinValues{
 						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{capacityType}}},
 				)
@@ -1004,11 +1008,11 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 
 			It("should mark SKU as unavailable in all zones for Spot", func() {
-				AssertUnavailable("Standard_D2_v2", karpv1.CapacityTypeSpot)
+				AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeSpot)
 			})
 
 			It("should mark SKU as unavailable in all zones for OnDemand", func() {
-				AssertUnavailable("Standard_D2_v2", karpv1.CapacityTypeOnDemand)
+				AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeOnDemand)
 			})
 		})
 	})

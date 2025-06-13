@@ -27,6 +27,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/skewer"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -84,16 +85,18 @@ func defaultCreateInstanceType(offerings ...struct{ zone, capacityType string })
 }
 
 type offeringToCheck struct {
-	instanceTypeName string
-	zone             string
-	capacityType     string
+	skuToCheck   *skewer.SKU
+	zone         string
+	capacityType string
 }
 
 func offeringInformation(zone, capacityType, instanceTypeName string) offeringToCheck {
 	return offeringToCheck{
-		instanceTypeName: instanceTypeName,
-		zone:             zone,
-		capacityType:     capacityType,
+		skuToCheck: &skewer.SKU{
+			Name: &instanceTypeName,
+		},
+		zone:         zone,
+		capacityType: capacityType,
 	}
 }
 
@@ -300,13 +303,13 @@ func TestHandleResponseErrors(t *testing.T) {
 			err := testProvider.handleResponseErrors(context.Background(), tc.instanceType, tc.zone, tc.capacityType, tc.responseErr)
 			assert.Equal(t, tc.expectedErr, err)
 			for _, info := range tc.expectedUnavailableOfferingsInformation {
-				if !testProvider.unavailableOfferings.IsUnavailable(info.instanceTypeName, info.zone, info.capacityType) {
-					t.Errorf("Expected offering %s in zone %s with capacity type %s to be marked as unavailable", info.instanceTypeName, info.zone, info.capacityType)
+				if !testProvider.unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType) {
+					t.Errorf("Expected offering %s in zone %s with capacity type %s to be marked as unavailable", info.skuToCheck.GetName(), info.zone, info.capacityType)
 				}
 			}
 			for _, info := range tc.expectedAvailableOfferingsInformation {
-				if testProvider.unavailableOfferings.IsUnavailable(info.instanceTypeName, info.zone, info.capacityType) {
-					t.Errorf("Expected offering %s in zone %s with capacity type %s to not be marked as unavailable", info.instanceTypeName, info.zone, info.capacityType)
+				if testProvider.unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType) {
+					t.Errorf("Expected offering %s in zone %s with capacity type %s to not be marked as unavailable", info.skuToCheck.GetName(), info.zone, info.capacityType)
 				}
 			}
 		})

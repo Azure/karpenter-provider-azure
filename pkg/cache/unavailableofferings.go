@@ -84,7 +84,7 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 	if err != nil {
 		skuVCPUCount = 0 // default to 0 if we can't determine VCPU count
 	}
-	if u.isFamilyUnavailable(sku.GetFamilyName(), capacityType, zone, skuVCPUCount) {
+	if u.isFamilyUnavailable(sku.GetFamilyName(), zone, capacityType, skuVCPUCount) {
 		return true
 	}
 
@@ -93,9 +93,9 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 	return found
 }
 
-func (u *UnavailableOfferings) isFamilyUnavailable(skuFamilyName, capacityType, zone string, cpuCount int64) bool {
+func (u *UnavailableOfferings) isFamilyUnavailable(skuFamilyName, zone, capacityType string, cpuCount int64) bool {
 	// Check if VM family is blocked in the specific zone
-	if val, found := u.vmFamilyCache.Get(vmFamilyKey(skuFamilyName, capacityType, zone)); found {
+	if val, found := u.vmFamilyCache.Get(vmFamilyKey(skuFamilyName, zone, capacityType)); found {
 		if blockedCPUCount, ok := val.(int64); ok {
 			if blockedCPUCount == wholeVMFamilyBlockedSentinel {
 				// Entire VM family is blocked in this zone
@@ -120,7 +120,7 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context,
 				return
 			}
 			// If new limit would be less restrictive, keep the existing one
-			// TODO - should we adjust TTL here? 
+			// TODO - should we adjust TTL here for the existing entry in cache?
 			if cpuCount != wholeVMFamilyBlockedSentinel && currentBlockedCPUCount <= cpuCount {
 				return
 			}
