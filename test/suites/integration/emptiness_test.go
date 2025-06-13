@@ -62,7 +62,9 @@ var _ = Describe("Emptiness", func() {
 
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+			// we want to make sure the reference we get for the nodeclaim is a registered nodeclaim
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
 
@@ -86,7 +88,9 @@ var _ = Describe("Emptiness", func() {
 
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+			// we want to make sure the reference we get for the nodeclaim is a registered nodeclaim
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
 
@@ -105,7 +109,10 @@ var _ = Describe("Emptiness", func() {
 
 		By("kicking off provisioning for a deployment")
 		env.ExpectCreated(nodeClass, nodePool, deployment)
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+
+		// we want to make sure the reference we get for the nodeclaim is a registered nodeclaim
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), numPods)
 
