@@ -4,7 +4,7 @@ ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
 else
-  NAME_SUFFIX ?= $(shell git config user.email | cut -d'@' -f1)
+  NAME_SUFFIX ?= $(shell git config user.email | cut -d'@' -f1 | tr -d '+')
   AZURE_RESOURCE_GROUP ?= $(COMMON_NAME)$(NAME_SUFFIX)
   AZURE_ACR_NAME ?= $(COMMON_NAME)$(NAME_SUFFIX)
 endif
