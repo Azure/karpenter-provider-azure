@@ -214,10 +214,10 @@ spec:
                 minimum: 0
                 type: integer
               osDiskSizeGB:
-                default: 75
+                default: 50
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
-                minimum: 75
+                minimum: 50
                 type: integer
               tags:
                 additionalProperties:
