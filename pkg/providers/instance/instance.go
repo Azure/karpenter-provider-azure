@@ -471,7 +471,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 
 // setVMPropertiesOSDiskType enables ephemeral os disk for instance types that support it
 func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, storageProfile string) {
-	if storageProfile == "Ephemeral" {
+	if storageProfile == consts.StorageProfileEphemeral {
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
 			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
 			// placement (cache/resource) is left to CRP

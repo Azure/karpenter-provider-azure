@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -136,9 +137,9 @@ func (r *defaultResolver) Resolve(
 		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
 	}
 
-	storageProfile := "ManagedDisks"
+	storageProfile := consts.StorageProfileManagedDisks
 	if useEphemeralDisk(instanceType, nodeClass) {
-		storageProfile = "Ephemeral"
+		storageProfile = consts.StorageProfileEphemeral
 	}
 
 	template := &template.Parameters{
