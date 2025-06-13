@@ -131,12 +131,12 @@ func (p *DefaultProvider) List(
 	for _, sku := range skus {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing VM size %s", *sku.Size))
+			log.FromContext(ctx).WithValues("skuSize", *sku.Size).Error(err, "parsing VM size")
 			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing SKU architecture %s", *sku.Size))
+			log.FromContext(ctx).WithValues("skuSize", *sku.Size).Error(err, "parsing SKU architecture")
 			continue
 		}
 		instanceTypeZones := instanceTypeZones(sku, p.region)
@@ -269,11 +269,11 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Discovered %d SKUs", len(skus)))
+	log.FromContext(ctx).WithValues("skuCount", len(skus)).V(1).Info("discovered SKUs")
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing VM size %s", *skus[i].Size))
+			log.FromContext(ctx).WithValues("skuSize", *skus[i].Size).Error(err, "parsing VM size")
 			continue
 		}
 		useSIG := options.FromContext(ctx).UseSIG

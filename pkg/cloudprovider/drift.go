@@ -88,7 +88,11 @@ func (c *CloudProvider) areStaticFieldsDrifted(ctx context.Context, nodeClaim *k
 	}
 
 	if nodeClassHash != nodeClaimHash {
-		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as nodeClassHash (%s) != nodeClaimHash (%s)", NodeClassDrift, nodeClassHash, nodeClaimHash))
+		logger.WithValues(
+			"driftType", NodeClassDrift,
+			"nodeClassHash", nodeClassHash,
+			"nodeClaimHash", nodeClaimHash,
+		).V(1).Info("drift triggered as nodeClassHash != nodeClaimHash")
 		return NodeClassDrift, nil
 	}
 
@@ -104,7 +108,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		// Note: we don't consider this a hard failure for drift if the KubernetesVersion is invalid/not ready to use, so we ignore returning the error here.
 		// We simply ensure the stored version is valid and ready to use, if we are to calculate potential Drift based on it.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.Info(fmt.Sprintf("WARN: Kubernetes version readiness invalid when checking drift: %s", err))
+		logger.Info("kubernetes version readiness invalid when checking drift", "error", err)
 		return "", nil //nolint:nilerr
 	}
 
@@ -115,7 +119,11 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 
 	nodeK8sVersion := strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")
 	if nodeK8sVersion != k8sVersion {
-		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion))
+		logger.WithValues(
+			"driftType", K8sVersionDrift,
+			"expectedK8sVersion", k8sVersion,
+			"actualK8sVersion", nodeK8sVersion,
+		).V(1).Info("drift triggered due to k8s version mismatch")
 		return K8sVersionDrift, nil
 	}
 	return "", nil
@@ -170,7 +178,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		// Note: we don't consider this a hard failure for drift if the Images are not ready to use, so we ignore returning the error here.
 		// The stored Images must be ready to use if we are to calculate potential Drift based on them.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.Info(fmt.Sprintf("WARN: NodeImage readiness invalid when checking drift: %s", err))
+		logger.Info("WARN: NodeImage readiness invalid when checking drift", "error", err)
 		return "", nil //nolint:nilerr
 	}
 	if len(nodeImages) == 0 {
@@ -185,7 +193,10 @@ func (c *CloudProvider) isImageVersionDrifted(
 		}
 	}
 
-	logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as actual image id %s was not found in the set of currently available node images", ImageDrift, vmImageID))
+	logger.WithValues(
+		"driftType", ImageDrift,
+		"actualImageId", vmImageID,
+	).V(1).Info("drift triggered as actual image id was not found in the set of currently available node images")
 	return ImageDrift, nil
 }
 
@@ -233,12 +244,11 @@ func (c *CloudProvider) isKubeletIdentityDrifted(ctx context.Context, nodeClaim 
 	}
 
 	if kubeletIdentityClientID != opts.KubeletIdentityClientID {
-		logger.V(1).Info(
-			fmt.Sprintf("drift triggered for %s, with expected kubelet identity client id %s, and actual kubelet identity client id %s",
-				KubeletIdentityDrift,
-				opts.KubeletIdentityClientID,
-				kubeletIdentityClientID),
-		)
+		logger.WithValues(
+			"driftType", KubeletIdentityDrift,
+			"expectedKubeletIdentityClientId", opts.KubeletIdentityClientID,
+			"actualKubeletIdentityClientId", kubeletIdentityClientID,
+		).V(1).Info("drift triggered due to expected and actual kubelet identity client id mismatch")
 		return KubeletIdentityDrift, nil
 	}
 
