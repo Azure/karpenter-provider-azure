@@ -77,7 +77,7 @@ type Operator struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	KubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
-	ImageProvider             *imagefamily.Provider
+	ImageProvider             imagefamily.NodeImageProvider
 	ImageResolver             imagefamily.Resolver
 	LaunchTemplateProvider    *launchtemplate.Provider
 	PricingProvider           *pricing.Provider
