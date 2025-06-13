@@ -38,6 +38,7 @@ import (
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 type Resolver interface {
@@ -233,4 +234,21 @@ func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
 func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) bool {
 	// use ephemeral disk if it is large enough
 	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
+}
+
+// resolveNodeImage returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
+//
+// Preconditions:
+// - nodeImages is sorted by priority order
+func (r *defaultResolver) resolveNodeImage(nodeImages []v1beta1.NodeImage, instanceType *cloudprovider.InstanceType) (string, error) {
+	// nodeImages are sorted by priority order, so we can return the first one that matches
+	for _, availableImage := range nodeImages {
+		if err := instanceType.Requirements.Compatible(
+			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),
+			v1beta1.AllowUndefinedWellKnownAndRestrictedLabels,
+		); err == nil {
+			return availableImage.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
 }

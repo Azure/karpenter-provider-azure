@@ -20,11 +20,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/patrickmn/go-cache"
+	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
@@ -81,7 +83,7 @@ func (p *Provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 
 func (p *Provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
-	retrievedLatestImages, err := p.nodeImageVersionsProvider.List(ctx, p.location, p.subscription)
+	retrievedLatestImages, err := p.nodeImageVersions.List(ctx, p.location, p.subscription)
 	if err != nil {
 		return nil, err
 	}
@@ -135,4 +137,33 @@ func (p *Provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersi
 		return "", err
 	}
 	return fmt.Sprintf("%016x", hash), nil
+}
+
+func (p *Provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
+	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
+	if err != nil {
+		return "", err
+	}
+	return buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
+}
+
+func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
+	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
+	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
+	for pager.More() {
+		page, err := pager.NextPage(context.Background())
+		if err != nil {
+			return "", err
+		}
+		for _, imageVersion := range page.CommunityGalleryImageVersionList.Value {
+			if lo.IsEmpty(topImageVersionCandidate) || imageVersion.Properties.PublishedDate.After(*topImageVersionCandidate.Properties.PublishedDate) {
+				topImageVersionCandidate = *imageVersion
+			}
+		}
+	}
+	return lo.FromPtr(topImageVersionCandidate.Name), nil
+}
+
+func buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
+	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
 }
