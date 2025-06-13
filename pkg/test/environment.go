@@ -122,7 +122,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI)
-	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, nodeBootstrappingAPI)
+	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, nodeBootstrappingAPI, env.KubernetesInterface)
 	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
