@@ -41,7 +41,10 @@ import (
 // Alternatively, we could try to pair our cache implementation with what's in Azure clients as below. However, the cost makes it arguably not worth it, given the current circumstances.
 // https://github.com/Azure/azure-sdk-for-go/blob/f72e2ad4f23b02eba6387dc31580c0e66333f2ae/sdk/internal/temporal/resource.go#L78-L140
 type tokenProvider struct {
-	mu sync.Mutex // credential.GetToken(...) doesn't have locks, thus could have resulted in multiple token requests at the same time.
+	// credential.GetToken(...) doesn't have locks, thus could have resulted in multiple token requests at the same time.
+	// This could produce unnecessarily more traffic with the token provider service, and more tokens to be issued if there is no server-side caching.
+	// MSAL-side issue: https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/569
+	mu sync.Mutex
 }
 
 func (t *tokenProvider) getToken(ctx context.Context, credential azcore.TokenCredential) (azcore.AccessToken, error) {
@@ -60,7 +63,7 @@ type NodeBootstrappingClient struct {
 	resourceGroupName string
 	resourceName      string
 	credential        azcore.TokenCredential
-	tokenProvider     *tokenProvider // Cache for Azure AD tokens to improve performance
+	tokenProvider     *tokenProvider
 }
 
 // NewNodeBootstrappingClient creates a new NodeBootstrappingClient with token caching enabled.
