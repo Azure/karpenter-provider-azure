@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// The intention of this file is to hold interfaces used in testing, where test code needs access to the Reset() method,
+// while we don't want to expose Reset() in the production interface. Beyond that, the interfaces here should mirror their
+// production counterparts. This allows us to keep the structs private and encapulated.
 package test
 
 import (
@@ -23,7 +26,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 )
 
-type Test_NodeImageProvider interface {
+type TestNodeImageProvider interface {
 	List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]imagefamily.NodeImage, error)
 	Reset()
 }

@@ -76,7 +76,7 @@ type Environment struct {
 	InstanceProvider             instance.Provider
 	PricingProvider              *pricing.Provider
 	KubernetesVersionProvider    kubernetesversion.KubernetesVersionProvider
-	ImageProvider                Test_NodeImageProvider
+	ImageProvider                TestNodeImageProvider
 	ImageResolver                imagefamily.Resolver
 	LaunchTemplateProvider       *launchtemplate.Provider
 	LoadBalancerProvider         *loadbalancer.Provider
