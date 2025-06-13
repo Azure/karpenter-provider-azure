@@ -141,6 +141,15 @@ func PrettySlice[T any](s []T, maxItems int) string {
 	return sb.String()
 }
 
+func GetClusterDNSIP(dnsService *v1.Service, dnsIPFromEnvVar string) string {
+	if dnsService != nil && len(dnsService.Spec.ClusterIP) > 0 {
+		// TODO: use clusterIPs instead, it used for dualstack?
+		return dnsService.Spec.ClusterIP
+	}
+	// Use env var when dns service is not found, or doesn't have any clusterIP
+	return dnsIPFromEnvVar
+}
+
 // GetMaxPods resolves what we should set max pods to for a given nodeclass.
 // If not specified, defaults based on network-plugin. 30 for "azure", 110 for "kubenet",
 // or 250 for "none" and network plugin mode overlay.

@@ -22,6 +22,8 @@ import (
 	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -56,6 +58,7 @@ var _ Resolver = &defaultResolver{}
 // defaultResolver is able to fill-in dynamic launch template parameters
 type defaultResolver struct {
 	nodeBootstrappingProvider types.NodeBootstrappingAPI
+	kubernetesInterface       kubernetes.Interface
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -85,9 +88,10 @@ type ImageFamily interface {
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
-func NewDefaultResolver(_ client.Client, nodeBootstrappingClient types.NodeBootstrappingAPI) *defaultResolver {
+func NewDefaultResolver(_ client.Client, nodeBootstrappingClient types.NodeBootstrappingAPI, kubernetesInterface kubernetes.Interface) *defaultResolver {
 	return &defaultResolver{
 		nodeBootstrappingProvider: nodeBootstrappingClient,
+		kubernetesInterface:       kubernetesInterface,
 	}
 }
 
@@ -146,14 +150,14 @@ func (r *defaultResolver) Resolve(
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
-			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
+			r.prepareKubeletConfiguration(ctx, instanceType, nodeClass),
 			allTaints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
 		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
-			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
+			r.prepareKubeletConfiguration(ctx, instanceType, nodeClass),
 			generalTaints,
 			startupTaints,
 			staticParameters.Labels,
@@ -181,7 +185,7 @@ func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
 	return "", fmt.Errorf("no distro found for image id %s", imageID)
 }
 
-func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *bootstrap.KubeletConfiguration {
+func (r *defaultResolver) prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *bootstrap.KubeletConfiguration {
 	kubeletConfig := &bootstrap.KubeletConfiguration{}
 
 	if nodeClass.Spec.Kubelet != nil {
@@ -189,7 +193,11 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	}
 
 	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)
-	kubeletConfig.DNSServiceIP = options.FromContext(ctx).DNSServiceIP
+	dnsService, err := r.kubernetesInterface.CoreV1().Services("kube-system").Get(ctx, "kube-dns", metav1.GetOptions{})
+	if err != nil {
+		log.FromContext(ctx).Info(fmt.Sprintf("Failed to discover kube-dns in kube-system, error message: %s", err))
+	}
+	kubeletConfig.DNSServiceIP = utils.GetClusterDNSIP(dnsService, options.FromContext(ctx).DNSServiceIP)
 
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
