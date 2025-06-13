@@ -50,7 +50,8 @@ type NodeImageProvider interface {
 	List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error)
 }
 
-type provider struct {
+// Provider is left public for now, for usage in testing since it needs access to Reset method, while prod code should all use the NodeImageProvider interface for storing the type.
+type Provider struct {
 	subscription string
 	location     string
 
@@ -61,8 +62,8 @@ type provider struct {
 	cm              *pretty.ChangeMonitor
 }
 
-func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI) *provider {
-	return &provider{
+func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location, subscription string, nodeImageVersionsClient types.NodeImageVersionsAPI) *Provider {
+	return &Provider{
 		subscription:        subscription,
 		location:            location,
 		imageVersionsClient: versionsClient,
@@ -73,7 +74,7 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 }
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
-func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+func (p *Provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
 	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 	if err != nil {
 		return []NodeImage{}, err
@@ -113,7 +114,7 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 	return nodeImages, nil
 }
 
-func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
+func (p *Provider) listSIG(ctx context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
 	retrievedLatestImages, err := p.nodeImageVersions.List(ctx, p.location, p.subscription)
 	if err != nil {
@@ -142,7 +143,7 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 	return nodeImages, nil
 }
 
-func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
+func (p *Provider) listCIG(_ context.Context, supportedImages []types.DefaultImageOutput) ([]NodeImage, error) {
 	nodeImages := []NodeImage{}
 	for _, supportedImage := range supportedImages {
 		cigImageID, err := p.getCIGImageID(supportedImage.PublicGalleryURL, supportedImage.ImageDefinition)
@@ -158,7 +159,7 @@ func (p *provider) listCIG(_ context.Context, supportedImages []types.DefaultIma
 	return nodeImages, nil
 }
 
-func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string) (string, error) {
+func (p *Provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersion string) (string, error) {
 	// Note: the kubernetes version is part of the cache key here, because we bump images on kubernetes upgrade meaning
 	// we want to ensure if there is a kubernetes change we'll get fresh images if there are any.
 	hash, err := hashstructure.Hash([]interface{}{
@@ -171,7 +172,7 @@ func (p *provider) cacheKey(supportedImages []types.DefaultImageOutput, k8sVersi
 	return fmt.Sprintf("%016x", hash), nil
 }
 
-func (p *provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
+func (p *Provider) getCIGImageID(publicGalleryURL, communityImageName string) (string, error) {
 	imageVersion, err := p.latestNodeImageVersionCommunity(publicGalleryURL, communityImageName)
 	if err != nil {
 		return "", err
@@ -179,7 +180,7 @@ func (p *provider) getCIGImageID(publicGalleryURL, communityImageName string) (s
 	return buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
 }
 
-func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
+func (p *Provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
 	pager := p.imageVersionsClient.NewListPager(p.location, publicGalleryURL, communityImageName, nil)
 	topImageVersionCandidate := armcompute.CommunityGalleryImageVersion{}
 	for pager.More() {
@@ -200,6 +201,6 @@ func buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) 
 	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
 }
 
-func (p *provider) Reset() {
+func (p *Provider) Reset() {
 	p.nodeImagesCache.Flush()
 }
