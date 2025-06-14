@@ -23,17 +23,15 @@ import (
 
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
-	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
@@ -70,9 +68,8 @@ type AZClient struct {
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
 
-	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
-	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
-	NodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
+	NodeImageVersionsClient imagefamily.NodeImageVersionsAPI
+	ImageVersionsClient     imagefamily.CommunityGalleryImageVersionsAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
 	SKUClient                   skuclient.SkuClient
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
@@ -86,9 +83,8 @@ func NewAZClientFromAPI(
 	interfacesClient NetworkInterfacesAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
-	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
-	nodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI,
-	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
+	imageVersionsClient imagefamily.CommunityGalleryImageVersionsAPI,
+	nodeImageVersionsClient imagefamily.NodeImageVersionsAPI,
 	skuClient skuclient.SkuClient,
 ) *AZClient {
 	return &AZClient{
@@ -98,14 +94,13 @@ func NewAZClientFromAPI(
 		networkInterfacesClient:        interfacesClient,
 		ImageVersionsClient:            imageVersionsClient,
 		NodeImageVersionsClient:        nodeImageVersionsClient,
-		NodeBootstrappingClient:        nodeBootstrappingClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
 	}
 }
 
-func CreateAZClient(ctx context.Context, cfg *auth.Config, cred azcore.TokenCredential) (*AZClient, error) {
+func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	// Defaulting env to Azure Public Cloud.
 	env := azclient.PublicCloud
 	var err error
@@ -113,7 +108,7 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config, cred azcore.TokenCred
 		env = azclient.EnvironmentFromName(cfg.Cloud)
 	}
 
-	azClient, err := NewAZClient(ctx, cfg, env, cred)
+	azClient, err := NewAZClient(ctx, cfg, env)
 	if err != nil {
 		return nil, err
 	}
@@ -121,16 +116,17 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config, cred azcore.TokenCred
 	return azClient, nil
 }
 
-// nolint: gocyclo
-func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment, cred azcore.TokenCredential) (*AZClient, error) {
-	o := options.FromContext(ctx)
+func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment) (*AZClient, error) {
+	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, err
+	}
+	cred := auth.NewTokenWrapper(defaultAzureCred)
 	opts := armopts.DefaultArmOpts()
-
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created virtual machine extensions client %v using token credential", extensionsClient)
 
 	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
@@ -140,6 +136,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
+	o := options.FromContext(ctx)
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
 		client := &http.Client{Timeout: 10 * time.Second}
@@ -154,7 +151,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		return nil, err
 	}
 	klog.V(5).Infof("Created virtual machines client %v, using a token credential", virtualMachinesClient)
-
 	azureResourceGraphClient, err := armresourcegraph.NewClient(cred, opts)
 	if err != nil {
 		return nil, err
@@ -185,21 +181,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
 
-	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI = nil
-	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
-		nodeBootstrappingClient, err = imagefamily.NewNodeBootstrappingClient(
-			ctx,
-			cfg.SubscriptionID,
-			cfg.ResourceGroup,
-			o.ClusterName,
-			cred,
-			o.NodeBootstrappingServerURL)
-		if err != nil {
-			return nil, err
-		}
-		klog.V(5).Infof("Created bootstrapping client %v, using a token credential", nodeBootstrappingClient)
-	}
-
 	return NewAZClientFromAPI(virtualMachinesClient,
 		azureResourceGraphClient,
 		extensionsClient,
@@ -208,6 +189,5 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
-		nodeBootstrappingClient,
 		skuClient), nil
 }

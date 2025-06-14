@@ -27,7 +27,7 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -106,7 +106,6 @@ type DefaultProvider struct {
 	subscriptionID               string
 	unavailableOfferings         *cache.UnavailableOfferings
 	provisionMode                string
-	responseErrorHandlers        []responseErrorHandler
 
 	vmListQuery, nicListQuery string
 }
@@ -134,7 +133,6 @@ func NewDefaultProvider(
 		subscriptionID:               subscriptionID,
 		unavailableOfferings:         offeringsCache,
 		provisionMode:                provisionMode,
-		responseErrorHandlers:        defaultResponseErrorHandlers(),
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
@@ -456,7 +454,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Zones: utils.MakeVMZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
 	}
-	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate.StorageProfile)
+	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 
@@ -470,11 +468,15 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 }
 
 // setVMPropertiesOSDiskType enables ephemeral os disk for instance types that support it
-func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, storageProfile string) {
-	if storageProfile == consts.StorageProfileEphemeral {
+func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, launchTemplate *launchtemplate.Template) {
+	diskType, placement, sizeGB := launchTemplate.StorageProfileDiskType, launchTemplate.StorageProfilePlacement, launchTemplate.StorageProfileSizeGB
+
+	if diskType == "Ephemeral" {
+		vmProperties.StorageProfile.OSDisk.DiskSizeGB = lo.ToPtr(int32(sizeGB))
+
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
-			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
-			// placement (cache/resource) is left to CRP
+			Option:    lo.ToPtr(armcompute.DiffDiskOptionsLocal),
+			Placement: lo.ToPtr(placement),
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
 	}
@@ -677,15 +679,115 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}, nil
 }
 
-func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
-	for _, handler := range p.responseErrorHandlers {
-		if handler.matchError(responseError) {
-			return handler.handleResponseError(ctx, p, instanceType, zone, capacityType, responseError)
-		}
+// nolint:gocyclo
+func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+	if sdkerrors.LowPriorityQuotaHasBeenReached(err) {
+		// Mark in cache that spot quota has been reached for this subscription
+		p.unavailableOfferings.MarkSpotUnavailableWithTTL(ctx, SubscriptionQuotaReachedTTL)
+
+		log.FromContext(ctx).Error(err, "")
+		return fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
 	}
-	// responseError didn't match any of our handlers, so we log details about it and return it as is
-	log.FromContext(ctx).Error(responseError, "Unknown response error")
-	return responseError
+	if sdkerrors.SKUFamilyQuotaHasBeenReached(err) {
+		// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
+		// This will also update the TTL for an existing offering in the cache that is already unavailable
+
+		log.FromContext(ctx).Error(err, "")
+		for _, offering := range instanceType.Offerings {
+			if getOfferingCapacityType(offering) != capacityType {
+				continue
+			}
+			// If we have a quota limit of 0 vcpus, we mark the offerings unavailable for an hour.
+			// CPU limits of 0 are usually due to a subscription having no allocated quota for that instance type at all on the subscription.
+			if cpuLimitIsZero(err) {
+				p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReachedReason, instanceType.Name, getOfferingZone(offering), capacityType, SubscriptionQuotaReachedTTL)
+			} else {
+				p.unavailableOfferings.MarkUnavailable(ctx, SubscriptionQuotaReachedReason, instanceType.Name, getOfferingZone(offering), capacityType)
+			}
+		}
+		return fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
+	}
+	if sdkerrors.IsSKUNotAvailable(err) {
+		// https://aka.ms/azureskunotavailable: either not available for a location or zone, or out of capacity for Spot.
+		// We only expect to observe the Spot case, not location or zone restrictions, because:
+		// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
+		// - zonal restrictions are filtered out internally by sku.AvailabilityZones, and don't get offerings
+		skuNotAvailableTTL := SKUNotAvailableSpotTTL
+		err = fmt.Errorf("out of spot capacity for %s: %w", instanceType.Name, err)
+		if capacityType == karpv1.CapacityTypeOnDemand { // should not happen, defensive check
+			err = fmt.Errorf("unexpected SkuNotAvailable error for %s (on-demand): %w", instanceType.Name, err)
+			skuNotAvailableTTL = SKUNotAvailableOnDemandTTL // still mark all offerings as unavailable, but with a longer TTL
+		}
+		// mark the instance type as unavailable for all offerings/zones for the capacity type
+		for _, offering := range instanceType.Offerings {
+			if getOfferingCapacityType(offering) != capacityType {
+				continue
+			}
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SKUNotAvailableReason, instanceType.Name, getOfferingZone(offering), capacityType, skuNotAvailableTTL)
+		}
+
+		log.FromContext(ctx).Error(err, "")
+		return fmt.Errorf(
+			"the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable",
+			instanceType.Name,
+			zone,
+			capacityType)
+	}
+	if sdkerrors.ZonalAllocationFailureOccurred(err) {
+		log.FromContext(ctx).WithValues("zone", zone).Error(err, "")
+		p.unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
+		p.unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
+
+		return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
+	}
+	// AllocationFailure means that VM allocation to the dedicated host has failed. But it can also mean "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."
+	if sdkerrors.AllocationFailureOccurred(err) {
+		// instanceType.Offerings contains multiple entries for one zone, but we only care that zone appears at least once, this avoids extra calls to MarkUnavailable
+		zonesToBlock := make(map[string]struct{})
+		for _, offering := range instanceType.Offerings {
+			offeringZone := getOfferingZone(offering)
+			zonesToBlock[offeringZone] = struct{}{}
+		}
+		for zone := range zonesToBlock {
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, AllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, AllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
+		}
+
+		return fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", instanceType.Name)
+	}
+	// OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
+	if sdkerrors.OverconstrainedZonalAllocationFailureOccurred(err) {
+		log.FromContext(ctx).WithValues("zone", zone, "capacity-type", capacityType, "vm size", instanceType.Name).Error(err, "")
+		p.unavailableOfferings.MarkUnavailableWithTTL(ctx, OverconstrainedZonalAllocationFailureReason, instanceType.Name, zone, capacityType, AllocationFailureTTL)
+
+		return fmt.Errorf("unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)", zone, capacityType, instanceType.Name)
+	}
+	// OverconstrainedAllocationFailure means that all zones cannot accommodate the selected size and capacity combination.
+	if sdkerrors.OverconstrainedAllocationFailureOccurred(err) {
+		log.FromContext(ctx).WithValues("capacity-type", capacityType, "vm size", instanceType.Name).Error(err, "")
+		// mark the instance type as unavailable for all offerings/zones for the capacity type
+		for _, offering := range instanceType.Offerings {
+			if getOfferingCapacityType(offering) != capacityType {
+				continue
+			}
+			p.unavailableOfferings.MarkUnavailableWithTTL(ctx, SKUNotAvailableReason, instanceType.Name, getOfferingZone(offering), capacityType, AllocationFailureTTL)
+		}
+
+		return fmt.Errorf("unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)", capacityType, instanceType.Name)
+	}
+	if sdkerrors.RegionalQuotaHasBeenReached(err) {
+		log.FromContext(ctx).Error(err, "")
+		// InsufficientCapacityError is appropriate here because trying any other instance type will not help
+		return corecloudprovider.NewInsufficientCapacityError(
+			fmt.Errorf(
+				"regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests",
+				capacityType))
+	}
+	return err
+}
+
+func cpuLimitIsZero(err error) bool {
+	return strings.Contains(err.Error(), "Current Limit: 0")
 }
 
 func (p *DefaultProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
