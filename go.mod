@@ -49,6 +49,7 @@ require (
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e
 	sigs.k8s.io/cloud-provider-azure v1.32.4
+	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.5.20
 	sigs.k8s.io/controller-runtime v0.20.4
 	sigs.k8s.io/karpenter v1.4.0
 )
@@ -161,7 +162,6 @@ require (
 	k8s.io/component-helpers v0.32.3 // indirect
 	k8s.io/csi-translation-lib v0.32.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
-	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.5.20 // indirect
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.5.2 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
