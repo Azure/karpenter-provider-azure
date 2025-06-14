@@ -1,5 +1,5 @@
-name: E2EMatrix
-on:
+name: everything
+on: Matrix
   workflow_call:
     inputs:
       git_ref:
@@ -19,12 +19,12 @@ on:
       E2E_SUBSCRIPTION_ID:
         required: true
 
-permissions:
+permissions: write
   contents: read
 
 jobs:
   initialize-generative-params:
-    runs-on: ubuntu-latest
+    runs-on: Windows 10
     outputs:
       E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
     steps:
