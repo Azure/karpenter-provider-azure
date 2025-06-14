@@ -24,8 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/mitchellh/hashstructure/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -158,35 +157,4 @@ func GetMaxPods(nodeClass *v1beta1.AKSNodeClass, networkPlugin, networkPluginMod
 	default:
 		return consts.DefaultKubernetesMaxPods
 	}
-}
-
-var managedVNETPattern = regexp.MustCompile(`(?i)^aks-vnet-\d{8}$`)
-
-const managedSubnetName = "aks-subnet"
-
-// IsAKSManagedVNET determines if the vnet managed or not.
-// Note: You can "trick" this function if you really try by (for example) createding a VNET that looks like
-// an AKS managed VNET, with the same resource group as the MC RG, in a different subscription, or by creating
-// your own VNET in the MC RG whose name matches the AKS pattern but the VNET is actually yours rather than ours.
-func IsAKSManagedVNET(nodeResourceGroup string, subnetID string) (bool, error) {
-	// TODO: I kinda think we should be using arm.ParseResourceID rather than rolling our own
-	id, err := GetVnetSubnetIDComponents(subnetID)
-	if err != nil {
-		return false, err
-	}
-
-	return managedVNETPattern.MatchString(id.VNetName) &&
-		strings.EqualFold(nodeResourceGroup, id.ResourceGroupName) &&
-		strings.EqualFold(id.SubnetName, managedSubnetName), nil
-}
-
-// HasChanged returns if the given value has changed, given the existing and new instance
-//
-// This option is accessible in place of using a ChangeMonitor, when there's access to both
-// the existing and new data.
-func HasChanged(existing, new any, options *hashstructure.HashOptions) bool {
-	// In the case of errors, the zero value from hashing will be compared, similar to ChangeMonitor
-	existingHV, _ := hashstructure.Hash(existing, hashstructure.FormatV2, options)
-	newHV, _ := hashstructure.Hash(new, hashstructure.FormatV2, options)
-	return existingHV != newHV
 }
