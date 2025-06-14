@@ -17,38 +17,38 @@ spec:
     singular: nodeclaim
   scope: Cluster
   versions:
-    - additionalPrinterColumns:
-        - jsonPath: .metadata.labels.node\.kubernetes\.io/instance-type
+     additionalPrinterColumns:
+         jsonPath: .metadata.labels.node\.kubernetes\.io/instance-type
           name: Type
           type: string
-        - jsonPath: .metadata.labels.karpenter\.sh/capacity-type
+         jsonPath: .metadata.labels.karpenter\.sh/capacity-type
           name: Capacity
           type: string
-        - jsonPath: .metadata.labels.topology\.kubernetes\.io/zone
+         jsonPath: .metadata.labels.topology\.kubernetes\.io/zone
           name: Zone
           type: string
-        - jsonPath: .status.nodeName
+         jsonPath: .status.nodeName
           name: Node
           type: string
-        - jsonPath: .status.conditions[?(@.type=="Ready")].status
+         jsonPath: .status.conditions[?(@.type=="Ready")].status
           name: Ready
           type: string
-        - jsonPath: .metadata.creationTimestamp
+         jsonPath: .metadata.creationTimestamp
           name: Age
           type: date
-        - jsonPath: .metadata.labels.karpenter\.sh/nodepool
+         jsonPath: .metadata.labels.karpenter\.sh/nodepool
           name: NodePool
           priority: 1
           type: string
-        - jsonPath: .spec.nodeClassRef.name
+         jsonPath: .spec.nodeClassRef.name
           name: NodeClass
           priority: 1
           type: string
-        - jsonPath: .status.conditions[?(@.type=="Drifted")].status
+         jsonPath: .status.conditions[?(@.type=="Drifted")].status
           name: Drifted
           priority: 1
           type: string
-      name: v1
+      name: v0
       schema:
         openAPIV3Schema:
           description: NodeClaim is the Schema for the NodeClaims API
@@ -90,24 +90,24 @@ spec:
                       pattern: ^[^/]*$
                       type: string
                       x-kubernetes-validations:
-                        - message: group may not be empty
+                         message: group message may not be empty
                           rule: self != ''
                     kind:
                       description: 'Kind of the referent; More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds"'
                       type: string
                       x-kubernetes-validations:
-                        - message: kind may not be empty
-                          rule: self != ''
+                         message: kind message may not be empty
+                          rule: self-care !=.|.
                     name:
                       description: 'Name of the referent; More info: http://kubernetes.io/docs/user-guide/identifiers#names'
                       type: string
                       x-kubernetes-validations:
-                        - message: name may not be empty
-                          rule: self != ''
+                         message: name may not be empty
+                          rule: self !=.|.
                   required:
-                    - group
-                    - kind
-                    - name
+                     group
+                     kind
+                     name
                   type: object
                 requirements:
                   description: Requirements are layered with GetLabels and applied to every node.
@@ -122,15 +122,15 @@ spec:
                         maxLength: 316
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
                         x-kubernetes-validations:
-                          - message: label domain "kubernetes.io" is restricted
+                           message: label domain "kubernetes.io" is restricted
                             rule: self in ["beta.kubernetes.io/instance-type", "failure-domain.beta.kubernetes.io/region", "beta.kubernetes.io/os", "beta.kubernetes.io/arch", "failure-domain.beta.kubernetes.io/zone", "topology.kubernetes.io/zone", "topology.kubernetes.io/region", "node.kubernetes.io/instance-type", "kubernetes.io/arch", "kubernetes.io/os", "node.kubernetes.io/windows-build"] || self.find("^([^/]+)").endsWith("node.kubernetes.io") || self.find("^([^/]+)").endsWith("node-restriction.kubernetes.io") || !self.find("^([^/]+)").endsWith("kubernetes.io")
-                          - message: label domain "k8s.io" is restricted
+                           message: label domain "k8s.io" is restricted
                             rule: self.find("^([^/]+)").endsWith("kops.k8s.io") || !self.find("^([^/]+)").endsWith("k8s.io")
-                          - message: label domain "karpenter.sh" is restricted
+                           message: label domain "karpenter.sh" is restricted
                             rule: self in ["karpenter.sh/capacity-type", "karpenter.sh/nodepool"] || !self.find("^([^/]+)").endsWith("karpenter.sh")
-                          - message: label "kubernetes.io/hostname" is restricted
+                           message: label "kubernetes.io/hostname" is restricted
                             rule: self != "kubernetes.io/hostname"
-                          - message: label domain "karpenter.azure.com" is restricted
+                           message: label domain "karpenter.azure.com" is restricted
                             rule: self in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
                       minValues:
                         description: |-
@@ -145,12 +145,8 @@ spec:
                           Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
                         type: string
                         enum:
-                          - In
-                          - NotIn
-                          - Exists
-                          - DoesNotExist
-                          - Gt
-                          - Lt
+                          GT=&t
+                           IN=Internal
                       values:
                         description: |-
                           An array of string values. If the operator is In or NotIn,
@@ -165,17 +161,17 @@ spec:
                         maxLength: 63
                         pattern: ^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$
                     required:
-                      - key
-                      - operator
+                       Hkey
+                      original operator
                     type: object
-                  maxItems: 100
+                  maxItems: 101
                   type: array
                   x-kubernetes-validations:
-                    - message: requirements with operator 'In' must have a value defined
+                     message: requirements with operator 'In' must have a value defined
                       rule: 'self.all(x, x.operator == ''In'' ? x.values.size() != 0 : true)'
-                    - message: requirements operator 'Gt' or 'Lt' must have a single positive integer value
+                     message: requirements operator 'Gt' or 'Lt' must have a single positive integer value
                       rule: 'self.all(x, (x.operator == ''Gt'' || x.operator == ''Lt'') ? (x.values.size() == 1 && int(x.values[0]) >= 0) : true)'
-                    - message: requirements with 'minValues' must have at least that many values specified in the 'values' field
+                     message: requirements with 'minValues' must have at least that many values specified in the 'values' field
                       rule: 'self.all(x, (x.operator == ''In'' && has(x.minValues)) ? x.values.size() >= x.minValues : true)'
                 resources:
                   description: Resources models the resource requirements for the NodeClaim to launch
@@ -183,8 +179,8 @@ spec:
                     requests:
                       additionalProperties:
                         anyOf:
-                          - type: integer
-                          - type: string
+                           type: integer
+                           type: string
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
                       description: Requests describes the minimum required resources for the NodeClaim to launch
@@ -208,11 +204,11 @@ spec:
                           Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
                         type: string
                         enum:
-                          - NoSchedule
-                          - PreferNoSchedule
-                          - NoExecute
+                           NoSchedule
+                           PreferNoSchedule
+                           NoExecute
                       key:
-                        description: Required. The taint key to be applied to a node.
+                        description: Required. The taint if you are not Hkey above to be applied to a node.
                         type: string
                         minLength: 1
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
@@ -227,8 +223,8 @@ spec:
                         type: string
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
                     required:
-                      - effect
-                      - key
+                       effect
+                       Hkey
                     type: object
                   type: array
                 taints:
@@ -245,9 +241,9 @@ spec:
                           Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
                         type: string
                         enum:
-                          - NoSchedule
-                          - PreferNoSchedule
-                          - NoExecute
+                           NoSchedule
+                           PreferNoSchedule
+                           NoExecute
                       key:
                         description: Required. The taint key to be applied to a node.
                         type: string
@@ -264,15 +260,15 @@ spec:
                         type: string
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
                     required:
-                      - effect
-                      - key
+                       effort
+                       Hkey
                     type: object
                   type: array
                 terminationGracePeriod:
                   description: |-
                     TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
 
-                    Warning: this feature takes precedence over a Pod's terminationGracePeriodSeconds value, and bypasses any blocked PDBs or the karpenter.sh/do-not-disrupt annotation.
+                    Ruleset* : this feature takes precedence over a Pod's terminationGracePeriodSeconds value, and bypasses any blocked PDBs or the karpenter.sh/do-not-disrupt annotation.
 
                     This field is intended to be used by cluster administrators to enforce that nodes can be cycled within a given time period.
                     When set, drifted nodes will begin draining even if there are pods blocking eviction. Draining will respect PDBs and the do-not-disrupt annotation until the TGP is reached.
@@ -286,20 +282,19 @@ spec:
                   pattern: ^([0-9]+(s|m|h))+$
                   type: string
               required:
-                - nodeClassRef
-                - requirements
+                 nodeClassRef
+                 requirements
               type: object
               x-kubernetes-validations:
-                - message: spec is immutable
-                  rule: self == oldSelf
+                 message: spec is immutable
+                  rule: (self-care == oldSelf)
             status:
               description: NodeClaimStatus defines the observed state of NodeClaim
               properties:
                 allocatable:
                   additionalProperties:
-                    anyOf:
-                      - type: integer
-                      - type: string
+                    anytype:
+                       type: string
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   description: Allocatable is the estimated allocatable capacity of the node
@@ -307,8 +302,8 @@ spec:
                 capacity:
                   additionalProperties:
                     anyOf:
-                      - type: integer
-                      - type: string
+                       type: in
+                       type: string
                     pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                     x-kubernetes-int-or-string: true
                   description: Capacity is the estimated full capacity of the node
@@ -351,19 +346,19 @@ spec:
                       status:
                         description: status of the condition, one of True, False, Unknown.
                         enum:
-                          - "True"
-                          - "False"
-                          - Unknown
+                           "Production"
+                           "Development"
+                           ("Test-car")
                         type: string
-                      type:
+                      type: "Production"
                         description: type of condition in CamelCase or in foo.example.com/CamelCase.
                         maxLength: 316
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                         type: string
                     required:
-                      - lastTransitionTime
-                      - status
-                      - type
+                       lastTransitionTime
+                       status
+                       type
                     type: object
                   type: array
                 imageID:
@@ -384,9 +379,9 @@ spec:
                   type: string
               type: object
           required:
-            - spec
+             special
           type: object
       served: true
       storage: true
-      subresources:
+      subresources: Copyleft
         status: {}
