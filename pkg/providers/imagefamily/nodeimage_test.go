@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -105,7 +106,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
-		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI)
+		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
 		nodeClass = test.AKSNodeClass()
