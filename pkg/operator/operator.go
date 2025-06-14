@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/go-logr/logr"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
@@ -37,7 +35,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/flowcontrol"
-	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator"
@@ -93,16 +90,10 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	azConfig, err := GetAZConfig()
 	lo.Must0(err, "creating Azure config") // NOTE: we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as when initializing the client there are helpful error messages in initializing clients and the azure config
 
-	cred, err := getCredential()
-	lo.Must0(err, "getting Azure credential")
-
-	// Get a token to ensure we can
-	lo.Must0(ensureToken(cred, azConfig), "ensuring Azure token can be retrieved")
-
-	azClient, err := instance.CreateAZClient(ctx, azConfig, cred)
+	azClient, err := instance.CreateAZClient(ctx, azConfig)
 	lo.Must0(err, "creating Azure client")
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
-		vnetGUID, err := getVnetGUID(cred, azConfig, options.FromContext(ctx).SubnetID)
+		vnetGUID, err := getVnetGUID(azConfig, options.FromContext(ctx).SubnetID)
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
@@ -127,14 +118,25 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 			azurecache.DefaultCleanupInterval),
 	)
 	imageProvider := imagefamily.NewProvider(
+		operator.KubernetesInterface,
+		cache.New(azurecache.KubernetesVersionTTL,
+			azurecache.DefaultCleanupInterval),
 		azClient.ImageVersionsClient,
 		azConfig.Location,
 		azConfig.SubscriptionID,
 		azClient.NodeImageVersionsClient,
 	)
+	instanceTypeProvider := instancetype.NewDefaultProvider(
+		azConfig.Location,
+		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
+		azClient.SKUClient,
+		pricingProvider,
+		unavailableOfferingsCache,
+	)
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
-		azClient.NodeBootstrappingClient,
+		imageProvider,
+		instanceTypeProvider,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -150,13 +152,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
-	)
-	instanceTypeProvider := instancetype.NewDefaultProvider(
-		azConfig.Location,
-		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
-		azClient.SKUClient,
-		pricingProvider,
-		unavailableOfferingsCache,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
@@ -219,7 +214,11 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	return lo.ToPtr(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
-func getVnetGUID(creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
+func getVnetGUID(cfg *auth.Config, subnetID string) (string, error) {
+	creds, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return "", err
+	}
 	opts := armopts.DefaultArmOpts()
 	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, creds, opts)
 	if err != nil {
@@ -286,33 +285,4 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 
 	log.Info("all required CRDs are available")
 	return nil
-}
-
-// ensureToken ensures we can get a token for the Azure environment. Note that this doesn't actually
-// use the token for anything, it just checks that we can get one.
-func ensureToken(cred azcore.TokenCredential, cfg *auth.Config) error {
-	cloudEnv := azclient.EnvironmentFromName(cfg.Cloud)
-
-	// Short timeout to avoid hanging forever if something bad happens
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{cloudEnv.ServiceManagementEndpoint + "/.default"},
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func getCredential() (azcore.TokenCredential, error) {
-	// TODO: Don't use NewDefaultAzureCredential
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return auth.NewTokenWrapper(cred), nil
 }
