@@ -106,13 +106,7 @@ func NewAZClientFromAPI(
 }
 
 func CreateAZClient(ctx context.Context, cfg *auth.Config, cred azcore.TokenCredential) (*AZClient, error) {
-	// Defaulting env to Azure Public Cloud.
-	env := azclient.PublicCloud
-	var err error
-	if cfg.Cloud != "" {
-		env = azclient.EnvironmentFromName(cfg.Cloud)
-	}
-
+	env := azclient.EnvironmentFromName(cfg.Cloud)
 	azClient, err := NewAZClient(ctx, cfg, env, cred)
 	if err != nil {
 		return nil, err
