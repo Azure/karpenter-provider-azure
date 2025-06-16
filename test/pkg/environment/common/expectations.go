@@ -19,6 +19,7 @@ package common
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -895,7 +896,10 @@ func (env *Environment) printControllerLogs(options *corev1.PodLogOptions) {
 		raw := &bytes.Buffer{}
 		_, err = io.Copy(raw, stream)
 		Expect(err).ToNot(HaveOccurred())
-		log.FromContext(env.Context).Info(raw.String())
+		var prettyJson bytes.Buffer
+		err = json.Indent(&prettyJson, raw.Bytes(), "", "  ")
+		Expect(err).ToNot(HaveOccurred())
+		fmt.Println(prettyJson)
 	}
 }
 
