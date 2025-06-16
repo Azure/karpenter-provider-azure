@@ -19,9 +19,6 @@ package utils_test
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	v1 "k8s.io/api/core/v1"
-
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/mitchellh/hashstructure/v2"
 	. "github.com/onsi/gomega"
@@ -124,9 +121,4 @@ func TestHasChanged_SliceOrderWithSlicesAsSets(t *testing.T) {
 	// With SlicesAsSets, order does not matter
 	opts := &hashstructure.HashOptions{SlicesAsSets: true}
 	g.Expect(utils.HasChanged(a, b, opts)).To(BeFalse())
-}
-
-func TestGetClusterDNSIP(t *testing.T) {
-	assert.Equal(t, "10.20.0.10", utils.GetClusterDNSIP(&v1.Service{Spec: v1.ServiceSpec{ClusterIP: "10.20.0.10"}}, "10.20.0.10"))
-	assert.Equal(t, "10.10.0.1", utils.GetClusterDNSIP(&v1.Service{Spec: v1.ServiceSpec{ClusterIP: ""}}, "10.10.0.1"))
 }

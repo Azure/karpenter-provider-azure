@@ -96,6 +96,23 @@ func TestAzure(t *testing.T) {
 	ctx = options.ToContext(ctx, test.Options())
 
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	_, err := env.KubernetesInterface.CoreV1().Services("kube-system").Create(ctx, &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "kube-dns",
+		},
+		Spec: v1.ServiceSpec{
+			//ClusterIP: "10.0.0.77",
+			Ports: []v1.ServicePort{{
+				Name:     "dns",
+				Protocol: "UDP",
+				Port:     53,
+			}},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		panic("failed to create service: " + err.Error())
+	}
 
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
@@ -658,7 +675,7 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("Custom DNS", func() {
-		It("should support provisioning with custom DNS server", func() {
+		It("should support provisioning with custom DNS server from options", func() {
 			ctx = options.ToContext(
 				ctx,
 				test.Options(test.OptionsFields{
@@ -675,6 +692,23 @@ var _ = Describe("InstanceType Provider", func() {
 
 			expectedFlags := map[string]string{
 				"cluster-dns": "10.244.0.1",
+			}
+
+			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+		})
+
+		It("should support provisioning with custom DNS server with autodiscovery", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			customData := ExpectDecodedCustomData(azureEnv)
+
+			clusterDNS, err := env.KubernetesInterface.CoreV1().Services("kube-system").Get(ctx, "kube-dns", metav1.GetOptions{})
+			Expect(err).To(Succeed())
+			expectedFlags := map[string]string{
+				"cluster-dns": clusterDNS.Spec.ClusterIP,
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)

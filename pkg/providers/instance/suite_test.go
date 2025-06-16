@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 
+	v1 "k8s.io/api/core/v1"
+
 	"github.com/awslabs/operatorpkg/object"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -74,6 +76,23 @@ func TestAzure(t *testing.T) {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	_, err := env.KubernetesInterface.CoreV1().Services("kube-system").Create(ctx, &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "kube-dns",
+		},
+		Spec: v1.ServiceSpec{
+			//ClusterIP: "10.0.0.77",
+			Ports: []v1.ServicePort{{
+				Name:     "dns",
+				Protocol: "UDP",
+				Port:     53,
+			}},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		panic("failed to create service: " + err.Error())
+	}
 
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)

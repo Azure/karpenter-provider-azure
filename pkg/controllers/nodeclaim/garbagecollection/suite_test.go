@@ -22,6 +22,9 @@ import (
 	"testing"
 	"time"
 
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -76,6 +79,23 @@ var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	ctx = options.ToContext(ctx, test.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
+	_, err := env.KubernetesInterface.CoreV1().Services("kube-system").Create(ctx, &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "kube-dns",
+		},
+		Spec: v1.ServiceSpec{
+			//ClusterIP: "10.0.0.77",
+			Ports: []v1.ServicePort{{
+				Name:     "dns",
+				Protocol: "UDP",
+				Port:     53,
+			}},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		panic("failed to create service: " + err.Error())
+	}
 	//	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
@@ -367,7 +387,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		})
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 		managedVM := test.VirtualMachine(test.VirtualMachineOptions{Name: lo.FromPtr(managedNic.Name), NodepoolName: nodePool.Name})
-		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+		azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
 		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 		// We should still have a network interface here
 		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
@@ -387,7 +407,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 				TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 16)), // Needs to be older than the nodeclaim registration ttl
 			},
 		})
-		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+		azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
 		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 		// We should still have a network interface here
 		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)

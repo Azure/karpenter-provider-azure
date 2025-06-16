@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/clusterdns"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/go-logr/logr"
@@ -121,6 +123,9 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		operator.Elected(),
 	)
 
+	clusterDNSProvider := clusterdns.NewClusterDNSProvider(
+		operator.KubernetesInterface,
+	)
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
@@ -137,7 +142,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
 		azClient.NodeBootstrappingClient,
-		inClusterClient,
+		clusterDNSProvider,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
