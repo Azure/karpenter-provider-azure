@@ -80,7 +80,7 @@ type Operator struct {
 	UnavailableOfferingsCache *azurecache.UnavailableOfferings
 
 	KubernetesVersionProvider kubernetesversion.KubernetesVersionProvider
-	ImageProvider             *imagefamily.Provider
+	ImageProvider             imagefamily.NodeImageProvider
 	ImageResolver             imagefamily.Resolver
 	LaunchTemplateProvider    *launchtemplate.Provider
 	PricingProvider           *pricing.Provider
@@ -131,6 +131,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		azConfig.SubscriptionID,
 		azClient.NodeImageVersionsClient,
+		cache.New(imagefamily.ImageExpirationInterval,
+			imagefamily.ImageCacheCleaningInterval),
 	)
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
