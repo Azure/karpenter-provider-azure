@@ -896,10 +896,10 @@ func (env *Environment) printControllerLogs(options *corev1.PodLogOptions) {
 		raw := &bytes.Buffer{}
 		_, err = io.Copy(raw, stream)
 		Expect(err).ToNot(HaveOccurred())
-		var prettyJson bytes.Buffer
-		err = json.Indent(&prettyJson, raw.Bytes(), "", "  ")
+		var prettyJSON bytes.Buffer
+		err = json.Indent(&prettyJSON, raw.Bytes(), "", "  ")
 		Expect(err).ToNot(HaveOccurred())
-		fmt.Println(prettyJson)
+		fmt.Println(prettyJSON)
 	}
 }
 
