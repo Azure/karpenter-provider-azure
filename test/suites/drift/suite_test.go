@@ -305,7 +305,6 @@ var _ = Describe("Drift", func() {
 
 			dep.Spec.Template.Annotations = nil
 			env.ExpectCreated(nodeClass, nodePool, dep)
-			// we want to make sure the reference we get for the nodeclaim is a registered nodeclaim
 			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
@@ -334,7 +333,6 @@ var _ = Describe("Drift", func() {
 			dep.Spec.Template.Annotations = nil
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			// we want to make sure the reference we get for the nodeclaim is a registered nodeclaim
 			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
