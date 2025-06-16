@@ -20,10 +20,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	armpolicy "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -97,7 +97,7 @@ func NewAZClientFromAPI(
 	}
 }
 
-func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
+func CreateAZClient(ctx context.Context, cfg *auth.Config, cred azcore.TokenCredential) (*AZClient, error) {
 	// Defaulting env to Azure Public Cloud.
 	env := azure.PublicCloud
 	var err error
@@ -108,7 +108,7 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 		}
 	}
 
-	azClient, err := NewAZClient(ctx, cfg, &env)
+	azClient, err := NewAZClient(ctx, cfg, &env, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +116,8 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 	return azClient, nil
 }
 
-func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment) (*AZClient, error) {
-	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, err
-	}
-	cred := auth.NewTokenWrapper(defaultAzureCred)
+// nolint: gocyclo
+func NewAZClient(ctx context.Context, cfg *auth.Config, env *azure.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	opts := armopts.DefaultArmOpts()
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
