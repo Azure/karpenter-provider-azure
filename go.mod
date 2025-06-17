@@ -168,4 +168,4 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace sigs.k8s.io/karpenter => github.com/comtalyst/karpenter v1.5.0-test.dqlogs
+replace sigs.k8s.io/karpenter => github.com/comtalyst/karpenter v1.5.0-test.dqlogs2
