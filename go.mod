@@ -3,12 +3,12 @@ module github.com/Azure/karpenter-provider-azure
 go 1.24.4
 
 require (
-	github.com/Azure/aks-middleware v0.0.36
+	github.com/Azure/aks-middleware v0.0.37
 	github.com/Azure/azure-kusto-go v0.16.1
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/azure-sdk-for-go-extensions v0.1.9
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0
-	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.0
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.10.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.7.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4 v4.8.0
@@ -37,7 +37,7 @@ require (
 	github.com/onsi/gomega v1.37.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus/client_golang v1.22.0
-	github.com/samber/lo v1.50.0
+	github.com/samber/lo v1.51.0
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/sync v0.15.0

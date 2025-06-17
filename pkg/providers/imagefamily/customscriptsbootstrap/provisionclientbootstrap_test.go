@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -58,7 +59,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 				KubernetesVersion:              "1.31.0",
 				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                      false,
-				StorageProfile:                 "ManagedDisks",
+				StorageProfile:                 consts.StorageProfileManagedDisks,
 				ImageFamily:                    v1beta1.Ubuntu2204ImageFamily,
 				NodeBootstrappingProvider:      &fake.NodeBootstrappingAPI{},
 				InstanceType: &cloudprovider.InstanceType{
@@ -85,7 +86,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 				KubernetesVersion:              "1.31.0",
 				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                      false,
-				StorageProfile:                 "ManagedDisks",
+				StorageProfile:                 consts.StorageProfileManagedDisks,
 				ImageFamily:                    v1beta1.Ubuntu2204ImageFamily,
 				NodeBootstrappingProvider:      nil,
 				InstanceType: &cloudprovider.InstanceType{
@@ -112,7 +113,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 				KubernetesVersion:              "1.31.0",
 				ImageDistro:                    "aks-windows-dummy",
 				IsWindows:                      true,
-				StorageProfile:                 "ManagedDisks",
+				StorageProfile:                 consts.StorageProfileManagedDisks,
 				ImageFamily:                    "Windows",
 				InstanceType: &cloudprovider.InstanceType{
 					Name: "Standard_D2s_v3",
@@ -138,7 +139,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 				KubernetesVersion:              "1.31.0",
 				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                      false,
-				StorageProfile:                 "ManagedDisks",
+				StorageProfile:                 consts.StorageProfileManagedDisks,
 				ImageFamily:                    v1beta1.Ubuntu2204ImageFamily,
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{
 					SimulateDown: true,
@@ -210,7 +211,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubernetesVersion:         "1.31.0",
 				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                 false,
-				StorageProfile:            "ManagedDisks",
+				StorageProfile:            consts.StorageProfileManagedDisks,
 				ImageFamily:               v1beta1.Ubuntu2204ImageFamily,
 				Labels:                    map[string]string{"key": "value"},
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
@@ -236,7 +237,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				assert.Equal(t, "aks-ubuntu-containerd-22.04-gen2", *profile.Distro)
 				assert.Equal(t, "1.31.0", *profile.OrchestratorVersion)
 				assert.Equal(t, "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", *profile.VnetSubnetID)
-				assert.Equal(t, "ManagedDisks", *profile.StorageProfile)
+				assert.Equal(t, consts.StorageProfileManagedDisks, *profile.StorageProfile)
 				assert.Equal(t, int32(110), *profile.MaxPods)
 				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
 
@@ -257,7 +258,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubernetesVersion:         "1.31.0",
 				ImageDistro:               "aks-azurelinux-v2-gen2",
 				IsWindows:                 false,
-				StorageProfile:            "ManagedDisks",
+				StorageProfile:            consts.StorageProfileManagedDisks,
 				ImageFamily:               v1beta1.AzureLinuxImageFamily,
 				Labels:                    map[string]string{"kubernetes.azure.com/mode": "system"}, // Test system mode
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
@@ -296,7 +297,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubernetesVersion:         "1.31.0",
 				ImageDistro:               "aks-windows",
 				IsWindows:                 true, // This should cause an error
-				StorageProfile:            "ManagedDisks",
+				StorageProfile:            consts.StorageProfileManagedDisks,
 				ImageFamily:               "Windows",
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
 				InstanceType: &cloudprovider.InstanceType{
@@ -320,7 +321,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubernetesVersion:         "1.31.0",
 				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                 false,
-				StorageProfile:            "ManagedDisks",
+				StorageProfile:            consts.StorageProfileManagedDisks,
 				ImageFamily:               v1beta1.Ubuntu2204ImageFamily,
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
 				InstanceType: &cloudprovider.InstanceType{
@@ -350,7 +351,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubernetesVersion:         "1.31.0",
 				ImageDistro:               "aks-ubuntu-arm64-containerd-22.04-gen2",
 				IsWindows:                 false,
-				StorageProfile:            "ManagedDisks",
+				StorageProfile:            consts.StorageProfileManagedDisks,
 				ImageFamily:               v1beta1.Ubuntu2204ImageFamily,
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
 				InstanceType: &cloudprovider.InstanceType{
@@ -394,7 +395,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				KubernetesVersion:         "1.31.0",
 				ImageDistro:               "aks-ubuntu-containerd-22.04-gen2",
 				IsWindows:                 false,
-				StorageProfile:            "ManagedDisks",
+				StorageProfile:            consts.StorageProfileManagedDisks,
 				ImageFamily:               v1beta1.Ubuntu2204ImageFamily,
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
 				InstanceType: &cloudprovider.InstanceType{
