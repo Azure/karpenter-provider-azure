@@ -1,5 +1,5 @@
 # workflows
-
+test/README.md
 ## E2E
 
 ### Making a new E2E test
