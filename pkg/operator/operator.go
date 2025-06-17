@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -39,6 +40,7 @@ import (
 	"k8s.io/client-go/util/flowcontrol"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -91,19 +93,36 @@ type Operator struct {
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
 	azConfig, err := GetAZConfig()
-	lo.Must0(err, "creating Azure config") // NOTE: we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as when initializing the client there are helpful error messages in initializing clients and the azure config
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to create Azure config")
+		os.Exit(1)
+	}
+	log.FromContext(ctx).WithValues("subscription", azConfig.SubscriptionID, "location", azConfig.Location, "resourceGroup", azConfig.ResourceGroup).V(1).Info("discovered Azure configuration")
 
 	cred, err := getCredential()
-	lo.Must0(err, "getting Azure credential")
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to get Azure credential")
+		os.Exit(1)
+	}
 
-	// Get a token to ensure we can
-	lo.Must0(ensureToken(cred, azConfig), "ensuring Azure token can be retrieved")
+	if err := ensureToken(cred, azConfig); err != nil {
+		log.FromContext(ctx).WithValues("tenantID", azConfig.TenantID).Error(err, "Azure token validation failed")
+		os.Exit(1)
+	}
 
 	azClient, err := instance.CreateAZClient(ctx, azConfig, cred)
-	lo.Must0(err, "creating Azure client")
+	if err != nil {
+		log.FromContext(ctx).Error(err, "failed to create Azure client")
+		os.Exit(1)
+	}
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
+		log.FromContext(ctx).WithValues("subnetID", options.FromContext(ctx).SubnetID).V(1).Info("retrieving VNET GUID for overlay networking")
 		vnetGUID, err := getVnetGUID(cred, azConfig, options.FromContext(ctx).SubnetID)
-		lo.Must0(err, "getting VNET GUID")
+		if err != nil {
+			log.FromContext(ctx).WithValues("subnetID", options.FromContext(ctx).SubnetID).Error(err, "failed to get VNET GUID")
+			os.Exit(1)
+		}
+		log.FromContext(ctx).WithValues("vnetGUID", vnetGUID).V(1).Info("discovered VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
 
@@ -275,7 +294,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 				}
 				return false, err
 			}
-			log.V(1).WithValues("gvk", gvk).Info("CRD is available")
+			log.WithValues("gvk", gvk).V(1).Info("CRD is available")
 			return true, nil
 		})
 		if err != nil {
