@@ -31,60 +31,60 @@ import (
 )
 
 const (
-	Ubuntu2204Gen2ImageDefinition    = "2204gen2containerd"
-	Ubuntu2204Gen1ImageDefinition    = "2204containerd"
-	Ubuntu2204Gen2ArmImageDefinition = "2204gen2arm64containerd"
+	AzureLinux3Gen2ImageDefinition    = "V3gen2"
+	AzureLinux3Gen1ImageDefinition    = "V3"
+	AzureLinux3Gen2ArmImageDefinition = "V3gen2arm64"
 )
 
-type Ubuntu2204 struct {
+type AzureLinux3 struct {
 	Options *parameters.StaticParameters
 }
 
-func (u Ubuntu2204) Name() string {
-	return v1beta1.Ubuntu2204ImageFamily
+func (u AzureLinux3) Name() string {
+	return v1beta1.AzureLinuxImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages() []types.DefaultImageOutput {
-	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
+func (u AzureLinux3) DefaultImages() []types.DefaultImageOutput {
+	// image provider will select these images in order, first match wins
 	return []types.DefaultImageOutput{
 		{
-			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-			GalleryResourceGroup: AKSUbuntuResourceGroup,
-			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2204Gen2ImageDefinition,
+			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+			GalleryName:          AKSAzureLinuxGalleryName,
+			ImageDefinition:      AzureLinux3Gen2ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
-			Distro: "aks-ubuntu-containerd-22.04-gen2",
+			Distro: "aks-azurelinux-v3-gen2",
 		},
 		{
-			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-			GalleryResourceGroup: AKSUbuntuResourceGroup,
-			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2204Gen1ImageDefinition,
+			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+			GalleryName:          AKSAzureLinuxGalleryName,
+			ImageDefinition:      AzureLinux3Gen1ImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
 			),
-			Distro: "aks-ubuntu-containerd-22.04",
+			Distro: "aks-azurelinux-v3",
 		},
 		{
-			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-			GalleryResourceGroup: AKSUbuntuResourceGroup,
-			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2204Gen2ArmImageDefinition,
+			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+			GalleryName:          AKSAzureLinuxGalleryName,
+			ImageDefinition:      AzureLinux3Gen2ArmImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
-			Distro: "aks-ubuntu-arm64-containerd-22.04-gen2",
+			Distro: "aks-azurelinux-v3-arm64-gen2",
 		},
 	}
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u AzureLinux3) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -115,7 +115,7 @@ func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string, nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
+func (u AzureLinux3) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string, nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,

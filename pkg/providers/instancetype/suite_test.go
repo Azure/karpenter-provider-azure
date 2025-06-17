@@ -66,6 +66,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -155,6 +156,64 @@ var _ = Describe("InstanceType Provider", func() {
 
 	AfterEach(func() {
 		ExpectCleanedUp(ctx, env.Client)
+	})
+	Context("Bootstrapping client", func() {
+		// Suggestion: ideally, we want to reuse all tests with just ProvisionMode changed to BootstrappingClient. It needs refactor to allow efficient reuse.
+		// However, not all tests are applicable. E.g., custom data tests are not useful as it is faked, unlike Scriptless.
+		BeforeEach(func() {
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				ProvisionMode: lo.ToPtr(consts.ProvisionModeBootstrappingClient),
+			}))
+			azureEnv = test.NewEnvironment(ctx, env)
+			fakeClock = &clock.FakeClock{}
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
+		})
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, test.Options())
+			azureEnv = test.NewEnvironment(ctx, env)
+			fakeClock = &clock.FakeClock{}
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
+		})
+		It("should provision the node and CSE", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectCSEProvisioned(azureEnv)
+
+			ExpectScheduled(ctx, env.Client, pod)
+		})
+		It("should not reattempt creation of a vm thats been created before, and also not CSE", func() {
+			// This test is more like a sanity check of the current intended behavior. The design of the behavior can be changed if intended.
+			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"karpenter.sh/nodepool": nodePool.Name},
+				},
+				Spec: karpv1.NodeClaimSpec{NodeClassRef: &karpv1.NodeClassReference{Name: nodeClass.Name}},
+			})
+			vmName := instance.GenerateResourceName(nodeClaim.Name)
+			vm := &armcompute.VirtualMachine{
+				Name:     lo.ToPtr(vmName),
+				ID:       lo.ToPtr(fake.MkVMID(options.FromContext(ctx).NodeResourceGroup, vmName)),
+				Location: lo.ToPtr(fake.Region),
+				Zones:    []*string{lo.ToPtr("fantasy-zone")},
+				Properties: &armcompute.VirtualMachineProperties{
+					TimeCreated: lo.ToPtr(time.Now()),
+					HardwareProfile: &armcompute.HardwareProfile{
+						VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypesBasicA3),
+					},
+				},
+			}
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			_, err := cloudProvider.Create(ctx, nodeClaim) // Async routine can still be ran in the background after this point
+			Expect(err).ToNot(HaveOccurred())
+
+			ExpectCSENotProvisioned(azureEnv)
+		})
 	})
 	Context("Subnet", func() {
 		It("should use the VNET_SUBNET_ID", func() {
@@ -601,9 +660,16 @@ var _ = Describe("InstanceType Provider", func() {
 	Context("Nodepool with KubeletConfig", func() {
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUManagerPolicy:            "static",
+				CPUCFSQuota:                 lo.ToPtr(true),
+				CPUCFSQuotaPeriod:           metav1.Duration{},
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-				CPUCFSQuota:                 lo.ToPtr(true),
+				TopologyManagerPolicy:       "best-effort",
+				AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
+				ContainerLogMaxSize:         "42Mi",
+				ContainerLogMaxFiles:        lo.ToPtr[int32](13),
+				PodPidsLimit:                lo.ToPtr[int64](99),
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -619,6 +685,12 @@ var _ = Describe("InstanceType Provider", func() {
 				"image-gc-low-threshold":  "20",
 				"cpu-cfs-quota":           "true",
 				"max-pods":                "250",
+				"topology-manager-policy": "best-effort",
+				"container-log-max-size":  "42Mi",
+				"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
+				"cpu-manager-policy":      "static",
+				"container-log-max-files": "13",
+				"pod-max-pids":            "99",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
@@ -664,9 +736,16 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUManagerPolicy:            "static",
+				CPUCFSQuota:                 lo.ToPtr(true),
+				CPUCFSQuotaPeriod:           metav1.Duration{},
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-				CPUCFSQuota:                 lo.ToPtr(true),
+				TopologyManagerPolicy:       "best-effort",
+				AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
+				ContainerLogMaxSize:         "42Mi",
+				ContainerLogMaxFiles:        lo.ToPtr[int32](13),
+				PodPidsLimit:                lo.ToPtr[int64](99),
 			}
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -681,6 +760,12 @@ var _ = Describe("InstanceType Provider", func() {
 				"image-gc-low-threshold":  "20",
 				"image-gc-high-threshold": "30",
 				"cpu-cfs-quota":           "true",
+				"topology-manager-policy": "best-effort",
+				"container-log-max-size":  "42Mi",
+				"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
+				"cpu-manager-policy":      "static",
+				"container-log-max-files": "13",
+				"pod-max-pids":            "99",
 			}
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
 			Expect(customData).To(SatisfyAny( // AKS default
@@ -694,9 +779,16 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should support provisioning with kubeletConfig, computeResources and maxPods specified", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
+				CPUManagerPolicy:            "static",
+				CPUCFSQuota:                 lo.ToPtr(true),
+				CPUCFSQuotaPeriod:           metav1.Duration{},
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(30)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
-				CPUCFSQuota:                 lo.ToPtr(true),
+				TopologyManagerPolicy:       "best-effort",
+				AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
+				ContainerLogMaxSize:         "42Mi",
+				ContainerLogMaxFiles:        lo.ToPtr[int32](13),
+				PodPidsLimit:                lo.ToPtr[int64](99),
 			}
 			nodeClass.Spec.MaxPods = lo.ToPtr(int32(15))
 
@@ -712,6 +804,12 @@ var _ = Describe("InstanceType Provider", func() {
 				"image-gc-low-threshold":  "20",
 				"image-gc-high-threshold": "30",
 				"cpu-cfs-quota":           "true",
+				"topology-manager-policy": "best-effort",
+				"container-log-max-size":  "42Mi",
+				"allowed-unsafe-sysctls":  "Allowed,Unsafe,Sysctls",
+				"cpu-manager-policy":      "static",
+				"container-log-max-files": "13",
+				"pod-max-pids":            "99",
 			}
 
 			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
@@ -1170,6 +1268,13 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	Context("ImageProvider + Image Family", func() {
+
+		kubernetesVersion := lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
+		expectUseAzureLinux3 := imagefamily.UseAzureLinux3(kubernetesVersion)
+		azureLinuxGen2ImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ImageDefinition, imagefamily.AzureLinuxGen2ImageDefinition)
+		azureLinuxGen1ImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen1ImageDefinition, imagefamily.AzureLinuxGen1ImageDefinition)
+		azureLinuxGen2ArmImageDefinition := lo.Ternary(expectUseAzureLinux3, imagefamily.AzureLinux3Gen2ArmImageDefinition, imagefamily.AzureLinuxGen2ArmImageDefinition)
+
 		DescribeTable("should select the right Shared Image Gallery image for a given instance type", func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryRG string, expectedGalleryURL string) {
 			options := test.Options(test.OptionsFields{
 				UseSIG: lo.ToPtr(true),
@@ -1203,9 +1308,9 @@ var _ = Describe("InstanceType Provider", func() {
 			Entry("Gen2, Gen1 instance type with AKSUbuntu image family", "Standard_D2_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
 			Entry("Gen1 instance type with AKSUbuntu image family", "Standard_D2_v3", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen1ImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
 			Entry("ARM instance type with AKSUbuntu image family", "Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuResourceGroup, imagefamily.AKSUbuntuGalleryName),
-			Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-			Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
-			Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("Gen2 instance type with AzureLinux image family", "Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("Gen1 instance type with AzureLinux image family", "Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
+			Entry("ARM instance type with AzureLinux image family", "Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxResourceGroup, imagefamily.AKSAzureLinuxGalleryName),
 		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
@@ -1242,11 +1347,11 @@ var _ = Describe("InstanceType Provider", func() {
 			Entry("ARM instance type with AKSUbuntu image family",
 				"Standard_D16plds_v5", v1beta1.Ubuntu2204ImageFamily, imagefamily.Ubuntu2204Gen2ArmImageDefinition, imagefamily.AKSUbuntuPublicGalleryURL),
 			Entry("Gen2 instance type with AzureLinux image family",
-				"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("Gen1 instance type with AzureLinux image family",
-				"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D2_v3", v1beta1.AzureLinuxImageFamily, azureLinuxGen1ImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 			Entry("ARM instance type with AzureLinux image family",
-				"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, imagefamily.AzureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
+				"Standard_D16plds_v5", v1beta1.AzureLinuxImageFamily, azureLinuxGen2ArmImageDefinition, imagefamily.AKSAzureLinuxPublicGalleryURL),
 		)
 	})
 

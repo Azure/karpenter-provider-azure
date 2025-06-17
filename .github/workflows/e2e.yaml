@@ -45,7 +45,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
+        uses: step-security/harden-runner@002fdce3c6a235733a90a27c80493a3241e56863 # v2.12.1
         with:
           disable-telemetry: true
           egress-policy: block
@@ -73,6 +73,7 @@ jobs:
             management.azure.com:443
             mcr.microsoft.com:443
             objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
             proxy.golang.org:443
             raw.githubusercontent.com:443
             storage.googleapis.com:443
@@ -100,7 +101,7 @@ jobs:
         run: az account set --subscription ${{ secrets.E2E_SUBSCRIPTION_ID }}
       - name: install skaffold
         run: |
-          curl -Lo skaffold https://storage.googleapis.com/skaffold/releases/v2.14.2/skaffold-linux-amd64
+          curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
           install skaffold /usr/local/bin/
       - name: generate rg name
         run: |
