@@ -54,8 +54,8 @@ var _ = Describe("StandaloneNodeClaim", func() {
 			},
 		})
 		env.ExpectCreated(nodeClass, nodeClaim)
+		nodeClaim = env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
-		nodeClaim = env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
 		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelSKUFamily, "D"))
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
