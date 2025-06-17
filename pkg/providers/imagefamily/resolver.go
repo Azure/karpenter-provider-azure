@@ -115,7 +115,7 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	log.FromContext(ctx).Info(fmt.Sprintf("Resolved image %s for instance type %s", imageID, instanceType.Name))
+	log.FromContext(ctx).WithValues("imageId", imageID, "instanceType", instanceType.Name).Info("resolved image")
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
 	imageDistro, err := mapToImageDistro(imageID, imageFamily)

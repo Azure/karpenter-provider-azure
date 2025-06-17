@@ -94,7 +94,7 @@ func (env *Environment) ExpectUpdated(objects ...client.Object) {
 			current := o.DeepCopyObject().(client.Object)
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(current), current)).To(Succeed())
 			if current.GetResourceVersion() != o.GetResourceVersion() {
-				log.FromContext(env).Info(fmt.Sprintf("detected an update to an object (%s) with an outdated resource version, did you get the latest version of the object before patching?", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme()))))
+				log.FromContext(env).WithValues("objectType", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme())).String()).Info("detected an update to an object with an outdated resource version, did you get the latest version of the object before patching?")
 			}
 			o.SetResourceVersion(current.GetResourceVersion())
 			g.Expect(env.Client.Update(env.Context, o)).To(Succeed())
@@ -115,7 +115,7 @@ func (env *Environment) ExpectStatusUpdated(objects ...client.Object) {
 			current := o.DeepCopyObject().(client.Object)
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(current), current)).To(Succeed())
 			if current.GetResourceVersion() != o.GetResourceVersion() {
-				log.FromContext(env).Info(fmt.Sprintf("detected an update to an object (%s) with an outdated resource version, did you get the latest version of the object before patching?", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme()))))
+				log.FromContext(env).WithValues("objectType", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme())).String()).Info("detected an update to an object with an outdated resource version, did you get the latest version of the object before patching?")
 			}
 			o.SetResourceVersion(current.GetResourceVersion())
 			g.Expect(env.Client.Status().Update(env.Context, o)).To(Succeed())
