@@ -184,7 +184,7 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 
 	if err != nil {
 		c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
-		log.FromContext(ctx).Error(err, "failed launching nodeclaim")
+		log.FromContext(ctx).WithValues("nodeClaimName", nodeClaim.Name).Error(err, "failed launching nodeclaim")
 
 		// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
 		vmName := lo.FromPtr(promise.VM.Name)
@@ -217,7 +217,7 @@ func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1
 			if client.IgnoreNotFound(err) == nil {
 				return
 			}
-			log.FromContext(ctx).Error(err, "failed getting nodeclaim to wait until launched")
+			log.FromContext(ctx).WithValues("nodeClaimName", nodeClaim.Name).Error(err, "failed getting nodeclaim to wait until launched")
 		}
 
 		if cond := freshClaim.StatusConditions().Get(karpv1.ConditionTypeLaunched); !cond.IsUnknown() {

@@ -92,11 +92,11 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 		if !unremovableInterfaces.Has(nicName) {
 			err := c.instanceProvider.DeleteNic(ctx, nicName)
 			if err != nil {
-				log.FromContext(ctx).Error(err, "")
+				log.FromContext(ctx).WithValues("nicName", nicName).Error(err, "failed to delete NIC during garbage collection")
 				return
 			}
 
-			log.FromContext(ctx).WithValues("nic", nicName).Info("garbage collected NIC")
+			log.FromContext(ctx).WithValues("nicName", nicName).Info("garbage collected NIC")
 		}
 	})
 	return reconcile.Result{
