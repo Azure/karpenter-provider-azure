@@ -62,7 +62,6 @@ var _ = Describe("Emptiness", func() {
 
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			// we want to make sure the reference we get for the nodeclaim is a registered nodeclaim
 			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 
 			env.EventuallyExpectCreatedNodeCount("==", 1)
@@ -88,7 +87,6 @@ var _ = Describe("Emptiness", func() {
 
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			// we want to make sure the reference we get for the nodeclaim is a registered nodeclaim
 			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 
 			env.EventuallyExpectCreatedNodeCount("==", 1)
@@ -110,7 +108,6 @@ var _ = Describe("Emptiness", func() {
 		By("kicking off provisioning for a deployment")
 		env.ExpectCreated(nodeClass, nodePool, deployment)
 
-		// we want to make sure the reference we get for the nodeclaim is a registered nodeclaim
 		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
