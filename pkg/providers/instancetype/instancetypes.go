@@ -131,12 +131,12 @@ func (p *DefaultProvider) List(
 	for _, sku := range skus {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).WithValues("skuSize", *sku.Size).Error(err, "parsing VM size")
+			log.FromContext(ctx).WithValues("vmSize", *sku.Size).Error(err, "parsing VM size")
 			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
-			log.FromContext(ctx).WithValues("skuSize", *sku.Size).Error(err, "parsing SKU architecture")
+			log.FromContext(ctx).WithValues("vmSize", *sku.Size).Error(err, "parsing SKU architecture")
 			continue
 		}
 		instanceTypeZones := instanceTypeZones(sku, p.region)
@@ -273,7 +273,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).WithValues("skuSize", *skus[i].Size).Error(err, "parsing VM size")
+			log.FromContext(ctx).WithValues("vmSize", *skus[i].Size).Error(err, "parsing VM size")
 			continue
 		}
 		useSIG := options.FromContext(ctx).UseSIG
@@ -287,7 +287,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		// This is to not create new keys with duplicate instance types option
 		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
 		log.FromContext(ctx).WithValues(
-			"count", len(instanceTypes)).V(1).Info("discovered instance types")
+			"instanceTypeCount", len(instanceTypes)).V(1).Info("discovered instance types")
 	}
 	p.instanceTypesCache.SetDefault(InstanceTypesCacheKey, instanceTypes)
 	return instanceTypes, nil
