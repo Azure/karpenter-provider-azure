@@ -125,9 +125,7 @@ func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, 
 	// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
 	// - zonal restrictions are filtered out internally by sku.AvailabilityZones, and don't get offerings
 	skuNotAvailableTTL := SKUNotAvailableSpotTTL
-	err = fmt.Errorf("out of spot capacity for %s: %w", instanceType.Name, err)
 	if capacityType == karpv1.CapacityTypeOnDemand { // should not happen, defensive check
-		err = fmt.Errorf("unexpected SkuNotAvailable error for %s (on-demand): %w", instanceType.Name, err)
 		skuNotAvailableTTL = SKUNotAvailableOnDemandTTL // still mark all offerings as unavailable, but with a longer TTL
 	}
 	// mark the instance type as unavailable for all offerings/zones for the capacity type
