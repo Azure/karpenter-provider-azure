@@ -167,7 +167,7 @@ func (r *defaultResolver) Resolve(
 			r.nodeBootstrappingProvider,
 		),
 		StorageProfileDiskType:  diskType,
-		StorageProfilePlacement: placement,
+		StorageProfilePlacement: lo.FromPtr(placement),
 
 		// TODO: We could potentially use the instance type to do defaulting like
 		// traditional AKS, so putting this here along with the other settings
@@ -179,13 +179,13 @@ func (r *defaultResolver) Resolve(
 	return template, nil
 }
 
-func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement armcompute.DiffDiskPlacement, err error) {
+func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement *armcompute.DiffDiskPlacement, err error) {
 	sku, err := r.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 	if err != nil {
-		return "", "", err
+		return "", nil, err
 	}
 
-	_, placement = instancetype.MaxEphemeralOSDiskSizeGB(sku)
+	_, placement = instancetype.FindMaxEphemeralSizeAndPlacement(sku)
 
 	if instancetype.UseEphemeralDisk(sku, nodeClass) {
 		return consts.StorageProfileEphemeral, placement, nil
