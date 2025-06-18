@@ -108,7 +108,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		// Note: we don't consider this a hard failure for drift if the KubernetesVersion is invalid/not ready to use, so we ignore returning the error here.
 		// We simply ensure the stored version is valid and ready to use, if we are to calculate potential Drift based on it.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.V(1).Info("WARN: Kubernetes version readiness invalid when checking drift", "error", err)
+		logger.Info("kubernetes version not ready, skipping drift check", "error", err)
 		return "", nil //nolint:nilerr
 	}
 
@@ -178,7 +178,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		// Note: we don't consider this a hard failure for drift if the Images are not ready to use, so we ignore returning the error here.
 		// The stored Images must be ready to use if we are to calculate potential Drift based on them.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.V(1).Info("WARN: NodeImage readiness invalid when checking drift", "error", err)
+		logger.Info("node image not ready, skipping drift check", "error", err)
 		return "", nil //nolint:nilerr
 	}
 	if len(nodeImages) == 0 {
@@ -267,7 +267,7 @@ func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.N
 			return nil, nil
 		}
 		if nodeclaimutils.IsDuplicateNodeError(err) {
-			logger.V(1).Info("WARN: Duplicate node error, invariant violated.")
+			logger.Info("duplicate node error detected, invariant violated")
 		}
 		return nil, err
 	}
