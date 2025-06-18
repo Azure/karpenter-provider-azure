@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 )
 
-const Region = "eastus"
+const Region = "southcentralus"
 const RegionNonZonal = "westcentralus"
 
 type PricingAPI struct {
