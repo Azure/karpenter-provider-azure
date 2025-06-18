@@ -81,11 +81,11 @@ var ctx context.Context
 var testOptions *options.Options
 var stop context.CancelFunc
 var env *coretest.Environment
-var azureEnv, azureEnvNonZonal, azureEnvSouthCentralUS *test.Environment
+var azureEnv, azureEnvNonZonal *test.Environment
 var fakeClock *clock.FakeClock
-var coreProvisioner, coreProvisionerNonZonal, coreProvisionerSouthCentralUS *provisioning.Provisioner
-var cluster, clusterNonZonal, clusterSouthCentralUS *state.Cluster
-var cloudProvider, cloudProviderNonZonal, cloudProviderSouthCentralUS *cloudprovider.CloudProvider
+var coreProvisioner, coreProvisionerNonZonal *provisioning.Provisioner
+var cluster, clusterNonZonal *state.Cluster
+var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
 
 var fakeZone1 = utils.MakeZone(fake.Region, "1")
 
@@ -102,19 +102,15 @@ func TestAzure(t *testing.T) {
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-	azureEnvSouthCentralUS = test.NewRegionalEnvironment(ctx, env, "southcentralus", true)
 
 	fakeClock = &clock.FakeClock{}
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
-	cloudProviderSouthCentralUS = cloudprovider.New(azureEnvSouthCentralUS.InstanceTypesProvider, azureEnvSouthCentralUS.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvSouthCentralUS.ImageProvider)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
-	clusterSouthCentralUS = state.NewCluster(fakeClock, env.Client, cloudProviderSouthCentralUS)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 	coreProvisionerNonZonal = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderNonZonal, clusterNonZonal, fakeClock)
-	coreProvisionerSouthCentralUS = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProviderSouthCentralUS, clusterSouthCentralUS, fakeClock)
 
 	RunSpecs(t, "Provider/Azure")
 }
@@ -722,10 +718,10 @@ var _ = Describe("InstanceType Provider", func() {
 			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](100)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, clusterSouthCentralUS, cloudProviderSouthCentralUS, coreProvisionerSouthCentralUS, pod)
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
-			vm := azureEnvSouthCentralUS.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			Expect(vm).NotTo(BeNil())
 
 			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
@@ -1718,7 +1714,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("Zone-aware provisioning", func() {
 		It("should launch in the NodePool-requested zone", func() {
-			zone, vmZone := "eastus-3", "3"
+			zone, vmZone := fmt.Sprintf("%s-3", fake.Region), "3"
 			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot, karpv1.CapacityTypeOnDemand}}},
 				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}}},
