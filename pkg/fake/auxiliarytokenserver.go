@@ -64,6 +64,7 @@ func (c *AuxiliaryTokenServer) Do(req *http.Request) (*http.Response, error) {
 		token := azcore.AccessToken{
 			Token:     "fake-token",
 			ExpiresOn: time.Now().Add(1 * time.Hour),
+			RefreshOn: time.Now().Add(5 * time.Second), // Set suggested refresh time for use in acceptance tests
 		}
 		tokenBytes, _ := json.Marshal(token)
 		resp.StatusCode = http.StatusOK

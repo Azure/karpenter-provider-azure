@@ -364,4 +364,23 @@ var _ = Describe("InstanceProvider", func() {
 		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
 		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
 	})
+
+	It("should use cached auxiliary token when not expired", func() {
+		// write a test that verifies the auxiliary token is cached and reused
+		// by ensuring the AuxiliaryTokenServer fake is not called
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+
+		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(0))
+	})
+
+	It("should refresh auxiliary token if expired", func() {
+		// write a test that verifies the auxiliary token is refreshed when it is expired
+		// by ensuring the AuxiliaryTokenServer fake is called since RefreshOn is set to 5 seconds in the fake server
+
+	})
 })

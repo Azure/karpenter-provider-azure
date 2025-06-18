@@ -64,6 +64,7 @@ type Environment struct {
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
+	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
 
 	// Cache
 	KubernetesVersionCache    *cache.Cache
@@ -111,6 +112,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
+	auxiliaryTokenServer := &fake.AuxiliaryTokenServer{}
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -161,6 +163,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		nodeImageVersionsAPI,
 		nodeBootstrappingAPI,
 		skuClientSingleton,
+		auxiliaryTokenServer,
 	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,

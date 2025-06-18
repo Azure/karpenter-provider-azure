@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -36,11 +38,34 @@ var _ policy.Policy = &AuxiliaryTokenPolicy{}
 // AuxiliaryTokenPolicy provides a custom policy used to authenticate
 // with shared node image galleries.
 type AuxiliaryTokenPolicy struct {
-	Token string
+	auxToken AuxiliaryToken
+	url      string
+	scope    string
+	client   AuxiliaryTokenServer
+}
+
+type AuxiliaryToken struct {
+	token azcore.AccessToken
+	lock  sync.Mutex
+}
+
+func (p *AuxiliaryTokenPolicy) GetAuxiliaryToken() {
+	p.auxToken.lock.Lock()
+	defer p.auxToken.lock.Unlock()
+	// If the token is expired or close to expiration, fetch a new one
+	if p.auxToken.token.ExpiresOn.IsZero() || p.auxToken.token.RefreshOn.Before(time.Now()) || p.auxToken.token.ExpiresOn.Before(time.Now().Add(5*time.Minute)) {
+		newToken, err := getAuxiliaryToken(p.client, p.url, p.scope)
+		if err != nil {
+			log.FromContext(context.Background()).Error(err, "Failed to get auxiliary token")
+			return
+		}
+		p.auxToken.token = newToken
+	}
 }
 
 func (p *AuxiliaryTokenPolicy) Do(req *policy.Request) (*http.Response, error) {
-	req.Raw().Header.Add("x-ms-authorization-auxiliary", "Bearer "+p.Token)
+	p.GetAuxiliaryToken()
+	req.Raw().Header.Add("x-ms-authorization-auxiliary", "Bearer "+p.auxToken.token.Token)
 	return req.Next()
 }
 
@@ -49,7 +74,12 @@ func NewAuxiliaryTokenPolicy(ctx context.Context, client AuxiliaryTokenServer, u
 	if err != nil {
 		return nil, fmt.Errorf("failed to get auxiliary token: %w", err)
 	}
-	auxPolicy := AuxiliaryTokenPolicy{Token: token.Token}
+	auxPolicy := AuxiliaryTokenPolicy{
+		auxToken: AuxiliaryToken{token: token, lock: sync.Mutex{}},
+		url:      url,
+		scope:    scope,
+		client:   client,
+	}
 	log.FromContext(ctx).V(1).Info("Will use auxiliary token policy for creating virtual machines")
 	return &auxPolicy, nil
 }
