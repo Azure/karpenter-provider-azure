@@ -97,14 +97,12 @@ func defaultResponseErrorHandlers() []responseErrorHandler {
 func handleLowPriorityQuotaError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	// Mark in cache that spot quota has been reached for this subscription
 	provider.unavailableOfferings.MarkSpotUnavailableWithTTL(ctx, SubscriptionQuotaReachedTTL)
-	log.FromContext(ctx).Error(err, "")
 	return fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
 }
 
 func handleSKUFamilyQuotaError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
 	// This will also update the TTL for an existing offering in the cache that is already unavailable
-	log.FromContext(ctx).Error(err, "")
 
 	for _, offering := range instanceType.Offerings {
 		if getOfferingCapacityType(offering) != capacityType {
@@ -127,15 +125,12 @@ func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, 
 	// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
 	// - zonal restrictions are filtered out internally by sku.AvailabilityZones, and don't get offerings
 	skuNotAvailableTTL := SKUNotAvailableSpotTTL
-	err = fmt.Errorf("out of spot capacity for %s: %w", instanceType.Name, err)
 	if capacityType == karpv1.CapacityTypeOnDemand { // should not happen, defensive check
-		err = fmt.Errorf("unexpected SkuNotAvailable error for %s (on-demand): %w", instanceType.Name, err)
 		skuNotAvailableTTL = SKUNotAvailableOnDemandTTL // still mark all offerings as unavailable, but with a longer TTL
 	}
 	// mark the instance type as unavailable for all offerings/zones for the capacity type
 	markOfferingsUnavailableForCapacityType(ctx, provider, instanceType, capacityType, SKUNotAvailableReason, skuNotAvailableTTL)
 
-	log.FromContext(ctx).Error(err, "")
 	return fmt.Errorf(
 		"the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable",
 		instanceType.Name,
@@ -144,7 +139,6 @@ func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, 
 }
 
 func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
-	log.FromContext(ctx).WithValues("zone", zone).Error(err, "")
 	provider.unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
 	provider.unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
 
@@ -153,7 +147,6 @@ func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultPro
 
 // AllocationFailure means that VM allocation to the dedicated host has failed. But it can also mean "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."
 func handleAllocationFailureError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
-	log.FromContext(ctx).Error(err, "")
 	markAllZonesUnavailableForBothCapacityTypes(ctx, provider, instanceType, AllocationFailureReason, AllocationFailureTTL)
 
 	return fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", instanceType.Name)
@@ -161,8 +154,6 @@ func handleAllocationFailureError(ctx context.Context, provider *DefaultProvider
 
 // OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
 func handleOverconstrainedZonalAllocationFailureError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
-	// OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
-	log.FromContext(ctx).WithValues("zone", zone, "capacity-type", capacityType, "vm size", instanceType.Name).Error(err, "")
 	provider.unavailableOfferings.MarkUnavailableWithTTL(ctx, OverconstrainedZonalAllocationFailureReason, instanceType.Name, zone, capacityType, AllocationFailureTTL)
 
 	return fmt.Errorf("unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)", zone, capacityType, instanceType.Name)
@@ -170,14 +161,16 @@ func handleOverconstrainedZonalAllocationFailureError(ctx context.Context, provi
 
 // OverconstrainedAllocationFailure means that all zones cannot accommodate the selected size and capacity combination.
 func handleOverconstrainedAllocationFailureError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
-	log.FromContext(ctx).WithValues("capacity-type", capacityType, "vm size", instanceType.Name).Error(err, "")
 	markOfferingsUnavailableForCapacityType(ctx, provider, instanceType, capacityType, OverconstrainedAllocationFailureReason, AllocationFailureTTL)
 
 	return fmt.Errorf("unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)", capacityType, instanceType.Name)
 }
 
 func handleRegionalQuotaError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
-	log.FromContext(ctx).Error(err, "")
+	log.FromContext(ctx).WithValues(
+		"instanceType", instanceType.Name,
+		"capacityType", capacityType,
+	).Error(err, "regional quota reached")
 	// InsufficientCapacityError is appropriate here because trying any other instance type will not help
 	return corecloudprovider.NewInsufficientCapacityError(
 		fmt.Errorf(

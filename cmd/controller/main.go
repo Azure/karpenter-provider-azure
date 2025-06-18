@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -43,7 +44,10 @@ import (
 func main() {
 	ctx := injection.WithOptionsOrDie(context.Background(), coreoptions.Injectables...)
 	logger := zapr.NewLogger(logging.NewLogger(ctx, "controller"))
-	lo.Must0(operator.WaitForCRDs(ctx, 2*time.Minute, ctrl.GetConfigOrDie(), logger), "failed waiting for CRDs")
+	if err := operator.WaitForCRDs(ctx, 2*time.Minute, ctrl.GetConfigOrDie(), logger); err != nil {
+		logger.Error(err, "failed waiting for CRDs")
+		os.Exit(1)
+	}
 
 	ctx, op := operator.NewOperator(coreoperator.NewOperator())
 

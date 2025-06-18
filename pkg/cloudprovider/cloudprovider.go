@@ -184,19 +184,19 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 
 	if err != nil {
 		c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
-		log.FromContext(ctx).Error(err, "failed launching nodeclaim")
+		log.FromContext(ctx).WithValues("nodeClaimName", nodeClaim.Name).Error(err, "failed launching nodeclaim")
 
 		// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
 		vmName := lo.FromPtr(promise.VM.Name)
 		err = c.instanceProvider.Delete(ctx, vmName)
 		if cloudprovider.IgnoreNodeClaimNotFoundError(err) != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("failed to delete VM %s", vmName))
+			log.FromContext(ctx).WithValues("vmName", vmName).Error(err, "failed to delete VM")
 		}
 
 		if err = c.kubeClient.Delete(ctx, nodeClaim); err != nil {
 			err = client.IgnoreNotFound(err)
 			if err != nil {
-				log.FromContext(ctx).Error(err, "failed to delete nodeclaim %s, will wait for liveness TTL", nodeClaim.Name)
+				log.FromContext(ctx).WithValues("nodeClaimName", nodeClaim.Name).Error(err, "failed to delete nodeclaim, will wait for liveness TTL")
 			}
 		}
 		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
@@ -217,7 +217,7 @@ func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1
 			if client.IgnoreNotFound(err) == nil {
 				return
 			}
-			log.FromContext(ctx).Error(err, "failed getting nodeclaim to wait until launched")
+			log.FromContext(ctx).WithValues("nodeClaimName", nodeClaim.Name).Error(err, "failed getting nodeclaim to wait until launched")
 		}
 
 		if cond := freshClaim.StatusConditions().Get(karpv1.ConditionTypeLaunched); !cond.IsUnknown() {
@@ -446,7 +446,7 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	}
 
 	if zone, err := utils.GetZone(vm); err != nil {
-		log.FromContext(ctx).Info(fmt.Sprintf("WARN: Failed to get zone for VM %s, %v", *vm.Name, err))
+		log.FromContext(ctx).WithValues("vmName", *vm.Name).V(1).Info("failed to get zone for VM", "error", err)
 	} else {
 		labels[corev1.LabelTopologyZone] = zone
 	}
