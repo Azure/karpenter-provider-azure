@@ -107,7 +107,7 @@ func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.N
 		if err := c.kubeClient.Delete(ctx, &node); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		log.FromContext(ctx).WithValues("node", node.Name).V(1).Info("garbage collected node")
+		log.FromContext(ctx).V(1).Info("garbage collected node", "nodeName", node.Name)
 	}
 	return nil
 }

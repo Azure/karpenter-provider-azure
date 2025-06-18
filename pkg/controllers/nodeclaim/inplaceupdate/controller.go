@@ -84,7 +84,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 	actualHash := nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]
 
-	log.FromContext(ctx).WithValues("goalHash", goalHash, "actualHash", actualHash).V(1).Info("comparing hashes")
+	log.FromContext(ctx).V(1).Info("comparing hashes", "goalHash", goalHash, "actualHash", actualHash)
 
 	// If there's no difference from goal state, no need to do anything else
 	if goalHash == actualHash {
@@ -185,6 +185,6 @@ func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
 			rawStr = string(raw)
 		}
 		// TODO: Include vm name in log message
-		log.FromContext(ctx).WithValues("vmPatch", rawStr).V(1).Info("applying patch to Azure VM")
+		log.FromContext(ctx).V(1).Info("applying patch to Azure VM", "vmPatch", rawStr)
 	}
 }
