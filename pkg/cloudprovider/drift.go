@@ -108,7 +108,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		// Note: we don't consider this a hard failure for drift if the KubernetesVersion is invalid/not ready to use, so we ignore returning the error here.
 		// We simply ensure the stored version is valid and ready to use, if we are to calculate potential Drift based on it.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.V(1).WithValues("error", err).Info("WARN: Kubernetes version readiness invalid when checking drift")
+		logger.WithValues("error", err).V(1).Info("WARN: Kubernetes version readiness invalid when checking drift")
 		return "", nil //nolint:nilerr
 	}
 
