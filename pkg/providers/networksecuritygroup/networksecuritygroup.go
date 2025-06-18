@@ -68,7 +68,7 @@ func (p *Provider) ManagedNetworkSecurityGroup(ctx context.Context) (*armnetwork
 
 	// Only consider the NSGs we actually care about
 	managedNSGs := lo.Filter(nsgs, isClusterNSG)
-	log.FromContext(ctx).WithValues("nsgCount", len(managedNSGs)).Info("found NSGs of interest")
+	log.FromContext(ctx).Info("found NSGs of interest", "nsgCount", len(managedNSGs))
 
 	if len(managedNSGs) == 0 {
 		return nil, fmt.Errorf("couldn't find managed NSG")
@@ -82,7 +82,7 @@ func (p *Provider) ManagedNetworkSecurityGroup(ctx context.Context) (*armnetwork
 }
 
 func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.SecurityGroup, error) {
-	log.FromContext(ctx).WithValues("resourceGroup", p.resourceGroup).Info("querying nsgs in resource group")
+	log.FromContext(ctx).Info("querying nsgs in resource group", "resourceGroup", p.resourceGroup)
 
 	pager := p.nsgAPI.NewListPager(p.resourceGroup, nil)
 

@@ -83,7 +83,7 @@ func NewProvider(ctx context.Context, pricing client.PricingAPI, region string, 
 		pricing:    pricing,
 		cm:         pretty.NewChangeMonitor(),
 	}
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("pricing"))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("pricing").WithValues("region", region))
 
 	go func() {
 		// perform an initial price update at startup
@@ -178,11 +178,10 @@ func (p *Provider) updatePricing(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		log.FromContext(ctx).WithValues(
-			"region", p.region,
+		log.FromContext(ctx).Error(err, "failed to fetch updated pricing, using existing pricing data",
 			"lastOnDemandUpdateTime", err.lastOnDemandUpdateTime.Format(time.RFC3339),
 			"lastSpotUpdateTime", err.lastSpotUpdateTime.Format(time.RFC3339),
-		).Error(err, "error fetching updated pricing, using existing pricing data")
+		)
 		return
 	}
 
@@ -193,10 +192,9 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		if err := p.UpdateOnDemandPricing(ctx, onDemandPrices); err != nil {
-			log.FromContext(ctx).WithValues(
-				"region", p.region,
+			log.FromContext(ctx).Error(err, "failed to update on-demand pricing, using existing pricing data",
 				"lastOnDemandUpdateTime", err.lastOnDemandUpdateTime.Format(time.RFC3339),
-			).Error(err, "error updating on-demand pricing, using existing pricing data")
+			)
 		}
 	}()
 
@@ -204,10 +202,9 @@ func (p *Provider) updatePricing(ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		if err := p.UpdateSpotPricing(ctx, spotPrices); err != nil {
-			log.FromContext(ctx).WithValues(
-				"region", p.region,
+			log.FromContext(ctx).Error(err, "failed to update spot pricing, using existing pricing data",
 				"lastSpotUpdateTime", err.lastSpotUpdateTime.Format(time.RFC3339),
-			).Error(err, "error updating spot pricing, using existing pricing data")
+			)
 		}
 	}()
 
@@ -224,10 +221,9 @@ func (p *Provider) UpdateOnDemandPricing(ctx context.Context, onDemandPrices map
 	p.onDemandPrices = lo.Assign(onDemandPrices)
 	p.onDemandUpdateTime = time.Now()
 	if p.cm.HasChanged("on-demand-prices", p.onDemandPrices) {
-		log.FromContext(ctx).WithValues(
-			"region", p.region,
+		log.FromContext(ctx).Info("updated on-demand pricing",
 			"instanceTypeCount", len(p.onDemandPrices),
-		).Info("updated on-demand pricing")
+		)
 	}
 	return nil
 }
@@ -293,10 +289,9 @@ func (p *Provider) UpdateSpotPricing(ctx context.Context, spotPrices map[string]
 	p.spotPrices = lo.Assign(spotPrices)
 	p.spotUpdateTime = time.Now()
 	if p.cm.HasChanged("spot-prices", p.spotPrices) {
-		log.FromContext(ctx).WithValues(
-			"region", p.region,
+		log.FromContext(ctx).Info("updated spot pricing",
 			"instanceTypeCount", len(p.spotPrices),
-		).Info("updated spot pricing")
+		)
 	}
 	return nil
 }

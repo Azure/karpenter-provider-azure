@@ -95,7 +95,7 @@ func (p *Provider) LoadBalancerBackendPools(ctx context.Context) (*BackendAddres
 		return lo.FromPtr(backendPool.ID), true
 	})
 
-	log.FromContext(ctx).WithValues("ipv4PoolCount", len(ipv4PoolIDs), "ipv4PoolIDs", ipv4PoolIDs).V(1).Info("returning IPv4 backend pools")
+	log.FromContext(ctx).V(1).Info("returning IPv4 backend pools", "ipv4PoolCount", len(ipv4PoolIDs), "ipv4PoolIDs", ipv4PoolIDs)
 
 	// RP only actually assigns the LB backend pools to VMs if OutboundType is LoadBalancer,
 	// but that's also the only OutboundType which creates the LoadBalancer, so as long as we're not allowing
@@ -127,7 +127,7 @@ func (p *Provider) getLoadBalancers(ctx context.Context) ([]*armnetwork.LoadBala
 }
 
 func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.LoadBalancer, error) {
-	log.FromContext(ctx).WithValues("resourceGroup", p.resourceGroup).Info("querying load balancers in resource group")
+	log.FromContext(ctx).Info("querying load balancers in resource group", "resourceGroup", p.resourceGroup)
 
 	pager := p.loadBalancersAPI.NewListPager(p.resourceGroup, nil)
 
@@ -142,7 +142,7 @@ func (p *Provider) loadFromAzure(ctx context.Context) ([]*armnetwork.LoadBalance
 
 	// Only return the LBs we actually care about
 	result := lo.Filter(lbs, isClusterLoadBalancer)
-	log.FromContext(ctx).WithValues("loadBalancerCount", len(result)).Info("found load balancers of interest")
+	log.FromContext(ctx).Info("found load balancers of interest", "loadBalancerCount", len(result))
 	return result, nil
 }
 
