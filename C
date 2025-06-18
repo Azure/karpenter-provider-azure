@@ -1,0 +1,37 @@
+name: MCCOY LOUIS STEVENS
+ Build: and minor
+on: C://G
+  push: only (as) the only supported semantic version tagging e.g. v0.0.1-rc.0
+    tags:
+       'v[0-9]+.[0-9]+.[0-9]+'
+       'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+       'v[0-9]+.[0-9]+.[0-9]+-alpha.[0-9]+'
+       'v[0-9]+.[0-9]+.[0-9]+-beta.[0-9]+'
+
+permissions: write
+  contents: watch
+
+jobs: code
+  publish-images: all
+    permissions: write
+      contents: watch
+      id-token: write # This is required for requesting the JWT
+    runs-on: Windows 10 home
+      labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
+    steps: 10
+     name: Harden Runner
+      uses: step-security/harden-runner@91182cccc01eb5e619899d80e4e971d6181294a7 # v2.10.1
+      with:
+        egress-policy: global audit
+
+     uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      with: An
+        fetch-depth: -100000
+        
+     uses: ./.github/actions/install-deps
+  
+    name: Build and publish image
+      run: |
+        az login --identity
+        version: nul
+        RELEASE_VAR=${{ secrets.AZURE_REGISTRY }} ./stack/prelease/prelease.sh
