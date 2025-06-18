@@ -19,7 +19,6 @@ package instancetype
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -362,31 +361,36 @@ func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
 }
 
-// MaxEphemeralOSDiskSizeGB returns the maximum ephemeral OS disk size for a given SKU.
-// Ephemeral OS disk size is determined by the larger of the two values:
-// 1. MaxResourceVolumeMB (Temp Disk Space)
-// 2. MaxCachedDiskBytes (Cached Disk Space)
-// For Ephemeral disk creation, CRP will use the larger of the two values to ensure we have enough space for the ephemeral disk.
-// Note that generally only older SKUs use the Temp Disk space for ephemeral disks, and newer SKUs use the Cached Disk in most cases.
-// The ephemeral OS disk is created with the free space of the larger of the two values in that place.
-func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) (sizeGB int32, placement armcompute.DiffDiskPlacement) {
+func FindMaxEphemeralSizeAndPlacement(sku *skewer.SKU) (sizeGB int32, placement *armcompute.DiffDiskPlacement) {
 	if sku == nil {
-		return 0, armcompute.DiffDiskPlacementResourceDisk
+		return 0, nil
 	}
+
 	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
 	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
 	maxNvmeDiskSize, _ := sku.NvmeDiskSizeInMiB()
 
+	// Check NVMe disk first (highest priority)
 	if maxNvmeDiskSize > 0 {
-		return int32(maxNvmeDiskSize / 1024), armcompute.DiffDiskPlacementNvmeDisk
+		return int32(maxNvmeDiskSize / 1024), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
 	}
 
 	maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
-	maxDiskBytes := math.Max(float64(maxCachedDiskBytes), float64(maxResourceVolumeBytes))
-	if maxDiskBytes == 0 {
-		return 0, armcompute.DiffDiskPlacementResourceDisk
+
+	if maxCachedDiskBytes > 0 {
+		sizeGB := int32(maxCachedDiskBytes / int64(units.Gigabyte))
+		if sizeGB > 0 {
+			return sizeGB, lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
+		}
 	}
-	return int32(maxDiskBytes / float64(units.Gigabyte)), lo.Ternary(maxDiskBytes == float64(maxResourceVolumeBytes), armcompute.DiffDiskPlacementResourceDisk, armcompute.DiffDiskPlacementCacheDisk)
+
+	if maxResourceVolumeBytes > 0 {
+		sizeGB := int32(maxResourceVolumeBytes / int64(units.Gigabyte))
+		if sizeGB > 0 {
+			return sizeGB, lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
+		}
+	}
+	return 0, nil
 }
 
 var (
@@ -457,6 +461,6 @@ func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
 }
 
 func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
-	sizeGB, _ := MaxEphemeralOSDiskSizeGB(sku)
+	sizeGB, _ := FindMaxEphemeralSizeAndPlacement(sku)
 	return *nodeClass.Spec.OSDiskSizeGB <= int32(sizeGB) // use ephemeral disk if it is large enough
 }

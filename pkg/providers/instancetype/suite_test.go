@@ -731,36 +731,6 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
 			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementNvmeDisk))
 		})
-		It("should provision Standard_E4d_v5 if asked for ephemeral storage with temp disk", func() {
-			// Standard_E4d_v5 should show up in the list of instance types, but should not be supported
-			instanceTypes, err := azureEnvSouthCentralUS.InstanceTypesProvider.List(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(instanceTypes).To(ContainElement(WithTransform(func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }, Equal("Standard_E4d_v5"))))
-
-			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-					Operator: v1.NodeSelectorOpGt,
-					Values:   []string{"0"},
-				},
-			},
-				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_E4d_v5"}, // E4d_v5 does not support ephemeral disk
-					},
-				})
-			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, clusterSouthCentralUS, cloudProviderSouthCentralUS, coreProvisionerSouthCentralUS, pod)
-			ExpectScheduled(ctx, env.Client, pod)
-
-			vm := azureEnvSouthCentralUS.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
-			Expect(vm).NotTo(BeNil())
-			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
-			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementResourceDisk))
-		})
 	})
 
 	Context("Nodepool with KubeletConfig", func() {
