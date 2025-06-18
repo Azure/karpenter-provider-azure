@@ -96,7 +96,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 			logger.WithValues("currentK8sVersion", currentK8sVersion.String(), "discoveredK8sVersion", newK8sVersion.String()).V(1).Info("kubernetes upgrade detected")
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
 		} else if newK8sVersion.LT(currentK8sVersion) {
-			logger.WithValues("currentK8sVersion", currentK8sVersion.String(), "discoveredK8sVersion", newK8sVersion.String()).Info("detected potential kubernetes downgrade, keeping current version")
+			logger.WithValues("currentK8sVersion", currentK8sVersion.String(), "discoveredK8sVersion", newK8sVersion.String()).V(-1).Info("detected potential kubernetes downgrade, keeping current version")
 			// We do not currently support downgrading, so keep the kubernetes version the same
 			goalK8sVersion = nodeClass.Status.KubernetesVersion
 		}
