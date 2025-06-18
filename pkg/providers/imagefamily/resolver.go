@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/clusterdns"
+
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -56,6 +58,7 @@ var _ Resolver = &defaultResolver{}
 // defaultResolver is able to fill-in dynamic launch template parameters
 type defaultResolver struct {
 	nodeBootstrappingProvider types.NodeBootstrappingAPI
+	clusterDNSProvider        clusterdns.ClusterDNSProvider
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -85,9 +88,10 @@ type ImageFamily interface {
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
-func NewDefaultResolver(_ client.Client, nodeBootstrappingClient types.NodeBootstrappingAPI) *defaultResolver {
+func NewDefaultResolver(_ client.Client, nodeBootstrappingClient types.NodeBootstrappingAPI, clusterDNSProvider clusterdns.ClusterDNSProvider) *defaultResolver {
 	return &defaultResolver{
 		nodeBootstrappingProvider: nodeBootstrappingClient,
+		clusterDNSProvider:        clusterDNSProvider,
 	}
 }
 
@@ -143,17 +147,22 @@ func (r *defaultResolver) Resolve(
 		storageProfile = consts.StorageProfileEphemeral
 	}
 
+	clusterDNSIP, err := r.clusterDNSProvider.ClusterDNS(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
-			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
+			prepareKubeletConfiguration(ctx, instanceType, nodeClass, clusterDNSIP),
 			allTaints,
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
 		),
 		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
-			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
+			prepareKubeletConfiguration(ctx, instanceType, nodeClass, clusterDNSIP),
 			generalTaints,
 			startupTaints,
 			staticParameters.Labels,
@@ -181,7 +190,7 @@ func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
 	return "", fmt.Errorf("no distro found for image id %s", imageID)
 }
 
-func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) *bootstrap.KubeletConfiguration {
+func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass, clusterDNS string) *bootstrap.KubeletConfiguration {
 	kubeletConfig := &bootstrap.KubeletConfiguration{}
 
 	if nodeClass.Spec.Kubelet != nil {
@@ -189,6 +198,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	}
 
 	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)
+	kubeletConfig.DNSServiceIP = clusterDNS
 
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
