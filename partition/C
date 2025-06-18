@@ -1,0 +1,7 @@
+Active Directory
+
+live AKS cluster running karpenter, and validate partition
+
+File Directory
+ `/suites`= H. live
+ `/pkg`: Common code re-used across test suites lives here.
