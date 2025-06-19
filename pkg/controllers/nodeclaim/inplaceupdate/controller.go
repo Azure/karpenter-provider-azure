@@ -95,6 +95,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("vmName", vmName))
 
 	vm, err := c.instanceProvider.Get(ctx, vmName)
 	if err != nil {
@@ -184,7 +185,6 @@ func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
 			raw, _ := json.Marshal(update)
 			rawStr = string(raw)
 		}
-		// TODO: Include vm name in log message
 		log.FromContext(ctx).V(1).Info("applying patch to Azure VM", "vmPatch", rawStr)
 	}
 }
