@@ -196,7 +196,7 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 		if err = c.kubeClient.Delete(ctx, nodeClaim); err != nil {
 			err = client.IgnoreNotFound(err)
 			if err != nil {
-				log.FromContext(ctx).Error(err, "failed to delete nodeclaim, will wait for liveness TTL", "nodeClaim", nodeClaim.Name)
+				log.FromContext(ctx).Error(err, "failed to delete nodeclaim, will wait for liveness TTL", "NodeClaim", nodeClaim.Name)
 			}
 		}
 		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
@@ -295,7 +295,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeClaim", nodeClaim.Name))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
 	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("getting VM name, %w", err)

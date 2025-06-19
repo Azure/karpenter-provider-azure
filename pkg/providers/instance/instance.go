@@ -161,7 +161,7 @@ func (p *DefaultProvider) BeginCreate(
 		// There may be orphan NICs (created before promise started)
 		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
-			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "nodeClaim", nodeClaim.Name)
+			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "NodeClaim", nodeClaim.Name)
 		}
 		return nil, err
 	}
@@ -231,7 +231,7 @@ func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error
 		return nil
 	}
 
-	log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "resourceName", resourceName)
+	log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "vmName", resourceName)
 	return p.cleanupAzureResources(ctx, resourceName)
 }
 
@@ -767,7 +767,7 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) error {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
-		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "resourceName", resourceName)
+		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
 	}
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
@@ -775,7 +775,7 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 
 	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
 	if nicErr != nil {
-		log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "resourceName", resourceName)
+		log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "nicName", resourceName)
 	}
 	return errors.Join(vmErr, nicErr)
 }
