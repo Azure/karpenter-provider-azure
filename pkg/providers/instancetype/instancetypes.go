@@ -371,7 +371,7 @@ func FindMaxEphemeralSizeAndPlacement(sku *skewer.SKU) (sizeGB int32, placement 
 	maxNvmeDiskSize, _ := sku.NvmeDiskSizeInMiB()
 
 	// Check NVMe disk first (highest priority)
-	if maxNvmeDiskSize > 0 {
+	if maxNvmeDiskSize > 0 && SupportsNVMeEphemeralOSDisk(sku) {
 		return int32(maxNvmeDiskSize / 1024), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
 	}
 
@@ -458,6 +458,12 @@ func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
 	}
 
 	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
+}
+
+func SupportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
+	const ephemeralOSDiskPlacementCapability = "SupportedEphemeralOSDiskPlacements"
+	const nvme = "NvmeDisk"
+	return sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, nvme)
 }
 
 func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
