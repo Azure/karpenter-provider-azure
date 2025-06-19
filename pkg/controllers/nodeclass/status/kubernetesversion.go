@@ -80,7 +80,7 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 
 	// Handles case 1: init, update kubernetes status to API server version found
 	if !nodeClass.StatusConditions().Get(v1beta1.ConditionTypeKubernetesVersionReady).IsTrue() || nodeClass.Status.KubernetesVersion == "" {
-		logger.WithValues("goalKubernetesVersion", goalK8sVersion).V(1).Info("init kubernetes version")
+		logger.V(1).Info("init kubernetes version", "goalKubernetesVersion", goalK8sVersion)
 	} else {
 		// Check if there is an upgrade
 		newK8sVersion, err := semver.Parse(goalK8sVersion)
@@ -93,10 +93,10 @@ func (r *KubernetesVersionReconciler) Reconcile(ctx context.Context, nodeClass *
 		}
 		// Handles case 2: Upgrade kubernetes version [Note: we set node image to not ready, since we upgrade node image when there is a kubernetes upgrade]
 		if newK8sVersion.GT(currentK8sVersion) {
-			logger.WithValues("currentK8sVersion", currentK8sVersion.String(), "discoveredK8sVersion", newK8sVersion.String()).V(1).Info("kubernetes upgrade detected")
+			logger.V(1).Info("kubernetes upgrade detected", "currentK8sVersion", currentK8sVersion.String(), "discoveredK8sVersion", newK8sVersion.String())
 			nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "KubernetesUpgrade", "Performing kubernetes upgrade, need to get latest images")
 		} else if newK8sVersion.LT(currentK8sVersion) {
-			logger.WithValues("currentK8sVersion", currentK8sVersion.String(), "discoveredK8sVersion", newK8sVersion.String()).V(-1).Info("detected potential kubernetes downgrade, keeping current version")
+			logger.V(-1).Info("detected potential kubernetes downgrade, keeping current version", "currentK8sVersion", currentK8sVersion.String(), "discoveredK8sVersion", newK8sVersion.String())
 			// We do not currently support downgrading, so keep the kubernetes version the same
 			goalK8sVersion = nodeClass.Status.KubernetesVersion
 		}
