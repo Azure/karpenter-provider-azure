@@ -94,9 +94,8 @@ func (env *Environment) ExpectUpdated(objects ...client.Object) {
 			current := o.DeepCopyObject().(client.Object)
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(current), current)).To(Succeed())
 			if current.GetResourceVersion() != o.GetResourceVersion() {
-				log.FromContext(env).WithValues(
-					"objectType", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme())).String(),
-				).Info("detected an update to an object with an outdated resource version, did you get the latest version of the object before patching?")
+				log.FromContext(env).Info("detected an update to an object with an outdated resource version, did you get the latest version of the object before patching?",
+					"objectType", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme())).String())
 			}
 			o.SetResourceVersion(current.GetResourceVersion())
 			g.Expect(env.Client.Update(env.Context, o)).To(Succeed())
@@ -117,9 +116,8 @@ func (env *Environment) ExpectStatusUpdated(objects ...client.Object) {
 			current := o.DeepCopyObject().(client.Object)
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(current), current)).To(Succeed())
 			if current.GetResourceVersion() != o.GetResourceVersion() {
-				log.FromContext(env).WithValues(
-					"objectType", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme())).String(),
-				).Info("detected an update to an object with an outdated resource version, did you get the latest version of the object before patching?")
+				log.FromContext(env).Info("detected an update to an object with an outdated resource version, did you get the latest version of the object before patching?",
+					"objectType", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme())).String())
 			}
 			o.SetResourceVersion(current.GetResourceVersion())
 			g.Expect(env.Client.Status().Update(env.Context, o)).To(Succeed())
@@ -1014,7 +1012,7 @@ func (env *Environment) ExpectCABundle() string {
 	Expect(err).ToNot(HaveOccurred())
 	_, err = transport.TLSConfigFor(transportConfig) // fills in CAData!
 	Expect(err).ToNot(HaveOccurred())
-	log.FromContext(env.Context).WithValues("length", len(transportConfig.TLS.CAData)).V(1).Info("discovered caBundle")
+	log.FromContext(env.Context).V(1).Info("discovered caBundle", "length", len(transportConfig.TLS.CAData))
 	return base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)
 }
 

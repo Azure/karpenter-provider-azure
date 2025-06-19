@@ -259,6 +259,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	if err != nil {
 		return nil, fmt.Errorf("getting vm name, %w", err)
 	}
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("vmName", vmName))
 	instance, err := c.instanceProvider.Get(ctx, vmName)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance, %w", err)
@@ -294,6 +295,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeClaimName", nodeClaim.Name))
 	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("getting VM name, %w", err)
