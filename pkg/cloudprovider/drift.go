@@ -193,7 +193,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 
 	logger.V(1).Info("drift triggered as actual image id was not found in the set of currently available node images",
 		"driftType", ImageDrift,
-		"actualImageId", vmImageID)
+		"actualImageID", vmImageID)
 	return ImageDrift, nil
 }
 
@@ -243,8 +243,8 @@ func (c *CloudProvider) isKubeletIdentityDrifted(ctx context.Context, nodeClaim 
 	if kubeletIdentityClientID != opts.KubeletIdentityClientID {
 		logger.V(1).Info("drift triggered due to expected and actual kubelet identity client id mismatch",
 			"driftType", KubeletIdentityDrift,
-			"expectedKubeletIdentityClientId", opts.KubeletIdentityClientID,
-			"actualKubeletIdentityClientId", kubeletIdentityClientID)
+			"expectedKubeletIdentityClientID", opts.KubeletIdentityClientID,
+			"actualKubeletIdentityClientID", kubeletIdentityClientID)
 		return KubeletIdentityDrift, nil
 	}
 

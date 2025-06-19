@@ -94,7 +94,7 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 }
 
 func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("provider-id", nodeClaim.Status.ProviderID))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("providerID", nodeClaim.Status.ProviderID))
 	if err := c.cloudProvider.Delete(ctx, nodeClaim); err != nil {
 		return corecloudprovider.IgnoreNodeClaimNotFoundError(err)
 	}
