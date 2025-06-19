@@ -120,8 +120,8 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 	if nodeK8sVersion != k8sVersion {
 		logger.V(1).Info("drift triggered due to k8s version mismatch",
 			"driftType", K8sVersionDrift,
-			"expectedK8sVersion", k8sVersion,
-			"actualK8sVersion", nodeK8sVersion)
+			"expectedKubernetesVersion", k8sVersion,
+			"actualKubernetesVersion", nodeK8sVersion)
 		return K8sVersionDrift, nil
 	}
 	return "", nil
