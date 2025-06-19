@@ -88,11 +88,10 @@ func (c *CloudProvider) areStaticFieldsDrifted(ctx context.Context, nodeClaim *k
 	}
 
 	if nodeClassHash != nodeClaimHash {
-		logger.WithValues(
+		logger.V(1).Info("drift triggered as nodeClassHash != nodeClaimHash",
 			"driftType", NodeClassDrift,
 			"nodeClassHash", nodeClassHash,
-			"nodeClaimHash", nodeClaimHash,
-		).V(1).Info("drift triggered as nodeClassHash != nodeClaimHash")
+			"nodeClaimHash", nodeClaimHash)
 		return NodeClassDrift, nil
 	}
 
@@ -119,11 +118,10 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 
 	nodeK8sVersion := strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")
 	if nodeK8sVersion != k8sVersion {
-		logger.WithValues(
+		logger.V(1).Info("drift triggered due to k8s version mismatch",
 			"driftType", K8sVersionDrift,
 			"expectedK8sVersion", k8sVersion,
-			"actualK8sVersion", nodeK8sVersion,
-		).V(1).Info("drift triggered due to k8s version mismatch")
+			"actualK8sVersion", nodeK8sVersion)
 		return K8sVersionDrift, nil
 	}
 	return "", nil
@@ -193,10 +191,9 @@ func (c *CloudProvider) isImageVersionDrifted(
 		}
 	}
 
-	logger.WithValues(
+	logger.V(1).Info("drift triggered as actual image id was not found in the set of currently available node images",
 		"driftType", ImageDrift,
-		"actualImageId", vmImageID,
-	).V(1).Info("drift triggered as actual image id was not found in the set of currently available node images")
+		"actualImageId", vmImageID)
 	return ImageDrift, nil
 }
 
@@ -244,11 +241,10 @@ func (c *CloudProvider) isKubeletIdentityDrifted(ctx context.Context, nodeClaim 
 	}
 
 	if kubeletIdentityClientID != opts.KubeletIdentityClientID {
-		logger.WithValues(
+		logger.V(1).Info("drift triggered due to expected and actual kubelet identity client id mismatch",
 			"driftType", KubeletIdentityDrift,
 			"expectedKubeletIdentityClientId", opts.KubeletIdentityClientID,
-			"actualKubeletIdentityClientId", kubeletIdentityClientID,
-		).V(1).Info("drift triggered due to expected and actual kubelet identity client id mismatch")
+			"actualKubeletIdentityClientId", kubeletIdentityClientID)
 		return KubeletIdentityDrift, nil
 	}
 
