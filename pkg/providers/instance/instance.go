@@ -161,7 +161,7 @@ func (p *DefaultProvider) BeginCreate(
 		// There may be orphan NICs (created before promise started)
 		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
 		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
-			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "nodeClaimName", nodeClaim.Name)
+			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "nodeClaim", nodeClaim.Name)
 		}
 		return nil, err
 	}
@@ -172,11 +172,11 @@ func (p *DefaultProvider) BeginCreate(
 	}
 
 	log.FromContext(ctx).Info("launched new instance",
-		"launched-instance", *vm.ID,
+		"launchedInstance", *vm.ID,
 		"hostname", *vm.Name,
 		"type", string(*vm.Properties.HardwareProfile.VMSize),
 		"zone", zone,
-		"capacity-type", GetCapacityType(vm))
+		"capacityType", GetCapacityType(vm))
 
 	return vmPromise, nil
 }
@@ -281,7 +281,7 @@ func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmN
 	}
 	log.FromContext(ctx).V(1).Info("created virtual machine AKS identifying extension",
 		"vmName", vmName,
-		"extensionId", *v.ID,
+		"extensionID", *v.ID,
 	)
 	return nil
 }
@@ -297,7 +297,7 @@ func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, 
 	}
 	log.FromContext(ctx).V(1).Info("created virtual machine CSE",
 		"vmName", vmName,
-		"extensionId", *v.ID,
+		"extensionID", *v.ID,
 	)
 	return nil
 }
@@ -386,7 +386,7 @@ func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *crea
 	if err != nil {
 		return "", err
 	}
-	log.FromContext(ctx).V(1).Info("successfully created network interface", "nicName", opts.NICName, "nicId", *res.ID)
+	log.FromContext(ctx).V(1).Info("successfully created network interface", "nicName", opts.NICName, "nicID", *res.ID)
 	return *res.ID, nil
 }
 
