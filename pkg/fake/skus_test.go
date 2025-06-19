@@ -23,7 +23,7 @@ import (
 )
 
 func TestSKUExistence(t *testing.T) {
-	testSKUExistenceForRegion(t, "eastus", sets.New(
+	testSKUExistenceForRegion(t, "southcentralus", sets.New(
 		"Standard_A0",
 		"Standard_B1s",
 		"Standard_D2s_v3",
