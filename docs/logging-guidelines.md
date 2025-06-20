@@ -3,13 +3,13 @@
 ## Log Levels and When to Use Them
 
 ### Error Level (`Error`)
-For failures that prevent normal operation
 
-**When to use Error:**
+**When to use Error:** Failures that prevent normal operation
 - External system failures (Azure API, network)
 - Authentication/authorization failures
 - Resource cleanup failures that may cause leaks
 - Unrecoverable errors that affect operation
+- Any operation that fails to complete its intended goal (even if retryable)
 
 **Examples:**
 ```go
@@ -26,9 +26,10 @@ log.FromContext(ctx).Error(err, "failed to cleanup VM, may cause resource leak")
 ```
 
 ### Warning Level (`V(-1)`)
-For non-fatal issues that operators should be aware of
 
-**When to use V(-1):**
+**Note: Generally avoid `V(-1)` unless truly warranted.** Use `Error` for operation failures and `V(-1)` for operations that succeed or continue with unexpected behavior.
+
+**When to use V(-1):** For non-fatal issues that operators should be aware of
 - Recoverable errors that don't prevent operation but indicate potential issues
 - Invariant violations that suggest system inconsistencies
 - Fallback scenarios where default behavior is used
@@ -52,9 +53,8 @@ log.FromContext(ctx).V(-1).Info("detected potential kubernetes downgrade, keepin
 ```
 
 ### Info Level (`V(0)`)
-For important events that operators care about, these are logged by default
 
-**When to use Info:**
+**When to use Info:** For important events that operators care about, these are logged by default
 - Successful completion of major operations
 - Important state changes (node creation/deletion)
 - System startup/shutdown events
@@ -75,9 +75,8 @@ log.FromContext(ctx).WithValues("version", version).Info("karpenter starting")
 ```
 
 ### Debug Level (`V(1)`)
-For operational details useful for troubleshooting
 
-**When to use V(1):**
+**When to use V(1):** For operational details useful for troubleshooting
 - Progress indicators for long-running operations
 - Detailed success confirmations
 - Resource lifecycle events (NIC creation, extension installation)
@@ -101,9 +100,8 @@ log.FromContext(ctx).WithValues("attempt", retryCount).V(1).Info("retrying opera
 ```
 
 ### Trace Level (`V(2)`+)
-For detailed debugging information
 
-**When to use V(2)+:**
+**When to use V(2)+:** For detailed debugging information
 - Per-request details and API calls
 - Internal state transitions
 - Verbose debugging information
@@ -158,12 +156,12 @@ log.FromContext(ctx).Error(err, "failed to create VM", "attempt", retryCount)
 **Example Output:**
 ```json
 // WithValues - vmName and resourceGroupName appear in both logs automatically
-{"level":"info","ts":"2025-06-19T10:30:00.123Z","msg":"creating VM","vmName":"aks-nodepool-12345-vm-000000","resourceGroupName":"rg-test"}
-{"level":"info","ts":"2025-06-19T10:30:05.456Z","msg":"VM created successfully","vmName":"aks-nodepool-12345-vm-000000","resourceGroupName":"rg-test"}
+{"level":"INFO","time":"2024-01-01T12:00:00Z","message":"creating VM","vmName":"aks-nodepool-12345-vm-000000","resourceGroupName":"rg-test"}
+{"level":"INFO","time":"2024-01-01T12:00:05Z","message":"VM created successfully","vmName":"aks-nodepool-12345-vm-000000","resourceGroupName":"rg-test"}
 
 // Direct pairs - single-use data appears only in specific logs
-{"level":"info","ts":"2025-06-19T10:30:10.789Z","msg":"processing instances","instanceCount":5}
-{"level":"error","ts":"2025-06-19T10:30:15.012Z","msg":"failed to create VM","attempt":3,"error":"timeout exceeded"}
+{"level":"INFO","time":"2024-01-01T12:00:10Z","message":"processing instances","instanceCount":5}
+{"level":"ERROR","time":"2024-01-01T12:00:15Z","message":"failed to create VM","attempt":3,"error":"timeout exceeded"}
 ```
 
 ## Logging Key Conventions
@@ -197,13 +195,13 @@ When adding new logging keys, follow these conventions:
 
 ## Summary
 
-| Level    | Purpose                              | Examples                                 | Zapr Output Level |
-|----------|--------------------------------------|------------------------------------------|------------------|
-| `Error` | Failures that prevent operation       | API failures, cleanup failures           | ERROR            |
-| `V(-1)` | Warnings for non-fatal issues        | Invariant violations, fallback scenarios, skipped operations | WARN             |
-| `Info`  | Important operational events          | VM created, cluster scaled, service started | INFO          |
-| `V(1)`  | Operational details for troubleshooting| Progress updates, detailed successes, retries | DEBUG        |
-| `V(2)`  | Per-request debugging                | API calls, request processing            | DEBUG            |
-| `V(3)`  | Verbose debugging                    | Full payloads, internal state            | DEBUG            |
+| Level   | Purpose                                         | Examples                                                     | Zapr Output Level |
+| ------- | ----------------------------------------------- | ------------------------------------------------------------ | ----------------- |
+| `Error` | Failures that prevent operation                 | API failures, cleanup failures                               | ERROR             |
+| `V(-1)` | Warnings for non-fatal issues *(use sparingly)* | Invariant violations, fallback scenarios, skipped operations | WARN              |
+| `Info`  | Important operational events                    | VM created, cluster scaled, service started                  | INFO              |
+| `V(1)`  | Operational details for troubleshooting         | Progress updates, detailed successes, retries                | DEBUG             |
+| `V(2)`  | Per-request debugging                           | API calls, request processing                                | DEBUG             |
+| `V(3)`  | Verbose debugging                               | Full payloads, internal state                                | DEBUG             |
 
 *Note: In Zapr, logr `V(-1)` maps to WARN output, `V(0)` maps to INFO, and `V(1)` and higher map to DEBUG. The V(-1) level provides a way to log warnings that operators should see without requiring debug logging to be enabled. See [Zapr README: Increasing Verbosity](https://github.com/go-logr/zapr?tab=readme-ov-file#increasing-verbosity) for details.*
