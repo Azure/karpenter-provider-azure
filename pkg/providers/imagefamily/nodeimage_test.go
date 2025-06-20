@@ -91,6 +91,7 @@ func getExpectedTestSIGImages(imageFamily string, version string, kubernetesVers
 
 var _ = Describe("NodeImageProvider tests", func() {
 	var (
+		testOptions               *options.Options
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider

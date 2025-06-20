@@ -107,7 +107,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	var auxiliaryTokenServer *fake.AuxiliaryTokenServer
 	if testOptions.UseSIG {
 		auxiliaryTokenServer = fake.NewAuxiliaryTokenServer("test-token", time.Now().Add(1*time.Hour), time.Now().Add(5*time.Minute))
-		auxTokenPolicy, _ = auth.NewAuxiliaryTokenPolicy(ctx, auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, testOptions.SIGAccessTokenScope)
+		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, testOptions.SIGAccessTokenScope)
 	}
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{AuxiliaryTokenPolicy: auxTokenPolicy}
 

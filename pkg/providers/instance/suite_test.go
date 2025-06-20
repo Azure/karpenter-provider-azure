@@ -209,23 +209,22 @@ var _ = Describe("InstanceProvider", func() {
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(1)) // init token
 			})
 		})
 
 		Context("token is cached by previous vmClient call", func() {
 			BeforeEach(func() {
-				azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token = azureEnv.AuxiliaryTokenServer.Token
+				_ = azureEnv.VirtualMachinesAPI.UseAuxiliaryTokenPolicy()
 			})
 			It("should use cached auxiliary token when still valid", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(1)) // init token
 				Expect(azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token).ToNot(BeNil())
 			})
 
@@ -238,7 +237,7 @@ var _ = Describe("InstanceProvider", func() {
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(2)) // init + refresh token
 			})
 
 			It("should refresh auxiliary token if after RefreshOn", func() {
@@ -250,7 +249,7 @@ var _ = Describe("InstanceProvider", func() {
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(2)) // init + refresh token
 			})
 		})
 	})

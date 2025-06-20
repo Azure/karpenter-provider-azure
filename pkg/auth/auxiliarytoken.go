@@ -17,7 +17,6 @@ limitations under the License.
 package auth
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -70,7 +69,7 @@ func (p *AuxiliaryTokenPolicy) Do(req *policy.Request) (*http.Response, error) {
 	return req.Next()
 }
 
-func NewAuxiliaryTokenPolicy(ctx context.Context, client AuxiliaryTokenServer, url string, scope string) (*AuxiliaryTokenPolicy, error) {
+func NewAuxiliaryTokenPolicy(client AuxiliaryTokenServer, url string, scope string) *AuxiliaryTokenPolicy {
 	auxPolicy := AuxiliaryTokenPolicy{
 		Token:  azcore.AccessToken{},
 		url:    url,
@@ -78,8 +77,7 @@ func NewAuxiliaryTokenPolicy(ctx context.Context, client AuxiliaryTokenServer, u
 		client: client,
 		lock:   sync.Mutex{},
 	}
-	log.FromContext(ctx).V(1).Info("Will use auxiliary token policy for creating virtual machines")
-	return &auxPolicy, nil
+	return &auxPolicy
 }
 
 func getAuxiliaryToken(client AuxiliaryTokenServer, url string, scope string) (azcore.AccessToken, error) {

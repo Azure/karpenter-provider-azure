@@ -62,6 +62,7 @@ func AKSNodeClass(overrides ...v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
 	}
 }
 
+// TODO: Pass in test.Options if we want to use more options within this func
 func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environment, useSIG bool) {
 	if useSIG {
 		ApplySIGImages(nodeClass)

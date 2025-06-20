@@ -54,6 +54,14 @@ func NewAuxiliaryTokenServer(token string, expiresOn time.Time, refreshOn time.T
 	}
 }
 
+func (c *AuxiliaryTokenServer) SetToken(token string, expiresOn time.Time, refreshOn time.Time) {
+	c.Token = azcore.AccessToken{
+		Token:     token,
+		ExpiresOn: expiresOn,
+		RefreshOn: refreshOn,
+	}
+}
+
 // Reset must be called between tests otherwise tests will pollute each other.
 func (c *AuxiliaryTokenServer) Reset() {
 	c.AuxiliaryTokenDoBehavior.Reset()

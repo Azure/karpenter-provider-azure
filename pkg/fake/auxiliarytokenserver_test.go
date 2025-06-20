@@ -17,13 +17,13 @@ limitations under the License.
 package fake
 
 import (
-	"context"
+	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
-	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -34,51 +34,38 @@ func Test_AddAuxiliaryTokenPolicyClientOptions(t *testing.T) {
 		RefreshOn: time.Now().Add(5 * time.Second),
 	}
 	tests := []struct {
-		name      string
-		expected  azcore.AccessToken
-		wantErr   bool
-		errString string
-		url       string
-		scope     string
+		name       string
+		userAgent  string
+		statusCode int
 	}{
 		{
-			name:      "url is not set",
-			wantErr:   true,
-			errString: "access token server URL is not set",
-			url:       "",
-			scope:     "anything",
+			name:       "default",
+			userAgent:  auth.GetUserAgentExtension(),
+			statusCode: http.StatusOK,
 		},
 		{
-			name:      "scope is not set",
-			wantErr:   true,
-			errString: "access token scope is not set",
-			url:       "anything",
-			scope:     "",
-		},
-		{
-			name:    "default",
-			wantErr: false,
-			url:     "http://test-url.com",
-			scope:   "test-scope",
+			name:       "wrong user agent",
+			userAgent:  "wrong-user-agent",
+			statusCode: http.StatusUnauthorized,
 		},
 	}
 	tokenServer := &AuxiliaryTokenServer{Token: defaultToken}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clientOpts := armopts.DefaultArmOpts()
-			vmClientOpts := *clientOpts
-			auxPolicy, err := auth.NewAuxiliaryTokenPolicy(context.Background(), tokenServer, tt.url, tt.scope)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getAuxiliaryToken() error = %v, wantErr: %v", err, tt.wantErr)
+			request := &http.Request{
+				Method: http.MethodGet,
+				URL:    &url.URL{Path: "/"},
+				Header: http.Header{
+					"User-Agent": []string{tt.userAgent},
+				},
+			}
+			resp, err := tokenServer.Do(request)
+			if err != nil {
+				t.Errorf("Unexpected error %v", err)
 				return
 			}
-			vmClientOpts.ClientOptions.PerRetryPolicies = append(vmClientOpts.ClientOptions.PerRetryPolicies, auxPolicy)
-			if tt.wantErr {
-				assert.ErrorContains(t, err, tt.errString)
-			} else {
-				assert.NotEqual(t, clientOpts.ClientOptions.PerRetryPolicies, vmClientOpts.ClientOptions.PerRetryPolicies)
-			}
+			assert.Equal(t, tt.statusCode, resp.StatusCode, "Expected status code %d, got %d", tt.statusCode, resp.StatusCode)
+			tokenServer.Reset()
 		})
-		tokenServer.Reset()
 	}
 }

@@ -27,14 +27,12 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 )
 
 var (
-	ctx         context.Context
-	env         *coretest.Environment
-	testOptions *options.Options
+	ctx context.Context
+	env *coretest.Environment
 )
 
 func TestImageFamilyProvider(t *testing.T) {
