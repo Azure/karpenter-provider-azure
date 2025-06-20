@@ -162,7 +162,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 	Context("List SIG Images", func() {
 		BeforeEach(func() {
-			testOptions := options.FromContext(ctx)
+			testOptions = options.FromContext(ctx)
 			testOptions.UseSIG = true
 			testOptions.SIGSubscriptionID = sigSubscription
 			testOptions.SIGAccessTokenScope = "http://valid-scope.com/.default"

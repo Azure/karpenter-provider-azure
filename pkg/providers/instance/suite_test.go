@@ -33,7 +33,6 @@ import (
 
 	"k8s.io/client-go/tools/record"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -60,17 +59,14 @@ import (
 
 var ctx context.Context
 
-// var ctxUseSIG context.Context
 var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv *test.Environment
 var azureEnvNonZonal *test.Environment
 
-// var azureEnvUseSIG *test.Environment
 var cloudProvider *cloudprovider.CloudProvider
 var cloudProviderNonZonal *cloudprovider.CloudProvider
 
-// var cloudProviderUseSIG *cloudprovider.CloudProvider
 var fakeClock *clock.FakeClock
 var cluster *state.Cluster
 var coreProvisioner *provisioning.Provisioner
@@ -140,7 +136,6 @@ var _ = Describe("InstanceProvider", func() {
 
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
-		// azureEnvUseSIG.Reset()
 		cluster.Reset()
 	})
 
@@ -178,7 +173,6 @@ var _ = Describe("InstanceProvider", func() {
 		var originalOptions *options.Options
 		var originalEnv *test.Environment
 		var originalCloudProvider *cloudprovider.CloudProvider
-		var serverToken azcore.AccessToken
 		newOptions := test.Options(test.OptionsFields{
 			UseSIG: lo.ToPtr(true),
 		})
@@ -197,7 +191,6 @@ var _ = Describe("InstanceProvider", func() {
 				azureEnv.ImageProvider,
 			)
 			test.ApplyDefaultStatus(nodeClass, env, newOptions.UseSIG)
-			serverToken = azureEnv.AuxiliaryTokenServer.Token
 		})
 
 		AfterEach(func() {
@@ -222,7 +215,7 @@ var _ = Describe("InstanceProvider", func() {
 
 		Context("token is cached by previous vmClient call", func() {
 			BeforeEach(func() {
-				azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token = serverToken
+				azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token = azureEnv.AuxiliaryTokenServer.Token
 			})
 			It("should use cached auxiliary token when still valid", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -237,8 +230,7 @@ var _ = Describe("InstanceProvider", func() {
 			})
 
 			It("should refresh auxiliary token if about to expire", func() {
-				prevExpiresOn := time.Now().Add(4 * time.Minute)
-				azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token.ExpiresOn = prevExpiresOn
+				azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token.ExpiresOn = time.Now().Add(4 * time.Minute)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})

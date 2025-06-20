@@ -62,7 +62,6 @@ type Environment struct {
 	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
 	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
-	NodeImageVersionsAPI        *fake.NodeImageVersionsAPI
 	MockSkuClientSingleton      *fake.MockSkuClientSingleton
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
@@ -171,7 +170,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		nodeImageVersionsAPI,
 		nodeBootstrappingAPI,
 		skuClientSingleton,
-		auxiliaryTokenServer,
 	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,
@@ -193,7 +191,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:        networkInterfacesAPI,
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
-		NodeImageVersionsAPI:        nodeImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
 		MockSkuClientSingleton:      skuClientSingleton,

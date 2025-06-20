@@ -93,8 +93,7 @@ func (c *VirtualMachinesAPI) Reset() {
 func (c *VirtualMachinesAPI) UseAuxiliaryPolicy() error {
 	if c.AuxiliaryTokenPolicy != nil {
 		request, _ := runtime.NewRequest(context.Background(), "GET", "http://example.com")
-		_, err := c.AuxiliaryTokenPolicy.Do(request)
-		if err != nil {
+		if _, err := c.AuxiliaryTokenPolicy.Do(request); err != nil {
 			return err
 		}
 	}
@@ -112,8 +111,7 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGr
 	// BeginCreateOrUpdate should fail, if the vm exists in the cache, and we are attempting to change properties for zone
 
 	return c.VirtualMachineCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineCreateOrUpdateInput) (*armcompute.VirtualMachinesClientCreateOrUpdateResponse, error) {
-		err := c.UseAuxiliaryPolicy()
-		if err != nil {
+		if err := c.UseAuxiliaryPolicy(); err != nil {
 			return nil, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
 		}
 		//if input.ResourceGroupName == "" {

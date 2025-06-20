@@ -69,7 +69,6 @@ type AZClient struct {
 	virtualMachinesClient          VirtualMachinesAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
-	auxiliaryTokenClient           auth.AuxiliaryTokenServer
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -91,12 +90,10 @@ func NewAZClientFromAPI(
 	nodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI,
 	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
 	skuClient skuclient.SkuClient,
-	auxiliaryTokenClient auth.AuxiliaryTokenServer,
 ) *AZClient {
 	return &AZClient{
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
-		auxiliaryTokenClient:           auxiliaryTokenClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
 		ImageVersionsClient:            imageVersionsClient,
@@ -207,6 +204,5 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
 		nodeBootstrappingClient,
-		skuClient,
-		auxiliaryTokenClient), nil
+		skuClient), nil
 }
