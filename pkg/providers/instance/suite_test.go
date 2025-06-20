@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/awslabs/operatorpkg/object"
 
@@ -32,6 +33,7 @@ import (
 
 	"k8s.io/client-go/tools/record"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -57,12 +59,18 @@ import (
 )
 
 var ctx context.Context
+
+// var ctxUseSIG context.Context
 var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv *test.Environment
 var azureEnvNonZonal *test.Environment
+
+// var azureEnvUseSIG *test.Environment
 var cloudProvider *cloudprovider.CloudProvider
 var cloudProviderNonZonal *cloudprovider.CloudProvider
+
+// var cloudProviderUseSIG *cloudprovider.CloudProvider
 var fakeClock *clock.FakeClock
 var cluster *state.Cluster
 var coreProvisioner *provisioning.Provisioner
@@ -95,10 +103,11 @@ var _ = Describe("InstanceProvider", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	var nodePool *karpv1.NodePool
 	var nodeClaim *karpv1.NodeClaim
+	testOptions := options.FromContext(ctx)
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		test.ApplyDefaultStatus(nodeClass, env)
+		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
 		nodePool = coretest.NodePool(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
@@ -131,6 +140,7 @@ var _ = Describe("InstanceProvider", func() {
 
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
+		// azureEnvUseSIG.Reset()
 		cluster.Reset()
 	})
 
@@ -163,6 +173,95 @@ var _ = Describe("InstanceProvider", func() {
 		},
 		ZonalAndNonZonalRegions,
 	)
+
+	When("getting the auxiliary token", func() {
+		var originalOptions *options.Options
+		var originalEnv *test.Environment
+		var originalCloudProvider *cloudprovider.CloudProvider
+		var serverToken azcore.AccessToken
+		newOptions := test.Options(test.OptionsFields{
+			UseSIG: lo.ToPtr(true),
+		})
+		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
+			originalEnv = azureEnv
+			originalCloudProvider = cloudProvider
+			ctx = options.ToContext(
+				ctx,
+				newOptions)
+			azureEnv = test.NewEnvironment(ctx, env)
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider,
+				azureEnv.InstanceProvider,
+				events.NewRecorder(&record.FakeRecorder{}),
+				env.Client,
+				azureEnv.ImageProvider,
+			)
+			test.ApplyDefaultStatus(nodeClass, env, newOptions.UseSIG)
+			serverToken = azureEnv.AuxiliaryTokenServer.Token
+		})
+
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, originalOptions)
+			azureEnv = originalEnv
+			cloudProvider = originalCloudProvider
+			test.ApplyDefaultStatus(nodeClass, env, originalOptions.UseSIG)
+		})
+		Context("the token is not cached", func() {
+			It("should get a new auxiliary token", func() {
+				// first call using vm client should get token
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(1))
+			})
+		})
+
+		Context("token is cached by previous vmClient call", func() {
+			BeforeEach(func() {
+				azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token = serverToken
+			})
+			It("should use cached auxiliary token when still valid", func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(0))
+				Expect(azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token).ToNot(BeNil())
+			})
+
+			It("should refresh auxiliary token if about to expire", func() {
+				prevExpiresOn := time.Now().Add(4 * time.Minute)
+				azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token.ExpiresOn = prevExpiresOn
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(1))
+			})
+
+			It("should refresh auxiliary token if after RefreshOn", func() {
+				azureEnv.VirtualMachinesAPI.AuxiliaryTokenPolicy.Token.RefreshOn = time.Now().Add(-1 * time.Second)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(1))
+			})
+		})
+	})
 
 	Context("AzureCNI V1", func() {
 		var originalOptions *options.Options
@@ -363,24 +462,5 @@ var _ = Describe("InstanceProvider", func() {
 		expectedNSGID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/networkSecurityGroups/aks-agentpool-%s-nsg", azureEnv.SubscriptionID, options.FromContext(ctx).NodeResourceGroup, options.FromContext(ctx).ClusterID)
 		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
 		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
-	})
-
-	It("should use cached auxiliary token when not expired", func() {
-		// write a test that verifies the auxiliary token is cached and reused
-		// by ensuring the AuxiliaryTokenServer fake is not called
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-		ExpectScheduled(ctx, env.Client, pod)
-
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-		Expect(azureEnv.AuxiliaryTokenServer.AuxiliaryTokenDoBehavior.CalledWithInput.Len()).To(Equal(0))
-	})
-
-	It("should refresh auxiliary token if expired", func() {
-		// write a test that verifies the auxiliary token is refreshed when it is expired
-		// by ensuring the AuxiliaryTokenServer fake is called since RefreshOn is set to 5 seconds in the fake server
-
 	})
 })

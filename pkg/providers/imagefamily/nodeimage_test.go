@@ -100,7 +100,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 	BeforeEach(func() {
 		ctx = coreoptions.ToContext(ctx, coretest.Options())
-		ctx = options.ToContext(ctx, test.Options())
+		testOptions = test.Options()
+		ctx = options.ToContext(ctx, testOptions)
 
 		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}
 		cigImageVersionTest := cigImageVersion
@@ -110,7 +111,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
 		nodeClass = test.AKSNodeClass()
-		test.ApplyDefaultStatus(nodeClass, env)
+		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 	})
 
 	Context("List CIG Images", func() {

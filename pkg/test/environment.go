@@ -18,6 +18,7 @@ package test
 
 import (
 	"context"
+	"time"
 
 	gomegaformat "github.com/onsi/gomega/format"
 	"github.com/samber/lo"
@@ -28,6 +29,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -60,6 +62,7 @@ type Environment struct {
 	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
 	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
+	NodeImageVersionsAPI        *fake.NodeImageVersionsAPI
 	MockSkuClientSingleton      *fake.MockSkuClientSingleton
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
@@ -101,7 +104,13 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	testOptions := options.FromContext(ctx)
 
 	// API
-	virtualMachinesAPI := &fake.VirtualMachinesAPI{}
+	var auxTokenPolicy *auth.AuxiliaryTokenPolicy
+	var auxiliaryTokenServer *fake.AuxiliaryTokenServer
+	if testOptions.UseSIG {
+		auxiliaryTokenServer = fake.NewAuxiliaryTokenServer("test-token", time.Now().Add(1*time.Hour), time.Now().Add(5*time.Minute))
+		auxTokenPolicy, _ = auth.NewAuxiliaryTokenPolicy(ctx, auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, testOptions.SIGAccessTokenScope)
+	}
+	virtualMachinesAPI := &fake.VirtualMachinesAPI{AuxiliaryTokenPolicy: auxTokenPolicy}
 
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
@@ -112,7 +121,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
-	auxiliaryTokenServer := &fake.AuxiliaryTokenServer{}
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -180,10 +188,12 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 	return &Environment{
 		VirtualMachinesAPI:          virtualMachinesAPI,
+		AuxiliaryTokenServer:        auxiliaryTokenServer,
 		AzureResourceGraphAPI:       azureResourceGraphAPI,
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:        networkInterfacesAPI,
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
+		NodeImageVersionsAPI:        nodeImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
 		MockSkuClientSingleton:      skuClientSingleton,
@@ -212,6 +222,9 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 func (env *Environment) Reset() {
 	env.VirtualMachinesAPI.Reset()
+	if env.AuxiliaryTokenServer != nil {
+		env.AuxiliaryTokenServer.Reset()
+	}
 	env.AzureResourceGraphAPI.Reset()
 	env.VirtualMachineExtensionsAPI.Reset()
 	env.NetworkInterfacesAPI.Reset()

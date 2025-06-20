@@ -19,6 +19,7 @@ package fake
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
@@ -27,6 +28,11 @@ import (
 )
 
 func Test_AddAuxiliaryTokenPolicyClientOptions(t *testing.T) {
+	defaultToken := azcore.AccessToken{
+		Token:     "test-token",
+		ExpiresOn: time.Now().Add(1 * time.Hour),
+		RefreshOn: time.Now().Add(5 * time.Second),
+	}
 	tests := []struct {
 		name      string
 		expected  azcore.AccessToken
@@ -56,7 +62,7 @@ func Test_AddAuxiliaryTokenPolicyClientOptions(t *testing.T) {
 			scope:   "test-scope",
 		},
 	}
-	tokenServer := &AuxiliaryTokenServer{}
+	tokenServer := &AuxiliaryTokenServer{Token: defaultToken}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clientOpts := armopts.DefaultArmOpts()

@@ -38,47 +38,45 @@ var _ policy.Policy = &AuxiliaryTokenPolicy{}
 // AuxiliaryTokenPolicy provides a custom policy used to authenticate
 // with shared node image galleries.
 type AuxiliaryTokenPolicy struct {
-	auxToken AuxiliaryToken
-	url      string
-	scope    string
-	client   AuxiliaryTokenServer
+	Token  azcore.AccessToken
+	url    string
+	scope  string
+	client AuxiliaryTokenServer
+	lock   sync.Mutex
 }
 
-type AuxiliaryToken struct {
-	token azcore.AccessToken
-	lock  sync.Mutex
-}
-
-func (p *AuxiliaryTokenPolicy) GetAuxiliaryToken() {
-	p.auxToken.lock.Lock()
-	defer p.auxToken.lock.Unlock()
-	// If the token is expired or close to expiration, fetch a new one
-	if p.auxToken.token.ExpiresOn.IsZero() || p.auxToken.token.RefreshOn.Before(time.Now()) || p.auxToken.token.ExpiresOn.Before(time.Now().Add(5*time.Minute)) {
+func (p *AuxiliaryTokenPolicy) GetAuxiliaryToken() error {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	// If the token is uninitialized or close to expiration, fetch a new one
+	currentTime := time.Now()
+	if p.Token.ExpiresOn.IsZero() || p.Token.RefreshOn.Before(currentTime) || p.Token.ExpiresOn.Before(currentTime.Add(5*time.Minute)) {
 		newToken, err := getAuxiliaryToken(p.client, p.url, p.scope)
 		if err != nil {
-			log.FromContext(context.Background()).Error(err, "Failed to get auxiliary token")
-			return
+			return err
 		}
-		p.auxToken.token = newToken
+		p.Token = newToken
 	}
+	return nil
 }
 
 func (p *AuxiliaryTokenPolicy) Do(req *policy.Request) (*http.Response, error) {
-	p.GetAuxiliaryToken()
-	req.Raw().Header.Add("x-ms-authorization-auxiliary", "Bearer "+p.auxToken.token.Token)
+	err := p.GetAuxiliaryToken()
+	if err != nil {
+		log.FromContext(req.Raw().Context()).Error(err, "Failed to get auxiliary token")
+		return nil, err
+	}
+	req.Raw().Header.Add("x-ms-authorization-auxiliary", "Bearer "+p.Token.Token)
 	return req.Next()
 }
 
 func NewAuxiliaryTokenPolicy(ctx context.Context, client AuxiliaryTokenServer, url string, scope string) (*AuxiliaryTokenPolicy, error) {
-	token, err := getAuxiliaryToken(client, url, scope)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get auxiliary token: %w", err)
-	}
 	auxPolicy := AuxiliaryTokenPolicy{
-		auxToken: AuxiliaryToken{token: token, lock: sync.Mutex{}},
-		url:      url,
-		scope:    scope,
-		client:   client,
+		Token:  azcore.AccessToken{},
+		url:    url,
+		scope:  scope,
+		client: client,
+		lock:   sync.Mutex{},
 	}
 	log.FromContext(ctx).V(1).Info("Will use auxiliary token policy for creating virtual machines")
 	return &auxPolicy, nil
