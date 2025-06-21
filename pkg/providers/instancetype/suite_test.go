@@ -78,6 +78,7 @@ import (
 )
 
 var ctx context.Context
+var testOptions *options.Options
 var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv, azureEnvNonZonal *test.Environment
@@ -93,7 +94,8 @@ func TestAzure(t *testing.T) {
 	RegisterFailHandler(Fail)
 
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx = options.ToContext(ctx, test.Options())
+	testOptions = test.Options()
+	ctx = options.ToContext(ctx, testOptions)
 
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 
@@ -127,7 +129,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 	BeforeEach(func() {
 		nodeClass = test.AKSNodeClass()
-		test.ApplyDefaultStatus(nodeClass, env)
+		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
 		nodePool = coretest.NodePool(karpv1.NodePool{
 			Spec: karpv1.NodePoolSpec{
