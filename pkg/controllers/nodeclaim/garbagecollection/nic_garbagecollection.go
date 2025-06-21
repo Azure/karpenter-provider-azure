@@ -96,7 +96,7 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 				return
 			}
 
-			log.FromContext(ctx).WithValues("nic", nicName).Info("garbage collected NIC")
+			log.FromContext(ctx).Info("garbage collected NIC", "nicName", nicName)
 		}
 	})
 	return reconcile.Result{

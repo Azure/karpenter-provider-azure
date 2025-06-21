@@ -161,7 +161,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 
 	// We care about the ordering of the slices here, as it translates to priority during selection, so not treating them as sets
 	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
-		logger.WithValues("existingImages", nodeClass.Status.Images).WithValues("newImages", goalImages).Info("new available images updated for nodeclass")
+		logger.Info("new available images updated for nodeclass", "existingImages", nodeClass.Status.Images, "newImages", goalImages)
 	}
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
@@ -203,7 +203,7 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 	// TODO: In the longer run, the maintenance window handling should be factored out into a sharable provider, rather than being contained
 	//     within the image controller itself.
 	if r.cm.HasChanged("nodeclass-maintenancewindowdata", mwConfigMap.Data) {
-		logger.WithValues("maintenanceWindowData", mwConfigMap.Data).Info("new maintenance window data discovered")
+		logger.Info("new maintenance window data discovered", "maintenanceWindowData", mwConfigMap.Data)
 	}
 	if len(mwConfigMap.Data) == 0 {
 		// An empty configmap means there's no maintenance windows defined, and its up to us when to preform maintenance

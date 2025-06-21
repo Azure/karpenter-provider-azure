@@ -84,7 +84,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 	actualHash := nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]
 
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("goal hash is: %q, actual hash is: %q", goalHash, actualHash))
+	log.FromContext(ctx).V(1).Info("comparing hashes", "goalHash", goalHash, "actualHash", actualHash)
 
 	// If there's no difference from goal state, no need to do anything else
 	if goalHash == actualHash {
@@ -95,6 +95,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("vmName", vmName))
 
 	vm, err := c.instanceProvider.Get(ctx, vmName)
 	if err != nil {
@@ -184,6 +185,6 @@ func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
 			raw, _ := json.Marshal(update)
 			rawStr = string(raw)
 		}
-		log.FromContext(ctx).V(1).Info(fmt.Sprintf("applying patch to Azure VM: %s", rawStr))
+		log.FromContext(ctx).V(1).Info("applying patch to Azure VM", "vmPatch", rawStr)
 	}
 }
