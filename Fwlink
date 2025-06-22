@@ -1,0 +1,901 @@
+{
+  "OS" : [
+    {
+      "Comment" : "Latest driver version is at top of the list and pointed to by the static FwLink. Maintain FwLinks for all files.",
+      "Name" : "Windows",
+      "Version" : [
+        {
+          "Name" : "2016/10",
+          "Driver" : [
+            {
+              "Type" : "CUDA",
+              "Version" : [
+                {
+                  "Num" : "473.47",
+                  "DirLink" : "https://download.microsoft.com/download/a/c/a/aca6122c-3565-4f55-9d4d-56a1cecc6ba6/473.47-data-center-tesla-desktop-winserver-2019-2016-international.exe",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874179"
+                },
+                {
+                  "Num" : "451.82",
+                  "FwLink" : "https://download.microsoft.com/download/6/1/0/6102ece3-39ae-4a95-93c1-e76db97c4ed3/Tesla_Windows_451_82.exe"
+                },
+                {
+                  "Num" : "398.75",
+                  "FwLink" : "https://download.microsoft.com/download/C/F/3/CF3A81B4-9279-45DA-92D0-AF698537E917/398.75-tesla-desktop-winserver2016-international.exe"
+                },
+                {
+                  "Num" : "397.44",
+                  "FwLink" : "https://download.microsoft.com/download/2/2/4/224C672F-1AD7-46CF-A4B2-1E7EEAD87F05/397.44-tesla-desktop-winserver2016-international.exe"
+                },
+                {
+                  "Num" : "390.85",
+                  "DirLink" : "https://download.microsoft.com/download/D/8/4/D846AE1E-6565-4EC7-9C99-45FC839A7659/390.85-tesla-desktop-winserver2016-international.exe",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874802"
+                }
+              ]
+            },
+            {
+              "Type" : "GRID",
+              "Version" : [
+                {
+                  "Num": "512.78",
+                  "DirLink": "https://download.microsoft.com/download/7/3/6/7361d1b9-08c8-4571-87aa-18cf671e71a0/512.78_grid_win10_win11_server2016_server2019_server2022_64bit_azure_swl.exe",
+                  "FwLink": "https://go.microsoft.com/fwlink/?linkid=874181"
+                },
+                {
+                  "Num": "472.39",
+                  "FwLink": "https://download.microsoft.com/download/3/2/2/322f99aa-57f3-4539-b5fc-718f8c0e2579/472.39_grid_win11_win10_64bit_Azure-SWL.exe"
+                },
+                {
+                  "Num": "471.68",
+                  "FwLink": "https://download.microsoft.com/download/f/0/1/f0121609-68b4-48af-8426-ef454d4d2376/471.68_grid_win10_server2016_server2019_server-azure-swl.exe"
+                },
+                {
+                  "Num": "462.31",
+                  "FwLink": "https://download.microsoft.com/download/0/0/1/001f0edf-d852-4297-9cb7-10b31b1abf45/462.31_grid_win10_server2016_server2019_64bit_azure_swl.exe"
+                },
+                {
+                  "Num": "461.33",
+                  "FwLink": "https://download.microsoft.com/download/9/7/e/97e1be73-d24b-410b-9c08-cc98c7becfa3/461.33_grid_win10_server2016_server2019_64bit_azure_swl.exe"
+                },
+                {
+                  "Num": "461.09",
+                  "FwLink": "https://download.microsoft.com/download/4/8/d/48d2d45b-bebc-44ad-9c58-e0b79a9d4ff2/461.09_grid_win10_server2016_server2019_64bit_azure_swl.exe"
+                },
+                {
+                  "Num": "452.77",
+                  "FwLink": "https://download.microsoft.com/download/f/d/5/fd5ad39b-89cb-4990-ae85-a6fd30475584/452.77_grid_win10_server2016_server2019_64bit_azure_swl.exe"
+                },
+                {
+                  "Num": "452.57",
+                  "FwLink": "https://download.microsoft.com/download/1/b/1/1b15516a-de49-4ba4-8651-6abda4f7fb82/452.57_grid_win10_server2016_server2019_64bit_international.exe"
+                },
+                {
+                  "Num": "452.39",
+                  "FwLink": "https://download.microsoft.com/download/9/9/1/99186e1b-d27d-47d5-9957-175c88f4efbe/452.39_grid_win10_64bit_whql.exe"
+                },
+                {
+                  "Num": "451.48",
+                  "FwLink": "https://download.microsoft.com/download/C/1/4/c147a482-1364-4d12-b9e3-0beda0f00a13/451.48_grid_win10_server2016_server2019_64bit_international.exe"
+                },
+                {
+                  "Num" : "442.06",
+                  "FwLink" : "https://download.microsoft.com/download/b/8/f/b8f5ecec-b8f9-47de-b007-ac40adc88dc8/442.06_grid_win10_64bit_international_whql.exe"
+                },
+                {
+                  "Num" : "441.66",
+                  "FwLink" : "https://download.microsoft.com/download/2/a/3/2a316e62-3be9-4ddb-ae8e-c04b6df6e22d/441.66_grid_win10_server2016_server2019_64bit_international.exe"
+                },
+                {
+                  "Num" : "431.79",
+                  "FwLink" : "https://download.microsoft.com/download/e/8/2/e8257939-a439-4da8-a927-b64b63743db1/431.79_grid_win10_server2016_server2019_64bit_international.exe"
+                },
+                {
+                  "Num" : "431.02",
+                  "FwLink" : "https://download.microsoft.com/download/8/C/C/8CC88D54-EB07-44D3-8FA9-B797B173ED04/431.02_grid_win10_server2016_server2019_64bit_international.exe"
+                },
+                {
+                  "Num" : "425.31",
+                  "FwLink" : "https://download.microsoft.com/download/4/8/C/48C2D46E-EB64-460E-A8D9-0F55737D0D68/425.31_grid_win10_server2016_64bit_international.exe"
+                },
+                {
+                  "Num" : "412.16",
+                  "FwLink" : "https://download.microsoft.com/download/0/B/0/0B082E50-4162-4910-B422-81B2E06E28B5/412.16_grid_win10_server2016_64bit_international.exe"
+                },
+                {
+                  "Num" : "411.81",
+                  "FwLink" : "https://download.microsoft.com/download/0/B/0/0B082E50-4162-4910-B422-81B2E06E28B5/411.81_grid_win10_server2016_64bit_international.exe"
+                },
+                {
+                  "Num" : "391.81",
+                  "FwLink" : "https://download.microsoft.com/download/A/3/A/A3AA4560-02DC-4315-A503-52E4B5B1E0ED/391.81_grid_win10_server2016_64bit_international.exe"
+                },
+                {
+                  "Num" : "391.58",
+                  "FwLink" : "https://download.microsoft.com/download/1/5/B/15B59944-F780-4A80-A8E1-D4489C83E830/391.58_grid_win10_server2016_64bit_international.exe"
+                },
+                {
+                  "Num" : "391.03",
+                  "DirLink" : "https://download.microsoft.com/download/7/D/2/7D276FE8-93AF-446E-8B0D-0B9EA5700255/391.03_grid_win10_server2016_64bit_international.exe",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874799"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Name" : "2012R2",
+          "Driver" : [
+            {
+              "Type" : "CUDA",
+              "Version" : [
+                {
+                  "Num" : "398.75",
+                  "DirLink" : "https://download.microsoft.com/download/4/4/5/445A0DF6-CC60-41BA-8F7C-FB682DBF0C15/398.75-tesla-desktop-winserver2008-2012r2-64bit-international.exe",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874182"
+                },
+                {
+                  "Num" : "397.44",
+                  "FwLink" : "https://download.microsoft.com/download/7/C/2/7C269BB3-6980-4B1A-9C9C-9A7DBEEFA788/397.44-tesla-desktop-winserver2008-2012r2-64bit-international.exe"
+                },
+                {
+                  "Num" : "390.85",
+                  "DirLink" : "https://download.microsoft.com/download/8/2/E/82ED8378-A45C-49EA-96BE-1F535A4864F9/390.85-tesla-desktop-winserver2008-2012r2-64bit-international.exe",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874808"
+                }
+              ]
+            },
+            {
+              "Type" : "GRID",
+              "Version" : [
+                {
+                  "Num": "471.68",
+                  "DirLink": "https://download.microsoft.com/download/9/b/4/9b4d4f8d-7962-4a67-839b-37cc95756759/471.68_grid_winserver2012R2_64bit_azure_swl.exe",
+                  "FwLink": "https://go.microsoft.com/fwlink/?linkid=874184"
+                },
+                {
+                  "Num": "462.31",
+                  "FwLink": "https://download.microsoft.com/download/1/2/0/120551f5-cc05-4911-bd29-88fb2747213c/462.31_grid_server2012R2_64bit_azure_swl.exe"
+                },
+                {
+                  "Num": "461.33",
+                  "FwLink": "https://download.microsoft.com/download/9/9/c/99caf5c6-af9f-48b2-bcb0-af5ec64b8592/461.33_grid_server2012R2_64bit_azure_swl.exe"
+                },
+                {
+                  "Num": "461.09",
+                  "FwLink": "https://download.microsoft.com/download/c/5/e/c5e7df99-364d-45f5-bff7-c253d59121f1/461.09_grid_server2012R2_64bit_azure_swl.exe"
+                },
+                {
+                  "Num": "452.77",
+                  "FwLink": "https://download.microsoft.com/download/5/4/3/54323644-3c84-4aa1-97ec-35491f94c866/452.77_grid_server2012R2_64bit_azure_swl.exe"
+                },
+                {
+                  "Num": "452.57",
+                  "FwLink": "https://download.microsoft.com/download/8/2/9/829ebbe2-182a-4037-8698-a27e6f190a81/452.57_grid_server2012R2_64bit_international.exe"
+                },
+                {
+                  "Num": "451.48",
+                  "FwLink": "https://download.microsoft.com/download/f/7/2/f729e28b-57b8-4141-b577-38d2390973ef/451.48_grid_server2012R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "442.06",
+                  "FwLink" : "https://download.microsoft.com/download/4/3/3/4330fd5c-c685-4ca1-abca-3b2fb3c11d2e/442.06_grid_win8_win7_64bit_international_whql.exe"
+                },
+                {
+                  "Num" : "441.66",
+                  "FwLink" : "https://download.microsoft.com/download/d/8/0/d80091f8-0d55-47c2-958a-bacd136f432a/441.66_grid_win7_win8_server2008R2_server2012R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "431.79",
+                  "FwLink" : "https://download.microsoft.com/download/8/6/e/86ef2daa-b31e-43ad-90f2-bd795384b71e/431.79_grid_win7_win8_server2008R2_server2012R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "431.02",
+                  "FwLink" : "https://download.microsoft.com/download/B/D/6/BD6D1C34-E41F-4654-B5AB-F4DA9C08AA64/431.02_grid_win7_win8_server2008R2_server2012R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "425.31",
+                  "FwLink" : "https://download.microsoft.com/download/6/D/7/6D73C628-B5FB-4243-9520-DAEF363223CB/425.31_grid_win8_win7_server2012R2_server2008R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "412.16",
+                  "FwLink" : "https://download.microsoft.com/download/0/9/8/098B5E8A-0563-4B25-9CDB-173B03B52C60/412.16_grid_win8_win7_server2012R2_server2008R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "411.81",
+                  "FwLink" : "https://download.microsoft.com/download/0/9/8/098B5E8A-0563-4B25-9CDB-173B03B52C60/411.81_grid_win8_win7_server2012R2_server2008R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "391.81",
+                  "FwLink" : "https://download.microsoft.com/download/4/E/B/4EB0A8FB-ADC5-43F5-8AF6-C35CA3E8C68A/391.81_grid_win8_win7_server2012R2_server2008R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "391.58",
+                  "FwLink" : "https://download.microsoft.com/download/C/F/C/CFCDAFC7-7A0D-418B-9188-4AB5F06DDC19/391.58_grid_win8_win7_server2012R2_server2008R2_64bit_international.exe"
+                },
+                {
+                  "Num" : "391.03",
+                  "DirLink" : "https://download.microsoft.com/download/F/9/3/F9317ABC-8EAA-45A8-882B-3E3F4C20DE15/391.03_grid_win8_win7_server2012R2_server2008R2_64bit_international.exe",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874814"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "Certificate" : {
+        "Expiration" : "7/26/2018",
+        "DirLink" : "https://download.microsoft.com/download/7/1/F/71FB7755-D899-4FD9-AC05-2216EE8102AC/nvidia.cer",
+        "FwLink" : "https://go.microsoft.com/fwlink/?linkid=871664"
+      }
+    },
+    {
+      "Comment" : "Latest driver version is at top of the list and pointed to by the static FwLink. Maintain FwLinks for all files.",
+      "Name" : "Linux",
+      "Version" : [
+        {
+          "Name" : "Ubuntu",
+          "Version" : "16.x",
+          "Driver" : [
+            {
+              "Type" : "CUDA",
+              "Version" : [
+                {
+                  "Num" : "10.0.130",
+                  "DirLink" : "https://download.microsoft.com/download/9/3/5/9356AEC3-D562-4E16-BF7A-4369980CB0D5/cuda-repo-ubuntu1604_10.0.130-1_amd64.deb",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874271",
+                  "InstallMethod" : 0
+                },
+                {
+                  "Num" : "9.2.88",
+                  "FwLink" : "https://download.microsoft.com/download/F/F/A/FFAC979D-AD9C-4684-A6CE-C92BB9372A3B/cuda-repo-ubuntu1604_9.2.88-1_amd64.deb",
+                  "InstallMethod" : 0
+                },
+                {
+                  "Num" : "9.1.85",
+                  "DirLink" : "https://download.microsoft.com/download/F/F/A/FFAC979D-AD9C-4684-A6CE-C92BB9372A3B/cuda-repo-ubuntu1604_9.1.85-1_amd64.deb",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874831",
+                  "InstallMethod" : 0
+                }
+              ]
+            },
+            {
+              "Type" : "GRID",
+              "Version" : [
+                {
+                  "Num": "470.82",
+                  "DirLink": "https://download.microsoft.com/download/a/3/c/a3c078a0-e182-4b61-ac9b-ac011dc6ccf4/NVIDIA-Linux-x86_64-470.82.01-grid-azure.run",
+                  "FwLink": "https://go.microsoft.com/fwlink/?linkid=874272"
+                },
+                {
+                  "Num": "470.63",
+                  "FwLink": "https://download.microsoft.com/download/b/d/d/bdd729ee-5003-4427-ace4-a7b9172b2e29/NVIDIA-Linux-x86_64-470.63.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.73",
+                  "FwLink": "https://download.microsoft.com/download/5/f/9/5f9d855b-8910-4e2d-90a6-5a038e78940f/NVIDIA-Linux-x86_64-460.73.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.32",
+                  "FwLink": "https://download.microsoft.com/download/9/5/c/95c667ff-ab95-4c56-89e0-e13e9a76782d/NVIDIA-Linux-x86_64-460.32.03-grid-azure.run"
+                },
+                {
+                  "Num": "450.102",
+                  "FwLink": "https://download.microsoft.com/download/6/3/7/637bdced-9b43-45a4-8b24-f737d058f61c/NVIDIA-Linux-x86_64-450.102.04-grid-azure.run"
+                },
+                {
+                  "Num": "450.89",
+                  "FwLink": "https://download.microsoft.com/download/c/1/0/c1050457-b310-436c-8b8f-e475c7695577/NVIDIA-Linux-x86_64-450.89-grid-azure.run"
+                },
+                {
+                  "Num": "450.80",
+                  "FwLink": "https://download.microsoft.com/download/6/1/d/61dad7f0-7be6-48b5-b297-bd46e44a1f14/NVIDIA-Linux-x86_64-450.80.02-grid-azure.run"
+                },
+                {
+                  "Num": "450.51",
+                  "FwLink": "https://download.microsoft.com/download/d/d/9/dd97a245-d277-4f43-915e-8d38b01334fb/NVIDIA-Linux-x86_64-450.51.05-grid-azure.run"
+                },
+                {
+                  "Num" : "440.56",
+                  "FwLink" : "https://download.microsoft.com/download/3/0/8/3084787d-078d-4a3d-b3e8-7394c6a1e2cd/NVIDIA-Linux-x86_64-440.56-grid-azure.run"
+                },
+                {
+                  "Num" : "440.43",
+                  "FwLink" : "https://download.microsoft.com/download/b/9/5/b95127da-6d8f-4dea-8d7d-827be40bb2b7/NVIDIA-Linux-x86_64-440.43-grid.run"
+                },
+                {
+                  "Num" : "430.46",
+                  "FwLink" : "https://download.microsoft.com/download/1/a/5/1a537cae-5b52-4348-acd2-2f210fc412b0/NVIDIA-Linux-x86_64-430.46-grid.run"
+                },
+                {
+                  "Num" : "430.30",
+                  "FwLink" : "https://download.microsoft.com/download/B/0/D/B0DD6405-CA50-4B99-A908-6D32C1B6836A/NVIDIA-Linux-x86_64-430.30-grid.run"
+                },
+                {
+                  "Num" : "418.70",
+                  "FwLink" : "https://download.microsoft.com/download/D/7/B/D7BC68DD-2BF3-4CBD-A6D3-AA7F68C22FD0/NVIDIA-Linux-x86_64-418.70-grid.run"
+                },
+                {
+                  "Num" : "410.92",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.92-grid.run"
+                },
+                {
+                  "Num" : "410.71",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.71-grid.run"
+                },
+                {
+                  "Num" : "390.75",
+                  "FwLink" : "https://download.microsoft.com/download/C/C/A/CCA1A402-D4EC-4260-BAD1-3AA1B004882A/NVIDIA-Linux-x86_64-390.75-grid.run"
+                },
+                {
+                  "Num" : "390.57",
+                  "FwLink" : "https://download.microsoft.com/download/6/0/4/6041F2BB-8194-4DB9-BA22-CF1898B9CB70/NVIDIA-Linux-x86_64-grid.run"
+                },
+                {
+                  "Num" : "390.42",
+                  "DirLink" : "https://download.microsoft.com/download/3/8/2/382E8D8A-7620-4F89-B772-A84D97524F7E/NVIDIA-Linux-x86_64-grid.run",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874834"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Name" : "RHEL/CentOS",
+          "Version" : "7.x",
+          "Driver" : [
+            {
+              "Type" : "CUDA",
+              "Version" : [
+                {
+                  "Num" : "10.0.130",
+                  "DirLink" : "https://download.microsoft.com/download/9/3/5/9356AEC3-D562-4E16-BF7A-4369980CB0D5/cuda-repo-rhel7-10.0.130-1.x86_64.rpm",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874273",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm",
+                  "InstallMethod" : 0
+                },
+                {
+                  "Num" : "9.2.88",
+                  "FwLink" : "https://download.microsoft.com/download/F/F/A/FFAC979D-AD9C-4684-A6CE-C92BB9372A3B/cuda-repo-rhel7-9.2.88-1.x86_64.rpm",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm",
+                  "InstallMethod" : 0
+                },
+                {
+                  "Num" : "9.1.85",
+                  "DirLink" : "https://download.microsoft.com/download/F/F/A/FFAC979D-AD9C-4684-A6CE-C92BB9372A3B/cuda-repo-rhel7-9.1.85-1.x86_64.rpm",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874833",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-rhel7.repo",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm",
+                  "InstallMethod" : 0
+                }
+              ]
+            },
+            {
+              "Type" : "GRID",
+              "Version" : [
+                {
+                  "Num": "510.73",
+                  "DirLink": "https://download.microsoft.com/download/6/2/5/625e22a0-34ea-4d03-8738-a639acebc15e/NVIDIA-Linux-x86_64-510.73.08-grid-azure.run",
+                  "FwLink": "https://go.microsoft.com/fwlink/?linkid=874272"
+                },
+                {
+                  "Num": "470.82",
+                  "FwLink": "https://download.microsoft.com/download/a/3/c/a3c078a0-e182-4b61-ac9b-ac011dc6ccf4/NVIDIA-Linux-x86_64-470.82.01-grid-azure.run"
+                },
+                {
+                  "Num": "470.63",
+                  "FwLink": "https://download.microsoft.com/download/b/d/d/bdd729ee-5003-4427-ace4-a7b9172b2e29/NVIDIA-Linux-x86_64-470.63.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.73",
+                  "FwLink": "https://download.microsoft.com/download/5/f/9/5f9d855b-8910-4e2d-90a6-5a038e78940f/NVIDIA-Linux-x86_64-460.73.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.32",
+                  "FwLink": "https://download.microsoft.com/download/9/5/c/95c667ff-ab95-4c56-89e0-e13e9a76782d/NVIDIA-Linux-x86_64-460.32.03-grid-azure.run"
+                },
+                {
+                  "Num": "450.102",
+                  "FwLink": "https://download.microsoft.com/download/6/3/7/637bdced-9b43-45a4-8b24-f737d058f61c/NVIDIA-Linux-x86_64-450.102.04-grid-azure.run"
+                },
+                {
+                  "Num": "450.89",
+                  "FwLink": "https://download.microsoft.com/download/c/1/0/c1050457-b310-436c-8b8f-e475c7695577/NVIDIA-Linux-x86_64-450.89-grid-azure.run"
+                },
+                {
+                  "Num": "450.80",
+                  "FwLink": "https://download.microsoft.com/download/6/1/d/61dad7f0-7be6-48b5-b297-bd46e44a1f14/NVIDIA-Linux-x86_64-450.80.02-grid-azure.run"
+                },
+                {
+                  "Num": "450.51",
+                  "FwLink": "https://download.microsoft.com/download/d/d/9/dd97a245-d277-4f43-915e-8d38b01334fb/NVIDIA-Linux-x86_64-450.51.05-grid-azure.run"
+                },
+                {
+                  "Num" : "440.56",
+                  "FwLink" : "https://download.microsoft.com/download/3/0/8/3084787d-078d-4a3d-b3e8-7394c6a1e2cd/NVIDIA-Linux-x86_64-440.56-grid-azure.run"
+                },
+                {
+                  "Num" : "440.43",
+                  "FwLink" : "https://download.microsoft.com/download/b/9/5/b95127da-6d8f-4dea-8d7d-827be40bb2b7/NVIDIA-Linux-x86_64-440.43-grid.run"
+                },
+                {
+                  "Num" : "430.46",
+                  "FwLink" : "https://download.microsoft.com/download/1/a/5/1a537cae-5b52-4348-acd2-2f210fc412b0/NVIDIA-Linux-x86_64-430.46-grid.run"
+                },
+                {
+                  "Num" : "430.30",
+                  "FwLink" : "https://download.microsoft.com/download/B/0/D/B0DD6405-CA50-4B99-A908-6D32C1B6836A/NVIDIA-Linux-x86_64-430.30-grid.run"
+                },
+                {
+                  "Num" : "418.70",
+                  "FwLink" : "https://download.microsoft.com/download/D/7/B/D7BC68DD-2BF3-4CBD-A6D3-AA7F68C22FD0/NVIDIA-Linux-x86_64-418.70-grid.run"
+                },
+                {
+                  "Num" : "410.92",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.92-grid.run"
+                },
+                {
+                  "Num" : "410.71",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.71-grid.run"
+                },
+                {
+                  "Num" : "390.75",
+                  "FwLink" : "https://download.microsoft.com/download/C/C/A/CCA1A402-D4EC-4260-BAD1-3AA1B004882A/NVIDIA-Linux-x86_64-390.75-grid.run"
+                },
+                {
+                  "Num" : "390.57",
+                  "FwLink" : "https://download.microsoft.com/download/6/0/4/6041F2BB-8194-4DB9-BA22-CF1898B9CB70/NVIDIA-Linux-x86_64-grid.run"
+                },
+                {
+                  "Num" : "390.42",
+                  "DirLink" : "https://download.microsoft.com/download/3/8/2/382E8D8A-7620-4F89-B772-A84D97524F7E/NVIDIA-Linux-x86_64-grid.run",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874834"
+                }
+              ]
+            },
+            {
+              "Type" : "CUDA with last supported Nvidia driver",
+              "Version" : [
+                {
+                  "Comment" : "For NCv1 series / Tesla K80 GPUs",
+                  "SkuRegEx" : "(nc[0-9]+r?(_promo)?)$",
+                  "Num" : "10.0.130",
+                  "DirLink" : "https://download.microsoft.com/download/9/3/5/9356AEC3-D562-4E16-BF7A-4369980CB0D5/cuda-repo-rhel7-10.0.130-1.x86_64.rpm",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874273",
+                  "DriverVersion" : "470.82.01",
+                  "DriverDirLink" : "https://download.microsoft.com/download/d/9/1/d9199489-e041-4019-a558-59fc58571a9f/nvidia-driver-local-repo-rhel7-470.82.01-1.0-1.x86_64.rpm",
+                  "DriverFwLink" : "https://go.microsoft.com/fwlink/?linkid=2180349",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm",
+                  "InstallMethod" : 0
+                },
+                {
+                  "Comment" : "For NCasT4v3 series / Tesla T4 GPUs",
+                  "SkuRegEx" : "(nc[0-9]+as_t4)",
+                  "Num" : "10.0.130",
+                  "DirLink" : "https://download.microsoft.com/download/9/3/5/9356AEC3-D562-4E16-BF7A-4369980CB0D5/cuda-repo-rhel7-10.0.130-1.x86_64.rpm",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874273",
+                  "DriverVersion" : "470.82.01",
+                  "DriverDirLink" : "https://download.microsoft.com/download/d/9/1/d9199489-e041-4019-a558-59fc58571a9f/nvidia-driver-local-repo-rhel7-470.82.01-1.0-1.x86_64.rpm",
+                  "DriverFwLink" : "https://go.microsoft.com/fwlink/?linkid=2180349",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm",
+                  "InstallMethod" : 0
+                }
+              ]
+            }
+          ],
+          "DKMS" : {
+            "FwLink" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm"
+          },
+          "LIS" : {
+            "LatestKernel" : "3.10.0-1062.9.1.el7",
+            "FwLink" : "https://aka.ms/lis"
+          }
+        },
+        {
+          "Name" : "RHEL/CentOS",
+          "Version" : "8.x",
+          "Driver" : [
+            {
+              "Type" : "CUDA",
+              "Version" : [
+                {
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm",
+                  "InstallMethod" : 2
+                },
+                {
+                  "Num" : "11.0",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm",
+                  "InstallMethod" : 2
+                }
+              ]
+            },
+            {
+              "Type" : "GRID",
+              "Version" : [
+                {
+                  "Num": "510.73",
+                  "DirLink": "https://download.microsoft.com/download/6/2/5/625e22a0-34ea-4d03-8738-a639acebc15e/NVIDIA-Linux-x86_64-510.73.08-grid-azure.run",
+                  "FwLink": "https://go.microsoft.com/fwlink/?linkid=874272"
+                },
+                {
+                  "Num": "470.82",
+                  "FwLink": "https://download.microsoft.com/download/a/3/c/a3c078a0-e182-4b61-ac9b-ac011dc6ccf4/NVIDIA-Linux-x86_64-470.82.01-grid-azure.run"
+                },
+                {
+                  "Num": "470.63",
+                  "FwLink": "https://download.microsoft.com/download/b/d/d/bdd729ee-5003-4427-ace4-a7b9172b2e29/NVIDIA-Linux-x86_64-470.63.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.73",
+                  "FwLink": "https://download.microsoft.com/download/5/f/9/5f9d855b-8910-4e2d-90a6-5a038e78940f/NVIDIA-Linux-x86_64-460.73.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.32",
+                  "FwLink": "https://download.microsoft.com/download/9/5/c/95c667ff-ab95-4c56-89e0-e13e9a76782d/NVIDIA-Linux-x86_64-460.32.03-grid-azure.run"
+                },
+                {
+                  "Num": "450.102",
+                  "FwLink": "https://download.microsoft.com/download/6/3/7/637bdced-9b43-45a4-8b24-f737d058f61c/NVIDIA-Linux-x86_64-450.102.04-grid-azure.run"
+                },
+                {
+                  "Num": "450.89",
+                  "FwLink": "https://download.microsoft.com/download/c/1/0/c1050457-b310-436c-8b8f-e475c7695577/NVIDIA-Linux-x86_64-450.89-grid-azure.run"
+                },
+                {
+                  "Num": "450.80",
+                  "FwLink": "https://download.microsoft.com/download/6/1/d/61dad7f0-7be6-48b5-b297-bd46e44a1f14/NVIDIA-Linux-x86_64-450.80.02-grid-azure.run"
+                },
+                {
+                  "Num": "450.51",
+                  "FwLink": "https://download.microsoft.com/download/d/d/9/dd97a245-d277-4f43-915e-8d38b01334fb/NVIDIA-Linux-x86_64-450.51.05-grid-azure.run"
+                },
+                {
+                  "Num" : "440.56",
+                  "FwLink" : "https://download.microsoft.com/download/3/0/8/3084787d-078d-4a3d-b3e8-7394c6a1e2cd/NVIDIA-Linux-x86_64-440.56-grid-azure.run"
+                },
+                {
+                  "Num" : "440.43",
+                  "FwLink" : "https://download.microsoft.com/download/b/9/5/b95127da-6d8f-4dea-8d7d-827be40bb2b7/NVIDIA-Linux-x86_64-440.43-grid.run"
+                },
+                {
+                  "Num" : "430.46",
+                  "FwLink" : "https://download.microsoft.com/download/1/a/5/1a537cae-5b52-4348-acd2-2f210fc412b0/NVIDIA-Linux-x86_64-430.46-grid.run"
+                },
+                {
+                  "Num" : "430.30",
+                  "FwLink" : "https://download.microsoft.com/download/B/0/D/B0DD6405-CA50-4B99-A908-6D32C1B6836A/NVIDIA-Linux-x86_64-430.30-grid.run"
+                },
+                {
+                  "Num" : "418.70",
+                  "FwLink" : "https://download.microsoft.com/download/D/7/B/D7BC68DD-2BF3-4CBD-A6D3-AA7F68C22FD0/NVIDIA-Linux-x86_64-418.70-grid.run"
+                },
+                {
+                  "Num" : "410.92",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.92-grid.run"
+                },
+                {
+                  "Num" : "410.71",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.71-grid.run"
+                },
+                {
+                  "Num" : "390.75",
+                  "FwLink" : "https://download.microsoft.com/download/C/C/A/CCA1A402-D4EC-4260-BAD1-3AA1B004882A/NVIDIA-Linux-x86_64-390.75-grid.run"
+                },
+                {
+                  "Num" : "390.57",
+                  "FwLink" : "https://download.microsoft.com/download/6/0/4/6041F2BB-8194-4DB9-BA22-CF1898B9CB70/NVIDIA-Linux-x86_64-grid.run"
+                },
+                {
+                  "Num" : "390.42",
+                  "DirLink" : "https://download.microsoft.com/download/3/8/2/382E8D8A-7620-4F89-B772-A84D97524F7E/NVIDIA-Linux-x86_64-grid.run",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874834"
+                }
+              ]
+            },
+            {
+              "Type" : "CUDA with last supported Nvidia driver",
+              "Version" : [
+                {
+                  "Comment" : "For NCv1 series / Tesla K80 GPUs",
+                  "SkuRegEx" : "(nc[0-9]+r?(_promo)?)$",
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm",
+                  "DriverVersion" : "470",
+                  "InstallMethod" : 2
+                },
+                {
+                  "Comment" : "For NCasT4v3 series / Tesla T4 GPUs",
+                  "SkuRegEx" : "(nc[0-9]+as_t4)",
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo",
+                  "DKMSUrl" : "https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm",
+                  "DriverVersion" : "470",
+                  "InstallMethod" : 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Name" : "Ubuntu",
+          "Version" : "18.x",
+          "Driver" : [
+            {
+              "Type" : "CUDA",
+              "Version" : [
+                {
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+                  "PinUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin",
+                  "InstallMethod" : 1
+                },
+                {
+                  "Num" : "11.0",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+                  "PinUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin",
+                  "InstallMethod" : 1
+                },
+                {
+                  "Num" : "10.0.130",
+                  "DirLink" : "https://download.microsoft.com/download/9/3/5/9356AEC3-D562-4E16-BF7A-4369980CB0D5/cuda-repo-ubuntu1604_10.0.130-1_amd64.deb",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874271",
+                  "InstallMethod" : 0
+                }
+              ]
+            },
+            {
+              "Type" : "GRID",
+              "Version" : [
+                {
+                  "Num": "510.73",
+                  "DirLink": "https://download.microsoft.com/download/6/2/5/625e22a0-34ea-4d03-8738-a639acebc15e/NVIDIA-Linux-x86_64-510.73.08-grid-azure.run",
+                  "FwLink": "https://go.microsoft.com/fwlink/?linkid=874272"
+                },
+                {
+                  "Num": "470.82",
+                  "FwLink": "https://download.microsoft.com/download/a/3/c/a3c078a0-e182-4b61-ac9b-ac011dc6ccf4/NVIDIA-Linux-x86_64-470.82.01-grid-azure.run"
+                },
+                {
+                  "Num": "470.63",
+                  "FwLink": "https://download.microsoft.com/download/b/d/d/bdd729ee-5003-4427-ace4-a7b9172b2e29/NVIDIA-Linux-x86_64-470.63.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.73",
+                  "FwLink": "https://download.microsoft.com/download/5/f/9/5f9d855b-8910-4e2d-90a6-5a038e78940f/NVIDIA-Linux-x86_64-460.73.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.32",
+                  "FwLink": "https://download.microsoft.com/download/9/5/c/95c667ff-ab95-4c56-89e0-e13e9a76782d/NVIDIA-Linux-x86_64-460.32.03-grid-azure.run"
+                },
+                {
+                  "Num": "450.102",
+                  "FwLink": "https://download.microsoft.com/download/6/3/7/637bdced-9b43-45a4-8b24-f737d058f61c/NVIDIA-Linux-x86_64-450.102.04-grid-azure.run"
+                },
+                {
+                  "Num": "450.89",
+                  "FwLink": "https://download.microsoft.com/download/c/1/0/c1050457-b310-436c-8b8f-e475c7695577/NVIDIA-Linux-x86_64-450.89-grid-azure.run"
+                },
+                {
+                  "Num": "450.80",
+                  "FwLink": "https://download.microsoft.com/download/6/1/d/61dad7f0-7be6-48b5-b297-bd46e44a1f14/NVIDIA-Linux-x86_64-450.80.02-grid-azure.run"
+                },
+                {
+                  "Num": "450.51",
+                  "FwLink": "https://download.microsoft.com/download/d/d/9/dd97a245-d277-4f43-915e-8d38b01334fb/NVIDIA-Linux-x86_64-450.51.05-grid-azure.run"
+                },
+                {
+                  "Num" : "440.56",
+                  "FwLink" : "https://download.microsoft.com/download/3/0/8/3084787d-078d-4a3d-b3e8-7394c6a1e2cd/NVIDIA-Linux-x86_64-440.56-grid-azure.run"
+                },
+                {
+                  "Num" : "440.43",
+                  "FwLink" : "https://download.microsoft.com/download/b/9/5/b95127da-6d8f-4dea-8d7d-827be40bb2b7/NVIDIA-Linux-x86_64-440.43-grid.run"
+                },
+                {
+                  "Num" : "430.46",
+                  "FwLink" : "https://download.microsoft.com/download/1/a/5/1a537cae-5b52-4348-acd2-2f210fc412b0/NVIDIA-Linux-x86_64-430.46-grid.run"
+                },
+                {
+                  "Num" : "430.30",
+                  "FwLink" : "https://download.microsoft.com/download/B/0/D/B0DD6405-CA50-4B99-A908-6D32C1B6836A/NVIDIA-Linux-x86_64-430.30-grid.run"
+                },
+                {
+                  "Num" : "418.70",
+                  "FwLink" : "https://download.microsoft.com/download/D/7/B/D7BC68DD-2BF3-4CBD-A6D3-AA7F68C22FD0/NVIDIA-Linux-x86_64-418.70-grid.run"
+                },
+                {
+                  "Num" : "410.92",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.92-grid.run"
+                },
+                {
+                  "Num" : "410.71",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.71-grid.run"
+                },
+                {
+                  "Num" : "390.75",
+                  "FwLink" : "https://download.microsoft.com/download/C/C/A/CCA1A402-D4EC-4260-BAD1-3AA1B004882A/NVIDIA-Linux-x86_64-390.75-grid.run"
+                },
+                {
+                  "Num" : "390.57",
+                  "FwLink" : "https://download.microsoft.com/download/6/0/4/6041F2BB-8194-4DB9-BA22-CF1898B9CB70/NVIDIA-Linux-x86_64-grid.run"
+                },
+                {
+                  "Num" : "390.42",
+                  "DirLink" : "https://download.microsoft.com/download/3/8/2/382E8D8A-7620-4F89-B772-A84D97524F7E/NVIDIA-Linux-x86_64-grid.run",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874834"
+                }
+              ]
+            },
+            {
+              "Type" : "CUDA with last supported Nvidia driver",
+              "Version" : [
+                {
+                  "Comment" : "For NCv1 series / Tesla K80 GPUs",
+                  "SkuRegEx" : "(nc[0-9]+r?(_promo)?)$",
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+                  "PinUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin",
+                  "DriverVersion" : "470",
+                  "InstallMethod" : 1
+                },
+                {
+                  "Comment" : "For NCasT4v3 series / Tesla T4 GPUs",
+                  "SkuRegEx" : "(nc[0-9]+as_t4)",
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+                  "PinUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin",
+                  "DriverVersion" : "470",
+                  "InstallMethod" : 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "Name" : "Ubuntu",
+          "Version" : "20.x",
+          "Driver" : [
+            {
+              "Type" : "CUDA",
+              "Version" : [
+                {
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+                  "PinUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin",
+                  "InstallMethod" : 1
+                },
+                {
+                  "Num" : "11.0",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+                  "PinUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin",
+                  "InstallMethod" : 1
+                }
+              ]
+            },
+            {
+              "Type" : "GRID",
+              "Version" : [
+                {
+                  "Num": "510.73",
+                  "DirLink": "https://download.microsoft.com/download/6/2/5/625e22a0-34ea-4d03-8738-a639acebc15e/NVIDIA-Linux-x86_64-510.73.08-grid-azure.run",
+                  "FwLink": "https://go.microsoft.com/fwlink/?linkid=874272"
+                },
+                {
+                  "Num": "470.82",
+                  "FwLink": "https://download.microsoft.com/download/a/3/c/a3c078a0-e182-4b61-ac9b-ac011dc6ccf4/NVIDIA-Linux-x86_64-470.82.01-grid-azure.run"
+                },
+                {
+                  "Num": "470.63",
+                  "FwLink": "https://download.microsoft.com/download/b/d/d/bdd729ee-5003-4427-ace4-a7b9172b2e29/NVIDIA-Linux-x86_64-470.63.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.73",
+                  "FwLink": "https://download.microsoft.com/download/5/f/9/5f9d855b-8910-4e2d-90a6-5a038e78940f/NVIDIA-Linux-x86_64-460.73.01-grid-azure.run"
+                },
+                {
+                  "Num": "460.32",
+                  "FwLink": "https://download.microsoft.com/download/9/5/c/95c667ff-ab95-4c56-89e0-e13e9a76782d/NVIDIA-Linux-x86_64-460.32.03-grid-azure.run"
+                },
+                {
+                  "Num": "450.102",
+                  "FwLink": "https://download.microsoft.com/download/6/3/7/637bdced-9b43-45a4-8b24-f737d058f61c/NVIDIA-Linux-x86_64-450.102.04-grid-azure.run"
+                },
+                {
+                  "Num": "450.89",
+                  "FwLink": "https://download.microsoft.com/download/c/1/0/c1050457-b310-436c-8b8f-e475c7695577/NVIDIA-Linux-x86_64-450.89-grid-azure.run"
+                },
+                {
+                  "Num": "450.80",
+                  "FwLink": "https://download.microsoft.com/download/6/1/d/61dad7f0-7be6-48b5-b297-bd46e44a1f14/NVIDIA-Linux-x86_64-450.80.02-grid-azure.run"
+                },
+                {
+                  "Num": "450.51",
+                  "FwLink": "https://download.microsoft.com/download/d/d/9/dd97a245-d277-4f43-915e-8d38b01334fb/NVIDIA-Linux-x86_64-450.51.05-grid-azure.run"
+                },
+                {
+                  "Num" : "440.56",
+                  "FwLink" : "https://download.microsoft.com/download/3/0/8/3084787d-078d-4a3d-b3e8-7394c6a1e2cd/NVIDIA-Linux-x86_64-440.56-grid-azure.run"
+                },
+                {
+                  "Num" : "440.43",
+                  "FwLink" : "https://download.microsoft.com/download/b/9/5/b95127da-6d8f-4dea-8d7d-827be40bb2b7/NVIDIA-Linux-x86_64-440.43-grid.run"
+                },
+                {
+                  "Num" : "430.46",
+                  "FwLink" : "https://download.microsoft.com/download/1/a/5/1a537cae-5b52-4348-acd2-2f210fc412b0/NVIDIA-Linux-x86_64-430.46-grid.run"
+                },
+                {
+                  "Num" : "430.30",
+                  "FwLink" : "https://download.microsoft.com/download/B/0/D/B0DD6405-CA50-4B99-A908-6D32C1B6836A/NVIDIA-Linux-x86_64-430.30-grid.run"
+                },
+                {
+                  "Num" : "418.70",
+                  "FwLink" : "https://download.microsoft.com/download/D/7/B/D7BC68DD-2BF3-4CBD-A6D3-AA7F68C22FD0/NVIDIA-Linux-x86_64-418.70-grid.run"
+                },
+                {
+                  "Num" : "410.92",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.92-grid.run"
+                },
+                {
+                  "Num" : "410.71",
+                  "FwLink" : "https://download.microsoft.com/download/8/5/D/85DC7798-B9F7-4BB9-84E8-B3350D7B52F7/NVIDIA-Linux-x86_64-410.71-grid.run"
+                },
+                {
+                  "Num" : "390.75",
+                  "FwLink" : "https://download.microsoft.com/download/C/C/A/CCA1A402-D4EC-4260-BAD1-3AA1B004882A/NVIDIA-Linux-x86_64-390.75-grid.run"
+                },
+                {
+                  "Num" : "390.57",
+                  "FwLink" : "https://download.microsoft.com/download/6/0/4/6041F2BB-8194-4DB9-BA22-CF1898B9CB70/NVIDIA-Linux-x86_64-grid.run"
+                },
+                {
+                  "Num" : "390.42",
+                  "DirLink" : "https://download.microsoft.com/download/3/8/2/382E8D8A-7620-4F89-B772-A84D97524F7E/NVIDIA-Linux-x86_64-grid.run",
+                  "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874834"
+                }
+              ]
+            },
+            {
+              "Type" : "CUDA with last supported Nvidia driver",
+              "Version" : [
+                {
+                  "Comment" : "For NCv1 series / Tesla K80 GPUs",
+                  "SkuRegEx" : "(nc[0-9]+r?(_promo)?)$",
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+                  "PinUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin",
+                  "DriverVersion" : "470",
+                  "InstallMethod" : 1
+                },
+                {
+                  "Comment" : "For NCasT4v3 series / Tesla T4 GPUs",
+                  "SkuRegEx" : "(nc[0-9]+as_t4)",
+                  "Num" : "11.1",
+                  "RepoUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+                  "PinUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin",
+                  "DriverVersion" : "470",
+                  "InstallMethod" : 1
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "PublicKey" : {
+        "FwLink" : "https://download.microsoft.com/download/f/4/7/f472d46c-1bc2-49dc-b43b-c803ce3e2f1d/3bf863cc.pub",
+        "BaseUrl" : "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/",
+        "KeyRing" : "cuda-keyring_1.0-1_all.deb"
+      }
+    }
+  ],
+  "EULA" : {
+    "DirLink" : "https://nvidiadrivereula.azurewebsites.net/NvidiaDriverEULA.htm",
+    "FwLink" : "https://go.microsoft.com/fwlink/?linkid=874330"
+  }
+}
