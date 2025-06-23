@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
@@ -152,7 +151,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	}
 	klog.V(5).Infof("Created azure resource graph client %v, using a token credential", azureResourceGraphClient)
 
-	communityImageVersionsClient, err := armcomputev5.NewCommunityGalleryImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	communityImageVersionsClient, err := armcompute.NewCommunityGalleryImageVersionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}

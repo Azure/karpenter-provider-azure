@@ -356,35 +356,58 @@ func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
 }
 
+const (
+	maxInt32 = 1<<31 - 1
+	minInt32 = -1 << 31
+)
+
+// safeConvert checks for overflow and then converts.
+// #nosec G115  // we’ve manually guarded against overflow
+func safeConvert(val int64) (int32, bool) {
+	if val > maxInt32 || val < minInt32 {
+		return 0, false
+	}
+	return int32(val), true
+}
+
+func bytesToGBWithPlacement(sizeInBytes int64, placement *armcompute.DiffDiskPlacement) (int32, *armcompute.DiffDiskPlacement, bool) {
+	if sizeInBytes <= 0 {
+		return 0, nil, false
+	}
+
+	gb, ok := safeConvert(sizeInBytes / int64(units.Gigabyte)) // required for conversion of int64 to int32
+	if !ok || gb <= 0 {
+		return 0, nil, false
+	}
+
+	return gb, placement, true
+}
+
 func FindMaxEphemeralSizeAndPlacement(sku *skewer.SKU) (sizeGB int32, placement *armcompute.DiffDiskPlacement) {
 	if sku == nil {
 		return 0, nil
 	}
-
-	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
-	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
-	maxNvmeDiskSize, _ := NvmeDiskSizeInMiB(sku)
+	maxCachedBytes, _ := sku.MaxCachedDiskBytes()
+	maxTempDiskBytes, _ := sku.MaxResourceVolumeMB()
+	maxNVMeMiB, _ := NvmeDiskSizeInMiB(sku)
 
 	// Check NVMe disk first (highest priority)
-	if maxNvmeDiskSize > 0 && SupportsNVMeEphemeralOSDisk(sku) {
-		return int32(maxNvmeDiskSize / 1024), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
-	}
-
-	maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
-
-	if maxCachedDiskBytes > 0 {
-		sizeGB := int32(maxCachedDiskBytes / int64(units.Gigabyte))
-		if sizeGB > 0 {
-			return sizeGB, lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
+	if maxNVMeMiB > 0 && SupportsNVMeEphemeralOSDisk(sku) {
+		if gb, ok := safeConvert(maxNVMeMiB / 1024); ok && gb > 0 {
+			return gb, lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
 		}
+		return 0, nil
 	}
 
-	if maxResourceVolumeBytes > 0 {
-		sizeGB := int32(maxResourceVolumeBytes / int64(units.Gigabyte))
-		if sizeGB > 0 {
-			return sizeGB, lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
-		}
+	if gb, placement, ok := bytesToGBWithPlacement(maxCachedBytes, lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)); ok {
+		return gb, placement
 	}
+
+	resBytes := maxTempDiskBytes * int64(units.Mebibyte)
+	if gb, placement, ok := bytesToGBWithPlacement(resBytes, lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)); ok {
+		return gb, placement
+	}
+
 	return 0, nil
 }
 
