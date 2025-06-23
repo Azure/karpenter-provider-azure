@@ -168,5 +168,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace github.com/Azure/skewer => github.com/Bryce-Soghigian/skewer v0.0.0-20250603213716-64caf6daff73
