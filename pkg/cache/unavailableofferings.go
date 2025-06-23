@@ -110,13 +110,12 @@ func (u *UnavailableOfferings) isFamilyUnavailable(skuFamilyName, zone, capacity
 // MarkFamilyUnavailableWithTTL marks a VM family with custom TTL in a specific zone
 func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context, versionedSKUFamily, zone, capacityType string, cpuCount int64, ttl time.Duration) {
 	key := vmFamilyKey(versionedSKUFamily, zone, capacityType)
-	valueToSet := cpuCount
 
 	if existing, found := u.vmFamilyCache.Get(key); found {
 		if currentBlockedCPUCount, ok := existing.(int64); ok {
 			// Keep the more restrictive limit for CPU count(lower value, with -1 being most restrictive - wholeVMFamilyBlockedSentinel)
 			if currentBlockedCPUCount <= cpuCount {
-				valueToSet = currentBlockedCPUCount
+				cpuCount = currentBlockedCPUCount
 			}
 		}
 	}
@@ -125,11 +124,11 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context,
 		"family", versionedSKUFamily,
 		"capacity-type", capacityType,
 		"zone", zone,
-		"max-cpu", valueToSet,
+		"max-cpu", cpuCount,
 		"ttl", ttl).V(1).Info("marking VM family unavailable in zone")
 
 	// call Set to update the cache entry, even if it already exists, to extend its TTL
-	u.vmFamilyCache.Set(key, valueToSet, ttl)
+	u.vmFamilyCache.Set(key, cpuCount, ttl)
 	atomic.AddUint64(&u.SeqNum, 1)
 }
 
