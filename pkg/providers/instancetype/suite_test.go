@@ -642,7 +642,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		})
 
-		It("should select an ephemeral disk if LabelSKUStorageEphemeralOSMaxSize is set", func() {
+		It("should select an ephemeral disk if LabelSKUStorageEphemeralOSMaxSize is set and os disk size fits", func() {
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
