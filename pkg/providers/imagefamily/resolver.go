@@ -166,8 +166,9 @@ func (r *defaultResolver) Resolve(
 			diskType,
 			r.nodeBootstrappingProvider,
 		),
-		StorageProfileDiskType:  diskType,
-		StorageProfilePlacement: lo.FromPtr(placement),
+		StorageProfileDiskType:    diskType,
+		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
+		StorageProfilePlacement:   lo.FromPtr(placement),
 
 		// TODO: We could potentially use the instance type to do defaulting like
 		// traditional AKS, so putting this here along with the other settings

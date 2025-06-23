@@ -57,6 +57,7 @@ type Parameters struct {
 	CustomScriptsNodeBootstrapping customscriptsbootstrap.Bootstrapper
 	ImageID                        string
 	StorageProfileDiskType         string
+	StorageProfileIsEphemeral      bool
 	StorageProfilePlacement        armcompute.DiffDiskPlacement
 	StorageProfileSizeGB           int32
 	IsWindows                      bool

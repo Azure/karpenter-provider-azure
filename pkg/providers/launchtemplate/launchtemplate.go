@@ -47,16 +47,17 @@ const (
 )
 
 type Template struct {
-	ScriptlessCustomData    string
-	ImageID                 string
-	SubnetID                string
-	Tags                    map[string]*string
-	CustomScriptsCustomData string
-	CustomScriptsCSE        string
-	IsWindows               bool
-	StorageProfileDiskType  string
-	StorageProfilePlacement armcompute.DiffDiskPlacement
-	StorageProfileSizeGB    int32
+	ScriptlessCustomData      string
+	ImageID                   string
+	SubnetID                  string
+	Tags                      map[string]*string
+	CustomScriptsCustomData   string
+	CustomScriptsCSE          string
+	IsWindows                 bool
+	StorageProfileDiskType    string
+	StorageProfileIsEphemeral bool
+	StorageProfilePlacement   armcompute.DiffDiskPlacement
+	StorageProfileSizeGB      int32
 }
 
 type Provider struct {
@@ -197,13 +198,14 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 	// merge and convert to ARM tags
 	azureTags := mergeTags(params.Tags, map[string]string{karpenterManagedTagKey: params.ClusterName})
 	template := &Template{
-		ImageID:                 params.ImageID,
-		Tags:                    azureTags,
-		SubnetID:                params.SubnetID,
-		IsWindows:               params.IsWindows,
-		StorageProfileDiskType:  params.StorageProfileDiskType,
-		StorageProfilePlacement: params.StorageProfilePlacement,
-		StorageProfileSizeGB:    params.StorageProfileSizeGB,
+		ImageID:                   params.ImageID,
+		Tags:                      azureTags,
+		SubnetID:                  params.SubnetID,
+		IsWindows:                 params.IsWindows,
+		StorageProfileDiskType:    params.StorageProfileDiskType,
+		StorageProfileIsEphemeral: params.StorageProfileIsEphemeral,
+		StorageProfilePlacement:   params.StorageProfilePlacement,
+		StorageProfileSizeGB:      params.StorageProfileSizeGB,
 	}
 
 	if p.provisionMode == consts.ProvisionModeBootstrappingClient {

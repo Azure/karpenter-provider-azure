@@ -363,7 +363,7 @@ func FindMaxEphemeralSizeAndPlacement(sku *skewer.SKU) (sizeGB int32, placement 
 
 	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
 	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
-	maxNvmeDiskSize, _ := sku.NvmeDiskSizeInMiB()
+	maxNvmeDiskSize, _ := NvmeDiskSizeInMiB(sku)
 
 	// Check NVMe disk first (highest priority)
 	if maxNvmeDiskSize > 0 && SupportsNVMeEphemeralOSDisk(sku) {
@@ -464,4 +464,9 @@ func SupportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
 func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 	sizeGB, _ := FindMaxEphemeralSizeAndPlacement(sku)
 	return *nodeClass.Spec.OSDiskSizeGB <= int32(sizeGB) // use ephemeral disk if it is large enough
+}
+
+func NvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
+	const selector = "NvmeDiskSizeInMiB"
+	return s.GetCapabilityIntegerQuantity(selector)
 }

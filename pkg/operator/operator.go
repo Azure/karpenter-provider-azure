@@ -143,9 +143,9 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	)
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
-		azClient.NodeBootstrappingClient,
 		imageProvider,
 		instanceTypeProvider,
+		azClient.NodeBootstrappingClient,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,

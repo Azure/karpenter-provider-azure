@@ -50,7 +50,6 @@ skugen-all() {
 
   # run skugen for selected regions
   skugen southcentralus # region with Standard_E4d_v5
-  skugen eastus
   skugen westcentralus # non-zonal region
 }
 
