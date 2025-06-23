@@ -51,28 +51,4 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
 		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
 	})
-
-	// TODO: Uncomment when we have shared image galleries in the test environment
-	//It("should use NVMe placement if the sku is v6+ and ephemeral os disk is requested", func() {
-	//	// if we aren't using shared image galleries we need to skip this test
-	//	nodePool.Spec.Requirements = append(nodePool.Spec.Requirements, v1.NodeSelectorRequirement{
-	//		Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-	//		Operator: v1.NodeSelectorOpGt,
-	//		Values:   []string{"0"},
-	//	},
-	//		v1.NodeSelectorRequirement{
-	//			Key:      v1beta1.LabelSKUVersion,
-	//			Operator: v1.NodeSelectorOpGt,
-	//			Values:   []string{"5"},
-	//		})
-
-	//	pod := test.Pod()
-	//	env.ExpectCreated(nodeClass, nodePool, pod)
-	//	env.EventuallyExpectHealthy(pod)
-	//	env.ExpectCreatedNodeCount("==", 1)
-
-	//	vm := env.GetVM(nodePool.Spec.Template.Spec.NodeName)
-	//	Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option).To(Equal("Local"))
-	//	Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).To(Equal("NVMe"))
-	//})
 })
