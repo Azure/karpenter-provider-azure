@@ -66,7 +66,6 @@ func NewUnavailableOfferingsWithCache(singleOfferingCache, vmFamilyCache *cache.
 func NewUnavailableOfferings() *UnavailableOfferings {
 	return NewUnavailableOfferingsWithCache(
 		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval),
-		// TODO - should we adjust cleanup interval for vmFamilyCache?
 		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval),
 	)
 }
@@ -111,18 +110,13 @@ func (u *UnavailableOfferings) isFamilyUnavailable(skuFamilyName, zone, capacity
 // MarkFamilyUnavailableWithTTL marks a VM family with custom TTL in a specific zone
 func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context, versionedSKUFamily, zone, capacityType string, cpuCount int64, ttl time.Duration) {
 	key := vmFamilyKey(versionedSKUFamily, zone, capacityType)
+	valueToSet := cpuCount
 
-	// Check if we already have a more restrictive limit
 	if existing, found := u.vmFamilyCache.Get(key); found {
 		if currentBlockedCPUCount, ok := existing.(int64); ok {
-			// If entire family is already blocked, don't override
-			if currentBlockedCPUCount == wholeVMFamilyBlockedSentinel {
-				return
-			}
-			// If new limit would be less restrictive, keep the existing one
-			// TODO - should we adjust TTL here for the existing entry in cache?
-			if cpuCount != wholeVMFamilyBlockedSentinel && currentBlockedCPUCount <= cpuCount {
-				return
+			// Keep the more restrictive limit for CPU count(lower value, with -1 being most restrictive - wholeVMFamilyBlockedSentinel)
+			if currentBlockedCPUCount <= cpuCount {
+				valueToSet = currentBlockedCPUCount
 			}
 		}
 	}
@@ -131,10 +125,11 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context,
 		"family", versionedSKUFamily,
 		"capacity-type", capacityType,
 		"zone", zone,
-		"max-cpu", cpuCount,
+		"max-cpu", valueToSet,
 		"ttl", ttl).V(1).Info("marking VM family unavailable in zone")
 
-	u.vmFamilyCache.Set(key, cpuCount, ttl)
+	// call Set to update the cache entry, even if it already exists, to extend its TTL
+	u.vmFamilyCache.Set(key, valueToSet, ttl)
 	atomic.AddUint64(&u.SeqNum, 1)
 }
 
