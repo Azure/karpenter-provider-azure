@@ -2,8 +2,6 @@ module github.com/Azure/karpenter-provider-azure
 
 go 1.24.4
 
-require github.com/Azure/skewer v0.0.20
-
 require (
 	github.com/Azure/aks-middleware v0.0.40
 	github.com/Azure/azure-kusto-go v0.16.1
@@ -17,6 +15,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork v1.1.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph v0.9.0
 	github.com/Azure/go-autorest/autorest v0.11.30
+	github.com/Azure/skewer v0.0.20
 	github.com/Pallinder/go-randomdata v1.2.0
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/awslabs/operatorpkg v0.0.0-20250425180727-b22281cd8057
