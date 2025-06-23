@@ -21,7 +21,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
@@ -92,6 +91,7 @@ func getExpectedTestSIGImages(imageFamily string, version string, kubernetesVers
 
 var _ = Describe("NodeImageProvider tests", func() {
 	var (
+		testOptions               *options.Options
 		communityImageVersionsAPI *fake.CommunityGalleryImageVersionsAPI
 
 		nodeImageProvider imagefamily.NodeImageProvider
@@ -101,19 +101,18 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 	BeforeEach(func() {
 		ctx = coreoptions.ToContext(ctx, coretest.Options())
-		ctx = options.ToContext(ctx, test.Options())
+		testOptions = test.Options()
+		ctx = options.ToContext(ctx, testOptions)
 
 		communityImageVersionsAPI = &fake.CommunityGalleryImageVersionsAPI{}
 		cigImageVersionTest := cigImageVersion
 		communityImageVersionsAPI.ImageVersions.Append(&armcompute.CommunityGalleryImageVersion{Name: &cigImageVersionTest})
 		nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
-		nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
-		kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
-		nodeImageProvider = imagefamily.NewProvider(env.KubernetesInterface, kubernetesVersionCache, communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, nodeBootstrappingAPI)
+		nodeImageProvider = imagefamily.NewProvider(communityImageVersionsAPI, fake.Region, customerSubscription, nodeImageVersionsAPI, cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval))
 		kubernetesVersion = lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String()
 
 		nodeClass = test.AKSNodeClass()
-		test.ApplyDefaultStatus(nodeClass, env)
+		test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 	})
 
 	Context("List CIG Images", func() {
@@ -164,7 +163,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 	Context("List SIG Images", func() {
 		BeforeEach(func() {
-			testOptions := options.FromContext(ctx)
+			testOptions = options.FromContext(ctx)
 			testOptions.UseSIG = true
 			testOptions.SIGSubscriptionID = sigSubscription
 			testOptions.SIGAccessTokenScope = "http://valid-scope.com/.default"

@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
@@ -83,7 +84,7 @@ func createValidProvisionProfile() *models.ProvisionProfile {
 		VMSize:              lo.ToPtr("Standard_D2s_v3"),
 		OsType:              lo.ToPtr(models.OSTypeLinux),
 		OsSku:               lo.ToPtr(models.OSSKUAzureLinux),
-		StorageProfile:      lo.ToPtr("ManagedDisks"),
+		StorageProfile:      lo.ToPtr(consts.StorageProfileManagedDisks),
 		Distro:              lo.ToPtr("AzureLinux"),
 		OrchestratorVersion: lo.ToPtr("1.31.0"),
 		VnetCidrs:           []string{"10.0.0.0/8"},

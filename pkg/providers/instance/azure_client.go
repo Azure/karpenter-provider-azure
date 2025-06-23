@@ -18,13 +18,11 @@ package instance
 
 import (
 	"context"
-	"net/http"
-	"time"
 
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	armcomputev5 "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -105,15 +103,9 @@ func NewAZClientFromAPI(
 	}
 }
 
-func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
-	// Defaulting env to Azure Public Cloud.
-	env := azclient.PublicCloud
-	var err error
-	if cfg.Cloud != "" {
-		env = azclient.EnvironmentFromName(cfg.Cloud)
-	}
-
-	azClient, err := NewAZClient(ctx, cfg, env)
+func CreateAZClient(ctx context.Context, cfg *auth.Config, cred azcore.TokenCredential) (*AZClient, error) {
+	env := azclient.EnvironmentFromName(cfg.Cloud)
+	azClient, err := NewAZClient(ctx, cfg, env, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -122,13 +114,8 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config) (*AZClient, error) {
 }
 
 // nolint: gocyclo
-func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment) (*AZClient, error) {
+func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	o := options.FromContext(ctx)
-	defaultAzureCred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, err
-	}
-	cred := auth.NewTokenWrapper(defaultAzureCred)
 	opts := armopts.DefaultArmOpts()
 
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
@@ -145,13 +132,12 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
+	var auxiliaryTokenClient auth.AuxiliaryTokenServer
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
-		client := &http.Client{Timeout: 10 * time.Second}
-		auxPolicy, err := auth.NewAuxiliaryTokenPolicy(ctx, client, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
-		if err != nil {
-			return nil, err
-		}
+		auxiliaryTokenClient = armopts.DefaultHTTPClient()
+		klog.V(1).Info("Will use auxiliary token policy for creating virtual machines")
+		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
@@ -197,6 +183,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 			cfg.SubscriptionID,
 			cfg.ResourceGroup,
 			o.ClusterName,
+			cred,
 			o.NodeBootstrappingServerURL)
 		if err != nil {
 			return nil, err

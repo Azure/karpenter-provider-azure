@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -37,6 +38,7 @@ import (
 	"github.com/samber/lo"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 type Resolver interface {
@@ -53,7 +55,7 @@ var _ Resolver = &defaultResolver{}
 
 // defaultResolver is able to fill-in dynamic launch template parameters
 type defaultResolver struct {
-	imageProvider *Provider
+	nodeBootstrappingProvider types.NodeBootstrappingAPI
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -83,9 +85,9 @@ type ImageFamily interface {
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
-func NewDefaultResolver(_ client.Client, imageProvider *Provider) *defaultResolver {
+func NewDefaultResolver(_ client.Client, nodeBootstrappingClient types.NodeBootstrappingAPI) *defaultResolver {
 	return &defaultResolver{
-		imageProvider: imageProvider,
+		nodeBootstrappingProvider: nodeBootstrappingClient,
 	}
 }
 
@@ -113,7 +115,7 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	log.FromContext(ctx).Info(fmt.Sprintf("Resolved image %s for instance type %s", imageID, instanceType.Name))
+	log.FromContext(ctx).Info("resolved image", "imageID", imageID, "instance-type", instanceType.Name)
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
 	imageDistro, err := mapToImageDistro(imageID, imageFamily)
@@ -136,9 +138,9 @@ func (r *defaultResolver) Resolve(
 		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
 	}
 
-	storageProfile := "ManagedDisks"
+	storageProfile := consts.StorageProfileManagedDisks
 	if useEphemeralDisk(instanceType, nodeClass) {
-		storageProfile = "Ephemeral"
+		storageProfile = consts.StorageProfileEphemeral
 	}
 
 	template := &template.Parameters{
@@ -158,7 +160,7 @@ func (r *defaultResolver) Resolve(
 			instanceType,
 			imageDistro,
 			storageProfile,
-			r.imageProvider.nodeBootstrappingProvider,
+			r.nodeBootstrappingProvider,
 		),
 		ImageID:        imageID,
 		StorageProfile: storageProfile,
@@ -232,4 +234,21 @@ func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
 func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) bool {
 	// use ephemeral disk if it is large enough
 	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
+}
+
+// resolveNodeImage returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
+//
+// Preconditions:
+// - nodeImages is sorted by priority order
+func (r *defaultResolver) resolveNodeImage(nodeImages []v1beta1.NodeImage, instanceType *cloudprovider.InstanceType) (string, error) {
+	// nodeImages are sorted by priority order, so we can return the first one that matches
+	for _, availableImage := range nodeImages {
+		if err := instanceType.Requirements.Compatible(
+			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),
+			v1beta1.AllowUndefinedWellKnownAndRestrictedLabels,
+		); err == nil {
+			return availableImage.ID, nil
+		}
+	}
+	return "", fmt.Errorf("no compatible images found for instance type %s", instanceType.Name)
 }

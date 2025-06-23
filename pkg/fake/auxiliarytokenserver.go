@@ -40,6 +40,26 @@ var _ auth.AuxiliaryTokenServer = &AuxiliaryTokenServer{}
 
 type AuxiliaryTokenServer struct {
 	AuxiliaryTokenBehavior
+	Token azcore.AccessToken
+}
+
+// NewAuxiliaryTokenServer creates a new AuxiliaryTokenServer with the given token.
+func NewAuxiliaryTokenServer(token string, expiresOn time.Time, refreshOn time.Time) *AuxiliaryTokenServer {
+	return &AuxiliaryTokenServer{
+		Token: azcore.AccessToken{
+			Token:     token,
+			ExpiresOn: expiresOn,
+			RefreshOn: refreshOn,
+		},
+	}
+}
+
+func (c *AuxiliaryTokenServer) SetToken(token string, expiresOn time.Time, refreshOn time.Time) {
+	c.Token = azcore.AccessToken{
+		Token:     token,
+		ExpiresOn: expiresOn,
+		RefreshOn: refreshOn,
+	}
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
@@ -61,10 +81,7 @@ func (c *AuxiliaryTokenServer) Do(req *http.Request) (*http.Response, error) {
 			return resp, nil
 		}
 
-		token := azcore.AccessToken{
-			Token:     "fake-token",
-			ExpiresOn: time.Now().Add(1 * time.Hour),
-		}
+		token := c.Token
 		tokenBytes, _ := json.Marshal(token)
 		resp.StatusCode = http.StatusOK
 		resp.Body = io.NopCloser(bytes.NewReader(tokenBytes))
