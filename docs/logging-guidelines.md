@@ -20,9 +20,9 @@ log.FromContext(ctx).Error(err, "failed to cleanup VM, may cause resource leak")
 
 **Example Output:**
 ```json
-{"level":"ERROR","time":"2024-01-01T12:00:00Z","message":"failed to authenticate with Azure","error":"authentication failed: invalid credentials"}
-{"level":"ERROR","time":"2024-01-01T12:00:05Z","message":"VM creation failed, cleaning up resources","error":"quota exceeded for region"}
-{"level":"ERROR","time":"2024-01-01T12:00:10Z","message":"failed to cleanup VM, may cause resource leak","error":"timeout waiting for deletion"}
+{"level":"ERROR","time":"2024-01-01T12:00:00Z","msg":"failed to authenticate with Azure","error":"authentication failed: invalid credentials"}
+{"level":"ERROR","time":"2024-01-01T12:00:05Z","msg":"VM creation failed, cleaning up resources","error":"quota exceeded for region"}
+{"level":"ERROR","time":"2024-01-01T12:00:10Z","msg":"failed to cleanup VM, may cause resource leak","error":"timeout waiting for deletion"}
 ```
 
 ### Warning Level (`V(-1)`)
@@ -46,10 +46,10 @@ log.FromContext(ctx).V(-1).Info("detected potential kubernetes downgrade, keepin
 
 **Example Output:**
 ```json
-{"level":"WARN","time":"2024-01-01T12:00:00Z","message":"duplicate node error detected, invariant violated"}
-{"level":"WARN","time":"2024-01-01T12:00:05Z","message":"kubernetes version not ready, skipping drift check","error":"version API unavailable"}
-{"level":"WARN","time":"2024-01-01T12:00:10Z","message":"failed to get zone for VM, zone label will be empty","vmName":"aks-nodepool-12345-vm-000000","error":"zone metadata not found"}
-{"level":"WARN","time":"2024-01-01T12:00:15Z","message":"detected potential kubernetes downgrade, keeping current version","currentKubernetesVersion":"1.28.5","discoveredKubernetesVersion":"1.28.0"}
+{"level":"WARN","time":"2024-01-01T12:00:00Z","msg":"duplicate node error detected, invariant violated"}
+{"level":"WARN","time":"2024-01-01T12:00:05Z","msg":"kubernetes version not ready, skipping drift check","error":"version API unavailable"}
+{"level":"WARN","time":"2024-01-01T12:00:10Z","msg":"failed to get zone for VM, zone label will be empty","vmName":"aks-nodepool-12345-vm-000000","error":"zone metadata not found"}
+{"level":"WARN","time":"2024-01-01T12:00:15Z","msg":"detected potential kubernetes downgrade, keeping current version","currentKubernetesVersion":"1.28.5","discoveredKubernetesVersion":"1.28.0"}
 ```
 
 ### Info Level (`V(0)`)
@@ -69,9 +69,9 @@ log.FromContext(ctx).WithValues("version", version).Info("karpenter starting")
 
 **Example Output:**
 ```json
-{"level":"INFO","time":"2024-01-01T12:00:00Z","message":"successfully created VM","vmName":"aks-nodepool-12345-vm-000000"}
-{"level":"INFO","time":"2024-01-01T12:00:05Z","message":"scaled cluster","nodeCount":3}
-{"level":"INFO","time":"2024-01-01T12:00:10Z","message":"karpenter starting","version":"v0.37.0"}
+{"level":"INFO","time":"2024-01-01T12:00:00Z","msg":"successfully created VM","vmName":"aks-nodepool-12345-vm-000000"}
+{"level":"INFO","time":"2024-01-01T12:00:05Z","msg":"scaled cluster","nodeCount":3}
+{"level":"INFO","time":"2024-01-01T12:00:10Z","msg":"karpenter starting","version":"v0.37.0"}
 ```
 
 ### Debug Level (`V(1)`)
@@ -93,10 +93,10 @@ log.FromContext(ctx).WithValues("attempt", retryCount).V(1).Info("retrying opera
 
 **Example Output:**
 ```json
-{"level":"DEBUG","time":"2024-01-01T12:00:00Z","message":"VM creation completed","duration":"45.2s"}
-{"level":"DEBUG","time":"2024-01-01T12:00:05Z","message":"discovered instance types","skuCount":24}
-{"level":"DEBUG","time":"2024-01-01T12:00:10Z","message":"created network interface","nicName":"aks-nodepool-12345-nic-000000"}
-{"level":"DEBUG","time":"2024-01-01T12:00:15Z","message":"retrying operation","attempt":2}
+{"level":"DEBUG","time":"2024-01-01T12:00:00Z","msg":"VM creation completed","duration":"45.2s"}
+{"level":"DEBUG","time":"2024-01-01T12:00:05Z","msg":"discovered instance types","skuCount":24}
+{"level":"DEBUG","time":"2024-01-01T12:00:10Z","msg":"created network interface","nicName":"aks-nodepool-12345-nic-000000"}
+{"level":"DEBUG","time":"2024-01-01T12:00:15Z","msg":"retrying operation","attempt":2}
 ```
 
 ### Trace Level (`V(2)`+)
@@ -122,13 +122,13 @@ log.FromContext(ctx).WithValues("state", internalState).V(3).Info("internal stat
 **Example Output:**
 ```json
 // V(2) - Per-request debugging
-{"level":"DEBUG","time":"2024-01-01T12:00:00Z","message":"calling Azure API","params":{"resourceGroupName":"rg-test","vmName":"test-vm"}}
-{"level":"DEBUG","time":"2024-01-01T12:00:05Z","message":"processing VM request","vmName":"aks-nodepool-12345-vm-000000"}
-{"level":"DEBUG","time":"2024-01-01T12:00:10Z","message":"evaluating instance offering","offering":"Standard_D4s_v5"}
+{"level":"DEBUG","time":"2024-01-01T12:00:00Z","msg":"calling Azure API","params":{"resourceGroupName":"rg-test","vmName":"test-vm"}}
+{"level":"DEBUG","time":"2024-01-01T12:00:05Z","msg":"processing VM request","vmName":"aks-nodepool-12345-vm-000000"}
+{"level":"DEBUG","time":"2024-01-01T12:00:10Z","msg":"evaluating instance offering","offering":"Standard_D4s_v5"}
 
 // V(3) - Verbose debugging
-{"level":"DEBUG","time":"2024-01-01T12:00:15Z","message":"received API response","response":{"id":"/subscriptions/.../vm-000000","status":"Creating"}}
-{"level":"DEBUG","time":"2024-01-01T12:00:20Z","message":"internal state dump","state":{"pendingVMs":3,"availableCapacity":"80%"}}
+{"level":"DEBUG","time":"2024-01-01T12:00:15Z","msg":"received API response","response":{"id":"/subscriptions/.../vm-000000","status":"Creating"}}
+{"level":"DEBUG","time":"2024-01-01T12:00:20Z","msg":"internal state dump","state":{"pendingVMs":3,"availableCapacity":"80%"}}
 ```
 
 ## WithValues vs Direct Key-Value Pairs
@@ -156,44 +156,37 @@ log.FromContext(ctx).Error(err, "failed to create VM", "attempt", retryCount)
 **Example Output:**
 ```json
 // WithValues - vmName and resourceGroupName appear in both logs automatically
-{"level":"INFO","time":"2024-01-01T12:00:00Z","message":"creating VM","vmName":"aks-nodepool-12345-vm-000000","resourceGroupName":"rg-test"}
-{"level":"INFO","time":"2024-01-01T12:00:05Z","message":"VM created successfully","vmName":"aks-nodepool-12345-vm-000000","resourceGroupName":"rg-test"}
+{"level":"INFO","time":"2024-01-01T12:00:00Z","msg":"creating VM","vmName":"aks-nodepool-12345-vm-000000","resourceGroupName":"rg-test"}
+{"level":"INFO","time":"2024-01-01T12:00:05Z","msg":"VM created successfully","vmName":"aks-nodepool-12345-vm-000000","resourceGroupName":"rg-test"}
 
 // Direct pairs - single-use data appears only in specific logs
-{"level":"INFO","time":"2024-01-01T12:00:10Z","message":"processing instances","instanceCount":5}
-{"level":"ERROR","time":"2024-01-01T12:00:15Z","message":"failed to create VM","attempt":3,"error":"timeout exceeded"}
+{"level":"INFO","time":"2024-01-01T12:00:10Z","msg":"processing instances","instanceCount":5}
+{"level":"ERROR","time":"2024-01-01T12:00:15Z","msg":"failed to create VM","attempt":3,"error":"timeout exceeded"}
 ```
 
-## Logging Key Conventions
+## Key Naming Conventions
 
 When adding new logging keys, follow these conventions:
 
 ### Key Naming
-- **Camel Case (Default)**: Use camel case for most logging keys (e.g., `driftType`, `vmName`, `resourceGroupName`)
-- **Kebab Case (Kubernetes)**: Use kebab-case for Kubernetes labels, annotations, and field names (e.g., `instance-type`, `capacity-type`)
 - **Descriptive**: Keys should clearly indicate what they represent
 - **Consistent**: Use the same key name across different log statements for the same variables
-
-### Resource Naming Conventions
+- **Camel Case Default**: Use camel case for most logging keys
+  -  `driftType`, `vmName`, `resourceGroupName`
 - **Azure Resources**: Use `Name` suffix for resources that have both name and ID properties
-  - `vmName`, `nicName`, `resourceGroupName`, `extensionName`
-  - `vmID`, `nicID`, `extensionID` (when logging the Azure resource ID)
-- **Kubernetes Resources**: Use capitalized resource types without suffix
-  - `Node`, `NodeClaim`, `NodePool`, `Pod`
-  - These are cluster-scoped resources typically referenced by their primary identifier
-### Kubernetes Labels and Annotations
-When logging Kubernetes labels or annotations, preserve their original kebab-case format:
-- **Labels**: `instance-type`, `capacity-type`, `node.kubernetes.io/instance-type`, `topology.kubernetes.io/zone`
-- **Annotations**: `node.alpha.kubernetes.io/ttl`, `karpenter.sh/provisioner-name`
-- **Custom Labels**: `example.com/my-custom-label`, `azure.workload.identity/client-id`
-
+  - Name: `vmName`, `nicName`, `extensionName`
+  - ID: `vmID`, `nicID`, `extensionID`
+- **Kubernetes Resource**: Match Kubernetes syntax for well-known Kubernetes resources, labels, and fields
+  - Kebab Case for labels: `instance-type`, `capacity-type`
+  - Capitalized Camel Case for resources: `Node`, `NodeClaim`, `NodePool`, `Pod`
+  - Camel Case for fields: `providerID`
 
 ### Common Key Examples
 - **Azure Resources (camelCase)**: `vmName`, `nicName`, `resourceGroupName`, `loadBalancerName`, `extensionName`
 - **Azure Resource IDs (camelCase)**: `vmID`, `nicID`, `extensionID`
 - **Kubernetes Resources (capitalized CamelCase)**: `Node`, `NodeClaim`, `NodePool`
+- **Kubernetes Labels/Annotations (kebab-case)**: `instance-type`, `capacity-type`
 - **Kubernetes Fields (camelCase)**: `providerID`
-- **Kubernetes Labels/Annotations (kebab-case)**: `instance-type`, `capacity-type`, `node.kubernetes.io/instance-type`
 - **Versioning (camelCase)**: `currentKubernetesVersion`, `discoveredKubernetesVersion`, `expectedKubernetesVersion`, `actualKubernetesVersion`
 - **Drift Detection (camelCase)**: `driftType`, `nodeClassHash`, `nodeClaimHash`, `actualImageID`
 - **Operations (camelCase)**: `goalHash`, `actualHash`
