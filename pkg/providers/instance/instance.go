@@ -176,7 +176,7 @@ func (p *DefaultProvider) BeginCreate(
 		"hostname", *vm.Name,
 		"type", string(*vm.Properties.HardwareProfile.VMSize),
 		"zone", zone,
-		"capacityType", GetCapacityType(vm))
+		"capacity-type", GetCapacityType(vm))
 
 	return vmPromise, nil
 }
@@ -548,7 +548,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
 	vm := newVMObject(opts)
-	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, "instanceType", opts.InstanceType.Name)
+	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, "instance-type", opts.InstanceType.Name)
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
@@ -749,7 +749,7 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	}
 	// InstanceType/VM SKU - just pick the first one for now. They are presorted by cheapest offering price (taking node requirements into account)
 	instanceType := instanceTypes[0]
-	log.FromContext(ctx).Info("selected instance type", "instanceType", instanceType.Name)
+	log.FromContext(ctx).Info("selected instance type", "instance-type", instanceType.Name)
 	// Priority - Nodepool defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
 	// Zone - ideally random/spread from requested zones that support given Priority
