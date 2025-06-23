@@ -162,7 +162,7 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 		"zone", zone,
 		"capacity-type", capacityType,
 		"ttl", ttl)
-	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
+	u.singleOfferingCache.Set(singleInstanceKey(instanceType, zone, capacityType), struct{}{}, ttl)
 	atomic.AddUint64(&u.SeqNum, 1)
 }
 
