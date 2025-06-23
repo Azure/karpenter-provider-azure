@@ -29,6 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/samber/lo"
 )
@@ -74,6 +75,7 @@ type VirtualMachinesAPI struct {
 	// TODO: document the implications of embedding vs. not embedding the interface here
 	// instance.VirtualMachinesAPI // - this is the interface we are mocking.
 	VirtualMachinesBehavior
+	AuxiliaryTokenPolicy *auth.AuxiliaryTokenPolicy
 }
 
 // Reset must be called between tests otherwise tests will pollute each other.
@@ -88,7 +90,24 @@ func (c *VirtualMachinesAPI) Reset() {
 	})
 }
 
-func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error) {
+// UseAuxiliaryTokenPolicy simulates AuxiliaryTokenPolicy.Do() method being called at the beginning of each API call
+// This is useful for testing scenarios where the auxiliary token is required for the API call to succeed.
+// If the AuxiliaryTokenPolicy is not set (USE_SIG: false), this method does nothing and returns nil.
+func (c *VirtualMachinesAPI) UseAuxiliaryTokenPolicy() error {
+	if c.AuxiliaryTokenPolicy != nil {
+		request, _ := runtime.NewRequest(context.Background(), "GET", "http://example.com")
+		if _, err := c.AuxiliaryTokenPolicy.Do(request); err != nil {
+			// req.Next() returns this if there are no more policies.
+			if err.Error() == "no more policies" {
+				return nil
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *VirtualMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error) {
 	// gather input parameters (may get rid of this with multiple mocked function signatures to reflect common patterns)
 	input := &VirtualMachineCreateOrUpdateInput{
 		ResourceGroupName: resourceGroupName,
@@ -99,6 +118,9 @@ func (c *VirtualMachinesAPI) BeginCreateOrUpdate(_ context.Context, resourceGrou
 	// BeginCreateOrUpdate should fail, if the vm exists in the cache, and we are attempting to change properties for zone
 
 	return c.VirtualMachineCreateOrUpdateBehavior.Invoke(input, func(input *VirtualMachineCreateOrUpdateInput) (*armcompute.VirtualMachinesClientCreateOrUpdateResponse, error) {
+		if err := c.UseAuxiliaryTokenPolicy(); err != nil {
+			return nil, getAuthTokenError(err)
+		}
 		//if input.ResourceGroupName == "" {
 		//	return nil, errors.New("ResourceGroupName is required")
 		//}
@@ -160,6 +182,9 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 		Options:           options,
 	}
 	return c.VirtualMachineUpdateBehavior.Invoke(input, func(input *VirtualMachineUpdateInput) (*armcompute.VirtualMachinesClientUpdateResponse, error) {
+		if err := c.UseAuxiliaryTokenPolicy(); err != nil {
+			return nil, getAuthTokenError(err)
+		}
 		id := MkVMID(input.ResourceGroupName, input.VMName)
 
 		instance, ok := c.Instances.Load(id)
@@ -203,6 +228,9 @@ func (c *VirtualMachinesAPI) Get(_ context.Context, resourceGroupName string, vm
 		Options:           options,
 	}
 	return c.VirtualMachineGetBehavior.Invoke(input, func(input *VirtualMachineGetInput) (armcompute.VirtualMachinesClientGetResponse, error) {
+		if err := c.UseAuxiliaryTokenPolicy(); err != nil {
+			return armcompute.VirtualMachinesClientGetResponse{}, getAuthTokenError(err)
+		}
 		instance, ok := c.Instances.Load(MkVMID(input.ResourceGroupName, input.VMName))
 		if !ok {
 			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
@@ -220,6 +248,9 @@ func (c *VirtualMachinesAPI) BeginDelete(_ context.Context, resourceGroupName st
 		Options:           options,
 	}
 	return c.VirtualMachineDeleteBehavior.Invoke(input, func(input *VirtualMachineDeleteInput) (*armcompute.VirtualMachinesClientDeleteResponse, error) {
+		if err := c.UseAuxiliaryTokenPolicy(); err != nil {
+			return &armcompute.VirtualMachinesClientDeleteResponse{}, getAuthTokenError(err)
+		}
 		c.Instances.Delete(MkVMID(input.ResourceGroupName, input.VMName))
 		return &armcompute.VirtualMachinesClientDeleteResponse{}, nil
 	})
@@ -232,4 +263,13 @@ func createSDKErrorBody(code, message string) io.ReadCloser {
 func MkVMID(resourceGroupName string, vmName string) string {
 	const idFormat = "/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s"
 	return fmt.Sprintf(idFormat, resourceGroupName, vmName)
+}
+
+func getAuthTokenError(err error) *azcore.ResponseError {
+	return &azcore.ResponseError{
+		ErrorCode: "AuthenticationFailed",
+		RawResponse: &http.Response{
+			Body: createSDKErrorBody("AuthenticationFailed", err.Error()),
+		},
+	}
 }

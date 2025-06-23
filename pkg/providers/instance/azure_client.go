@@ -18,8 +18,6 @@ package instance
 
 import (
 	"context"
-	"net/http"
-	"time"
 
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 
@@ -134,13 +132,12 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
+	var auxiliaryTokenClient auth.AuxiliaryTokenServer
 	if o.UseSIG {
 		klog.V(1).Info("Using SIG for image versions")
-		client := &http.Client{Timeout: 10 * time.Second}
-		auxPolicy, err := auth.NewAuxiliaryTokenPolicy(ctx, client, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
-		if err != nil {
-			return nil, err
-		}
+		auxiliaryTokenClient = armopts.DefaultHTTPClient()
+		klog.V(1).Info("Will use auxiliary token policy for creating virtual machines")
+		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
