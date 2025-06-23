@@ -1246,7 +1246,6 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
 			for _, pod := range pods {
-				fmt.Println(pod.Spec.NodeSelector)
 				ExpectScheduled(ctx, env.Client, pod)
 			}
 		})

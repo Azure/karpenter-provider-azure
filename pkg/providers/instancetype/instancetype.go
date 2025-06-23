@@ -189,7 +189,6 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
 	if sku.IsEphemeralOSDiskSupported() && vmsize.Series != "Dlds_v5" { // Dlds_v5 does not support ephemeral OS disk, contrary to what it claims
 		sizeGB, _ := FindMaxEphemeralSizeAndPlacement(sku)
-		fmt.Println(lo.FromPtr(sku.Name), sizeGB)
 		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(sizeGB))
 	}
 }

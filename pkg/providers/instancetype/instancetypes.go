@@ -283,11 +283,6 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
-	for _, sku := range skus {
-		log.FromContext(ctx).Info(fmt.Sprintf("SKU: %v", sku.GetName()))
-	}
-	log.FromContext(ctx).Info(fmt.Sprintf("SKUs: %v", skus))
-	log.FromContext(ctx).Info(fmt.Sprintf("Region: %v", p.region))
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
