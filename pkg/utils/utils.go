@@ -59,7 +59,7 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
 	if err != nil {
-		log.FromContext(ctx).V(-1).Info("failed to convert resource group name to lower case in providerID, using fallback", "providerID", providerID, "error", err)
+		log.FromContext(ctx).Info("failed to convert resource group name to lower case in providerID, using fallback", "providerID", providerID, "error", err)
 		// fallback to original providerID
 		return providerID
 	}

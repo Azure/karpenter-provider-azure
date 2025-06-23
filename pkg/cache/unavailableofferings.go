@@ -77,9 +77,9 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 	// even if the key is already in the cache, we still need to call Set to extend the cached entry's TTL
 	log.FromContext(ctx).V(1).Info("removing offering from offerings",
 		"unavailable", unavailableReason,
-		"instanceType", instanceType,
+		"instance-type", instanceType,
 		"zone", zone,
-		"capacityType", capacityType,
+		"capacity-type", capacityType,
 		"ttl", ttl)
 	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
 	atomic.AddUint64(&u.SeqNum, 1)
