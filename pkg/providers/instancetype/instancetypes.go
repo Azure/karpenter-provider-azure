@@ -463,7 +463,7 @@ func SupportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
 
 func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 	sizeGB, _ := FindMaxEphemeralSizeAndPlacement(sku)
-	return *nodeClass.Spec.OSDiskSizeGB <= int32(sizeGB) // use ephemeral disk if it is large enough
+	return *nodeClass.Spec.OSDiskSizeGB <= sizeGB // use ephemeral disk if it is large enough
 }
 
 func NvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
