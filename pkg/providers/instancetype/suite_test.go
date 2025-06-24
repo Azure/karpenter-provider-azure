@@ -631,6 +631,12 @@ var _ = Describe("InstanceType Provider", func() {
 			// NvmeDiskSizeInMiB == 0
 			// CacheDiskBytes == 171798691840 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
 			// placement == CacheDisk and size == 1717 GB
+			// Standard_A0
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 0, this is zero
+			// MaxResourceVolumeMB == 20480 Mib -> 21.474836 GB. Note that this sku doesnt support ephemeral os disk,
+			// but we do filtering in another function for this, so we should just return 21 and resource disk placement, even though we cannot set it to that
+			// other places will filter out this sku, we just need the sku to test NVME 0, Cache 0, MaxResourceVolumeMB > 0
 			DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
 				func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
 					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
@@ -644,6 +650,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Entry("Standard_D64s_v3", SkewerSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
 				Entry("Standard_NC24ads_A100_v4", SkewerSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 				Entry("Standard_D64s_v3", SkewerSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_A0", SkewerSKU("Standard_A0"), int64(21), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)),
 			)
 		})
 		Context("Placement", func() {
