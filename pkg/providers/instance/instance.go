@@ -479,9 +479,8 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 }
 
 func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, launchTemplate *launchtemplate.Template) {
-	placement, sizeGB := launchTemplate.StorageProfilePlacement, launchTemplate.StorageProfileSizeGB
+	placement := launchTemplate.StorageProfilePlacement
 	if launchTemplate.StorageProfileIsEphemeral {
-		vmProperties.StorageProfile.OSDisk.DiskSizeGB = lo.ToPtr(sizeGB)
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
 			Option:    lo.ToPtr(armcompute.DiffDiskOptionsLocal),
 			Placement: lo.ToPtr(placement),
