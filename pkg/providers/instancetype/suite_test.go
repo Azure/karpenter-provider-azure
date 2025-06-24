@@ -62,8 +62,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 
-	// nolint SA1019 - deprecated package
-
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
