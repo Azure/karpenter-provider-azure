@@ -629,7 +629,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// MaxResourceVolumeMB == 65536 MiB
 			// Standard_D64s_v3:
 			// NvmeDiskSizeInMiB == 0
-			// CacheDiskBytes == 171798691840 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
+			// CacheDiskBytes == 1717986918400 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
 			// placement == CacheDisk and size == 1717 GB
 			// Standard_A0
 			// NvmeDiskSizeInMiB == 0
