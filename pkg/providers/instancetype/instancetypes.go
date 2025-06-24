@@ -302,7 +302,6 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
 		log.FromContext(ctx).V(1).Info("discovered instance types", "instanceTypeCount", len(instanceTypes))
 	}
-	log.FromContext(ctx).Info(fmt.Sprintf("InstanceTypes: %v", instanceTypes))
 	p.instanceTypesCache.SetDefault(InstanceTypesCacheKey, instanceTypes)
 	return instanceTypes, nil
 }
