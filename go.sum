@@ -1,5 +1,5 @@
-github.com/Azure/aks-middleware v0.0.37 h1:WH46dEtAU3bJsGHHLvgefsqa0SBFznsWwnP53K43wNQ=
-github.com/Azure/aks-middleware v0.0.37/go.mod h1:s03PzzzlJm1+9TerNBdCDb6p3GTYgWU9056IlpgTThc=
+github.com/Azure/aks-middleware v0.0.40 h1:eFRuAxCcIAZoy/6+FvumDl2KOWnSPxXcAeCSOA4+aTo=
+github.com/Azure/aks-middleware v0.0.40/go.mod h1:7Y+wxZmS7p1K0FPreiO3+6Wr8YhYjWz9c50YohDQIQ4=
 github.com/Azure/azure-kusto-go v0.16.1 h1:vCBWcQghmC1qIErUUgVNWHxGhZVStu1U/hki6iBA14k=
 github.com/Azure/azure-kusto-go v0.16.1/go.mod h1:9F2zvXH8B6eWzgI1S4k1ZXAIufnBZ1bv1cW1kB1n3D0=
 github.com/Azure/azure-sdk-for-go v68.0.0+incompatible h1:fcYLmCpyNYRnvJbPerq7U0hS+6+I79yEDJBqVNcqUzU=

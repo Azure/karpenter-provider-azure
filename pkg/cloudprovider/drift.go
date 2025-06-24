@@ -88,7 +88,10 @@ func (c *CloudProvider) areStaticFieldsDrifted(ctx context.Context, nodeClaim *k
 	}
 
 	if nodeClassHash != nodeClaimHash {
-		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as nodeClassHash (%s) != nodeClaimHash (%s)", NodeClassDrift, nodeClassHash, nodeClaimHash))
+		logger.V(1).Info("drift triggered as nodeClassHash != nodeClaimHash",
+			"driftType", NodeClassDrift,
+			"nodeClassHash", nodeClassHash,
+			"nodeClaimHash", nodeClaimHash)
 		return NodeClassDrift, nil
 	}
 
@@ -104,7 +107,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		// Note: we don't consider this a hard failure for drift if the KubernetesVersion is invalid/not ready to use, so we ignore returning the error here.
 		// We simply ensure the stored version is valid and ready to use, if we are to calculate potential Drift based on it.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.Info(fmt.Sprintf("WARN: Kubernetes version readiness invalid when checking drift: %s", err))
+		logger.Info("kubernetes version not ready, skipping drift check", "error", err)
 		return "", nil //nolint:nilerr
 	}
 
@@ -115,7 +118,10 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 
 	nodeK8sVersion := strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")
 	if nodeK8sVersion != k8sVersion {
-		logger.V(1).Info(fmt.Sprintf("drift triggered for %s, with expected k8s version %s, and actual k8s version %s", K8sVersionDrift, k8sVersion, nodeK8sVersion))
+		logger.V(1).Info("drift triggered due to k8s version mismatch",
+			"driftType", K8sVersionDrift,
+			"expectedKubernetesVersion", k8sVersion,
+			"actualKubernetesVersion", nodeK8sVersion)
 		return K8sVersionDrift, nil
 	}
 	return "", nil
@@ -170,7 +176,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		// Note: we don't consider this a hard failure for drift if the Images are not ready to use, so we ignore returning the error here.
 		// The stored Images must be ready to use if we are to calculate potential Drift based on them.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.Info(fmt.Sprintf("WARN: NodeImage readiness invalid when checking drift: %s", err))
+		logger.Info("node image not ready, skipping drift check", "error", err)
 		return "", nil //nolint:nilerr
 	}
 	if len(nodeImages) == 0 {
@@ -185,7 +191,9 @@ func (c *CloudProvider) isImageVersionDrifted(
 		}
 	}
 
-	logger.V(1).Info(fmt.Sprintf("drift triggered for %s, as actual image id %s was not found in the set of currently available node images", ImageDrift, vmImageID))
+	logger.V(1).Info("drift triggered as actual image id was not found in the set of currently available node images",
+		"driftType", ImageDrift,
+		"actualImageID", vmImageID)
 	return ImageDrift, nil
 }
 
@@ -233,12 +241,10 @@ func (c *CloudProvider) isKubeletIdentityDrifted(ctx context.Context, nodeClaim 
 	}
 
 	if kubeletIdentityClientID != opts.KubeletIdentityClientID {
-		logger.V(1).Info(
-			fmt.Sprintf("drift triggered for %s, with expected kubelet identity client id %s, and actual kubelet identity client id %s",
-				KubeletIdentityDrift,
-				opts.KubeletIdentityClientID,
-				kubeletIdentityClientID),
-		)
+		logger.V(1).Info("drift triggered due to expected and actual kubelet identity client id mismatch",
+			"driftType", KubeletIdentityDrift,
+			"expectedKubeletIdentityClientID", opts.KubeletIdentityClientID,
+			"actualKubeletIdentityClientID", kubeletIdentityClientID)
 		return KubeletIdentityDrift, nil
 	}
 
@@ -257,7 +263,7 @@ func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.N
 			return nil, nil
 		}
 		if nodeclaimutils.IsDuplicateNodeError(err) {
-			logger.V(1).Info("WARN: Duplicate node error, invariant violated.")
+			logger.Info("duplicate node error detected, invariant violated")
 		}
 		return nil, err
 	}

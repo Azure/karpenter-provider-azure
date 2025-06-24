@@ -75,12 +75,12 @@ func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, t
 // MarkUnavailableWithTTL allows us to mark an offering unavailable with a custom TTL
 func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unavailableReason, instanceType, zone, capacityType string, ttl time.Duration) {
 	// even if the key is already in the cache, we still need to call Set to extend the cached entry's TTL
-	log.FromContext(ctx).WithValues(
+	log.FromContext(ctx).V(1).Info("removing offering from offerings",
 		"unavailable", unavailableReason,
 		"instance-type", instanceType,
 		"zone", zone,
 		"capacity-type", capacityType,
-		"ttl", ttl).V(1).Info("removing offering from offerings")
+		"ttl", ttl)
 	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
 	atomic.AddUint64(&u.SeqNum, 1)
 }
