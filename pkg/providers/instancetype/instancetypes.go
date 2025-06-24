@@ -360,8 +360,6 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	if sku == nil {
 		return 0, nil
 	}
-	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
-	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
 	maxNVMeMiB, _ := NvmeDiskSizeInMiB(sku)
 
 	// Check NVMe disk first (highest priority)
@@ -369,10 +367,12 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 		return maxNVMeMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
 	}
 
+	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
 	if maxCacheDiskBytes > 0 {
 		return maxCacheDiskBytes / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
 	}
 
+	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
 	if maxResourceDiskMiB > 0 {
 		return maxResourceDiskMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
 	}
