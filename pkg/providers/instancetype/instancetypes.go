@@ -370,17 +370,17 @@ func safeConvert(val int64) (int32, bool) {
 	return int32(val), true
 }
 
-func bytesToGBWithPlacement(sizeInBytes int64, placement *armcompute.DiffDiskPlacement) (int32, *armcompute.DiffDiskPlacement, bool) {
+func safeConversionOfBytesToGB(sizeInBytes int64) (int32, bool) {
 	if sizeInBytes <= 0 {
-		return 0, nil, false
+		return 0, false
 	}
 
 	gb, ok := safeConvert(sizeInBytes / int64(units.Gigabyte)) // required for conversion of int64 to int32
 	if !ok || gb <= 0 {
-		return 0, nil, false
+		return 0, false
 	}
 
-	return gb, placement, true
+	return gb, true
 }
 
 func FindMaxEphemeralSizeAndPlacement(sku *skewer.SKU) (sizeGB int32, placement *armcompute.DiffDiskPlacement) {
@@ -399,13 +399,13 @@ func FindMaxEphemeralSizeAndPlacement(sku *skewer.SKU) (sizeGB int32, placement 
 		return 0, nil
 	}
 
-	if gb, placement, ok := bytesToGBWithPlacement(maxCachedBytes, lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)); ok {
-		return gb, placement
+	if gb, ok := safeConversionOfBytesToGB(maxCachedBytes); ok {
+		return gb, lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
 	}
 
 	resBytes := maxTempDiskBytes * int64(units.Mebibyte)
-	if gb, placement, ok := bytesToGBWithPlacement(resBytes, lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)); ok {
-		return gb, placement
+	if gb, ok := safeConversionOfBytesToGB(resBytes); ok {
+		return gb, lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
 	}
 
 	return 0, nil
