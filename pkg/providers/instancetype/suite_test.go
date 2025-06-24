@@ -651,6 +651,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Entry("Standard_NC24ads_A100_v4", SkewerSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 				Entry("Standard_D64s_v3", SkewerSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 				Entry("Standard_A0", SkewerSKU("Standard_A0"), int64(21), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)),
+				Entry("Nil SKU", nil, int64(0), nil),
 			)
 		})
 		Context("Placement", func() {
