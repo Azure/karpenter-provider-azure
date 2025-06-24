@@ -356,11 +356,6 @@ func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
 }
 
-const (
-	maxInt32 = 1<<31 - 1
-	minInt32 = -1 << 31
-)
-
 func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
 	if sku == nil {
 		return 0, nil

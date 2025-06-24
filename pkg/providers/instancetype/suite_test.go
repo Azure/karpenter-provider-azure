@@ -56,10 +56,13 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/skewer"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+
+	// nolint SA1019 - deprecated package
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
@@ -601,6 +604,49 @@ var _ = Describe("InstanceType Provider", func() {
 
 		AfterEach(func() {
 			ctx = options.ToContext(ctx, originalOptions)
+		})
+
+		Context("FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
+			// B20ms:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 32212254720 -> 32.21225472 GB .. we should select this as the ephemeral disk size
+			// placement == CacheDisk
+			// MaxResourceVolumeMB == 163840 MiB -> 160 GB,
+			// Standard_D128ds_v6:
+			// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacments == NvmeDisk
+			// and this is greater than 0, so we select 7559, placement == NvmeDisk
+			// Standard_D16plds_v5:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 429496729600 -> 429.4967296, this is greater than zero, so we select this as the ephemeral disk size
+			// placement == CacheDisk and size == 429.4967296 GB
+			// MaxResourceVolumeMB == 614400 MiB
+			// Standard_D2as_v6: -> EphemeralOSDiskSupported is false, it should return 0 and nil for placement
+			// Standard_D128ds_v6:
+			// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacments == NvmeDisk
+			// and this is greater than 0, so we select 7559, placement == NvmeDisk
+			// Standard_NC24ads_A100_v4:
+			// {Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
+			// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacments == NvmeDisk so we move to cache disk
+			// CacheDiskBytes == 274877906944 -> 274.877906944 GB so we select cache disk + 274
+			// MaxResourceVolumeMB == 65536 MiB
+			// Standard_D64s_v3:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 171798691840 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
+			// placement == CacheDisk and size == 1717 GB
+			DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
+				func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
+					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+					Expect(sizeGB).To(Equal(expectedSize))
+					Expect(placement).To(Equal(expectedPlacement))
+
+				}, Entry("Standard_B20ms", SkewerSKU("Standard_B20ms"), int64(32), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D128ds_v6", SkewerSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
+				Entry("Standard_D16plds_v5", SkewerSKU("Standard_D16plds_v5"), int64(429), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D2as_v6", SkewerSKU("Standard_D2as_v6"), int64(0), nil),
+				Entry("Standard_D64s_v3", SkewerSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
+				Entry("Standard_NC24ads_A100_v4", SkewerSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D64s_v3", SkewerSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+			)
 		})
 		Context("Placement", func() {
 			It("should prefer NVMe disk if supported for ephemeral", func() {
@@ -2014,4 +2060,22 @@ func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider coreclou
 		_, err = ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, nodeClaim)
 		Expect(err).ToNot(HaveOccurred())
 	}
+}
+
+func SkewerSKU(skuName string) *skewer.SKU {
+	data := fake.ResourceSkus["southcentralus"]
+	// Note we could do a more efficient lookup if this data
+	// was in a map by skuname, but with less than 20 skus linear search rather than O(1) is fine.
+	for _, sku := range data {
+		if lo.FromPtr(sku.Name) == skuName {
+			return &skewer.SKU{
+				Name:         sku.Name,
+				Capabilities: sku.Capabilities,
+				Locations:    sku.Locations,
+				Family:       sku.Family,
+				ResourceType: sku.ResourceType,
+			}
+		}
+	}
+	return nil
 }
