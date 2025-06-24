@@ -361,51 +361,25 @@ const (
 	minInt32 = -1 << 31
 )
 
-// safeConvert checks for overflow and then converts.
-// #nosec G115  // we’ve manually guarded against overflow
-func safeConvert(val int64) (int32, bool) {
-	if val > maxInt32 || val < minInt32 {
-		return 0, false
-	}
-	return int32(val), true
-}
-
-func safeConversionOfBytesToGB(sizeInBytes int64) (int32, bool) {
-	if sizeInBytes <= 0 {
-		return 0, false
-	}
-
-	gb, ok := safeConvert(sizeInBytes / int64(units.Gigabyte)) // required for conversion of int64 to int32
-	if !ok || gb <= 0 {
-		return 0, false
-	}
-
-	return gb, true
-}
-
-func FindMaxEphemeralSizeAndPlacement(sku *skewer.SKU) (sizeGB int32, placement *armcompute.DiffDiskPlacement) {
+func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
 	if sku == nil {
 		return 0, nil
 	}
-	maxCachedBytes, _ := sku.MaxCachedDiskBytes()
-	maxTempDiskBytes, _ := sku.MaxResourceVolumeMB()
+	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
+	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
 	maxNVMeMiB, _ := NvmeDiskSizeInMiB(sku)
 
 	// Check NVMe disk first (highest priority)
 	if maxNVMeMiB > 0 && SupportsNVMeEphemeralOSDisk(sku) {
-		if gb, ok := safeConvert(maxNVMeMiB / 1024); ok && gb > 0 {
-			return gb, lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
-		}
-		return 0, nil
+		return maxNVMeMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
 	}
 
-	if gb, ok := safeConversionOfBytesToGB(maxCachedBytes); ok {
-		return gb, lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
+	if maxCacheDiskBytes > 0 {
+		return maxCacheDiskBytes / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
 	}
 
-	resBytes := maxTempDiskBytes * int64(units.Mebibyte)
-	if gb, ok := safeConversionOfBytesToGB(resBytes); ok {
-		return gb, lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
+	if maxResourceDiskMiB > 0 {
+		return maxResourceDiskMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
 	}
 
 	return 0, nil
@@ -485,8 +459,8 @@ func SupportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
 }
 
 func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
-	sizeGB, _ := FindMaxEphemeralSizeAndPlacement(sku)
-	return *nodeClass.Spec.OSDiskSizeGB <= sizeGB // use ephemeral disk if it is large enough
+	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
+	return int64(*nodeClass.Spec.OSDiskSizeGB) <= sizeGB // use ephemeral disk if it is large enough
 }
 
 func NvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {

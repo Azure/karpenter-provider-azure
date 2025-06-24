@@ -708,8 +708,6 @@ var _ = Describe("InstanceType Provider", func() {
 					Values:   []string{"100000"},
 				},
 			}) // No InstanceType will match this requirement
-			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](100001)
-
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod()
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
