@@ -848,7 +848,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
 			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
-		FIt("should handle ZonalAllocationFailed on creating the VM", func() {
+		It("should handle ZonalAllocationFailed on creating the VM", func() {
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
 				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
 			)
