@@ -117,7 +117,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.LabelSKUMemory:                    "8192",
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
-				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53.6870912", // TODO: should not be float?
+				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {

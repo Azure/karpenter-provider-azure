@@ -27,7 +27,7 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -465,7 +465,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Zones: utils.MakeVMZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
 	}
-	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate.StorageProfile)
+	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 
@@ -478,12 +478,12 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	return vm
 }
 
-// setVMPropertiesOSDiskType enables ephemeral os disk for instance types that support it
-func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, storageProfile string) {
-	if storageProfile == consts.StorageProfileEphemeral {
+func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, launchTemplate *launchtemplate.Template) {
+	placement := launchTemplate.StorageProfilePlacement
+	if launchTemplate.StorageProfileIsEphemeral {
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
-			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
-			// placement (cache/resource) is left to CRP
+			Option:    lo.ToPtr(armcompute.DiffDiskOptionsLocal),
+			Placement: lo.ToPtr(placement),
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
 	}
