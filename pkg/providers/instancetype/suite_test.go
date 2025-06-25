@@ -77,7 +77,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/Azure/skewer"
 )
 
 var ctx context.Context
