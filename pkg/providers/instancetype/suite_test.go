@@ -55,6 +55,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -851,7 +852,29 @@ var _ = Describe("InstanceType Provider", func() {
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
 				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
 			)
-			skuToCheck := &skewer.SKU{Name: lo.ToPtr("Standard_D2_v2")}
+			// when ZonalAllocationFailed error is encountered, we block all VM sizes that have >= vCPUs as the VM size for which we encountered the error
+			skusToCheck := []*skewer.SKU{
+				{
+					Name:   lo.ToPtr("Standard_D2_v2"),
+					Family: lo.ToPtr("standardDv2Family"),
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{
+							Name:  lo.ToPtr("vCPUs"),
+							Value: lo.ToPtr("2"),
+						},
+					},
+				},
+				{
+					Name:   lo.ToPtr("Standard_D16_v2"),
+					Family: lo.ToPtr("standardDv2Family"),
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{
+							Name:  lo.ToPtr("vCPUs"),
+							Value: lo.ToPtr("16"),
+						},
+					},
+				},
+			}
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
@@ -869,8 +892,10 @@ var _ = Describe("InstanceType Provider", func() {
 			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
 			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
-			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+			for _, skuToCheck := range skusToCheck {
+				Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
+				Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+			}
 
 			By("successfully scheduling in a different zone on retry")
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)

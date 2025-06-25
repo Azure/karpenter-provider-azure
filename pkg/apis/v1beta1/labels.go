@@ -73,6 +73,7 @@ var (
 	LabelSKUName    = Group + "/sku-name"    // Standard_A1_v2
 	LabelSKUFamily  = Group + "/sku-family"  // A
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
+	LabelSKUVersionedFamily = Group + "/sku-versioned-family" // ie NVasv4Family
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
 	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
