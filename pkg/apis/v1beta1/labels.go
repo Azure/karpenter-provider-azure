@@ -30,6 +30,7 @@ func init() {
 		LabelSKUName,
 		LabelSKUFamily,
 		LabelSKUVersion,
+		LabelSKUVersionedFamily,
 
 		LabelSKUCPU,
 		LabelSKUMemory,

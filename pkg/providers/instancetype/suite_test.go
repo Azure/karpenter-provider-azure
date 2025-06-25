@@ -848,12 +848,12 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(node.Labels[v1.LabelTopologyZone]).ToNot(Equal(fakeZone1))
 			Expect(node.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
 		})
-		It("should handle ZonalAllocationFailed on creating the VM", func() {
+		FIt("should handle ZonalAllocationFailed on creating the VM", func() {
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
 				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
 			)
 			// when ZonalAllocationFailed error is encountered, we block all VM sizes that have >= vCPUs as the VM size for which we encountered the error
-			skusToCheck := []*skewer.SKU{
+			expectedUnavailableSKUs := []*skewer.SKU{
 				{
 					Name:   lo.ToPtr("Standard_D2_v2"),
 					Family: lo.ToPtr("standardDv2Family"),
@@ -871,6 +871,16 @@ var _ = Describe("InstanceType Provider", func() {
 						{
 							Name:  lo.ToPtr("vCPUs"),
 							Value: lo.ToPtr("16"),
+						},
+					},
+				},
+				{
+					Name:   lo.ToPtr("Standard_D32_v2"),
+					Family: lo.ToPtr("standardDv2Family"),
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{
+							Name:  lo.ToPtr("vCPUs"),
+							Value: lo.ToPtr("32"),
 						},
 					},
 				},
@@ -892,7 +902,7 @@ var _ = Describe("InstanceType Provider", func() {
 			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
 			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
-			for _, skuToCheck := range skusToCheck {
+			for _, skuToCheck := range expectedUnavailableSKUs {
 				Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
 				Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
 			}
