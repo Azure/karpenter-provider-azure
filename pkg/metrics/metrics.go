@@ -31,10 +31,22 @@ var (
 		},
 		[]string{"family"},
 	)
+
+	MethodDurationWithAsync = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: cloudProviderSubsystem,
+			Name:      "duration_seconds_with_async",
+			Help:      "Duration of cloud provider method calls. Includes async/LRO operations in routines that run beyond the initial call.",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{},
+	)
 )
 
 func init() {
 	crmetrics.Registry.MustRegister(
 		ImageSelectionErrorCount,
+		MethodDurationWithAsync,
 	)
 }

@@ -21,5 +21,6 @@ const (
 	Namespace = "karpenter"
 
 	// Subsystem(s).
-	imageFamilySubsystem = "image"
+	imageFamilySubsystem   = "image"
+	cloudProviderSubsystem = "cloudprovider"
 )

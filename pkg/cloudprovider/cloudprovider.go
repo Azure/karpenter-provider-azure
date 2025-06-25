@@ -42,6 +42,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	azuremetrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 
 	"github.com/samber/lo"
 
@@ -95,6 +96,8 @@ func New(
 
 // Create a node given the constraints.
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
+	startTime := time.Now()
+
 	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -151,7 +154,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
 	// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
 	// only held in memory.
-	go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+	go c.waitOnPromise(ctx, instancePromise, nodeClaim, startTime)
 
 	instance := instancePromise.VM
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
@@ -165,12 +168,18 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	return nc, err
 }
 
-func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {
+func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim, startTime time.Time) {
+	var mainErrForMetrics error
+
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("%v", r)
 			log.FromContext(ctx).Error(err, "panic during waitOnPromise")
+			mainErrForMetrics = err
 		}
+
+		duration := time.Since(startTime)
+		azuremetrics.MethodDurationWithAsync.With(getLabelsMapForDuration(ctx, c, "Create", mainErrForMetrics)).Observe(duration.Seconds())
 	}()
 
 	err := promise.Wait()
@@ -183,6 +192,8 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 	c.waitUntilLaunched(ctx, nodeClaim)
 
 	if err != nil {
+		mainErrForMetrics = err
+
 		c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
 		log.FromContext(ctx).Error(err, "failed launching nodeclaim")
 
