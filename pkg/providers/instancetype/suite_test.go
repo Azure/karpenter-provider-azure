@@ -647,7 +647,6 @@ var _ = Describe("InstanceType Provider", func() {
 				Entry("Standard_D128ds_v6", SkewerSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
 				Entry("Standard_D16plds_v5", SkewerSKU("Standard_D16plds_v5"), int64(429), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 				Entry("Standard_D2as_v6", SkewerSKU("Standard_D2as_v6"), int64(0), nil),
-				Entry("Standard_D64s_v3", SkewerSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
 				Entry("Standard_NC24ads_A100_v4", SkewerSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 				Entry("Standard_D64s_v3", SkewerSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 				Entry("Standard_A0", SkewerSKU("Standard_A0"), int64(21), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)),
