@@ -178,8 +178,15 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 			mainErrForMetrics = err
 		}
 
+		defer func() {
+			if r := recover(); r != nil {
+				err := fmt.Errorf("%v", r)
+				log.FromContext(ctx).Error(err, "panic during waitOnPromise defer, likely during metrics recording")
+			}
+		}()
+
 		duration := time.Since(startTime)
-		azuremetrics.MethodDurationWithAsync.With(getLabelsMapForDuration(ctx, c, "Create", mainErrForMetrics)).Observe(duration.Seconds())
+		azuremetrics.MethodDurationWithAsync.With(azuremetrics.GetLabelsMapForCloudProviderDurationWithAsync(ctx, "Create", mainErrForMetrics)).Observe(duration.Seconds())
 	}()
 
 	err := promise.Wait()

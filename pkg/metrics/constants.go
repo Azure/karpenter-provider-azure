@@ -18,9 +18,20 @@ package metrics
 
 const (
 	// Namespace(s).
-	Namespace = "karpenter"
+	Namespace = "karpenter_azure"
 
 	// Subsystem(s).
 	imageFamilySubsystem   = "image"
 	cloudProviderSubsystem = "cloudprovider"
+
+	// Label(s).
+	metricLabelController = "controller"
+	metricLabelMethod     = "method"
+	metricLabelError      = "error"
+
+	// Warning: this is the different convention than Karpenter core
+	// Core: empty = unknown
+	// This: "unknown" = unknown, empty = no error, which allows the labeling of duration metrics with error
+	cloudProviderMetricLabelErrorUnknown = "unknown" // Errors falling into this unknown category could change anytime. Do not expect consistency when measuring this.
+	cloudProviderMetricLabelErrorNone    = ""
 )
