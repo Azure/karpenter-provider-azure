@@ -126,7 +126,7 @@ var _ = Describe("Drift", func() {
 			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaims := env.EventuallyExpectLaunchedNodeClaimCount("==", 3)
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 3)
 			nodes := env.EventuallyExpectCreatedNodeCount("==", 3)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
@@ -188,7 +188,7 @@ var _ = Describe("Drift", func() {
 			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", 3)
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 3)
 			nodes := env.EventuallyExpectCreatedNodeCount("==", 3)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
@@ -255,8 +255,8 @@ var _ = Describe("Drift", func() {
 
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			originalNodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", numPods)
 			originalNodes := env.EventuallyExpectCreatedNodeCount("==", numPods)
+			originalNodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", numPods)
 
 			// Check that all deployment pods are online
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
@@ -305,8 +305,7 @@ var _ = Describe("Drift", func() {
 
 			dep.Spec.Template.Annotations = nil
 			env.ExpectCreated(nodeClass, nodePool, dep)
-
-			nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
 
@@ -316,6 +315,7 @@ var _ = Describe("Drift", func() {
 			env.ExpectUpdated(nodePool)
 
 			env.EventuallyExpectDrifted(nodeClaim)
+
 			env.ConsistentlyExpectNoDisruptions(1, time.Minute)
 		})
 		It("should not allow drift if the budget is fully blocking during a scheduled time", func() {
@@ -333,7 +333,7 @@ var _ = Describe("Drift", func() {
 			dep.Spec.Template.Annotations = nil
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 			env.EventuallyExpectCreatedNodeCount("==", 1)
 			env.EventuallyExpectHealthyPodCount(selector, numPods)
 
@@ -378,8 +378,9 @@ var _ = Describe("Drift", func() {
 		updatedNodePool = env.AdaptToClusterConfig(updatedNodePool)
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
+
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
 		node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 		env.ExpectCreatedOrUpdated(updatedNodePool)
@@ -448,8 +449,9 @@ var _ = Describe("Drift", func() {
 		updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
+
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
 		node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 		env.ExpectCreatedOrUpdated(updatedNodeClass)
@@ -526,7 +528,7 @@ var _ = Describe("Drift", func() {
 	It("should update the aksnodeclass-hash annotation on the aksnodeclass and nodeclaim when the aksnodeclass's aksnodeclass-hash-version annotation does not match the controller hash version", func() {
 		env.ExpectCreated(dep, nodeClass, nodePool)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		nodeClass = env.ExpectExists(nodeClass).(*v1beta1.AKSNodeClass)
 		expectedHash := nodeClass.Hash()
 
@@ -592,10 +594,9 @@ var _ = Describe("Drift", func() {
 			env.ExpectCreated(dep, nodeClass, nodePool)
 
 			By("deploying multiple replicas, pod per node")
-			startingNodeClaimState := env.EventuallyExpectCreatedNodeClaimCount("==", int(numPods))
+			startingNodeClaimState := env.EventuallyExpectRegisteredNodeClaimCount("==", int(numPods))
 			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
-
 			By("drifting the nodeClaim with bad configuration that never registers")
 			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
 			env.ExpectCreatedOrUpdated(nodeClass)
@@ -640,7 +641,7 @@ var _ = Describe("Drift", func() {
 			env.ExpectCreated(dep, nodeClass, nodePool)
 
 			By("deploying multiple replicas, pod per node")
-			startingNodeClaimState := env.EventuallyExpectCreatedNodeClaimCount("==", int(numPods))
+			startingNodeClaimState := env.EventuallyExpectRegisteredNodeClaimCount("==", int(numPods))
 			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
@@ -709,7 +710,7 @@ var _ = Describe("Drift", func() {
 			})
 			env.ExpectCreated(dep, nodeClass, nodePool, pdb)
 
-			nodeClaims := env.EventuallyExpectCreatedNodeClaimCount("==", int(numPods))
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", int(numPods))
 			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
 
 			// Expect pods to be bound but not to be ready since we are intentionally failing the readiness check
@@ -726,10 +727,11 @@ var _ = Describe("Drift", func() {
 
 	It("should disrupt nodes that have drifted due to VNETSubnetID", func() {
 		env.ExpectCreated(dep, nodeClass, nodePool)
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		By("expect created node count to be 1")
 		env.ExpectCreatedNodeCount("==", 1)
+		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+
 		By("triggering subnet drift")
 		// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
 		// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
