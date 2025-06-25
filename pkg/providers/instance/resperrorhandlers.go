@@ -147,13 +147,17 @@ func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, 
 
 // For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone
 func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
-	var versionedInstanceTypeSkuFamily string
+	var skuFamily string
+	var skuFamilyVersion string
 	var skuCPUCount int64
 
 	log.FromContext(ctx).Error(err, "zonal allocation failure", "instance-type", instanceType.Name, "zone", zone)
 
-	if len(instanceType.Requirements.Get(v1beta1.LabelSKUVersionedFamily).Values()) > 0 {
-		versionedInstanceTypeSkuFamily = instanceType.Requirements.Get(v1beta1.LabelSKUVersionedFamily).Values()[0]
+	if len(instanceType.Requirements.Get(v1beta1.LabelSKUFamily).Values()) > 0 {
+		skuFamily = instanceType.Requirements.Get(v1beta1.LabelSKUFamily).Values()[0]
+	}
+	if len(instanceType.Requirements.Get(v1beta1.LabelSKUVersion).Values()) > 0 {
+		skuFamilyVersion = instanceType.Requirements.Get(v1beta1.LabelSKUVersion).Values()[0]
 	}
 
 	instanceTypeSKUCPURequirements := instanceType.Requirements.Get(v1beta1.LabelSKUCPU).Values()
@@ -166,8 +170,8 @@ func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultPro
 		}
 	}
 
-	provider.unavailableOfferings.MarkFamilyUnavailableWithTTL(ctx, versionedInstanceTypeSkuFamily, zone, karpv1.CapacityTypeOnDemand, skuCPUCount, AllocationFailureTTL)
-	provider.unavailableOfferings.MarkFamilyUnavailableWithTTL(ctx, versionedInstanceTypeSkuFamily, zone, karpv1.CapacityTypeSpot, skuCPUCount, AllocationFailureTTL)
+	provider.unavailableOfferings.MarkFamilyUnavailableWithTTL(ctx, skuFamily+skuFamilyVersion, zone, karpv1.CapacityTypeOnDemand, skuCPUCount, AllocationFailureTTL)
+	provider.unavailableOfferings.MarkFamilyUnavailableWithTTL(ctx, skuFamily+skuFamilyVersion, zone, karpv1.CapacityTypeSpot, skuCPUCount, AllocationFailureTTL)
 
 	return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
 }

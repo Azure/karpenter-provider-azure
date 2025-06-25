@@ -1046,8 +1046,8 @@ var _ = Describe("InstanceType Provider", func() {
 			// when ZonalAllocationFailed error is encountered, we block all VM sizes that have >= vCPUs as the VM size for which we encountered the error
 			expectedUnavailableSKUs := []*skewer.SKU{
 				{
-					Name:   lo.ToPtr("Standard_D2_v2"),
-					Family: lo.ToPtr("standardDv2Family"),
+					Name: lo.ToPtr("Standard_D2_v2"),
+					Size: lo.ToPtr("D2_v2"),
 					Capabilities: &[]compute.ResourceSkuCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),
@@ -1056,8 +1056,8 @@ var _ = Describe("InstanceType Provider", func() {
 					},
 				},
 				{
-					Name:   lo.ToPtr("Standard_D16_v2"),
-					Family: lo.ToPtr("standardDv2Family"),
+					Name: lo.ToPtr("Standard_D16_v2"),
+					Size: lo.ToPtr("D16_v2"),
 					Capabilities: &[]compute.ResourceSkuCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),
@@ -1066,8 +1066,8 @@ var _ = Describe("InstanceType Provider", func() {
 					},
 				},
 				{
-					Name:   lo.ToPtr("Standard_D32_v2"),
-					Family: lo.ToPtr("standardDv2Family"),
+					Name: lo.ToPtr("Standard_D32_v2"),
+					Size: lo.ToPtr("D32_v2"),
 					Capabilities: &[]compute.ResourceSkuCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),
@@ -1405,7 +1405,8 @@ var _ = Describe("InstanceType Provider", func() {
 				pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{key: value}}))
 			}
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
-			for _, pod := range pods {
+			for i, pod := range pods {
+				fmt.Printf("Expecting pod %d to be scheduled with node selector %v\n", i, pod.Spec.NodeSelector)
 				ExpectScheduled(ctx, env.Client, pod)
 			}
 		})

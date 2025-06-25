@@ -78,12 +78,8 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 		}
 	}
 
-	// check if there offering is marked as unavailable on vm family level
-	skuVCPUCount, err := sku.VCPU()
-	if err != nil {
-		skuVCPUCount = 0 // default to 0 if we can't determine VCPU count
-	}
-	if u.isFamilyUnavailable(sku.GetFamilyName(), zone, capacityType, skuVCPUCount) {
+	// check if there offering is marked as unavailable at vm family level
+	if u.isFamilyUnavailable(sku, zone, capacityType) {
 		return true
 	}
 
@@ -92,22 +88,42 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 	return found
 }
 
-func (u *UnavailableOfferings) isFamilyUnavailable(skuFamilyName, zone, capacityType string, cpuCount int64) bool {
+func (u *UnavailableOfferings) isFamilyUnavailable(sku *skewer.SKU, zone, capacityType string) bool {
+	skuVCPUCount, err := sku.VCPU()
+	if err != nil {
+		skuVCPUCount = 0 // default to 0 if we can't determine VCPU count
+	}
+	// TODO - refactor to reduce code duplication between here and instancetype.go
+	skuVMSize, err := sku.GetVMSize()
+	if err != nil {
+		log.FromContext(context.TODO()).Error(err, "failed to get VM size for SKU", "sku", sku.GetName())
+		return false // if we can't determine VM size, we assume it's not blocked
+	}
+	skuVersion := "1"
+	if skuVMSize.Version != "" {
+		if !(skuVMSize.Version[0] == 'V' || skuVMSize.Version[0] == 'v') {
+			// should never happen; don't capture in label (won't be available for selection by version)
+			return false
+		}
+		skuVersion = skuVMSize.Version[1:]
+	}
+
 	// Check if VM family is blocked in the specific zone
-	if val, found := u.vmFamilyCache.Get(vmFamilyKey(skuFamilyName, zone, capacityType)); found {
+	if val, found := u.vmFamilyCache.Get(vmFamilyKey(skuVMSize.Family+skuVersion, zone, capacityType)); found {
 		if blockedCPUCount, ok := val.(int64); ok {
 			if blockedCPUCount == wholeVMFamilyBlockedSentinel {
 				// Entire VM family is blocked in this zone
 				return true
 			}
 			// VM sizes from this family are blocked for CPU counts >= blockedCPUCount in this zone
-			return cpuCount >= blockedCPUCount
+			return skuVCPUCount >= blockedCPUCount
 		}
 	}
 	return false
 }
 
 // MarkFamilyUnavailableWithTTL marks a VM family with custom TTL in a specific zone
+// versionedSKUFamily e.g. "N4" for "NV8as_v4"
 func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context, versionedSKUFamily, zone, capacityType string, cpuCount int64, ttl time.Duration) {
 	key := vmFamilyKey(versionedSKUFamily, zone, capacityType)
 
