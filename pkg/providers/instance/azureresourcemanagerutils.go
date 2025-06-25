@@ -22,6 +22,7 @@ import (
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/samber/lo"
 )
 
 func CreateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string, vm armcompute.VirtualMachine) (*armcompute.VirtualMachine, error) {
@@ -49,7 +50,7 @@ func UpdateVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vm
 }
 
 func deleteVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vmName string) error {
-	poller, err := client.BeginDelete(ctx, rg, vmName, nil)
+	poller, err := client.BeginDelete(ctx, rg, vmName, &armcompute.VirtualMachinesClientBeginDeleteOptions{ForceDeletion: lo.ToPtr(true)})
 	if err != nil {
 		return err
 	}
