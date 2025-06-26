@@ -211,15 +211,10 @@ func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, v
 	}
 }
 
-// setRequirementsVersion sets the SKU version label, dropping "v" prefix and backfilling "1"
 func setRequirementsVersion(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	version := "1"
-	if vmsize.Version != "" {
-		if !(vmsize.Version[0] == 'V' || vmsize.Version[0] == 'v') {
-			// should never happen; don't capture in label (won't be available for selection by version)
-			return
-		}
-		version = vmsize.Version[1:]
+	version := utils.ExtractVersionFromVMSize(vmsize)
+	if version == "" {
+		return
 	}
 	requirements[v1beta1.LabelSKUVersion].Insert(version)
 }

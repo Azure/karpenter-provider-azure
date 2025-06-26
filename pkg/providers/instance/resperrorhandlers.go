@@ -19,10 +19,12 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -143,10 +145,13 @@ func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, 
 		capacityType)
 }
 
+// For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone
 func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	log.FromContext(ctx).Error(err, "zonal allocation failure", "instance-type", instanceType.Name, "zone", zone)
-	provider.unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeOnDemand, AllocationFailureTTL)
-	provider.unavailableOfferings.MarkUnavailableWithTTL(ctx, ZonalAllocationFailureReason, instanceType.Name, zone, karpv1.CapacityTypeSpot, AllocationFailureTTL)
+
+	versionedSKUFamily, skuCPUCount := extractSKUInformationFromInstanceType(instanceType)
+	provider.unavailableOfferings.MarkFamilyUnavailableWithTTL(ctx, versionedSKUFamily, zone, karpv1.CapacityTypeOnDemand, skuCPUCount, AllocationFailureTTL)
+	provider.unavailableOfferings.MarkFamilyUnavailableWithTTL(ctx, versionedSKUFamily, zone, karpv1.CapacityTypeSpot, skuCPUCount, AllocationFailureTTL)
 
 	return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
 }
@@ -183,6 +188,31 @@ func handleRegionalQuotaError(ctx context.Context, provider *DefaultProvider, in
 		fmt.Errorf(
 			"regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests",
 			capacityType))
+}
+
+func extractSKUInformationFromInstanceType(instanceType *corecloudprovider.InstanceType) (string, int64) {
+	var skuFamily string
+	var skuFamilyVersion string
+	var skuCPUCount int64
+
+	if len(instanceType.Requirements.Get(v1beta1.LabelSKUFamily).Values()) > 0 {
+		skuFamily = instanceType.Requirements.Get(v1beta1.LabelSKUFamily).Values()[0]
+	}
+	if len(instanceType.Requirements.Get(v1beta1.LabelSKUVersion).Values()) > 0 {
+		skuFamilyVersion = instanceType.Requirements.Get(v1beta1.LabelSKUVersion).Values()[0]
+	}
+
+	instanceTypeSKUCPURequirements := instanceType.Requirements.Get(v1beta1.LabelSKUCPU).Values()
+	if len(instanceTypeSKUCPURequirements) > 0 {
+		parsedCPUCount, parseErr := strconv.ParseInt(instanceTypeSKUCPURequirements[0], 10, 64)
+		if parseErr != nil {
+			skuCPUCount = 0 // fallback to 0 if parsing fails, but this should not happen
+		} else {
+			skuCPUCount = parsedCPUCount
+		}
+	}
+
+	return skuFamily + skuFamilyVersion, skuCPUCount
 }
 
 func cpuLimitIsZero(err error) bool {

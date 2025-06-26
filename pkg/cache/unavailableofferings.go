@@ -22,13 +22,20 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/skewer"
 	"github.com/patrickmn/go-cache"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
+const (
+	// wholeVMFamilyBlockedSentinel means that entire SKU family is blocked, not just certain instance types with a CPU count above a threshold
+	wholeVMFamilyBlockedSentinel = -1
+)
+
 var (
-	spotKey = key("", "", karpv1.CapacityTypeSpot)
+	spotKey = singleInstanceKey("", "", karpv1.CapacityTypeSpot)
 )
 
 // UnavailableOfferings stores any offerings that return ICE (insufficient capacity errors) when
@@ -36,16 +43,22 @@ var (
 // GetInstanceTypes responses
 type UnavailableOfferings struct {
 	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{}
-	cache  *cache.Cache
-	SeqNum uint64
+	singleOfferingCache *cache.Cache
+	// key: <skuFamilyName>:<zone>:<capacityType>, value: int64 (CPU count at or above which we block, or wholeVMFamilyBlockedSentinel if entire family is blocked)
+	vmFamilyCache *cache.Cache
+	SeqNum        uint64
 }
 
-func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
+func NewUnavailableOfferingsWithCache(singleOfferingCache, vmFamilyCache *cache.Cache) *UnavailableOfferings {
 	uo := &UnavailableOfferings{
-		cache:  c,
-		SeqNum: 0,
+		singleOfferingCache: singleOfferingCache,
+		vmFamilyCache:       vmFamilyCache,
+		SeqNum:              0,
 	}
-	uo.cache.OnEvicted(func(_ string, _ interface{}) {
+	uo.singleOfferingCache.OnEvicted(func(_ string, _ interface{}) {
+		atomic.AddUint64(&uo.SeqNum, 1)
+	})
+	uo.vmFamilyCache.OnEvicted(func(_ string, _ interface{}) {
 		atomic.AddUint64(&uo.SeqNum, 1)
 	})
 	return uo
@@ -53,18 +66,90 @@ func NewUnavailableOfferingsWithCache(c *cache.Cache) *UnavailableOfferings {
 
 func NewUnavailableOfferings() *UnavailableOfferings {
 	return NewUnavailableOfferingsWithCache(
-		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval))
+		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval),
+		cache.New(UnavailableOfferingsTTL, UnavailableOfferingsCleanupInterval),
+	)
 }
 
 // IsUnavailable returns true if the offering appears in the cache
-func (u *UnavailableOfferings) IsUnavailable(instanceType, zone, capacityType string) bool {
+func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType string) bool {
 	if capacityType == karpv1.CapacityTypeSpot {
-		if _, found := u.cache.Get(spotKey); found {
+		if _, found := u.singleOfferingCache.Get(spotKey); found {
 			return true
 		}
 	}
-	_, found := u.cache.Get(key(instanceType, zone, capacityType))
+
+	// check if there offering is marked as unavailable at vm family level
+	if u.isFamilyUnavailable(sku, zone, capacityType) {
+		return true
+	}
+
+	// lastly check if the offering is marked as unavailable for the specific instance type, zone and capacity type
+	_, found := u.singleOfferingCache.Get(singleInstanceKey(sku.GetName(), zone, capacityType))
 	return found
+}
+
+func (u *UnavailableOfferings) isFamilyUnavailable(sku *skewer.SKU, zone, capacityType string) bool {
+	skuVCPUCount, err := sku.VCPU()
+	if err != nil {
+		// default to 0 if we can't determine VCPU count
+		skuVCPUCount = 0
+	}
+	skuVMSize, err := sku.GetVMSize()
+	if err != nil {
+		// if we can't determine VM size, we assume it's not blocked
+		return false
+	}
+	skuVersion := utils.ExtractVersionFromVMSize(skuVMSize)
+
+	// Check if VM family is blocked in the specific zone
+	if val, found := u.vmFamilyCache.Get(vmFamilyKey(skuVMSize.Family+skuVersion, zone, capacityType)); found {
+		if blockedCPUCount, ok := val.(int64); ok {
+			if blockedCPUCount == wholeVMFamilyBlockedSentinel {
+				// Entire VM family is blocked in this zone
+				return true
+			}
+			// VM sizes from this family are blocked for CPU counts >= blockedCPUCount in this zone
+			return skuVCPUCount >= blockedCPUCount
+		}
+	}
+	return false
+}
+
+// MarkFamilyUnavailableWithTTL marks a VM family with custom TTL in a specific zone
+// versionedSKUFamily e.g. "N4" for "NV8as_v4"
+func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context, versionedSKUFamily, zone, capacityType string, cpuCount int64, ttl time.Duration) {
+	key := vmFamilyKey(versionedSKUFamily, zone, capacityType)
+
+	if existing, found := u.vmFamilyCache.Get(key); found {
+		if currentBlockedCPUCount, ok := existing.(int64); ok {
+			// Keep the more restrictive limit for CPU count(lower value, with -1 being most restrictive - wholeVMFamilyBlockedSentinel)
+			if currentBlockedCPUCount <= cpuCount {
+				cpuCount = currentBlockedCPUCount
+			}
+		}
+	}
+
+	log.FromContext(ctx).V(1).Info("marking VM Family unavailable in zone",
+		"family", versionedSKUFamily,
+		"capacity-type", capacityType,
+		"zone", zone,
+		"max-cpu", cpuCount,
+		"ttl", ttl)
+
+	// call Set to update the cache entry, even if it already exists, to extend its TTL
+	u.vmFamilyCache.Set(key, cpuCount, ttl)
+	atomic.AddUint64(&u.SeqNum, 1)
+}
+
+// MarkWholeVMFamilyUnavailable marks an entire VM family as unavailable in a specific zone
+func (u *UnavailableOfferings) MarkWholeVMFamilyUnavailable(ctx context.Context, family, capacityType, zone string) {
+	u.MarkFamilyUnavailableWithTTL(ctx, family, zone, capacityType, wholeVMFamilyBlockedSentinel, UnavailableOfferingsTTL)
+}
+
+// MarkVMFamilyUnavailableAtCPUCount marks a VM family as unavailable for CPU counts above the threshold in a specific zone
+func (u *UnavailableOfferings) MarkVMFamilyUnavailableAtCPUCount(ctx context.Context, family, capacityType, zone string, maxCPUCount int64) {
+	u.MarkFamilyUnavailableWithTTL(ctx, family, zone, capacityType, maxCPUCount, UnavailableOfferingsTTL)
 }
 
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
@@ -81,7 +166,7 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 		"zone", zone,
 		"capacity-type", capacityType,
 		"ttl", ttl)
-	u.cache.Set(key(instanceType, zone, capacityType), struct{}{}, ttl)
+	u.singleOfferingCache.Set(singleInstanceKey(instanceType, zone, capacityType), struct{}{}, ttl)
 	atomic.AddUint64(&u.SeqNum, 1)
 }
 
@@ -91,11 +176,17 @@ func (u *UnavailableOfferings) MarkUnavailable(ctx context.Context, unavailableR
 }
 
 func (u *UnavailableOfferings) Flush() {
-	u.cache.Flush()
+	u.singleOfferingCache.Flush()
+	u.vmFamilyCache.Flush()
 	atomic.AddUint64(&u.SeqNum, 1)
 }
 
-// key returns the cache key for all offerings in the cache
-func key(instanceType string, zone string, capacityType string) string {
+// singleInstanceKey returns the cache singleInstanceKey for all offerings in the cache
+func singleInstanceKey(instanceType string, zone string, capacityType string) string {
 	return fmt.Sprintf("%s:%s:%s", capacityType, instanceType, zone)
+}
+
+// vmFamilyKey returns the cache key for VM family blocks in a specific zone
+func vmFamilyKey(skuFamilyName, zone, capacityType string) string {
+	return fmt.Sprintf("skuFamily:%s:%s:%s", skuFamilyName, zone, capacityType)
 }

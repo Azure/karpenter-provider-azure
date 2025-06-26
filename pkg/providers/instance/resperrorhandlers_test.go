@@ -25,8 +25,12 @@ import (
 	"testing"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/skewer"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -35,10 +39,13 @@ import (
 )
 
 const (
-	responseErrorTestInstanceName = "Standard_D2s_v3"
-	testZone1                     = "westus-1"
-	testZone2                     = "westus-2"
-	testZone3                     = "westus-3"
+	responseErrorTestInstanceName             = "Standard_D2s_v3"
+	responseErrorTestInstanceVMSize           = "D2s_v3"
+	responseErrorTestInstanceFamily           = "D"
+	responseErrorTestInstanceSKUFamilyVersion = "3"
+	testZone1                                 = "westus-1"
+	testZone2                                 = "westus-2"
+	testZone3                                 = "westus-3"
 )
 
 type responseErrorTestCase struct {
@@ -60,9 +67,14 @@ func createOfferingType(zone, capacityType string) struct{ zone, capacityType st
 	}
 }
 
-func createInstanceType(instanceName string, offerings ...struct{ zone, capacityType string }) *cloudprovider.InstanceType {
+func createInstanceType(instanceName, skuFamily, skuVersion string, offerings ...struct{ zone, capacityType string }) *cloudprovider.InstanceType {
 	it := &cloudprovider.InstanceType{
-		Name:      instanceName,
+		Name: instanceName,
+		Requirements: scheduling.NewRequirements(
+			scheduling.NewRequirement(v1beta1.LabelSKUFamily, corev1.NodeSelectorOpIn, skuFamily),
+			scheduling.NewRequirement(v1beta1.LabelSKUVersion, corev1.NodeSelectorOpIn, skuVersion),
+			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, "2"),
+		),
 		Offerings: []*cloudprovider.Offering{},
 	}
 
@@ -80,26 +92,35 @@ func createInstanceType(instanceName string, offerings ...struct{ zone, capacity
 
 // Helper to create a default instance type for testing, for errors where we don't block specific families of VM SKUs
 func defaultCreateInstanceType(offerings ...struct{ zone, capacityType string }) *cloudprovider.InstanceType {
-	return createInstanceType(responseErrorTestInstanceName, offerings...)
+	return createInstanceType(responseErrorTestInstanceName, responseErrorTestInstanceFamily, responseErrorTestInstanceSKUFamilyVersion, offerings...)
 }
 
 type offeringToCheck struct {
-	instanceTypeName string
-	zone             string
-	capacityType     string
+	skuToCheck   *skewer.SKU
+	zone         string
+	capacityType string
 }
 
-func offeringInformation(zone, capacityType, instanceTypeName string) offeringToCheck {
+func offeringInformation(zone, capacityType, instanceTypeName, instanceVMSize, cpuCount string) offeringToCheck {
 	return offeringToCheck{
-		instanceTypeName: instanceTypeName,
-		zone:             zone,
-		capacityType:     capacityType,
+		skuToCheck: &skewer.SKU{
+			Name: &instanceTypeName,
+			Size: &instanceVMSize,
+			Capabilities: &[]compute.ResourceSkuCapabilities{
+				{
+					Name:  to.Ptr(skewer.VCPUs),
+					Value: &cpuCount,
+				},
+			},
+		},
+		zone:         zone,
+		capacityType: capacityType,
 	}
 }
 
 // Helper to create default offering information for testing, for errors where we don't block specific families of VM SKUs
 func defaultTestOfferingInfo(zone, capacityType string) offeringToCheck {
-	return offeringInformation(zone, capacityType, responseErrorTestInstanceName)
+	return offeringInformation(zone, capacityType, responseErrorTestInstanceName, responseErrorTestInstanceVMSize, "2")
 }
 
 func createResponseError(errorCode, errorMessage string) error {
@@ -213,12 +234,14 @@ func TestHandleResponseErrors(t *testing.T) {
 			expectedUnavailableOfferingsInformation: []offeringToCheck{
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				// an example of a VM SKU from the same family but with a higher CPU count than what triggered the error - should be blocked too
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", "16"),
 			},
 			expectedAvailableOfferingsInformation: []offeringToCheck{
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				// an example of a VM SKU from the same family but different version(!)
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4"),
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4", "D2s_v4", "2"),
 			},
 		},
 		{
@@ -300,13 +323,13 @@ func TestHandleResponseErrors(t *testing.T) {
 			err := testProvider.handleResponseErrors(context.Background(), tc.instanceType, tc.zone, tc.capacityType, tc.responseErr)
 			assert.Equal(t, tc.expectedErr, err)
 			for _, info := range tc.expectedUnavailableOfferingsInformation {
-				if !testProvider.unavailableOfferings.IsUnavailable(info.instanceTypeName, info.zone, info.capacityType) {
-					t.Errorf("Expected offering %s in zone %s with capacity type %s to be marked as unavailable", info.instanceTypeName, info.zone, info.capacityType)
+				if !testProvider.unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType) {
+					t.Errorf("Expected offering %s in zone %s with capacity type %s to be marked as unavailable", info.skuToCheck.GetName(), info.zone, info.capacityType)
 				}
 			}
 			for _, info := range tc.expectedAvailableOfferingsInformation {
-				if testProvider.unavailableOfferings.IsUnavailable(info.instanceTypeName, info.zone, info.capacityType) {
-					t.Errorf("Expected offering %s in zone %s with capacity type %s to not be marked as unavailable", info.instanceTypeName, info.zone, info.capacityType)
+				if testProvider.unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType) {
+					t.Errorf("Expected offering %s in zone %s with capacity type %s to not be marked as unavailable", info.skuToCheck.GetName(), info.zone, info.capacityType)
 				}
 			}
 		})

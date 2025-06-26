@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/skewer"
 	"github.com/mitchellh/hashstructure/v2"
 
 	"github.com/samber/lo"
@@ -51,6 +52,19 @@ func GetVMName(providerID string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("parsing vm name %s", providerID)
+}
+
+// extractVersionFromVMSize extracts and normalizes the version from VMSizeType, dropping "v" prefix and backfilling "1"
+func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
+	version := "1"
+	if vmsize.Version != "" {
+		if !(vmsize.Version[0] == 'V' || vmsize.Version[0] == 'v') {
+			// should never happen; don't capture in label (won't be available for selection by version)
+			return ""
+		}
+		version = vmsize.Version[1:]
+	}
+	return version
 }
 
 func ResourceIDToProviderID(ctx context.Context, id string) string {
