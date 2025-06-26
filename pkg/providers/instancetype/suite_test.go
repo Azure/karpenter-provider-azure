@@ -1405,8 +1405,7 @@ var _ = Describe("InstanceType Provider", func() {
 				pods = append(pods, coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{key: value}}))
 			}
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pods...)
-			for i, pod := range pods {
-				fmt.Printf("Expecting pod %d to be scheduled with node selector %v\n", i, pod.Spec.NodeSelector)
+			for _, pod := range pods {
 				ExpectScheduled(ctx, env.Client, pod)
 			}
 		})

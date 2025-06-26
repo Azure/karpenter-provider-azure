@@ -22,6 +22,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/skewer"
 	"github.com/patrickmn/go-cache"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -91,22 +92,15 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 func (u *UnavailableOfferings) isFamilyUnavailable(sku *skewer.SKU, zone, capacityType string) bool {
 	skuVCPUCount, err := sku.VCPU()
 	if err != nil {
-		skuVCPUCount = 0 // default to 0 if we can't determine VCPU count
+		// default to 0 if we can't determine VCPU count
+		skuVCPUCount = 0
 	}
-	// TODO - refactor to reduce code duplication between here and instancetype.go
 	skuVMSize, err := sku.GetVMSize()
 	if err != nil {
-		log.FromContext(context.TODO()).Error(err, "failed to get VM size for SKU", "sku", sku.GetName())
-		return false // if we can't determine VM size, we assume it's not blocked
+		// if we can't determine VM size, we assume it's not blocked
+		return false
 	}
-	skuVersion := "1"
-	if skuVMSize.Version != "" {
-		if !(skuVMSize.Version[0] == 'V' || skuVMSize.Version[0] == 'v') {
-			// should never happen; don't capture in label (won't be available for selection by version)
-			return false
-		}
-		skuVersion = skuVMSize.Version[1:]
-	}
+	skuVersion := utils.ExtractVersionFromVMSize(skuVMSize)
 
 	// Check if VM family is blocked in the specific zone
 	if val, found := u.vmFamilyCache.Get(vmFamilyKey(skuVMSize.Family+skuVersion, zone, capacityType)); found {
