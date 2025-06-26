@@ -29,11 +29,10 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
-func createTestSKU(name, family string, cpuCount int) *skewer.SKU {
+func createTestSKU(name, size string, cpuCount int) *skewer.SKU {
 	return &skewer.SKU{
 		Name:         &name,
-		Family:       &family,
-		Size:         &name,
+		Size:         &size,
 		Capabilities: &[]compute.ResourceSkuCapabilities{{Name: lo.ToPtr(skewer.VCPUs), Value: lo.ToPtr(strconv.Itoa(cpuCount))}},
 	}
 }
@@ -57,13 +56,13 @@ func TestUnavailableOfferings(t *testing.T) {
 	singleInstanceCache := cache.New(time.Second, time.Second)
 	vmFamilyCache := cache.New(time.Second, time.Second)
 	u := NewUnavailableOfferingsWithCache(singleInstanceCache, vmFamilyCache)
-	testSKU := createTestSKU("NV16as_v4", "NVasv4Family", 16)
+	testSKU := createTestSKU("Standard_NV16as_v4", "NV16as_v4", 16)
 
 	// test that an offering is not marked as unavailable initially
 	assertOfferingAvailable(t, u, testSKU, "westus", karpv1.CapacityTypeSpot, "Offering should not be marked as unavailable initially")
 
 	// mark the offering as unavailable
-	u.MarkUnavailableWithTTL(context.TODO(), "test reason", "NV16as_v4", "westus", karpv1.CapacityTypeSpot, time.Second)
+	u.MarkUnavailableWithTTL(context.TODO(), "test reason", "Standard_NV16as_v4", "westus", karpv1.CapacityTypeSpot, time.Second)
 
 	// test that the offering is now marked as unavailable
 	assertOfferingUnavailable(t, u, testSKU, "westus", karpv1.CapacityTypeSpot, "Offering should be marked as unavailable after being marked as such")
@@ -93,9 +92,9 @@ func TestUnavailableOfferingsVMFamilyLevel(t *testing.T) {
 	u := NewUnavailableOfferingsWithCache(singleInstanceCache, vmFamilyCache)
 
 	skus := []*skewer.SKU{
-		createTestSKU("NV8as_v4", "NVasv4Family", 8),
-		createTestSKU("NV16as_v4", "NVasv4Family", 16),
-		createTestSKU("NV24as_v4", "NVasv4Family", 24),
+		createTestSKU("Standard_NV8as_v4", "NV8as_v4", 8),
+		createTestSKU("Standard_NV16as_v4", "NV16as_v4", 16),
+		createTestSKU("Standard_NV24as_v4", "NV24as_v4", 24),
 	}
 
 	// Test that offerings are not marked as unavailable initially
@@ -134,7 +133,7 @@ func TestUnavailableOfferingsVMFamilyLevel(t *testing.T) {
 	}
 
 	// Test that offerings from same VM family but different version are available
-	differentVersionSKU := createTestSKU("NV16as_v5", "NVasv5Family", 16)
+	differentVersionSKU := createTestSKU("Standard_NV16as_v5", "NV16as_v5", 16)
 	assertOfferingAvailable(t, u, differentVersionSKU, "westus-1", karpv1.CapacityTypeOnDemand, "Offering from a different version of the same VM family should be available")
 
 	// Wait for cache expiration
@@ -161,10 +160,10 @@ func TestUnavailableOfferings_RestrictiveLimitPreservation(t *testing.T) {
 	u := NewUnavailableOfferingsWithCache(singleInstanceCache, vmFamilyCache)
 
 	skus := []*skewer.SKU{
-		createTestSKU("NV8as_v4", "NVasv4Family", 8),
-		createTestSKU("NV16as_v4", "NVasv4Family", 16),
-		createTestSKU("NV24as_v4", "NVasv4Family", 24),
-		createTestSKU("NV32as_v4", "NVasv4Family", 32),
+		createTestSKU("Standard_NV8as_v4", "NV8as_v4", 8),
+		createTestSKU("Standard_NV16as_v4", "NV16as_v4", 16),
+		createTestSKU("Standard_NV24as_v4", "NV24as_v4", 24),
+		createTestSKU("Standard_NV32as_v4", "NV32as_v4", 32),
 	}
 
 	// Test 1: Set a limit at 16 CPUs, then try to set a less restrictive limit at 24 CPUs
