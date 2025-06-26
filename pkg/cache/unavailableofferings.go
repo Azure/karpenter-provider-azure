@@ -130,12 +130,12 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context,
 		}
 	}
 
-	log.FromContext(ctx).WithValues(
+	log.FromContext(ctx).V(1).Info("marking VM Family unavailable in zone",
 		"family", versionedSKUFamily,
 		"capacity-type", capacityType,
 		"zone", zone,
 		"max-cpu", cpuCount,
-		"ttl", ttl).V(1).Info("marking VM family unavailable in zone")
+		"ttl", ttl)
 
 	// call Set to update the cache entry, even if it already exists, to extend its TTL
 	u.vmFamilyCache.Set(key, cpuCount, ttl)
