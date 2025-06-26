@@ -36,7 +36,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
-	klog "k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type VirtualMachinesAPI interface {
@@ -121,21 +121,21 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created virtual machine extensions client %v using token credential", extensionsClient)
+	log.FromContext(ctx).V(1).Info("created virtual machine extensions client using token credential", "client", extensionsClient)
 
 	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
+	log.FromContext(ctx).V(1).Info("created network interface client using token credential", "client", interfacesClient)
 
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
 	if o.UseSIG {
-		klog.V(1).Info("Using SIG for image versions")
+		log.FromContext(ctx).V(1).Info("using SIG for image versions")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
-		klog.V(1).Info("Will use auxiliary token policy for creating virtual machines")
+		log.FromContext(ctx).V(1).Info("will use auxiliary token policy for creating virtual machines")
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
@@ -143,19 +143,19 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created virtual machines client %v, using a token credential", virtualMachinesClient)
+	log.FromContext(ctx).V(1).Info("created virtual machines client using token credential", "client", virtualMachinesClient)
 
 	azureResourceGraphClient, err := armresourcegraph.NewClient(cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created azure resource graph client %v, using a token credential", azureResourceGraphClient)
+	log.FromContext(ctx).V(1).Info("created azure resource graph client using token credential", "client", azureResourceGraphClient)
 
 	communityImageVersionsClient, err := armcompute.NewCommunityGalleryImageVersionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created image versions client %v, using a token credential", communityImageVersionsClient)
+	log.FromContext(ctx).V(1).Info("created image versions client using token credential", "client", communityImageVersionsClient)
 
 	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred)
 
@@ -163,13 +163,13 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created load balancers client %v, using a token credential", loadBalancersClient)
+	log.FromContext(ctx).V(1).Info("created load balancers client using token credential", "client", loadBalancersClient)
 
 	networkSecurityGroupsClient, err := armnetwork.NewSecurityGroupsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created nsg client %v, using a token credential", networkSecurityGroupsClient)
+	log.FromContext(ctx).V(1).Info("created nsg client using token credential", "client", networkSecurityGroupsClient)
 
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
@@ -187,7 +187,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		if err != nil {
 			return nil, err
 		}
-		klog.V(5).Infof("Created bootstrapping client %v, using a token credential", nodeBootstrappingClient)
+		log.FromContext(ctx).V(1).Info("created bootstrapping client using token credential", "client", nodeBootstrappingClient)
 	}
 
 	return NewAZClientFromAPI(virtualMachinesClient,
