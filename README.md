@@ -1,72 +1,8 @@
-
-[![GitHub License](https://img.shields.io/badge/License-Apache%202.0-ff69b4.svg)](https://github.com/Azure/karpenter-provider-azure/blob/main/LICENSE.txt)
-[![CI](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Azure/karpenter-provider-azure/actions/workflows/ci.yml)
-![GitHub stars](https://img.shields.io/github/stars/Azure/karpenter-provider-azure)
-![GitHub forks](https://img.shields.io/github/forks/Azure/karpenter-provider-azure)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Azure/karpenter-provider-azure)](https://goreportcard.com/report/github.com/Azure/karpenter-provider-azure)
-[![contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/Azure/karpenter-provider-azure/issues)
-
-Table of contents:
-- [Features Overview](#features-overview)
-- [Node Auto Provisioning (NAP) vs. Self-hosted](#node-auto-provisioning-nap-vs-self-hosted)
-- [Known limitations](#known-limitations)
-- [Installation (self-hosted)](#installation-self-hosted)
-  - [Install utilities](#install-utilities)
-  - [Create a cluster](#create-a-cluster)
-  - [Configure Helm chart values](#configure-helm-chart-values)
-  - [Install Karpenter](#install-karpenter)
-- [Using Karpenter (self-hosted)](#using-karpenter-self-hosted)
-  - [Create NodePool](#create-nodepool)
-  - [Scale up deployment](#scale-up-deployment)
-  - [Scale down deployment](#scale-down-deployment)
-  - [Delete Karpenter nodes manually](#delete-karpenter-nodes-manually)
-- [Cleanup (self-hosted)](#cleanup-self-hosted)
-  - [Delete the cluster](#delete-the-cluster)
-- [Source Attribution](#source-attribution)
-- [Community, discussion, contribution, and support](#community-discussion-contribution-and-support)
-
-## Features Overview
-
-The AKS Karpenter Provider enables node autoprovisioning using [Karpenter](https://karpenter.sh/) on your AKS cluster.
-Karpenter improves the efficiency and cost of running workloads on Kubernetes clusters by:
-
-* **Watching** for pods that the Kubernetes scheduler has marked as unschedulable
-* **Evaluating** scheduling constraints (resource requests, node selectors, affinities, tolerations, and topology-spread constraints) requested by the pods
-* **Provisioning** nodes that meet the requirements of the pods
-* **Removing** the nodes when they are no longer needed
-* **Consolidating** existing nodes onto cheaper nodes with higher utilization per node
-
-
-## Node Auto Provisioning (NAP) vs. Self-hosted
-
-Karpenter provider for AKS can be used in two modes:
-* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) mode** (preview): Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode.
-* **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment. The rest of this page describes how to use Karpenter in self-hosted mode.
-
-## Known limitations
-* Only Linux nodes are supported.
-* Kubenet and Calico are not supported
-
-## Installation (self-hosted)
-
-This guide shows how to get started with Karpenter by creating an AKS cluster and installing Karpenter.
-
-### Install utilities
-
-Install these tools before proceeding:
-* [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
-* [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
-* [Helm](https://helm.sh/docs/intro/install/)
-* [jq](https://stedolan.github.io/jq/) - used by some of the scripts below
-* [yq](https://mikefarah.gitbook.io/yq/) - used by some of the scripts below
-
-### Create a cluster
-
-Create a new AKS cluster with the required configuration, and ready to run Karpenter using workload identity.
+ workload identity.
 
 > Note: You can use `hack/deploy/create-cluster.sh <cluster-name> <resource-group> <namespace>` to automate the following steps.
 
-Set environment variables:
+Set environment variables: Go
 
 ```bash
 export CLUSTER_NAME=karpenter
