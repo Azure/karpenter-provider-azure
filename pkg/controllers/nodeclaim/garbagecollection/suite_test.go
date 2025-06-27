@@ -29,7 +29,7 @@ import (
 
 	"github.com/awslabs/operatorpkg/object"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
@@ -58,6 +58,7 @@ import (
 )
 
 var ctx context.Context
+var testOptions *options.Options
 var env *coretest.Environment
 var azureEnv *test.Environment
 var fakeClock *clock.FakeClock
@@ -77,7 +78,8 @@ func TestAPIs(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx = options.ToContext(ctx, test.Options())
+	testOptions = test.Options()
+	ctx = options.ToContext(ctx, testOptions)
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	_, err := env.KubernetesInterface.CoreV1().Services("kube-system").Create(ctx, &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -114,7 +116,7 @@ var _ = AfterSuite(func() {
 
 var _ = BeforeEach(func() {
 	nodeClass = test.AKSNodeClass()
-	test.ApplyDefaultStatus(nodeClass, env)
+	test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 
 	nodePool = coretest.NodePool(karpv1.NodePool{
 		Spec: karpv1.NodePoolSpec{

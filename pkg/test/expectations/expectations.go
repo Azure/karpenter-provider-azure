@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

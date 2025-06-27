@@ -24,11 +24,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/mitchellh/hashstructure/v2"
-
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/mitchellh/hashstructure/v2"
 
 	"github.com/samber/lo"
 
@@ -59,7 +58,7 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
 	if err != nil {
-		log.FromContext(ctx).Info(fmt.Sprintf("WARN: Failed to convert resource group name to lower case in providerID %s: %v", providerID, err))
+		log.FromContext(ctx).Info("failed to convert resource group name to lower case in providerID, using fallback", "providerID", providerID, "error", err)
 		// fallback to original providerID
 		return providerID
 	}

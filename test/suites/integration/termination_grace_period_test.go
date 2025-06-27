@@ -42,7 +42,7 @@ var _ = Describe("TerminationGracePeriod", func() {
 		}}, TerminationGracePeriodSeconds: lo.ToPtr(int64(30))})
 		env.ExpectCreated(nodeClass, nodePool, pod)
 
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
@@ -76,7 +76,7 @@ var _ = Describe("TerminationGracePeriod", func() {
 			Command:                       []string{"/bin/sh", "-c", "sleep 30"}})
 		env.ExpectCreated(nodeClass, nodePool, pod)
 
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthy(pod)
 
@@ -90,7 +90,9 @@ var _ = Describe("TerminationGracePeriod", func() {
 				return t.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
 			})
 			g.Expect(ok).To(BeTrue())
-		}).WithTimeout(3 * time.Second).WithPolling(100 * time.Millisecond).Should(Succeed())
+			//Reduced polling time from 100 to 50 to mitigate flakes
+			//TODO Investigate root cause of timing sensitivity and restructure test
+		}).WithTimeout(3 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 
 		env.EventuallyExpectTerminating(pod)
 

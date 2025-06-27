@@ -24,11 +24,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
 )
 
-// generated at 2024-12-13T00:09:51Z
+// generated at 2025-06-03T21:16:53Z
 
 func init() {
 	// ResourceSkus is a list of selected VM SKUs for a given region
-	ResourceSkus["eastus"] = []compute.ResourceSku{
+	ResourceSkus["southcentralus"] = []compute.ResourceSku{
 		{
 			Name:         lo.ToPtr("Standard_A0"),
 			Tier:         lo.ToPtr("Standard"),
@@ -38,23 +38,7 @@ func init() {
 			ResourceType: lo.ToPtr("virtualMachines"),
 			APIVersions:  &[]string{},
 			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{
-				{
-					Type:   compute.ResourceSkuRestrictionsType("Zone"),
-					Values: &[]string{"eastus"},
-					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
-						Locations: &[]string{
-							"eastus",
-						},
-						Zones: &[]string{
-							"1",
-							"2",
-							"3",
-						},
-					},
-					ReasonCode: "NotAvailableForSubscription",
-				},
-			},
+			Restrictions: &[]compute.ResourceSkuRestrictions{},
 			Capabilities: &[]compute.ResourceSkuCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("20480")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
@@ -75,6 +59,7 @@ func init() {
 				{Name: lo.ToPtr("CombinedTempDiskAndCachedWriteBytesPerSecond"), Value: lo.ToPtr("10485760")},
 				{Name: lo.ToPtr("UncachedDiskIOPS"), Value: lo.ToPtr("1600")},
 				{Name: lo.ToPtr("UncachedDiskBytesPerSecond"), Value: lo.ToPtr("24000000")},
+				{Name: lo.ToPtr("RetirementDateUtc"), Value: lo.ToPtr("09/03/2024")},
 				{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("CapacityReservationSupported"), Value: lo.ToPtr("False")},
@@ -82,8 +67,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{}}},
+			Locations:    &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_B1s"),
@@ -122,9 +107,112 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
+				"1",
+				"2",
+				"3",
+			},
+			},
+			},
+		},
+		{
+			Name:         lo.ToPtr("Standard_B20ms"),
+			Tier:         lo.ToPtr("Standard"),
+			Kind:         lo.ToPtr(""),
+			Size:         lo.ToPtr("B20ms"),
+			Family:       lo.ToPtr("standardBSFamily"),
+			ResourceType: lo.ToPtr("virtualMachines"),
+			APIVersions:  &[]string{},
+			Costs:        &[]compute.ResourceSkuCosts{},
+			Restrictions: &[]compute.ResourceSkuRestrictions{},
+			Capabilities: &[]compute.ResourceSkuCapabilities{
+				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("163840")},
+				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("20")},
+				{Name: lo.ToPtr("MemoryPreservingMaintenanceSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1,V2")},
+				{Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
+				{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("80")},
+				{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("32")},
+				{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+				{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+				{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("20")},
+				{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("1")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedIOPS"), Value: lo.ToPtr("10800")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedReadBytesPerSecond"), Value: lo.ToPtr("124928000")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedWriteBytesPerSecond"), Value: lo.ToPtr("124928000")},
+				{Name: lo.ToPtr("CachedDiskBytes"), Value: lo.ToPtr("32212254720")},
+				{Name: lo.ToPtr("UncachedDiskIOPS"), Value: lo.ToPtr("4320")},
+				{Name: lo.ToPtr("UncachedDiskBytesPerSecond"), Value: lo.ToPtr("50000000")},
+				{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("CapacityReservationSupported"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
+			},
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
+				"1",
+				"2",
+				"3",
+			},
+			},
+			},
+		},
+		{
+			Name:         lo.ToPtr("Standard_D128ds_v6"),
+			Tier:         lo.ToPtr("Standard"),
+			Kind:         lo.ToPtr(""),
+			Size:         lo.ToPtr("D128ds_v6"),
+			Family:       lo.ToPtr("StandardDdsv6Family"),
+			ResourceType: lo.ToPtr("virtualMachines"),
+			APIVersions:  &[]string{},
+			Costs:        &[]compute.ResourceSkuCosts{},
+			Restrictions: &[]compute.ResourceSkuRestrictions{},
+			Capabilities: &[]compute.ResourceSkuCapabilities{
+				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("0")},
+				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("128")},
+				{Name: lo.ToPtr("MemoryPreservingMaintenanceSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V2")},
+				{Name: lo.ToPtr("DiskControllerTypes"), Value: lo.ToPtr("NVMe")},
+				{Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("NvmeDisk")},
+				{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("512")},
+				{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("64")},
+				{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+				{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+				{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("128")},
+				{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedIOPS"), Value: lo.ToPtr("450000")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedReadBytesPerSecond"), Value: lo.ToPtr("4000000000")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedWriteBytesPerSecond"), Value: lo.ToPtr("4000000000")},
+				{Name: lo.ToPtr("UncachedDiskIOPS"), Value: lo.ToPtr("204800")},
+				{Name: lo.ToPtr("UncachedDiskBytesPerSecond"), Value: lo.ToPtr("6782000000")},
+				{Name: lo.ToPtr("NvmeDiskSizeInMiB"), Value: lo.ToPtr("7208960")},
+				{Name: lo.ToPtr("NvmeSizePerDiskInMiB"), Value: lo.ToPtr("1802240")},
+				{Name: lo.ToPtr("NvmeMaxReadIops"), Value: lo.ToPtr("2400000")},
+				{Name: lo.ToPtr("NvmeMaxWriteIops"), Value: lo.ToPtr("960000")},
+				{Name: lo.ToPtr("NvmeMaxReadBytesPerSecond"), Value: lo.ToPtr("11520000000")},
+				{Name: lo.ToPtr("NvmeMaxWriteBytesPerSecond"), Value: lo.ToPtr("5760000000")},
+				{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("CapacityReservationSupported"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("False")},
+			},
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -170,9 +258,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -217,10 +306,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
-				"1",
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"2",
 				"3",
 			},
@@ -265,9 +354,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -312,8 +402,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -358,8 +448,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -402,9 +492,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -450,9 +541,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -498,9 +590,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -543,9 +636,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("False")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 			},
 			},
@@ -590,8 +684,55 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
+				"1",
+				"2",
+				"3",
+			},
+			},
+			},
+		},
+		{
+			Name:         lo.ToPtr("Standard_E4d_v5"),
+			Tier:         lo.ToPtr("Standard"),
+			Kind:         lo.ToPtr(""),
+			Size:         lo.ToPtr("E4d_v5"),
+			Family:       lo.ToPtr("standardEDv5Family"),
+			ResourceType: lo.ToPtr("virtualMachines"),
+			APIVersions:  &[]string{},
+			Costs:        &[]compute.ResourceSkuCosts{},
+			Restrictions: &[]compute.ResourceSkuRestrictions{},
+			Capabilities: &[]compute.ResourceSkuCapabilities{
+				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("153600")},
+				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
+				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("4")},
+				{Name: lo.ToPtr("MemoryPreservingMaintenanceSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("HyperVGenerations"), Value: lo.ToPtr("V1,V2")},
+				{Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
+				{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr("32")},
+				{Name: lo.ToPtr("MaxDataDiskCount"), Value: lo.ToPtr("8")},
+				{Name: lo.ToPtr("CpuArchitectureType"), Value: lo.ToPtr("x64")},
+				{Name: lo.ToPtr("LowPriorityCapable"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("PremiumIO"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("VMDeploymentTypes"), Value: lo.ToPtr("IaaS")},
+				{Name: lo.ToPtr("vCPUsAvailable"), Value: lo.ToPtr("4")},
+				{Name: lo.ToPtr("vCPUsPerCore"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedIOPS"), Value: lo.ToPtr("19000")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedReadBytesPerSecond"), Value: lo.ToPtr("250000000")},
+				{Name: lo.ToPtr("CombinedTempDiskAndCachedWriteBytesPerSecond"), Value: lo.ToPtr("250000000")},
+				{Name: lo.ToPtr("UncachedDiskIOPS"), Value: lo.ToPtr("6400")},
+				{Name: lo.ToPtr("UncachedDiskBytesPerSecond"), Value: lo.ToPtr("145000000")},
+				{Name: lo.ToPtr("EphemeralOSDiskSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("EncryptionAtHostSupported"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("CapacityReservationSupported"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
+				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
+				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
+			},
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -637,9 +778,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -656,21 +798,7 @@ func init() {
 			ResourceType: lo.ToPtr("virtualMachines"),
 			APIVersions:  &[]string{},
 			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{
-				{
-					Type:   compute.ResourceSkuRestrictionsType("Zone"),
-					Values: &[]string{"eastus"},
-					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
-						Locations: &[]string{
-							"eastus",
-						},
-						Zones: &[]string{
-							"1",
-						},
-					},
-					ReasonCode: "NotAvailableForSubscription",
-				},
-			},
+			Restrictions: &[]compute.ResourceSkuRestrictions{},
 			Capabilities: &[]compute.ResourceSkuCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("262144")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
@@ -702,10 +830,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
-				"1",
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"2",
 				"3",
 			},
@@ -750,9 +878,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
 				"1",
 				"2",
 				"3",
@@ -800,9 +929,11 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
+			Locations: &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{
+				"1",
 				"3",
 			},
 			},
@@ -817,23 +948,7 @@ func init() {
 			ResourceType: lo.ToPtr("virtualMachines"),
 			APIVersions:  &[]string{},
 			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{
-				{
-					Type:   compute.ResourceSkuRestrictionsType("Zone"),
-					Values: &[]string{"eastus"},
-					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
-						Locations: &[]string{
-							"eastus",
-						},
-						Zones: &[]string{
-							"1",
-							"2",
-							"3",
-						},
-					},
-					ReasonCode: "NotAvailableForSubscription",
-				},
-			},
+			Restrictions: &[]compute.ResourceSkuRestrictions{},
 			Capabilities: &[]compute.ResourceSkuCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("753664")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
@@ -862,15 +977,10 @@ func init() {
 				{Name: lo.ToPtr("AcceleratedNetworkingEnabled"), Value: lo.ToPtr("True")},
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
+				{Name: lo.ToPtr("UltraSSDAvailable"), Value: lo.ToPtr("True")},
 			},
-			Locations: &[]string{"eastus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("eastus"), Zones: &[]string{
-				"1",
-				"2",
-				"3",
-			},
-			},
-			},
+			Locations:    &[]string{"southcentralus"},
+			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("southcentralus"), Zones: &[]string{}}},
 		},
 	}
 }

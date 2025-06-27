@@ -3,7 +3,7 @@ module github.com/Azure/karpenter-provider-azure
 go 1.24.4
 
 require (
-	github.com/Azure/aks-middleware v0.0.37
+	github.com/Azure/aks-middleware v0.0.40
 	github.com/Azure/azure-kusto-go v0.16.1
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/azure-sdk-for-go-extensions v0.1.9

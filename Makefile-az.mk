@@ -4,7 +4,7 @@ ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
 else
-  NAME_SUFFIX ?= $(shell git config user.email | cut -d'@' -f1)
+  NAME_SUFFIX ?= $(shell git config user.email | cut -d'@' -f1 | tr -d '+')
   AZURE_RESOURCE_GROUP ?= $(COMMON_NAME)$(NAME_SUFFIX)
   AZURE_ACR_NAME ?= $(COMMON_NAME)$(NAME_SUFFIX)
 endif
@@ -61,7 +61,7 @@ az-mkacr: az-mkrg ## Create test ACR
 az-acrimport: ## Imports an image to an acr registry
 	az acr import --name $(AZURE_ACR_NAME) --source "mcr.microsoft.com/oss/kubernetes/pause:3.6" --image "pause:3.6"
 
-az-cleanenv: az-rmnodeclaims-fin  ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses)
+az-cleanenv: az-rmnodeclaims-fin az-rmnodeclasses-fin ## Deletes a few common karpenter testing resources(pods, nodepools, nodeclaims, aksnodeclasses)
 	kubectl delete deployments -n default --all
 	kubectl delete pods -n default --all
 	kubectl delete nodeclaims --all
@@ -270,6 +270,11 @@ az-rmnodes: ## kubectl delete all Karpenter-provisioned nodes; don't wait for fi
 az-rmnodeclaims-fin: ## Remove Karpenter finalizer from all nodeclaims (use with care!)
 	for nodeclaim in $$(kubectl get nodeclaims --output=jsonpath={.items..metadata.name}); do \
 		kubectl patch nodeclaim $$nodeclaim --type=json -p '[{"op": "remove", "path": "/metadata/finalizers"}]'; \
+	done
+
+az-rmnodeclasses-fin: ## Remove Karpenter finalizer from all nodeclasses (use with care!)
+	for nodeclass in $$(kubectl get aksnodeclasses --output=jsonpath={.items..metadata.name}); do \
+		kubectl patch aksnodeclass $$nodeclass --type=json -p '[{"op": "remove", "path": "/metadata/finalizers"}]'; \
 	done
 
 az-rmnodeclaims: ## kubectl delete all nodeclaims; don't wait for finalizers (use with care!)

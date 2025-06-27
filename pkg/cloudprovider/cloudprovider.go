@@ -37,7 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	// nolint SA1019 - deprecated package
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -190,13 +190,13 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 		vmName := lo.FromPtr(promise.VM.Name)
 		err = c.instanceProvider.Delete(ctx, vmName)
 		if cloudprovider.IgnoreNodeClaimNotFoundError(err) != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("failed to delete VM %s", vmName))
+			log.FromContext(ctx).Error(err, "failed to delete VM", "vmName", vmName)
 		}
 
 		if err = c.kubeClient.Delete(ctx, nodeClaim); err != nil {
 			err = client.IgnoreNotFound(err)
 			if err != nil {
-				log.FromContext(ctx).Error(err, "failed to delete nodeclaim %s, will wait for liveness TTL", nodeClaim.Name)
+				log.FromContext(ctx).Error(err, "failed to delete nodeclaim, will wait for liveness TTL", "NodeClaim", nodeClaim.Name)
 			}
 		}
 		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
@@ -259,7 +259,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	if err != nil {
 		return nil, fmt.Errorf("getting vm name, %w", err)
 	}
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("id", vmName))
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("vmName", vmName))
 	instance, err := c.instanceProvider.Get(ctx, vmName)
 	if err != nil {
 		return nil, fmt.Errorf("getting instance, %w", err)
@@ -295,8 +295,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 }
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("nodeclaim", nodeClaim.Name))
-
+	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
 	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("getting VM name, %w", err)
@@ -446,7 +445,7 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	}
 
 	if zone, err := utils.GetZone(vm); err != nil {
-		log.FromContext(ctx).Info(fmt.Sprintf("WARN: Failed to get zone for VM %s, %v", *vm.Name, err))
+		log.FromContext(ctx).Info("failed to get zone for VM, zone label will be empty", "vmName", *vm.Name, "error", err)
 	} else {
 		labels[corev1.LabelTopologyZone] = zone
 	}
