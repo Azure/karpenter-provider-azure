@@ -55,7 +55,7 @@ func (sc *skuClient) updateInstance(ctx context.Context) {
 	// TODO (charliedmcb): need to get track 2 support for the skewer API
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		log.FromContext(ctx).V(1).Info("error creating authorizer for sku client", "credentialType", "default", "error", err)
+		log.FromContext(ctx).Error(err, "error creating authorizer for sku client", "credentialType", "default")
 		return
 	}
 	authorizer := azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope})
@@ -64,7 +64,6 @@ func (sc *skuClient) updateInstance(ctx context.Context) {
 
 	skuClient := compute.NewResourceSkusClient(sc.cfg.SubscriptionID)
 	skuClient.Authorizer = azClientConfig.Authorizer
-	log.FromContext(ctx).V(1).Info("created sku client with authorizer", "client", skuClient)
 
 	sc.instance = skuClient
 }
