@@ -69,11 +69,6 @@ func (sc *skuClient) updateInstance(ctx context.Context) {
 }
 
 func NewSkuClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment) SkuClient {
-	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("skuclient").WithValues(
-		"subscriptionID", cfg.SubscriptionID,
-		"environment", env.Name,
-	))
-
 	sc := &skuClient{
 		cfg: cfg,
 		env: env,
