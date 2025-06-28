@@ -23,5 +23,5 @@ import (
 )
 
 func GetUserAgentExtension() string {
-	return fmt.Sprintf("karpenter-aks/v%s", operator.Version)
+	return fmt.Sprintf("karpenter/v%s", operator.Version)
 }
