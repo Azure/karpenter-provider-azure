@@ -178,7 +178,7 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	// size parts
 	requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
 
-	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
+	setRequirementsEphemeralOSDiskSupported(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
 	setRequirementsGPU(requirements, sku, vmsize)
 	setRequirementsVersion(requirements, vmsize)
@@ -186,7 +186,7 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	return requirements
 }
 
-func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
+func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU) {
 	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
 	if sizeGB > 0 {
 		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(sizeGB))
