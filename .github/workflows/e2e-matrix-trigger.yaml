@@ -1,7 +1,7 @@
 name: E2EMatrixTrigger
 on:
   schedule:
-    - cron: '*/5 * * * *' # Testing cron that runs every 5 minutes
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       location:
@@ -9,7 +9,7 @@ on:
         description: "the azure location to run the e2e test in"
         default: "westus3"
   push:
-    branches: [main, bsoghigian/periodic-runs-self-hosted-nap-will-be-done-separately]
+    branches: [main]
 
 permissions:
   contents: read
