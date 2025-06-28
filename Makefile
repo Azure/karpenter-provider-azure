@@ -117,7 +117,7 @@ codegen: ## Auto generate files based on Azure API responses
 snapshot: az-login ## Builds and publishes snapshot release
 	./hack/release/snapshot.sh
 
-release: ## Builds and publishes stable release
+release: az-login ## Builds and publishes stable release
 	./hack/release/release.sh
 
 toolchain: ## Install developer toolchain
