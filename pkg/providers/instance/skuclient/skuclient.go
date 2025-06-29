@@ -28,7 +28,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/skewer"
 	"github.com/jongio/azidext/go/azidext"
-	klog "k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -47,7 +47,7 @@ type skuClient struct {
 	instance compute.ResourceSkusClient
 }
 
-func (sc *skuClient) updateInstance() {
+func (sc *skuClient) updateInstance(ctx context.Context) {
 	sc.mu.RLock()
 	defer sc.mu.RUnlock()
 
@@ -55,7 +55,7 @@ func (sc *skuClient) updateInstance() {
 	// TODO (charliedmcb): need to get track 2 support for the skewer API
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		klog.V(5).Infof("Error creating authorizer for sku client: default cred: %s", err)
+		log.FromContext(ctx).Error(err, "error creating authorizer for sku client", "credentialType", "default")
 		return
 	}
 	authorizer := azidext.NewTokenCredentialAdapter(cred, []string{azidext.DefaultManagementScope})
@@ -64,7 +64,6 @@ func (sc *skuClient) updateInstance() {
 
 	skuClient := compute.NewResourceSkusClient(sc.cfg.SubscriptionID)
 	skuClient.Authorizer = azClientConfig.Authorizer
-	klog.V(5).Infof("Created sku client with authorizer: %v", skuClient)
 
 	sc.instance = skuClient
 }
@@ -74,7 +73,7 @@ func NewSkuClient(ctx context.Context, cfg *auth.Config, env *azclient.Environme
 		cfg: cfg,
 		env: env,
 	}
-	sc.updateInstance()
+	sc.updateInstance(ctx)
 
 	go func() {
 		for {
@@ -82,7 +81,7 @@ func NewSkuClient(ctx context.Context, cfg *auth.Config, env *azclient.Environme
 			case <-ctx.Done():
 				return
 			case <-time.After(refreshClient):
-				sc.updateInstance()
+				sc.updateInstance(ctx)
 			}
 		}
 	}()
