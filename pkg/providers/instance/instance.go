@@ -160,7 +160,7 @@ func (p *DefaultProvider) BeginCreate(
 	if err != nil {
 		// There may be orphan NICs (created before promise started)
 		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
-		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
+		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name), true); cleanupErr != nil {
 			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "NodeClaim", nodeClaim.Name)
 		}
 		return nil, err
@@ -232,7 +232,7 @@ func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error
 	}
 
 	log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "vmName", resourceName)
-	return p.cleanupAzureResources(ctx, resourceName)
+	return p.cleanupAzureResources(ctx, resourceName, false)
 }
 
 func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
@@ -764,7 +764,10 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	return nil, "", ""
 }
 
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) error {
+// mustDeleteNic parameter is used to determine whether NIC deletion failure is considered an error.
+// We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
+// NIC garbage collector is expected to handle such cases.
+func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string, mustDeleteNic bool) error {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
@@ -777,7 +780,12 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 	if nicErr != nil {
 		log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "nicName", resourceName)
 	}
-	return errors.Join(vmErr, nicErr)
+
+	if mustDeleteNic {
+		return errors.Join(vmErr, nicErr)
+	} else {
+		return vmErr
+	}
 }
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.
