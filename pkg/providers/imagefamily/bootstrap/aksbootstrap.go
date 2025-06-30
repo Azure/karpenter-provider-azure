@@ -295,9 +295,6 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.NetworkPolicy = a.NetworkPolicy
 	nbv.KubernetesVersion = a.KubernetesVersion
 
-	// Set cluster-dns flag
-	kubeletFlagsBase["--cluster-dns"] = a.ClusterDNS
-
 	nbv.KubeBinaryURL = kubeBinaryURL(a.KubernetesVersion, a.Arch)
 	nbv.VNETCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
 	nbv.CNIPluginsURL = fmt.Sprintf("%s/cni-plugins/v1.1.1/binaries/cni-plugins-linux-%s-v1.1.1.tgz", globalAKSMirror, a.Arch)
@@ -344,6 +341,8 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 		kubeletFlagsBase["--feature-gates"] = "DisableKubeletCloudCredentialProviders=false"
 		kubeletFlagsBase["--azure-container-registry-config"] = "/etc/kubernetes/azure.json"
 	}
+	// Set cluster-dns flag
+	kubeletFlagsBase["--cluster-dns"] = a.ClusterDNS
 	// merge and stringify taints
 	kubeletFlags := lo.Assign(kubeletFlagsBase)
 	if len(a.Taints) > 0 {
