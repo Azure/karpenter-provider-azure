@@ -46,7 +46,6 @@ const (
 	testZone2                           = "westus-2"
 	testZone3                           = "westus-3"
 
-	// Error message constants
 	errMsgLowPriorityQuota             = "this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota"
 	errMsgSKUFamilyQuotaFmt            = "subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)"
 	errMsgSKUNotAvailableFmt           = "the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable"
@@ -73,7 +72,6 @@ var (
 	zone3Spot     = offering{zone: testZone3, capacityType: karpv1.CapacityTypeSpot}
 )
 
-// testCaseBuilder provides a fluent interface for building test cases
 type testCaseBuilder struct {
 	tc responseErrorTestCase
 }
@@ -236,7 +234,6 @@ func newTestProvider() *DefaultProvider {
 	}
 }
 
-// assertOfferingsState validates the expected state of offerings (available/unavailable)
 func assertOfferingsState(t *testing.T, provider *DefaultProvider, unavailable, available []offeringToCheck) {
 	t.Helper()
 
@@ -257,7 +254,6 @@ func assertOfferingsState(t *testing.T, provider *DefaultProvider, unavailable, 
 	}
 }
 
-// setupTestCases creates the test cases using the builder pattern
 func setupTestCases() []responseErrorTestCase {
 	return []responseErrorTestCase{
 		newTestCase("Response error is nil").
