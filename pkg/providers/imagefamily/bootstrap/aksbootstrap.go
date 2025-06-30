@@ -47,6 +47,7 @@ type AKS struct {
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
+	ClusterDNS                     string
 }
 
 var _ Bootstrapper = (*AKS)(nil) // assert AKS implements Bootstrapper
@@ -293,6 +294,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	nbv.NetworkPolicy = a.NetworkPolicy
 	nbv.KubernetesVersion = a.KubernetesVersion
+
+	// Set cluster-dns flag
+	kubeletFlagsBase["--cluster-dns"] = a.ClusterDNS
 
 	nbv.KubeBinaryURL = kubeBinaryURL(a.KubernetesVersion, a.Arch)
 	nbv.VNETCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)

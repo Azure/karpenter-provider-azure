@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RELEASE_ACR=${RELEASE_ACR:-ksnap.azurecr.io} # will always be overridden
-RELEASE_REPO_ACR=${RELEASE_REPO_ACR:-${RELEASE_ACR}/public/aks/karpenter}
-RELEASE_IMAGE_REPO_MAR=mcr.microsoft.com/aks/karpenter/controller
-SNAPSHOT_ACR=${SNAPSHOT_ACR:-ksnap.azurecr.io}
-SNAPSHOT_REPO_ACR=${SNAPSHOT_REPO_ACR:-${SNAPSHOT_ACR}/karpenter/snapshot}
+RELEASE_ACR=${RELEASE_ACR}
+RELEASE_REPO_ACR=${RELEASE_ACR}/karpenter
+RELEASE_IMAGE_REPO_MAR=${RELEASE_ACR}/karpenter/controller
+SNAPSHOT_ACR=${RELEASE_ACR}
+SNAPSHOT_REPO_ACR=${RELEASE_ACR}/karpenter/snapshot
 
 CURRENT_MAJOR_VERSION="0"
 
