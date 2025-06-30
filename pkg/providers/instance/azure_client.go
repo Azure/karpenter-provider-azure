@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -36,7 +37,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
-	klog "k8s.io/klog/v2"
 )
 
 type VirtualMachinesAPI interface {
@@ -121,21 +121,18 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created virtual machine extensions client %v using token credential", extensionsClient)
 
 	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created network interface client %v using token credential", interfacesClient)
 
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
 	if o.UseSIG {
-		klog.V(1).Info("Using SIG for image versions")
+		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
-		klog.V(1).Info("Will use auxiliary token policy for creating virtual machines")
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
 		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
@@ -143,19 +140,16 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created virtual machines client %v, using a token credential", virtualMachinesClient)
 
 	azureResourceGraphClient, err := armresourcegraph.NewClient(cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created azure resource graph client %v, using a token credential", azureResourceGraphClient)
 
 	communityImageVersionsClient, err := armcompute.NewCommunityGalleryImageVersionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created image versions client %v, using a token credential", communityImageVersionsClient)
 
 	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred)
 
@@ -163,13 +157,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created load balancers client %v, using a token credential", loadBalancersClient)
 
 	networkSecurityGroupsClient, err := armnetwork.NewSecurityGroupsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
-	klog.V(5).Infof("Created nsg client %v, using a token credential", networkSecurityGroupsClient)
 
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
@@ -187,7 +179,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		if err != nil {
 			return nil, err
 		}
-		klog.V(5).Infof("Created bootstrapping client %v, using a token credential", nodeBootstrappingClient)
 	}
 
 	return NewAZClientFromAPI(virtualMachinesClient,
