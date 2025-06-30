@@ -359,6 +359,11 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	if sku == nil {
 		return 0, nil
 	}
+
+	if !sku.IsEphemeralOSDiskSupported() {
+		return 0, nil // ephemeral OS disk is not supported by this SKU
+	}
+
 	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
 
 	// Check NVMe disk first (highest priority)
