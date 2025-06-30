@@ -91,7 +91,7 @@ var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
 
 var fakeZone1 = utils.MakeZone(fake.Region, "1")
 
-var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("D_v3")}
+var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -1046,8 +1046,9 @@ var _ = Describe("InstanceType Provider", func() {
 			// when ZonalAllocationFailed error is encountered, we block all VM sizes that have >= vCPUs as the VM size for which we encountered the error
 			expectedUnavailableSKUs := []*skewer.SKU{
 				{
-					Name: lo.ToPtr("Standard_D2_v2"),
-					Size: lo.ToPtr("D2_v2"),
+					Name:   lo.ToPtr("Standard_D2_v2"),
+					Size:   lo.ToPtr("D2_v2"),
+					Family: lo.ToPtr("StandardDv2Family"),
 					Capabilities: &[]compute.ResourceSkuCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),
@@ -1056,8 +1057,9 @@ var _ = Describe("InstanceType Provider", func() {
 					},
 				},
 				{
-					Name: lo.ToPtr("Standard_D16_v2"),
-					Size: lo.ToPtr("D16_v2"),
+					Name:   lo.ToPtr("Standard_D16_v2"),
+					Size:   lo.ToPtr("D16_v2"),
+					Family: lo.ToPtr("StandardDv2Family"),
 					Capabilities: &[]compute.ResourceSkuCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),
@@ -1066,8 +1068,9 @@ var _ = Describe("InstanceType Provider", func() {
 					},
 				},
 				{
-					Name: lo.ToPtr("Standard_D32_v2"),
-					Size: lo.ToPtr("D32_v2"),
+					Name:   lo.ToPtr("Standard_D32_v2"),
+					Size:   lo.ToPtr("D32_v2"),
+					Family: lo.ToPtr("StandardDv2Family"),
 					Capabilities: &[]compute.ResourceSkuCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),

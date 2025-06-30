@@ -19,10 +19,10 @@ package cache
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/skewer"
 	"github.com/patrickmn/go-cache"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -41,10 +41,14 @@ var (
 // UnavailableOfferings stores any offerings that return ICE (insufficient capacity errors) when
 // attempting to launch the capacity. These offerings are ignored as long as they are in the cache on
 // GetInstanceTypes responses
+// We maintain two caches (singleOfferingCache and vmFamilyCache) to better handle error cases in which we know that allocation from a specific VM family + capacity type + zone combination will not work.
+// Information available from skewer.SKU is used to determine details about the VM SKU for which we encountered allocation errors.
+// We don't bundle the two caches together into one to avoid accidentally bundling together different SKUs while handling errors which don't necessarily warrant blocking more than just the single instance type.
+// This could be adjusted in the future, as we gather more data and get more confidence in information available in skewer.SKU.
 type UnavailableOfferings struct {
 	// key: <capacityType>:<instanceType>:<zone>, value: struct{}{}
 	singleOfferingCache *cache.Cache
-	// key: <skuFamilyName>:<zone>:<capacityType>, value: int64 (CPU count at or above which we block, or wholeVMFamilyBlockedSentinel if entire family is blocked)
+	// key: <skuFamilyName>:<zone>:<capacityType> (lowercase), value: int64 (CPU count at or above which we block, or wholeVMFamilyBlockedSentinel if entire family is blocked)
 	vmFamilyCache *cache.Cache
 	SeqNum        uint64
 }
@@ -92,18 +96,11 @@ func (u *UnavailableOfferings) IsUnavailable(sku *skewer.SKU, zone, capacityType
 func (u *UnavailableOfferings) isFamilyUnavailable(sku *skewer.SKU, zone, capacityType string) bool {
 	skuVCPUCount, err := sku.VCPU()
 	if err != nil {
-		// default to 0 if we can't determine VCPU count
+		// default to 0 if we can't determine VCPU count, this shouldn't happen as long as data in skewer.SKU is correct
 		skuVCPUCount = 0
 	}
-	skuVMSize, err := sku.GetVMSize()
-	if err != nil {
-		// if we can't determine VM size, we assume it's not blocked
-		return false
-	}
-	skuVersion := utils.ExtractVersionFromVMSize(skuVMSize)
-
 	// Check if VM family is blocked in the specific zone
-	if val, found := u.vmFamilyCache.Get(vmFamilyKey(skuVMSize.Family+skuVersion, zone, capacityType)); found {
+	if val, found := u.vmFamilyCache.Get(vmFamilyKey(sku.GetFamilyName(), zone, capacityType)); found {
 		if blockedCPUCount, ok := val.(int64); ok {
 			if blockedCPUCount == wholeVMFamilyBlockedSentinel {
 				// Entire VM family is blocked in this zone
@@ -117,9 +114,9 @@ func (u *UnavailableOfferings) isFamilyUnavailable(sku *skewer.SKU, zone, capaci
 }
 
 // MarkFamilyUnavailableWithTTL marks a VM family with custom TTL in a specific zone
-// versionedSKUFamily e.g. "N4" for "NV8as_v4"
-func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context, versionedSKUFamily, zone, capacityType string, cpuCount int64, ttl time.Duration) {
-	key := vmFamilyKey(versionedSKUFamily, zone, capacityType)
+// skuFamilyName e.g. "StandardDv2Family" for "Standard_D2_v2" VM SKU
+func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context, skuFamilyName, zone, capacityType string, cpuCount int64, ttl time.Duration) {
+	key := vmFamilyKey(skuFamilyName, zone, capacityType)
 
 	if existing, found := u.vmFamilyCache.Get(key); found {
 		if currentBlockedCPUCount, ok := existing.(int64); ok {
@@ -131,7 +128,7 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context,
 	}
 
 	log.FromContext(ctx).V(1).Info("marking VM Family unavailable in zone",
-		"family", versionedSKUFamily,
+		"family", skuFamilyName,
 		"capacity-type", capacityType,
 		"zone", zone,
 		"max-cpu", cpuCount,
@@ -143,13 +140,13 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context,
 }
 
 // MarkWholeVMFamilyUnavailable marks an entire VM family as unavailable in a specific zone
-func (u *UnavailableOfferings) MarkWholeVMFamilyUnavailable(ctx context.Context, family, capacityType, zone string) {
-	u.MarkFamilyUnavailableWithTTL(ctx, family, zone, capacityType, wholeVMFamilyBlockedSentinel, UnavailableOfferingsTTL)
+func (u *UnavailableOfferings) MarkWholeVMFamilyUnavailable(ctx context.Context, skuFamilyName, capacityType, zone string) {
+	u.MarkFamilyUnavailableWithTTL(ctx, skuFamilyName, zone, capacityType, wholeVMFamilyBlockedSentinel, UnavailableOfferingsTTL)
 }
 
 // MarkVMFamilyUnavailableAtCPUCount marks a VM family as unavailable for CPU counts above the threshold in a specific zone
-func (u *UnavailableOfferings) MarkVMFamilyUnavailableAtCPUCount(ctx context.Context, family, capacityType, zone string, maxCPUCount int64) {
-	u.MarkFamilyUnavailableWithTTL(ctx, family, zone, capacityType, maxCPUCount, UnavailableOfferingsTTL)
+func (u *UnavailableOfferings) MarkVMFamilyUnavailableAtCPUCount(ctx context.Context, skuFamilyName, capacityType, zone string, maxCPUCount int64) {
+	u.MarkFamilyUnavailableWithTTL(ctx, skuFamilyName, zone, capacityType, maxCPUCount, UnavailableOfferingsTTL)
 }
 
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
@@ -188,5 +185,5 @@ func singleInstanceKey(instanceType string, zone string, capacityType string) st
 
 // vmFamilyKey returns the cache key for VM family blocks in a specific zone
 func vmFamilyKey(skuFamilyName, zone, capacityType string) string {
-	return fmt.Sprintf("skuFamily:%s:%s:%s", skuFamilyName, zone, capacityType)
+	return strings.ToLower(fmt.Sprintf("skuFamily:%s:%s:%s", skuFamilyName, zone, capacityType))
 }
