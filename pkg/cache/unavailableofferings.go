@@ -113,7 +113,8 @@ func (u *UnavailableOfferings) isFamilyUnavailable(sku *skewer.SKU, zone, capaci
 	return false
 }
 
-// MarkFamilyUnavailableAtCPUCount marks a VM family with custom TTL in a specific zone
+// MarkFamilyUnavailableAtCPUCount marks a VM family with custom TTL in a specific zone for all instance types that have CPU count at or above the provided cpuCount
+// Value of -1 is used as a "wholeVMFamilyBlockedSentinel" to indicate that the entire VM family is blocked in this zone for the specified capacity type.
 // skuFamilyName e.g. "StandardDv2Family" for "Standard_D2_v2" VM SKU
 func (u *UnavailableOfferings) MarkFamilyUnavailableAtCPUCount(ctx context.Context, skuFamilyName, zone, capacityType string, cpuCount int64, ttl time.Duration) {
 	key := vmFamilyKey(skuFamilyName, zone, capacityType)
@@ -139,6 +140,7 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableAtCPUCount(ctx context.Conte
 	atomic.AddUint64(&u.SeqNum, 1)
 }
 
+// MarkFamilyUnavailable marks the entire VM family as unavailable in a specific zone for a specific capacity type with custom TTL
 func (u *UnavailableOfferings) MarkFamilyUnavailable(ctx context.Context, skuFamilyName, zone, capacityType string, ttl time.Duration) {
 	u.MarkFamilyUnavailableAtCPUCount(ctx, skuFamilyName, zone, capacityType, wholeVMFamilyBlockedSentinel, ttl)
 }

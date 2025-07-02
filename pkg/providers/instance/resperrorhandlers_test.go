@@ -87,7 +87,7 @@ func newTestCase(name string) *testCaseBuilder {
 	}
 }
 
-func (b *testCaseBuilder) withDefaultInstanceType(offerings ...offering) *testCaseBuilder {
+func (b *testCaseBuilder) withInstanceType(offerings ...offering) *testCaseBuilder {
 	b.tc.instanceType = createInstanceType(responseErrorTestInstanceName, offerings...)
 	return b
 }
@@ -252,7 +252,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("SKU family quota has been reached").
-			withDefaultInstanceType(zone2OnDemand, zone3OnDemand).
+			withInstanceType(zone2OnDemand, zone3OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.SKUFamilyQuotaExceededTerm).
 			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName)).
@@ -263,7 +263,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("SKU family quota 0 CPUs").
-			withDefaultInstanceType(zone2OnDemand, zone3OnDemand).
+			withInstanceType(zone2OnDemand, zone3OnDemand).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OperationNotAllowed, "Family Cores quota Current Limit: 0").
 			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName)).
@@ -274,7 +274,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("SKU not available for spot").
-			withDefaultInstanceType(zone2OnDemand, zone3Spot).
+			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
 			withResponseError(sdkerrors.SKUNotAvailableErrorCode, "").
 			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, responseErrorTestInstanceName, testZone2, karpv1.CapacityTypeSpot)).
@@ -283,7 +283,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("SKU not available for on-demand").
-			withDefaultInstanceType(zone2OnDemand, zone3Spot).
+			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.SKUNotAvailableErrorCode, "").
 			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, responseErrorTestInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
@@ -292,7 +292,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("Zonal allocation failure").
-			withDefaultInstanceType(zone2OnDemand, zone2Spot, zone3Spot).
+			withInstanceType(zone2OnDemand, zone2Spot, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.ZoneAllocationFailed, "").
 			expectError(fmt.Errorf(errMsgZonalAllocationFailureFmt, testZone2)).
@@ -309,7 +309,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("Allocation failure").
-			withDefaultInstanceType(zone1Spot, zone2OnDemand, zone3Spot).
+			withInstanceType(zone1Spot, zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.AllocationFailed, "").
 			expectError(fmt.Errorf(errMsgAllocationFailureFmt, responseErrorTestInstanceName)).
@@ -324,7 +324,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("Overconstrained zonal allocation failure").
-			withDefaultInstanceType(zone2OnDemand, zone3Spot).
+			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OverconstrainedZonalAllocationRequest, "").
 			expectError(fmt.Errorf(errMsgOverconstrainedZonalFmt, testZone2, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName)).
@@ -333,7 +333,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("Overconstrained allocation failure").
-			withDefaultInstanceType(zone1OnDemand, zone2OnDemand, zone3Spot).
+			withInstanceType(zone1OnDemand, zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OverconstrainedAllocationRequest, "").
 			expectError(fmt.Errorf(errMsgOverconstrainedAllocationFmt, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName)).
@@ -345,7 +345,7 @@ func setupTestCases() []responseErrorTestCase {
 			build(),
 
 		newTestCase("Regional quota exceeded").
-			withDefaultInstanceType(zone2OnDemand, zone3Spot).
+			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.RegionalQuotaExceededTerm).
 			expectError(cloudprovider.NewInsufficientCapacityError(fmt.Errorf("%s", errMsgRegionalQuotaExceeded))).

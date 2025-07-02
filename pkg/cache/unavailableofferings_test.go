@@ -137,7 +137,6 @@ func TestUnavailableOfferingsVMFamilyBlocksAll(t *testing.T) {
 
 	// Mark the entire VM family as unavailable
 	u.MarkFamilyUnavailable(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, testUnavailableOfferingsTTL)
-	// u.MarkFamilyUnavailableAtCPUCount(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, -1, testUnavailableOfferingsTTL)
 
 	// Test that offerings all offerings from the VM family are marked as unavailable in specific zone
 	for _, sku := range skus {
