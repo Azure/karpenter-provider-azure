@@ -31,7 +31,10 @@ import (
 )
 
 var _ = Describe("StandaloneNodeClaim", func() {
-	It("should create a standard NodeClaim within the 'D' sku family", func() {
+	// Added FlakeAttempts(3) to the tests to retry because in some cases the nodeclaim is 
+	// expected to be deleted from an LRO error we can recover from
+	It("should create a standard NodeClaim within the 'D' sku family", FlakeAttempts(3),func() {
+	Eventually(func(g Gomega) { 
 		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
@@ -53,13 +56,18 @@ var _ = Describe("StandaloneNodeClaim", func() {
 				},
 			},
 		})
+	
+
+
+			// if the nodeclaim was deleted, try again but with a new nodeclaim 
+
 		env.ExpectCreated(nodeClass, nodeClaim)
 		nodeClaim = env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		node := env.EventuallyExpectInitializedNodeCount("==", 1)[0]
 		Expect(node.Labels).To(HaveKeyWithValue(v1beta1.LabelSKUFamily, "D"))
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
-	It("should create a standard NodeClaim based on resource requests", func() {
+	It("should create a standard NodeClaim based on resource requests", FlakeAttempts(3), func() {
 		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Resources: karpv1.ResourceRequirements{
@@ -81,7 +89,7 @@ var _ = Describe("StandaloneNodeClaim", func() {
 		Expect(resources.Fits(nodeClaim.Spec.Resources.Requests, node.Status.Allocatable))
 		env.EventuallyExpectNodeClaimsReady(nodeClaim)
 	})
-	It("should create a NodeClaim propagating all the NodeClaim spec details", func() {
+	It("should create a NodeClaim propagating all the NodeClaim spec details", FlakeAttempts(3), func() {
 		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
