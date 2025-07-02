@@ -342,7 +342,8 @@ spec:
               This will contain configuration necessary to launch instances in AKS.
             properties:
               fipsMode:
-                description: FIPSMode controls FIPS compliance mode for the nodes
+                description: FIPSMode controls FIPS compliance for the provisioned
+                  nodes
                 enum:
                 - FIPS
                 - Disabled
