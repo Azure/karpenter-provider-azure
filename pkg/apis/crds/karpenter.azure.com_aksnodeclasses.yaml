@@ -341,10 +341,17 @@ spec:
               AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              fipsMode:
+                description: FIPSMode controls FIPS compliance mode for the nodes
+                enum:
+                - FIPS
+                - Disabled
+                type: string
               imageFamily:
                 default: Ubuntu2204
                 description: ImageFamily is the image family that instances use.
                 enum:
+                - Ubuntu
                 - Ubuntu2204
                 - AzureLinux
                 type: string
