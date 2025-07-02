@@ -92,11 +92,10 @@ func TestUnavailableOfferingsVMFamilyCoreLimitAllowsFewerCores(t *testing.T) {
 	vmFamilyCache := cache.New(testUnavailableOfferingsTTL, testUnavailableOfferingsTTL)
 	u := NewUnavailableOfferingsWithCache(singleInstanceCache, vmFamilyCache)
 
-	skus := []*skewer.SKU{
-		createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8),
-		createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16),
-		createTestSKU("Standard_NV24as_v4", "standardNVasv4Family", "NV24as_v4", 24),
-	}
+	nv8 := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
+	nv16 := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+	nv24 := createTestSKU("Standard_NV24as_v4", "standardNVasv4Family", "NV24as_v4", 24)
+	skus := []*skewer.SKU{nv8, nv16, nv24}
 
 	// Test that offerings are not marked as unavailable initially
 	for _, sku := range skus {
@@ -104,12 +103,12 @@ func TestUnavailableOfferingsVMFamilyCoreLimitAllowsFewerCores(t *testing.T) {
 	}
 
 	// Mark part of the VM family as unavailable (>= 16 CPUs)
-	u.MarkFamilyUnavailableWithTTL(context.TODO(), skus[0].GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 16, testUnavailableOfferingsTTL)
+	u.MarkFamilyUnavailableWithTTL(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 16, testUnavailableOfferingsTTL)
 
 	// Test that 16+ CPU offerings are marked as unavailable, but 8 CPU is not
-	assertOfferingAvailable(t, u, skus[0], "westus-1", karpv1.CapacityTypeOnDemand, "8 CPU offering should remain available after partial family marking")
-	assertOfferingUnavailable(t, u, skus[1], "westus-1", karpv1.CapacityTypeOnDemand, "16 CPU offering should be unavailable after partial family marking")
-	assertOfferingUnavailable(t, u, skus[2], "westus-1", karpv1.CapacityTypeOnDemand, "24 CPU offering should be unavailable after partial family marking")
+	assertOfferingAvailable(t, u, nv8, "westus-1", karpv1.CapacityTypeOnDemand, "8 CPU offering should remain available after partial family marking")
+	assertOfferingUnavailable(t, u, nv16, "westus-1", karpv1.CapacityTypeOnDemand, "16 CPU offering should be unavailable after partial family marking")
+	assertOfferingUnavailable(t, u, nv24, "westus-1", karpv1.CapacityTypeOnDemand, "24 CPU offering should be unavailable after partial family marking")
 
 	// Wait for cache expiration
 	time.Sleep(testUnavailableOfferingsTTL)
@@ -126,11 +125,10 @@ func TestUnavailableOfferingsVMFamilyBlocksAll(t *testing.T) {
 	vmFamilyCache := cache.New(testUnavailableOfferingsTTL, testUnavailableOfferingsTTL)
 	u := NewUnavailableOfferingsWithCache(singleInstanceCache, vmFamilyCache)
 
-	skus := []*skewer.SKU{
-		createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8),
-		createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16),
-		createTestSKU("Standard_NV24as_v4", "standardNVasv4Family", "NV24as_v4", 24),
-	}
+	nv8 := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
+	nv16 := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+	nv24 := createTestSKU("Standard_NV24as_v4", "standardNVasv4Family", "NV24as_v4", 24)
+	skus := []*skewer.SKU{nv8, nv16, nv24}
 
 	// Test that offerings are not marked as unavailable initially
 	for _, sku := range skus {
@@ -138,7 +136,7 @@ func TestUnavailableOfferingsVMFamilyBlocksAll(t *testing.T) {
 	}
 
 	// Mark the entire VM family as unavailable
-	u.MarkFamilyUnavailableWithTTL(context.TODO(), skus[0].GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, -1, testUnavailableOfferingsTTL)
+	u.MarkFamilyUnavailableWithTTL(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, -1, testUnavailableOfferingsTTL)
 
 	// Test that offerings all offerings from the VM family are marked as unavailable in specific zone
 	for _, sku := range skus {
@@ -177,40 +175,39 @@ func TestUnavailableOfferingsRestrictiveLimitPreservation(t *testing.T) {
 	vmFamilyCache := cache.New(testUnavailableOfferingsTTL, testUnavailableOfferingsTTL)
 	u := NewUnavailableOfferingsWithCache(singleInstanceCache, vmFamilyCache)
 
-	skus := []*skewer.SKU{
-		createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8),
-		createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16),
-		createTestSKU("Standard_NV24as_v4", "standardNVasv4Family", "NV24as_v4", 24),
-		createTestSKU("Standard_NV32as_v4", "standardNVasv4Family", "NV32as_v4", 32),
-	}
+	nv8 := createTestSKU("Standard_NV8as_v4", "standardNVasv4Family", "NV8as_v4", 8)
+	nv16 := createTestSKU("Standard_NV16as_v4", "standardNVasv4Family", "NV16as_v4", 16)
+	nv24 := createTestSKU("Standard_NV24as_v4", "standardNVasv4Family", "NV24as_v4", 24)
+	nv32 := createTestSKU("Standard_NV32as_v4", "standardNVasv4Family", "NV32as_v4", 32)
+	skus := []*skewer.SKU{nv8, nv16, nv24, nv32}
 
 	// Test 1: Set a limit at 16 CPUs, then try to set a less restrictive limit at 24 CPUs
 	// The 16 CPU limit should be preserved
-	u.MarkFamilyUnavailableWithTTL(context.TODO(), skus[0].GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 16, testUnavailableOfferingsTTL)
+	u.MarkFamilyUnavailableWithTTL(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 16, testUnavailableOfferingsTTL)
 
 	// Verify initial state: 8 CPU available, 16+ CPUs unavailable
-	assertOfferingAvailable(t, u, skus[0], "westus-1", karpv1.CapacityTypeOnDemand, "8 CPU offering should be available with 16 CPU limit")
-	assertOfferingUnavailable(t, u, skus[1], "westus-1", karpv1.CapacityTypeOnDemand, "16 CPU offering should be unavailable with 16 CPU limit")
-	assertOfferingUnavailable(t, u, skus[2], "westus-1", karpv1.CapacityTypeOnDemand, "24 CPU offering should be unavailable with 16 CPU limit")
+	assertOfferingAvailable(t, u, nv8, "westus-1", karpv1.CapacityTypeOnDemand, "8 CPU offering should be available with 16 CPU limit")
+	assertOfferingUnavailable(t, u, nv16, "westus-1", karpv1.CapacityTypeOnDemand, "16 CPU offering should be unavailable with 16 CPU limit")
+	assertOfferingUnavailable(t, u, nv24, "westus-1", karpv1.CapacityTypeOnDemand, "24 CPU offering should be unavailable with 16 CPU limit")
 
 	// Try to set a less restrictive limit (24 CPUs) - should preserve the 16 CPU limit
-	u.MarkFamilyUnavailableWithTTL(context.TODO(), skus[0].GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 24, testUnavailableOfferingsTTL)
+	u.MarkFamilyUnavailableWithTTL(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 24, testUnavailableOfferingsTTL)
 
 	// Verify the 16 CPU limit is preserved
-	assertOfferingAvailable(t, u, skus[0], "westus-1", karpv1.CapacityTypeOnDemand, "8 CPU offering should remain available after less restrictive limit attempt")
-	assertOfferingUnavailable(t, u, skus[1], "westus-1", karpv1.CapacityTypeOnDemand, "16 CPU offering should remain unavailable after less restrictive limit attempt")
-	assertOfferingUnavailable(t, u, skus[2], "westus-1", karpv1.CapacityTypeOnDemand, "24 CPU offering should remain unavailable after less restrictive limit attempt")
+	assertOfferingAvailable(t, u, nv8, "westus-1", karpv1.CapacityTypeOnDemand, "8 CPU offering should remain available after less restrictive limit attempt")
+	assertOfferingUnavailable(t, u, nv16, "westus-1", karpv1.CapacityTypeOnDemand, "16 CPU offering should remain unavailable after less restrictive limit attempt")
+	assertOfferingUnavailable(t, u, nv24, "westus-1", karpv1.CapacityTypeOnDemand, "24 CPU offering should remain unavailable after less restrictive limit attempt")
 
 	// Test 2: Set a more restrictive limit (8 CPUs) - should override the 16 CPU limit
-	u.MarkFamilyUnavailableWithTTL(context.TODO(), skus[0].GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 8, testUnavailableOfferingsTTL)
+	u.MarkFamilyUnavailableWithTTL(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 8, testUnavailableOfferingsTTL)
 
 	// Verify the 8 CPU limit is now in effect
-	assertOfferingUnavailable(t, u, skus[0], "westus-1", karpv1.CapacityTypeOnDemand, "8 CPU offering should be unavailable with 8 CPU limit")
-	assertOfferingUnavailable(t, u, skus[1], "westus-1", karpv1.CapacityTypeOnDemand, "16 CPU offering should be unavailable with 8 CPU limit")
-	assertOfferingUnavailable(t, u, skus[2], "westus-1", karpv1.CapacityTypeOnDemand, "24 CPU offering should be unavailable with 8 CPU limit")
+	assertOfferingUnavailable(t, u, nv8, "westus-1", karpv1.CapacityTypeOnDemand, "8 CPU offering should be unavailable with 8 CPU limit")
+	assertOfferingUnavailable(t, u, nv16, "westus-1", karpv1.CapacityTypeOnDemand, "16 CPU offering should be unavailable with 8 CPU limit")
+	assertOfferingUnavailable(t, u, nv24, "westus-1", karpv1.CapacityTypeOnDemand, "24 CPU offering should be unavailable with 8 CPU limit")
 
 	// Test 3: Set whole family blocked (-1) - should override any CPU limit
-	u.MarkFamilyUnavailableWithTTL(context.TODO(), skus[0].GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, -1, testUnavailableOfferingsTTL)
+	u.MarkFamilyUnavailableWithTTL(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, -1, testUnavailableOfferingsTTL)
 
 	// Verify all offerings are unavailable
 	for _, sku := range skus {
@@ -218,7 +215,7 @@ func TestUnavailableOfferingsRestrictiveLimitPreservation(t *testing.T) {
 	}
 
 	// Test 4: Try to set a less restrictive limit after whole family is blocked - should preserve -1
-	u.MarkFamilyUnavailableWithTTL(context.TODO(), skus[0].GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 32, testUnavailableOfferingsTTL)
+	u.MarkFamilyUnavailableWithTTL(context.TODO(), nv8.GetFamilyName(), "westus-1", karpv1.CapacityTypeOnDemand, 32, testUnavailableOfferingsTTL)
 
 	// Verify all offerings remain unavailable
 	for _, sku := range skus {
