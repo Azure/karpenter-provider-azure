@@ -152,8 +152,8 @@ func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultPro
 		// default to 0 if we can't determine VCPU count, this shouldn't happen as long as data in skewer.SKU is correct
 		vCPU = 0
 	}
-	provider.unavailableOfferings.MarkFamilyUnavailableWithTTL(ctx, sku.GetFamilyName(), zone, karpv1.CapacityTypeOnDemand, vCPU, AllocationFailureTTL)
-	provider.unavailableOfferings.MarkFamilyUnavailableWithTTL(ctx, sku.GetFamilyName(), zone, karpv1.CapacityTypeSpot, vCPU, AllocationFailureTTL)
+	provider.unavailableOfferings.MarkFamilyUnavailableAtCPUCount(ctx, sku.GetFamilyName(), zone, karpv1.CapacityTypeOnDemand, vCPU, AllocationFailureTTL)
+	provider.unavailableOfferings.MarkFamilyUnavailableAtCPUCount(ctx, sku.GetFamilyName(), zone, karpv1.CapacityTypeSpot, vCPU, AllocationFailureTTL)
 
 	return fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", zone)
 }

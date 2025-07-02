@@ -113,9 +113,9 @@ func (u *UnavailableOfferings) isFamilyUnavailable(sku *skewer.SKU, zone, capaci
 	return false
 }
 
-// MarkFamilyUnavailableWithTTL marks a VM family with custom TTL in a specific zone
+// MarkFamilyUnavailableAtCPUCount marks a VM family with custom TTL in a specific zone
 // skuFamilyName e.g. "StandardDv2Family" for "Standard_D2_v2" VM SKU
-func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context, skuFamilyName, zone, capacityType string, cpuCount int64, ttl time.Duration) {
+func (u *UnavailableOfferings) MarkFamilyUnavailableAtCPUCount(ctx context.Context, skuFamilyName, zone, capacityType string, cpuCount int64, ttl time.Duration) {
 	key := vmFamilyKey(skuFamilyName, zone, capacityType)
 
 	if existing, found := u.vmFamilyCache.Get(key); found {
@@ -137,6 +137,10 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context,
 	// call Set to update the cache entry, even if it already exists, to extend its TTL
 	u.vmFamilyCache.Set(key, cpuCount, ttl)
 	atomic.AddUint64(&u.SeqNum, 1)
+}
+
+func (u *UnavailableOfferings) MarkFamilyUnavailable(ctx context.Context, skuFamilyName, zone, capacityType string, ttl time.Duration) {
+	u.MarkFamilyUnavailableAtCPUCount(ctx, skuFamilyName, zone, capacityType, wholeVMFamilyBlockedSentinel, ttl)
 }
 
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
