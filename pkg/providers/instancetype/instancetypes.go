@@ -208,8 +208,8 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 	for zone := range zones {
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
-		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeOnDemand)
-		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeSpot)
+		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
+		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
@@ -359,6 +359,11 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	if sku == nil {
 		return 0, nil
 	}
+
+	if !sku.IsEphemeralOSDiskSupported() {
+		return 0, nil // ephemeral OS disk is not supported by this SKU
+	}
+
 	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
 
 	// Check NVMe disk first (highest priority)

@@ -178,7 +178,7 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	// size parts
 	requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
 
-	setRequirementsEphemeralOSDiskSupported(requirements, sku, vmsize)
+	setRequirementsEphemeralOSDiskSupported(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
 	setRequirementsGPU(requirements, sku, vmsize)
 	setRequirementsVersion(requirements, vmsize)
@@ -186,9 +186,9 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 	return requirements
 }
 
-func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU, vmsize *skewer.VMSizeType) {
-	if sku.IsEphemeralOSDiskSupported() && vmsize.Series != "Dlds_v5" { // Dlds_v5 does not support ephemeral OS disk, contrary to what it claims
-		sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
+func setRequirementsEphemeralOSDiskSupported(requirements scheduling.Requirements, sku *skewer.SKU) {
+	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
+	if sizeGB > 0 {
 		requirements[v1beta1.LabelSKUStorageEphemeralOSMaxSize].Insert(fmt.Sprint(sizeGB))
 	}
 }
@@ -213,13 +213,9 @@ func setRequirementsGPU(requirements scheduling.Requirements, sku *skewer.SKU, v
 
 // setRequirementsVersion sets the SKU version label, dropping "v" prefix and backfilling "1"
 func setRequirementsVersion(requirements scheduling.Requirements, vmsize *skewer.VMSizeType) {
-	version := "1"
-	if vmsize.Version != "" {
-		if !(vmsize.Version[0] == 'V' || vmsize.Version[0] == 'v') {
-			// should never happen; don't capture in label (won't be available for selection by version)
-			return
-		}
-		version = vmsize.Version[1:]
+	version := utils.ExtractVersionFromVMSize(vmsize)
+	if version == "" {
+		return
 	}
 	requirements[v1beta1.LabelSKUVersion].Insert(version)
 }

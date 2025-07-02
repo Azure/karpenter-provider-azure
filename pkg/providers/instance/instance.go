@@ -29,6 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -160,7 +161,7 @@ func (p *DefaultProvider) BeginCreate(
 	if err != nil {
 		// There may be orphan NICs (created before promise started)
 		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
-		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
+		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name), true); cleanupErr != nil {
 			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "NodeClaim", nodeClaim.Name)
 		}
 		return nil, err
@@ -232,7 +233,7 @@ func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error
 	}
 
 	log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "vmName", resourceName)
-	return p.cleanupAzureResources(ctx, resourceName)
+	return p.cleanupAzureResources(ctx, resourceName, false)
 }
 
 func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
@@ -640,7 +641,12 @@ func (p *DefaultProvider) beginLaunchInstance(
 		UseSIG:             options.FromContext(ctx).UseSIG,
 	})
 	if err != nil {
-		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+		if skuErr != nil {
+			log.FromContext(ctx).Error(err, "failed to get instance type", "instanceType", instanceType.Name)
+			return nil, err
+		}
+		azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 		return nil, azErr
 	}
 
@@ -663,7 +669,12 @@ func (p *DefaultProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+				if skuErr != nil {
+					log.FromContext(ctx).Error(err, "failed to get instance type", "instanceType", instanceType.Name)
+					return err
+				}
+				azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 				return azErr
 			}
 
@@ -686,10 +697,10 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}, nil
 }
 
-func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
+func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
 	for _, handler := range p.responseErrorHandlers {
 		if handler.matchError(responseError) {
-			return handler.handleResponseError(ctx, p, instanceType, zone, capacityType, responseError)
+			return handler.handleResponseError(ctx, p, sku, instanceType, zone, capacityType, responseError)
 		}
 	}
 	// responseError didn't match any of our handlers, so we log details about it and return it as is
@@ -764,7 +775,10 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	return nil, "", ""
 }
 
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) error {
+// mustDeleteNic parameter is used to determine whether NIC deletion failure is considered an error.
+// We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
+// NIC garbage collector is expected to handle such cases.
+func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string, mustDeleteNic bool) error {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
@@ -777,7 +791,12 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 	if nicErr != nil {
 		log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "nicName", resourceName)
 	}
-	return errors.Join(vmErr, nicErr)
+
+	if mustDeleteNic {
+		return errors.Join(vmErr, nicErr)
+	} else {
+		return vmErr
+	}
 }
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.
