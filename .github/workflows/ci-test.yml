@@ -13,6 +13,7 @@ jobs:
       statuses: write
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false # https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idstrategyfail-fast 
       matrix:
         k8sVersion: ["1.25.x", "1.26.x", "1.27.x", "1.28.x", "1.29.x", "1.30.x", "1.31.x", "1.32.x", "1.33.x"]
     env:
