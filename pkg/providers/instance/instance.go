@@ -29,6 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -640,7 +641,12 @@ func (p *DefaultProvider) beginLaunchInstance(
 		UseSIG:             options.FromContext(ctx).UseSIG,
 	})
 	if err != nil {
-		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+		if skuErr != nil {
+			log.FromContext(ctx).Error(err, "failed to get instance type", "instanceType", instanceType.Name)
+			return nil, err
+		}
+		azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 		return nil, azErr
 	}
 
@@ -663,7 +669,12 @@ func (p *DefaultProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+				if skuErr != nil {
+					log.FromContext(ctx).Error(err, "failed to get instance type", "instanceType", instanceType.Name)
+					return err
+				}
+				azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 				return azErr
 			}
 
@@ -686,10 +697,10 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}, nil
 }
 
-func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
+func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
 	for _, handler := range p.responseErrorHandlers {
 		if handler.matchError(responseError) {
-			return handler.handleResponseError(ctx, p, instanceType, zone, capacityType, responseError)
+			return handler.handleResponseError(ctx, p, sku, instanceType, zone, capacityType, responseError)
 		}
 	}
 	// responseError didn't match any of our handlers, so we log details about it and return it as is
