@@ -35,10 +35,15 @@ const (
 
 func createTestSKU(name, familyName, size string, cpuCount int) *skewer.SKU {
 	return &skewer.SKU{
-		Name:         &name,
-		Family:       &familyName,
-		Size:         &size,
-		Capabilities: &[]compute.ResourceSkuCapabilities{{Name: lo.ToPtr(skewer.VCPUs), Value: lo.ToPtr(strconv.Itoa(cpuCount))}},
+		Name:   &name,
+		Family: &familyName,
+		Size:   &size,
+		Capabilities: &[]compute.ResourceSkuCapabilities{
+			{
+				Name:  lo.ToPtr(skewer.VCPUs),
+				Value: lo.ToPtr(strconv.Itoa(cpuCount)),
+			},
+		},
 	}
 }
 

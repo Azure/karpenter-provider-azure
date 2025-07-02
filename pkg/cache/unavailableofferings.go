@@ -139,16 +139,6 @@ func (u *UnavailableOfferings) MarkFamilyUnavailableWithTTL(ctx context.Context,
 	atomic.AddUint64(&u.SeqNum, 1)
 }
 
-// MarkWholeVMFamilyUnavailable marks an entire VM family as unavailable in a specific zone
-func (u *UnavailableOfferings) MarkWholeVMFamilyUnavailable(ctx context.Context, skuFamilyName, capacityType, zone string) {
-	u.MarkFamilyUnavailableWithTTL(ctx, skuFamilyName, zone, capacityType, wholeVMFamilyBlockedSentinel, UnavailableOfferingsTTL)
-}
-
-// MarkVMFamilyUnavailableAtCPUCount marks a VM family as unavailable for CPU counts above the threshold in a specific zone
-func (u *UnavailableOfferings) MarkVMFamilyUnavailableAtCPUCount(ctx context.Context, skuFamilyName, capacityType, zone string, maxCPUCount int64) {
-	u.MarkFamilyUnavailableWithTTL(ctx, skuFamilyName, zone, capacityType, maxCPUCount, UnavailableOfferingsTTL)
-}
-
 // MarkSpotUnavailable communicates recently observed temporary capacity shortages for spot
 func (u *UnavailableOfferings) MarkSpotUnavailableWithTTL(ctx context.Context, ttl time.Duration) {
 	u.MarkUnavailableWithTTL(ctx, "SpotUnavailable", "", "", karpv1.CapacityTypeSpot, ttl)

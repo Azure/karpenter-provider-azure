@@ -56,6 +56,11 @@ func GetVMName(providerID string) (string, error) {
 
 // extractVersionFromVMSize extracts and normalizes the version from VMSizeType, dropping "v" prefix and backfilling "1"
 func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
+	// safety-check to avoid panics, shouldn't happen in practice
+	if vmsize == nil {
+		return ""
+	}
+
 	version := "1"
 	if vmsize.Version != "" {
 		if !(vmsize.Version[0] == 'V' || vmsize.Version[0] == 'v') {

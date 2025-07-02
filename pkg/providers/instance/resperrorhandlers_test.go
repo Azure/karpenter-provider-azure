@@ -90,7 +90,10 @@ func newTestCase(name string) *testCaseBuilder {
 func (b *testCaseBuilder) withInstanceType(offerings ...offering) *testCaseBuilder {
 	offeringTypes := make([]struct{ zone, capacityType string }, len(offerings))
 	for i, o := range offerings {
-		offeringTypes[i] = struct{ zone, capacityType string }{zone: o.zone, capacityType: o.capacityType}
+		offeringTypes[i] = struct{ zone, capacityType string }{
+			zone:         o.zone,
+			capacityType: o.capacityType,
+		}
 	}
 	b.tc.instanceType = defaultCreateInstanceType(offeringTypes...)
 	return b
@@ -119,11 +122,6 @@ func (b *testCaseBuilder) withNilResponseError() *testCaseBuilder {
 
 func (b *testCaseBuilder) expectError(err error) *testCaseBuilder {
 	b.tc.expectedErr = err
-	return b
-}
-
-func (b *testCaseBuilder) expectNilError() *testCaseBuilder {
-	b.tc.expectedErr = nil
 	return b
 }
 
@@ -259,8 +257,7 @@ func setupTestCases() []responseErrorTestCase {
 		newTestCase("Response error is nil").
 			withEmptyInstanceType().
 			withZoneAndCapacity("", karpv1.CapacityTypeOnDemand).
-			withNilResponseError().
-			expectNilError().
+			expectError(nil).
 			build(),
 
 		newTestCase("Low priority quota has been reached").
