@@ -4,7 +4,6 @@ include Makefile-az.mk
 LDFLAGS ?= -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=$(shell git describe --tags --always | cut -d"v" -f2)
 
 GOFLAGS ?= $(LDFLAGS)
-WITH_GOFLAGS = GOFLAGS="$(GOFLAGS)"
 
 # # CR for local builds of Karpenter
 KARPENTER_NAMESPACE ?= kube-system
@@ -116,10 +115,10 @@ codegen: ## Auto generate files based on Azure API responses
 	./hack/codegen.sh
 
 snapshot: az-login ## Builds and publishes snapshot release
-	$(WITH_GOFLAGS) ./hack/release/snapshot.sh
+	./hack/release/snapshot.sh
 
 release: az-login ## Builds and publishes stable release
-	$(WITH_GOFLAGS) ./hack/release/release.sh
+	./hack/release/release.sh
 
 toolchain: ## Install developer toolchain
 	./hack/toolchain.sh

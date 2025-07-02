@@ -634,22 +634,23 @@ var _ = Describe("InstanceType Provider", func() {
 			// Standard_A0
 			// NvmeDiskSizeInMiB == 0
 			// CacheDiskBytes == 0, this is zero
-			// MaxResourceVolumeMB == 20480 Mib -> 21.474836 GB. Note that this sku doesnt support ephemeral os disk,
-			// but we do filtering in another function for this, so we should just return 21 and resource disk placement, even though we cannot set it to that
-			// other places will filter out this sku, we just need the sku to test NVME 0, Cache 0, MaxResourceVolumeMB > 0
+			// MaxResourceVolumeMB == 20480 Mib -> 21.474836 GB. Note that this sku doesnt support ephemeral os disk
 			DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
 				func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
 					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
 					Expect(sizeGB).To(Equal(expectedSize))
 					Expect(placement).To(Equal(expectedPlacement))
-
 				}, Entry("Standard_B20ms", SkewerSKU("Standard_B20ms"), int64(32), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 				Entry("Standard_D128ds_v6", SkewerSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
 				Entry("Standard_D16plds_v5", SkewerSKU("Standard_D16plds_v5"), int64(429), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-				Entry("Standard_D2as_v6", SkewerSKU("Standard_D2as_v6"), int64(0), nil),
+				Entry("Standard_D2as_v6", SkewerSKU("Standard_D2as_v6"), int64(0), nil), // does not support ephemeral
 				Entry("Standard_NC24ads_A100_v4", SkewerSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
 				Entry("Standard_D64s_v3", SkewerSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
-				Entry("Standard_A0", SkewerSKU("Standard_A0"), int64(21), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)),
+				Entry("Standard_A0", SkewerSKU("Standard_A0"), int64(0), nil),       // does not support ephemeral
+				Entry("Standard_D2_v2", SkewerSKU("Standard_D2_v2"), int64(0), nil), // does not support ephemeral
+				// TODO: codegen
+				// Entry("Standard_D2pls_v5", SkewerSKU("Standard_D2pls_v5"), int64(0), nil), // does not support ephemeral
+				// Entry("Standard_D2lds_v5", SkewerSKU("Standard_D2lds_v5"), int64(80), armcompute.DiffDiskPlacementResourceDisk),
 				Entry("Nil SKU", nil, int64(0), nil),
 			)
 		})
