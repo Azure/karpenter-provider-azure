@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/skewer"
 	"github.com/mitchellh/hashstructure/v2"
 	. "github.com/onsi/gomega"
 )
@@ -121,4 +122,51 @@ func TestHasChanged_SliceOrderWithSlicesAsSets(t *testing.T) {
 	// With SlicesAsSets, order does not matter
 	opts := &hashstructure.HashOptions{SlicesAsSets: true}
 	g.Expect(utils.HasChanged(a, b, opts)).To(BeFalse())
+}
+
+func TestExtractVersionFromVMSize(t *testing.T) {
+	cases := []struct {
+		name           string
+		vmSize         *skewer.VMSizeType
+		expectedResult string
+	}{
+		{
+			name:           "nil VMSizeType returns empty string",
+			vmSize:         nil,
+			expectedResult: "",
+		},
+		{
+			name:           "empty version returns default '1'",
+			vmSize:         &skewer.VMSizeType{Version: ""},
+			expectedResult: "1",
+		},
+		{
+			name:           "version with lowercase 'v' prefix",
+			vmSize:         &skewer.VMSizeType{Version: "v2"},
+			expectedResult: "2",
+		},
+		{
+			name:           "version with uppercase 'V' prefix",
+			vmSize:         &skewer.VMSizeType{Version: "V2"},
+			expectedResult: "2",
+		},
+		{
+			name:           "multi-digit version",
+			vmSize:         &skewer.VMSizeType{Version: "V123"},
+			expectedResult: "123",
+		},
+		{
+			name:           "unexpected version format returns empty string",
+			vmSize:         &skewer.VMSizeType{Version: "x2"},
+			expectedResult: "",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := utils.ExtractVersionFromVMSize(c.vmSize)
+			g.Expect(result).To(Equal(c.expectedResult))
+		})
+	}
 }
