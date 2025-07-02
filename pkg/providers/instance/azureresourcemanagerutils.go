@@ -107,7 +107,8 @@ func deleteNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName str
 func deleteNicIfExists(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string) error {
 	_, err := client.Get(ctx, rg, nicName, nil)
 	if err != nil {
-		if sdkerrors.IsNotFoundErr(err) {
+		azErr := sdkerrors.IsResponseError(err)
+		if azErr != nil && (azErr.ErrorCode == "NotFound" || azErr.ErrorCode == "ResourceNotFound") {
 			return nil
 		}
 		return err
