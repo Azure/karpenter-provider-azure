@@ -194,6 +194,16 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("network dataplane ciluum is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')")))
 		})
+		It("should fail validation when cluster DNS IP is not valid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--dns-service-ip", "999.1.2.3",
+			)
+			Expect(err).To(MatchError(ContainSubstring("dns-service-ip is invalid")))
+		})
 		It("should fail validation when clusterName not included", func() {
 			err := opts.Parse(
 				fs,
