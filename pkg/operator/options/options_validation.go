@@ -18,6 +18,7 @@ package options
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"regexp"
 
@@ -41,8 +42,18 @@ func (o *Options) Validate() error {
 		o.validateProvisionMode(),
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
+		o.validateClusterDNSIP(),
 		validate.Struct(o),
 	)
+}
+
+func (o *Options) validateClusterDNSIP() error {
+	if o.DNSServiceIP != "" {
+		if _, err := netip.ParseAddr(o.DNSServiceIP); err != nil {
+			return fmt.Errorf("dns-service-ip is invalid %w", err)
+		}
+	}
+	return nil
 }
 
 func (o *Options) validateVNETGUID() error {
