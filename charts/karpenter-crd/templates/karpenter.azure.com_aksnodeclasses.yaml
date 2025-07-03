@@ -492,6 +492,10 @@ spec:
                 pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
                 type: string
             type: object
+            x-kubernetes-validations:
+            - message: FIPS is not yet supported for Ubuntu2204
+              rule: 'has(self.imageFamily) && has(self.fipsMode) ?  !(self.imageFamily
+                == ''Ubuntu2204'' && self.fipsMode == ''FIPS'') : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:
