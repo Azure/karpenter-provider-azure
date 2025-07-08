@@ -62,8 +62,13 @@ func AKSNodeClass(overrides ...v1beta1.AKSNodeClass) *v1beta1.AKSNodeClass {
 	}
 }
 
-func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environment) {
-	ApplyCIGImages(nodeClass)
+// TODO: Pass in test.Options if we want to use more options within this func
+func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environment, useSIG bool) {
+	if useSIG {
+		ApplySIGImages(nodeClass)
+	} else {
+		ApplyCIGImages(nodeClass)
+	}
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
 
 	testK8sVersion := lo.Must(semver.ParseTolerant(lo.Must(env.KubernetesInterface.Discovery().ServerVersion()).String())).String()

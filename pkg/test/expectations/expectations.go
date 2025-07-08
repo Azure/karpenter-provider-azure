@@ -24,8 +24,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/skewer"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -34,9 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func ExpectUnavailable(env *test.Environment, instanceType string, zone string, capacityType string) {
+func ExpectUnavailable(env *test.Environment, sku *skewer.SKU, zone string, capacityType string) {
 	GinkgoHelper()
-	Expect(env.UnavailableOfferingsCache.IsUnavailable(instanceType, zone, capacityType)).To(BeTrue())
+	Expect(env.UnavailableOfferingsCache.IsUnavailable(sku, zone, capacityType)).To(BeTrue())
 }
 
 func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {

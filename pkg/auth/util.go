@@ -23,5 +23,6 @@ import (
 )
 
 func GetUserAgentExtension() string {
+	// Note: do not change "karpenter-aks/" prefix, some infra depends on it
 	return fmt.Sprintf("karpenter-aks/v%s", operator.Version)
 }

@@ -1,5 +1,5 @@
-github.com/Azure/aks-middleware v0.0.37 h1:WH46dEtAU3bJsGHHLvgefsqa0SBFznsWwnP53K43wNQ=
-github.com/Azure/aks-middleware v0.0.37/go.mod h1:s03PzzzlJm1+9TerNBdCDb6p3GTYgWU9056IlpgTThc=
+github.com/Azure/aks-middleware v0.0.40 h1:eFRuAxCcIAZoy/6+FvumDl2KOWnSPxXcAeCSOA4+aTo=
+github.com/Azure/aks-middleware v0.0.40/go.mod h1:7Y+wxZmS7p1K0FPreiO3+6Wr8YhYjWz9c50YohDQIQ4=
 github.com/Azure/azure-kusto-go v0.16.1 h1:vCBWcQghmC1qIErUUgVNWHxGhZVStu1U/hki6iBA14k=
 github.com/Azure/azure-kusto-go v0.16.1/go.mod h1:9F2zvXH8B6eWzgI1S4k1ZXAIufnBZ1bv1cW1kB1n3D0=
 github.com/Azure/azure-sdk-for-go v68.0.0+incompatible h1:fcYLmCpyNYRnvJbPerq7U0hS+6+I79yEDJBqVNcqUzU=
@@ -162,8 +162,8 @@ github.com/go-playground/locales v0.14.1 h1:EWaQ/wswjilfKLTECiXz7Rh+3BjFhfDFKv/o
 github.com/go-playground/locales v0.14.1/go.mod h1:hxrqLVvrK65+Rwrd5Fc6F2O76J/NuW9t0sjnWqG1slY=
 github.com/go-playground/universal-translator v0.18.1 h1:Bcnm0ZwsGyWbCzImXv+pAJnYK9S473LQFuzCbDbfSFY=
 github.com/go-playground/universal-translator v0.18.1/go.mod h1:xekY+UJKNuX9WP91TpwSH2VMlDf28Uj24BCp08ZFTUY=
-github.com/go-playground/validator/v10 v10.26.0 h1:SP05Nqhjcvz81uJaRfEV0YBSSSGMc/iMaVtFbr3Sw2k=
-github.com/go-playground/validator/v10 v10.26.0/go.mod h1:I5QpIEbmr8On7W0TktmJAumgzX4CA1XNl4ZmDuVHKKo=
+github.com/go-playground/validator/v10 v10.27.0 h1:w8+XrWVMhGkxOaaowyKH35gFydVHOvC0/uWoy2Fzwn4=
+github.com/go-playground/validator/v10 v10.27.0/go.mod h1:I5QpIEbmr8On7W0TktmJAumgzX4CA1XNl4ZmDuVHKKo=
 github.com/go-task/slim-sprig/v3 v3.0.0 h1:sUs3vkvUymDpBKi3qH1YSqBQk9+9D/8M2mN1vB6EwHI=
 github.com/go-task/slim-sprig/v3 v3.0.0/go.mod h1:W848ghGpv3Qj3dhTPRyJypKRiqCdHZiAzKg9hl15HA8=
 github.com/gogo/protobuf v1.3.2 h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=

@@ -27,8 +27,9 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -160,23 +161,23 @@ func (p *DefaultProvider) BeginCreate(
 	if err != nil {
 		// There may be orphan NICs (created before promise started)
 		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
-		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
-			log.FromContext(ctx).Error(cleanupErr, fmt.Sprintf("failed to cleanup resources for node claim %s", nodeClaim.Name))
+		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name), true); cleanupErr != nil {
+			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "NodeClaim", nodeClaim.Name)
 		}
 		return nil, err
 	}
 	vm := vmPromise.VM
 	zone, err := utils.GetZone(vm)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "")
+		log.FromContext(ctx).V(1).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	}
 
-	log.FromContext(ctx).WithValues(
-		"launched-instance", *vm.ID,
+	log.FromContext(ctx).Info("launched new instance",
+		"launchedInstance", *vm.ID,
 		"hostname", *vm.Name,
 		"type", string(*vm.Properties.HardwareProfile.VMSize),
 		"zone", zone,
-		"capacity-type", GetCapacityType(vm)).Info("launched new instance")
+		"capacity-type", GetCapacityType(vm))
 
 	return vmPromise, nil
 }
@@ -231,8 +232,8 @@ func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error
 		return nil
 	}
 
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Deleting virtual machine %s and associated resources", resourceName))
-	return p.cleanupAzureResources(ctx, resourceName)
+	log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "vmName", resourceName)
+	return p.cleanupAzureResources(ctx, resourceName, false)
 }
 
 func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
@@ -270,26 +271,35 @@ func (p *DefaultProvider) DeleteNic(ctx context.Context, nicName string) error {
 func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string, tags map[string]*string) (err error) {
 	vmExt := p.getAKSIdentifyingExtension(tags)
 	vmExtName := *vmExt.Name
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine AKS identifying extension for %s", vmName))
+	log.FromContext(ctx).V(1).Info("creating virtual machine AKS identifying extension", "vmName", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
-		log.FromContext(ctx).Error(err, fmt.Sprintf("Creating VM AKS identifying extension for VM %q failed", vmName))
+		log.FromContext(ctx).Error(err, "failed to create VM AKS identifying extension",
+			"vmName", vmName,
+			"extensionName", vmExtName,
+		)
 		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
 	}
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Created  virtual machine AKS identifying extension for %s, with an id of %s", vmName, *v.ID))
+	log.FromContext(ctx).V(1).Info("created virtual machine AKS identifying extension",
+		"vmName", vmName,
+		"extensionID", *v.ID,
+	)
 	return nil
 }
 
 func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool, tags map[string]*string) error {
 	vmExt := p.getCSExtension(cse, isWindows, tags)
 	vmExtName := *vmExt.Name
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine CSE for %s", vmName))
+	log.FromContext(ctx).V(1).Info("creating virtual machine CSE", "vmName", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
-		log.FromContext(ctx).Error(err, fmt.Sprintf("Creating VM CSE for VM %q failed", vmName))
+		log.FromContext(ctx).Error(err, "failed to create VM CSE", "vmName", vmName)
 		return fmt.Errorf("creating VM CSE for VM %q, %w failed", vmName, err)
 	}
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Created virtual machine CSE for %s, with an id of %s", vmName, *v.ID))
+	log.FromContext(ctx).V(1).Info("created virtual machine CSE",
+		"vmName", vmName,
+		"extensionID", *v.ID,
+	)
 	return nil
 }
 
@@ -372,12 +382,12 @@ type createNICOptions struct {
 func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating network interface %s", opts.NICName))
+	log.FromContext(ctx).V(1).Info("creating network interface", "nicName", opts.NICName)
 	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
 	if err != nil {
 		return "", err
 	}
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Successfully created network interface: %v", *res.ID))
+	log.FromContext(ctx).V(1).Info("successfully created network interface", "nicName", opts.NICName, "nicID", *res.ID)
 	return *res.ID, nil
 }
 
@@ -456,7 +466,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Zones: utils.MakeVMZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
 	}
-	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate.StorageProfile)
+	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 
@@ -469,12 +479,12 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	return vm
 }
 
-// setVMPropertiesOSDiskType enables ephemeral os disk for instance types that support it
-func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, storageProfile string) {
-	if storageProfile == consts.StorageProfileEphemeral {
+func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, launchTemplate *launchtemplate.Template) {
+	placement := launchTemplate.StorageProfilePlacement
+	if launchTemplate.StorageProfileIsEphemeral {
 		vmProperties.StorageProfile.OSDisk.DiffDiskSettings = &armcompute.DiffDiskSettings{
-			Option: lo.ToPtr(armcompute.DiffDiskOptionsLocal),
-			// placement (cache/resource) is left to CRP
+			Option:    lo.ToPtr(armcompute.DiffDiskOptionsLocal),
+			Placement: lo.ToPtr(placement),
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
 	}
@@ -539,11 +549,11 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
 	vm := newVMObject(opts)
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Creating virtual machine %s (%s)", opts.VMName, opts.InstanceType.Name))
+	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, "instance-type", opts.InstanceType.Name)
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		log.FromContext(ctx).Error(err, fmt.Sprintf("Creating virtual machine %q failed", opts.VMName))
+		log.FromContext(ctx).Error(err, "creating virtual machine failed", "vmName", opts.VMName)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
@@ -631,7 +641,12 @@ func (p *DefaultProvider) beginLaunchInstance(
 		UseSIG:             options.FromContext(ctx).UseSIG,
 	})
 	if err != nil {
-		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+		if skuErr != nil {
+			log.FromContext(ctx).Error(err, "failed to get instance type", "instanceType", instanceType.Name)
+			return nil, err
+		}
+		azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 		return nil, azErr
 	}
 
@@ -654,7 +669,12 @@ func (p *DefaultProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+				if skuErr != nil {
+					log.FromContext(ctx).Error(err, "failed to get instance type", "instanceType", instanceType.Name)
+					return err
+				}
+				azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 				return azErr
 			}
 
@@ -677,10 +697,10 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}, nil
 }
 
-func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
+func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
 	for _, handler := range p.responseErrorHandlers {
 		if handler.matchError(responseError) {
-			return handler.handleResponseError(ctx, p, instanceType, zone, capacityType, responseError)
+			return handler.handleResponseError(ctx, p, sku, instanceType, zone, capacityType, responseError)
 		}
 	}
 	// responseError didn't match any of our handlers, so we log details about it and return it as is
@@ -740,7 +760,7 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	}
 	// InstanceType/VM SKU - just pick the first one for now. They are presorted by cheapest offering price (taking node requirements into account)
 	instanceType := instanceTypes[0]
-	log.FromContext(ctx).Info(fmt.Sprintf("Selected instance type %s", instanceType.Name))
+	log.FromContext(ctx).Info("selected instance type", "instance-type", instanceType.Name)
 	// Priority - Nodepool defaults to Regular, so pick Spot if it is explicitly included in requirements (and is offered in at least one zone)
 	priority := p.getPriorityForInstanceType(nodeClaim, instanceType)
 	// Zone - ideally random/spread from requested zones that support given Priority
@@ -755,10 +775,13 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	return nil, "", ""
 }
 
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) error {
+// mustDeleteNic parameter is used to determine whether NIC deletion failure is considered an error.
+// We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
+// NIC garbage collector is expected to handle such cases.
+func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string, mustDeleteNic bool) error {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
-		log.FromContext(ctx).Error(vmErr, fmt.Sprintf("virtualMachine.Delete for %s failed", resourceName))
+		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
 	}
 	// The order here is intentional, if the VM was created successfully, then we attempt to delete the vm, the
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
@@ -766,9 +789,14 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 
 	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
 	if nicErr != nil {
-		log.FromContext(ctx).Error(nicErr, fmt.Sprintf("networkinterface.Delete for %s failed", resourceName))
+		log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "nicName", resourceName)
 	}
-	return errors.Join(vmErr, nicErr)
+
+	if mustDeleteNic {
+		return errors.Join(vmErr, nicErr)
+	} else {
+		return vmErr
+	}
 }
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.

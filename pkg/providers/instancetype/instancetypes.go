@@ -19,7 +19,6 @@ package instancetype
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -33,6 +32,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -60,6 +60,9 @@ const (
 type Provider interface {
 	LivenessProbe(*http.Request) error
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+
+	// Return Azure Skewer Representation of the instance type
+	Get(context.Context, *v1beta1.AKSNodeClass, string) (*skewer.SKU, error)
 	//UpdateInstanceTypes(ctx context.Context) error
 	//UpdateInstanceTypeOfferings(ctx context.Context) error
 }
@@ -131,12 +134,12 @@ func (p *DefaultProvider) List(
 	for _, sku := range skus {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing VM size %s", *sku.Size))
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
 			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing SKU architecture %s", *sku.Size))
+			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
 			continue
 		}
 		instanceTypeZones := instanceTypeZones(sku, p.region)
@@ -161,6 +164,17 @@ func (p *DefaultProvider) List(
 
 func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
 	return p.pricingProvider.LivenessProbe(req)
+}
+
+func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, instanceType string) (*skewer.SKU, error) {
+	skus, err := p.getInstanceTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if sku, ok := skus[instanceType]; ok {
+		return sku, nil
+	}
+	return nil, fmt.Errorf("instance type %s not found", instanceType)
 }
 
 // instanceTypeZones generates the set of all supported zones for a given SKU
@@ -194,8 +208,8 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 	for zone := range zones {
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
-		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeOnDemand)
-		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeSpot)
+		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
+		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
@@ -269,11 +283,11 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Discovered %d SKUs", len(skus)))
+	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing VM size %s", *skus[i].Size))
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
 			continue
 		}
 		useSIG := options.FromContext(ctx).UseSIG
@@ -286,8 +300,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		// Only update instanceTypesSeqNun with the instance types have been changed
 		// This is to not create new keys with duplicate instance types option
 		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
-		log.FromContext(ctx).WithValues(
-			"count", len(instanceTypes)).V(1).Info("discovered instance types")
+		log.FromContext(ctx).V(1).Info("discovered instance types", "instanceTypeCount", len(instanceTypes))
 	}
 	p.instanceTypesCache.SetDefault(InstanceTypesCacheKey, instanceTypes)
 	return instanceTypes, nil
@@ -342,27 +355,33 @@ func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
 }
 
-// MaxEphemeralOSDiskSizeGB returns the maximum ephemeral OS disk size for a given SKU.
-// Ephemeral OS disk size is determined by the larger of the two values:
-// 1. MaxResourceVolumeMB (Temp Disk Space)
-// 2. MaxCachedDiskBytes (Cached Disk Space)
-// For Ephemeral disk creation, CRP will use the larger of the two values to ensure we have enough space for the ephemeral disk.
-// Note that generally only older SKUs use the Temp Disk space for ephemeral disks, and newer SKUs use the Cached Disk in most cases.
-// The ephemeral OS disk is created with the free space of the larger of the two values in that place.
-func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
+func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
 	if sku == nil {
-		return 0
+		return 0, nil
 	}
-	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
-	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
 
-	maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
-	maxDiskBytes := math.Max(float64(maxCachedDiskBytes), float64(maxResourceVolumeBytes))
-	if maxDiskBytes == 0 {
-		return 0
+	if !sku.IsEphemeralOSDiskSupported() {
+		return 0, nil // ephemeral OS disk is not supported by this SKU
 	}
-	// convert bytes to GB
-	return maxDiskBytes / float64(units.Gigabyte)
+
+	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
+
+	// Check NVMe disk first (highest priority)
+	if maxNVMeMiB > 0 && supportsNVMeEphemeralOSDisk(sku) {
+		return maxNVMeMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
+	}
+
+	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
+	if maxCacheDiskBytes > 0 {
+		return maxCacheDiskBytes / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
+	}
+
+	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
+	if maxResourceDiskMiB > 0 {
+		return maxResourceDiskMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
+	}
+
+	return 0, nil
 }
 
 var (
@@ -430,4 +449,20 @@ func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
 	}
 
 	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
+}
+
+func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
+	const ephemeralOSDiskPlacementCapability = "SupportedEphemeralOSDiskPlacements"
+	const nvme = "NvmeDisk"
+	return sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, nvme)
+}
+
+func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
+	return int64(*nodeClass.Spec.OSDiskSizeGB) <= sizeGB // use ephemeral disk if it is large enough
+}
+
+func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
+	const selector = "NvmeDiskSizeInMiB"
+	return s.GetCapabilityIntegerQuantity(selector)
 }

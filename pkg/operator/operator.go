@@ -134,8 +134,17 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
+	instanceTypeProvider := instancetype.NewDefaultProvider(
+		azConfig.Location,
+		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
+		azClient.SKUClient,
+		pricingProvider,
+		unavailableOfferingsCache,
+	)
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
+		imageProvider,
+		instanceTypeProvider,
 		azClient.NodeBootstrappingClient,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
@@ -152,13 +161,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
-	)
-	instanceTypeProvider := instancetype.NewDefaultProvider(
-		azConfig.Location,
-		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
-		azClient.SKUClient,
-		pricingProvider,
-		unavailableOfferingsCache,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
@@ -262,7 +264,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 		return fmt.Errorf("creating dynamic rest mapper, %w", err)
 	}
 
-	log.WithValues("timeout", timeout).Info("waiting for required CRDs to be available")
+	log.Info("waiting for required CRDs to be available", "timeout", timeout)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -270,12 +272,12 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 		err := wait.PollUntilContextCancel(ctx, 10*time.Second, true, func(ctx context.Context) (bool, error) {
 			if _, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
 				if meta.IsNoMatchError(err) {
-					log.V(1).WithValues("gvk", gvk).Info("waiting for CRD to be available")
+					log.V(1).Info("waiting for CRD to be available", "gvk", gvk)
 					return false, nil
 				}
 				return false, err
 			}
-			log.V(1).WithValues("gvk", gvk).Info("CRD is available")
+			log.V(1).Info("CRD is available", "gvk", gvk)
 			return true, nil
 		})
 		if err != nil {
