@@ -125,9 +125,7 @@ func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, 
 	// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
 	// - zonal restrictions are filtered out internally by sku.AvailabilityZones, and don't get offerings
 	skuNotAvailableTTL := SKUNotAvailableSpotTTL
-	err = fmt.Errorf("out of spot capacity for %s: %w", instanceType.Name, err)
 	if capacityType == karpv1.CapacityTypeOnDemand { // should not happen, defensive check
-		err = fmt.Errorf("unexpected SkuNotAvailable error for %s (on-demand): %w", instanceType.Name, err)
 		skuNotAvailableTTL = SKUNotAvailableOnDemandTTL // still mark all offerings as unavailable, but with a longer TTL
 	}
 	// mark the instance type as unavailable for all offerings/zones for the capacity type
@@ -142,8 +140,8 @@ func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, 
 
 // For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone
 func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
-	vCPU, err := sku.VCPU() // versionedSKUFamily e.g. "N4" for "NV8as_v4"
-	if err != nil {
+	vCPU, vCPUErr := sku.VCPU() // versionedSKUFamily e.g. "N4" for "NV8as_v4"
+	if vCPUErr != nil {
 		// default to 0 if we can't determine VCPU count, this shouldn't happen as long as data in skewer.SKU is correct
 		vCPU = 0
 	}
