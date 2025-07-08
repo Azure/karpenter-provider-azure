@@ -67,16 +67,45 @@ func getExpectedTestCIGImages(imageFamily string, version string, kubernetesVers
 	return nodeImages
 }
 
+// assuming FIPSMode == Disabled
+//
 //nolint:unparam // might always be using the same version in test, but could change in the future
 func getExpectedTestSIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
-	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
+	if imageFamily == v1beta1.UbuntuImageFamily {
+		images = imagefamily.Ubuntu2204{}.DefaultImages()
+	} else if imageFamily == v1beta1.Ubuntu2204ImageFamily {
 		images = imagefamily.Ubuntu2204{}.DefaultImages()
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
 		if imagefamily.UseAzureLinux3(kubernetesVersion) {
 			images = imagefamily.AzureLinux3{}.DefaultImages()
 		} else {
 			images = imagefamily.AzureLinux{}.DefaultImages()
+		}
+	}
+	nodeImages := []imagefamily.NodeImage{}
+	for _, image := range images {
+		nodeImages = append(nodeImages, imagefamily.NodeImage{
+			ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, version),
+			Requirements: image.Requirements,
+		})
+	}
+	return nodeImages
+}
+
+// assuming FIPSMode == FIPS
+func getExpectedTestFIPSImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
+	var images []imagefamilytypes.DefaultImageOutput
+	if imageFamily == v1beta1.UbuntuImageFamily {
+		images = imagefamily.Ubuntu2004{}.FIPSImages()
+	} else if imageFamily == v1beta1.Ubuntu2204ImageFamily {
+		// coming soon
+		images = imagefamily.Ubuntu2204{}.FIPSImages()
+	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
+		if imagefamily.UseAzureLinux3(kubernetesVersion) {
+			images = imagefamily.AzureLinux3{}.FIPSImages()
+		} else {
+			images = imagefamily.AzureLinux{}.FIPSImages()
 		}
 	}
 	nodeImages := []imagefamily.NodeImage{}
@@ -171,7 +200,48 @@ var _ = Describe("NodeImageProvider tests", func() {
 			ctx = options.ToContext(ctx, testOptions)
 		})
 
-		It("should match expected images for Ubuntu2204", func() {
+		It("should match expected images for default Ubuntu2204 when FIPSMode is explicitly set to Disabled", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			nodeClass.Spec.FIPSMode = lo.ToPtr("Disabled")
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
+		})
+
+		It("should match expected images for default Ubuntu2204 when FIPSMode is not explicitly set", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
+		})
+
+		//TODO: Modify when Ubuntu 22.04 with FIPS becomes available
+		It("should match expected images for FIPS Ubuntu2204 when FIPSMode is explicitly set to FIPS", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			nodeClass.Spec.FIPSMode = lo.ToPtr("FIPS")
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(BeEmpty())
+		})
+
+		It("should match expected images for FIPS Ubuntu2004 when FIPSMode is explicitly set to FIPS", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+			nodeClass.Spec.FIPSMode = lo.ToPtr("FIPS")
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(foundImages).To(ContainElements(getExpectedTestFIPSImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
+		})
+
+		// This test changes depending on the Kubernetes version, in effect making the following version-specific tests unnecessary.
+		// They are still kept for clarity and to ensure that the behavior is explicitly tested.
+		It("should match expected images for default AzureLinux, depending on the Kubernetes version, when FIPSMode is explicitly set to Disabled", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			nodeClass.Spec.FIPSMode = lo.ToPtr("Disabled")
+
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
@@ -179,7 +249,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 		// This test changes depending on the Kubernetes version, in effect making the following version-specific tests unnecessary.
 		// They are still kept for clarity and to ensure that the behavior is explicitly tested.
-		It("should match expected images for AzureLinux, depending on the Kubernetes version", func() {
+		It("should match expected images for default AzureLinux, depending on the Kubernetes version, when FIPSMode is not explicitly set", func() {
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
@@ -187,23 +257,44 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
 		})
 
-		It("should match expected images for AzureLinux with version < 1.32", func() {
+		// This test changes depending on the Kubernetes version, in effect making the following version-specific tests unnecessary.
+		// They are still kept for clarity and to ensure that the behavior is explicitly tested.
+		It("should match expected images for FIPS AzureLinux, depending on the Kubernetes version, when FIPSMode is explicitly set to FIPS", func() {
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-			nodeClass.Status.KubernetesVersion = "1.31.0"
+			nodeClass.Spec.FIPSMode = lo.ToPtr("FIPS")
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, "1.31.0")))
+			Expect(foundImages).To(ContainElements(getExpectedTestFIPSImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
 		})
 
-		It("should match expected images for AzureLinux with version >= 1.32", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
-			nodeClass.Status.KubernetesVersion = "1.32.0"
+		DescribeTable("should match expected images",
+			func(imageFamily *string, fipsMode *string, version string, kubernetesVersion string) {
+				nodeClass.Spec.ImageFamily = imageFamily
+				effectiveFipsMode := ""
+				// allows for leaving fipsMode unset, which currently effectively behaves like setting fipsMode to Disabled
+				if fipsMode != nil {
+					nodeClass.Spec.FIPSMode = fipsMode
+					effectiveFipsMode = *fipsMode
+				}
+				nodeClass.Status.KubernetesVersion = kubernetesVersion
 
-			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, "1.32.0")))
-		})
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				if effectiveFipsMode == "FIPS" {
+					Expect(foundImages).To(ContainElements(getExpectedTestFIPSImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
+				} else {
+					Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, kubernetesVersion)))
+				}
+			},
+			Entry("for default AzureLinux with version < 1.32 when FIPSMode is explicitly set to Disabled", lo.ToPtr(v1beta1.AzureLinuxImageFamily), lo.ToPtr("Disabled"), sigImageVersion, "1.31.0"),
+			Entry("for default AzureLinux with version < 1.32 when FIPSMode is not explicitly set", lo.ToPtr(v1beta1.AzureLinuxImageFamily), nil, sigImageVersion, "1.31.0"),
+			Entry("for FIPS AzureLinux with version < 1.32 when FIPSMode is explicitly set to FIPS", lo.ToPtr(v1beta1.AzureLinuxImageFamily), lo.ToPtr("FIPS"), sigImageVersion, "1.31.0"),
+			Entry("for default AzureLinux with version >= 1.32 when FIPSMode is explicitly set to Disabled", lo.ToPtr(v1beta1.AzureLinuxImageFamily), lo.ToPtr("Disabled"), sigImageVersion, "1.32.0"),
+			Entry("for default AzureLinux with version >= 1.32 when FIPSMode is not explicitly set", lo.ToPtr(v1beta1.AzureLinuxImageFamily), nil, sigImageVersion, "1.32.0"),
+			Entry("for FIPS AzureLinux with version >= 1.32 when FIPSMode is explicitly set to FIPS", lo.ToPtr(v1beta1.AzureLinuxImageFamily), lo.ToPtr("FIPS"), sigImageVersion, "1.32.0"),
+		)
 	})
 
 	Context("Caching tests", func() {
