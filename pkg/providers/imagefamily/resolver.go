@@ -84,6 +84,9 @@ type ImageFamily interface {
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
 	// Our Release pipeline ensures all images are released together within 24 hours of each other for community image gallery, so selecting based on image feature priorities, then by date, and not vice-versa is acceptable.
 	DefaultImages() []types.DefaultImageOutput
+	// FIPSImages returns a list of default FIPSImage definitions for this ImageFamily.
+	// Our Image Selection logic relies on the ordering of the images to be ordered from most preferred to least, then we will select the latest image version available for that FIPSImage definition
+	FIPSImages() []types.DefaultImageOutput
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
@@ -112,7 +115,7 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, kubernetesVersion, staticParameters)
+	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
 	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
@@ -221,14 +224,22 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string, kubernetesVersion string) []types.DefaultImageOutput {
+func getSupportedImages(familyName *string, fipsMode *string, kubernetesVersion string) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
-	imageFamily := getImageFamily(familyName, kubernetesVersion, nil)
+	imageFamily := getImageFamily(familyName, fipsMode, kubernetesVersion, nil)
+	if lo.FromPtr(fipsMode) == "FIPS" {
+		return imageFamily.FIPSImages()
+	}
 	return imageFamily.DefaultImages()
 }
 
-func getImageFamily(familyName *string, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+func getImageFamily(familyName *string, fipsMode *string, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
+	case v1beta1.UbuntuImageFamily:
+		if lo.FromPtr(fipsMode) == "FIPS" {
+			return &Ubuntu2004{Options: parameters}
+		}
+		return &Ubuntu2204{Options: parameters}
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.AzureLinuxImageFamily:

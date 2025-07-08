@@ -31,90 +31,53 @@ import (
 )
 
 const (
-	AzureLinuxGen2ImageDefinition      = "V2gen2"
-	AzureLinuxGen1ImageDefinition      = "V2"
-	AzureLinuxGen2ArmImageDefinition   = "V2gen2arm64"
-	AzureLinux2Gen2FIPSImageDefinition = "V2gen2fips"
-	AzureLinux2Gen1FIPSImageDefinition = "V2fips"
+	Ubuntu2004Gen2FIPSImageDefinition = "2004gen2fipscontainerd"
+	Ubuntu2004FIPSImageDefinition     = "2004fipscontainerd"
 )
 
-type AzureLinux struct {
+type Ubuntu2004 struct {
 	Options *parameters.StaticParameters
 }
 
-func (u AzureLinux) Name() string {
-	return v1beta1.AzureLinuxImageFamily
+func (u Ubuntu2004) Name() string {
+	return v1beta1.UbuntuImageFamily
 }
 
-func (u AzureLinux) DefaultImages() []types.DefaultImageOutput {
-	// image provider will select these images in order, first match wins. This is why we chose to put Gen2 first in the defaultImages, as we prefer gen2 over gen1
+func (u Ubuntu2004) DefaultImages() []types.DefaultImageOutput {
+	// Ubuntu2004 doesn't have default node images (only FIPS)
+	return []types.DefaultImageOutput{}
+}
+
+func (u Ubuntu2004) FIPSImages() []types.DefaultImageOutput {
+	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2004Gen2Fipscontainerd first in the FIPSImages
 	return []types.DefaultImageOutput{
 		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureLinuxGen2ImageDefinition,
+			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+			GalleryResourceGroup: AKSUbuntuResourceGroup,
+			GalleryName:          AKSUbuntuGalleryName,
+			ImageDefinition:      Ubuntu2004Gen2FIPSImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
-			Distro: "aks-azurelinux-v2-gen2",
+			Distro: "aks-ubuntu-fips-containerd-20.04-gen2",
 		},
 		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureLinuxGen1ImageDefinition,
+			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+			GalleryResourceGroup: AKSUbuntuResourceGroup,
+			GalleryName:          AKSUbuntuGalleryName,
+			ImageDefinition:      Ubuntu2004FIPSImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
 			),
-			Distro: "aks-azurelinux-v2",
-		},
-		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureLinuxGen2ArmImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-azurelinux-v2-arm64-gen2",
-		},
-	}
-}
-
-func (u AzureLinux) FIPSImages() []types.DefaultImageOutput {
-	// image provider will select these images in order, first match wins. This is why we chose to put Gen2 first in the defaultImages, as we prefer gen2 over gen1
-	return []types.DefaultImageOutput{
-		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureLinux2Gen2FIPSImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-azurelinux-v2-gen2-fips",
-		},
-		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureLinux2Gen1FIPSImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
-			),
-			Distro: "aks-azurelinux-v2-fips",
+			Distro: "aks-ubuntu-fips-containerd-20.04",
 		},
 	}
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u Ubuntu2004) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -145,7 +108,7 @@ func (u AzureLinux) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string, nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
+func (u Ubuntu2004) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string, nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,

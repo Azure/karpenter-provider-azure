@@ -31,9 +31,11 @@ import (
 )
 
 const (
-	AzureLinux3Gen2ImageDefinition    = "V3gen2"
-	AzureLinux3Gen1ImageDefinition    = "V3"
-	AzureLinux3Gen2ArmImageDefinition = "V3gen2arm64"
+	AzureLinux3Gen2ImageDefinition     = "V3gen2"
+	AzureLinux3Gen1ImageDefinition     = "V3"
+	AzureLinux3Gen2ArmImageDefinition  = "V3gen2arm64"
+	AzureLinux3Gen2FIPSImageDefinition = "V3gen2fips"
+	AzureLinux3Gen1FIPSImageDefinition = "V3fips"
 )
 
 type AzureLinux3 struct {
@@ -79,6 +81,34 @@ func (u AzureLinux3) DefaultImages() []types.DefaultImageOutput {
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
 			Distro: "aks-azurelinux-v3-arm64-gen2",
+		},
+	}
+}
+
+func (u AzureLinux3) FIPSImages() []types.DefaultImageOutput {
+	// image provider will select these images in order, first match wins
+	return []types.DefaultImageOutput{
+		{
+			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+			GalleryName:          AKSAzureLinuxGalleryName,
+			ImageDefinition:      AzureLinux3Gen2FIPSImageDefinition,
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+			),
+			Distro: "aks-azurelinux-v3-gen2-fips",
+		},
+		{
+			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+			GalleryName:          AKSAzureLinuxGalleryName,
+			ImageDefinition:      AzureLinux3Gen1FIPSImageDefinition,
+			Requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
+			),
+			Distro: "aks-azurelinux-v3-fips",
 		},
 	}
 }
