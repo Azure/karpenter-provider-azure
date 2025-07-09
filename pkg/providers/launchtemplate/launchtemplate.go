@@ -96,8 +96,13 @@ func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvi
 	}
 }
 
-func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim,
-	instanceType *cloudprovider.InstanceType, additionalLabels map[string]string) (*Template, error) {
+func (p *Provider) GetTemplate(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceType *cloudprovider.InstanceType,
+	additionalLabels map[string]string,
+) (*Template, error) {
 	staticParameters, err := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(nodeClaim.Labels, additionalLabels))
 	if err != nil {
 		return nil, err
@@ -121,7 +126,12 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	return launchTemplate, nil
 }
 
-func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass, labels map[string]string) (*parameters.StaticParameters, error) {
+func (p *Provider) getStaticParameters(
+	ctx context.Context,
+	instanceType *cloudprovider.InstanceType,
+	nodeClass *v1beta1.AKSNodeClass,
+	labels map[string]string,
+) (*parameters.StaticParameters, error) {
 	var arch string = karpv1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
 		arch = karpv1.ArchitectureArm64
@@ -149,10 +159,12 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 		labels[dataplaneLabel] = consts.NetworkDataplaneCilium
 	}
 
+	tags := lo.Assign(options.FromContext(ctx).AdditionalTags, nodeClass.Spec.Tags)
+
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
-		Tags:                           nodeClass.Spec.Tags,
+		Tags:                           tags,
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
