@@ -543,6 +543,37 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("additional-tags", func() {
+		It("should add additional tags to the node", func() {
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				AdditionalTags: map[string]string{
+					"karpenter.azure.com/test-tag": "test-value",
+				},
+			}))
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+			Expect(vm.Tags).To(Equal(map[string]*string{
+				"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
+				"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
+				"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
+			}))
+
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			Expect(nic.Interface.Tags).To(Equal(map[string]*string{
+				"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
+				"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
+				"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
+			}))
+		})
+	})
+
 	Context("Filtering in InstanceType Provider List", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
 		var err error
