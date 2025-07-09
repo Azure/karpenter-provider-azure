@@ -227,7 +227,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 func getSupportedImages(familyName *string, fipsMode *string, kubernetesVersion string) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
 	imageFamily := getImageFamily(familyName, fipsMode, kubernetesVersion, nil)
-	if lo.FromPtr(fipsMode) == "FIPS" {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSEnabled {
 		return imageFamily.FIPSImages()
 	}
 	return imageFamily.DefaultImages()
@@ -236,7 +236,7 @@ func getSupportedImages(familyName *string, fipsMode *string, kubernetesVersion 
 func getImageFamily(familyName *string, fipsMode *string, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.UbuntuImageFamily:
-		if lo.FromPtr(fipsMode) == "FIPS" {
+		if lo.FromPtr(fipsMode) == v1beta1.FIPSEnabled {
 			return &Ubuntu2004{Options: parameters}
 		}
 		return &Ubuntu2204{Options: parameters}
