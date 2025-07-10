@@ -11,7 +11,7 @@ Each NodePool must reference an AKSNodeClass using `spec.template.spec.nodeClass
 Multiple NodePools may point to the same AKSNodeClass.
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: default

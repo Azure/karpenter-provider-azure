@@ -235,7 +235,7 @@ You can use taints to dedicate nodes for specific uses. For example, if you want
 Example of using a taint on a NodePool:
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: gpu-nodepool
@@ -351,7 +351,7 @@ spec:
 If multiple NodePools are available for a pod, Karpenter will use the NodePool with the highest weight. If no weight is specified, the NodePool has a weight of 0.
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: preferred-nodepool

@@ -25,7 +25,7 @@ Here are things you should know about NodePools:
 For some example `NodePool` configurations, see the [examples in the Karpenter GitHub repository](https://github.com/Azure/karpenter-provider-azure/tree/main/examples/).
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: default
@@ -468,7 +468,7 @@ The NodePool spec includes a limits section (`spec.limits`), which constrains th
 Karpenter supports limits of any resource type reported by your cloudprovider. It limits instance types when scheduling to those that will not exceed the specified limits.  If a limit has been exceeded, nodes provisioning is prevented until some nodes have been terminated.
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: default
@@ -514,7 +514,7 @@ A NodePool can be set up to only provision nodes on particular processor types.
 The following example sets a taint that only allows pods with tolerations for Nvidia GPUs to be scheduled:
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: gpu
@@ -539,7 +539,7 @@ In order for a pod to run on a node defined in this NodePool, it must tolerate `
 Per the Cilium [docs](https://docs.cilium.io/en/stable/installation/taints/#taint-effects), it's recommended to place a taint of `node.cilium.io/agent-not-ready=true:NoExecute` on nodes to allow Cilium to configure networking prior to other pods starting.  This can be accomplished via the use of Karpenter `startupTaints`.  These taints are placed on the node, but pods aren't required to tolerate these taints to be considered for provisioning.
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: cilium-startup
