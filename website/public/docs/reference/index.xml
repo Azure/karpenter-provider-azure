@@ -1,0 +1,518 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Karpenter for Azure – Reference</title>
+    <link>//localhost:1313/docs/reference/</link>
+    <description>Recent content in Reference on Karpenter for Azure</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en</language>
+    
+	  <atom:link href="//localhost:1313/docs/reference/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+      
+        
+      
+    
+    
+    <item>
+      <title>Docs: Settings</title>
+      <link>//localhost:1313/docs/reference/settings/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>//localhost:1313/docs/reference/settings/</guid>
+      <description>
+        
+        
+        &lt;p&gt;Karpenter surfaces environment variables and CLI parameters to allow you to configure certain global settings on the controllers. These settings are described below.&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Environment Variable&lt;/th&gt;
+          &lt;th&gt;CLI Flag&lt;/th&gt;
+          &lt;th&gt;Description&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;AZURE_CLIENT_ID&lt;/td&gt;
+          &lt;td&gt;--azure-client-id&lt;/td&gt;
+          &lt;td&gt;Azure client ID for authentication. Used when authenticating with Azure APIs.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;AZURE_TENANT_ID&lt;/td&gt;
+          &lt;td&gt;--azure-tenant-id&lt;/td&gt;
+          &lt;td&gt;Azure tenant ID for authentication.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;AZURE_SUBSCRIPTION_ID&lt;/td&gt;
+          &lt;td&gt;--azure-subscription-id&lt;/td&gt;
+          &lt;td&gt;[REQUIRED] Azure subscription ID where resources will be created.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;AZURE_RESOURCE_GROUP&lt;/td&gt;
+          &lt;td&gt;--azure-resource-group&lt;/td&gt;
+          &lt;td&gt;[REQUIRED] Azure resource group name where the AKS cluster resides.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;AZURE_NODE_RESOURCE_GROUP&lt;/td&gt;
+          &lt;td&gt;--azure-node-resource-group&lt;/td&gt;
+          &lt;td&gt;Azure node resource group name where VMs will be created. If not specified, defaults to the MC_ resource group created by AKS.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;AZURE_LOCATION&lt;/td&gt;
+          &lt;td&gt;--azure-location&lt;/td&gt;
+          &lt;td&gt;[REQUIRED] Azure region/location where resources will be created.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;AZURE_VNET_SUBNET_ID&lt;/td&gt;
+          &lt;td&gt;--azure-vnet-subnet-id&lt;/td&gt;
+          &lt;td&gt;[REQUIRED] Azure VNet subnet ID for node network interfaces.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;BATCH_IDLE_DURATION&lt;/td&gt;
+          &lt;td&gt;--batch-idle-duration&lt;/td&gt;
+          &lt;td&gt;The maximum amount of time with no new pending pods that if exceeded ends the current batching window. If pods arrive faster than this time, the batching window will be extended up to the maxDuration. If they arrive slower, the pods will be batched separately. (default = 1s)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;BATCH_MAX_DURATION&lt;/td&gt;
+          &lt;td&gt;--batch-max-duration&lt;/td&gt;
+          &lt;td&gt;The maximum length of a batch window. The longer this is, the more pods we can consider for provisioning at one time which usually results in fewer but larger nodes. (default = 10s)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;CLUSTER_CA_BUNDLE&lt;/td&gt;
+          &lt;td&gt;--cluster-ca-bundle&lt;/td&gt;
+          &lt;td&gt;Cluster CA bundle for nodes to use for TLS connections with the API server. If not set, this is taken from the controller&amp;rsquo;s TLS configuration.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;CLUSTER_ENDPOINT&lt;/td&gt;
+          &lt;td&gt;--cluster-endpoint&lt;/td&gt;
+          &lt;td&gt;The external kubernetes cluster endpoint for new nodes to connect with. If not specified, will discover the cluster endpoint using Azure APIs.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;CLUSTER_NAME&lt;/td&gt;
+          &lt;td&gt;--cluster-name&lt;/td&gt;
+          &lt;td&gt;[REQUIRED] The kubernetes cluster name for resource discovery.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;DISABLE_WEBHOOK&lt;/td&gt;
+          &lt;td&gt;--disable-webhook&lt;/td&gt;
+          &lt;td&gt;Disable the admission and validation webhooks&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;ENABLE_PROFILING&lt;/td&gt;
+          &lt;td&gt;--enable-profiling&lt;/td&gt;
+          &lt;td&gt;Enable the profiling on the metric endpoint&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;FEATURE_GATES&lt;/td&gt;
+          &lt;td&gt;--feature-gates&lt;/td&gt;
+          &lt;td&gt;Optional features can be enabled / disabled using feature gates. Current options are: Drift,SpotToSpotConsolidation (default = Drift=true,SpotToSpotConsolidation=false)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;HEALTH_PROBE_PORT&lt;/td&gt;
+          &lt;td&gt;--health-probe-port&lt;/td&gt;
+          &lt;td&gt;The port the health probe endpoint binds to for reporting controller health (default = 8081)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;INTERRUPTION_QUEUE&lt;/td&gt;
+          &lt;td&gt;--interruption-queue&lt;/td&gt;
+          &lt;td&gt;Azure Service Bus queue name for spot interruption notifications. Interruption handling is disabled if not specified.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;KARPENTER_SERVICE&lt;/td&gt;
+          &lt;td&gt;--karpenter-service&lt;/td&gt;
+          &lt;td&gt;The Karpenter Service name for the dynamic webhook certificate&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;KUBE_CLIENT_BURST&lt;/td&gt;
+          &lt;td&gt;--kube-client-burst&lt;/td&gt;
+          &lt;td&gt;The maximum allowed burst of queries to the kube-apiserver (default = 300)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;KUBE_CLIENT_QPS&lt;/td&gt;
+          &lt;td&gt;--kube-client-qps&lt;/td&gt;
+          &lt;td&gt;The smoothed rate of qps to kube-apiserver (default = 200)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;LEADER_ELECT&lt;/td&gt;
+          &lt;td&gt;--leader-elect&lt;/td&gt;
+          &lt;td&gt;Start leader election client and gain leadership before executing the main loop. Enable this when running replicated components for high availability.&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;LOG_LEVEL&lt;/td&gt;
+          &lt;td&gt;--log-level&lt;/td&gt;
+          &lt;td&gt;Log verbosity level. Can be one of &amp;lsquo;debug&amp;rsquo;, &amp;lsquo;info&amp;rsquo;, or &amp;rsquo;error&amp;rsquo; (default = info)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;MEMORY_LIMIT&lt;/td&gt;
+          &lt;td&gt;--memory-limit&lt;/td&gt;
+          &lt;td&gt;Memory limit on the container running the controller. The GC soft memory limit is set to 90% of this value. (default = -1)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;METRICS_PORT&lt;/td&gt;
+          &lt;td&gt;--metrics-port&lt;/td&gt;
+          &lt;td&gt;The port the metric endpoint binds to for operating metrics about the controller itself (default = 8000)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;VM_MEMORY_OVERHEAD_PERCENT&lt;/td&gt;
+          &lt;td&gt;--vm-memory-overhead-percent&lt;/td&gt;
+          &lt;td&gt;The VM memory overhead as a percent that will be subtracted from the total memory for all instance types. (default = 0.075)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;WEBHOOK_METRICS_PORT&lt;/td&gt;
+          &lt;td&gt;--webhook-metrics-port&lt;/td&gt;
+          &lt;td&gt;The port the webhook metric endpoing binds to for operating metrics about the webhook (default = 8001)&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;WEBHOOK_PORT&lt;/td&gt;
+          &lt;td&gt;--webhook-port&lt;/td&gt;
+          &lt;td&gt;The port the webhook endpoint binds to for validation and mutation of resources (default = 8443)&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3 id=&#34;feature-gates&#34;&gt;Feature Gates&lt;/h3&gt;
+&lt;p&gt;Karpenter uses &lt;a href=&#34;https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features&#34;&gt;feature gates&lt;/a&gt; You can enable the feature gates through the &lt;code&gt;--feature-gates&lt;/code&gt; CLI environment variable or the &lt;code&gt;FEATURE_GATES&lt;/code&gt; environment variable in the Karpenter deployment. For example, you can configure drift, spotToSpotConsolidation by setting the CLI argument: &lt;code&gt;--feature-gates Drift=true,SpotToSpotConsolidation=true&lt;/code&gt;.&lt;/p&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;Feature&lt;/th&gt;
+          &lt;th&gt;Default&lt;/th&gt;
+          &lt;th&gt;Stage&lt;/th&gt;
+          &lt;th&gt;Since&lt;/th&gt;
+          &lt;th&gt;Until&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Drift&lt;/td&gt;
+          &lt;td&gt;false&lt;/td&gt;
+          &lt;td&gt;Alpha&lt;/td&gt;
+          &lt;td&gt;v0.21.x&lt;/td&gt;
+          &lt;td&gt;v0.32.x&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;Drift&lt;/td&gt;
+          &lt;td&gt;true&lt;/td&gt;
+          &lt;td&gt;Beta&lt;/td&gt;
+          &lt;td&gt;v0.33.x&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;SpotToSpotConsolidation&lt;/td&gt;
+          &lt;td&gt;false&lt;/td&gt;
+          &lt;td&gt;Beta&lt;/td&gt;
+          &lt;td&gt;v0.34.x&lt;/td&gt;
+          &lt;td&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3 id=&#34;batching-parameters&#34;&gt;Batching Parameters&lt;/h3&gt;
+&lt;p&gt;The batching parameters control how Karpenter batches an incoming stream of pending pods.  Reducing these values may trade off a slightly faster time from pending pod to node launch, in exchange for launching smaller nodes.  Increasing the values can do the inverse.  Karpenter provides reasonable defaults for these values, but if you have specific knowledge about your workloads you can tweak these parameters to match the expected rate of incoming pods.&lt;/p&gt;
+&lt;p&gt;For a standard deployment scale-up, the pods arrive at the QPS setting of the &lt;code&gt;kube-controller-manager&lt;/code&gt;, and the default values are typically fine.  These settings are intended for use cases where other systems may create large numbers of pods over a period of many seconds or minutes and there is a desire to batch them together.&lt;/p&gt;
+&lt;h4 id=&#34;batch-idle-duration&#34;&gt;Batch Idle Duration&lt;/h4&gt;
+&lt;p&gt;The batch idle duration duration is the period of time that a new pending pod extends the current batching window. This can be increased to handle scenarios where pods arrive slower than one second part, but it would be preferable if they were batched together onto a single larger node.&lt;/p&gt;
+&lt;p&gt;This value is expressed as a string value like &lt;code&gt;10s&lt;/code&gt;, &lt;code&gt;1m&lt;/code&gt; or &lt;code&gt;2h45m&lt;/code&gt;. The valid time units are &lt;code&gt;ns&lt;/code&gt;, &lt;code&gt;us&lt;/code&gt; (or &lt;code&gt;µs&lt;/code&gt;), &lt;code&gt;ms&lt;/code&gt;, &lt;code&gt;s&lt;/code&gt;, &lt;code&gt;m&lt;/code&gt;, &lt;code&gt;h&lt;/code&gt;.&lt;/p&gt;
+&lt;h4 id=&#34;batch-max-duration&#34;&gt;Batch Max Duration&lt;/h4&gt;
+&lt;p&gt;The batch max duration is the maximum period of time a batching window can be extended to. Increasing this value will allow the maximum batch window size to increase to collect more pending pods into a single batch at the expense of a longer delay from when the first pending pod was created.&lt;/p&gt;
+&lt;p&gt;This value is expressed as a string value like &lt;code&gt;10s&lt;/code&gt;, &lt;code&gt;1m&lt;/code&gt; or &lt;code&gt;2h45m&lt;/code&gt;. The valid time units are &lt;code&gt;ns&lt;/code&gt;, &lt;code&gt;us&lt;/code&gt; (or &lt;code&gt;µs&lt;/code&gt;), &lt;code&gt;ms&lt;/code&gt;, &lt;code&gt;s&lt;/code&gt;, &lt;code&gt;m&lt;/code&gt;, &lt;code&gt;h&lt;/code&gt;.&lt;/p&gt;
+&lt;h3 id=&#34;azure-specific-configuration&#34;&gt;Azure-Specific Configuration&lt;/h3&gt;
+&lt;h4 id=&#34;authentication&#34;&gt;Authentication&lt;/h4&gt;
+&lt;p&gt;Karpenter for Azure supports multiple authentication methods:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Managed Identity&lt;/strong&gt; (Recommended): Use Azure Managed Identity assigned to the AKS cluster&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Service Principal&lt;/strong&gt;: Use Azure Service Principal with client ID and secret&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Azure CLI&lt;/strong&gt;: Use Azure CLI authentication (for development only)&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h4 id=&#34;resource-groups&#34;&gt;Resource Groups&lt;/h4&gt;
+&lt;p&gt;Azure organizes resources into resource groups. Karpenter needs to know:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Cluster Resource Group&lt;/strong&gt;: Where the AKS cluster control plane resources are located&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Node Resource Group&lt;/strong&gt;: Where the VM instances will be created (usually the MC_ resource group)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;networking&#34;&gt;Networking&lt;/h4&gt;
+&lt;p&gt;Karpenter requires network configuration:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;VNet Subnet ID&lt;/strong&gt;: The subnet where node NICs will be created&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Network Security Groups&lt;/strong&gt;: Applied automatically based on AKS cluster configuration&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id=&#34;interruption-handling&#34;&gt;Interruption Handling&lt;/h4&gt;
+&lt;p&gt;For Azure Spot VM interruption handling, configure:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Azure Service Bus&lt;/strong&gt;: Queue for receiving spot interruption notifications&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Event Grid&lt;/strong&gt;: Subscription to forward Azure platform events to Service Bus&lt;/li&gt;
+&lt;/ul&gt;
+
+      </description>
+    </item>
+    
+    <item>
+      <title>Docs: Instance Types</title>
+      <link>//localhost:1313/docs/reference/instance-types/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>//localhost:1313/docs/reference/instance-types/</guid>
+      <description>
+        
+        
+        &lt;p&gt;Karpenter provisions instances from Azure&amp;rsquo;s VM sizes. Karpenter supports all VM sizes except those with fewer than 2 vCPUs, specialized VM sizes that don&amp;rsquo;t support standard Azure managed disks, or VM sizes that are not available in AKS.&lt;/p&gt;
+&lt;h2 id=&#34;viewing-available-instance-types&#34;&gt;Viewing Available Instance Types&lt;/h2&gt;
+&lt;p&gt;You can view instance types available for your cluster by running:&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;kubectl get aksnodeclass default -o &lt;span style=&#34;color:#000&#34;&gt;jsonpath&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#39;{.status.instances[*]}&amp;#39;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;The complete list of instance types is discoverable programmatically. Karpenter surfaces this information through the &lt;code&gt;AKSNodeClass&lt;/code&gt; status for instances supported in your region and zones.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;kubectl describe aksnodeclass default
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;vm-size-families&#34;&gt;VM Size Families&lt;/h2&gt;
+&lt;p&gt;Azure organizes VM sizes into families based on their intended use case:&lt;/p&gt;
+&lt;h3 id=&#34;general-purpose&#34;&gt;General Purpose&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;D-series&lt;/strong&gt;: Balanced CPU-to-memory ratio. Good for testing, development, small databases, and low traffic web servers.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;E-series&lt;/strong&gt;: Optimized for in-memory applications. High memory-to-CPU ratio.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;B-series&lt;/strong&gt;: Burstable performance. Cost-effective for workloads that don&amp;rsquo;t need full CPU performance continuously.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;compute-optimized&#34;&gt;Compute Optimized&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;F-series&lt;/strong&gt;: High CPU-to-memory ratio. Good for compute-intensive applications.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;memory-optimized&#34;&gt;Memory Optimized&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;M-series&lt;/strong&gt;: Highest memory-to-CPU ratios. Ideal for large databases and in-memory analytics.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;storage-optimized&#34;&gt;Storage Optimized&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;L-series&lt;/strong&gt;: High disk throughput and IO. Good for big data, NoSQL databases.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;gpu-accelerated&#34;&gt;GPU Accelerated&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;N-series&lt;/strong&gt;: GPU-enabled VMs for AI, machine learning, and high-performance computing.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;instance-type-selection&#34;&gt;Instance Type Selection&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter-labels&#34;&gt;Karpenter Labels&lt;/h3&gt;
+&lt;p&gt;When Karpenter provisions instances, it attaches several Azure-specific labels:&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-yaml&#34; data-lang=&#34;yaml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# VM SKU information&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-name&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;Standard_D4s_v3&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-family&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;D&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-version&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;3&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Hardware specifications&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-cpu&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;4&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-memory&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;16384&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Capabilities&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-networking-accelerated&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;true&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-storage-premium-capable&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;true&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# GPU information (if applicable)&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-gpu-name&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;V100&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-gpu-manufacturer&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;nvidia&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;karpenter.azure.com/sku-gpu-count&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;1&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;scheduling-constraints&#34;&gt;Scheduling Constraints&lt;/h3&gt;
+&lt;p&gt;You can use these labels in your NodePool requirements to target specific instance types:&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-yaml&#34; data-lang=&#34;yaml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;apiVersion&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;karpenter.sh/v1beta1&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;kind&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;NodePool&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;metadata&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;name&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;compute-optimized&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;spec&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;    &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;spec&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;      &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;requirements&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;        &lt;/span&gt;- &lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;key&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;karpenter.azure.com/sku-family&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;operator&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;In&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;values&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;F&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;]&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;        &lt;/span&gt;- &lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;key&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;karpenter.azure.com/sku-cpu&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;operator&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;Gt&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;values&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;8&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;]&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;common-vm-sizes&#34;&gt;Common VM Sizes&lt;/h2&gt;
+&lt;h3 id=&#34;small-workloads&#34;&gt;Small Workloads&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Standard_B2s&lt;/strong&gt;: 2 vCPUs, 4 GB RAM - Burstable, cost-effective&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Standard_D2s_v3&lt;/strong&gt;: 2 vCPUs, 8 GB RAM - General purpose&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;medium-workloads&#34;&gt;Medium Workloads&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Standard_D4s_v3&lt;/strong&gt;: 4 vCPUs, 16 GB RAM - General purpose&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Standard_E4s_v3&lt;/strong&gt;: 4 vCPUs, 32 GB RAM - Memory optimized&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;large-workloads&#34;&gt;Large Workloads&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Standard_D8s_v3&lt;/strong&gt;: 8 vCPUs, 32 GB RAM - General purpose&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Standard_E8s_v3&lt;/strong&gt;: 8 vCPUs, 64 GB RAM - Memory optimized&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Standard_F8s_v2&lt;/strong&gt;: 8 vCPUs, 16 GB RAM - Compute optimized&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;gpu-workloads&#34;&gt;GPU Workloads&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Standard_NC6s_v3&lt;/strong&gt;: 6 vCPUs, 112 GB RAM, 1x V100 GPU&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Standard_NC12s_v3&lt;/strong&gt;: 12 vCPUs, 224 GB RAM, 2x V100 GPU&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Standard_ND40rs_v2&lt;/strong&gt;: 40 vCPUs, 672 GB RAM, 8x V100 GPU&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;regional-availability&#34;&gt;Regional Availability&lt;/h2&gt;
+&lt;p&gt;VM size availability varies by Azure region. Not all VM sizes are available in all regions. Karpenter automatically discovers which VM sizes are available in your cluster&amp;rsquo;s region and zones.&lt;/p&gt;
+&lt;p&gt;You can check VM size availability in a region using Azure CLI:&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;az vm list-sizes --location eastus --output table
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;pricing-considerations&#34;&gt;Pricing Considerations&lt;/h2&gt;
+&lt;p&gt;Azure VM pricing varies by:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;VM size&lt;/strong&gt;: Larger VMs generally cost more&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Region&lt;/strong&gt;: Some regions have different pricing&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Pricing model&lt;/strong&gt;: On-demand vs. Spot VMs&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Disk type&lt;/strong&gt;: Premium SSD costs more than Standard HDD&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Karpenter automatically considers pricing when making provisioning decisions and will choose the most cost-effective VM size that meets your requirements.&lt;/p&gt;
+&lt;h2 id=&#34;best-practices&#34;&gt;Best Practices&lt;/h2&gt;
+&lt;h3 id=&#34;nodepool-configuration&#34;&gt;NodePool Configuration&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Use a variety of instance types to increase availability&lt;/li&gt;
+&lt;li&gt;Don&amp;rsquo;t over-constrain requirements unless necessary&lt;/li&gt;
+&lt;li&gt;Consider using Spot VMs for fault-tolerant workloads&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;cost-optimization&#34;&gt;Cost Optimization&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Use burstable B-series for variable workloads&lt;/li&gt;
+&lt;li&gt;Consider Spot VMs for batch processing&lt;/li&gt;
+&lt;li&gt;Right-size your instances based on actual usage&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;performance&#34;&gt;Performance&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Use premium storage capable VMs for I/O intensive workloads&lt;/li&gt;
+&lt;li&gt;Enable accelerated networking for network-intensive applications&lt;/li&gt;
+&lt;li&gt;Choose appropriate CPU-to-memory ratios for your workload type&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id=&#34;spot-vms&#34;&gt;Spot VMs&lt;/h2&gt;
+&lt;p&gt;Azure Spot VMs offer significant cost savings (up to 90% off) in exchange for potential interruption when Azure needs the capacity back.&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-yaml&#34; data-lang=&#34;yaml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;apiVersion&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;karpenter.sh/v1beta1&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;kind&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;NodePool&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;metadata&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;name&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;spot-nodepool&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;spec&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;template&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;    &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;spec&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;      &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;requirements&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;        &lt;/span&gt;- &lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;key&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;karpenter.sh/capacity-type&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;operator&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;In&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;values&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;spot&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;]&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;spot-vm-considerations&#34;&gt;Spot VM Considerations&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Interruption notice&lt;/strong&gt;: 30 seconds advance warning&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;No SLA&lt;/strong&gt;: No availability guarantee&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Best effort&lt;/strong&gt;: Allocation depends on available capacity&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Pricing&lt;/strong&gt;: Variable based on demand&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Use Spot VMs for:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Batch processing jobs&lt;/li&gt;
+&lt;li&gt;Development/testing environments&lt;/li&gt;
+&lt;li&gt;Fault-tolerant applications&lt;/li&gt;
+&lt;li&gt;Workloads with flexible timing&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Avoid Spot VMs for:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Production databases&lt;/li&gt;
+&lt;li&gt;Real-time applications&lt;/li&gt;
+&lt;li&gt;Stateful workloads without backup strategies&lt;/li&gt;
+&lt;li&gt;Critical system components&lt;/li&gt;
+&lt;/ul&gt;
+
+      </description>
+    </item>
+    
+    <item>
+      <title>Docs: Metrics</title>
+      <link>//localhost:1313/docs/reference/metrics/</link>
+      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
+      
+      <guid>//localhost:1313/docs/reference/metrics/</guid>
+      <description>
+        
+        
+        &lt;p&gt;Karpenter makes several metrics available in Prometheus format to allow monitoring cluster provisioning status. These metrics are available by default at &lt;code&gt;karpenter.karpenter.svc.cluster.local:8000/metrics&lt;/code&gt; configurable via the &lt;code&gt;METRICS_PORT&lt;/code&gt; environment variable documented &lt;a href=&#34;../settings&#34;&gt;here&lt;/a&gt;&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_build_info&#34;&gt;&lt;code&gt;karpenter_build_info&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;A metric with a constant &amp;lsquo;1&amp;rsquo; value labeled by version from which karpenter was built.&lt;/p&gt;
+&lt;h2 id=&#34;nodepool-metrics&#34;&gt;Nodepool Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_nodepool_usage&#34;&gt;&lt;code&gt;karpenter_nodepool_usage&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;The nodepool usage is the amount of resources that have been provisioned by a particular nodepool. Labeled by nodepool name and resource type.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodepool_limit&#34;&gt;&lt;code&gt;karpenter_nodepool_limit&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;The nodepool limits are the limits specified on the nodepool that restrict the quantity of resources provisioned. Labeled by nodepool name and resource type.&lt;/p&gt;
+&lt;h2 id=&#34;nodes-metrics&#34;&gt;Nodes Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_nodes_total_pod_requests&#34;&gt;&lt;code&gt;karpenter_nodes_total_pod_requests&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Node total pod requests are the resources requested by non-DaemonSet pods bound to nodes.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_total_pod_limits&#34;&gt;&lt;code&gt;karpenter_nodes_total_pod_limits&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Node total pod limits are the resources specified by non-DaemonSet pod limits.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_total_daemon_requests&#34;&gt;&lt;code&gt;karpenter_nodes_total_daemon_requests&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Node total daemon requests are the resource requested by DaemonSet pods bound to nodes.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_total_daemon_limits&#34;&gt;&lt;code&gt;karpenter_nodes_total_daemon_limits&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Node total daemon limits are the resources specified by DaemonSet pod limits.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_termination_time_seconds&#34;&gt;&lt;code&gt;karpenter_nodes_termination_time_seconds&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;The time taken between a node&amp;rsquo;s deletion request and the removal of its finalizer&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_terminated&#34;&gt;&lt;code&gt;karpenter_nodes_terminated&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodes terminated in total by Karpenter. Labeled by owning nodepool.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_system_overhead&#34;&gt;&lt;code&gt;karpenter_nodes_system_overhead&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Node system daemon overhead are the resources reserved for system overhead, the difference between the node&amp;rsquo;s capacity and allocatable values are reported by the status.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_leases_deleted&#34;&gt;&lt;code&gt;karpenter_nodes_leases_deleted&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of deleted leaked leases.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_eviction_queue_depth&#34;&gt;&lt;code&gt;karpenter_nodes_eviction_queue_depth&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;The number of pods currently waiting for a successful eviction in the eviction queue.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_created&#34;&gt;&lt;code&gt;karpenter_nodes_created&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodes created in total by Karpenter. Labeled by owning nodepool.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodes_allocatable&#34;&gt;&lt;code&gt;karpenter_nodes_allocatable&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Node allocatable are the resources allocatable by nodes.&lt;/p&gt;
+&lt;h2 id=&#34;pods-metrics&#34;&gt;Pods Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_pods_state&#34;&gt;&lt;code&gt;karpenter_pods_state&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Pod state is the current state of pods. This metric can be used several ways as it is labeled by the pod name, namespace, owner, node, nodepool name, zone, architecture, capacity type, instance type and pod phase.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_pods_startup_time_seconds&#34;&gt;&lt;code&gt;karpenter_pods_startup_time_seconds&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;The time from pod creation until the pod is running.&lt;/p&gt;
+&lt;h2 id=&#34;provisioner-metrics&#34;&gt;Provisioner Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_provisioner_scheduling_simulation_duration_seconds&#34;&gt;&lt;code&gt;karpenter_provisioner_scheduling_simulation_duration_seconds&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Duration of scheduling simulations used for deprovisioning and provisioning in seconds.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_provisioner_scheduling_queue_depth&#34;&gt;&lt;code&gt;karpenter_provisioner_scheduling_queue_depth&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;The number of pods currently waiting to be scheduled.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_provisioner_scheduling_duration_seconds&#34;&gt;&lt;code&gt;karpenter_provisioner_scheduling_duration_seconds&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Duration of scheduling process in seconds.&lt;/p&gt;
+&lt;h2 id=&#34;nodeclaims-metrics&#34;&gt;Nodeclaims Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_nodeclaims_terminated&#34;&gt;&lt;code&gt;karpenter_nodeclaims_terminated&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodeclaims terminated in total by Karpenter. Labeled by reason the nodeclaim was terminated and the owning nodepool.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodeclaims_registered&#34;&gt;&lt;code&gt;karpenter_nodeclaims_registered&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodeclaims registered in total by Karpenter. Labeled by the owning nodepool.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodeclaims_launched&#34;&gt;&lt;code&gt;karpenter_nodeclaims_launched&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodeclaims launched in total by Karpenter. Labeled by the owning nodepool.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodeclaims_initialized&#34;&gt;&lt;code&gt;karpenter_nodeclaims_initialized&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodeclaims initialized in total by Karpenter. Labeled by the owning nodepool.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodeclaims_drifted&#34;&gt;&lt;code&gt;karpenter_nodeclaims_drifted&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodeclaims drifted reasons in total by Karpenter. Labeled by drift type of the nodeclaim and the owning nodepool.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodeclaims_disrupted&#34;&gt;&lt;code&gt;karpenter_nodeclaims_disrupted&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodeclaims disrupted in total by Karpenter. Labeled by disruption type of the nodeclaim and the owning nodepool.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_nodeclaims_created&#34;&gt;&lt;code&gt;karpenter_nodeclaims_created&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of nodeclaims created in total by Karpenter. Labeled by reason the nodeclaim was created and the owning nodepool.&lt;/p&gt;
+&lt;h2 id=&#34;interruption-metrics&#34;&gt;Interruption Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_interruption_received_messages_total&#34;&gt;&lt;code&gt;karpenter_interruption_received_messages_total&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of interruption messages received from Azure Service Bus. Labeled by message type.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_interruption_actions_performed_total&#34;&gt;&lt;code&gt;karpenter_interruption_actions_performed_total&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of interruption actions performed. Labeled by action type (taint, cordon, drain).&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_interruption_message_latency_time_seconds&#34;&gt;&lt;code&gt;karpenter_interruption_message_latency_time_seconds&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Length of time between message generation and message receipt from the Azure Service Bus queue.&lt;/p&gt;
+&lt;h2 id=&#34;consistency-metrics&#34;&gt;Consistency Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_consistency_errors&#34;&gt;&lt;code&gt;karpenter_consistency_errors&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of consistency errors encountered by Karpenter. Labeled by error type.&lt;/p&gt;
+&lt;h2 id=&#34;allocation-metrics&#34;&gt;Allocation Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_allocation_controller_batch_duration_seconds&#34;&gt;&lt;code&gt;karpenter_allocation_controller_batch_duration_seconds&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Duration of batches for the allocation controller in seconds.&lt;/p&gt;
+&lt;h2 id=&#34;azure-metrics&#34;&gt;Azure Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_azure_api_duration_seconds&#34;&gt;&lt;code&gt;karpenter_azure_api_duration_seconds&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Duration of Azure API calls. Labeled by the Azure service API and HTTP method.&lt;/p&gt;
+&lt;h2 id=&#34;cloudprovider-metrics&#34;&gt;Cloudprovider Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_cloudprovider_duration_seconds&#34;&gt;&lt;code&gt;karpenter_cloudprovider_duration_seconds&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Duration of cloud provider method calls. Labeled by the method name and provider.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_cloudprovider_errors_total&#34;&gt;&lt;code&gt;karpenter_cloudprovider_errors_total&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Total number of errors returned from CloudProvider calls. Labeled by the method name and provider.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_cloudprovider_instances_terminated_total&#34;&gt;&lt;code&gt;karpenter_cloudprovider_instances_terminated_total&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of instances terminated by the cloud provider. Labeled by reason.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_cloudprovider_instances_created_total&#34;&gt;&lt;code&gt;karpenter_cloudprovider_instances_created_total&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Number of instances created by the cloud provider.&lt;/p&gt;
+&lt;h2 id=&#34;cluster-state-metrics&#34;&gt;Cluster State Metrics&lt;/h2&gt;
+&lt;h3 id=&#34;karpenter_cluster_state_node_count&#34;&gt;&lt;code&gt;karpenter_cluster_state_node_count&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Current count of nodes in cluster state synced with the controller.&lt;/p&gt;
+&lt;h3 id=&#34;karpenter_cluster_state_synced&#34;&gt;&lt;code&gt;karpenter_cluster_state_synced&lt;/code&gt;&lt;/h3&gt;
+&lt;p&gt;Returns 1 if cluster state is synced and 0 otherwise.&lt;/p&gt;
+
+      </description>
+    </item>
+    
+  </channel>
+</rss>

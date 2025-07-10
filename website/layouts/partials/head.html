@@ -1,0 +1,15 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+{{ hugo.Generator }}
+{{ range .AlternativeOutputFormats -}}
+<link rel="{{ .Rel }}" type="{{ .MediaType.Type }}" href="{{ .Permalink | safeURL }}">
+{{ end -}}
+{{ $scr := .Scratch }}
+{{ if .IsHome }}{{ $scr.Set "title" .Site.Title }}{{ else }}{{ $scr.Set "title" (printf "%s | %s" .Title .Site.Title) }}{{ end }}
+{{ $title := $scr.Get "title" }}
+<title>{{ $title }}</title>
+{{ with .Params.description }}<meta name="description" content="{{ . }}">{{ end }}
+{{ if .IsHome }}{{ with .Site.Params.description }}<meta name="description" content="{{ . }}">{{ end }}{{ end }}
+{{ template "_internal/opengraph.html" . }}
+{{ template "_internal/twitter_cards.html" . }}
+{{ partial "head-css.html" . }}

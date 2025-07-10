@@ -1,0 +1,676 @@
+<!doctype html>
+<html itemscope itemtype="http://schema.org/WebPage" lang="en" class="no-js">
+  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="generator" content="Hugo 0.145.0">
+
+
+
+<title>Disruption | Karpenter for Azure</title>
+<meta name="description" content="Understand different ways Karpenter disrupts nodes
+">
+
+<meta property="og:url" content="//localhost:1313/docs/concepts/disruption/">
+  <meta property="og:site_name" content="Karpenter for Azure">
+  <meta property="og:title" content="Disruption">
+  <meta property="og:description" content="Understand different ways Karpenter disrupts nodes">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+    <meta property="og:image" content="//localhost:1313/banner.png">
+
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="//localhost:1313/banner.png">
+  <meta name="twitter:title" content="Disruption">
+  <meta name="twitter:description" content="Understand different ways Karpenter disrupts nodes">
+
+
+
+
+
+
+<link href="/scss/main.css" rel="stylesheet">
+
+
+  </head>
+  <body class="td-page">
+    <header>
+      <nav class="js-navbar-scroll navbar navbar-expand navbar-dark flex-column flex-md-row td-navbar">
+  <a class="navbar-brand" href="/"><span class="navbar-brand__logo navbar-logo"><svg viewBox="0 0 500 443" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd"><path d="M237.704918.0C314.662629.0 377.04918 62.3865513 377.04918 139.344262L377.049 336.352 442.622951 336.351852C474.31142 336.351852 5e2 362.040432 5e2 393.728901V443h-7.546066c-18.225271.0-33.094961-14.592764-33.437541-32.814815V401.960534L459.013099 401.553891C458.795948 388.160675 447.871194 377.37037 434.42623 377.37037H106.557377c-58.8500143.0-106.557377-47.707362-106.557377-106.557377L-100611761e-22 139.344262c0-76.9577107 62.3865513-139.344262 139.344262-139.344262zm-8.196721 41.0185185H147.540984L145.778863 41.0327942C87.7415928 41.97378 40.9836066 89.3143814 40.9836066 147.575896V270.778081L40.9923916 271.862464C41.5714598 307.577706 70.7041376 336.351852 106.557377 336.351852H270.491803c36.215394.0 65.573771-29.358377 65.573771-65.573771V147.575896L336.051298 145.813774C335.110312 87.7765047 287.769711 41.0185185 229.508197 41.0185185zM147.868852 106.648148C157.213115 106.648148 164.590164 114.277593 164.590164 123.875926v49.960555l56.803279-58.574444C228.770492 108.370926 238.852459 107.878704 245.983607 114.523704V114.769815C252.868852 121.168704 252.377049 131.751481 244.754098 138.642593l-42.04918 43.315555 48.934426 69.895556C257.540984 260.467593 255.819672 271.296481 247.95082 276.464815 239.344262 281.387037 229.508197 278.679815 223.606557 270.065926l-44.016393-64.481111-15 15.751111v40.362222c0 9.84444500000001-7.377049 17.227778-16.721312 17.227778C138.52459 278.925926 131.147541 271.542593 131.147541 261.698148V123.875926c0-9.59833300000001 7.377049-17.227778 16.721311-17.227778z" id="white_square_logo" fill="#fff"/></g></svg></span><span class="navbar-brand__name">Karpenter for Azure</span></a>
+  <div class="td-navbar-nav-scroll ml-md-auto" id="main_navbar">
+    <ul class="navbar-nav mt-2 mt-lg-0">
+      <li class="nav-item mr-4 mb-2 mb-lg-0">
+        <a class="nav-link" href="/docs"><i class='fas fa-book'></i><span>Docs</span></a>
+      </li>
+      <li class="nav-item mr-4 mb-2 mb-lg-0">
+        <a class="nav-link" href="https://github.com/Azure/karpenter-provider-azure" target="_blank"><i class='fab fa-github'></i><span>GitHub</span></a>
+      </li>
+      <li class="nav-item dropdown mr-4 d-none d-lg-block">
+        
+
+
+	
+
+
+
+
+<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+	v0.6  (latest) 
+</a>
+<div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink" id="navbarVersionSelector">
+	
+	<a class="dropdown-item" href='/v0.6//concepts/disruption/' data-docs-version="v0.6">
+		v0.6  (latest) 
+	</a>
+	
+	<a class="dropdown-item" href='/v0.5//concepts/disruption/' data-docs-version="v0.5">
+		v0.5 
+	</a>
+	
+	<a class="dropdown-item" href='/v0.4//concepts/disruption/' data-docs-version="v0.4">
+		v0.4 
+	</a>
+	
+	<a class="dropdown-item" href='/preview//concepts/disruption/' data-docs-version="preview">
+		preview 
+	</a>
+	
+</div>
+</li>
+      </ul>
+  </div>
+  <div class="navbar-nav d-none d-lg-block">
+    
+  </div>
+</nav>
+    </header>
+    <div class="container-fluid td-outer">
+      <div class="td-main">
+        <div class="row flex-xl-nowrap">
+          <aside class="col-12 col-md-3 col-xl-2 td-sidebar d-print-none">
+            
+<div id="td-sidebar-menu" class="td-sidebar__inner">
+  <form class="td-sidebar__search d-flex align-items-center">
+    
+    <button class="btn btn-link td-sidebar__toggle d-md-none p-0 ml-3 fas fa-bars" type="button" data-toggle="collapse" data-target="#td-section-nav" aria-controls="td-section-nav" aria-expanded="false" aria-label="Toggle section navigation">
+    </button>
+  </form>
+  <nav class="collapse td-sidebar-nav foldable-nav" id="td-section-nav">
+    <ul class="td-sidebar-nav__section pr-md-3 ul-0">
+      <li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id="m-docs-li">
+  <a href="/docs/" title="Documentation" class="align-left pl-0 td-sidebar-link td-sidebar-link__section tree-root" id="m-docs"><span class="">Docs</span></a>
+  <ul class="ul-1">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsgetting-started-li">
+  <input type="checkbox" id="m-docsgetting-started-check"/>
+  <label for="m-docsgetting-started-check"><a href="/docs/getting-started/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsgetting-started"><span class="">Getting Started</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsgetting-startedquickstart-li">
+  <input type="checkbox" id="m-docsgetting-startedquickstart-check"/>
+  <label for="m-docsgetting-startedquickstart-check"><a href="/docs/getting-started/quickstart/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsgetting-startedquickstart"><span class="">Quickstart</span></a></label>
+  
+</li>
+  </ul>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id="m-docsconcepts-li">
+  <input type="checkbox" id="m-docsconcepts-check" checked/>
+  <label for="m-docsconcepts-check"><a href="/docs/concepts/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsconcepts"><span class="">Concepts</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsnodepools-li">
+  <input type="checkbox" id="m-docsconceptsnodepools-check"/>
+  <label for="m-docsconceptsnodepools-check"><a href="/docs/concepts/nodepools/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsnodepools"><span class="">NodePools</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsnodeclasses-li">
+  <input type="checkbox" id="m-docsconceptsnodeclasses-check"/>
+  <label for="m-docsconceptsnodeclasses-check"><a href="/docs/concepts/nodeclasses/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsnodeclasses"><span class="">NodeClasses</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsscheduling-li">
+  <input type="checkbox" id="m-docsconceptsscheduling-check"/>
+  <label for="m-docsconceptsscheduling-check"><a href="/docs/concepts/scheduling/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsscheduling"><span class="">Scheduling</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child active-path" id="m-docsconceptsdisruption-li">
+  <input type="checkbox" id="m-docsconceptsdisruption-check" checked/>
+  <label for="m-docsconceptsdisruption-check"><a href="/docs/concepts/disruption/" class="align-left pl-0  active td-sidebar-link td-sidebar-link__page" id="m-docsconceptsdisruption"><span class="td-sidebar-nav-active-item">Disruption</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsdeployment-modes-li">
+  <input type="checkbox" id="m-docsconceptsdeployment-modes-check"/>
+  <label for="m-docsconceptsdeployment-modes-check"><a href="/docs/concepts/deployment-modes/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsdeployment-modes"><span class="">Deployment Modes</span></a></label>
+  
+</li>
+  </ul>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docstasks-li">
+  <input type="checkbox" id="m-docstasks-check"/>
+  <label for="m-docstasks-check"><a href="/docs/tasks/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docstasks"><span class="">Tasks</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstasksmanaging-vm-images-li">
+  <input type="checkbox" id="m-docstasksmanaging-vm-images-check"/>
+  <label for="m-docstasksmanaging-vm-images-check"><a href="/docs/tasks/managing-vm-images/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstasksmanaging-vm-images"><span class="">Managing VM Images</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstasksnodepool-examples-li">
+  <input type="checkbox" id="m-docstasksnodepool-examples-check"/>
+  <label for="m-docstasksnodepool-examples-check"><a href="/docs/tasks/nodepool-examples/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstasksnodepool-examples"><span class="">NodePool Examples</span></a></label>
+  
+</li>
+  </ul>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsreference-li">
+  <input type="checkbox" id="m-docsreference-check"/>
+  <label for="m-docsreference-check"><a href="/docs/reference/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsreference"><span class="">Reference</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencesettings-li">
+  <input type="checkbox" id="m-docsreferencesettings-check"/>
+  <label for="m-docsreferencesettings-check"><a href="/docs/reference/settings/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencesettings"><span class="">Settings</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferenceinstance-types-li">
+  <input type="checkbox" id="m-docsreferenceinstance-types-check"/>
+  <label for="m-docsreferenceinstance-types-check"><a href="/docs/reference/instance-types/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferenceinstance-types"><span class="">Instance Types</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencemetrics-li">
+  <input type="checkbox" id="m-docsreferencemetrics-check"/>
+  <label for="m-docsreferencemetrics-check"><a href="/docs/reference/metrics/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencemetrics"><span class="">Metrics</span></a></label>
+  
+</li>
+  </ul>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsfaq-li">
+  <input type="checkbox" id="m-docsfaq-check"/>
+  <label for="m-docsfaq-check"><a href="/docs/faq/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsfaq"><span class="">FAQ</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstroubleshooting-li">
+  <input type="checkbox" id="m-docstroubleshooting-check"/>
+  <label for="m-docstroubleshooting-check"><a href="/docs/troubleshooting/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstroubleshooting"><span class="">Troubleshooting</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsupgrading-li">
+  <input type="checkbox" id="m-docsupgrading-check"/>
+  <label for="m-docsupgrading-check"><a href="/docs/upgrading/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsupgrading"><span class="">Upgrading</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsupgradingupgrade-guide-li">
+  <input type="checkbox" id="m-docsupgradingupgrade-guide-check"/>
+  <label for="m-docsupgradingupgrade-guide-check"><a href="/docs/upgrading/upgrade-guide/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsupgradingupgrade-guide"><span class="">Upgrade Guide</span></a></label>
+  
+</li>
+  </ul>
+</li>
+  </ul>
+</li>
+    </ul>
+  </nav>
+</div>
+
+          </aside>
+          <aside class="d-none d-xl-block col-xl-2 td-sidebar-toc d-print-none">
+            
+<div class="td-page-meta ml-2 pb-1 pt-2 mb-0">
+<a href="https://github.com/Azure/karpenter-provider-azure/tree/main/website/content/en/docs/concepts/disruption.md" class="td-page-meta--view" target="_blank" rel="noopener"><i class="fa-solid fa-file-lines fa-fw"></i> View page source</a>
+  <a href="https://github.com/Azure/karpenter-provider-azure/edit/main/website/content/en/docs/concepts/disruption.md" class="td-page-meta--edit" target="_blank" rel="noopener"><i class="fa-solid fa-pen-to-square fa-fw"></i> Edit this page</a>
+  <a href="https://github.com/Azure/karpenter-provider-azure/new/main/website/content/en/docs/concepts/disruption.md?filename=change-me.md&amp;value=---%0Atitle%3A&#43;%22Long&#43;Page&#43;Title%22%0AlinkTitle%3A&#43;%22Short&#43;Nav&#43;Title%22%0Aweight%3A&#43;100%0Adescription%3A&#43;%3E-%0A&#43;&#43;&#43;&#43;&#43;Page&#43;description&#43;for&#43;heading&#43;and&#43;indexes.%0A---%0A%0A%23%23&#43;Heading%0A%0AEdit&#43;this&#43;template&#43;to&#43;create&#43;your&#43;new&#43;page.%0A%0A%2A&#43;Give&#43;it&#43;a&#43;good&#43;name%2C&#43;ending&#43;in&#43;%60.md%60&#43;-&#43;e.g.&#43;%60getting-started.md%60%0A%2A&#43;Edit&#43;the&#43;%22front&#43;matter%22&#43;section&#43;at&#43;the&#43;top&#43;of&#43;the&#43;page&#43;%28weight&#43;controls&#43;how&#43;its&#43;ordered&#43;amongst&#43;other&#43;pages&#43;in&#43;the&#43;same&#43;directory%3B&#43;lowest&#43;number&#43;first%29.%0A%2A&#43;Add&#43;a&#43;good&#43;commit&#43;message&#43;at&#43;the&#43;bottom&#43;of&#43;the&#43;page&#43;%28%3C80&#43;characters%3B&#43;use&#43;the&#43;extended&#43;description&#43;field&#43;for&#43;more&#43;detail%29.%0A%2A&#43;Create&#43;a&#43;new&#43;branch&#43;so&#43;you&#43;can&#43;preview&#43;your&#43;new&#43;file&#43;and&#43;request&#43;a&#43;review&#43;via&#43;Pull&#43;Request.%0A" class="td-page-meta--child" target="_blank" rel="noopener"><i class="fa-solid fa-pen-to-square fa-fw"></i> Create child page</a>
+  <a href="https://github.com/Azure/karpenter-provider-azure/issues/new?title=Disruption" class="td-page-meta--issue" target="_blank" rel="noopener"><i class="fa-solid fa-list-check fa-fw"></i> Create documentation issue</a>
+  
+</div>
+
+            <div class="td-toc">
+        <nav id="TableOfContents">
+  <ul>
+    <li><a href="#control-flow">Control Flow</a>
+      <ul>
+        <li><a href="#disruption-controller">Disruption Controller</a></li>
+        <li><a href="#termination-controller">Termination Controller</a></li>
+      </ul>
+    </li>
+    <li><a href="#manual-methods">Manual Methods</a></li>
+    <li><a href="#automated-methods">Automated Methods</a>
+      <ul>
+        <li><a href="#consolidation">Consolidation</a></li>
+        <li><a href="#drift">Drift</a></li>
+        <li><a href="#interruption">Interruption</a></li>
+      </ul>
+    </li>
+    <li><a href="#controls">Controls</a>
+      <ul>
+        <li><a href="#disruption-budgets">Disruption Budgets</a></li>
+        <li><a href="#pod-level-controls">Pod-Level Controls</a></li>
+        <li><a href="#node-level-controls">Node-Level Controls</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+      </div>
+    
+            
+
+	
+
+          </aside>
+          <main class="col-12 col-md-9 col-xl-8 pl-md-5" role="main">
+            
+  
+
+            <nav aria-label="breadcrumb" class="td-breadcrumbs">
+  <ol class="breadcrumb">
+  <li class="breadcrumb-item">
+    <a href="//localhost:1313/docs/">Docs</a>
+  </li>
+  <li class="breadcrumb-item">
+    <a href="//localhost:1313/docs/concepts/">Concepts</a>
+  </li>
+  <li class="breadcrumb-item active" aria-current="page">
+    <a href="//localhost:1313/docs/concepts/disruption/" aria-disabled="true" class="btn-link disabled">Disruption</a>
+  </li>
+  </ol>
+</nav>
+            
+<div class="td-content">
+	<h1>Disruption</h1>
+	<div class="lead">Understand different ways Karpenter disrupts nodes</div>
+	<header class="article-meta">
+		
+
+  
+
+		
+	</header>    
+	<h2 id="control-flow">Control Flow</h2>
+<p>Karpenter sets a Kubernetes <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/">finalizer</a> on each node and node claim it provisions.
+The finalizer blocks deletion of the node object while the Termination Controller taints and drains the node, before removing the underlying NodeClaim. Disruption is triggered by the Disruption Controller, by the user through manual disruption, or through an external system that sends a delete request to the node object.</p>
+<h3 id="disruption-controller">Disruption Controller</h3>
+<p>Karpenter automatically discovers disruptable nodes and spins up replacements when needed. Karpenter disrupts nodes by executing one <a href="/docs/concepts/disruption/#automated-methods">automated method</a> at a time, in order of Expiration, Drift, and then Consolidation. Each method varies slightly, but they all follow the standard disruption process. Karpenter uses <a href="#disruption-budgets">disruption budgets</a> to control the speed of disruption.</p>
+<ol>
+<li>Identify a list of prioritized candidates for the disruption method.
+<ul>
+<li>If there are <a href="/docs/concepts/disruption/#pod-eviction">pods that cannot be evicted</a> on the node, Karpenter will ignore the node and try disrupting it later.</li>
+<li>If there are no disruptable nodes, continue to the next disruption method.</li>
+</ul>
+</li>
+<li>For each disruptable node:
+<ol>
+<li>Check if disrupting it would violate its NodePool&rsquo;s disruption budget.</li>
+<li>Execute a scheduling simulation with the pods on the node to find if any replacement nodes are needed.</li>
+</ol>
+</li>
+<li>Add the <code>karpenter.sh/disruption:NoSchedule</code> taint to the node(s) to prevent pods from scheduling to it.</li>
+<li>Pre-spin any replacement nodes needed as calculated in Step (2), and wait for them to become ready.
+<ul>
+<li>If a replacement node fails to initialize, un-taint the node(s), and restart from Step (1), starting at the first disruption method again.</li>
+</ul>
+</li>
+<li>Delete the node(s) and wait for the Termination Controller to gracefully shutdown the node(s).</li>
+<li>Once the Termination Controller terminates the node, go back to Step (1), starting at the first disruption method again.</li>
+</ol>
+<h3 id="termination-controller">Termination Controller</h3>
+<p>When a Karpenter node is deleted, the Karpenter finalizer will block deletion and the APIServer will set the <code>DeletionTimestamp</code> on the node, allowing Karpenter to gracefully shutdown the node, modeled after <a href="https://kubernetes.io/docs/concepts/architecture/nodes/#graceful-node-shutdown">Kubernetes Graceful Node Shutdown</a>. Karpenter&rsquo;s graceful shutdown process will:</p>
+<ol>
+<li>Add the <code>karpenter.sh/disruption=disrupting:NoSchedule</code> taint to the node to prevent pods from scheduling to it.</li>
+<li>Begin evicting the pods on the node with the <a href="https://kubernetes.io/docs/concepts/scheduling-eviction/api-eviction/">Kubernetes Eviction API</a> to respect PDBs, while ignoring all <a href="https://kubernetes.io/docs/tasks/configure-pod-container/static-pod/">static pods</a>, pods tolerating the <code>karpenter.sh/disruption=disrupting:NoSchedule</code> taint, and succeeded/failed pods. Wait for the node to be fully drained before proceeding to Step (3).
+<ul>
+<li>While waiting, if the underlying NodeClaim for the node no longer exists, remove the finalizer to allow the APIServer to delete the node, completing termination.</li>
+</ul>
+</li>
+<li>Terminate the NodeClaim in the Azure Cloud Provider.</li>
+<li>Remove the finalizer from the node to allow the APIServer to delete the node, completing termination.</li>
+</ol>
+<h2 id="manual-methods">Manual Methods</h2>
+<ul>
+<li>
+<p><strong>Node Deletion</strong>: You can use <code>kubectl</code> to manually remove a single Karpenter node or nodeclaim. Since each Karpenter node is owned by a NodeClaim, deleting either the node or the nodeclaim will cause cascade deletion of the other:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Delete a specific nodeclaim</span>
+</span></span><span style="display:flex;"><span>kubectl delete nodeclaim <span style="color:#000">$NODECLAIM_NAME</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Delete a specific node</span>
+</span></span><span style="display:flex;"><span>kubectl delete node <span style="color:#000">$NODE_NAME</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Delete all nodeclaims</span>
+</span></span><span style="display:flex;"><span>kubectl delete nodeclaims --all
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Delete all nodes owned by any nodepool</span>
+</span></span><span style="display:flex;"><span>kubectl delete nodes -l karpenter.sh/nodepool
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Delete all nodeclaims owned by a specific nodepool</span>
+</span></span><span style="display:flex;"><span>kubectl delete nodeclaims -l karpenter.sh/nodepool<span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#000">$NODEPOOL_NAME</span>
+</span></span></code></pre></div></li>
+<li>
+<p><strong>NodePool Deletion</strong>: NodeClaims are owned by the NodePool through an <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/#owner-references-in-object-specifications">owner reference</a> that launched them. Karpenter will gracefully terminate nodes through cascading deletion when the owning NodePool is deleted.</p>
+</li>
+</ul>
+
+
+<div class="alert alert-primary" role="alert">
+<h4 class="alert-heading">Note</h4>
+
+    By adding the finalizer, Karpenter improves the default Kubernetes process of node deletion.
+When you run <code>kubectl delete node</code> on a node without a finalizer, the node is deleted without triggering the finalization logic. The instance will continue running in Azure, even though there is no longer a node object for it. The kubelet isn&rsquo;t watching for its own existence, so if a node is deleted, the kubelet doesn&rsquo;t terminate itself. All the pod objects get deleted by a garbage collection process later, because the pods&rsquo; node is gone.
+
+</div>
+
+<h2 id="automated-methods">Automated Methods</h2>
+<p>Automated methods can be rate limited through <a href="#disruption-budgets">NodePool Disruption Budgets</a></p>
+<ul>
+<li><strong>Expiration</strong>: Karpenter will mark nodes as expired and disrupt them after they have lived a set number of seconds, based on the NodePool&rsquo;s <code>spec.disruption.expireAfter</code> value. You can use node expiry to periodically recycle nodes due to security concerns.</li>
+<li><a href="#consolidation"><strong>Consolidation</strong></a>: Karpenter works to actively reduce cluster cost by identifying when:
+<ul>
+<li>Nodes can be removed because the node is empty</li>
+<li>Nodes can be removed as their workloads will run on other nodes in the cluster.</li>
+<li>Nodes can be replaced with lower priced variants due to a change in the workloads.</li>
+</ul>
+</li>
+<li><a href="#drift"><strong>Drift</strong></a>: Karpenter will mark nodes as drifted and disrupt nodes that have drifted from their desired specification. See <a href="#drift">Drift</a> to see which fields are considered.</li>
+<li><a href="#interruption"><strong>Interruption</strong></a>: Karpenter will watch for upcoming interruption events that could affect your nodes (health events, spot interruption, etc.) and will taint, drain, and terminate the node(s) ahead of the event to reduce workload disruption.</li>
+</ul>
+
+
+<div class="alert alert-secondary" role="alert">
+<h4 class="alert-heading">Defaults</h4>
+
+    <p>Disruption is configured through the NodePool&rsquo;s disruption block by the <code>consolidationPolicy</code>, <code>expireAfter</code> and <code>consolidateAfter</code> fields. Karpenter will configure these fields with the following values by default if they are not set:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">disruption</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">consolidationPolicy</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">WhenUnderutilized</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">expireAfter</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">720h</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div>
+
+</div>
+
+
+
+<div class="alert alert-warning" role="alert">
+<h4 class="alert-heading">Warning</h4>
+
+    <code>consolidateAfter</code> <strong>cannot</strong> be set if <code>consolidationPolicy</code> is set to <code>WhenUnderutilized</code>. See <a href="https://github.com/kubernetes-sigs/karpenter/issues/735">kubernetes-sigs/karpenter#735</a> for more information.
+
+</div>
+
+<h3 id="consolidation">Consolidation</h3>
+<p>Karpenter has two mechanisms for cluster consolidation:</p>
+<ol>
+<li><strong>Deletion</strong> - A node is eligible for deletion if all of its pods can run on free capacity of other nodes in the cluster.</li>
+<li><strong>Replace</strong> - A node can be replaced if all of its pods can run on a combination of free capacity of other nodes in the cluster and a single lower price replacement node.</li>
+</ol>
+<p>Consolidation has three mechanisms that are performed in order to attempt to identify a consolidation action:</p>
+<ol>
+<li><strong>Empty Node Consolidation</strong> - Delete any entirely empty nodes in parallel</li>
+<li><strong>Multi Node Consolidation</strong> - Try to delete two or more nodes in parallel, possibly launching a single replacement whose price is lower than that of all nodes being removed</li>
+<li><strong>Single Node Consolidation</strong> - Try to delete any single node, possibly launching a single replacement whose price is lower than that of the node being removed</li>
+</ol>
+<p>It&rsquo;s impractical to examine all possible consolidation options for multi-node consolidation, so Karpenter uses a heuristic to identify a likely set of nodes that can be consolidated.  For single-node consolidation we consider each node in the cluster individually.</p>
+<p>When there are multiple nodes that could be potentially deleted or replaced, Karpenter chooses to consolidate the node that overall disrupts your workloads the least by preferring to terminate:</p>
+<ul>
+<li>Nodes running fewer pods</li>
+<li>Nodes that will expire soon</li>
+<li>Nodes with lower priority pods</li>
+</ul>
+<p>If consolidation is enabled, Karpenter periodically reports events against nodes that indicate why the node can&rsquo;t be consolidated.  These events can be used to investigate nodes that you expect to have been consolidated, but still remain in your cluster.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>Events:
+</span></span><span style="display:flex;"><span>  Type     Reason                   Age                From             Message
+</span></span><span style="display:flex;"><span>  ----     ------                   ----               ----             -------
+</span></span><span style="display:flex;"><span>  Normal   Unconsolidatable         66s                karpenter        pdb default/inflate-pdb prevents pod evictions
+</span></span><span style="display:flex;"><span>  Normal   Unconsolidatable         33s <span style="color:#ce5c00;font-weight:bold">(</span>x3 over 30m<span style="color:#ce5c00;font-weight:bold">)</span>  karpenter        can<span style="color:#a40000">&#39;</span>t replace with a lower-priced node
+</span></span></code></pre></div>
+
+<div class="alert alert-warning" role="alert">
+<h4 class="alert-heading">Warning</h4>
+
+    Using preferred anti-affinity and topology spreads can reduce the effectiveness of consolidation. At node launch, Karpenter attempts to satisfy affinity and topology spread preferences. In order to reduce node churn, consolidation must also attempt to satisfy these constraints to avoid immediately consolidating nodes after they launch. This means that consolidation may not disrupt nodes in order to avoid violating preferences, even if kube-scheduler can fit the host pods elsewhere.  Karpenter reports these pods via logging to bring awareness to the possible issues they can cause (e.g. <code>pod default/inflate-anti-self-55894c5d8b-522jd has a preferred Anti-Affinity which can prevent consolidation</code>).
+
+</div>
+
+<h4 id="spot-consolidation">Spot consolidation</h4>
+<p>For spot nodes, Karpenter has deletion consolidation enabled by default. If you would like to enable replacement with spot consolidation, you need to enable the feature through the <code>SpotToSpotConsolidation</code> feature flag.</p>
+<p>Lower priced spot instance types are selected with Azure&rsquo;s spot pricing strategy. Sometimes, the lowest priced spot instance type is not launched due to the likelihood of interruption. As a result, Karpenter uses the number of available instance type options with a price lower than the currently launched spot instance as a heuristic for evaluating whether it should launch a replacement for the current spot node.</p>
+<p>We refer to the number of instances that Karpenter has within its launch decision as a launch&rsquo;s &ldquo;instance type flexibility.&rdquo; When Karpenter is considering performing a spot-to-spot consolidation replacement, it will check whether replacing the instance type will lead to enough instance type flexibility in the subsequent launch request. As a result, we get the following properties when evaluating for consolidation:</p>
+<ol>
+<li>We shouldn&rsquo;t continually consolidate down to the lowest priced spot instance which might have very high rates of interruption.</li>
+<li>We launch with enough instance types that there&rsquo;s high likelihood that our replacement instance has comparable availability to our current one.</li>
+</ol>
+<p>Karpenter requires a minimum instance type flexibility of 15 instance types when performing single node spot-to-spot consolidations (1 node to 1 node). It does not have the same instance type flexibility requirement for multi-node spot-to-spot consolidations (many nodes to 1 node) since doing so without requiring flexibility won&rsquo;t lead to &ldquo;race to the bottom&rdquo; scenarios.</p>
+<h3 id="drift">Drift</h3>
+<p>Drift handles changes to the NodePool/AKSNodeClass. For Drift, values in the NodePool/AKSNodeClass are reflected in the NodeClaimTemplateSpec/AKSNodeClassSpec in the same way that they&rsquo;re set. A NodeClaim will be detected as drifted if the values in its owning NodePool/AKSNodeClass do not match the values in the NodeClaim. Similar to the upstream <code>deployment.spec.template</code> relationship to pods, Karpenter will annotate the owning NodePool and AKSNodeClass with a hash of the NodeClaimTemplateSpec to check for drift. Some special cases will be discovered either from Karpenter or through the CloudProvider interface, triggered by NodeClaim/Instance/NodePool/AKSNodeClass changes.</p>
+<h4 id="special-cases-on-drift">Special Cases on Drift</h4>
+<p>In special cases, drift can correspond to multiple values and must be handled differently. Drift on resolved fields can create cases where drift occurs without changes to CRDs, or where CRD changes do not result in drift. For example, if a NodeClaim has <code>node.kubernetes.io/instance-type: Standard_D2s_v3</code>, and requirements change from <code>node.kubernetes.io/instance-type In [Standard_D2s_v3]</code> to <code>node.kubernetes.io/instance-type In [Standard_D2s_v3, Standard_D4s_v3]</code>, the NodeClaim will not be drifted because its value is still compatible with the new requirements. Conversely, if a NodeClaim is using a NodeClaim image <code>imageId: /subscriptions/.../images/myimage</code>, but a new image is published, Karpenter&rsquo;s <code>AKSNodeClass.spec.imageFamily</code> will discover that the new correct value is <code>imageId: /subscriptions/.../images/mynewimage</code>, and detect the NodeClaim as drifted.</p>
+<h5 id="nodepool">NodePool</h5>
+<table>
+  <thead>
+      <tr>
+          <th>Fields</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>spec.template.spec.requirements</td>
+      </tr>
+  </tbody>
+</table>
+<h5 id="aksnodeclass">AKSNodeClass</h5>
+<table>
+  <thead>
+      <tr>
+          <th>Fields</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>spec.vnetSubnetID</td>
+      </tr>
+      <tr>
+          <td>spec.imageFamily</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="behavioral-fields">Behavioral Fields</h4>
+<p>Behavioral Fields are treated as over-arching settings on the NodePool to dictate how Karpenter behaves. These fields don&rsquo;t correspond to settings on the NodeClaim or instance. They&rsquo;re set by the user to control Karpenter&rsquo;s Provisioning and disruption logic. Since these don&rsquo;t map to a desired state of NodeClaims, <strong>behavioral fields are not considered for Drift</strong>.</p>
+<h5 id="nodepool-1">NodePool</h5>
+<table>
+  <thead>
+      <tr>
+          <th>Fields</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>spec.weight</td>
+      </tr>
+      <tr>
+          <td>spec.limits</td>
+      </tr>
+      <tr>
+          <td>spec.disruption.*</td>
+      </tr>
+  </tbody>
+</table>
+<p>Read the <a href="https://github.com/aws/karpenter-core/blob/main/designs/drift.md">Drift Design</a> for more.</p>
+<p>To enable the drift feature flag, refer to the Feature Gates section in the settings documentation.</p>
+<p>Karpenter will add the <code>Drifted</code> status condition on NodeClaims if the NodeClaim is drifted from its owning NodePool. Karpenter will also remove the <code>Drifted</code> status condition if either:</p>
+<ol>
+<li>The <code>Drift</code> feature gate is not enabled but the NodeClaim is drifted, Karpenter will remove the status condition.</li>
+<li>The NodeClaim isn&rsquo;t drifted, but has the status condition, Karpenter will remove it.</li>
+</ol>
+<h3 id="interruption">Interruption</h3>
+<p>If interruption-handling is enabled, Karpenter will watch for upcoming involuntary interruption events that would cause disruption to your workloads. These interruption events include:</p>
+<ul>
+<li>Azure Spot Instance Interruption Warnings</li>
+<li>Scheduled Maintenance Events</li>
+<li>Instance Terminating Events</li>
+<li>Instance Stopping Events</li>
+</ul>
+<p>When Karpenter detects one of these events will occur to your nodes, it automatically taints, drains, and terminates the node(s) ahead of the interruption event to give the maximum amount of time for workload cleanup prior to compute disruption. This enables scenarios where the <code>terminationGracePeriod</code> for your workloads may be long or cleanup for your workloads is critical, and you want enough time to be able to gracefully clean-up your pods.</p>
+<p>For Azure Spot interruptions, the NodePool will start a new node as soon as it sees the Spot interruption warning. Azure Spot interruptions have a <strong>30 second notice</strong> before Azure reclaims the instance. Karpenter&rsquo;s average node startup time means that, generally, there is sufficient time for the new node to become ready and to move the pods to the new node before the NodeClaim is reclaimed.</p>
+
+
+<div class="alert alert-primary" role="alert">
+<h4 class="alert-heading">Note</h4>
+
+    <p>Karpenter publishes Kubernetes events to the node for all events listed above. Azure provides notifications for scheduled maintenance and spot interruptions through Azure Event Grid and Azure Service Bus.</p>
+<p>If you require handling for additional Azure maintenance events, you can integrate with <a href="https://docs.microsoft.com/en-us/azure/event-grid/">Azure Event Grid</a> alongside Karpenter to receive additional event notifications.</p>
+
+
+</div>
+
+<p>Karpenter enables this feature by watching an Azure Service Bus queue which receives critical events from Azure services which may affect your nodes. Karpenter requires that an Azure Service Bus queue be provisioned and Event Grid subscriptions be added that forward interruption events from Azure services to the Service Bus queue.</p>
+<p>To enable interruption handling, configure the <code>--interruption-queue</code> CLI argument with the name of the interruption queue provisioned to handle interruption events.</p>
+<h2 id="controls">Controls</h2>
+<h3 id="disruption-budgets">Disruption Budgets</h3>
+<p>You can rate limit Karpenter&rsquo;s disruption through the NodePool&rsquo;s <code>spec.disruption.budgets</code>. If undefined, Karpenter will default to one budget with <code>nodes: 10%</code>. Budgets will consider nodes that are actively being deleted for any reason, and will only block Karpenter from disrupting nodes voluntarily through expiration, drift, emptiness, and consolidation.</p>
+<h4 id="nodes">Nodes</h4>
+<p>When calculating if a budget will block nodes from disruption, Karpenter lists the total number of nodes owned by a NodePool, subtracting out the nodes owned by that NodePool that are currently being deleted and nodes that are NotReady. If the number of nodes being deleted by Karpenter or any other processes is greater than the number of allowed disruptions, disruption for this node will not proceed.</p>
+<p>If the budget is configured with a percentage value, such as <code>20%</code>, Karpenter will calculate the number of allowed disruptions as <code>allowed_disruptions = roundup(total * percentage) - total_deleting - total_notready</code>. If otherwise defined as a non-percentage value, Karpenter will simply subtract the number of nodes from the total <code>(total - non_percentage_value) - total_deleting - total_notready</code>. For multiple budgets in a NodePool, Karpenter will take the minimum value (most restrictive) of each of the budgets.</p>
+<p>For example, the following NodePool with three budgets defines the following requirements:</p>
+<ul>
+<li>The first budget will only allow 20% of nodes owned by that NodePool to be disrupted. For instance, if there were 19 nodes owned by the NodePool, 4 disruptions would be allowed, rounding up from <code>19 * .2 = 3.8</code>.</li>
+<li>The second budget acts as a ceiling to the previous budget, only allowing 5 disruptions when there are more than 25 nodes.</li>
+<li>The last budget only blocks disruptions during the first 10 minutes of the day, where 0 disruptions are allowed.</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">NodePool</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">default</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">disruption</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">consolidationPolicy</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">WhenUnderutilized</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">expireAfter</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">720h</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#8f5902;font-style:italic"># 30 * 24h = 720h</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">budgets</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span>- <span style="color:#204a87;font-weight:bold">nodes</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;20%&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span>- <span style="color:#204a87;font-weight:bold">nodes</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;5&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span>- <span style="color:#204a87;font-weight:bold">nodes</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;0&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">schedule</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;@daily&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">duration</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">10m</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div><h4 id="schedule">Schedule</h4>
+<p>Schedule is a cronjob schedule. Generally, the cron syntax is five space-delimited values with options below, with additional special macros like <code>@yearly</code>, <code>@monthly</code>, <code>@weekly</code>, <code>@daily</code>, <code>@hourly</code>.
+Follow the <a href="https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#writing-a-cronjob-spec">Kubernetes documentation</a> for more information on how to follow the cron syntax. Timezones are not currently supported. Schedules are always in UTC.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># ┌───────────── minute (0 - 59)</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># │ ┌───────────── hour (0 - 23)</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># │ │ ┌───────────── day of the month (1 - 31)</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># │ │ │ ┌───────────── month (1 - 12)</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># │ │ │ │ ┌───────────── day of the week (0 - 6) (Sunday to Saturday;</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># │ │ │ │ │                                   7 is also Sunday on some systems)</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># │ │ │ │ │                                   OR sun, mon, tue, wed, thu, fri, sat</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># │ │ │ │ │</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># * * * * *</span>
+</span></span></code></pre></div><h4 id="duration">Duration</h4>
+<p>Duration allows compound durations with minutes and hours values such as <code>10h5m</code> or <code>30m</code> or <code>160h</code>. Since cron syntax does not accept denominations smaller than minutes, users can only define minutes or hours.</p>
+
+
+<div class="alert alert-primary" role="alert">
+<h4 class="alert-heading">Note</h4>
+
+    Duration and Schedule must be defined together. When omitted, the budget is always active. When defined, the schedule determines a starting point where the budget will begin being enforced, and the duration determines how long from that starting point the budget will be enforced.
+
+</div>
+
+<h3 id="pod-level-controls">Pod-Level Controls</h3>
+<p>You can block Karpenter from voluntarily choosing to disrupt certain pods by setting the <code>karpenter.sh/do-not-disrupt: &quot;true&quot;</code> annotation on the pod. This is useful for pods that you want to run from start to finish without disruption. By opting pods out of this disruption, you are telling Karpenter that it should not voluntarily remove a node containing this pod.</p>
+<p>Examples of pods that you might want to opt-out of disruption include an interactive game that you don&rsquo;t want to interrupt or a long batch job (such as you might have with machine learning) that would need to start over if it were interrupted.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">apps/v1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">Deployment</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">template</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">annotations</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">karpenter.sh/do-not-disrupt</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;true&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div>
+
+<div class="alert alert-primary" role="alert">
+<h4 class="alert-heading">Note</h4>
+
+    This annotation will be ignored for <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase">terminating pods</a> and <a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-phase">terminal pods</a> (Failed/Succeeded).
+
+</div>
+
+<p>Examples of voluntary node removal that will be prevented by this annotation include:</p>
+<ul>
+<li><a href="#consolidation">Consolidation</a></li>
+<li><a href="#drift">Drift</a></li>
+<li>Expiration</li>
+</ul>
+
+
+<div class="alert alert-primary" role="alert">
+<h4 class="alert-heading">Note</h4>
+
+    Voluntary node removal does not include <a href="/docs/concepts/disruption/#interruption">Interruption</a> or manual deletion initiated through <code>kubectl delete node</code>. Both of these are considered involuntary events, since node removal cannot be delayed.
+
+</div>
+
+<h3 id="node-level-controls">Node-Level Controls</h3>
+<p>You can block Karpenter from voluntarily choosing to disrupt certain nodes by setting the <code>karpenter.sh/do-not-disrupt: &quot;true&quot;</code> annotation on the node. This will prevent disruption actions on the node.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">v1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">Node</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">annotations</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">karpenter.sh/do-not-disrupt</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;true&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div><h4 id="example-disable-disruption-on-a-nodepool">Example: Disable Disruption on a NodePool</h4>
+<p>NodePool <code>.spec.annotations</code> allow you to set annotations that will be applied to all nodes launched by this NodePool. By setting the annotation <code>karpenter.sh/do-not-disrupt: &quot;true&quot;</code> on the NodePool, you will selectively prevent all nodes launched by this NodePool from being considered in disruption actions.</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">NodePool</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">default</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">template</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">annotations</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#8f5902;font-style:italic"># will be applied to all nodes</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">karpenter.sh/do-not-disrupt</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;true&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div>
+	
+	
+	
+</div>
+
+
+          </main>
+        </div>
+      </div>
+      
+<footer class="bg-dark py-5 row d-print-none">
+  <div class="container-fluid mx-sm-5">
+    <div class="row">
+      <p class="mx-auto col-sm-3 text-center text-light">
+        Built with ❤️ at <a class="text-light" href="https://aws.amazon.com/">AWS</a>
+      </p>
+    </div>
+    <div class="row">
+      <div class="col-6 col-sm-4 text-xs-center order-sm-2">
+        
+          
+        
+      </div>
+      <div class="col-6 col-sm-4 text-right text-xs-center order-sm-3">
+        
+          
+            
+  <ul class="list-inline mb-0">
+    
+      <li class="list-inline-item mx-2 h3" data-toggle="tooltip" data-placement="top" title="GitHub" aria-label="GitHub">
+        <a class="text-white" target="_blank" rel="noopener" href="https://github.com/Azure/karpenter-provider-azure" aria-label="GitHub">
+          <i class="fab fa-github"></i>
+        </a>
+      </li>
+    
+      <li class="list-inline-item mx-2 h3" data-toggle="tooltip" data-placement="top" title="Slack" aria-label="Slack">
+        <a class="text-white" target="_blank" rel="noopener" href="https://slack.k8s.io/" aria-label="Slack">
+          <i class="fab fa-slack"></i>
+        </a>
+      </li>
+    
+  </ul>
+
+          
+        
+      </div>
+      <div class="col-12 col-sm-4 text-center py-2 order-sm-2">
+        <small class="text-white">&copy; 2025 Microsoft Corporation or its affiliates. All Rights Reserved</small>
+        
+        
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+    </div>
+    
+  <script src="/js/main.js"></script>
+<script src='/js/prism.js'></script>
+<script src='/js/tabpane-persist.js'></script>
+
+  </body>
+</html>

@@ -1,0 +1,583 @@
+<!doctype html>
+<html itemscope itemtype="http://schema.org/WebPage" lang="en" class="no-js">
+  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="generator" content="Hugo 0.145.0">
+
+
+
+<title>Managing VM Images | Karpenter for Azure</title>
+<meta name="description" content="Learn to customize and manage VM images for Karpenter nodes
+">
+
+<meta property="og:url" content="//localhost:1313/docs/tasks/managing-vm-images/">
+  <meta property="og:site_name" content="Karpenter for Azure">
+  <meta property="og:title" content="Managing VM Images">
+  <meta property="og:description" content="Learn to customize and manage VM images for Karpenter nodes">
+  <meta property="og:locale" content="en">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="docs">
+    <meta property="og:image" content="//localhost:1313/banner.png">
+
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="//localhost:1313/banner.png">
+  <meta name="twitter:title" content="Managing VM Images">
+  <meta name="twitter:description" content="Learn to customize and manage VM images for Karpenter nodes">
+
+
+
+
+
+
+<link href="/scss/main.css" rel="stylesheet">
+
+
+  </head>
+  <body class="td-page">
+    <header>
+      <nav class="js-navbar-scroll navbar navbar-expand navbar-dark flex-column flex-md-row td-navbar">
+  <a class="navbar-brand" href="/"><span class="navbar-brand__logo navbar-logo"><svg viewBox="0 0 500 443" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd"><path d="M237.704918.0C314.662629.0 377.04918 62.3865513 377.04918 139.344262L377.049 336.352 442.622951 336.351852C474.31142 336.351852 5e2 362.040432 5e2 393.728901V443h-7.546066c-18.225271.0-33.094961-14.592764-33.437541-32.814815V401.960534L459.013099 401.553891C458.795948 388.160675 447.871194 377.37037 434.42623 377.37037H106.557377c-58.8500143.0-106.557377-47.707362-106.557377-106.557377L-100611761e-22 139.344262c0-76.9577107 62.3865513-139.344262 139.344262-139.344262zm-8.196721 41.0185185H147.540984L145.778863 41.0327942C87.7415928 41.97378 40.9836066 89.3143814 40.9836066 147.575896V270.778081L40.9923916 271.862464C41.5714598 307.577706 70.7041376 336.351852 106.557377 336.351852H270.491803c36.215394.0 65.573771-29.358377 65.573771-65.573771V147.575896L336.051298 145.813774C335.110312 87.7765047 287.769711 41.0185185 229.508197 41.0185185zM147.868852 106.648148C157.213115 106.648148 164.590164 114.277593 164.590164 123.875926v49.960555l56.803279-58.574444C228.770492 108.370926 238.852459 107.878704 245.983607 114.523704V114.769815C252.868852 121.168704 252.377049 131.751481 244.754098 138.642593l-42.04918 43.315555 48.934426 69.895556C257.540984 260.467593 255.819672 271.296481 247.95082 276.464815 239.344262 281.387037 229.508197 278.679815 223.606557 270.065926l-44.016393-64.481111-15 15.751111v40.362222c0 9.84444500000001-7.377049 17.227778-16.721312 17.227778C138.52459 278.925926 131.147541 271.542593 131.147541 261.698148V123.875926c0-9.59833300000001 7.377049-17.227778 16.721311-17.227778z" id="white_square_logo" fill="#fff"/></g></svg></span><span class="navbar-brand__name">Karpenter for Azure</span></a>
+  <div class="td-navbar-nav-scroll ml-md-auto" id="main_navbar">
+    <ul class="navbar-nav mt-2 mt-lg-0">
+      <li class="nav-item mr-4 mb-2 mb-lg-0">
+        <a class="nav-link" href="/docs"><i class='fas fa-book'></i><span>Docs</span></a>
+      </li>
+      <li class="nav-item mr-4 mb-2 mb-lg-0">
+        <a class="nav-link" href="https://github.com/Azure/karpenter-provider-azure" target="_blank"><i class='fab fa-github'></i><span>GitHub</span></a>
+      </li>
+      <li class="nav-item dropdown mr-4 d-none d-lg-block">
+        
+
+
+	
+
+
+
+
+<a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+	v0.6  (latest) 
+</a>
+<div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink" id="navbarVersionSelector">
+	
+	<a class="dropdown-item" href='/v0.6//tasks/managing-vm-images/' data-docs-version="v0.6">
+		v0.6  (latest) 
+	</a>
+	
+	<a class="dropdown-item" href='/v0.5//tasks/managing-vm-images/' data-docs-version="v0.5">
+		v0.5 
+	</a>
+	
+	<a class="dropdown-item" href='/v0.4//tasks/managing-vm-images/' data-docs-version="v0.4">
+		v0.4 
+	</a>
+	
+	<a class="dropdown-item" href='/preview//tasks/managing-vm-images/' data-docs-version="preview">
+		preview 
+	</a>
+	
+</div>
+</li>
+      </ul>
+  </div>
+  <div class="navbar-nav d-none d-lg-block">
+    
+  </div>
+</nav>
+    </header>
+    <div class="container-fluid td-outer">
+      <div class="td-main">
+        <div class="row flex-xl-nowrap">
+          <aside class="col-12 col-md-3 col-xl-2 td-sidebar d-print-none">
+            
+<div id="td-sidebar-menu" class="td-sidebar__inner">
+  <form class="td-sidebar__search d-flex align-items-center">
+    
+    <button class="btn btn-link td-sidebar__toggle d-md-none p-0 ml-3 fas fa-bars" type="button" data-toggle="collapse" data-target="#td-section-nav" aria-controls="td-section-nav" aria-expanded="false" aria-label="Toggle section navigation">
+    </button>
+  </form>
+  <nav class="collapse td-sidebar-nav foldable-nav" id="td-section-nav">
+    <ul class="td-sidebar-nav__section pr-md-3 ul-0">
+      <li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id="m-docs-li">
+  <a href="/docs/" title="Documentation" class="align-left pl-0 td-sidebar-link td-sidebar-link__section tree-root" id="m-docs"><span class="">Docs</span></a>
+  <ul class="ul-1">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsgetting-started-li">
+  <input type="checkbox" id="m-docsgetting-started-check"/>
+  <label for="m-docsgetting-started-check"><a href="/docs/getting-started/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsgetting-started"><span class="">Getting Started</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsgetting-startedquickstart-li">
+  <input type="checkbox" id="m-docsgetting-startedquickstart-check"/>
+  <label for="m-docsgetting-startedquickstart-check"><a href="/docs/getting-started/quickstart/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsgetting-startedquickstart"><span class="">Quickstart</span></a></label>
+  
+</li>
+  </ul>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsconcepts-li">
+  <input type="checkbox" id="m-docsconcepts-check"/>
+  <label for="m-docsconcepts-check"><a href="/docs/concepts/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsconcepts"><span class="">Concepts</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsnodepools-li">
+  <input type="checkbox" id="m-docsconceptsnodepools-check"/>
+  <label for="m-docsconceptsnodepools-check"><a href="/docs/concepts/nodepools/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsnodepools"><span class="">NodePools</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsnodeclasses-li">
+  <input type="checkbox" id="m-docsconceptsnodeclasses-check"/>
+  <label for="m-docsconceptsnodeclasses-check"><a href="/docs/concepts/nodeclasses/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsnodeclasses"><span class="">NodeClasses</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsscheduling-li">
+  <input type="checkbox" id="m-docsconceptsscheduling-check"/>
+  <label for="m-docsconceptsscheduling-check"><a href="/docs/concepts/scheduling/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsscheduling"><span class="">Scheduling</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsdisruption-li">
+  <input type="checkbox" id="m-docsconceptsdisruption-check"/>
+  <label for="m-docsconceptsdisruption-check"><a href="/docs/concepts/disruption/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsdisruption"><span class="">Disruption</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsdeployment-modes-li">
+  <input type="checkbox" id="m-docsconceptsdeployment-modes-check"/>
+  <label for="m-docsconceptsdeployment-modes-check"><a href="/docs/concepts/deployment-modes/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsdeployment-modes"><span class="">Deployment Modes</span></a></label>
+  
+</li>
+  </ul>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child active-path" id="m-docstasks-li">
+  <input type="checkbox" id="m-docstasks-check" checked/>
+  <label for="m-docstasks-check"><a href="/docs/tasks/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docstasks"><span class="">Tasks</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child active-path" id="m-docstasksmanaging-vm-images-li">
+  <input type="checkbox" id="m-docstasksmanaging-vm-images-check" checked/>
+  <label for="m-docstasksmanaging-vm-images-check"><a href="/docs/tasks/managing-vm-images/" class="align-left pl-0  active td-sidebar-link td-sidebar-link__page" id="m-docstasksmanaging-vm-images"><span class="td-sidebar-nav-active-item">Managing VM Images</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstasksnodepool-examples-li">
+  <input type="checkbox" id="m-docstasksnodepool-examples-check"/>
+  <label for="m-docstasksnodepool-examples-check"><a href="/docs/tasks/nodepool-examples/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstasksnodepool-examples"><span class="">NodePool Examples</span></a></label>
+  
+</li>
+  </ul>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsreference-li">
+  <input type="checkbox" id="m-docsreference-check"/>
+  <label for="m-docsreference-check"><a href="/docs/reference/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsreference"><span class="">Reference</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencesettings-li">
+  <input type="checkbox" id="m-docsreferencesettings-check"/>
+  <label for="m-docsreferencesettings-check"><a href="/docs/reference/settings/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencesettings"><span class="">Settings</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferenceinstance-types-li">
+  <input type="checkbox" id="m-docsreferenceinstance-types-check"/>
+  <label for="m-docsreferenceinstance-types-check"><a href="/docs/reference/instance-types/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferenceinstance-types"><span class="">Instance Types</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencemetrics-li">
+  <input type="checkbox" id="m-docsreferencemetrics-check"/>
+  <label for="m-docsreferencemetrics-check"><a href="/docs/reference/metrics/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencemetrics"><span class="">Metrics</span></a></label>
+  
+</li>
+  </ul>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsfaq-li">
+  <input type="checkbox" id="m-docsfaq-check"/>
+  <label for="m-docsfaq-check"><a href="/docs/faq/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsfaq"><span class="">FAQ</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstroubleshooting-li">
+  <input type="checkbox" id="m-docstroubleshooting-check"/>
+  <label for="m-docstroubleshooting-check"><a href="/docs/troubleshooting/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstroubleshooting"><span class="">Troubleshooting</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsupgrading-li">
+  <input type="checkbox" id="m-docsupgrading-check"/>
+  <label for="m-docsupgrading-check"><a href="/docs/upgrading/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsupgrading"><span class="">Upgrading</span></a></label>
+  
+  <ul class="ul-2 foldable">
+    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsupgradingupgrade-guide-li">
+  <input type="checkbox" id="m-docsupgradingupgrade-guide-check"/>
+  <label for="m-docsupgradingupgrade-guide-check"><a href="/docs/upgrading/upgrade-guide/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsupgradingupgrade-guide"><span class="">Upgrade Guide</span></a></label>
+  
+</li>
+  </ul>
+</li>
+  </ul>
+</li>
+    </ul>
+  </nav>
+</div>
+
+          </aside>
+          <aside class="d-none d-xl-block col-xl-2 td-sidebar-toc d-print-none">
+            
+<div class="td-page-meta ml-2 pb-1 pt-2 mb-0">
+<a href="https://github.com/Azure/karpenter-provider-azure/tree/main/website/content/en/docs/tasks/managing-vm-images.md" class="td-page-meta--view" target="_blank" rel="noopener"><i class="fa-solid fa-file-lines fa-fw"></i> View page source</a>
+  <a href="https://github.com/Azure/karpenter-provider-azure/edit/main/website/content/en/docs/tasks/managing-vm-images.md" class="td-page-meta--edit" target="_blank" rel="noopener"><i class="fa-solid fa-pen-to-square fa-fw"></i> Edit this page</a>
+  <a href="https://github.com/Azure/karpenter-provider-azure/new/main/website/content/en/docs/tasks/managing-vm-images.md?filename=change-me.md&amp;value=---%0Atitle%3A&#43;%22Long&#43;Page&#43;Title%22%0AlinkTitle%3A&#43;%22Short&#43;Nav&#43;Title%22%0Aweight%3A&#43;100%0Adescription%3A&#43;%3E-%0A&#43;&#43;&#43;&#43;&#43;Page&#43;description&#43;for&#43;heading&#43;and&#43;indexes.%0A---%0A%0A%23%23&#43;Heading%0A%0AEdit&#43;this&#43;template&#43;to&#43;create&#43;your&#43;new&#43;page.%0A%0A%2A&#43;Give&#43;it&#43;a&#43;good&#43;name%2C&#43;ending&#43;in&#43;%60.md%60&#43;-&#43;e.g.&#43;%60getting-started.md%60%0A%2A&#43;Edit&#43;the&#43;%22front&#43;matter%22&#43;section&#43;at&#43;the&#43;top&#43;of&#43;the&#43;page&#43;%28weight&#43;controls&#43;how&#43;its&#43;ordered&#43;amongst&#43;other&#43;pages&#43;in&#43;the&#43;same&#43;directory%3B&#43;lowest&#43;number&#43;first%29.%0A%2A&#43;Add&#43;a&#43;good&#43;commit&#43;message&#43;at&#43;the&#43;bottom&#43;of&#43;the&#43;page&#43;%28%3C80&#43;characters%3B&#43;use&#43;the&#43;extended&#43;description&#43;field&#43;for&#43;more&#43;detail%29.%0A%2A&#43;Create&#43;a&#43;new&#43;branch&#43;so&#43;you&#43;can&#43;preview&#43;your&#43;new&#43;file&#43;and&#43;request&#43;a&#43;review&#43;via&#43;Pull&#43;Request.%0A" class="td-page-meta--child" target="_blank" rel="noopener"><i class="fa-solid fa-pen-to-square fa-fw"></i> Create child page</a>
+  <a href="https://github.com/Azure/karpenter-provider-azure/issues/new?title=Managing%20VM%20Images" class="td-page-meta--issue" target="_blank" rel="noopener"><i class="fa-solid fa-list-check fa-fw"></i> Create documentation issue</a>
+  
+</div>
+
+            <div class="td-toc">
+        <nav id="TableOfContents">
+  <ul>
+    <li><a href="#default-image-families">Default Image Families</a>
+      <ul>
+        <li><a href="#ubuntu2204">Ubuntu2204</a></li>
+        <li><a href="#azurelinux">AzureLinux</a></li>
+      </ul>
+    </li>
+    <li><a href="#specifying-image-families">Specifying Image Families</a></li>
+    <li><a href="#using-custom-images">Using Custom Images</a>
+      <ul>
+        <li><a href="#creating-custom-images">Creating Custom Images</a></li>
+        <li><a href="#using-custom-images-with-karpenter">Using Custom Images with Karpenter</a></li>
+      </ul>
+    </li>
+    <li><a href="#image-requirements">Image Requirements</a>
+      <ul>
+        <li><a href="#base-requirements">Base Requirements</a></li>
+        <li><a href="#aks-specific-requirements">AKS-Specific Requirements</a></li>
+        <li><a href="#security-requirements">Security Requirements</a></li>
+      </ul>
+    </li>
+    <li><a href="#gpu-images">GPU Images</a>
+      <ul>
+        <li><a href="#nvidia-gpus">NVIDIA GPUs</a></li>
+        <li><a href="#verify-gpu-support">Verify GPU Support</a></li>
+      </ul>
+    </li>
+    <li><a href="#image-updates-and-lifecycle">Image Updates and Lifecycle</a>
+      <ul>
+        <li><a href="#automatic-updates">Automatic Updates</a></li>
+        <li><a href="#custom-image-updates">Custom Image Updates</a></li>
+        <li><a href="#rolling-updates">Rolling Updates</a></li>
+      </ul>
+    </li>
+    <li><a href="#best-practices">Best Practices</a>
+      <ul>
+        <li><a href="#image-management">Image Management</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#testing">Testing</a></li>
+        <li><a href="#monitoring">Monitoring</a></li>
+      </ul>
+    </li>
+    <li><a href="#troubleshooting">Troubleshooting</a>
+      <ul>
+        <li><a href="#common-issues">Common Issues</a></li>
+        <li><a href="#debug-commands">Debug Commands</a></li>
+      </ul>
+    </li>
+  </ul>
+</nav>
+      </div>
+    
+            
+
+	
+
+          </aside>
+          <main class="col-12 col-md-9 col-xl-8 pl-md-5" role="main">
+            
+  
+
+            <nav aria-label="breadcrumb" class="td-breadcrumbs">
+  <ol class="breadcrumb">
+  <li class="breadcrumb-item">
+    <a href="//localhost:1313/docs/">Docs</a>
+  </li>
+  <li class="breadcrumb-item">
+    <a href="//localhost:1313/docs/tasks/">Tasks</a>
+  </li>
+  <li class="breadcrumb-item active" aria-current="page">
+    <a href="//localhost:1313/docs/tasks/managing-vm-images/" aria-disabled="true" class="btn-link disabled">Managing VM Images</a>
+  </li>
+  </ol>
+</nav>
+            
+<div class="td-content">
+	<h1>Managing VM Images</h1>
+	<div class="lead">Learn to customize and manage VM images for Karpenter nodes</div>
+	<header class="article-meta">
+		
+
+  
+
+		
+	</header>    
+	<p>Karpenter for Azure provisions nodes using VM images. By default, Karpenter uses Azure-managed images that are optimized for AKS, but you can also specify custom images for specialized use cases.</p>
+<h2 id="default-image-families">Default Image Families</h2>
+<p>Karpenter supports the following image families out of the box:</p>
+<h3 id="ubuntu2204">Ubuntu2204</h3>
+<p>The default image family, providing Ubuntu 22.04 LTS with AKS optimizations:</p>
+<ul>
+<li>Container runtime: containerd</li>
+<li>Kubernetes versions: Latest AKS-supported versions</li>
+<li>GPU support: NVIDIA GPU drivers pre-installed</li>
+<li>Security: Regular security updates via AKS</li>
+</ul>
+<h3 id="azurelinux">AzureLinux</h3>
+<p>Microsoft&rsquo;s optimized Linux distribution for Azure workloads:</p>
+<ul>
+<li>Lightweight and secure</li>
+<li>Optimized for containerized workloads</li>
+<li>Fast boot times</li>
+<li>Azure-specific optimizations</li>
+</ul>
+<h2 id="specifying-image-families">Specifying Image Families</h2>
+<p>Configure the image family in your <code>AKSNodeClass</code>:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">custom-images</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">imageFamily</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">Ubuntu2204 </span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#8f5902;font-style:italic"># or AzureLinux</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div><h2 id="using-custom-images">Using Custom Images</h2>
+<p>For specialized requirements, you can use custom VM images. Custom images must:</p>
+<ul>
+<li>Be based on a supported base image (Ubuntu 22.04 or Azure Linux)</li>
+<li>Include the AKS node binaries and configuration</li>
+<li>Have containerd properly configured</li>
+<li>Include any required GPU drivers or specialized software</li>
+</ul>
+<h3 id="creating-custom-images">Creating Custom Images</h3>
+<ol>
+<li><strong>Start with a base AKS-optimized image</strong>:</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># List available AKS images</span>
+</span></span><span style="display:flex;"><span>az vm image list --publisher microsoft-aks --all --output table
+</span></span></code></pre></div><ol start="2">
+<li><strong>Create a VM from the base image</strong>:</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az vm create <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --resource-group myResourceGroup <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --name image-builder-vm <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --image microsoft-aks:aks:ubuntu-2204-202310:latest <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --size Standard_D2s_v3 <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --admin-username azureuser <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --generate-ssh-keys
+</span></span></code></pre></div><ol start="3">
+<li><strong>Customize the VM</strong>:</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># SSH into the VM and install your customizations</span>
+</span></span><span style="display:flex;"><span>ssh azureuser@&lt;VM_IP&gt;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Example: Install additional software</span>
+</span></span><span style="display:flex;"><span>sudo apt update
+</span></span><span style="display:flex;"><span>sudo apt install -y my-custom-package
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Install custom GPU drivers if needed</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Configure additional security tools</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Set up monitoring agents</span>
+</span></span></code></pre></div><ol start="4">
+<li><strong>Prepare for image capture</strong>:</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Deprovision the VM (removes user data and generalizes)</span>
+</span></span><span style="display:flex;"><span>sudo waagent -deprovision+user -force
+</span></span><span style="display:flex;"><span><span style="color:#204a87">exit</span>
+</span></span></code></pre></div><ol start="5">
+<li><strong>Capture the image</strong>:</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Deallocate and generalize the VM</span>
+</span></span><span style="display:flex;"><span>az vm deallocate --resource-group myResourceGroup --name image-builder-vm
+</span></span><span style="display:flex;"><span>az vm generalize --resource-group myResourceGroup --name image-builder-vm
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Create the custom image</span>
+</span></span><span style="display:flex;"><span>az image create <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --resource-group myResourceGroup <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --name myCustomAKSImage <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --source image-builder-vm
+</span></span></code></pre></div><h3 id="using-custom-images-with-karpenter">Using Custom Images with Karpenter</h3>
+<p>Reference your custom image in the <code>AKSNodeClass</code>:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">custom-image-nodeclass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#8f5902;font-style:italic"># Use custom image by specifying the image ID</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">imageID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/&lt;subscription-id&gt;/resourceGroups/&lt;rg&gt;/providers/Microsoft.Compute/images/myCustomAKSImage&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#8f5902;font-style:italic"># Or use a custom image family (requires Karpenter configuration)</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">imageFamily</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;Custom&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div><h2 id="image-requirements">Image Requirements</h2>
+<p>All images used with Karpenter must meet these requirements:</p>
+<h3 id="base-requirements">Base Requirements</h3>
+<ul>
+<li>Linux-based (Ubuntu 22.04 LTS or Azure Linux)</li>
+<li>x86_64 or ARM64 architecture</li>
+<li>Minimum 30 GB disk space</li>
+<li>containerd container runtime</li>
+<li>systemd init system</li>
+</ul>
+<h3 id="aks-specific-requirements">AKS-Specific Requirements</h3>
+<ul>
+<li>AKS node binaries (kubelet, kubeadm, etc.)</li>
+<li>Azure VM agent (waagent)</li>
+<li>Proper network configuration for Azure CNI</li>
+<li>AKS-specific systemd units and configuration</li>
+</ul>
+<h3 id="security-requirements">Security Requirements</h3>
+<ul>
+<li>Up-to-date security patches</li>
+<li>Disabled password authentication (SSH key only)</li>
+<li>Proper firewall configuration</li>
+<li>No unnecessary services running</li>
+</ul>
+<h2 id="gpu-images">GPU Images</h2>
+<p>For GPU workloads, ensure your image includes:</p>
+<h3 id="nvidia-gpus">NVIDIA GPUs</h3>
+<ul>
+<li>NVIDIA driver (version compatible with your CUDA requirements)</li>
+<li>NVIDIA Container Toolkit</li>
+<li>CUDA runtime (if needed)</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Example: Install NVIDIA drivers in custom image</span>
+</span></span><span style="display:flex;"><span>sudo apt update
+</span></span><span style="display:flex;"><span>sudo apt install -y nvidia-driver-525
+</span></span><span style="display:flex;"><span>sudo apt install -y nvidia-container-toolkit
+</span></span></code></pre></div><h3 id="verify-gpu-support">Verify GPU Support</h3>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">NodePool</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">gpu-nodepool</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">template</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">requirements</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span>- <span style="color:#204a87;font-weight:bold">key</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/sku-gpu-count</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">          </span><span style="color:#204a87;font-weight:bold">operator</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">Gt</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">          </span><span style="color:#204a87;font-weight:bold">values</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000;font-weight:bold">[</span><span style="color:#4e9a06">&#34;0&#34;</span><span style="color:#000;font-weight:bold">]</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">nodeClassRef</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">gpu-image-nodeclass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div><h2 id="image-updates-and-lifecycle">Image Updates and Lifecycle</h2>
+<h3 id="automatic-updates">Automatic Updates</h3>
+<ul>
+<li>Default AKS images are automatically updated by Microsoft</li>
+<li>New image versions include security patches and AKS improvements</li>
+<li>Karpenter automatically uses the latest available image version</li>
+</ul>
+<h3 id="custom-image-updates">Custom Image Updates</h3>
+<ul>
+<li>Custom images require manual updating</li>
+<li>Plan for regular security updates</li>
+<li>Test image updates in non-production environments first</li>
+</ul>
+<h3 id="rolling-updates">Rolling Updates</h3>
+<p>When updating images:</p>
+<ol>
+<li><strong>Create new image version</strong></li>
+<li><strong>Update AKSNodeClass</strong> with new image reference</li>
+<li><strong>Trigger node refresh</strong> to roll out new images:</li>
+</ol>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Cordon and drain nodes to force replacement</span>
+</span></span><span style="display:flex;"><span>kubectl cordon &lt;node-name&gt;
+</span></span><span style="display:flex;"><span>kubectl drain &lt;node-name&gt; --ignore-daemonsets --delete-emptydir-data
+</span></span></code></pre></div><h2 id="best-practices">Best Practices</h2>
+<h3 id="image-management">Image Management</h3>
+<ul>
+<li>Use infrastructure as code (ARM templates, Terraform) to create images</li>
+<li>Implement automated image building pipelines</li>
+<li>Tag images with version numbers and creation dates</li>
+<li>Store images in the same region as your AKS cluster</li>
+</ul>
+<h3 id="security">Security</h3>
+<ul>
+<li>Regularly update base images with security patches</li>
+<li>Scan images for vulnerabilities before deployment</li>
+<li>Use minimal images with only required packages</li>
+<li>Implement image signing and verification</li>
+</ul>
+<h3 id="testing">Testing</h3>
+<ul>
+<li>Test custom images in development environments first</li>
+<li>Validate that all required software is properly installed</li>
+<li>Verify compatibility with your AKS cluster version</li>
+<li>Test node bootstrap process</li>
+</ul>
+<h3 id="monitoring">Monitoring</h3>
+<ul>
+<li>Monitor image performance and reliability</li>
+<li>Track image usage across different NodePools</li>
+<li>Set up alerts for image-related failures</li>
+<li>Log image deployment metrics</li>
+</ul>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<p><strong>Image Not Found</strong></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Verify image exists and permissions</span>
+</span></span><span style="display:flex;"><span>az image show --resource-group myResourceGroup --name myCustomAKSImage
+</span></span></code></pre></div><p><strong>Node Bootstrap Failures</strong></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Check node logs for bootstrap errors</span>
+</span></span><span style="display:flex;"><span>kubectl logs -n kube-system &lt;node-name&gt;
+</span></span></code></pre></div><p><strong>Permission Issues</strong></p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Verify Karpenter has access to custom images</span>
+</span></span><span style="display:flex;"><span>az role assignment list --assignee &lt;karpenter-identity&gt; --scope /subscriptions/&lt;subscription-id&gt;
+</span></span></code></pre></div><h3 id="debug-commands">Debug Commands</h3>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Check AKSNodeClass status</span>
+</span></span><span style="display:flex;"><span>kubectl describe aksnodeclass &lt;nodeclass-name&gt;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># View node events</span>
+</span></span><span style="display:flex;"><span>kubectl get events --field-selector involvedObject.kind<span style="color:#ce5c00;font-weight:bold">=</span>Node
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Check Karpenter controller logs</span>
+</span></span><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter -f
+</span></span></code></pre></div>
+	
+	
+	
+</div>
+
+
+          </main>
+        </div>
+      </div>
+      
+<footer class="bg-dark py-5 row d-print-none">
+  <div class="container-fluid mx-sm-5">
+    <div class="row">
+      <p class="mx-auto col-sm-3 text-center text-light">
+        Built with ❤️ at <a class="text-light" href="https://aws.amazon.com/">AWS</a>
+      </p>
+    </div>
+    <div class="row">
+      <div class="col-6 col-sm-4 text-xs-center order-sm-2">
+        
+          
+        
+      </div>
+      <div class="col-6 col-sm-4 text-right text-xs-center order-sm-3">
+        
+          
+            
+  <ul class="list-inline mb-0">
+    
+      <li class="list-inline-item mx-2 h3" data-toggle="tooltip" data-placement="top" title="GitHub" aria-label="GitHub">
+        <a class="text-white" target="_blank" rel="noopener" href="https://github.com/Azure/karpenter-provider-azure" aria-label="GitHub">
+          <i class="fab fa-github"></i>
+        </a>
+      </li>
+    
+      <li class="list-inline-item mx-2 h3" data-toggle="tooltip" data-placement="top" title="Slack" aria-label="Slack">
+        <a class="text-white" target="_blank" rel="noopener" href="https://slack.k8s.io/" aria-label="Slack">
+          <i class="fab fa-slack"></i>
+        </a>
+      </li>
+    
+  </ul>
+
+          
+        
+      </div>
+      <div class="col-12 col-sm-4 text-center py-2 order-sm-2">
+        <small class="text-white">&copy; 2025 Microsoft Corporation or its affiliates. All Rights Reserved</small>
+        
+        
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+    </div>
+    
+  <script src="/js/main.js"></script>
+<script src='/js/prism.js'></script>
+<script src='/js/tabpane-persist.js'></script>
+
+  </body>
+</html>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>//localhost:1313/docs/concepts/nodepools/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/concepts/nodeclasses/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/concepts/scheduling/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/concepts/disruption/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/getting-started/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/concepts/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/reference/</loc>
+  </url><url>
+    <loc>//localhost:1313/</loc>
+  </url>
+</urlset>
