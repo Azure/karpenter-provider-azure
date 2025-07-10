@@ -123,7 +123,7 @@ func NewAZClientFromAPI(
 // nolint: gocyclo
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	o := options.FromContext(ctx)
-	opts := armopts.DefaultARMOpts(env.Cloud)
+	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
@@ -193,7 +193,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			cfg.ResourceGroup,
 			o.ClusterName,
 			cred,
-			o.NodeBootstrappingServerURL)
+			o.NodeBootstrappingServerURL,
+			o.EnableAzureSDKLogging)
 		if err != nil {
 			return nil, err
 		}

@@ -89,6 +89,7 @@ type Options struct {
 	SIGSubscriptionID          string            `json:"sigSubscriptionId,omitempty"`
 	NodeResourceGroup          string            `json:"nodeResourceGroup,omitempty"`
 	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
+	EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -119,6 +120,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	}
 	// See https://github.com/Azure/karpenter-provider-azure/issues/1042 for issue discussing improvements around this
 	fs.Var(additionalTagsFlag, "additional-tags", "Additional tags to apply to the resources in Azure. Format is key1=value1,key2=value2. These tags will be merged with the tags specified on the NodePool. In the case of a tag collision, the NodePool tag wins. These tags only apply to new nodes and do not trigger drift, which means that adding tags to this collection will not update existing nodes until drift triggers for some other reason.")
+	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", false), "If set to true then Azure SDK middleware logging is enabled for debugging, logging all HTTP requests/responses to Azure APIs.")
 }
 
 func (o *Options) GetAPIServerName() string {
