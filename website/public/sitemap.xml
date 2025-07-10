@@ -32,7 +32,7 @@
   </url><url>
     <loc>//localhost:1313/docs/tasks/</loc>
   </url><url>
-    <loc>//localhost:1313/docs/concepts/deployment-modes/</loc>
+    <loc>//localhost:1313/docs/concepts/nap-vs-self-hosted/</loc>
   </url><url>
     <loc>//localhost:1313/docs/reference/</loc>
   </url><url>
@@ -41,6 +41,8 @@
     <loc>//localhost:1313/docs/troubleshooting/</loc>
   </url><url>
     <loc>//localhost:1313/docs/upgrading/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/reference/nodepools/</loc>
   </url><url>
     <loc>//localhost:1313/</loc>
   </url>

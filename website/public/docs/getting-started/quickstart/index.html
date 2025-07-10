@@ -122,9 +122,9 @@
   <input type="checkbox" id="m-docsconceptsdisruption-check"/>
   <label for="m-docsconceptsdisruption-check"><a href="/docs/concepts/disruption/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsdisruption"><span class="">Disruption</span></a></label>
   
-</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsdeployment-modes-li">
-  <input type="checkbox" id="m-docsconceptsdeployment-modes-check"/>
-  <label for="m-docsconceptsdeployment-modes-check"><a href="/docs/concepts/deployment-modes/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsdeployment-modes"><span class="">Deployment Modes</span></a></label>
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsnap-vs-self-hosted-li">
+  <input type="checkbox" id="m-docsconceptsnap-vs-self-hosted-check"/>
+  <label for="m-docsconceptsnap-vs-self-hosted-check"><a href="/docs/concepts/nap-vs-self-hosted/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsnap-vs-self-hosted"><span class="">Deployment Modes</span></a></label>
   
 </li>
   </ul>
@@ -159,6 +159,10 @@
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencemetrics-li">
   <input type="checkbox" id="m-docsreferencemetrics-check"/>
   <label for="m-docsreferencemetrics-check"><a href="/docs/reference/metrics/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencemetrics"><span class="">Metrics</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencenodepools-li">
+  <input type="checkbox" id="m-docsreferencenodepools-check"/>
+  <label for="m-docsreferencenodepools-check"><a href="/docs/reference/nodepools/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencenodepools"><span class=""></span></a></label>
   
 </li>
   </ul>
@@ -461,7 +465,7 @@
 </span></span><span style="display:flex;"><span>kubectl logs -f -n <span style="color:#4e9a06">&#34;</span><span style="color:#4e9a06">${</span><span style="color:#000">KARPENTER_NAMESPACE</span><span style="color:#4e9a06">}</span><span style="color:#4e9a06">&#34;</span> -l app.kubernetes.io/name<span style="color:#ce5c00;font-weight:bold">=</span>karpenter -c controller
 </span></span></code></pre></div><h3 id="create-nodepool">Create NodePool</h3>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>cat <span style="color:#4e9a06">&lt;&lt;EOF | kubectl apply -f -
-</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">apiVersion: karpenter.sh/v1beta1
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">apiVersion: karpenter.sh/v1
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">kind: NodePool
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">metadata:
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  name: general-purpose
@@ -534,7 +538,7 @@
 <li><strong>Learn concepts</strong>: Understand <a href="/docs/concepts/nodepools/">NodePools</a>, <a href="/docs/concepts/nodeclasses/">AKSNodeClasses</a>, and <a href="/docs/concepts/disruption/">disruption policies</a></li>
 <li><strong>Advanced configuration</strong>: Explore <a href="/docs/tasks/managing-vm-images/#gpu-images">GPU workloads</a>, <a href="/docs/concepts/nodepools/#spot-instances">spot instances</a>, and <a href="/docs/tasks/managing-vm-images/">custom images</a></li>
 <li><strong>Production deployment</strong>: Review <a href="../best-practices/">best practices</a>, <a href="../observability/">monitoring</a>, and <a href="/docs/troubleshooting/">troubleshooting</a></li>
-<li><strong>Choose deployment mode</strong>: Read <a href="/docs/concepts/deployment-modes/">NAP vs Self-hosted</a> comparison to understand which mode fits your needs</li>
+<li><strong>Choose deployment mode</strong>: Read <a href="../concepts/deployment-modes/">NAP vs Self-hosted</a> comparison to understand which mode fits your needs</li>
 </ul>
 <h2 id="common-next-steps">Common Next Steps</h2>
 <h3 id="enable-spot-instances">Enable Spot Instances</h3>
