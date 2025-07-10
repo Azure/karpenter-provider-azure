@@ -83,6 +83,11 @@ func (u Ubuntu2204) DefaultImages() []types.DefaultImageOutput {
 	}
 }
 
+func (u Ubuntu2204) FIPSImages() []types.DefaultImageOutput {
+	//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
+	return []types.DefaultImageOutput{}
+}
+
 // UserData returns the default userdata script for the image Family
 func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
