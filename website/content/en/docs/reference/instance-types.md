@@ -6,7 +6,20 @@ description: >
   Evaluate Instance Types
 ---
 
-Karpenter provisions instances from Azure's VM sizes. Karpenter supports all VM sizes except those with fewer than 2 vCPUs, specialized VM sizes that don't support standard Azure managed disks, or VM sizes that are not available in AKS.
+Karpenter provisions instances from Azure's VM sizes with the following support criteria:
+
+**Supported VM sizes must have:**
+- At least 2 vCPUs
+- At least 3.5 GiB of memory
+- Compatibility with AKS (Azure Kubernetes Service)
+- Support for standard Azure managed disks
+
+**Excluded VM sizes:**
+- Basic tier VMs (Basic_A0 through Basic_A4)
+- Very small Standard VMs (Standard_A0, Standard_A1, Standard_A1_v2, Standard_B1s, Standard_B1ms, Standard_F1, Standard_F1s)
+- Confidential computing VMs (DC-series, EC-series) - *planned for future support*
+- VMs with constrained vCPUs
+- GPU VMs without proper image family support
 
 ## Viewing Available Instance Types
 
@@ -24,24 +37,103 @@ kubectl describe aksnodeclass default
 
 ## VM Size Families
 
-Azure organizes VM sizes into families based on their intended use case:
+Azure organizes VM sizes into families based on their intended use case and performance characteristics:
 
 ### General Purpose
-- **D-series**: Balanced CPU-to-memory ratio. Good for testing, development, small databases, and low traffic web servers.
-- **E-series**: Optimized for in-memory applications. High memory-to-CPU ratio.
-- **B-series**: Burstable performance. Cost-effective for workloads that don't need full CPU performance continuously.
 
-### Compute Optimized  
-- **F-series**: High CPU-to-memory ratio. Good for compute-intensive applications.
+**A-series**
+- Entry-level economical VMs for development and testing
+- Best for low-traffic web servers, proof of concepts
+- Limited performance for production workloads
+
+**B-series**  
+- Burstable performance with baseline CPU performance
+- Cost-effective for workloads with variable CPU usage
+- Ideal for web servers, small databases, development environments
+- CPU credits system allows bursting above baseline when needed
+
+**D-series**
+- Balanced CPU-to-memory ratio for enterprise applications  
+- Suitable for web servers, application servers, small to medium databases
+- Supports premium storage for better I/O performance
+- Good for batch processing and relational databases
+
+**DC-series**
+- Confidential computing with hardware-based trusted execution environments
+- Enhanced data protection for sensitive workloads
+- Supports encryption of data in use
+- Currently not supported by Karpenter
+
+### Compute Optimized
+
+**F-series**
+- High CPU-to-memory ratio optimized for compute-intensive workloads
+- Ideal for medium-traffic web servers, batch processing, analytics
+- Good for gaming servers, scientific modeling
+- Supports premium storage and accelerated networking
+
+**FX-series**
+- Specialized for compute-intensive workloads
+- Excellent for Electronic Design Automation (EDA)
+- Financial modeling and scientific simulations
+- High-frequency processors with large L3 cache
 
 ### Memory Optimized
-- **M-series**: Highest memory-to-CPU ratios. Ideal for large databases and in-memory analytics.
+
+**E-series**
+- High memory-to-CPU ratios for memory-intensive applications
+- Ideal for relational databases, in-memory analytics
+- Supports large-scale enterprise applications
+- Good for big data processing and caching layers
+
+**M-series**
+- Extremely large memory configurations (up to 3.8 TiB)
+- Designed for the largest enterprise databases
+- SAP HANA and other large in-memory databases
+- High-memory business intelligence applications
 
 ### Storage Optimized
-- **L-series**: High disk throughput and IO. Good for big data, NoSQL databases.
+
+**L-series**
+- High disk throughput and I/O for storage-intensive workloads
+- Local NVMe SSD storage with high IOPS
+- Ideal for big data, NoSQL databases (Cassandra, MongoDB)
+- Data warehousing and distributed file systems
+- Video processing and rendering
 
 ### GPU Accelerated
-- **N-series**: GPU-enabled VMs for AI, machine learning, and high-performance computing.
+
+**NC-series**
+- NVIDIA GPU acceleration for compute-intensive workloads
+- Machine learning training and inference
+- High-performance computing (HPC) simulations
+- 3D graphics rendering and video processing
+
+**ND-series**  
+- Optimized for deep learning training at scale
+- Multiple high-end NVIDIA GPUs with NVLink
+- Distributed AI training workloads
+- Research and development in AI/ML
+
+**NV-series**
+- Graphics-intensive applications and virtual desktops
+- GPU acceleration for visualization workloads
+- 3D rendering, computer-aided design (CAD)
+- Virtual desktop infrastructure (VDI)
+
+### High Performance Computing (HPC)
+
+**HB-series**
+- High memory bandwidth for HPC applications
+- AMD EPYC processors with large L3 cache
+- Scientific simulations and modeling
+- Computational fluid dynamics (CFD)
+
+**HC-series**
+- Intel Xeon processors optimized for HPC
+- Dense compute workloads
+- Weather forecasting and seismic analysis
+- Engineering simulations
 
 ## Instance Type Selection
 
@@ -74,7 +166,7 @@ karpenter.azure.com/sku-gpu-count: "1"
 You can use these labels in your NodePool requirements to target specific instance types:
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: compute-optimized
@@ -110,9 +202,54 @@ spec:
 - **Standard_NC12s_v3**: 12 vCPUs, 224 GB RAM, 2x V100 GPU
 - **Standard_ND40rs_v2**: 40 vCPUs, 672 GB RAM, 8x V100 GPU
 
+## GPU Support and Image Compatibility
+
+GPU-enabled VMs require specific image families for proper driver support:
+
+**NVIDIA GPU VMs (NC, ND, NV series):**
+- Supported with Ubuntu 22.04 image family
+- Automatic NVIDIA driver installation
+- CUDA runtime environment
+
+**Azure Linux GPU VMs:**
+- Supported with AzureLinux image family  
+- Optimized for specific GPU workloads
+- Limited to compatible GPU SKUs
+
+```yaml
+# Example GPU NodePool with proper image family
+apiVersion: karpenter.sh/v1
+kind: NodePool  
+metadata:
+  name: gpu-workloads
+spec:
+  template:
+    spec:
+      requirements:
+        - key: karpenter.azure.com/sku-gpu-count
+          operator: Gt
+          values: ["0"]
+      nodeClassRef:
+        apiVersion: karpenter.azure.com/v1beta1
+        kind: AKSNodeClass
+        name: gpu-nodeclass
+---
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: gpu-nodeclass
+spec:
+  imageFamily: Ubuntu2204  # Required for NVIDIA GPU support
+```
+
 ## Regional Availability
 
 VM size availability varies by Azure region. Not all VM sizes are available in all regions. Karpenter automatically discovers which VM sizes are available in your cluster's region and zones.
+
+**Zonal regions** (with availability zone support):
+- Americas: East US, East US 2, Central US, South Central US, West US 2, West US 3, Canada Central, Brazil South
+- Europe: North Europe, West Europe, France Central, Germany West Central, UK South, Sweden Central, Switzerland North
+- Asia Pacific: Southeast Asia, East Asia, Australia East, Japan East, Korea Central, Central India
 
 You can check VM size availability in a region using Azure CLI:
 
@@ -147,12 +284,26 @@ Karpenter automatically considers pricing when making provisioning decisions and
 - Enable accelerated networking for network-intensive applications  
 - Choose appropriate CPU-to-memory ratios for your workload type
 
+### Ephemeral OS Disks
+Karpenter automatically chooses the best ephemeral disk placement when the OS disk size fits within available ephemeral storage:
+
+**Placement Priority (best to worst):**
+1. **NVMe Disk**: Highest performance local NVMe SSD
+2. **Cache Disk**: High-performance caching disk 
+3. **Resource Disk**: Standard temporary disk
+
+**Benefits:**
+- Significantly faster boot times
+- Better I/O performance for OS operations
+- No additional storage costs
+- Automatic selection based on VM capabilities
+
 ## Spot VMs
 
 Azure Spot VMs offer significant cost savings (up to 90% off) in exchange for potential interruption when Azure needs the capacity back.
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: spot-nodepool
@@ -166,7 +317,7 @@ spec:
 ```
 
 ### Spot VM Considerations
-- **Interruption notice**: 30 seconds advance warning
+- **Preemption**: May be reclaimed when Azure needs capacity
 - **No SLA**: No availability guarantee
 - **Best effort**: Allocation depends on available capacity
 - **Pricing**: Variable based on demand

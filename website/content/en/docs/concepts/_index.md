@@ -58,7 +58,6 @@ Karpenter handles all clean-up work needed to properly delete the node.
   * Nodes can be removed as their workloads will run on other nodes in the cluster.
   * Nodes can be replaced with cheaper variants due to a change in the workloads.
 * [**Drift**]({{<ref "disruption#drift" >}}): Karpenter will mark nodes as drifted and disrupt nodes that have drifted from their desired specification. See [Drift]({{<ref "#drift" >}}) to see which fields are considered.
-* [**Interruption**]({{<ref "disruption#interruption" >}}): Karpenter will watch for upcoming interruption events that could affect your nodes (health events, spot interruption, etc.) and will cordon, drain, and terminate the node(s) ahead of the event to reduce workload disruption.
 
 For more details on how Karpenter deletes nodes, see the [Disruption Documentation]({{<ref "disruption" >}}).
 

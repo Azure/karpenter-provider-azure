@@ -50,10 +50,7 @@ Karpenter supports most Azure VM sizes that are:
 Yes, you can specify custom VM images through the `AKSNodeClass` configuration. Custom images must include the necessary AKS components and configurations.
 
 ### How does Karpenter handle spot VMs?
-Karpenter supports Azure Spot VMs for cost savings. It automatically handles spot interruptions by:
-- Receiving 30-second advance warning
-- Cordoning and draining affected nodes
-- Provisioning replacement capacity when possible
+Karpenter supports Azure Spot VMs for cost savings. When using spot instances, be aware that they may be reclaimed by Azure when capacity is needed elsewhere.
 
 ### Can I mix spot and regular VMs in the same NodePool?
 Yes, you can specify both `spot` and `on-demand` in the capacity type requirements. Karpenter will prefer spot instances when available.

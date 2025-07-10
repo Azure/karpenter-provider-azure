@@ -79,7 +79,7 @@ spec:
         apiVersion: karpenter.azure.com/v1beta1
         kind: AKSNodeClass
         name: default
-      # Add toleration for spot interruptions
+      # Add toleration for spot instances
       taints:
         - key: "spot-instance"
           value: "true"

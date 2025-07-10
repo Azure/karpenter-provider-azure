@@ -96,16 +96,6 @@ Number of nodeclaims disrupted in total by Karpenter. Labeled by disruption type
 ### `karpenter_nodeclaims_created`
 Number of nodeclaims created in total by Karpenter. Labeled by reason the nodeclaim was created and the owning nodepool.
 
-## Interruption Metrics
-
-### `karpenter_interruption_received_messages_total`
-Number of interruption messages received from Azure Service Bus. Labeled by message type.
-
-### `karpenter_interruption_actions_performed_total` 
-Number of interruption actions performed. Labeled by action type (taint, cordon, drain).
-
-### `karpenter_interruption_message_latency_time_seconds`
-Length of time between message generation and message receipt from the Azure Service Bus queue.
 
 ## Consistency Metrics
 

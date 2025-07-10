@@ -285,15 +285,15 @@ kubectl get pods -n kube-system | grep -E "azure-cni|kube-proxy"
 
 ## Azure-Specific Issues
 
-### Spot VM Interruptions
+### Spot VM Issues
 
-**Symptoms**: Frequent unexpected node terminations.
+**Symptoms**: Unexpected node terminations when using spot instances.
 
 **Debugging Steps**:
 
-1. **Check for spot interruptions**:
+1. **Check node events**:
 ```bash
-kubectl get events | grep -i "spot\|interrupt\|evict"
+kubectl get events | grep -i "spot\|evict"
 ```
 
 2. **Monitor spot VM pricing**:
@@ -302,10 +302,10 @@ az vm list-sizes --location <region> --query "[?contains(name, 'Standard_D2s_v3'
 ```
 
 **Solutions**:
-- Use diverse instance types to reduce interruption impact
+- Use diverse instance types for better availability
 - Implement proper pod disruption budgets
 - Consider mixed spot/on-demand strategies
-- Use spot-tolerant workloads
+- Use workloads tolerant of node preemption
 
 ### Quota Exceeded
 

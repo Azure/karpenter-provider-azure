@@ -71,7 +71,6 @@ Automated methods can be rate limited through [NodePool Disruption Budgets]({{<r
   * Nodes can be removed as their workloads will run on other nodes in the cluster.
   * Nodes can be replaced with lower priced variants due to a change in the workloads.
 * [**Drift**]({{<ref "#drift" >}}): Karpenter will mark nodes as drifted and disrupt nodes that have drifted from their desired specification. See [Drift]({{<ref "#drift" >}}) to see which fields are considered.
-* [**Interruption**]({{<ref "#interruption" >}}): Karpenter will watch for upcoming interruption events that could affect your nodes (health events, spot interruption, etc.) and will taint, drain, and terminate the node(s) ahead of the event to reduce workload disruption.
 
 {{% alert title="Defaults" color="secondary" %}}
 Disruption is configured through the NodePool's disruption block by the `consolidationPolicy`, `expireAfter` and `consolidateAfter` fields. Karpenter will configure these fields with the following values by default if they are not set:
@@ -168,28 +167,6 @@ Karpenter will add the `Drifted` status condition on NodeClaims if the NodeClaim
 1. The `Drift` feature gate is not enabled but the NodeClaim is drifted, Karpenter will remove the status condition.
 2. The NodeClaim isn't drifted, but has the status condition, Karpenter will remove it.
 
-### Interruption
-
-If interruption-handling is enabled, Karpenter will watch for upcoming involuntary interruption events that would cause disruption to your workloads. These interruption events include:
-
-* Azure Spot Instance Interruption Warnings
-* Scheduled Maintenance Events
-* Instance Terminating Events
-* Instance Stopping Events
-
-When Karpenter detects one of these events will occur to your nodes, it automatically taints, drains, and terminates the node(s) ahead of the interruption event to give the maximum amount of time for workload cleanup prior to compute disruption. This enables scenarios where the `terminationGracePeriod` for your workloads may be long or cleanup for your workloads is critical, and you want enough time to be able to gracefully clean-up your pods.
-
-For Azure Spot interruptions, the NodePool will start a new node as soon as it sees the Spot interruption warning. Azure Spot interruptions have a __30 second notice__ before Azure reclaims the instance. Karpenter's average node startup time means that, generally, there is sufficient time for the new node to become ready and to move the pods to the new node before the NodeClaim is reclaimed.
-
-{{% alert title="Note" color="primary" %}}
-Karpenter publishes Kubernetes events to the node for all events listed above. Azure provides notifications for scheduled maintenance and spot interruptions through Azure Event Grid and Azure Service Bus.
-
-If you require handling for additional Azure maintenance events, you can integrate with [Azure Event Grid](https://docs.microsoft.com/en-us/azure/event-grid/) alongside Karpenter to receive additional event notifications.
-{{% /alert %}}
-
-Karpenter enables this feature by watching an Azure Service Bus queue which receives critical events from Azure services which may affect your nodes. Karpenter requires that an Azure Service Bus queue be provisioned and Event Grid subscriptions be added that forward interruption events from Azure services to the Service Bus queue.
-
-To enable interruption handling, configure the `--interruption-queue` CLI argument with the name of the interruption queue provisioned to handle interruption events.
 
 ## Controls
 
@@ -208,7 +185,7 @@ For example, the following NodePool with three budgets defines the following req
 - The last budget only blocks disruptions during the first 10 minutes of the day, where 0 disruptions are allowed.
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: default
@@ -273,7 +250,7 @@ Examples of voluntary node removal that will be prevented by this annotation inc
 - Expiration
 
 {{% alert title="Note" color="primary" %}}
-Voluntary node removal does not include [Interruption]({{<ref "#interruption" >}}) or manual deletion initiated through `kubectl delete node`. Both of these are considered involuntary events, since node removal cannot be delayed.
+Voluntary node removal does not include manual deletion initiated through `kubectl delete node`. This is considered an involuntary event, since node removal cannot be delayed.
 {{% /alert %}}
 
 ### Node-Level Controls
@@ -293,7 +270,7 @@ metadata:
 NodePool `.spec.annotations` allow you to set annotations that will be applied to all nodes launched by this NodePool. By setting the annotation `karpenter.sh/do-not-disrupt: "true"` on the NodePool, you will selectively prevent all nodes launched by this NodePool from being considered in disruption actions.
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: default
