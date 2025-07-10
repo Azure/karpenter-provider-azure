@@ -88,6 +88,7 @@ type Options struct {
 	SIGAccessTokenScope        string `json:"-"`                // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
 	SIGSubscriptionID          string `json:"sigSubscriptionId,omitempty"`
 	NodeResourceGroup          string `json:"nodeResourceGroup,omitempty"`
+	EnableAzureSDKLogging      bool   `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -112,6 +113,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGAccessTokenScope, "sig-access-token-scope", env.WithDefaultString("SIG_ACCESS_TOKEN_SCOPE", ""), "The scope for the SIG access token. Only used for AKS managed karpenter. UseSIG must be set to true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
+	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", false), "If set to true then Azure SDK middleware logging is enabled for debugging, logging all HTTP requests/responses to Azure APIs.")
 }
 
 func (o *Options) GetAPIServerName() string {
