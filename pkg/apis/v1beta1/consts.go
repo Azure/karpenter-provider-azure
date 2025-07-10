@@ -17,7 +17,8 @@ limitations under the License.
 package v1beta1
 
 const (
-	FIPSEnabled     = "FIPS"
-	FIPSDisabled    = "Disabled"
-	FIPSUnspecified = ""
+	// FIPSMode enum values
+	FIPSEnabled     = "FIPS"     // Explicitly enables FIPS images (currently FIPS 140-2)
+	FIPSDisabled    = "Disabled" // Explicitly disables FIPSMode
+	FIPSUnspecified = ""         // Effectively behaves like Disabled for now
 )
