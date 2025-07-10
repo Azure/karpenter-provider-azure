@@ -1542,10 +1542,10 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     
     <item>
       <title>Docs: Deployment Modes</title>
-      <link>//localhost:1313/docs/concepts/deployment-modes/</link>
+      <link>//localhost:1313/docs/concepts/nap-vs-self-hosted/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/concepts/deployment-modes/</guid>
+      <guid>//localhost:1313/docs/concepts/nap-vs-self-hosted/</guid>
       <description>
         
         
@@ -1566,8 +1566,8 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
 &lt;li&gt;&lt;strong&gt;Zero operational overhead&lt;/strong&gt;: No need to install, configure, or maintain Karpenter&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Automatic updates&lt;/strong&gt;: Karpenter is automatically updated with AKS cluster updates&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Enterprise support&lt;/strong&gt;: Covered under Azure support agreements&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Integrated monitoring&lt;/strong&gt;: Built-in integration with Azure Monitor and logging&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Security&lt;/strong&gt;: Managed identity and RBAC configured automatically&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Integrated monitoring&lt;/strong&gt;: Built-in integration with Azure Monitor, grafana, metrics, and logging&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Security&lt;/strong&gt;: We manage the bootstrapping token for you&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Cost optimization&lt;/strong&gt;: Automatically provisions optimal VM configurations for workloads&lt;/li&gt;
 &lt;/ul&gt;
 &lt;h3 id=&#34;when-to-use-nap&#34;&gt;When to Use NAP&lt;/h3&gt;
@@ -1669,24 +1669,8 @@ The recommended network configurations for NAP are:&lt;/p&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;}&lt;/span&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;self-hosted-mode&#34;&gt;Self-hosted Mode&lt;/h2&gt;
 &lt;h3 id=&#34;what-is-self-hosted-mode&#34;&gt;What is Self-hosted Mode?&lt;/h3&gt;
-&lt;p&gt;Self-hosted mode runs Karpenter as a regular Kubernetes deployment in your cluster, giving you full control over its configuration and lifecycle.&lt;/p&gt;
-&lt;h3 id=&#34;benefits-of-self-hosted-mode&#34;&gt;Benefits of Self-hosted Mode&lt;/h3&gt;
-&lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;Full control&lt;/strong&gt;: Complete control over Karpenter configuration and behavior&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Latest features&lt;/strong&gt;: Access to the newest Karpenter features immediately&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Custom configuration&lt;/strong&gt;: Ability to customize all aspects of the deployment&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Development and testing&lt;/strong&gt;: Ideal for experimentation and development&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Multi-cloud compatibility&lt;/strong&gt;: Uses the same patterns as other Karpenter providers&lt;/li&gt;
-&lt;/ul&gt;
-&lt;h3 id=&#34;when-to-use-self-hosted-mode&#34;&gt;When to Use Self-hosted Mode&lt;/h3&gt;
-&lt;p&gt;Choose self-hosted mode when:&lt;/p&gt;
-&lt;ul&gt;
-&lt;li&gt;You need advanced customization not available in NAP&lt;/li&gt;
-&lt;li&gt;You want to use the latest Karpenter features immediately&lt;/li&gt;
-&lt;li&gt;You&amp;rsquo;re experimenting with Karpenter or developing custom functionality&lt;/li&gt;
-&lt;li&gt;You prefer to manage infrastructure components directly&lt;/li&gt;
-&lt;li&gt;You need specific configuration for compliance or security requirements&lt;/li&gt;
-&lt;/ul&gt;
+&lt;p&gt;Self-hosted mode runs Karpenter as a regular Kubernetes deployment in your cluster, giving you full control over its configuration and lifecycle. You probably don&amp;rsquo;t want this, as that comes with managing the bootstrap token and other headaches. It is our belief that you should use NAP and only use self hosted for experimentation with new feature flags or development of karpenter.&lt;/p&gt;
+&lt;p&gt;This will change in the future as we add more stability and parity to the two projects.&lt;/p&gt;
 &lt;h3 id=&#34;self-hosted-limitations&#34;&gt;Self-hosted Limitations&lt;/h3&gt;
 &lt;ul&gt;
 &lt;li&gt;&lt;strong&gt;Operational overhead&lt;/strong&gt;: You manage installation, updates, and maintenance&lt;/li&gt;
@@ -1696,92 +1680,17 @@ The recommended network configurations for NAP are:&lt;/p&gt;
 &lt;/ul&gt;
 &lt;h3 id=&#34;self-hosted-architecture&#34;&gt;Self-hosted Architecture&lt;/h3&gt;
 &lt;p&gt;In self-hosted mode:&lt;/p&gt;
-&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;┌─────────────────────┐    ┌──────────────────────┐
-│   AKS Cluster       │    │     Azure APIs       │
-│                     │    │                      │
-│  ┌───────────────┐  │    │  ┌─────────────────┐ │
-│  │   Karpenter   │  │◄───┤  │  Compute API    │ │
-│  │   Controller  │  │    │  │  Network API    │ │
-│  │               │  │    │  │  Identity API   │ │
-│  └───────────────┘  │    │  └─────────────────┘ │
-│          │          │    └──────────────────────┘
-│          ▼          │
-│  ┌───────────────┐  │    
-│  │     Nodes     │  │    
-│  │  (Provisioned │  │    
-│  │   by Karpenter│  │    
-│  └───────────────┘  │    
-└─────────────────────┘    
-&lt;/code&gt;&lt;/pre&gt;&lt;h3 id=&#34;installing-self-hosted-karpenter&#34;&gt;Installing Self-hosted Karpenter&lt;/h3&gt;
-&lt;h4 id=&#34;prerequisites&#34;&gt;Prerequisites&lt;/h4&gt;
+&lt;p&gt;In self-hosted mode, Karpenter is deployed directly into your AKS cluster as a standard Kubernetes deployment—typically in the &lt;code&gt;kube-system&lt;/code&gt; or a dedicated namespace. This means Karpenter runs alongside your workloads and other cluster components, giving you direct access to its configuration, logs, and lifecycle management.&lt;/p&gt;
+&lt;p&gt;By contrast, in Node Auto Provisioning (NAP) mode, Karpenter runs as a managed addon within the AKS control plane, alongside the Kubernetes API server and other critical system components. In this managed scenario, you do not interact directly with the Karpenter deployment; Microsoft manages its lifecycle, configuration, and upgrades for you.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Key architectural difference:&lt;/strong&gt;&lt;/p&gt;
 &lt;ul&gt;
-&lt;li&gt;Azure CLI&lt;/li&gt;
-&lt;li&gt;kubectl&lt;/li&gt;
-&lt;li&gt;Helm 3.x&lt;/li&gt;
-&lt;li&gt;An AKS cluster with workload identity enabled&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Self-hosted:&lt;/strong&gt; Karpenter runs in your overlay (user) cluster, managed by you.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;NAP:&lt;/strong&gt; Karpenter runs in the managed AKS control plane, managed by Azure.&lt;/li&gt;
 &lt;/ul&gt;
-&lt;h4 id=&#34;installation-steps&#34;&gt;Installation Steps&lt;/h4&gt;
-&lt;ol&gt;
-&lt;li&gt;&lt;strong&gt;Set up environment variables&lt;/strong&gt;:&lt;/li&gt;
-&lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87&#34;&gt;export&lt;/span&gt; &lt;span style=&#34;color:#000&#34;&gt;CLUSTER_NAME&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;myCluster
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87&#34;&gt;export&lt;/span&gt; &lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;myResourceGroup
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87&#34;&gt;export&lt;/span&gt; &lt;span style=&#34;color:#000&#34;&gt;LOCATION&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;westus2
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87&#34;&gt;export&lt;/span&gt; &lt;span style=&#34;color:#000&#34;&gt;KARPENTER_NAMESPACE&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;kube-system
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;2&#34;&gt;
-&lt;li&gt;&lt;strong&gt;Create managed identity&lt;/strong&gt;:&lt;/li&gt;
-&lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;az identity create --name karpentermsi --resource-group &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --location &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;LOCATION&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;3&#34;&gt;
-&lt;li&gt;&lt;strong&gt;Configure workload identity&lt;/strong&gt;:&lt;/li&gt;
-&lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Get cluster OIDC issuer&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#000&#34;&gt;OIDC_ISSUER&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;$(&lt;/span&gt;az aks show --name &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;CLUSTER_NAME&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --resource-group &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --query &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;oidcIssuerProfile.issuerUrl&amp;#34;&lt;/span&gt; -o tsv&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;)&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Create federated credential&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;az identity federated-credential create &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --name KARPENTER_FID &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --identity-name karpentermsi &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --resource-group &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --issuer &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;OIDC_ISSUER&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --subject system:serviceaccount:&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;KARPENTER_NAMESPACE&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;:karpenter-sa &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --audience api://AzureADTokenExchange
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;4&#34;&gt;
-&lt;li&gt;&lt;strong&gt;Assign Azure permissions&lt;/strong&gt;:&lt;/li&gt;
-&lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Get the node resource group&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#000&#34;&gt;NODE_RG&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;$(&lt;/span&gt;az aks show --name &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;CLUSTER_NAME&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --resource-group &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --query &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;nodeResourceGroup&amp;#34;&lt;/span&gt; -o tsv&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;)&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Get MSI principal ID&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#000&#34;&gt;MSI_PRINCIPAL_ID&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;$(&lt;/span&gt;az identity show --name karpentermsi --resource-group &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --query &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;principalId&amp;#34;&lt;/span&gt; -o tsv&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;)&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Assign required roles&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;for&lt;/span&gt; role in &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;Virtual Machine Contributor&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;Network Contributor&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;Managed Identity Operator&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;;&lt;/span&gt; &lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;do&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;  az role assignment create &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;    --assignee &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;MSI_PRINCIPAL_ID&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;    --scope &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;/subscriptions/&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;$(&lt;/span&gt;az account show --query id -o tsv&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;)&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;/resourceGroups/&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;NODE_RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;    --role &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;$role&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;done&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;5&#34;&gt;
-&lt;li&gt;&lt;strong&gt;Configure Helm values&lt;/strong&gt;:&lt;/li&gt;
-&lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Download configuration script&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/hack/deploy/configure-values.sh
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;chmod +x ./configure-values.sh
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Generate values file&lt;/span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;./configure-values.sh &lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;CLUSTER_NAME&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt; &lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt; karpenter-sa karpentermsi
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;6&#34;&gt;
-&lt;li&gt;&lt;strong&gt;Install Karpenter&lt;/strong&gt;:&lt;/li&gt;
-&lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87&#34;&gt;export&lt;/span&gt; &lt;span style=&#34;color:#000&#34;&gt;KARPENTER_VERSION&lt;/span&gt;&lt;span style=&#34;color:#ce5c00;font-weight:bold&#34;&gt;=&lt;/span&gt;0.7.0
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --version &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;KARPENTER_VERSION&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --namespace &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;KARPENTER_NAMESPACE&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --create-namespace &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --values karpenter-values.yaml &lt;span style=&#34;color:#4e9a06&#34;&gt;\
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&lt;/span&gt;  --wait
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;comparison-matrix&#34;&gt;Comparison Matrix&lt;/h2&gt;
+&lt;p&gt;This distinction affects how you interact with Karpenter, what you can customize, and who is responsible for its operation and security.&lt;/p&gt;
+&lt;h3 id=&#34;installing-self-hosted-karpenter&#34;&gt;Installing Self-hosted Karpenter&lt;/h3&gt;
+&lt;p&gt;See an installation guide &lt;a href=&#34;https://github.com/Azure/karpenter-provider-azure?tab=readme-ov-file#installation-self-hosted&#34;&gt;here&lt;/a&gt;.&lt;/p&gt;
+&lt;h2 id=&#34;comparison-matrix&#34;&gt;Comparison Matrix&lt;/h2&gt;
 &lt;table&gt;
   &lt;thead&gt;
       &lt;tr&gt;
@@ -1807,11 +1716,6 @@ The recommended network configurations for NAP are:&lt;/p&gt;
           &lt;td&gt;Manual&lt;/td&gt;
       &lt;/tr&gt;
       &lt;tr&gt;
-          &lt;td&gt;&lt;strong&gt;Customization&lt;/strong&gt;&lt;/td&gt;
-          &lt;td&gt;Limited to AKS-exposed options&lt;/td&gt;
-          &lt;td&gt;Full control&lt;/td&gt;
-      &lt;/tr&gt;
-      &lt;tr&gt;
           &lt;td&gt;&lt;strong&gt;Support&lt;/strong&gt;&lt;/td&gt;
           &lt;td&gt;Azure enterprise support&lt;/td&gt;
           &lt;td&gt;Community + self-support&lt;/td&gt;
@@ -1829,20 +1733,16 @@ The recommended network configurations for NAP are:&lt;/p&gt;
       &lt;tr&gt;
           &lt;td&gt;&lt;strong&gt;Production readiness&lt;/strong&gt;&lt;/td&gt;
           &lt;td&gt;Enterprise ready&lt;/td&gt;
-          &lt;td&gt;Requires operational expertise&lt;/td&gt;
+          &lt;td&gt;Use at your own risk&lt;/td&gt;
       &lt;/tr&gt;
       &lt;tr&gt;
           &lt;td&gt;&lt;strong&gt;Cost&lt;/strong&gt;&lt;/td&gt;
           &lt;td&gt;Included in AKS&lt;/td&gt;
           &lt;td&gt;Self-managed infrastructure&lt;/td&gt;
       &lt;/tr&gt;
-      &lt;tr&gt;
-          &lt;td&gt;&lt;strong&gt;Security&lt;/strong&gt;&lt;/td&gt;
-          &lt;td&gt;Auto-configured&lt;/td&gt;
-          &lt;td&gt;Manual configuration required&lt;/td&gt;
-      &lt;/tr&gt;
   &lt;/tbody&gt;
 &lt;/table&gt;
+&lt;p&gt;With self-hosted karpenter, you will be responsible for managing the node bootstrapping token, which is a very expensive and dangerous thing to manage yourself.&lt;/p&gt;
 &lt;h2 id=&#34;migration-between-modes&#34;&gt;Migration Between Modes&lt;/h2&gt;
 &lt;h3 id=&#34;from-self-hosted-to-nap&#34;&gt;From Self-hosted to NAP&lt;/h3&gt;
 &lt;ol&gt;

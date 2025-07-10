@@ -18,19 +18,17 @@ Karpenter provider for AKS can be deployed in two modes:
 ## Node Auto Provisioning (NAP) Mode
 
 ### What is NAP?
-
 [Node Auto Provisioning (NAP)](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) is a managed service where AKS automatically deploys, configures, and manages Karpenter on your cluster. This is the **recommended mode for most users**.
 
 NAP uses pending pod resource requirements to decide the optimal virtual machine configuration to run workloads in the most efficient and cost-effective manner. It automatically manages the entire Karpenter lifecycle as a managed AKS addon.
 
 ### Benefits of NAP
-
 - **Fully managed**: Microsoft manages the Karpenter deployment, updates, and lifecycle
 - **Zero operational overhead**: No need to install, configure, or maintain Karpenter
 - **Automatic updates**: Karpenter is automatically updated with AKS cluster updates
 - **Enterprise support**: Covered under Azure support agreements
-- **Integrated monitoring**: Built-in integration with Azure Monitor and logging
-- **Security**: Managed identity and RBAC configured automatically
+- **Integrated monitoring**: Built-in integration with Azure Monitor, grafana, metrics, and logging
+- **Security**: We manage the bootstrapping token for you 
 - **Cost optimization**: Automatically provisions optimal VM configurations for workloads
 
 ### When to Use NAP
@@ -146,24 +144,9 @@ az aks update \
 
 ### What is Self-hosted Mode?
 
-Self-hosted mode runs Karpenter as a regular Kubernetes deployment in your cluster, giving you full control over its configuration and lifecycle.
+Self-hosted mode runs Karpenter as a regular Kubernetes deployment in your cluster, giving you full control over its configuration and lifecycle. You probably don't want this, as that comes with managing the bootstrap token and other headaches. It is our belief that you should use NAP and only use self hosted for experimentation with new feature flags or development of karpenter. 
 
-### Benefits of Self-hosted Mode
-
-- **Full control**: Complete control over Karpenter configuration and behavior
-- **Latest features**: Access to the newest Karpenter features immediately
-- **Custom configuration**: Ability to customize all aspects of the deployment
-- **Development and testing**: Ideal for experimentation and development
-- **Multi-cloud compatibility**: Uses the same patterns as other Karpenter providers
-
-### When to Use Self-hosted Mode
-
-Choose self-hosted mode when:
-- You need advanced customization not available in NAP
-- You want to use the latest Karpenter features immediately
-- You're experimenting with Karpenter or developing custom functionality
-- You prefer to manage infrastructure components directly
-- You need specific configuration for compliance or security requirements
+This will change in the future as we add more stability and parity to the two projects.
 
 ### Self-hosted Limitations
 
@@ -176,116 +159,33 @@ Choose self-hosted mode when:
 
 In self-hosted mode:
 
-```
-┌─────────────────────┐    ┌──────────────────────┐
-│   AKS Cluster       │    │     Azure APIs       │
-│                     │    │                      │
-│  ┌───────────────┐  │    │  ┌─────────────────┐ │
-│  │   Karpenter   │  │◄───┤  │  Compute API    │ │
-│  │   Controller  │  │    │  │  Network API    │ │
-│  │               │  │    │  │  Identity API   │ │
-│  └───────────────┘  │    │  └─────────────────┘ │
-│          │          │    └──────────────────────┘
-│          ▼          │
-│  ┌───────────────┐  │    
-│  │     Nodes     │  │    
-│  │  (Provisioned │  │    
-│  │   by Karpenter│  │    
-│  └───────────────┘  │    
-└─────────────────────┘    
-```
+In self-hosted mode, Karpenter is deployed directly into your AKS cluster as a standard Kubernetes deployment—typically in the `kube-system` or a dedicated namespace. This means Karpenter runs alongside your workloads and other cluster components, giving you direct access to its configuration, logs, and lifecycle management.
 
+By contrast, in Node Auto Provisioning (NAP) mode, Karpenter runs as a managed addon within the AKS control plane, alongside the Kubernetes API server and other critical system components. In this managed scenario, you do not interact directly with the Karpenter deployment; Microsoft manages its lifecycle, configuration, and upgrades for you.
+
+**Key architectural difference:**  
+- **Self-hosted:** Karpenter runs in your overlay (user) cluster, managed by you.
+- **NAP:** Karpenter runs in the managed AKS control plane, managed by Azure.
+
+This distinction affects how you interact with Karpenter, what you can customize, and who is responsible for its operation and security.
+  
 ### Installing Self-hosted Karpenter
-
-#### Prerequisites
-
-- Azure CLI
-- kubectl
-- Helm 3.x
-- An AKS cluster with workload identity enabled
-
-#### Installation Steps
-
-1. **Set up environment variables**:
-```bash
-export CLUSTER_NAME=myCluster
-export RG=myResourceGroup
-export LOCATION=westus2
-export KARPENTER_NAMESPACE=kube-system
-```
-
-2. **Create managed identity**:
-```bash
-az identity create --name karpentermsi --resource-group "${RG}" --location "${LOCATION}"
-```
-
-3. **Configure workload identity**:
-```bash
-# Get cluster OIDC issuer
-OIDC_ISSUER=$(az aks show --name "${CLUSTER_NAME}" --resource-group "${RG}" --query "oidcIssuerProfile.issuerUrl" -o tsv)
-
-# Create federated credential
-az identity federated-credential create \
-  --name KARPENTER_FID \
-  --identity-name karpentermsi \
-  --resource-group "${RG}" \
-  --issuer "${OIDC_ISSUER}" \
-  --subject system:serviceaccount:${KARPENTER_NAMESPACE}:karpenter-sa \
-  --audience api://AzureADTokenExchange
-```
-
-4. **Assign Azure permissions**:
-```bash
-# Get the node resource group
-NODE_RG=$(az aks show --name "${CLUSTER_NAME}" --resource-group "${RG}" --query "nodeResourceGroup" -o tsv)
-
-# Get MSI principal ID
-MSI_PRINCIPAL_ID=$(az identity show --name karpentermsi --resource-group "${RG}" --query "principalId" -o tsv)
-
-# Assign required roles
-for role in "Virtual Machine Contributor" "Network Contributor" "Managed Identity Operator"; do
-  az role assignment create \
-    --assignee "${MSI_PRINCIPAL_ID}" \
-    --scope "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/${NODE_RG}" \
-    --role "$role"
-done
-```
-
-5. **Configure Helm values**:
-```bash
-# Download configuration script
-curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/hack/deploy/configure-values.sh
-chmod +x ./configure-values.sh
-
-# Generate values file
-./configure-values.sh ${CLUSTER_NAME} ${RG} karpenter-sa karpentermsi
-```
-
-6. **Install Karpenter**:
-```bash
-export KARPENTER_VERSION=0.7.0
-
-helm upgrade --install karpenter oci://mcr.microsoft.com/aks/karpenter/karpenter \
-  --version "${KARPENTER_VERSION}" \
-  --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
-  --values karpenter-values.yaml \
-  --wait
-```
+See an installation guide [here](https://github.com/Azure/karpenter-provider-azure?tab=readme-ov-file#installation-self-hosted).
 
 ## Comparison Matrix
-
 | Feature | NAP Mode | Self-hosted Mode |
 |---------|----------|------------------|
 | **Management** | Fully managed by Microsoft | User managed |
 | **Installation** | Single CLI command | Multi-step setup process |
 | **Updates** | Automatic | Manual |
-| **Customization** | Limited to AKS-exposed options | Full control |
 | **Support** | Azure enterprise support | Community + self-support |
 | **Latest features** | Follows AKS release cycle | Immediate access |
 | **Operational overhead** | Minimal | High |
-| **Production readiness** | Enterprise ready | Requires operational expertise |
+| **Production readiness** | Enterprise ready | Use at your own risk |
 | **Cost** | Included in AKS | Self-managed infrastructure |
-| **Security** | Auto-configured | Manual configuration required |
+
+
+With self-hosted karpenter, you will be responsible for managing the node bootstrapping token, which is a very expensive and dangerous thing to manage yourself. 
 
 ## Migration Between Modes
 

@@ -286,7 +286,7 @@
 &lt;li&gt;&lt;strong&gt;Learn concepts&lt;/strong&gt;: Understand &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/&#34;&gt;NodePools&lt;/a&gt;, &lt;a href=&#34;//localhost:1313/docs/concepts/nodeclasses/&#34;&gt;AKSNodeClasses&lt;/a&gt;, and &lt;a href=&#34;//localhost:1313/docs/concepts/disruption/&#34;&gt;disruption policies&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Advanced configuration&lt;/strong&gt;: Explore &lt;a href=&#34;//localhost:1313/docs/tasks/managing-vm-images/#gpu-images&#34;&gt;GPU workloads&lt;/a&gt;, &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/#spot-instances&#34;&gt;spot instances&lt;/a&gt;, and &lt;a href=&#34;//localhost:1313/docs/tasks/managing-vm-images/&#34;&gt;custom images&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Production deployment&lt;/strong&gt;: Review &lt;a href=&#34;../best-practices/&#34;&gt;best practices&lt;/a&gt;, &lt;a href=&#34;../observability/&#34;&gt;monitoring&lt;/a&gt;, and &lt;a href=&#34;//localhost:1313/docs/troubleshooting/&#34;&gt;troubleshooting&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Choose deployment mode&lt;/strong&gt;: Read &lt;a href=&#34;//localhost:1313/docs/concepts/deployment-modes/&#34;&gt;NAP vs Self-hosted&lt;/a&gt; comparison to understand which mode fits your needs&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Choose deployment mode&lt;/strong&gt;: Read &lt;a href=&#34;../concepts/deployment-modes/&#34;&gt;NAP vs Self-hosted&lt;/a&gt; comparison to understand which mode fits your needs&lt;/li&gt;
 &lt;/ul&gt;
 &lt;h2 id=&#34;common-next-steps&#34;&gt;Common Next Steps&lt;/h2&gt;
 &lt;h3 id=&#34;enable-spot-instances&#34;&gt;Enable Spot Instances&lt;/h3&gt;

@@ -10,13 +10,37 @@
   </url><url>
     <loc>//localhost:1313/docs/concepts/disruption/</loc>
   </url><url>
+    <loc>//localhost:1313/docs/reference/settings/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/reference/instance-types/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/reference/metrics/</loc>
+  </url><url>
     <loc>//localhost:1313/docs/getting-started/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/tasks/managing-vm-images/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/getting-started/quickstart/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/upgrading/upgrade-guide/</loc>
   </url><url>
     <loc>//localhost:1313/docs/concepts/</loc>
   </url><url>
     <loc>//localhost:1313/docs/</loc>
   </url><url>
+    <loc>//localhost:1313/docs/tasks/nodepool-examples/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/tasks/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/concepts/deployment-modes/</loc>
+  </url><url>
     <loc>//localhost:1313/docs/reference/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/faq/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/troubleshooting/</loc>
+  </url><url>
+    <loc>//localhost:1313/docs/upgrading/</loc>
   </url><url>
     <loc>//localhost:1313/</loc>
   </url>
