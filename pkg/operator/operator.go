@@ -102,7 +102,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	azClient, err := instance.CreateAZClient(ctx, azConfig, cred)
 	lo.Must0(err, "creating Azure client")
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
-		vnetGUID, err := getVnetGUID(cred, azConfig, options.FromContext(ctx).SubnetID)
+		vnetGUID, err := getVnetGUID(ctx, cred, azConfig, options.FromContext(ctx).SubnetID)
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
@@ -223,8 +223,9 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	return lo.ToPtr(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
-func getVnetGUID(creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
-	opts := armopts.DefaultArmOpts()
+func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
+	o := options.FromContext(ctx)
+	opts := armopts.DefaultArmOpts(o.EnableAzureSDKLogging)
 	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, creds, opts)
 	if err != nil {
 		return "", err
