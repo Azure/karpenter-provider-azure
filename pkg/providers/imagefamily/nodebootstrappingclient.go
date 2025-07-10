@@ -67,7 +67,7 @@ type NodeBootstrappingClient struct {
 	enableLogging     bool
 }
 
-// NewNodeBootstrappingClient creates a new NodeBootstrappingClient with token caching enabled and optional logging.
+// NewNodeBootstrappingClient creates a new NodeBootstrappingClient with token caching enabled.
 func NewNodeBootstrappingClient(ctx context.Context, subscriptionID string, resourceGroupName string, resourceName string, credential azcore.TokenCredential, serverURL string, enableLogging bool) (*NodeBootstrappingClient, error) {
 	return &NodeBootstrappingClient{
 		serverURL:         serverURL,
@@ -95,7 +95,7 @@ func (c *NodeBootstrappingClient) Get(
 	}
 	transport.DefaultAuthentication = httptransport.BearerToken(token.Token)
 
-	// Azure SDK Middleware logging - only if enabled
+	// Middleware logging only if ENABLE_AZURE_SDK_LOGGING flag is enabled
 	if c.enableLogging {
 		logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 		loggingClient := restlogger.NewLoggingClient(logger)
