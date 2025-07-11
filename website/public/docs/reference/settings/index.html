@@ -261,41 +261,6 @@
   </thead>
   <tbody>
       <tr>
-          <td>AZURE_CLIENT_ID</td>
-          <td>--azure-client-id</td>
-          <td>Azure client ID for authentication. Used when authenticating with Azure APIs.</td>
-      </tr>
-      <tr>
-          <td>AZURE_TENANT_ID</td>
-          <td>--azure-tenant-id</td>
-          <td>Azure tenant ID for authentication.</td>
-      </tr>
-      <tr>
-          <td>AZURE_SUBSCRIPTION_ID</td>
-          <td>--azure-subscription-id</td>
-          <td>[REQUIRED] Azure subscription ID where resources will be created.</td>
-      </tr>
-      <tr>
-          <td>AZURE_RESOURCE_GROUP</td>
-          <td>--azure-resource-group</td>
-          <td>[REQUIRED] Azure resource group name where the AKS cluster resides.</td>
-      </tr>
-      <tr>
-          <td>AZURE_NODE_RESOURCE_GROUP</td>
-          <td>--azure-node-resource-group</td>
-          <td>Azure node resource group name where VMs will be created. If not specified, defaults to the MC_ resource group created by AKS.</td>
-      </tr>
-      <tr>
-          <td>AZURE_LOCATION</td>
-          <td>--azure-location</td>
-          <td>[REQUIRED] Azure region/location where resources will be created.</td>
-      </tr>
-      <tr>
-          <td>AZURE_VNET_SUBNET_ID</td>
-          <td>--azure-vnet-subnet-id</td>
-          <td>[REQUIRED] Azure VNet subnet ID for node network interfaces.</td>
-      </tr>
-      <tr>
           <td>BATCH_IDLE_DURATION</td>
           <td>--batch-idle-duration</td>
           <td>The maximum amount of time with no new pending pods that if exceeded ends the current batching window. If pods arrive faster than this time, the batching window will be extended up to the maxDuration. If they arrive slower, the pods will be batched separately. (default = 1s)</td>
@@ -313,12 +278,12 @@
       <tr>
           <td>CLUSTER_ENDPOINT</td>
           <td>--cluster-endpoint</td>
-          <td>The external kubernetes cluster endpoint for new nodes to connect with. If not specified, will discover the cluster endpoint using Azure APIs.</td>
+          <td>[REQUIRED] The external kubernetes cluster endpoint for new nodes to connect with.</td>
       </tr>
       <tr>
           <td>CLUSTER_NAME</td>
           <td>--cluster-name</td>
-          <td>[REQUIRED] The kubernetes cluster name for resource discovery.</td>
+          <td>[REQUIRED] The kubernetes cluster name for resource tags.</td>
       </tr>
       <tr>
           <td>DISABLE_WEBHOOK</td>
@@ -341,11 +306,6 @@
           <td>The port the health probe endpoint binds to for reporting controller health (default = 8081)</td>
       </tr>
       <tr>
-          <td>INTERRUPTION_QUEUE</td>
-          <td>--interruption-queue</td>
-          <td>Azure Service Bus queue name for spot interruption notifications. Interruption handling is disabled if not specified.</td>
-      </tr>
-      <tr>
           <td>KARPENTER_SERVICE</td>
           <td>--karpenter-service</td>
           <td>The Karpenter Service name for the dynamic webhook certificate</td>
@@ -361,9 +321,24 @@
           <td>The smoothed rate of qps to kube-apiserver (default = 200)</td>
       </tr>
       <tr>
+          <td>KUBELET_BOOTSTRAP_TOKEN</td>
+          <td>--kubelet-bootstrap-token</td>
+          <td>[REQUIRED] The bootstrap token for new nodes to join the cluster.</td>
+      </tr>
+      <tr>
+          <td>KUBELET_IDENTITY_CLIENT_ID</td>
+          <td>--kubelet-identity-client-id</td>
+          <td>The client ID of the kubelet identity.</td>
+      </tr>
+      <tr>
           <td>LEADER_ELECT</td>
           <td>--leader-elect</td>
           <td>Start leader election client and gain leadership before executing the main loop. Enable this when running replicated components for high availability.</td>
+      </tr>
+      <tr>
+          <td>LINUX_ADMIN_USERNAME</td>
+          <td>--linux-admin-username</td>
+          <td>The admin username for Linux VMs. (default = azureuser)</td>
       </tr>
       <tr>
           <td>LOG_LEVEL</td>
@@ -381,6 +356,81 @@
           <td>The port the metric endpoint binds to for operating metrics about the controller itself (default = 8000)</td>
       </tr>
       <tr>
+          <td>NETWORK_DATAPLANE</td>
+          <td>--network-dataplane</td>
+          <td>The network dataplane used by the cluster. (default = cilium)</td>
+      </tr>
+      <tr>
+          <td>NETWORK_PLUGIN</td>
+          <td>--network-plugin</td>
+          <td>The network plugin used by the cluster. (default = azure)</td>
+      </tr>
+      <tr>
+          <td>NETWORK_PLUGIN_MODE</td>
+          <td>--network-plugin-mode</td>
+          <td>Network plugin mode of the cluster. (default = overlay)</td>
+      </tr>
+      <tr>
+          <td>NETWORK_POLICY</td>
+          <td>--network-policy</td>
+          <td>The network policy used by the cluster.</td>
+      </tr>
+      <tr>
+          <td>NODEBOOTSTRAPPING_SERVER_URL</td>
+          <td>--nodebootstrapping-server-url</td>
+          <td>[UNSUPPORTED] The url for the node bootstrapping provider server.</td>
+      </tr>
+      <tr>
+          <td>NODE_IDENTITIES</td>
+          <td>--node-identities</td>
+          <td>User assigned identities for nodes.</td>
+      </tr>
+      <tr>
+          <td>AZURE_NODE_RESOURCE_GROUP</td>
+          <td>--node-resource-group</td>
+          <td>[REQUIRED] The resource group created and managed by AKS where the nodes live</td>
+      </tr>
+      <tr>
+          <td>PROVISION_MODE</td>
+          <td>--provision-mode</td>
+          <td>[UNSUPPORTED] The provision mode for the cluster. (default = AKS-scriptless)</td>
+      </tr>
+      <tr>
+          <td>SIG_ACCESS_TOKEN_SCOPE</td>
+          <td>--sig-access-token-scope</td>
+          <td>The scope for the SIG access token. Only used for AKS managed karpenter. UseSIG must be set to true for this to take effect.</td>
+      </tr>
+      <tr>
+          <td>SIG_ACCESS_TOKEN_SERVER_URL</td>
+          <td>--sig-access-token-server-url</td>
+          <td>The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set to true for this to take effect.</td>
+      </tr>
+      <tr>
+          <td>SIG_SUBSCRIPTION_ID</td>
+          <td>--sig-subscription-id</td>
+          <td>The subscription ID of the shared image gallery.</td>
+      </tr>
+      <tr>
+          <td>SSH_PUBLIC_KEY</td>
+          <td>--ssh-public-key</td>
+          <td>[REQUIRED] VM SSH public key.</td>
+      </tr>
+      <tr>
+          <td>USE_SIG</td>
+          <td>--use-sig</td>
+          <td>If set to true karpenter will use the AKS managed shared image galleries and the node image versions api. If set to false karpenter will use community image galleries. Only a subset of image features will be available in the community image galleries and this flag is only for the managed node provisioning addon. (default = false)</td>
+      </tr>
+      <tr>
+          <td>VNET_GUID</td>
+          <td>--vnet-guid</td>
+          <td>The vnet guid of the clusters vnet, only required by azure cni with overlay + byo vnet</td>
+      </tr>
+      <tr>
+          <td>VNET_SUBNET_ID</td>
+          <td>--vnet-subnet-id</td>
+          <td>[REQUIRED] The default subnet ID to use for new nodes. This must be a valid ARM resource ID for subnet that does not overlap with the service CIDR or the pod CIDR.</td>
+      </tr>
+      <tr>
           <td>VM_MEMORY_OVERHEAD_PERCENT</td>
           <td>--vm-memory-overhead-percent</td>
           <td>The VM memory overhead as a percent that will be subtracted from the total memory for all instance types. (default = 0.075)</td>
@@ -388,7 +438,7 @@
       <tr>
           <td>WEBHOOK_METRICS_PORT</td>
           <td>--webhook-metrics-port</td>
-          <td>The port the webhook metric endpoing binds to for operating metrics about the webhook (default = 8001)</td>
+          <td>The port the webhook metric endpoint binds to for operating metrics about the webhook (default = 8001)</td>
       </tr>
       <tr>
           <td>WEBHOOK_PORT</td>
@@ -444,29 +494,39 @@
 <p>This value is expressed as a string value like <code>10s</code>, <code>1m</code> or <code>2h45m</code>. The valid time units are <code>ns</code>, <code>us</code> (or <code>µs</code>), <code>ms</code>, <code>s</code>, <code>m</code>, <code>h</code>.</p>
 <h3 id="azure-specific-configuration">Azure-Specific Configuration</h3>
 <h4 id="authentication">Authentication</h4>
-<p>Karpenter for Azure supports multiple authentication methods:</p>
-<ol>
-<li><strong>Managed Identity</strong> (Recommended): Use Azure Managed Identity assigned to the AKS cluster</li>
-<li><strong>Service Principal</strong>: Use Azure Service Principal with client ID and secret</li>
-<li><strong>Azure CLI</strong>: Use Azure CLI authentication (for development only)</li>
-</ol>
-<h4 id="resource-groups">Resource Groups</h4>
-<p>Azure organizes resources into resource groups. Karpenter needs to know:</p>
+<p>Karpenter for Azure supports Azure Managed Identity and Service Principal authentication. The kubelet identity client ID is used for node authentication with Azure APIs.</p>
+<h4 id="cluster-configuration">Cluster Configuration</h4>
+<p>Required cluster settings include:</p>
 <ul>
-<li><strong>Cluster Resource Group</strong>: Where the AKS cluster control plane resources are located</li>
-<li><strong>Node Resource Group</strong>: Where the VM instances will be created (usually the MC_ resource group)</li>
+<li><strong>CLUSTER_NAME</strong>: The AKS cluster name for resource tagging</li>
+<li><strong>CLUSTER_ENDPOINT</strong>: The Kubernetes API server endpoint</li>
+<li><strong>AZURE_NODE_RESOURCE_GROUP</strong>: The MC_ resource group where VMs are created</li>
 </ul>
 <h4 id="networking">Networking</h4>
-<p>Karpenter requires network configuration:</p>
+<p>Network configuration options:</p>
 <ul>
-<li><strong>VNet Subnet ID</strong>: The subnet where node NICs will be created</li>
-<li><strong>Network Security Groups</strong>: Applied automatically based on AKS cluster configuration</li>
+<li><strong>VNET_SUBNET_ID</strong>: Required subnet ID for node network interfaces</li>
+<li><strong>VNET_GUID</strong>: VNet GUID for Azure CNI with overlay + BYO VNet scenarios</li>
+<li><strong>NETWORK_PLUGIN</strong>: Network plugin (default: azure)</li>
+<li><strong>NETWORK_PLUGIN_MODE</strong>: Network plugin mode (default: overlay)</li>
+<li><strong>NETWORK_DATAPLANE</strong>: Network dataplane (default: cilium)</li>
+<li><strong>NETWORK_POLICY</strong>: Optional network policy configuration</li>
 </ul>
-<h4 id="interruption-handling">Interruption Handling</h4>
-<p>For Azure Spot VM interruption handling, configure:</p>
+<h4 id="node-configuration">Node Configuration</h4>
+<p>Node-specific settings:</p>
 <ul>
-<li><strong>Azure Service Bus</strong>: Queue for receiving spot interruption notifications</li>
-<li><strong>Event Grid</strong>: Subscription to forward Azure platform events to Service Bus</li>
+<li><strong>SSH_PUBLIC_KEY</strong>: Required SSH public key for VM access</li>
+<li><strong>LINUX_ADMIN_USERNAME</strong>: Admin username for Linux VMs (default: azureuser)</li>
+<li><strong>NODE_IDENTITIES</strong>: Comma-separated list of user-assigned identities</li>
+<li><strong>KUBELET_BOOTSTRAP_TOKEN</strong>: Required bootstrap token for cluster joining</li>
+</ul>
+<h4 id="image-management">Image Management</h4>
+<p>For managed Karpenter instances (NAP):</p>
+<ul>
+<li><strong>USE_SIG</strong>: Enable AKS managed shared image galleries (default: false)</li>
+<li><strong>SIG_SUBSCRIPTION_ID</strong>: Subscription ID for shared image gallery</li>
+<li><strong>SIG_ACCESS_TOKEN_SERVER_URL</strong>: Token server URL for SIG access</li>
+<li><strong>SIG_ACCESS_TOKEN_SCOPE</strong>: Token scope for SIG access</li>
 </ul>
 
 	

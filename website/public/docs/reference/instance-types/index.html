@@ -214,6 +214,7 @@
         <li><a href="#memory-optimized">Memory Optimized</a></li>
         <li><a href="#storage-optimized">Storage Optimized</a></li>
         <li><a href="#gpu-accelerated">GPU Accelerated</a></li>
+        <li><a href="#high-performance-computing-hpc">High Performance Computing (HPC)</a></li>
       </ul>
     </li>
     <li><a href="#instance-type-selection">Instance Type Selection</a>
@@ -230,6 +231,7 @@
         <li><a href="#gpu-workloads">GPU Workloads</a></li>
       </ul>
     </li>
+    <li><a href="#gpu-support-and-image-compatibility">GPU Support and Image Compatibility</a></li>
     <li><a href="#regional-availability">Regional Availability</a></li>
     <li><a href="#pricing-considerations">Pricing Considerations</a></li>
     <li><a href="#best-practices">Best Practices</a>
@@ -237,6 +239,7 @@
         <li><a href="#nodepool-configuration">NodePool Configuration</a></li>
         <li><a href="#cost-optimization">Cost Optimization</a></li>
         <li><a href="#performance">Performance</a></li>
+        <li><a href="#ephemeral-os-disks">Ephemeral OS Disks</a></li>
       </ul>
     </li>
     <li><a href="#spot-vms">Spot VMs</a>
@@ -281,35 +284,132 @@
 
 		
 	</header>    
-	<p>Karpenter provisions instances from Azure&rsquo;s VM sizes. Karpenter supports all VM sizes except those with fewer than 2 vCPUs, specialized VM sizes that don&rsquo;t support standard Azure managed disks, or VM sizes that are not available in AKS.</p>
+	<p>Karpenter provisions instances from Azure&rsquo;s VM sizes with the following support criteria:</p>
+<p><strong>Supported VM sizes must have:</strong></p>
+<ul>
+<li>At least 2 vCPUs</li>
+<li>At least 3.5 GiB of memory</li>
+<li>Compatibility with AKS (Azure Kubernetes Service)</li>
+<li>Support for standard Azure managed disks</li>
+</ul>
+<p><strong>Excluded VM sizes:</strong></p>
+<ul>
+<li>Basic tier VMs (Basic_A0 through Basic_A4)</li>
+<li>Very small Standard VMs (Standard_A0, Standard_A1, Standard_A1_v2, Standard_B1s, Standard_B1ms, Standard_F1, Standard_F1s)</li>
+<li>Confidential computing VMs (DC-series, EC-series) - <em>planned for future support</em></li>
+<li>VMs with constrained vCPUs</li>
+<li>GPU VMs without proper image family support</li>
+</ul>
 <h2 id="viewing-available-instance-types">Viewing Available Instance Types</h2>
 <p>You can view instance types available for your cluster by running:</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get aksnodeclass default -o <span style="color:#000">jsonpath</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#39;{.status.instances[*]}&#39;</span>
 </span></span></code></pre></div><p>The complete list of instance types is discoverable programmatically. Karpenter surfaces this information through the <code>AKSNodeClass</code> status for instances supported in your region and zones.</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl describe aksnodeclass default
 </span></span></code></pre></div><h2 id="vm-size-families">VM Size Families</h2>
-<p>Azure organizes VM sizes into families based on their intended use case:</p>
+<p>Azure organizes VM sizes into families based on their intended use case and performance characteristics:</p>
 <h3 id="general-purpose">General Purpose</h3>
+<p><strong>A-series</strong></p>
 <ul>
-<li><strong>D-series</strong>: Balanced CPU-to-memory ratio. Good for testing, development, small databases, and low traffic web servers.</li>
-<li><strong>E-series</strong>: Optimized for in-memory applications. High memory-to-CPU ratio.</li>
-<li><strong>B-series</strong>: Burstable performance. Cost-effective for workloads that don&rsquo;t need full CPU performance continuously.</li>
+<li>Entry-level economical VMs for development and testing</li>
+<li>Best for low-traffic web servers, proof of concepts</li>
+<li>Limited performance for production workloads</li>
+</ul>
+<p><strong>B-series</strong></p>
+<ul>
+<li>Burstable performance with baseline CPU performance</li>
+<li>Cost-effective for workloads with variable CPU usage</li>
+<li>Ideal for web servers, small databases, development environments</li>
+<li>CPU credits system allows bursting above baseline when needed</li>
+</ul>
+<p><strong>D-series</strong></p>
+<ul>
+<li>Balanced CPU-to-memory ratio for enterprise applications</li>
+<li>Suitable for web servers, application servers, small to medium databases</li>
+<li>Supports premium storage for better I/O performance</li>
+<li>Good for batch processing and relational databases</li>
+</ul>
+<p><strong>DC-series</strong></p>
+<ul>
+<li>Confidential computing with hardware-based trusted execution environments</li>
+<li>Enhanced data protection for sensitive workloads</li>
+<li>Supports encryption of data in use</li>
+<li>Currently not supported by Karpenter</li>
 </ul>
 <h3 id="compute-optimized">Compute Optimized</h3>
+<p><strong>F-series</strong></p>
 <ul>
-<li><strong>F-series</strong>: High CPU-to-memory ratio. Good for compute-intensive applications.</li>
+<li>High CPU-to-memory ratio optimized for compute-intensive workloads</li>
+<li>Ideal for medium-traffic web servers, batch processing, analytics</li>
+<li>Good for gaming servers, scientific modeling</li>
+<li>Supports premium storage and accelerated networking</li>
+</ul>
+<p><strong>FX-series</strong></p>
+<ul>
+<li>Specialized for compute-intensive workloads</li>
+<li>Excellent for Electronic Design Automation (EDA)</li>
+<li>Financial modeling and scientific simulations</li>
+<li>High-frequency processors with large L3 cache</li>
 </ul>
 <h3 id="memory-optimized">Memory Optimized</h3>
+<p><strong>E-series</strong></p>
 <ul>
-<li><strong>M-series</strong>: Highest memory-to-CPU ratios. Ideal for large databases and in-memory analytics.</li>
+<li>High memory-to-CPU ratios for memory-intensive applications</li>
+<li>Ideal for relational databases, in-memory analytics</li>
+<li>Supports large-scale enterprise applications</li>
+<li>Good for big data processing and caching layers</li>
+</ul>
+<p><strong>M-series</strong></p>
+<ul>
+<li>Extremely large memory configurations (up to 3.8 TiB)</li>
+<li>Designed for the largest enterprise databases</li>
+<li>SAP HANA and other large in-memory databases</li>
+<li>High-memory business intelligence applications</li>
 </ul>
 <h3 id="storage-optimized">Storage Optimized</h3>
+<p><strong>L-series</strong></p>
 <ul>
-<li><strong>L-series</strong>: High disk throughput and IO. Good for big data, NoSQL databases.</li>
+<li>High disk throughput and I/O for storage-intensive workloads</li>
+<li>Local NVMe SSD storage with high IOPS</li>
+<li>Ideal for big data, NoSQL databases (Cassandra, MongoDB)</li>
+<li>Data warehousing and distributed file systems</li>
+<li>Video processing and rendering</li>
 </ul>
 <h3 id="gpu-accelerated">GPU Accelerated</h3>
+<p><strong>NC-series</strong></p>
 <ul>
-<li><strong>N-series</strong>: GPU-enabled VMs for AI, machine learning, and high-performance computing.</li>
+<li>NVIDIA GPU acceleration for compute-intensive workloads</li>
+<li>Machine learning training and inference</li>
+<li>High-performance computing (HPC) simulations</li>
+<li>3D graphics rendering and video processing</li>
+</ul>
+<p><strong>ND-series</strong></p>
+<ul>
+<li>Optimized for deep learning training at scale</li>
+<li>Multiple high-end NVIDIA GPUs with NVLink</li>
+<li>Distributed AI training workloads</li>
+<li>Research and development in AI/ML</li>
+</ul>
+<p><strong>NV-series</strong></p>
+<ul>
+<li>Graphics-intensive applications and virtual desktops</li>
+<li>GPU acceleration for visualization workloads</li>
+<li>3D rendering, computer-aided design (CAD)</li>
+<li>Virtual desktop infrastructure (VDI)</li>
+</ul>
+<h3 id="high-performance-computing-hpc">High Performance Computing (HPC)</h3>
+<p><strong>HB-series</strong></p>
+<ul>
+<li>High memory bandwidth for HPC applications</li>
+<li>AMD EPYC processors with large L3 cache</li>
+<li>Scientific simulations and modeling</li>
+<li>Computational fluid dynamics (CFD)</li>
+</ul>
+<p><strong>HC-series</strong></p>
+<ul>
+<li>Intel Xeon processors optimized for HPC</li>
+<li>Dense compute workloads</li>
+<li>Weather forecasting and seismic analysis</li>
+<li>Engineering simulations</li>
 </ul>
 <h2 id="instance-type-selection">Instance Type Selection</h2>
 <h3 id="karpenter-labels">Karpenter Labels</h3>
@@ -370,8 +470,51 @@
 <li><strong>Standard_NC12s_v3</strong>: 12 vCPUs, 224 GB RAM, 2x V100 GPU</li>
 <li><strong>Standard_ND40rs_v2</strong>: 40 vCPUs, 672 GB RAM, 8x V100 GPU</li>
 </ul>
-<h2 id="regional-availability">Regional Availability</h2>
+<h2 id="gpu-support-and-image-compatibility">GPU Support and Image Compatibility</h2>
+<p>GPU-enabled VMs require specific image families for proper driver support:</p>
+<p><strong>NVIDIA GPU VMs (NC, ND, NV series):</strong></p>
+<ul>
+<li>Supported with Ubuntu 22.04 image family</li>
+<li>Automatic NVIDIA driver installation</li>
+<li>CUDA runtime environment</li>
+</ul>
+<p><strong>Azure Linux GPU VMs:</strong></p>
+<ul>
+<li>Supported with AzureLinux image family</li>
+<li>Optimized for specific GPU workloads</li>
+<li>Limited to compatible GPU SKUs</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Example GPU NodePool with proper image family</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/v1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">NodePool  </span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">gpu-workloads</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">template</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">requirements</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span>- <span style="color:#204a87;font-weight:bold">key</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/sku-gpu-count</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">          </span><span style="color:#204a87;font-weight:bold">operator</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">Gt</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">          </span><span style="color:#204a87;font-weight:bold">values</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000;font-weight:bold">[</span><span style="color:#4e9a06">&#34;0&#34;</span><span style="color:#000;font-weight:bold">]</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">nodeClassRef</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">gpu-nodeclass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#000">---</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">gpu-nodeclass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">imageFamily</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">Ubuntu2204 </span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#8f5902;font-style:italic"># Required for NVIDIA GPU support</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span></code></pre></div><h2 id="regional-availability">Regional Availability</h2>
 <p>VM size availability varies by Azure region. Not all VM sizes are available in all regions. Karpenter automatically discovers which VM sizes are available in your cluster&rsquo;s region and zones.</p>
+<p><strong>Zonal regions</strong> (with availability zone support):</p>
+<ul>
+<li>Americas: East US, East US 2, Central US, South Central US, West US 2, West US 3, Canada Central, Brazil South</li>
+<li>Europe: North Europe, West Europe, France Central, Germany West Central, UK South, Sweden Central, Switzerland North</li>
+<li>Asia Pacific: Southeast Asia, East Asia, Australia East, Japan East, Korea Central, Central India</li>
+</ul>
 <p>You can check VM size availability in a region using Azure CLI:</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az vm list-sizes --location eastus --output table
 </span></span></code></pre></div><h2 id="pricing-considerations">Pricing Considerations</h2>
@@ -402,6 +545,21 @@
 <li>Enable accelerated networking for network-intensive applications</li>
 <li>Choose appropriate CPU-to-memory ratios for your workload type</li>
 </ul>
+<h3 id="ephemeral-os-disks">Ephemeral OS Disks</h3>
+<p>Karpenter automatically chooses the best ephemeral disk placement when the OS disk size fits within available ephemeral storage:</p>
+<p><strong>Placement Priority (best to worst):</strong></p>
+<ol>
+<li><strong>NVMe Disk</strong>: Highest performance local NVMe SSD</li>
+<li><strong>Cache Disk</strong>: High-performance caching disk</li>
+<li><strong>Resource Disk</strong>: Standard temporary disk</li>
+</ol>
+<p><strong>Benefits:</strong></p>
+<ul>
+<li>Significantly faster boot times</li>
+<li>Better I/O performance for OS operations</li>
+<li>No additional storage costs</li>
+<li>Automatic selection based on VM capabilities</li>
+</ul>
 <h2 id="spot-vms">Spot VMs</h2>
 <p>Azure Spot VMs offer significant cost savings (up to 90% off) in exchange for potential interruption when Azure needs the capacity back.</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/v1</span><span style="color:#f8f8f8;text-decoration:underline">
@@ -417,7 +575,7 @@
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">          </span><span style="color:#204a87;font-weight:bold">values</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000;font-weight:bold">[</span><span style="color:#4e9a06">&#34;spot&#34;</span><span style="color:#000;font-weight:bold">]</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span></code></pre></div><h3 id="spot-vm-considerations">Spot VM Considerations</h3>
 <ul>
-<li><strong>Interruption notice</strong>: 30 seconds advance warning</li>
+<li><strong>Preemption</strong>: May be reclaimed when Azure needs capacity</li>
 <li><strong>No SLA</strong>: No availability guarantee</li>
 <li><strong>Best effort</strong>: Allocation depends on available capacity</li>
 <li><strong>Pricing</strong>: Variable based on demand</li>

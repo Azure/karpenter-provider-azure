@@ -94,36 +94,26 @@ spec:
           operator: In
           values: ["spot", "on-demand"]
 
-      # Karpenter provides the ability to specify a few additional Kubelet args.
-      # These are all optional and provide support for additional customization and use cases.
-      kubelet:
-        clusterDNS: ["10.0.1.100"]
-        systemReserved:
-          cpu: 100m
-          memory: 100Mi
-          ephemeral-storage: 1Gi
-        kubeReserved:
-          cpu: 200m
-          memory: 100Mi
-          ephemeral-storage: 3Gi
-        evictionHard:
-          memory.available: 5%
-          nodefs.available: 10%
-          nodefs.inodesFree: 10%
-        evictionSoft:
-          memory.available: 500Mi
-          nodefs.available: 15%
-          nodefs.inodesFree: 15%
-        evictionSoftGracePeriod:
-          memory.available: 1m
-          nodefs.available: 1m30s
-          nodefs.inodesFree: 2m
-        evictionMaxPodGracePeriod: 60
-        imageGCHighThresholdPercent: 85
-        imageGCLowThresholdPercent: 80
-        cpuCFSQuota: true
-        podsPerCore: 2
-        maxPods: 20
+      # ExpireAfter is the duration the controller will wait
+      # before terminating a node, measured from when the node is created. This
+      # is useful to implement features like eventually consistent node upgrade,
+      # memory leak protection, and disruption testing.
+      expireAfter: 720h
+
+      # TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
+      # 
+      # Warning: this feature takes precedence over a Pod's terminationGracePeriodSeconds value, and bypasses any blocked PDBs or the karpenter.sh/do-not-disrupt annotation.
+      # 
+      # This field is intended to be used by cluster administrators to enforce that nodes can be cycled within a given time period.
+      # When set, drifted nodes will begin draining even if there are pods blocking eviction. Draining will respect PDBs and the do-not-disrupt annotation until the TGP is reached.
+      # 
+      # Karpenter will preemptively delete pods so their terminationGracePeriodSeconds align with the node's terminationGracePeriod.
+      # If a pod would be terminated without being granted its full terminationGracePeriodSeconds prior to the node timeout,
+      # that pod will be deleted at T = node timeout - pod terminationGracePeriodSeconds.
+      # 
+      # The feature can also be used to allow maximum time limits for long-running jobs which can delay node termination with preStop hooks.
+      # If left undefined, the controller will wait indefinitely for pods to be drained.
+      terminationGracePeriod: 30s
 
   # Disruption section which describes the ways in which Karpenter can disrupt and replace Nodes
   # Configuration in this section constrains how aggressive Karpenter can be with performing operations
@@ -132,17 +122,12 @@ spec:
     # Describes which types of Nodes Karpenter should consider for consolidation
     # If using 'WhenUnderutilized', Karpenter will consider all nodes for consolidation and attempt to remove or replace Nodes when it discovers that the Node is underutilized and could be changed to reduce cost
     # If using `WhenEmpty`, Karpenter will only consider nodes for consolidation that contain no workload pods
-    consolidationPolicy: WhenUnderutilized | WhenEmpty
+    consolidationPolicy: WhenUnderutilized
 
     # The amount of time Karpenter should wait after discovering a consolidation decision
     # This value can currently only be set when the consolidationPolicy is 'WhenEmpty'
     # You can choose to disable consolidation entirely by setting the string value 'Never' here
     consolidateAfter: 30s
-
-    # The amount of time a Node can live on the cluster before being removed
-    # Avoiding long-running Nodes helps to reduce security vulnerabilities as well as to reduce the chance of issues that can plague Nodes with long uptimes such as file fragmentation or memory leaks from system processes
-    # You can choose to disable expiration entirely by setting the string value 'Never' here
-    expireAfter: 720h
 
     # Budgets control the speed Karpenter can scale down nodes.
     # Karpenter will respect the minimum of the currently active budgets, and will round up
@@ -327,135 +312,37 @@ spec:
 
 This field points to the Cloud Provider NodeClass resource. Learn more about [AKSNodeClasses]({{<ref "nodeclasses" >}}).
 
-## spec.template.spec.kubelet
+## spec.template.spec.expireAfter
 
-Karpenter provides the ability to specify a few additional Kubelet args. These are all optional and provide support for
-additional customization and use cases. Adjust these only if you know you need to do so. For more details on kubelet configuration arguments, [see the KubeletConfiguration API specification docs](https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/). The implemented fields are a subset of the full list of upstream kubelet configuration arguments. Please cut an issue if you'd like to see another field implemented.
+`expireAfter` is the duration the controller will wait before terminating a node, measured from when the node is created. This is useful to implement features like eventually consistent node upgrade, memory leak protection, and disruption testing.
 
-```yaml
-kubelet:
-  clusterDNS: ["10.0.1.100"]
-  systemReserved:
-    cpu: 100m
-    memory: 100Mi
-    ephemeral-storage: 1Gi
-  kubeReserved:
-    cpu: 200m
-    memory: 100Mi
-    ephemeral-storage: 3Gi
-  evictionHard:
-    memory.available: 5%
-    nodefs.available: 10%
-    nodefs.inodesFree: 10%
-  evictionSoft:
-    memory.available: 500Mi
-    nodefs.available: 15%
-    nodefs.inodesFree: 15%
-  evictionSoftGracePeriod:
-    memory.available: 1m
-    nodefs.available: 1m30s
-    nodefs.inodesFree: 2m
-  evictionMaxPodGracePeriod: 60
-  imageGCHighThresholdPercent: 85
-  imageGCLowThresholdPercent: 80
-  cpuCFSQuota: true
-  podsPerCore: 2
-  maxPods: 20
-```
-
-### Reserved Resources
-
-Karpenter will automatically configure the system and kube reserved resource requests on the fly on your behalf. These requests are used to configure your node and to make scheduling decisions for your pods. If you have specific requirements or know that you will have additional capacity requirements, you can optionally override the `--system-reserved` configuration defaults with the `.spec.template.spec.kubelet.systemReserved` values and the `--kube-reserved` configuration defaults with the `.spec.template.spec.kubelet.kubeReserved` values.
-
-{{% alert title="Note" color="primary" %}}
-Karpenter considers these reserved resources when computing the allocatable ephemeral storage on a given instance type.
-If `kubeReserved` is not specified, Karpenter will compute the default reserved CPU and memory resources for the purpose of ephemeral storage computation.
-These defaults are based on the defaults on Karpenter's supported VM image families.
-You should be aware of the CPU and memory default calculation when using Custom VM Image Families. If they don't align, there may be a difference in Karpenter's computed allocatable ephemeral storage and the actually ephemeral storage available on the node.
-{{% /alert %}}
-
-### Eviction Thresholds
-
-The kubelet supports eviction thresholds by default. When enough memory or file system pressure is exerted on the node, the kubelet will begin to evict pods to ensure that system daemons and other system processes can continue to run in a healthy manner.
-
-Kubelet has the notion of [hard evictions](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#hard-eviction-thresholds) and [soft evictions](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#soft-eviction-thresholds). In hard evictions, pods are evicted as soon as a threshold is met, with no grace period to terminate. Soft evictions, on the other hand, provide an opportunity for pods to be terminated gracefully. They do so by sending a termination signal to pods that are planning to be evicted and allowing those pods to terminate up to their grace period.
-
-Karpenter supports [hard evictions](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#hard-eviction-thresholds) through the `.spec.template.spec.kubelet.evictionHard` field and [soft evictions](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#soft-eviction-thresholds) through the `.spec.template.spec.kubelet.evictionSoft` field. `evictionHard` and `evictionSoft` are configured by listing [signal names](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction/#eviction-signals) with either percentage values or resource values.
+The default value is `720h` (30 days). You can disable node expiration by setting the value to `Never`.
 
 ```yaml
-kubelet:
-  evictionHard:
-    memory.available: 500Mi
-    nodefs.available: 10%
-    nodefs.inodesFree: 10%
-    imagefs.available: 5%
-    imagefs.inodesFree: 5%
-    pid.available: 7%
-  evictionSoft:
-    memory.available: 1Gi
-    nodefs.available: 15%
-    nodefs.inodesFree: 15%
-    imagefs.available: 10%
-    imagefs.inodesFree: 10%
-    pid.available: 10%
+spec:
+  template:
+    spec:
+      expireAfter: 24h  # Expire nodes after 24 hours
 ```
 
-#### Supported Eviction Signals
+## spec.template.spec.terminationGracePeriod
 
-| Eviction Signal    | Description                                                                     |
-|--------------------|---------------------------------------------------------------------------------|
-| memory.available   | memory.available := node.status.capacity[memory] - node.stats.memory.workingSet |
-| nodefs.available   | nodefs.available := node.stats.fs.available                                     |
-| nodefs.inodesFree  | nodefs.inodesFree := node.stats.fs.inodesFree                                   |
-| imagefs.available  | imagefs.available := node.stats.runtime.imagefs.available                       |
-| imagefs.inodesFree | imagefs.inodesFree := node.stats.runtime.imagefs.inodesFree                     |
-| pid.available      | pid.available := node.stats.rlimit.maxpid - node.stats.rlimit.curproc           |
+`terminationGracePeriod` is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
 
-For more information on eviction thresholds, view the [Node-pressure Eviction](https://kubernetes.io/docs/concepts/scheduling-eviction/node-pressure-eviction) section of the official Kubernetes docs.
+{{% alert title="Warning" color="warning" %}}
+This feature takes precedence over a Pod's terminationGracePeriodSeconds value, and bypasses any blocked PDBs or the karpenter.sh/do-not-disrupt annotation.
+{{% /alert %}}
 
-#### Soft Eviction Grace Periods
+This field is intended to be used by cluster administrators to enforce that nodes can be cycled within a given time period. When set, drifted nodes will begin draining even if there are pods blocking eviction. Draining will respect PDBs and the do-not-disrupt annotation until the TGP is reached.
 
-Soft eviction pairs an eviction threshold with a specified grace period. With soft eviction thresholds, the kubelet will only begin evicting pods when the node exceeds its soft eviction threshold over the entire duration of its grace period. For example, if you specify `evictionSoft[memory.available]` of `500Mi` and a `evictionSoftGracePeriod[memory.available]` of `1m30`, the node must have less than `500Mi` of available memory over a minute and a half in order for the kubelet to begin evicting pods.
-
-Optionally, you can specify an `evictionMaxPodGracePeriod` which defines the administrator-specified maximum pod termination grace period to use during soft eviction. If a namespace-owner had specified a pod `terminationGracePeriodInSeconds` on pods in their namespace, the minimum of `evictionPodGracePeriod` and `terminationGracePeriodInSeconds` would be used.
+If left undefined, the controller will wait indefinitely for pods to be drained.
 
 ```yaml
-kubelet:
-  evictionSoftGracePeriod:
-    memory.available: 1m
-    nodefs.available: 1m30s
-    nodefs.inodesFree: 2m
-    imagefs.available: 1m30s
-    imagefs.inodesFree: 2m
-    pid.available: 2m
-  evictionMaxPodGracePeriod: 60
+spec:
+  template:
+    spec:
+      terminationGracePeriod: 30s
 ```
-
-### Pod Density
-
-By default, the number of pods on a node is limited by the CNI plugin and the Azure subnet IP address allocation. Azure CNI allocates IP addresses from the subnet for pods, and this affects the maximum pod density.
-
-{{% alert title="Note" color="primary" %}}
-With Azure CNI, pods receive IP addresses from the node subnet. The number of available IP addresses in the subnet and the maxPods setting on the kubelet determine the maximum number of pods per node. Azure also supports CNI overlay mode which allows for higher pod density by using a separate IP space for pods.
-{{% /alert %}}
-
-#### Max Pods
-
-For small instances that require an increased pod density or large instances that require a reduced pod density, you can override this default value with `.spec.template.spec.kubelet.maxPods`. This value will be used during Karpenter pod scheduling and passed through to `--max-pods` on kubelet startup.
-
-{{% alert title="Note" color="primary" %}}
-When using CNI overlay mode, much higher pod densities are supported. The maximum number of pods per node can be configured in the AKS cluster configuration.
-{{% /alert %}}
-
-#### Pods Per Core
-
-An alternative way to dynamically set the maximum density of pods on a node is to use the `.spec.template.spec.kubelet.podsPerCore` value. Karpenter will calculate the pod density during scheduling by multiplying this value by the number of logical cores (vCPUs) on an instance type. This value will also be passed through to the `--pods-per-core` value on kubelet startup to configure the number of allocatable pods the kubelet can assign to the node instance.
-
-The value generated from `podsPerCore` cannot exceed `maxPods`, meaning, if both are set, the minimum of the `podsPerCore` dynamic pod density and the static `maxPods` value will be used for scheduling.
-
-{{% alert title="Note" color="primary" %}}
-`maxPods` may not be set in the `kubelet` of a NodePool, but may still be restricted by the CNI configuration. You may want to ensure that the `podsPerCore` value that will be used for instance families associated with the NodePool will not cause unexpected behavior by exceeding the `maxPods` value.
-{{% /alert %}}
 
 ## spec.disruption
 

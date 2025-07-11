@@ -212,7 +212,7 @@
         <li><a href="#what-is-nap">What is NAP?</a></li>
         <li><a href="#benefits-of-nap">Benefits of NAP</a></li>
         <li><a href="#when-to-use-nap">When to Use NAP</a></li>
-        <li><a href="#nap-limitations">NAP Limitations</a></li>
+        <li><a href="#nap--self-hosted-limitations">NAP + Self-Hosted Limitations</a></li>
         <li><a href="#using-nap">Using NAP</a></li>
       </ul>
     </li>
@@ -222,6 +222,7 @@
         <li><a href="#self-hosted-limitations">Self-hosted Limitations</a></li>
         <li><a href="#self-hosted-architecture">Self-hosted Architecture</a></li>
         <li><a href="#installing-self-hosted-karpenter">Installing Self-hosted Karpenter</a></li>
+        <li><a href="#features-available-in-nap-but-not-self-hosted">Features Available in NAP but Not Self-hosted</a></li>
       </ul>
     </li>
     <li><a href="#comparison-matrix">Comparison Matrix</a></li>
@@ -290,7 +291,7 @@
 <ul>
 <li><strong>Fully managed</strong>: Microsoft manages the Karpenter deployment, updates, and lifecycle</li>
 <li><strong>Zero operational overhead</strong>: No need to install, configure, or maintain Karpenter</li>
-<li><strong>Automatic updates</strong>: Karpenter is automatically updated with AKS cluster updates</li>
+<li><strong>Automatic updates</strong>: Karpenter is automatically updated with AKS cluster updates and images</li>
 <li><strong>Enterprise support</strong>: Covered under Azure support agreements</li>
 <li><strong>Integrated monitoring</strong>: Built-in integration with Azure Monitor, grafana, metrics, and logging</li>
 <li><strong>Security</strong>: We manage the bootstrapping token for you</li>
@@ -306,7 +307,7 @@
 <li>You don&rsquo;t need deep customization of Karpenter configuration</li>
 <li>You want to optimize costs automatically</li>
 </ul>
-<h3 id="nap-limitations">NAP Limitations</h3>
+<h3 id="nap--self-hosted-limitations">NAP + Self-Hosted Limitations</h3>
 <p><strong>Networking Requirements:</strong>
 The recommended network configurations for NAP are:</p>
 <ul>
@@ -416,6 +417,24 @@ The recommended network configurations for NAP are:</p>
 <p>This distinction affects how you interact with Karpenter, what you can customize, and who is responsible for its operation and security.</p>
 <h3 id="installing-self-hosted-karpenter">Installing Self-hosted Karpenter</h3>
 <p>See an installation guide <a href="https://github.com/Azure/karpenter-provider-azure?tab=readme-ov-file#installation-self-hosted">here</a>.</p>
+<h3 id="features-available-in-nap-but-not-self-hosted">Features Available in NAP but Not Self-hosted</h3>
+<p>NAP mode provides several features and capabilities that are not available in self-hosted mode:</p>
+<ul>
+<li><strong>v6 SKUs</strong>: Only supported in NAP mode. Self-hosted mode does not support v6 generation VM SKUs.</li>
+<li><strong>&ndash;dns-service-ip</strong>: Only supported in NAP mode for now.</li>
+<li><strong>Automatic bootstrap token management</strong>: NAP handles node bootstrapping tokens automatically, if you are using self-hosted,
+you will be managing that token yourself after each upgrade to the systempool or change.</li>
+<li><strong>Service CIDR</strong>: Only supported or honored in NAP</li>
+<li><strong>Integrated monitoring</strong>: Built-in Azure Monitor integration with predefined metrics and dashboards</li>
+<li><strong>Automatic security updates</strong>: Security patches and updates are managed by Azure</li>
+<li><strong>Enterprise support</strong>: Covered under Azure support SLAs and agreements feel free to file a support ticket</li>
+</ul>
+<p><strong>Advanced Capabilities:</strong></p>
+<ul>
+<li><strong>Optimized provisioning</strong>: NAP uses Azure-specific optimizations for faster node provisioning</li>
+<li><strong>Regional feature rollouts</strong>: New Azure features are often available in NAP before self-hosted</li>
+<li><strong>Cross-region failover</strong>: Built-in support for multi-region deployments</li>
+</ul>
 <h2 id="comparison-matrix">Comparison Matrix</h2>
 <table>
   <thead>
@@ -523,16 +542,14 @@ The recommended network configurations for NAP are:</p>
 <p><strong>Choose NAP if:</strong></p>
 <ul>
 <li>You want minimal operational overhead</li>
-<li>You need enterprise support and SLAs</li>
+<li>You need support on your cluster</li>
 <li>You prefer managed services</li>
 <li>Your requirements fit within NAP&rsquo;s capabilities</li>
 </ul>
 <p><strong>Choose Self-hosted if:</strong></p>
 <ul>
-<li>You need advanced customization</li>
 <li>You want immediate access to new features</li>
 <li>You&rsquo;re comfortable managing Kubernetes deployments</li>
-<li>You have specific compliance or security requirements</li>
 </ul>
 <p>Both modes provide the same core Karpenter functionality for node provisioning and lifecycle management. The choice depends on your operational preferences, customization needs, and support requirements.</p>
 

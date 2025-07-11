@@ -344,12 +344,7 @@
 <h3 id="can-i-use-custom-vm-images-with-karpenter">Can I use custom VM images with Karpenter?</h3>
 <p>Yes, you can specify custom VM images through the <code>AKSNodeClass</code> configuration. Custom images must include the necessary AKS components and configurations.</p>
 <h3 id="how-does-karpenter-handle-spot-vms">How does Karpenter handle spot VMs?</h3>
-<p>Karpenter supports Azure Spot VMs for cost savings. It automatically handles spot interruptions by:</p>
-<ul>
-<li>Receiving 30-second advance warning</li>
-<li>Cordoning and draining affected nodes</li>
-<li>Provisioning replacement capacity when possible</li>
-</ul>
+<p>Karpenter supports Azure Spot VMs for cost savings. When using spot instances, be aware that they may be reclaimed by Azure when capacity is needed elsewhere.</p>
 <h3 id="can-i-mix-spot-and-regular-vms-in-the-same-nodepool">Can I mix spot and regular VMs in the same NodePool?</h3>
 <p>Yes, you can specify both <code>spot</code> and <code>on-demand</code> in the capacity type requirements. Karpenter will prefer spot instances when available.</p>
 <h2 id="networking-and-security">Networking and Security</h2>

@@ -234,7 +234,7 @@
     </li>
     <li><a href="#azure-specific-issues">Azure-Specific Issues</a>
       <ul>
-        <li><a href="#spot-vm-interruptions">Spot VM Interruptions</a></li>
+        <li><a href="#spot-vm-issues">Spot VM Issues</a></li>
         <li><a href="#quota-exceeded">Quota Exceeded</a></li>
       </ul>
     </li>
@@ -519,23 +519,23 @@
 <li>Check CoreDNS configuration</li>
 </ul>
 <h2 id="azure-specific-issues">Azure-Specific Issues</h2>
-<h3 id="spot-vm-interruptions">Spot VM Interruptions</h3>
-<p><strong>Symptoms</strong>: Frequent unexpected node terminations.</p>
+<h3 id="spot-vm-issues">Spot VM Issues</h3>
+<p><strong>Symptoms</strong>: Unexpected node terminations when using spot instances.</p>
 <p><strong>Debugging Steps</strong>:</p>
 <ol>
-<li><strong>Check for spot interruptions</strong>:</li>
+<li><strong>Check node events</strong>:</li>
 </ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get events <span style="color:#000;font-weight:bold">|</span> grep -i <span style="color:#4e9a06">&#34;spot\|interrupt\|evict&#34;</span>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get events <span style="color:#000;font-weight:bold">|</span> grep -i <span style="color:#4e9a06">&#34;spot\|evict&#34;</span>
 </span></span></code></pre></div><ol start="2">
 <li><strong>Monitor spot VM pricing</strong>:</li>
 </ol>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az vm list-sizes --location &lt;region&gt; --query <span style="color:#4e9a06">&#34;[?contains(name, &#39;Standard_D2s_v3&#39;)]&#34;</span>
 </span></span></code></pre></div><p><strong>Solutions</strong>:</p>
 <ul>
-<li>Use diverse instance types to reduce interruption impact</li>
+<li>Use diverse instance types for better availability</li>
 <li>Implement proper pod disruption budgets</li>
 <li>Consider mixed spot/on-demand strategies</li>
-<li>Use spot-tolerant workloads</li>
+<li>Use workloads tolerant of node preemption</li>
 </ul>
 <h3 id="quota-exceeded">Quota Exceeded</h3>
 <p><strong>Symptoms</strong>: VM creation fails with quota exceeded errors.</p>

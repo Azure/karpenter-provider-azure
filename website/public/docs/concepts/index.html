@@ -294,7 +294,6 @@ Karpenter handles all clean-up work needed to properly delete the node.</li>
 </ul>
 </li>
 <li><a href="//localhost:1313/docs/concepts/disruption/#drift"><strong>Drift</strong></a>: Karpenter will mark nodes as drifted and disrupt nodes that have drifted from their desired specification. See <a href="#drift">Drift</a> to see which fields are considered.</li>
-<li><a href="//localhost:1313/docs/concepts/disruption/#interruption"><strong>Interruption</strong></a>: Karpenter will watch for upcoming interruption events that could affect your nodes (health events, spot interruption, etc.) and will cordon, drain, and terminate the node(s) ahead of the event to reduce workload disruption.</li>
 </ul>
 <p>For more details on how Karpenter deletes nodes, see the <a href="//localhost:1313/docs/concepts/disruption/">Disruption Documentation</a>.</p>
 <h3 id="scheduling">Scheduling</h3>

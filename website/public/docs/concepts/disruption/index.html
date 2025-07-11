@@ -217,7 +217,6 @@
       <ul>
         <li><a href="#consolidation">Consolidation</a></li>
         <li><a href="#drift">Drift</a></li>
-        <li><a href="#interruption">Interruption</a></li>
       </ul>
     </li>
     <li><a href="#controls">Controls</a>
@@ -348,7 +347,6 @@ When you run <code>kubectl delete node</code> on a node without a finalizer, the
 </ul>
 </li>
 <li><a href="#drift"><strong>Drift</strong></a>: Karpenter will mark nodes as drifted and disrupt nodes that have drifted from their desired specification. See <a href="#drift">Drift</a> to see which fields are considered.</li>
-<li><a href="#interruption"><strong>Interruption</strong></a>: Karpenter will watch for upcoming interruption events that could affect your nodes (health events, spot interruption, etc.) and will taint, drain, and terminate the node(s) ahead of the event to reduce workload disruption.</li>
 </ul>
 
 
@@ -477,29 +475,6 @@ When you run <code>kubectl delete node</code> on a node without a finalizer, the
 <li>The <code>Drift</code> feature gate is not enabled but the NodeClaim is drifted, Karpenter will remove the status condition.</li>
 <li>The NodeClaim isn&rsquo;t drifted, but has the status condition, Karpenter will remove it.</li>
 </ol>
-<h3 id="interruption">Interruption</h3>
-<p>If interruption-handling is enabled, Karpenter will watch for upcoming involuntary interruption events that would cause disruption to your workloads. These interruption events include:</p>
-<ul>
-<li>Azure Spot Instance Interruption Warnings</li>
-<li>Scheduled Maintenance Events</li>
-<li>Instance Terminating Events</li>
-<li>Instance Stopping Events</li>
-</ul>
-<p>When Karpenter detects one of these events will occur to your nodes, it automatically taints, drains, and terminates the node(s) ahead of the interruption event to give the maximum amount of time for workload cleanup prior to compute disruption. This enables scenarios where the <code>terminationGracePeriod</code> for your workloads may be long or cleanup for your workloads is critical, and you want enough time to be able to gracefully clean-up your pods.</p>
-<p>For Azure Spot interruptions, the NodePool will start a new node as soon as it sees the Spot interruption warning. Azure Spot interruptions have a <strong>30 second notice</strong> before Azure reclaims the instance. Karpenter&rsquo;s average node startup time means that, generally, there is sufficient time for the new node to become ready and to move the pods to the new node before the NodeClaim is reclaimed.</p>
-
-
-<div class="alert alert-primary" role="alert">
-<h4 class="alert-heading">Note</h4>
-
-    <p>Karpenter publishes Kubernetes events to the node for all events listed above. Azure provides notifications for scheduled maintenance and spot interruptions through Azure Event Grid and Azure Service Bus.</p>
-<p>If you require handling for additional Azure maintenance events, you can integrate with <a href="https://docs.microsoft.com/en-us/azure/event-grid/">Azure Event Grid</a> alongside Karpenter to receive additional event notifications.</p>
-
-
-</div>
-
-<p>Karpenter enables this feature by watching an Azure Service Bus queue which receives critical events from Azure services which may affect your nodes. Karpenter requires that an Azure Service Bus queue be provisioned and Event Grid subscriptions be added that forward interruption events from Azure services to the Service Bus queue.</p>
-<p>To enable interruption handling, configure the <code>--interruption-queue</code> CLI argument with the name of the interruption queue provisioned to handle interruption events.</p>
 <h2 id="controls">Controls</h2>
 <h3 id="disruption-budgets">Disruption Budgets</h3>
 <p>You can rate limit Karpenter&rsquo;s disruption through the NodePool&rsquo;s <code>spec.disruption.budgets</code>. If undefined, Karpenter will default to one budget with <code>nodes: 10%</code>. Budgets will consider nodes that are actively being deleted for any reason, and will only block Karpenter from disrupting nodes voluntarily through expiration, drift, emptiness, and consolidation.</p>
@@ -579,7 +554,7 @@ Follow the <a href="https://kubernetes.io/docs/concepts/workloads/controllers/cr
 <div class="alert alert-primary" role="alert">
 <h4 class="alert-heading">Note</h4>
 
-    Voluntary node removal does not include <a href="/docs/concepts/disruption/#interruption">Interruption</a> or manual deletion initiated through <code>kubectl delete node</code>. Both of these are considered involuntary events, since node removal cannot be delayed.
+    Voluntary node removal does not include manual deletion initiated through <code>kubectl delete node</code>. This is considered an involuntary event, since node removal cannot be delayed.
 
 </div>
 

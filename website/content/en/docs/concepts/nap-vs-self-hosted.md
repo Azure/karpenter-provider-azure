@@ -25,7 +25,7 @@ NAP uses pending pod resource requirements to decide the optimal virtual machine
 ### Benefits of NAP
 - **Fully managed**: Microsoft manages the Karpenter deployment, updates, and lifecycle
 - **Zero operational overhead**: No need to install, configure, or maintain Karpenter
-- **Automatic updates**: Karpenter is automatically updated with AKS cluster updates
+- **Automatic updates**: Karpenter is automatically updated with AKS cluster updates and images
 - **Enterprise support**: Covered under Azure support agreements
 - **Integrated monitoring**: Built-in integration with Azure Monitor, grafana, metrics, and logging
 - **Security**: We manage the bootstrapping token for you 
@@ -41,7 +41,7 @@ Choose NAP when:
 - You don't need deep customization of Karpenter configuration
 - You want to optimize costs automatically
 
-### NAP Limitations
+### NAP + Self-Hosted Limitations
 
 **Networking Requirements:**
 The recommended network configurations for NAP are:
@@ -172,6 +172,24 @@ This distinction affects how you interact with Karpenter, what you can customize
 ### Installing Self-hosted Karpenter
 See an installation guide [here](https://github.com/Azure/karpenter-provider-azure?tab=readme-ov-file#installation-self-hosted).
 
+### Features Available in NAP but Not Self-hosted
+
+NAP mode provides several features and capabilities that are not available in self-hosted mode:
+
+- **v6 SKUs**: Only supported in NAP mode. Self-hosted mode does not support v6 generation VM SKUs.
+- **--dns-service-ip**: Only supported in NAP mode for now.
+- **Automatic bootstrap token management**: NAP handles node bootstrapping tokens automatically, if you are using self-hosted,
+you will be managing that token yourself after each upgrade to the systempool or change.
+- **Service CIDR**: Only supported or honored in NAP
+- **Integrated monitoring**: Built-in Azure Monitor integration with predefined metrics and dashboards
+- **Automatic security updates**: Security patches and updates are managed by Azure
+- **Enterprise support**: Covered under Azure support SLAs and agreements feel free to file a support ticket 
+
+**Advanced Capabilities:**
+- **Optimized provisioning**: NAP uses Azure-specific optimizations for faster node provisioning
+- **Regional feature rollouts**: New Azure features are often available in NAP before self-hosted
+- **Cross-region failover**: Built-in support for multi-region deployments
+
 ## Comparison Matrix
 | Feature | NAP Mode | Self-hosted Mode |
 |---------|----------|------------------|
@@ -243,14 +261,12 @@ az aks update --resource-group myRG --name myCluster --disable-node-autoprovisio
 
 **Choose NAP if:**
 - You want minimal operational overhead
-- You need enterprise support and SLAs
+- You need support on your cluster
 - You prefer managed services
 - Your requirements fit within NAP's capabilities
 
 **Choose Self-hosted if:**
-- You need advanced customization
 - You want immediate access to new features
 - You're comfortable managing Kubernetes deployments
-- You have specific compliance or security requirements
 
 Both modes provide the same core Karpenter functionality for node provisioning and lifecycle management. The choice depends on your operational preferences, customization needs, and support requirements.

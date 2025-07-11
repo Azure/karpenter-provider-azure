@@ -74,7 +74,7 @@ Yes, Karpenter works with private AKS clusters. Ensure the Karpenter controller 
 
 ### How fast can Karpenter provision new nodes?
 Typical node provisioning times:
-- Spot VMs: 30-60 seconds
+- Spot VMs: <TODO> 
 - Regular VMs: 45-90 seconds
 - GPU VMs: 60-120 seconds
 

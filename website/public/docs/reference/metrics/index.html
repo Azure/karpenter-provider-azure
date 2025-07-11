@@ -256,13 +256,6 @@
         <li><a href="#karpenter_nodeclaims_created"><code>karpenter_nodeclaims_created</code></a></li>
       </ul>
     </li>
-    <li><a href="#interruption-metrics">Interruption Metrics</a>
-      <ul>
-        <li><a href="#karpenter_interruption_received_messages_total"><code>karpenter_interruption_received_messages_total</code></a></li>
-        <li><a href="#karpenter_interruption_actions_performed_total"><code>karpenter_interruption_actions_performed_total</code></a></li>
-        <li><a href="#karpenter_interruption_message_latency_time_seconds"><code>karpenter_interruption_message_latency_time_seconds</code></a></li>
-      </ul>
-    </li>
     <li><a href="#consistency-metrics">Consistency Metrics</a>
       <ul>
         <li><a href="#karpenter_consistency_errors"><code>karpenter_consistency_errors</code></a></li>
@@ -387,13 +380,6 @@
 <p>Number of nodeclaims disrupted in total by Karpenter. Labeled by disruption type of the nodeclaim and the owning nodepool.</p>
 <h3 id="karpenter_nodeclaims_created"><code>karpenter_nodeclaims_created</code></h3>
 <p>Number of nodeclaims created in total by Karpenter. Labeled by reason the nodeclaim was created and the owning nodepool.</p>
-<h2 id="interruption-metrics">Interruption Metrics</h2>
-<h3 id="karpenter_interruption_received_messages_total"><code>karpenter_interruption_received_messages_total</code></h3>
-<p>Number of interruption messages received from Azure Service Bus. Labeled by message type.</p>
-<h3 id="karpenter_interruption_actions_performed_total"><code>karpenter_interruption_actions_performed_total</code></h3>
-<p>Number of interruption actions performed. Labeled by action type (taint, cordon, drain).</p>
-<h3 id="karpenter_interruption_message_latency_time_seconds"><code>karpenter_interruption_message_latency_time_seconds</code></h3>
-<p>Length of time between message generation and message receipt from the Azure Service Bus queue.</p>
 <h2 id="consistency-metrics">Consistency Metrics</h2>
 <h3 id="karpenter_consistency_errors"><code>karpenter_consistency_errors</code></h3>
 <p>Number of consistency errors encountered by Karpenter. Labeled by error type.</p>
