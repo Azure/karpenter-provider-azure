@@ -159,9 +159,6 @@ spec:
         - key: karpenter.azure.com/sku-gpu-count
           operator: Gt
           values: ["0"]
-        - key: karpenter.azure.com/sku-gpu-manufacturer
-          operator: In
-          values: ["nvidia"]
         - key: karpenter.azure.com/sku-family
           operator: In
           values: ["NC", "ND", "NV"]  # GPU families

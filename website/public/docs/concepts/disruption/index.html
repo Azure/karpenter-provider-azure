@@ -128,21 +128,6 @@
   
 </li>
   </ul>
-</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docstasks-li">
-  <input type="checkbox" id="m-docstasks-check"/>
-  <label for="m-docstasks-check"><a href="/docs/tasks/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docstasks"><span class="">Tasks</span></a></label>
-  
-  <ul class="ul-2 foldable">
-    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstasksmanaging-vm-images-li">
-  <input type="checkbox" id="m-docstasksmanaging-vm-images-check"/>
-  <label for="m-docstasksmanaging-vm-images-check"><a href="/docs/tasks/managing-vm-images/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstasksmanaging-vm-images"><span class="">Managing VM Images</span></a></label>
-  
-</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstasksnodepool-examples-li">
-  <input type="checkbox" id="m-docstasksnodepool-examples-check"/>
-  <label for="m-docstasksnodepool-examples-check"><a href="/docs/tasks/nodepool-examples/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstasksnodepool-examples"><span class="">NodePool Examples</span></a></label>
-  
-</li>
-  </ul>
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsreference-li">
   <input type="checkbox" id="m-docsreference-check"/>
   <label for="m-docsreference-check"><a href="/docs/reference/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsreference"><span class="">Reference</span></a></label>
@@ -152,6 +137,10 @@
   <input type="checkbox" id="m-docsreferencesettings-check"/>
   <label for="m-docsreferencesettings-check"><a href="/docs/reference/settings/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencesettings"><span class="">Settings</span></a></label>
   
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencecustom-networking-li">
+  <input type="checkbox" id="m-docsreferencecustom-networking-check"/>
+  <label for="m-docsreferencecustom-networking-check"><a href="/docs/reference/custom-networking/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencecustom-networking"><span class="">Custom Networking</span></a></label>
+  
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferenceinstance-types-li">
   <input type="checkbox" id="m-docsreferenceinstance-types-check"/>
   <label for="m-docsreferenceinstance-types-check"><a href="/docs/reference/instance-types/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferenceinstance-types"><span class="">Instance Types</span></a></label>
@@ -159,6 +148,10 @@
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencemetrics-li">
   <input type="checkbox" id="m-docsreferencemetrics-check"/>
   <label for="m-docsreferencemetrics-check"><a href="/docs/reference/metrics/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencemetrics"><span class="">Metrics</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencenodepool-examples-li">
+  <input type="checkbox" id="m-docsreferencenodepool-examples-check"/>
+  <label for="m-docsreferencenodepool-examples-check"><a href="/docs/reference/nodepool-examples/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencenodepool-examples"><span class="">NodePool Examples</span></a></label>
   
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencenodepools-li">
   <input type="checkbox" id="m-docsreferencenodepools-check"/>
@@ -174,17 +167,6 @@
   <input type="checkbox" id="m-docstroubleshooting-check"/>
   <label for="m-docstroubleshooting-check"><a href="/docs/troubleshooting/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstroubleshooting"><span class="">Troubleshooting</span></a></label>
   
-</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsupgrading-li">
-  <input type="checkbox" id="m-docsupgrading-check"/>
-  <label for="m-docsupgrading-check"><a href="/docs/upgrading/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsupgrading"><span class="">Upgrading</span></a></label>
-  
-  <ul class="ul-2 foldable">
-    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsupgradingupgrade-guide-li">
-  <input type="checkbox" id="m-docsupgradingupgrade-guide-check"/>
-  <label for="m-docsupgradingupgrade-guide-check"><a href="/docs/upgrading/upgrade-guide/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsupgradingupgrade-guide"><span class="">Upgrade Guide</span></a></label>
-  
-</li>
-  </ul>
 </li>
   </ul>
 </li>
@@ -447,6 +429,31 @@ When you run <code>kubectl delete node</code> on a node without a finalizer, the
       </tr>
   </tbody>
 </table>
+<h6 id="vnet-subnet-id-drift">VNet Subnet ID Drift</h6>
+<p><strong>⚠️ Important</strong>: The <code>spec.vnetSubnetID</code> field can trigger drift detection, but modifying this field from one valid subnet to another valid subnet is <strong>NOT a supported operation</strong>. This field is mutable solely to provide an escape hatch for correcting invalid or malformed subnet IDs during initial configuration.</p>
+<p>Unlike traditional AKS NodePools created through ARM templates, Karpenter applies custom resource definitions (CRDs) that provision nodes instantly without the extended validation that ARM provides. <strong>Customers are responsible for understanding their cluster&rsquo;s CIDR ranges and ensuring no conflicts occur when configuring <code>vnetSubnetID</code>.</strong></p>
+<p><strong>Validation Differences</strong>:</p>
+<ul>
+<li><strong>ARM Template NodePools</strong>: Include comprehensive CIDR conflict detection and network validation</li>
+<li><strong>Karpenter CRDs</strong>: Apply changes instantly without automatic validation - requires customer due diligence</li>
+</ul>
+<p><strong>Customer Responsibility</strong>: Before modifying <code>vnetSubnetID</code>, customers must verify:</p>
+<ul>
+<li>Custom subnets don&rsquo;t conflict with cluster Pod CIDR, Service CIDR, or Docker Bridge CIDR</li>
+<li>Sufficient IP address capacity for scaling requirements</li>
+<li>Proper network connectivity and routing configuration</li>
+</ul>
+<p><strong>Supported Use Case</strong>: Fixing invalid subnet IDs only</p>
+<ul>
+<li>Correcting malformed subnet references that prevent node provisioning</li>
+<li>Updating subnet IDs that point to non-existent or inaccessible subnets</li>
+</ul>
+<p><strong>Unsupported Use Case</strong>: Subnet migration between valid subnets</p>
+<ul>
+<li>Moving nodes between subnets for network reorganization</li>
+<li>Changing subnet configurations for capacity or performance reasons</li>
+</ul>
+<p><strong>Support Policy</strong>: Microsoft will not provide support for issues arising from subnet-to-subnet migrations via <code>vnetSubnetID</code> modifications.</p>
 <h4 id="behavioral-fields">Behavioral Fields</h4>
 <p>Behavioral Fields are treated as over-arching settings on the NodePool to dictate how Karpenter behaves. These fields don&rsquo;t correspond to settings on the NodeClaim or instance. They&rsquo;re set by the user to control Karpenter&rsquo;s Provisioning and disruption logic. Since these don&rsquo;t map to a desired state of NodeClaims, <strong>behavioral fields are not considered for Drift</strong>.</p>
 <h5 id="nodepool-1">NodePool</h5>

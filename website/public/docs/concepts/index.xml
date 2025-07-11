@@ -727,7 +727,6 @@ Instance type selection math only uses &lt;code&gt;requests&lt;/code&gt;, but &l
 &lt;p&gt;Accelerator (e.g., GPU) values include&lt;/p&gt;
 &lt;ul&gt;
 &lt;li&gt;&lt;code&gt;nvidia.com/gpu&lt;/code&gt;&lt;/li&gt;
-&lt;li&gt;&lt;code&gt;amd.com/gpu&lt;/code&gt;&lt;/li&gt;
 &lt;/ul&gt;
 &lt;p&gt;Karpenter supports accelerators, such as GPUs.&lt;/p&gt;
 &lt;p&gt;Additionally, include a resource requirement in the workload manifest. This will cause the GPU dependent pod to be scheduled onto the appropriate node.&lt;/p&gt;
@@ -746,10 +745,9 @@ Instance type selection math only uses &lt;code&gt;requests&lt;/code&gt;, but &l
 
     &lt;p&gt;If you are provisioning GPU nodes, you need to deploy an appropriate GPU device plugin daemonset for those nodes.
 Without the daemonset running, Karpenter will not see those nodes as initialized.
-Refer to general &lt;a href=&#34;https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/#deploying-amd-gpu-device-plugin&#34;&gt;Kubernetes GPU&lt;/a&gt; docs and the following specific GPU docs:&lt;/p&gt;
+Refer to general &lt;a href=&#34;https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/&#34;&gt;Kubernetes GPU&lt;/a&gt; docs and the following specific GPU docs:&lt;/p&gt;
 &lt;ul&gt;
 &lt;li&gt;&lt;code&gt;nvidia.com/gpu&lt;/code&gt;: &lt;a href=&#34;https://github.com/NVIDIA/k8s-device-plugin&#34;&gt;NVIDIA device plugin for Kubernetes&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;code&gt;amd.com/gpu&lt;/code&gt;: &lt;a href=&#34;https://github.com/RadeonOpenCompute/k8s-device-plugin&#34;&gt;AMD GPU device plugin for Kubernetes&lt;/a&gt;&lt;/li&gt;
 &lt;/ul&gt;
 
 &lt;/div&gt;
@@ -1246,6 +1244,31 @@ When you run &lt;code&gt;kubectl delete node&lt;/code&gt; on a node without a fi
       &lt;/tr&gt;
   &lt;/tbody&gt;
 &lt;/table&gt;
+&lt;h6 id=&#34;vnet-subnet-id-drift&#34;&gt;VNet Subnet ID Drift&lt;/h6&gt;
+&lt;p&gt;&lt;strong&gt;⚠️ Important&lt;/strong&gt;: The &lt;code&gt;spec.vnetSubnetID&lt;/code&gt; field can trigger drift detection, but modifying this field from one valid subnet to another valid subnet is &lt;strong&gt;NOT a supported operation&lt;/strong&gt;. This field is mutable solely to provide an escape hatch for correcting invalid or malformed subnet IDs during initial configuration.&lt;/p&gt;
+&lt;p&gt;Unlike traditional AKS NodePools created through ARM templates, Karpenter applies custom resource definitions (CRDs) that provision nodes instantly without the extended validation that ARM provides. &lt;strong&gt;Customers are responsible for understanding their cluster&amp;rsquo;s CIDR ranges and ensuring no conflicts occur when configuring &lt;code&gt;vnetSubnetID&lt;/code&gt;.&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Validation Differences&lt;/strong&gt;:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;ARM Template NodePools&lt;/strong&gt;: Include comprehensive CIDR conflict detection and network validation&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Karpenter CRDs&lt;/strong&gt;: Apply changes instantly without automatic validation - requires customer due diligence&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Customer Responsibility&lt;/strong&gt;: Before modifying &lt;code&gt;vnetSubnetID&lt;/code&gt;, customers must verify:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Custom subnets don&amp;rsquo;t conflict with cluster Pod CIDR, Service CIDR, or Docker Bridge CIDR&lt;/li&gt;
+&lt;li&gt;Sufficient IP address capacity for scaling requirements&lt;/li&gt;
+&lt;li&gt;Proper network connectivity and routing configuration&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Supported Use Case&lt;/strong&gt;: Fixing invalid subnet IDs only&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Correcting malformed subnet references that prevent node provisioning&lt;/li&gt;
+&lt;li&gt;Updating subnet IDs that point to non-existent or inaccessible subnets&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Unsupported Use Case&lt;/strong&gt;: Subnet migration between valid subnets&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Moving nodes between subnets for network reorganization&lt;/li&gt;
+&lt;li&gt;Changing subnet configurations for capacity or performance reasons&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Support Policy&lt;/strong&gt;: Microsoft will not provide support for issues arising from subnet-to-subnet migrations via &lt;code&gt;vnetSubnetID&lt;/code&gt; modifications.&lt;/p&gt;
 &lt;h4 id=&#34;behavioral-fields&#34;&gt;Behavioral Fields&lt;/h4&gt;
 &lt;p&gt;Behavioral Fields are treated as over-arching settings on the NodePool to dictate how Karpenter behaves. These fields don&amp;rsquo;t correspond to settings on the NodeClaim or instance. They&amp;rsquo;re set by the user to control Karpenter&amp;rsquo;s Provisioning and disruption logic. Since these don&amp;rsquo;t map to a desired state of NodeClaims, &lt;strong&gt;behavioral fields are not considered for Drift&lt;/strong&gt;.&lt;/p&gt;
 &lt;h5 id=&#34;nodepool-1&#34;&gt;NodePool&lt;/h5&gt;
@@ -1610,60 +1633,16 @@ you will be managing that token yourself after each upgrade to the systempool or
 &lt;li&gt;&lt;strong&gt;Uninstall self-hosted Karpenter&lt;/strong&gt;:&lt;/li&gt;
 &lt;/ol&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;helm uninstall karpenter -n kube-system
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;3&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;Delete those CRDs + CRs, note you will need to scale down everything for the migration&lt;/p&gt;
+&lt;ol start=&#34;3&#34;&gt;
 &lt;li&gt;&lt;strong&gt;Enable NAP&lt;/strong&gt;:&lt;/li&gt;
 &lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;az aks update --resource-group myRG --name myCluster --enable-node-autoprovision
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;az aks update --resource-group myRG --name myCluster --node-provisioning-mode Auto
 &lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;4&#34;&gt;
 &lt;li&gt;&lt;strong&gt;Recreate NodePools&lt;/strong&gt; (configuration may need adjustment for NAP compatibility)&lt;/li&gt;
 &lt;/ol&gt;
 &lt;h3 id=&#34;from-nap-to-self-hosted&#34;&gt;From NAP to Self-hosted&lt;/h3&gt;
-&lt;ol&gt;
-&lt;li&gt;&lt;strong&gt;Backup NAP configuration&lt;/strong&gt;:&lt;/li&gt;
-&lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;kubectl get nodepools,aksnodeclasses -o yaml &amp;gt; nap-backup.yaml
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;2&#34;&gt;
-&lt;li&gt;&lt;strong&gt;Disable NAP&lt;/strong&gt;:&lt;/li&gt;
-&lt;/ol&gt;
-&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-bash&#34; data-lang=&#34;bash&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;az aks update --resource-group myRG --name myCluster --disable-node-autoprovision
-&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;ol start=&#34;3&#34;&gt;
-&lt;li&gt;
-&lt;p&gt;&lt;strong&gt;Install self-hosted Karpenter&lt;/strong&gt; following the installation steps above&lt;/p&gt;
-&lt;/li&gt;
-&lt;li&gt;
-&lt;p&gt;&lt;strong&gt;Restore NodePools&lt;/strong&gt; (may require configuration adjustments)&lt;/p&gt;
-&lt;/li&gt;
-&lt;/ol&gt;
-&lt;h2 id=&#34;best-practices&#34;&gt;Best Practices&lt;/h2&gt;
-&lt;h3 id=&#34;for-nap-mode&#34;&gt;For NAP Mode&lt;/h3&gt;
-&lt;ul&gt;
-&lt;li&gt;Use NAP for production workloads requiring enterprise support&lt;/li&gt;
-&lt;li&gt;Monitor NAP feature availability in your region&lt;/li&gt;
-&lt;li&gt;Plan capacity and scaling policies within NAP constraints&lt;/li&gt;
-&lt;li&gt;Leverage Azure Monitor integration for observability&lt;/li&gt;
-&lt;/ul&gt;
-&lt;h3 id=&#34;for-self-hosted-mode&#34;&gt;For Self-hosted Mode&lt;/h3&gt;
-&lt;ul&gt;
-&lt;li&gt;Implement proper GitOps workflows for configuration management&lt;/li&gt;
-&lt;li&gt;Set up monitoring and alerting for the Karpenter controller&lt;/li&gt;
-&lt;li&gt;Plan regular update cycles for security and features&lt;/li&gt;
-&lt;li&gt;Test configuration changes in non-production environments first&lt;/li&gt;
-&lt;li&gt;Document your customizations for team knowledge sharing&lt;/li&gt;
-&lt;/ul&gt;
-&lt;h2 id=&#34;choosing-the-right-mode&#34;&gt;Choosing the Right Mode&lt;/h2&gt;
-&lt;p&gt;&lt;strong&gt;Choose NAP if:&lt;/strong&gt;&lt;/p&gt;
-&lt;ul&gt;
-&lt;li&gt;You want minimal operational overhead&lt;/li&gt;
-&lt;li&gt;You need support on your cluster&lt;/li&gt;
-&lt;li&gt;You prefer managed services&lt;/li&gt;
-&lt;li&gt;Your requirements fit within NAP&amp;rsquo;s capabilities&lt;/li&gt;
-&lt;/ul&gt;
-&lt;p&gt;&lt;strong&gt;Choose Self-hosted if:&lt;/strong&gt;&lt;/p&gt;
-&lt;ul&gt;
-&lt;li&gt;You want immediate access to new features&lt;/li&gt;
-&lt;li&gt;You&amp;rsquo;re comfortable managing Kubernetes deployments&lt;/li&gt;
-&lt;/ul&gt;
-&lt;p&gt;Both modes provide the same core Karpenter functionality for node provisioning and lifecycle management. The choice depends on your operational preferences, customization needs, and support requirements.&lt;/p&gt;
+&lt;p&gt;This configuration is currently untested and unsupported, not to say its impossible just not throughly thought through&lt;/p&gt;
 
       </description>
     </item>

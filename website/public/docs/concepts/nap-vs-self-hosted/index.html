@@ -128,21 +128,6 @@
   
 </li>
   </ul>
-</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docstasks-li">
-  <input type="checkbox" id="m-docstasks-check"/>
-  <label for="m-docstasks-check"><a href="/docs/tasks/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docstasks"><span class="">Tasks</span></a></label>
-  
-  <ul class="ul-2 foldable">
-    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstasksmanaging-vm-images-li">
-  <input type="checkbox" id="m-docstasksmanaging-vm-images-check"/>
-  <label for="m-docstasksmanaging-vm-images-check"><a href="/docs/tasks/managing-vm-images/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstasksmanaging-vm-images"><span class="">Managing VM Images</span></a></label>
-  
-</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docstasksnodepool-examples-li">
-  <input type="checkbox" id="m-docstasksnodepool-examples-check"/>
-  <label for="m-docstasksnodepool-examples-check"><a href="/docs/tasks/nodepool-examples/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstasksnodepool-examples"><span class="">NodePool Examples</span></a></label>
-  
-</li>
-  </ul>
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsreference-li">
   <input type="checkbox" id="m-docsreference-check"/>
   <label for="m-docsreference-check"><a href="/docs/reference/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsreference"><span class="">Reference</span></a></label>
@@ -152,6 +137,10 @@
   <input type="checkbox" id="m-docsreferencesettings-check"/>
   <label for="m-docsreferencesettings-check"><a href="/docs/reference/settings/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencesettings"><span class="">Settings</span></a></label>
   
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencecustom-networking-li">
+  <input type="checkbox" id="m-docsreferencecustom-networking-check"/>
+  <label for="m-docsreferencecustom-networking-check"><a href="/docs/reference/custom-networking/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencecustom-networking"><span class="">Custom Networking</span></a></label>
+  
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferenceinstance-types-li">
   <input type="checkbox" id="m-docsreferenceinstance-types-check"/>
   <label for="m-docsreferenceinstance-types-check"><a href="/docs/reference/instance-types/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferenceinstance-types"><span class="">Instance Types</span></a></label>
@@ -159,6 +148,10 @@
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencemetrics-li">
   <input type="checkbox" id="m-docsreferencemetrics-check"/>
   <label for="m-docsreferencemetrics-check"><a href="/docs/reference/metrics/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencemetrics"><span class="">Metrics</span></a></label>
+  
+</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencenodepool-examples-li">
+  <input type="checkbox" id="m-docsreferencenodepool-examples-check"/>
+  <label for="m-docsreferencenodepool-examples-check"><a href="/docs/reference/nodepool-examples/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencenodepool-examples"><span class="">NodePool Examples</span></a></label>
   
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencenodepools-li">
   <input type="checkbox" id="m-docsreferencenodepools-check"/>
@@ -174,17 +167,6 @@
   <input type="checkbox" id="m-docstroubleshooting-check"/>
   <label for="m-docstroubleshooting-check"><a href="/docs/troubleshooting/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docstroubleshooting"><span class="">Troubleshooting</span></a></label>
   
-</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section with-child" id="m-docsupgrading-li">
-  <input type="checkbox" id="m-docsupgrading-check"/>
-  <label for="m-docsupgrading-check"><a href="/docs/upgrading/" class="align-left pl-0  td-sidebar-link td-sidebar-link__section" id="m-docsupgrading"><span class="">Upgrading</span></a></label>
-  
-  <ul class="ul-2 foldable">
-    <li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsupgradingupgrade-guide-li">
-  <input type="checkbox" id="m-docsupgradingupgrade-guide-check"/>
-  <label for="m-docsupgradingupgrade-guide-check"><a href="/docs/upgrading/upgrade-guide/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsupgradingupgrade-guide"><span class="">Upgrade Guide</span></a></label>
-  
-</li>
-  </ul>
 </li>
   </ul>
 </li>
@@ -232,13 +214,6 @@
         <li><a href="#from-nap-to-self-hosted">From NAP to Self-hosted</a></li>
       </ul>
     </li>
-    <li><a href="#best-practices">Best Practices</a>
-      <ul>
-        <li><a href="#for-nap-mode">For NAP Mode</a></li>
-        <li><a href="#for-self-hosted-mode">For Self-hosted Mode</a></li>
-      </ul>
-    </li>
-    <li><a href="#choosing-the-right-mode">Choosing the Right Mode</a></li>
   </ul>
 </nav>
       </div>
@@ -498,60 +473,16 @@ you will be managing that token yourself after each upgrade to the systempool or
 <li><strong>Uninstall self-hosted Karpenter</strong>:</li>
 </ol>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>helm uninstall karpenter -n kube-system
-</span></span></code></pre></div><ol start="3">
+</span></span></code></pre></div><p>Delete those CRDs + CRs, note you will need to scale down everything for the migration</p>
+<ol start="3">
 <li><strong>Enable NAP</strong>:</li>
 </ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az aks update --resource-group myRG --name myCluster --enable-node-autoprovision
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az aks update --resource-group myRG --name myCluster --node-provisioning-mode Auto
 </span></span></code></pre></div><ol start="4">
 <li><strong>Recreate NodePools</strong> (configuration may need adjustment for NAP compatibility)</li>
 </ol>
 <h3 id="from-nap-to-self-hosted">From NAP to Self-hosted</h3>
-<ol>
-<li><strong>Backup NAP configuration</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get nodepools,aksnodeclasses -o yaml &gt; nap-backup.yaml
-</span></span></code></pre></div><ol start="2">
-<li><strong>Disable NAP</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az aks update --resource-group myRG --name myCluster --disable-node-autoprovision
-</span></span></code></pre></div><ol start="3">
-<li>
-<p><strong>Install self-hosted Karpenter</strong> following the installation steps above</p>
-</li>
-<li>
-<p><strong>Restore NodePools</strong> (may require configuration adjustments)</p>
-</li>
-</ol>
-<h2 id="best-practices">Best Practices</h2>
-<h3 id="for-nap-mode">For NAP Mode</h3>
-<ul>
-<li>Use NAP for production workloads requiring enterprise support</li>
-<li>Monitor NAP feature availability in your region</li>
-<li>Plan capacity and scaling policies within NAP constraints</li>
-<li>Leverage Azure Monitor integration for observability</li>
-</ul>
-<h3 id="for-self-hosted-mode">For Self-hosted Mode</h3>
-<ul>
-<li>Implement proper GitOps workflows for configuration management</li>
-<li>Set up monitoring and alerting for the Karpenter controller</li>
-<li>Plan regular update cycles for security and features</li>
-<li>Test configuration changes in non-production environments first</li>
-<li>Document your customizations for team knowledge sharing</li>
-</ul>
-<h2 id="choosing-the-right-mode">Choosing the Right Mode</h2>
-<p><strong>Choose NAP if:</strong></p>
-<ul>
-<li>You want minimal operational overhead</li>
-<li>You need support on your cluster</li>
-<li>You prefer managed services</li>
-<li>Your requirements fit within NAP&rsquo;s capabilities</li>
-</ul>
-<p><strong>Choose Self-hosted if:</strong></p>
-<ul>
-<li>You want immediate access to new features</li>
-<li>You&rsquo;re comfortable managing Kubernetes deployments</li>
-</ul>
-<p>Both modes provide the same core Karpenter functionality for node provisioning and lifecycle management. The choice depends on your operational preferences, customization needs, and support requirements.</p>
+<p>This configuration is currently untested and unsupported, not to say its impossible just not throughly thought through</p>
 
 	
 	

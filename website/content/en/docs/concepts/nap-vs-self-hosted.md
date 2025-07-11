@@ -219,54 +219,14 @@ kubectl get nodepools,aksnodeclasses -o yaml > karpenter-backup.yaml
 helm uninstall karpenter -n kube-system
 ```
 
+Delete those CRDs + CRs, note you will need to scale down everything for the migration
+
 3. **Enable NAP**:
 ```bash
-az aks update --resource-group myRG --name myCluster --enable-node-autoprovision
+az aks update --resource-group myRG --name myCluster --node-provisioning-mode Auto
 ```
 
 4. **Recreate NodePools** (configuration may need adjustment for NAP compatibility)
 
 ### From NAP to Self-hosted
-
-1. **Backup NAP configuration**:
-```bash
-kubectl get nodepools,aksnodeclasses -o yaml > nap-backup.yaml
-```
-
-2. **Disable NAP**:
-```bash
-az aks update --resource-group myRG --name myCluster --disable-node-autoprovision
-```
-
-3. **Install self-hosted Karpenter** following the installation steps above
-
-4. **Restore NodePools** (may require configuration adjustments)
-
-## Best Practices
-
-### For NAP Mode
-- Use NAP for production workloads requiring enterprise support
-- Monitor NAP feature availability in your region
-- Plan capacity and scaling policies within NAP constraints
-- Leverage Azure Monitor integration for observability
-
-### For Self-hosted Mode
-- Implement proper GitOps workflows for configuration management
-- Set up monitoring and alerting for the Karpenter controller
-- Plan regular update cycles for security and features
-- Test configuration changes in non-production environments first
-- Document your customizations for team knowledge sharing
-
-## Choosing the Right Mode
-
-**Choose NAP if:**
-- You want minimal operational overhead
-- You need support on your cluster
-- You prefer managed services
-- Your requirements fit within NAP's capabilities
-
-**Choose Self-hosted if:**
-- You want immediate access to new features
-- You're comfortable managing Kubernetes deployments
-
-Both modes provide the same core Karpenter functionality for node provisioning and lifecycle management. The choice depends on your operational preferences, customization needs, and support requirements.
+This configuration is currently untested and unsupported, not to say its impossible just not throughly thought through

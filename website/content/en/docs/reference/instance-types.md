@@ -275,7 +275,7 @@ Karpenter automatically considers pricing when making provisioning decisions and
 - Consider using Spot VMs for fault-tolerant workloads
 
 ### Cost Optimization
-- Use burstable B-series for variable workloads
+- Use burstable B-series for variable workloads understand the tradeoff of performance
 - Consider Spot VMs for batch processing
 - Right-size your instances based on actual usage
 
@@ -293,13 +293,13 @@ Karpenter automatically chooses the best ephemeral disk placement when the OS di
 3. **Resource Disk**: Standard temporary disk
 
 **Benefits:**
-- Significantly faster boot times
+- faster boot times
 - Better I/O performance for OS operations
 - No additional storage costs
 - Automatic selection based on VM capabilities
 
-## Spot VMs
 
+## Spot VMs
 Azure Spot VMs offer significant cost savings (up to 90% off) in exchange for potential interruption when Azure needs the capacity back.
 
 ```yaml
@@ -333,3 +333,6 @@ Avoid Spot VMs for:
 - Real-time applications
 - Stateful workloads without backup strategies
 - Critical system components
+
+
+Configure nodepools with spot and on-demand to fall back to on-demand capacity when you run out of spot capacity! 

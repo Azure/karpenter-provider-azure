@@ -149,6 +149,31 @@ In special cases, drift can correspond to multiple values and must be handled di
 | spec.vnetSubnetID             |
 | spec.imageFamily              |
 
+###### VNet Subnet ID Drift
+
+**⚠️ Important**: The `spec.vnetSubnetID` field can trigger drift detection, but modifying this field from one valid subnet to another valid subnet is **NOT a supported operation**. This field is mutable solely to provide an escape hatch for correcting invalid or malformed subnet IDs during initial configuration.
+
+Unlike traditional AKS NodePools created through ARM templates, Karpenter applies custom resource definitions (CRDs) that provision nodes instantly without the extended validation that ARM provides. **Customers are responsible for understanding their cluster's CIDR ranges and ensuring no conflicts occur when configuring `vnetSubnetID`.**
+
+**Validation Differences**: 
+- **ARM Template NodePools**: Include comprehensive CIDR conflict detection and network validation
+- **Karpenter CRDs**: Apply changes instantly without automatic validation - requires customer due diligence
+
+**Customer Responsibility**: Before modifying `vnetSubnetID`, customers must verify:
+- Custom subnets don't conflict with cluster Pod CIDR, Service CIDR, or Docker Bridge CIDR
+- Sufficient IP address capacity for scaling requirements  
+- Proper network connectivity and routing configuration
+
+**Supported Use Case**: Fixing invalid subnet IDs only
+- Correcting malformed subnet references that prevent node provisioning
+- Updating subnet IDs that point to non-existent or inaccessible subnets
+
+**Unsupported Use Case**: Subnet migration between valid subnets
+- Moving nodes between subnets for network reorganization
+- Changing subnet configurations for capacity or performance reasons
+
+**Support Policy**: Microsoft will not provide support for issues arising from subnet-to-subnet migrations via `vnetSubnetID` modifications.
+
 #### Behavioral Fields
 Behavioral Fields are treated as over-arching settings on the NodePool to dictate how Karpenter behaves. These fields don't correspond to settings on the NodeClaim or instance. They're set by the user to control Karpenter's Provisioning and disruption logic. Since these don't map to a desired state of NodeClaims, __behavioral fields are not considered for Drift__.
 
