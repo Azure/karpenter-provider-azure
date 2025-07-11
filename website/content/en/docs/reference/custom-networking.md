@@ -8,10 +8,78 @@ description: >
 
 Karpenter supports custom networking configurations that allow you to specify different subnets for your nodes. This is particularly useful when you need to place nodes in specific subnets for compliance, security, or network segmentation requirements.
 
+## Cluster Setup with Custom VNet and Subnets
+
+### Creating VNet and Subnets
+
+First, create a VNet with two subnets for your AKS cluster:
+
+```bash
+# Set variables
+RESOURCE_GROUP="my-aks-rg"
+LOCATION="eastus"
+VNET_NAME="my-aks-vnet"
+CLUSTER_SUBNET="cluster-subnet"
+CUSTOM_SUBNET="custom-subnet"
+CLUSTER_NAME="my-aks-cluster"
+
+# Create resource group
+az group create --name $RESOURCE_GROUP --location $LOCATION
+
+# Create VNet with address space
+az network vnet create \
+  --resource-group $RESOURCE_GROUP \
+  --name $VNET_NAME \
+  --address-prefixes 10.0.0.0/16
+
+# Create cluster subnet for main AKS nodes
+az network vnet subnet create \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name $VNET_NAME \
+  --name $CLUSTER_SUBNET \
+  --address-prefixes 10.0.1.0/24
+
+# Create custom subnet for Karpenter nodes
+az network vnet subnet create \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name $VNET_NAME \
+  --name $CUSTOM_SUBNET \
+  --address-prefixes 10.0.2.0/24
+```
+
+### Creating AKS Cluster with Custom VNet
+
+Create the AKS cluster using the cluster subnet:
+
+```bash
+# Get subnet ID for cluster creation
+CLUSTER_SUBNET_ID=$(az network vnet subnet show \
+  --resource-group $RESOURCE_GROUP \
+  --vnet-name $VNET_NAME \
+  --name $CLUSTER_SUBNET \
+  --query id -o tsv)
+
+# Create AKS cluster with custom VNet and Karpenter enabled
+az aks create \
+  --resource-group $RESOURCE_GROUP \
+  --name $CLUSTER_NAME \
+  --node-count 1 \
+  --vnet-subnet-id $CLUSTER_SUBNET_ID \
+  --network-plugin azure \
+  --enable-managed-identity \
+  --node-provisioning-mode Auto \
+  --generate-ssh-keys
+```
+
+### Karpenter Installation
+
+Karpenter is automatically installed when using `--node-provisioning-mode Auto` during cluster creation.
+
 ## Prerequisites
 
-- An existing AKS cluster with Karpenter installed
-- One or more custom subnets in your VNet
+- Azure CLI installed and authenticated
+- An AKS cluster with Karpenter installed (created above)
+- Custom subnets in your VNet (created above)
 - Appropriate RBAC permissions for subnet access
 
 ## VNet Subnet Configuration
@@ -19,13 +87,12 @@ Karpenter supports custom networking configurations that allow you to specify di
 You can configure custom subnet IDs in your AKSNodeClass using the `vnetSubnetID` field:
 
 ```yaml
-apiVersion: karpenter.k8s.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: custom-networking
 spec:
-  vnetSubnetID: "/subscriptions/{subscription-id}/resourceGroups/{rg-name}/providers/Microsoft.Network/virtualNetworks/{vnet-name}/subnets/{subnet-name}"
-  # Other nodeclass configuration...
+  vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet"
 ```
 
 ## RBAC Configuration
@@ -59,6 +126,9 @@ az role assignment create \
 - No need to update permissions when adding new subnets
 - Works well for single-tenant environments
 
+#### Example Script
+For a complete example of setting up custom networking with Approach A permissions, see this [sample setup script](https://gist.github.com/Bryce-Soghigian/a4259d6224db0c55081718caa7b37268).
+
 #### Considerations
 - Broader permissions than strictly necessary
 - May not meet strict security requirements
@@ -69,25 +139,66 @@ This approach grants permissions on a per-subnet basis, providing more granular 
 
 #### Required Permissions
 
-For each subnet you want to use with Karpenter, assign the following permissions:
+For each subnet you want to use with Karpenter, assign the following specific permissions:
 
 ```bash
 # Get your cluster's managed identity
 CLUSTER_IDENTITY=$(az aks show --resource-group <cluster-rg> --name <cluster-name> --query identity.principalId -o tsv)
 
-# For each subnet, assign Network Contributor role
+# For each subnet, assign specific subnet permissions
 SUBNET_ID="/subscriptions/<subscription-id>/resourceGroups/<vnet-rg>/providers/Microsoft.Network/virtualNetworks/<vnet-name>/subnets/<subnet-name>"
 
+# Create custom role definition for subnet access
+cat > subnet-access-role.json << EOF
+{
+  "Name": "Karpenter Subnet Access",
+  "IsCustom": true,
+  "Description": "Allows reading subnet information and joining VMs to subnets",
+  "Actions": [
+    "Microsoft.Network/virtualNetworks/subnets/read",
+    "Microsoft.Network/virtualNetworks/subnets/join/action"
+  ],
+  "NotActions": [],
+  "DataActions": [],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/subscriptions/<subscription-id>"
+  ]
+}
+EOF
+
+# Create the custom role (only needed once per subscription)
+az role definition create --role-definition subnet-access-role.json
+
+# Assign the custom role to each subnet
+az role assignment create \
+  --assignee $CLUSTER_IDENTITY \
+  --role "Karpenter Subnet Access" \
+  --scope $SUBNET_ID
+```
+
+#### Alternative: Using Built-in Roles
+
+If you prefer using built-in roles, you can assign these specific permissions individually:
+
+```bash
+# Assign Network Reader role for subnet read access
 az role assignment create \
   --assignee $CLUSTER_IDENTITY \
   --role "Network Contributor" \
-  --scope $SUBNET_ID
+  --scope $SUBNET_ID \
+  --condition "((!(ActionMatches{'Microsoft.Network/virtualNetworks/subnets/write'})) AND (!(ActionMatches{'Microsoft.Network/virtualNetworks/subnets/delete'})))"
 ```
+
+> **Note**: The condition parameter limits the Network Contributor role to only read and join operations on subnets, excluding write and delete permissions.
 
 #### Benefits
 - Principle of least privilege
 - Granular access control
 - Better compliance with security policies
+
+#### Example Script
+For a complete example of setting up custom networking with Approach B permissions, see this [scoped subnet permissions script](https://gist.github.com/Bryce-Soghigian/fc3de3a796b20dbed8fe5d2ca0c85dd4).
 
 #### Considerations
 - More complex permission management
@@ -99,12 +210,12 @@ az role assignment create \
 ### Single Custom Subnet
 
 ```yaml
-apiVersion: karpenter.k8s.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: dedicated-workload
 spec:
-  vnetSubnetID: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/dedicated-subnet"
+  vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet"
   requirements:
     - key: karpenter.sh/capacity-type
       operator: In
@@ -117,23 +228,23 @@ spec:
 ### Multiple NodeClasses for Different Subnets
 
 ```yaml
-apiVersion: karpenter.k8s.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: frontend-nodes
 spec:
-  vnetSubnetID: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/frontend-subnet"
+  vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet"
   requirements:
     - key: karpenter.sh/capacity-type
       operator: In
       values: ["spot", "on-demand"]
 ---
-apiVersion: karpenter.k8s.azure.com/v1alpha2
+apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: backend-nodes
 spec:
-  vnetSubnetID: "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/backend-subnet"
+  vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet"
   requirements:
     - key: karpenter.sh/capacity-type
       operator: In
@@ -145,7 +256,7 @@ spec:
 Create NodePools that reference your custom AKSNodeClass:
 
 ```yaml
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: custom-networking-pool
@@ -153,7 +264,9 @@ spec:
   template:
     spec:
       nodeClassRef:
-        name: dedicated-workload
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: custom-networking
       requirements:
         - key: kubernetes.io/arch
           operator: In
@@ -220,12 +333,10 @@ When configuring custom networking with `vnetSubnetID`, customers are responsibl
 **Cluster and Service CIDRs**: Your AKS cluster is configured with specific CIDR ranges for:
 - **Cluster CIDR** (`--pod-cidr`): IP range for pod networking
 - **Service CIDR** (`--service-cidr`): IP range for Kubernetes services  
-- **Docker Bridge CIDR** (`--docker-bridge-address`): Internal Docker networking
 
 **Custom Subnet Requirements**: When using `vnetSubnetID`, ensure your custom subnets:
-- Do not overlap with cluster, service, or Docker bridge CIDRs
+- Do not overlap with cluster, service, or use any of the reserved addresses 
 - Have sufficient IP addresses for expected node and pod scaling
-- Are properly routed to cluster control plane and Azure services
 
 ### Identifying Your Cluster CIDRs
 
@@ -255,7 +366,7 @@ az aks show --resource-group <rg-name> --name <cluster-name> \
 - **⚠️ No automatic CIDR conflict detection**
 - **⚠️ No subnet capacity pre-validation**
 - **⚠️ Instant application without extended validation**
-- Faster provisioning but requires careful pre-planning
+- Faster provisioning but requires pre-planning
 
 ### Customer Responsibilities
 
@@ -292,41 +403,3 @@ Be aware of these potential conflicts:
 - **Plan for future expansion** with appropriately sized subnets
 - **Test configurations** in non-production environments first
 - **Monitor network utilization** and plan capacity accordingly
-
-## Troubleshooting
-
-### Permission Issues
-
-If you encounter permission errors, verify:
-
-1. The cluster identity has the correct role assignments
-2. The subnet ID is correctly formatted
-3. The subnet exists and is in the same region as your cluster
-
-```bash
-# Check role assignments for your cluster identity
-az role assignment list --assignee $CLUSTER_IDENTITY --output table
-
-# Verify subnet exists
-az network vnet subnet show --ids $SUBNET_ID
-```
-
-### Network Connectivity
-
-Ensure your custom subnets have:
-- Appropriate route tables configured
-- Network security group rules allowing required traffic
-- Connectivity to Azure services required by AKS
-
-### Monitoring
-
-Monitor Karpenter logs for subnet-related errors:
-
-```bash
-kubectl logs -n karpenter deployment/karpenter -f
-```
-
-Common errors include:
-- `subnet not found`: Verify the subnet ID format and existence
-- `permission denied`: Check RBAC assignments
-- `subnet full`: Ensure sufficient IP addresses are available

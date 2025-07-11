@@ -188,6 +188,13 @@
             <div class="td-toc">
         <nav id="TableOfContents">
   <ul>
+    <li><a href="#cluster-setup-with-custom-vnet-and-subnets">Cluster Setup with Custom VNet and Subnets</a>
+      <ul>
+        <li><a href="#creating-vnet-and-subnets">Creating VNet and Subnets</a></li>
+        <li><a href="#creating-aks-cluster-with-custom-vnet">Creating AKS Cluster with Custom VNet</a></li>
+        <li><a href="#karpenter-installation">Karpenter Installation</a></li>
+      </ul>
+    </li>
     <li><a href="#prerequisites">Prerequisites</a></li>
     <li><a href="#vnet-subnet-configuration">VNet Subnet Configuration</a></li>
     <li><a href="#rbac-configuration">RBAC Configuration</a>
@@ -220,13 +227,6 @@
         <li><a href="#customer-responsibilities">Customer Responsibilities</a></li>
         <li><a href="#common-cidr-conflicts">Common CIDR Conflicts</a></li>
         <li><a href="#network-planning-best-practices">Network Planning Best Practices</a></li>
-      </ul>
-    </li>
-    <li><a href="#troubleshooting">Troubleshooting</a>
-      <ul>
-        <li><a href="#permission-issues">Permission Issues</a></li>
-        <li><a href="#network-connectivity">Network Connectivity</a></li>
-        <li><a href="#monitoring">Monitoring</a></li>
       </ul>
     </li>
   </ul>
@@ -267,21 +267,75 @@
 		
 	</header>    
 	<p>Karpenter supports custom networking configurations that allow you to specify different subnets for your nodes. This is particularly useful when you need to place nodes in specific subnets for compliance, security, or network segmentation requirements.</p>
+<h2 id="cluster-setup-with-custom-vnet-and-subnets">Cluster Setup with Custom VNet and Subnets</h2>
+<h3 id="creating-vnet-and-subnets">Creating VNet and Subnets</h3>
+<p>First, create a VNet with two subnets for your AKS cluster:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Set variables</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">RESOURCE_GROUP</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#34;my-aks-rg&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">LOCATION</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#34;eastus&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">VNET_NAME</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#34;my-aks-vnet&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">CLUSTER_SUBNET</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#34;cluster-subnet&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">CUSTOM_SUBNET</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#34;custom-subnet&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">CLUSTER_NAME</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#34;my-aks-cluster&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Create resource group</span>
+</span></span><span style="display:flex;"><span>az group create --name <span style="color:#000">$RESOURCE_GROUP</span> --location <span style="color:#000">$LOCATION</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Create VNet with address space</span>
+</span></span><span style="display:flex;"><span>az network vnet create <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --resource-group <span style="color:#000">$RESOURCE_GROUP</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --name <span style="color:#000">$VNET_NAME</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --address-prefixes 10.0.0.0/16
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Create cluster subnet for main AKS nodes</span>
+</span></span><span style="display:flex;"><span>az network vnet subnet create <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --resource-group <span style="color:#000">$RESOURCE_GROUP</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --vnet-name <span style="color:#000">$VNET_NAME</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --name <span style="color:#000">$CLUSTER_SUBNET</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --address-prefixes 10.0.1.0/24
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Create custom subnet for Karpenter nodes</span>
+</span></span><span style="display:flex;"><span>az network vnet subnet create <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --resource-group <span style="color:#000">$RESOURCE_GROUP</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --vnet-name <span style="color:#000">$VNET_NAME</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --name <span style="color:#000">$CUSTOM_SUBNET</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --address-prefixes 10.0.2.0/24
+</span></span></code></pre></div><h3 id="creating-aks-cluster-with-custom-vnet">Creating AKS Cluster with Custom VNet</h3>
+<p>Create the AKS cluster using the cluster subnet:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Get subnet ID for cluster creation</span>
+</span></span><span style="display:flex;"><span><span style="color:#000">CLUSTER_SUBNET_ID</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#204a87;font-weight:bold">$(</span>az network vnet subnet show <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --resource-group <span style="color:#000">$RESOURCE_GROUP</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --vnet-name <span style="color:#000">$VNET_NAME</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --name <span style="color:#000">$CLUSTER_SUBNET</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --query id -o tsv<span style="color:#204a87;font-weight:bold">)</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Create AKS cluster with custom VNet and Karpenter enabled</span>
+</span></span><span style="display:flex;"><span>az aks create <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --resource-group <span style="color:#000">$RESOURCE_GROUP</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --name <span style="color:#000">$CLUSTER_NAME</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --node-count <span style="color:#0000cf;font-weight:bold">1</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --vnet-subnet-id <span style="color:#000">$CLUSTER_SUBNET_ID</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --network-plugin azure <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --enable-managed-identity <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --node-provisioning-mode Auto <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --generate-ssh-keys
+</span></span></code></pre></div><h3 id="karpenter-installation">Karpenter Installation</h3>
+<p>Karpenter is automatically installed when using <code>--node-provisioning-mode Auto</code> during cluster creation.</p>
 <h2 id="prerequisites">Prerequisites</h2>
 <ul>
-<li>An existing AKS cluster with Karpenter installed</li>
-<li>One or more custom subnets in your VNet</li>
+<li>Azure CLI installed and authenticated</li>
+<li>An AKS cluster with Karpenter installed (created above)</li>
+<li>Custom subnets in your VNet (created above)</li>
 <li>Appropriate RBAC permissions for subnet access</li>
 </ul>
 <h2 id="vnet-subnet-configuration">VNet Subnet Configuration</h2>
 <p>You can configure custom subnet IDs in your AKSNodeClass using the <code>vnetSubnetID</code> field:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.k8s.azure.com/v1alpha2</span><span style="color:#f8f8f8;text-decoration:underline">
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">custom-networking</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">vnetSubnetID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/{subscription-id}/resourceGroups/{rg-name}/providers/Microsoft.Network/virtualNetworks/{vnet-name}/subnets/{subnet-name}&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#8f5902;font-style:italic"># Other nodeclass configuration...</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">vnetSubnetID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span></code></pre></div><h2 id="rbac-configuration">RBAC Configuration</h2>
 <p>When using custom subnet configurations, Karpenter needs appropriate permissions to read subnet information and join nodes to the specified subnets. There are two recommended approaches for configuring these permissions.</p>
 <h3 id="approach-a-broad-vnet-permissions">Approach A: Broad VNet Permissions</h3>
@@ -305,6 +359,8 @@
 <li>No need to update permissions when adding new subnets</li>
 <li>Works well for single-tenant environments</li>
 </ul>
+<h4 id="example-script">Example Script</h4>
+<p>For a complete example of setting up custom networking with Approach A permissions, see this <a href="https://gist.github.com/Bryce-Soghigian/a4259d6224db0c55081718caa7b37268">sample setup script</a>.</p>
 <h4 id="considerations">Considerations</h4>
 <ul>
 <li>Broader permissions than strictly necessary</li>
@@ -313,23 +369,58 @@
 <h3 id="approach-b-scoped-subnet-permissions">Approach B: Scoped Subnet Permissions</h3>
 <p>This approach grants permissions on a per-subnet basis, providing more granular control over which subnets the cluster can access.</p>
 <h4 id="required-permissions-1">Required Permissions</h4>
-<p>For each subnet you want to use with Karpenter, assign the following permissions:</p>
+<p>For each subnet you want to use with Karpenter, assign the following specific permissions:</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Get your cluster&#39;s managed identity</span>
 </span></span><span style="display:flex;"><span><span style="color:#000">CLUSTER_IDENTITY</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#204a87;font-weight:bold">$(</span>az aks show --resource-group &lt;cluster-rg&gt; --name &lt;cluster-name&gt; --query identity.principalId -o tsv<span style="color:#204a87;font-weight:bold">)</span>
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># For each subnet, assign Network Contributor role</span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># For each subnet, assign specific subnet permissions</span>
 </span></span><span style="display:flex;"><span><span style="color:#000">SUBNET_ID</span><span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#34;/subscriptions/&lt;subscription-id&gt;/resourceGroups/&lt;vnet-rg&gt;/providers/Microsoft.Network/virtualNetworks/&lt;vnet-name&gt;/subnets/&lt;subnet-name&gt;&#34;</span>
 </span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Create custom role definition for subnet access</span>
+</span></span><span style="display:flex;"><span>cat &gt; subnet-access-role.json <span style="color:#4e9a06">&lt;&lt; EOF
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">{
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  &#34;Name&#34;: &#34;Karpenter Subnet Access&#34;,
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  &#34;IsCustom&#34;: true,
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  &#34;Description&#34;: &#34;Allows reading subnet information and joining VMs to subnets&#34;,
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  &#34;Actions&#34;: [
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    &#34;Microsoft.Network/virtualNetworks/subnets/read&#34;,
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    &#34;Microsoft.Network/virtualNetworks/subnets/join/action&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  ],
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  &#34;NotActions&#34;: [],
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  &#34;DataActions&#34;: [],
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  &#34;NotDataActions&#34;: [],
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  &#34;AssignableScopes&#34;: [
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    &#34;/subscriptions/&lt;subscription-id&gt;&#34;
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  ]
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">}
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">EOF</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Create the custom role (only needed once per subscription)</span>
+</span></span><span style="display:flex;"><span>az role definition create --role-definition subnet-access-role.json
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Assign the custom role to each subnet</span>
+</span></span><span style="display:flex;"><span>az role assignment create <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --assignee <span style="color:#000">$CLUSTER_IDENTITY</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --role <span style="color:#4e9a06">&#34;Karpenter Subnet Access&#34;</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --scope <span style="color:#000">$SUBNET_ID</span>
+</span></span></code></pre></div><h4 id="alternative-using-built-in-roles">Alternative: Using Built-in Roles</h4>
+<p>If you prefer using built-in roles, you can assign these specific permissions individually:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Assign Network Reader role for subnet read access</span>
 </span></span><span style="display:flex;"><span>az role assignment create <span style="color:#4e9a06">\
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --assignee <span style="color:#000">$CLUSTER_IDENTITY</span> <span style="color:#4e9a06">\
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --role <span style="color:#4e9a06">&#34;Network Contributor&#34;</span> <span style="color:#4e9a06">\
-</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --scope <span style="color:#000">$SUBNET_ID</span>
-</span></span></code></pre></div><h4 id="benefits-1">Benefits</h4>
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --scope <span style="color:#000">$SUBNET_ID</span> <span style="color:#4e9a06">\
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06"></span>  --condition <span style="color:#4e9a06">&#34;((!(ActionMatches{&#39;Microsoft.Network/virtualNetworks/subnets/write&#39;})) AND (!(ActionMatches{&#39;Microsoft.Network/virtualNetworks/subnets/delete&#39;})))&#34;</span>
+</span></span></code></pre></div><blockquote>
+<p><strong>Note</strong>: The condition parameter limits the Network Contributor role to only read and join operations on subnets, excluding write and delete permissions.</p></blockquote>
+<h4 id="benefits-1">Benefits</h4>
 <ul>
 <li>Principle of least privilege</li>
 <li>Granular access control</li>
 <li>Better compliance with security policies</li>
 </ul>
+<h4 id="example-script-1">Example Script</h4>
+<p>For a complete example of setting up custom networking with Approach B permissions, see this <a href="https://gist.github.com/Bryce-Soghigian/fc3de3a796b20dbed8fe5d2ca0c85dd4">scoped subnet permissions script</a>.</p>
 <h4 id="considerations-1">Considerations</h4>
 <ul>
 <li>More complex permission management</li>
@@ -338,12 +429,12 @@
 </ul>
 <h2 id="example-aksnodeclass-configurations">Example AKSNodeClass Configurations</h2>
 <h3 id="single-custom-subnet">Single Custom Subnet</h3>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.k8s.azure.com/v1alpha2</span><span style="color:#f8f8f8;text-decoration:underline">
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">dedicated-workload</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">vnetSubnetID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/dedicated-subnet&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">vnetSubnetID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">requirements</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span>- <span style="color:#204a87;font-weight:bold">key</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/capacity-type</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">operator</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">In</span><span style="color:#f8f8f8;text-decoration:underline">
@@ -352,30 +443,30 @@
 </span></span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic">    #!/bin/bash
 </span></span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic">    # Custom startup script</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span></code></pre></div><h3 id="multiple-nodeclasses-for-different-subnets">Multiple NodeClasses for Different Subnets</h3>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.k8s.azure.com/v1alpha2</span><span style="color:#f8f8f8;text-decoration:underline">
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">frontend-nodes</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">vnetSubnetID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/frontend-subnet&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">vnetSubnetID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">requirements</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span>- <span style="color:#204a87;font-weight:bold">key</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/capacity-type</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">operator</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">In</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">values</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000;font-weight:bold">[</span><span style="color:#4e9a06">&#34;spot&#34;</span><span style="color:#000;font-weight:bold">,</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;on-demand&#34;</span><span style="color:#000;font-weight:bold">]</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#000">---</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.k8s.azure.com/v1alpha2</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">backend-nodes</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">vnetSubnetID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/backend-subnet&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">vnetSubnetID</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#4e9a06">&#34;/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet&#34;</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">requirements</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span>- <span style="color:#204a87;font-weight:bold">key</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/capacity-type</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">operator</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">In</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">values</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000;font-weight:bold">[</span><span style="color:#4e9a06">&#34;on-demand&#34;</span><span style="color:#000;font-weight:bold">]</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span></code></pre></div><h2 id="nodepool-configuration">NodePool Configuration</h2>
 <p>Create NodePools that reference your custom AKSNodeClass:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/v1beta1</span><span style="color:#f8f8f8;text-decoration:underline">
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.sh/v1</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">NodePool</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">custom-networking-pool</span><span style="color:#f8f8f8;text-decoration:underline">
@@ -383,7 +474,9 @@
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">template</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">nodeClassRef</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">dedicated-workload</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">group</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter.azure.com</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">AKSNodeClass</span><span style="color:#f8f8f8;text-decoration:underline">
+</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">custom-networking</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">requirements</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span>- <span style="color:#204a87;font-weight:bold">key</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">kubernetes.io/arch</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">          </span><span style="color:#204a87;font-weight:bold">operator</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">In</span><span style="color:#f8f8f8;text-decoration:underline">
@@ -439,13 +532,11 @@
 <ul>
 <li><strong>Cluster CIDR</strong> (<code>--pod-cidr</code>): IP range for pod networking</li>
 <li><strong>Service CIDR</strong> (<code>--service-cidr</code>): IP range for Kubernetes services</li>
-<li><strong>Docker Bridge CIDR</strong> (<code>--docker-bridge-address</code>): Internal Docker networking</li>
 </ul>
 <p><strong>Custom Subnet Requirements</strong>: When using <code>vnetSubnetID</code>, ensure your custom subnets:</p>
 <ul>
-<li>Do not overlap with cluster, service, or Docker bridge CIDRs</li>
+<li>Do not overlap with cluster, service, or use any of the reserved addresses</li>
 <li>Have sufficient IP addresses for expected node and pod scaling</li>
-<li>Are properly routed to cluster control plane and Azure services</li>
 </ul>
 <h3 id="identifying-your-cluster-cidrs">Identifying Your Cluster CIDRs</h3>
 <p>Use these commands to identify your cluster&rsquo;s network configuration:</p>
@@ -471,7 +562,7 @@
 <li><strong>⚠️ No automatic CIDR conflict detection</strong></li>
 <li><strong>⚠️ No subnet capacity pre-validation</strong></li>
 <li><strong>⚠️ Instant application without extended validation</strong></li>
-<li>Faster provisioning but requires careful pre-planning</li>
+<li>Faster provisioning but requires pre-planning</li>
 </ul>
 <h3 id="customer-responsibilities">Customer Responsibilities</h3>
 <p>When configuring <code>vnetSubnetID</code>, you must:</p>
@@ -502,35 +593,6 @@
 <li><strong>Plan for future expansion</strong> with appropriately sized subnets</li>
 <li><strong>Test configurations</strong> in non-production environments first</li>
 <li><strong>Monitor network utilization</strong> and plan capacity accordingly</li>
-</ul>
-<h2 id="troubleshooting">Troubleshooting</h2>
-<h3 id="permission-issues">Permission Issues</h3>
-<p>If you encounter permission errors, verify:</p>
-<ol>
-<li>The cluster identity has the correct role assignments</li>
-<li>The subnet ID is correctly formatted</li>
-<li>The subnet exists and is in the same region as your cluster</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Check role assignments for your cluster identity</span>
-</span></span><span style="display:flex;"><span>az role assignment list --assignee <span style="color:#000">$CLUSTER_IDENTITY</span> --output table
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Verify subnet exists</span>
-</span></span><span style="display:flex;"><span>az network vnet subnet show --ids <span style="color:#000">$SUBNET_ID</span>
-</span></span></code></pre></div><h3 id="network-connectivity">Network Connectivity</h3>
-<p>Ensure your custom subnets have:</p>
-<ul>
-<li>Appropriate route tables configured</li>
-<li>Network security group rules allowing required traffic</li>
-<li>Connectivity to Azure services required by AKS</li>
-</ul>
-<h3 id="monitoring">Monitoring</h3>
-<p>Monitor Karpenter logs for subnet-related errors:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter -f
-</span></span></code></pre></div><p>Common errors include:</p>
-<ul>
-<li><code>subnet not found</code>: Verify the subnet ID format and existence</li>
-<li><code>permission denied</code>: Check RBAC assignments</li>
-<li><code>subnet full</code>: Ensure sufficient IP addresses are available</li>
 </ul>
 
 	
