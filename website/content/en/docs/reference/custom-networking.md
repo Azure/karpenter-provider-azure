@@ -6,10 +6,9 @@ description: >
   Configure Karpenter with custom VNet and subnet configurations
 ---
 
-Karpenter supports custom networking configurations that allow you to specify different subnets for your nodes. This is particularly useful when you need to place nodes in specific subnets for compliance, security, or network segmentation requirements.
-
 ## Cluster Setup with Custom VNet and Subnets
 
+Karpenter supports custom networking configurations that allow you to specify different subnets for your nodes. This is particularly useful when you need to place nodes in specific subnets for compliance, security, or network segmentation requirements.
 ### Creating VNet and Subnets
 
 First, create a VNet with two subnets for your AKS cluster:
@@ -101,7 +100,7 @@ When using custom subnet configurations, Karpenter needs appropriate permissions
 
 ### Approach A: Broad VNet Permissions
 
-This approach grants the cluster identity permissions to read and join any subnet within the main VNet. This is suitable for environments where you trust the cluster to access all subnets in the VNet.
+This approach grants the cluster identity permissions to read and join any subnet within the main VNet, as well as overall network contributor. Its very permissive, investigate the "Network Contributor" role before applying this to your production cluster. 
 
 #### Required Permissions
 
@@ -125,6 +124,7 @@ az role assignment create \
 - Simplified permission management
 - No need to update permissions when adding new subnets
 - Works well for single-tenant environments
+- In cases where a subscription has reached the maximium number of custom roles, this approach works
 
 #### Example Script
 For a complete example of setting up custom networking with Approach A permissions, see this [sample setup script](https://gist.github.com/Bryce-Soghigian/a4259d6224db0c55081718caa7b37268).
@@ -216,13 +216,6 @@ metadata:
   name: dedicated-workload
 spec:
   vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet"
-  requirements:
-    - key: karpenter.sh/capacity-type
-      operator: In
-      values: ["on-demand"]
-  userData: |
-    #!/bin/bash
-    # Custom startup script
 ```
 
 ### Multiple NodeClasses for Different Subnets
@@ -234,21 +227,13 @@ metadata:
   name: frontend-nodes
 spec:
   vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet"
-  requirements:
-    - key: karpenter.sh/capacity-type
-      operator: In
-      values: ["spot", "on-demand"]
 ---
 apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: backend-nodes
 spec:
-  vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet"
-  requirements:
-    - key: karpenter.sh/capacity-type
-      operator: In
-      values: ["on-demand"]
+  vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet2"
 ```
 
 ## NodePool Configuration
