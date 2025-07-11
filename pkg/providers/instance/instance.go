@@ -29,6 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/skewer"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -160,7 +161,7 @@ func (p *DefaultProvider) BeginCreate(
 	if err != nil {
 		// There may be orphan NICs (created before promise started)
 		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
-		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name)); cleanupErr != nil {
+		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name), true); cleanupErr != nil {
 			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "NodeClaim", nodeClaim.Name)
 		}
 		return nil, err
@@ -232,7 +233,7 @@ func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error
 	}
 
 	log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "vmName", resourceName)
-	return p.cleanupAzureResources(ctx, resourceName)
+	return p.cleanupAzureResources(ctx, resourceName, false)
 }
 
 func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
@@ -273,11 +274,7 @@ func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmN
 	log.FromContext(ctx).V(1).Info("creating virtual machine AKS identifying extension", "vmName", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to create VM AKS identifying extension",
-			"vmName", vmName,
-			"extensionName", vmExtName,
-		)
-		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
+		return fmt.Errorf("creating VM AKS identifying extension %q for VM %q: %w", vmExtName, vmName, err)
 	}
 	log.FromContext(ctx).V(1).Info("created virtual machine AKS identifying extension",
 		"vmName", vmName,
@@ -292,8 +289,7 @@ func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, 
 	log.FromContext(ctx).V(1).Info("creating virtual machine CSE", "vmName", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to create VM CSE", "vmName", vmName)
-		return fmt.Errorf("creating VM CSE for VM %q, %w failed", vmName, err)
+		return fmt.Errorf("creating VM CSE for VM %q: %w", vmName, err)
 	}
 	log.FromContext(ctx).V(1).Info("created virtual machine CSE",
 		"vmName", vmName,
@@ -552,7 +548,6 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "creating virtual machine failed", "vmName", opts.VMName)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
@@ -640,7 +635,11 @@ func (p *DefaultProvider) beginLaunchInstance(
 		UseSIG:             options.FromContext(ctx).UseSIG,
 	})
 	if err != nil {
-		azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+		if skuErr != nil {
+			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+		}
+		azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 		return nil, azErr
 	}
 
@@ -663,7 +662,11 @@ func (p *DefaultProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				azErr := p.handleResponseErrors(ctx, instanceType, zone, capacityType, err)
+				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+				if skuErr != nil {
+					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
+				}
+				azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 				return azErr
 			}
 
@@ -686,14 +689,13 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}, nil
 }
 
-func (p *DefaultProvider) handleResponseErrors(ctx context.Context, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
+func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
 	for _, handler := range p.responseErrorHandlers {
 		if handler.matchError(responseError) {
-			return handler.handleResponseError(ctx, p, instanceType, zone, capacityType, responseError)
+			return handler.handleResponseError(ctx, p, sku, instanceType, zone, capacityType, responseError)
 		}
 	}
-	// responseError didn't match any of our handlers, so we log details about it and return it as is
-	log.FromContext(ctx).Error(responseError, "Unknown response error")
+	// responseError didn't match any of our handlers, return it as is
 	return responseError
 }
 
@@ -764,7 +766,10 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 	return nil, "", ""
 }
 
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string) error {
+// mustDeleteNic parameter is used to determine whether NIC deletion failure is considered an error.
+// We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
+// NIC garbage collector is expected to handle such cases.
+func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string, mustDeleteNic bool) error {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
@@ -774,10 +779,21 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 	// then we attempt to delete the nic.
 
 	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
-	if nicErr != nil {
-		log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "nicName", resourceName)
+
+	if mustDeleteNic {
+		// Don't log NIC error here since mustDeleteNic is true (critical cleanup scenario).
+		// Both VM and NIC errors are returned to the caller for proper handling and logging.
+		// Logging here would create duplicate logs when the caller processes the joined error.
+		return errors.Join(vmErr, nicErr)
+	} else {
+		// Log NIC error here since mustDeleteNic is false (best-effort cleanup scenario).
+		// Because we're not returning nicErr to the caller we need to log here.
+		// Without this log, NIC deletion failures would be silently ignored.
+		if nicErr != nil {
+			log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "nicName", resourceName)
+		}
+		return vmErr
 	}
-	return errors.Join(vmErr, nicErr)
 }
 
 // getPriorityForInstanceType selects spot if both constraints are flexible and there is an available offering.
