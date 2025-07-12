@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Karpenter for Azure – Getting Started</title>
-    <link>//localhost:1313/docs/getting-started/</link>
+    <link>/docs/getting-started/</link>
     <description>Recent content in Getting Started on Karpenter for Azure</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
     
-	  <atom:link href="//localhost:1313/docs/getting-started/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="/docs/getting-started/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Docs: Quickstart</title>
-      <link>//localhost:1313/docs/getting-started/quickstart/</link>
+      <link>/docs/getting-started/quickstart/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/getting-started/quickstart/</guid>
+      <guid>/docs/getting-started/quickstart/</guid>
       <description>
         
         
@@ -27,8 +27,8 @@
 &lt;h2 id=&#34;choose-your-deployment-mode&#34;&gt;Choose Your Deployment Mode&lt;/h2&gt;
 &lt;p&gt;Karpenter for Azure supports two deployment modes:&lt;/p&gt;
 &lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;//localhost:1313/docs/getting-started/quickstart/#node-auto-provisioning-nap&#34;&gt;Node Auto Provisioning (NAP)&lt;/a&gt;&lt;/strong&gt; - Managed by AKS (Recommended)&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;//localhost:1313/docs/getting-started/quickstart/#self-hosted-mode&#34;&gt;Self-hosted&lt;/a&gt;&lt;/strong&gt; - You manage the deployment&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;/docs/getting-started/quickstart/#node-auto-provisioning-nap&#34;&gt;Node Auto Provisioning (NAP)&lt;/a&gt;&lt;/strong&gt; - Managed by AKS (Recommended)&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;/docs/getting-started/quickstart/#self-hosted-mode&#34;&gt;Self-hosted&lt;/a&gt;&lt;/strong&gt; - You manage the deployment&lt;/li&gt;
 &lt;/ul&gt;
 &lt;h2 id=&#34;node-auto-provisioning-nap&#34;&gt;Node Auto Provisioning (NAP)&lt;/h2&gt;
 &lt;p&gt;NAP is the recommended way to use Karpenter with AKS. Microsoft manages the entire Karpenter lifecycle as a managed addon.&lt;/p&gt;
@@ -289,9 +289,9 @@
 &lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;az group delete --name &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --yes --no-wait
 &lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;whats-next&#34;&gt;What&amp;rsquo;s Next?&lt;/h2&gt;
 &lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;Learn concepts&lt;/strong&gt;: Understand &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/&#34;&gt;NodePools&lt;/a&gt;, &lt;a href=&#34;//localhost:1313/docs/concepts/nodeclasses/&#34;&gt;AKSNodeClasses&lt;/a&gt;, and &lt;a href=&#34;//localhost:1313/docs/concepts/disruption/&#34;&gt;disruption policies&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Advanced configuration&lt;/strong&gt;: Explore &lt;a href=&#34;../tasks/managing-vm-images/#gpu-images&#34;&gt;GPU workloads&lt;/a&gt;, &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/#spot-instances&#34;&gt;spot instances&lt;/a&gt;, and &lt;a href=&#34;../tasks/managing-vm-images/&#34;&gt;custom images&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Production deployment&lt;/strong&gt;: Review &lt;a href=&#34;../best-practices/&#34;&gt;best practices&lt;/a&gt;, &lt;a href=&#34;../observability/&#34;&gt;monitoring&lt;/a&gt;, and &lt;a href=&#34;//localhost:1313/docs/troubleshooting/&#34;&gt;troubleshooting&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Learn concepts&lt;/strong&gt;: Understand &lt;a href=&#34;/docs/concepts/nodepools/&#34;&gt;NodePools&lt;/a&gt;, &lt;a href=&#34;/docs/concepts/nodeclasses/&#34;&gt;AKSNodeClasses&lt;/a&gt;, and &lt;a href=&#34;/docs/concepts/disruption/&#34;&gt;disruption policies&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Advanced configuration&lt;/strong&gt;: Explore &lt;a href=&#34;../tasks/managing-vm-images/#gpu-images&#34;&gt;GPU workloads&lt;/a&gt;, &lt;a href=&#34;/docs/concepts/nodepools/#spot-instances&#34;&gt;spot instances&lt;/a&gt;, and &lt;a href=&#34;../tasks/managing-vm-images/&#34;&gt;custom images&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Production deployment&lt;/strong&gt;: Review &lt;a href=&#34;../best-practices/&#34;&gt;best practices&lt;/a&gt;, &lt;a href=&#34;../observability/&#34;&gt;monitoring&lt;/a&gt;, and &lt;a href=&#34;/docs/troubleshooting/&#34;&gt;troubleshooting&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Choose deployment mode&lt;/strong&gt;: Read &lt;a href=&#34;../concepts/deployment-modes/&#34;&gt;NAP vs Self-hosted&lt;/a&gt; comparison to understand which mode fits your needs&lt;/li&gt;
 &lt;/ul&gt;
 &lt;h2 id=&#34;common-next-steps&#34;&gt;Common Next Steps&lt;/h2&gt;
@@ -351,7 +351,7 @@
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;values&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;D&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;,&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;Dpds&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;]&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  &lt;/span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Dpds for ARM64&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;getting-help&#34;&gt;Getting Help&lt;/h2&gt;
 &lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;Documentation&lt;/strong&gt;: Browse the complete &lt;a href=&#34;//localhost:1313/docs/&#34;&gt;documentation&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Documentation&lt;/strong&gt;: Browse the complete &lt;a href=&#34;/docs/&#34;&gt;documentation&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;GitHub Issues&lt;/strong&gt;: Report bugs or request features on &lt;a href=&#34;https://github.com/Azure/karpenter-provider-azure/issues&#34;&gt;GitHub&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Community&lt;/strong&gt;: Join the &lt;a href=&#34;https://kubernetes.slack.com/archives/C02SFFZSA2K&#34;&gt;#karpenter&lt;/a&gt; channel in Kubernetes Slack&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Examples&lt;/strong&gt;: Explore more examples in the &lt;a href=&#34;https://github.com/Azure/karpenter-provider-azure/tree/main/examples&#34;&gt;repository&lt;/a&gt;&lt;/li&gt;

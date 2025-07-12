@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Karpenter for Azure – Documentation</title>
-    <link>//localhost:1313/docs/</link>
+    <link>/docs/</link>
     <description>Recent content in Documentation on Karpenter for Azure</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
     
-	  <atom:link href="//localhost:1313/docs/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="/docs/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Docs: NodePools</title>
-      <link>//localhost:1313/docs/concepts/nodepools/</link>
+      <link>/docs/concepts/nodepools/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/concepts/nodepools/</guid>
+      <guid>/docs/concepts/nodepools/</guid>
       <description>
         
         
@@ -37,7 +37,7 @@ Here are things you should know about NodePools:&lt;/p&gt;
 &lt;li&gt;Each NodePool that is configured is looped through by Karpenter.&lt;/li&gt;
 &lt;li&gt;If Karpenter encounters a taint in the NodePool that is not tolerated by a Pod, Karpenter won&amp;rsquo;t use that NodePool to provision the pod.&lt;/li&gt;
 &lt;li&gt;If Karpenter encounters a startup taint in the NodePool it will be applied to nodes that are provisioned, but pods do not need to tolerate the taint.  Karpenter assumes that the taint is temporary and some other system will remove the taint.&lt;/li&gt;
-&lt;li&gt;It is recommended to create NodePools that are mutually exclusive. So no Pod should match multiple NodePools. If multiple NodePools are matched, Karpenter will use the NodePool with the highest &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/#specweight&#34;&gt;weight&lt;/a&gt;.&lt;/li&gt;
+&lt;li&gt;It is recommended to create NodePools that are mutually exclusive. So no Pod should match multiple NodePools. If multiple NodePools are matched, Karpenter will use the NodePool with the highest &lt;a href=&#34;/docs/concepts/nodepools/#specweight&#34;&gt;weight&lt;/a&gt;.&lt;/li&gt;
 &lt;/ul&gt;
 &lt;p&gt;For some example &lt;code&gt;NodePool&lt;/code&gt; configurations, see the &lt;a href=&#34;https://github.com/Azure/karpenter-provider-azure/tree/main/examples/&#34;&gt;examples in the Karpenter GitHub repository&lt;/a&gt;.&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-yaml&#34; data-lang=&#34;yaml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;apiVersion&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;karpenter.sh/v1&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
@@ -308,7 +308,7 @@ i.e at least 2 unique instance families from [D,E,F], 5 unique sku names, 10 uni
 &lt;/div&gt;
 
 &lt;h2 id=&#34;spectemplatespecnodeclassref&#34;&gt;spec.template.spec.nodeClassRef&lt;/h2&gt;
-&lt;p&gt;This field points to the Cloud Provider NodeClass resource. Learn more about &lt;a href=&#34;//localhost:1313/docs/concepts/nodeclasses/&#34;&gt;AKSNodeClasses&lt;/a&gt;.&lt;/p&gt;
+&lt;p&gt;This field points to the Cloud Provider NodeClass resource. Learn more about &lt;a href=&#34;/docs/concepts/nodeclasses/&#34;&gt;AKSNodeClasses&lt;/a&gt;.&lt;/p&gt;
 &lt;h2 id=&#34;spectemplatespecexpireafter&#34;&gt;spec.template.spec.expireAfter&lt;/h2&gt;
 &lt;p&gt;&lt;code&gt;expireAfter&lt;/code&gt; is the duration the controller will wait before terminating a node, measured from when the node is created. This is useful to implement features like eventually consistent node upgrade, memory leak protection, and disruption testing.&lt;/p&gt;
 &lt;p&gt;The default value is &lt;code&gt;720h&lt;/code&gt; (30 days). You can disable node expiration by setting the value to &lt;code&gt;Never&lt;/code&gt;.&lt;/p&gt;
@@ -334,7 +334,7 @@ i.e at least 2 unique instance families from [D,E,F], 5 unique sku names, 10 uni
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;    &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;spec&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;      &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;terminationGracePeriod&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;30s&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;specdisruption&#34;&gt;spec.disruption&lt;/h2&gt;
-&lt;p&gt;You can configure Karpenter to disrupt Nodes through your NodePool in multiple ways. You can use &lt;code&gt;spec.disruption.consolidationPolicy&lt;/code&gt;, &lt;code&gt;spec.disruption.consolidateAfter&lt;/code&gt; or &lt;code&gt;spec.disruption.expireAfter&lt;/code&gt;. Read &lt;a href=&#34;//localhost:1313/docs/concepts/disruption/&#34;&gt;Disruption&lt;/a&gt; for more.&lt;/p&gt;
+&lt;p&gt;You can configure Karpenter to disrupt Nodes through your NodePool in multiple ways. You can use &lt;code&gt;spec.disruption.consolidationPolicy&lt;/code&gt;, &lt;code&gt;spec.disruption.consolidateAfter&lt;/code&gt; or &lt;code&gt;spec.disruption.expireAfter&lt;/code&gt;. Read &lt;a href=&#34;/docs/concepts/disruption/&#34;&gt;Disruption&lt;/a&gt; for more.&lt;/p&gt;
 &lt;h2 id=&#34;speclimits&#34;&gt;spec.limits&lt;/h2&gt;
 &lt;p&gt;The NodePool spec includes a limits section (&lt;code&gt;spec.limits&lt;/code&gt;), which constrains the maximum amount of resources that the NodePool will manage.&lt;/p&gt;
 &lt;p&gt;Karpenter supports limits of any resource type reported by your cloudprovider. It limits instance types when scheduling to those that will not exceed the specified limits.  If a limit has been exceeded, nodes provisioning is prevented until some nodes have been terminated.&lt;/p&gt;
@@ -369,7 +369,7 @@ i.e at least 2 unique instance families from [D,E,F], 5 unique sku names, 10 uni
 &lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Review the &lt;a href=&#34;https://github.com/kubernetes/api/blob/37748cca582229600a3599b40e9a82a951d8bbbf/core/v1/resource.go#L23&#34;&gt;Kubernetes core API&lt;/a&gt; (&lt;code&gt;k8s.io/api/core/v1&lt;/code&gt;) for more information on &lt;code&gt;resources&lt;/code&gt;.&lt;/p&gt;
 &lt;h2 id=&#34;specweight&#34;&gt;spec.weight&lt;/h2&gt;
 &lt;p&gt;Karpenter allows you to describe NodePool preferences through a &lt;code&gt;weight&lt;/code&gt; mechanism similar to how weight is described with &lt;a href=&#34;https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity&#34;&gt;pod and node affinities&lt;/a&gt;.&lt;/p&gt;
-&lt;p&gt;For more information on weighting NodePools, see the &lt;a href=&#34;//localhost:1313/docs/concepts/scheduling/#weighted-nodepools&#34;&gt;Weighted NodePools section&lt;/a&gt; in the scheduling docs.&lt;/p&gt;
+&lt;p&gt;For more information on weighting NodePools, see the &lt;a href=&#34;/docs/concepts/scheduling/#weighted-nodepools&#34;&gt;Weighted NodePools section&lt;/a&gt; in the scheduling docs.&lt;/p&gt;
 &lt;h2 id=&#34;examples&#34;&gt;Examples&lt;/h2&gt;
 &lt;h3 id=&#34;isolating-expensive-hardware&#34;&gt;Isolating Expensive Hardware&lt;/h3&gt;
 &lt;p&gt;A NodePool can be set up to only provision nodes on particular processor types.
@@ -413,10 +413,10 @@ The following example sets a taint that only allows pods with tolerations for Nv
     
     <item>
       <title>Docs: NodeClasses</title>
-      <link>//localhost:1313/docs/concepts/nodeclasses/</link>
+      <link>/docs/concepts/nodeclasses/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/concepts/nodeclasses/</guid>
+      <guid>/docs/concepts/nodeclasses/</guid>
       <description>
         
         
@@ -488,7 +488,7 @@ Multiple NodePools may point to the same AKSNodeClass.&lt;/p&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;operator&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;In&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;values&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;            &lt;/span&gt;- &lt;span style=&#34;color:#000&#34;&gt;arm64&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;Refer to the &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/&#34;&gt;NodePool docs&lt;/a&gt; for settings applicable to all providers. To explore various &lt;code&gt;AKSNodeClass&lt;/code&gt; configurations, refer to the examples provided &lt;a href=&#34;https://github.com/Azure/karpenter-provider-azure/tree/main/examples/&#34;&gt;in the Karpenter GitHub repository&lt;/a&gt;.&lt;/p&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;Refer to the &lt;a href=&#34;/docs/concepts/nodepools/&#34;&gt;NodePool docs&lt;/a&gt; for settings applicable to all providers. To explore various &lt;code&gt;AKSNodeClass&lt;/code&gt; configurations, refer to the examples provided &lt;a href=&#34;https://github.com/Azure/karpenter-provider-azure/tree/main/examples/&#34;&gt;in the Karpenter GitHub repository&lt;/a&gt;.&lt;/p&gt;
 &lt;h2 id=&#34;specimagefamily&#34;&gt;spec.imageFamily&lt;/h2&gt;
 &lt;p&gt;ImageFamily is an optional field that dictates the default VM image and bootstrapping logic for nodes provisioned through this &lt;code&gt;AKSNodeClass&lt;/code&gt;. Currently, Karpenter supports &lt;code&gt;imageFamily&lt;/code&gt; values &lt;code&gt;Ubuntu2204&lt;/code&gt; and &lt;code&gt;AzureLinux&lt;/code&gt;. If not specified, the default is &lt;code&gt;Ubuntu2204&lt;/code&gt;. GPUs are supported with both image families on compatible VM sizes.&lt;/p&gt;
 &lt;h3 id=&#34;ubuntu2204&#34;&gt;Ubuntu2204&lt;/h3&gt;
@@ -662,10 +662,10 @@ Multiple NodePools may point to the same AKSNodeClass.&lt;/p&gt;
     
     <item>
       <title>Docs: Scheduling</title>
-      <link>//localhost:1313/docs/concepts/scheduling/</link>
+      <link>/docs/concepts/scheduling/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/concepts/scheduling/</guid>
+      <guid>/docs/concepts/scheduling/</guid>
       <description>
         
         
@@ -722,7 +722,7 @@ For example:&lt;/p&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;In this example, the container is requesting 128MiB of memory and .5 CPU.
 Its limits are set to 256MiB of memory and 1 CPU.
 Instance type selection math only uses &lt;code&gt;requests&lt;/code&gt;, but &lt;code&gt;limits&lt;/code&gt; may be configured to enable resource oversubscription.&lt;/p&gt;
-&lt;p&gt;See &lt;a href=&#34;https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/&#34;&gt;Managing Resources for Containers&lt;/a&gt; for details on resource types supported by Kubernetes, &lt;a href=&#34;https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/#specify-a-memory-request-and-a-memory-limit&#34;&gt;Specify a memory request and a memory limit&lt;/a&gt; for examples of memory requests, and &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/&#34;&gt;NodePools&lt;/a&gt; for a list of supported resources.&lt;/p&gt;
+&lt;p&gt;See &lt;a href=&#34;https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/&#34;&gt;Managing Resources for Containers&lt;/a&gt; for details on resource types supported by Kubernetes, &lt;a href=&#34;https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/#specify-a-memory-request-and-a-memory-limit&#34;&gt;Specify a memory request and a memory limit&lt;/a&gt; for examples of memory requests, and &lt;a href=&#34;/docs/concepts/nodepools/&#34;&gt;NodePools&lt;/a&gt; for a list of supported resources.&lt;/p&gt;
 &lt;h3 id=&#34;acceleratorsgpu-resources&#34;&gt;Accelerators/GPU Resources&lt;/h3&gt;
 &lt;p&gt;Accelerator (e.g., GPU) values include&lt;/p&gt;
 &lt;ul&gt;
@@ -1053,10 +1053,10 @@ Here, if &lt;code&gt;eastus-1&lt;/code&gt; is not available, the second term wil
     
     <item>
       <title>Docs: Disruption</title>
-      <link>//localhost:1313/docs/concepts/disruption/</link>
+      <link>/docs/concepts/disruption/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/concepts/disruption/</guid>
+      <guid>/docs/concepts/disruption/</guid>
       <description>
         
         
@@ -1064,11 +1064,11 @@ Here, if &lt;code&gt;eastus-1&lt;/code&gt; is not available, the second term wil
 &lt;p&gt;Karpenter sets a Kubernetes &lt;a href=&#34;https://kubernetes.io/docs/concepts/overview/working-with-objects/finalizers/&#34;&gt;finalizer&lt;/a&gt; on each node and node claim it provisions.
 The finalizer blocks deletion of the node object while the Termination Controller taints and drains the node, before removing the underlying NodeClaim. Disruption is triggered by the Disruption Controller, by the user through manual disruption, or through an external system that sends a delete request to the node object.&lt;/p&gt;
 &lt;h3 id=&#34;disruption-controller&#34;&gt;Disruption Controller&lt;/h3&gt;
-&lt;p&gt;Karpenter automatically discovers disruptable nodes and spins up replacements when needed. Karpenter disrupts nodes by executing one &lt;a href=&#34;//localhost:1313/docs/concepts/disruption/#automated-methods&#34;&gt;automated method&lt;/a&gt; at a time, in order of Expiration, Drift, and then Consolidation. Each method varies slightly, but they all follow the standard disruption process. Karpenter uses &lt;a href=&#34;#disruption-budgets&#34;&gt;disruption budgets&lt;/a&gt; to control the speed of disruption.&lt;/p&gt;
+&lt;p&gt;Karpenter automatically discovers disruptable nodes and spins up replacements when needed. Karpenter disrupts nodes by executing one &lt;a href=&#34;/docs/concepts/disruption/#automated-methods&#34;&gt;automated method&lt;/a&gt; at a time, in order of Expiration, Drift, and then Consolidation. Each method varies slightly, but they all follow the standard disruption process. Karpenter uses &lt;a href=&#34;#disruption-budgets&#34;&gt;disruption budgets&lt;/a&gt; to control the speed of disruption.&lt;/p&gt;
 &lt;ol&gt;
 &lt;li&gt;Identify a list of prioritized candidates for the disruption method.
 &lt;ul&gt;
-&lt;li&gt;If there are &lt;a href=&#34;//localhost:1313/docs/concepts/disruption/#pod-eviction&#34;&gt;pods that cannot be evicted&lt;/a&gt; on the node, Karpenter will ignore the node and try disrupting it later.&lt;/li&gt;
+&lt;li&gt;If there are &lt;a href=&#34;/docs/concepts/disruption/#pod-eviction&#34;&gt;pods that cannot be evicted&lt;/a&gt; on the node, Karpenter will ignore the node and try disrupting it later.&lt;/li&gt;
 &lt;li&gt;If there are no disruptable nodes, continue to the next disruption method.&lt;/li&gt;
 &lt;/ul&gt;
 &lt;/li&gt;
@@ -1404,10 +1404,10 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     
     <item>
       <title>Docs: Settings</title>
-      <link>//localhost:1313/docs/reference/settings/</link>
+      <link>/docs/reference/settings/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/settings/</guid>
+      <guid>/docs/reference/settings/</guid>
       <description>
         
         
@@ -1695,10 +1695,10 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     
     <item>
       <title>Docs: Custom Networking</title>
-      <link>//localhost:1313/docs/reference/custom-networking/</link>
+      <link>/docs/reference/custom-networking/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/custom-networking/</guid>
+      <guid>/docs/reference/custom-networking/</guid>
       <description>
         
         
@@ -2022,10 +2022,10 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     
     <item>
       <title>Docs: Instance Types</title>
-      <link>//localhost:1313/docs/reference/instance-types/</link>
+      <link>/docs/reference/instance-types/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/instance-types/</guid>
+      <guid>/docs/reference/instance-types/</guid>
       <description>
         
         
@@ -2346,10 +2346,10 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     
     <item>
       <title>Docs: Metrics</title>
-      <link>//localhost:1313/docs/reference/metrics/</link>
+      <link>/docs/reference/metrics/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/metrics/</guid>
+      <guid>/docs/reference/metrics/</guid>
       <description>
         
         
@@ -2440,10 +2440,10 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     
     <item>
       <title>Docs: Quickstart</title>
-      <link>//localhost:1313/docs/getting-started/quickstart/</link>
+      <link>/docs/getting-started/quickstart/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/getting-started/quickstart/</guid>
+      <guid>/docs/getting-started/quickstart/</guid>
       <description>
         
         
@@ -2451,8 +2451,8 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
 &lt;h2 id=&#34;choose-your-deployment-mode&#34;&gt;Choose Your Deployment Mode&lt;/h2&gt;
 &lt;p&gt;Karpenter for Azure supports two deployment modes:&lt;/p&gt;
 &lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;//localhost:1313/docs/getting-started/quickstart/#node-auto-provisioning-nap&#34;&gt;Node Auto Provisioning (NAP)&lt;/a&gt;&lt;/strong&gt; - Managed by AKS (Recommended)&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;//localhost:1313/docs/getting-started/quickstart/#self-hosted-mode&#34;&gt;Self-hosted&lt;/a&gt;&lt;/strong&gt; - You manage the deployment&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;/docs/getting-started/quickstart/#node-auto-provisioning-nap&#34;&gt;Node Auto Provisioning (NAP)&lt;/a&gt;&lt;/strong&gt; - Managed by AKS (Recommended)&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;a href=&#34;/docs/getting-started/quickstart/#self-hosted-mode&#34;&gt;Self-hosted&lt;/a&gt;&lt;/strong&gt; - You manage the deployment&lt;/li&gt;
 &lt;/ul&gt;
 &lt;h2 id=&#34;node-auto-provisioning-nap&#34;&gt;Node Auto Provisioning (NAP)&lt;/h2&gt;
 &lt;p&gt;NAP is the recommended way to use Karpenter with AKS. Microsoft manages the entire Karpenter lifecycle as a managed addon.&lt;/p&gt;
@@ -2713,9 +2713,9 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
 &lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;az group delete --name &lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;${&lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;RG&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;}&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;&lt;/span&gt; --yes --no-wait
 &lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;whats-next&#34;&gt;What&amp;rsquo;s Next?&lt;/h2&gt;
 &lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;Learn concepts&lt;/strong&gt;: Understand &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/&#34;&gt;NodePools&lt;/a&gt;, &lt;a href=&#34;//localhost:1313/docs/concepts/nodeclasses/&#34;&gt;AKSNodeClasses&lt;/a&gt;, and &lt;a href=&#34;//localhost:1313/docs/concepts/disruption/&#34;&gt;disruption policies&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Advanced configuration&lt;/strong&gt;: Explore &lt;a href=&#34;../tasks/managing-vm-images/#gpu-images&#34;&gt;GPU workloads&lt;/a&gt;, &lt;a href=&#34;//localhost:1313/docs/concepts/nodepools/#spot-instances&#34;&gt;spot instances&lt;/a&gt;, and &lt;a href=&#34;../tasks/managing-vm-images/&#34;&gt;custom images&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Production deployment&lt;/strong&gt;: Review &lt;a href=&#34;../best-practices/&#34;&gt;best practices&lt;/a&gt;, &lt;a href=&#34;../observability/&#34;&gt;monitoring&lt;/a&gt;, and &lt;a href=&#34;//localhost:1313/docs/troubleshooting/&#34;&gt;troubleshooting&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Learn concepts&lt;/strong&gt;: Understand &lt;a href=&#34;/docs/concepts/nodepools/&#34;&gt;NodePools&lt;/a&gt;, &lt;a href=&#34;/docs/concepts/nodeclasses/&#34;&gt;AKSNodeClasses&lt;/a&gt;, and &lt;a href=&#34;/docs/concepts/disruption/&#34;&gt;disruption policies&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Advanced configuration&lt;/strong&gt;: Explore &lt;a href=&#34;../tasks/managing-vm-images/#gpu-images&#34;&gt;GPU workloads&lt;/a&gt;, &lt;a href=&#34;/docs/concepts/nodepools/#spot-instances&#34;&gt;spot instances&lt;/a&gt;, and &lt;a href=&#34;../tasks/managing-vm-images/&#34;&gt;custom images&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Production deployment&lt;/strong&gt;: Review &lt;a href=&#34;../best-practices/&#34;&gt;best practices&lt;/a&gt;, &lt;a href=&#34;../observability/&#34;&gt;monitoring&lt;/a&gt;, and &lt;a href=&#34;/docs/troubleshooting/&#34;&gt;troubleshooting&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Choose deployment mode&lt;/strong&gt;: Read &lt;a href=&#34;../concepts/deployment-modes/&#34;&gt;NAP vs Self-hosted&lt;/a&gt; comparison to understand which mode fits your needs&lt;/li&gt;
 &lt;/ul&gt;
 &lt;h2 id=&#34;common-next-steps&#34;&gt;Common Next Steps&lt;/h2&gt;
@@ -2775,7 +2775,7 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;          &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;values&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;[&lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;D&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;,&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;Dpds&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;]&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  &lt;/span&gt;&lt;span style=&#34;color:#8f5902;font-style:italic&#34;&gt;# Dpds for ARM64&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;getting-help&#34;&gt;Getting Help&lt;/h2&gt;
 &lt;ul&gt;
-&lt;li&gt;&lt;strong&gt;Documentation&lt;/strong&gt;: Browse the complete &lt;a href=&#34;//localhost:1313/docs/&#34;&gt;documentation&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Documentation&lt;/strong&gt;: Browse the complete &lt;a href=&#34;/docs/&#34;&gt;documentation&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;GitHub Issues&lt;/strong&gt;: Report bugs or request features on &lt;a href=&#34;https://github.com/Azure/karpenter-provider-azure/issues&#34;&gt;GitHub&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Community&lt;/strong&gt;: Join the &lt;a href=&#34;https://kubernetes.slack.com/archives/C02SFFZSA2K&#34;&gt;#karpenter&lt;/a&gt; channel in Kubernetes Slack&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Examples&lt;/strong&gt;: Explore more examples in the &lt;a href=&#34;https://github.com/Azure/karpenter-provider-azure/tree/main/examples&#34;&gt;repository&lt;/a&gt;&lt;/li&gt;
@@ -2786,10 +2786,10 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     
     <item>
       <title>Docs: NodePool Examples</title>
-      <link>//localhost:1313/docs/reference/nodepool-examples/</link>
+      <link>/docs/reference/nodepool-examples/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/nodepool-examples/</guid>
+      <guid>/docs/reference/nodepool-examples/</guid>
       <description>
         
         
@@ -3378,10 +3378,10 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     
     <item>
       <title>Docs: Deployment Modes</title>
-      <link>//localhost:1313/docs/concepts/nap-vs-self-hosted/</link>
+      <link>/docs/concepts/nap-vs-self-hosted/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/concepts/nap-vs-self-hosted/</guid>
+      <guid>/docs/concepts/nap-vs-self-hosted/</guid>
       <description>
         
         
@@ -3623,10 +3623,10 @@ you will be managing that token yourself after each upgrade to the systempool or
     
     <item>
       <title>Docs: FAQ</title>
-      <link>//localhost:1313/docs/faq/</link>
+      <link>/docs/faq/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/faq/</guid>
+      <guid>/docs/faq/</guid>
       <description>
         
         
@@ -3794,10 +3794,10 @@ you will be managing that token yourself after each upgrade to the systempool or
     
     <item>
       <title>Docs: Troubleshooting</title>
-      <link>//localhost:1313/docs/troubleshooting/</link>
+      <link>/docs/troubleshooting/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/troubleshooting/</guid>
+      <guid>/docs/troubleshooting/</guid>
       <description>
         
         
@@ -4129,10 +4129,10 @@ you will be managing that token yourself after each upgrade to the systempool or
     
     <item>
       <title>Docs: </title>
-      <link>//localhost:1313/docs/reference/nodepools/</link>
+      <link>/docs/reference/nodepools/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/nodepools/</guid>
+      <guid>/docs/reference/nodepools/</guid>
       <description>
         
         

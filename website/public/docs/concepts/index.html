@@ -1,10 +1,10 @@
 <!doctype html>
 <html itemscope itemtype="http://schema.org/WebPage" lang="en" class="no-js">
-  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+  <head>
     <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="generator" content="Hugo 0.145.0">
-<link rel="alternate" type="application/rss&#43;xml" href="//localhost:1313/docs/concepts/index.xml">
+<link rel="alternate" type="application/rss&#43;xml" href="/docs/concepts/index.xml">
 
 
 
@@ -12,17 +12,17 @@
 <meta name="description" content="Understand key concepts of Karpenter
 ">
 
-<meta property="og:url" content="//localhost:1313/docs/concepts/">
+<meta property="og:url" content="/docs/concepts/">
   <meta property="og:site_name" content="Karpenter for Azure">
   <meta property="og:title" content="Concepts">
   <meta property="og:description" content="Understand key concepts of Karpenter">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="website">
-    <meta property="og:image" content="//localhost:1313/banner.png">
+    <meta property="og:image" content="/banner.png">
 
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="//localhost:1313/banner.png">
+  <meta name="twitter:image" content="/banner.png">
   <meta name="twitter:title" content="Concepts">
   <meta name="twitter:description" content="Understand key concepts of Karpenter">
 
@@ -30,8 +30,8 @@
 
 
 
-
-<link href="/scss/main.css" rel="stylesheet">
+<link rel="preload" href="/scss/main.min.8d85b8b2feb2d1d5dd41ddf8b0a8e8b797d8f8becf784ef5a5a5f407c81415fb.css" as="style">
+<link href="/scss/main.min.8d85b8b2feb2d1d5dd41ddf8b0a8e8b797d8f8becf784ef5a5a5f407c81415fb.css" rel="stylesheet" integrity="">
 
 
   </head>
@@ -57,7 +57,7 @@
 
 
 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-	v1.5 
+	v1.5.5  (latest) 
 </a>
 <div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink" id="navbarVersionSelector">
 	
@@ -215,10 +215,10 @@
             <nav aria-label="breadcrumb" class="td-breadcrumbs">
   <ol class="breadcrumb">
   <li class="breadcrumb-item">
-    <a href="//localhost:1313/docs/">Docs</a>
+    <a href="/docs/">Docs</a>
   </li>
   <li class="breadcrumb-item active" aria-current="page">
-    <a href="//localhost:1313/docs/concepts/" aria-disabled="true" class="btn-link disabled">Concepts</a>
+    <a href="/docs/concepts/" aria-disabled="true" class="btn-link disabled">Concepts</a>
   </li>
   </ol>
 </nav>
@@ -241,17 +241,17 @@
 <p>Getting Started with Karpenter describes the process of installing Karpenter. Because requests to add and delete nodes and schedule pods are made through Kubernetes, Azure Managed Identity and RBAC are needed by your Kubernetes cluster to make privileged requests to Azure. For example, Karpenter uses Azure Managed Identity to grant the permissions needed to describe Azure VM types and create Azure VM instances.</p>
 <p>Once privileges are in place, Karpenter is deployed with a Helm chart.</p>
 <h3 id="configuring-nodepools">Configuring NodePools</h3>
-<p>Karpenter&rsquo;s job is to add nodes to handle unschedulable pods, schedule pods on those nodes, and remove the nodes when they are not needed. To configure Karpenter, you create <a href="//localhost:1313/docs/concepts/nodepools/">NodePools</a> that define how Karpenter manages unschedulable pods and configures nodes. You will also define behaviors for your NodePools, capturing details like how Karpenter handles disruption of nodes and setting limits and weights for each NodePool</p>
+<p>Karpenter&rsquo;s job is to add nodes to handle unschedulable pods, schedule pods on those nodes, and remove the nodes when they are not needed. To configure Karpenter, you create <a href="/docs/concepts/nodepools/">NodePools</a> that define how Karpenter manages unschedulable pods and configures nodes. You will also define behaviors for your NodePools, capturing details like how Karpenter handles disruption of nodes and setting limits and weights for each NodePool</p>
 <p>Here are some things to know about Karpenter&rsquo;s NodePools:</p>
 <ul>
 <li>
 <p><strong>Unschedulable pods</strong>: Karpenter only attempts to schedule pods that have a status condition <code>Unschedulable=True</code>, which the kube scheduler sets when it fails to schedule the pod to existing capacity.</p>
 </li>
 <li>
-<p><a href="//localhost:1313/docs/concepts/nodepools/"><strong>Defining Constraints</strong></a>: Karpenter defines a Custom Resource called a NodePool to specify configuration. Each NodePool manages a distinct set of nodes, but pods can be scheduled to any NodePool that supports its scheduling constraints. A NodePool contains constraints that impact the nodes that can be provisioned and attributes of those nodes. See the <a href="//localhost:1313/docs/concepts/nodepools/">NodePools Documentation</a> docs for a description of configuration and NodePool examples.</p>
+<p><a href="/docs/concepts/nodepools/"><strong>Defining Constraints</strong></a>: Karpenter defines a Custom Resource called a NodePool to specify configuration. Each NodePool manages a distinct set of nodes, but pods can be scheduled to any NodePool that supports its scheduling constraints. A NodePool contains constraints that impact the nodes that can be provisioned and attributes of those nodes. See the <a href="/docs/concepts/nodepools/">NodePools Documentation</a> docs for a description of configuration and NodePool examples.</p>
 </li>
 <li>
-<p><a href="//localhost:1313/docs/concepts/disruption/"><strong>Defining Disruption</strong></a>: A NodePool can also include values to indicate when nodes should be disrupted. This includes configuration around concepts like <a href="//localhost:1313/docs/concepts/disruption/#consolidation">Consolidation</a>, <a href="//localhost:1313/docs/concepts/disruption/#drift">Drift</a>, and <a href="//localhost:1313/docs/concepts/disruption/#automated-methods">Expiration</a>.</p>
+<p><a href="/docs/concepts/disruption/"><strong>Defining Disruption</strong></a>: A NodePool can also include values to indicate when nodes should be disrupted. This includes configuration around concepts like <a href="/docs/concepts/disruption/#consolidation">Consolidation</a>, <a href="/docs/concepts/disruption/#drift">Drift</a>, and <a href="/docs/concepts/disruption/#automated-methods">Expiration</a>.</p>
 </li>
 <li>
 <p><strong>Well-known labels</strong>: The NodePool can use well-known Kubernetes labels to allow pods to request only certain instance types, architectures, operating systems, or other attributes when creating nodes. See <a href="https://kubernetes.io/docs/reference/labels-annotations-taints/">Well-Known Labels, Annotations and Taints</a> for details. Keep in mind that only a subset of these labels are supported in Karpenter, as described later.</p>
@@ -264,20 +264,20 @@
 <h3 id="disrupting-nodes">Disrupting nodes</h3>
 <p>Karpenter deletes nodes when they are no longer needed.</p>
 <ul>
-<li><a href="//localhost:1313/docs/concepts/disruption/#manual-methods"><strong>Finalizer</strong></a>: Karpenter places a finalizer bit on each node it creates.
+<li><a href="/docs/concepts/disruption/#manual-methods"><strong>Finalizer</strong></a>: Karpenter places a finalizer bit on each node it creates.
 When a request comes in to delete one of those nodes (such as a TTL or a manual <code>kubectl delete node</code>), Karpenter will cordon the node, drain all the pods, terminate the Azure VM instance, and delete the node object.
 Karpenter handles all clean-up work needed to properly delete the node.</li>
-<li><a href="//localhost:1313/docs/concepts/disruption/"><strong>Expiration</strong></a>: Karpenter will mark nodes as expired and disrupt them after they have lived a set number of seconds, based on the NodePool&rsquo;s <code>spec.disruption.expireAfter</code> value. You can use node expiry to periodically recycle nodes due to security concerns.</li>
-<li><a href="//localhost:1313/docs/concepts/disruption/#consolidation"><strong>Consolidation</strong></a>: Karpenter works to actively reduce cluster cost by identifying when:
+<li><a href="/docs/concepts/disruption/"><strong>Expiration</strong></a>: Karpenter will mark nodes as expired and disrupt them after they have lived a set number of seconds, based on the NodePool&rsquo;s <code>spec.disruption.expireAfter</code> value. You can use node expiry to periodically recycle nodes due to security concerns.</li>
+<li><a href="/docs/concepts/disruption/#consolidation"><strong>Consolidation</strong></a>: Karpenter works to actively reduce cluster cost by identifying when:
 <ul>
 <li>Nodes can be removed because the node is empty</li>
 <li>Nodes can be removed as their workloads will run on other nodes in the cluster.</li>
 <li>Nodes can be replaced with cheaper variants due to a change in the workloads.</li>
 </ul>
 </li>
-<li><a href="//localhost:1313/docs/concepts/disruption/#drift"><strong>Drift</strong></a>: Karpenter will mark nodes as drifted and disrupt nodes that have drifted from their desired specification. See <a href="#drift">Drift</a> to see which fields are considered.</li>
+<li><a href="/docs/concepts/disruption/#drift"><strong>Drift</strong></a>: Karpenter will mark nodes as drifted and disrupt nodes that have drifted from their desired specification. See <a href="#drift">Drift</a> to see which fields are considered.</li>
 </ul>
-<p>For more details on how Karpenter deletes nodes, see the <a href="//localhost:1313/docs/concepts/disruption/">Disruption Documentation</a>.</p>
+<p>For more details on how Karpenter deletes nodes, see the <a href="/docs/concepts/disruption/">Disruption Documentation</a>.</p>
 <h3 id="scheduling">Scheduling</h3>
 <p>Karpenter launches nodes in response to pods that the Kubernetes scheduler has marked unschedulable. After solving scheduling constraints and launching capacity, Karpenter launches a machine in your chosen cloud provider.</p>
 <p>Once Karpenter brings up a node, that node is available for the Kubernetes scheduler to schedule pods on it as well.</p>
@@ -423,7 +423,7 @@ It also supports <a href="https://kubernetes.io/docs/tasks/run-application/confi
 
     </div>
     
-  <script src="/js/main.js"></script>
+  <script src="/js/main.min.bffcbd864f145da81ab1ddd55cf7bd327fce8e19cd5f26dfbf1b53e954491998.js" integrity="sha256-v/y9hk8UXagasd3VXPe9Mn/OjhnNXybfvxtT6VRJGZg=" crossorigin="anonymous"></script>
 <script src='/js/prism.js'></script>
 <script src='/js/tabpane-persist.js'></script>
 

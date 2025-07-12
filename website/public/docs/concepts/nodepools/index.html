@@ -1,6 +1,6 @@
 <!doctype html>
 <html itemscope itemtype="http://schema.org/WebPage" lang="en" class="no-js">
-  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+  <head>
     <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="generator" content="Hugo 0.145.0">
@@ -11,18 +11,18 @@
 <meta name="description" content="Configure Karpenter with NodePools
 ">
 
-<meta property="og:url" content="//localhost:1313/docs/concepts/nodepools/">
+<meta property="og:url" content="/docs/concepts/nodepools/">
   <meta property="og:site_name" content="Karpenter for Azure">
   <meta property="og:title" content="NodePools">
   <meta property="og:description" content="Configure Karpenter with NodePools">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="docs">
-    <meta property="og:image" content="//localhost:1313/banner.png">
+    <meta property="og:image" content="/banner.png">
 
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="//localhost:1313/banner.png">
+  <meta name="twitter:image" content="/banner.png">
   <meta name="twitter:title" content="NodePools">
   <meta name="twitter:description" content="Configure Karpenter with NodePools">
 
@@ -30,8 +30,8 @@
 
 
 
-
-<link href="/scss/main.css" rel="stylesheet">
+<link rel="preload" href="/scss/main.min.8d85b8b2feb2d1d5dd41ddf8b0a8e8b797d8f8becf784ef5a5a5f407c81415fb.css" as="style">
+<link href="/scss/main.min.8d85b8b2feb2d1d5dd41ddf8b0a8e8b797d8f8becf784ef5a5a5f407c81415fb.css" rel="stylesheet" integrity="">
 
 
   </head>
@@ -57,7 +57,7 @@
 
 
 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-	v1.5 
+	v1.5.5  (latest) 
 </a>
 <div class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink" id="navbarVersionSelector">
 	
@@ -222,13 +222,13 @@
             <nav aria-label="breadcrumb" class="td-breadcrumbs">
   <ol class="breadcrumb">
   <li class="breadcrumb-item">
-    <a href="//localhost:1313/docs/">Docs</a>
+    <a href="/docs/">Docs</a>
   </li>
   <li class="breadcrumb-item">
-    <a href="//localhost:1313/docs/concepts/">Concepts</a>
+    <a href="/docs/concepts/">Concepts</a>
   </li>
   <li class="breadcrumb-item active" aria-current="page">
-    <a href="//localhost:1313/docs/concepts/nodepools/" aria-disabled="true" class="btn-link disabled">NodePools</a>
+    <a href="/docs/concepts/nodepools/" aria-disabled="true" class="btn-link disabled">NodePools</a>
   </li>
   </ol>
 </nav>
@@ -528,7 +528,7 @@ i.e at least 2 unique instance families from [D,E,F], 5 unique sku names, 10 uni
 </div>
 
 <h2 id="spectemplatespecnodeclassref">spec.template.spec.nodeClassRef</h2>
-<p>This field points to the Cloud Provider NodeClass resource. Learn more about <a href="//localhost:1313/docs/concepts/nodeclasses/">AKSNodeClasses</a>.</p>
+<p>This field points to the Cloud Provider NodeClass resource. Learn more about <a href="/docs/concepts/nodeclasses/">AKSNodeClasses</a>.</p>
 <h2 id="spectemplatespecexpireafter">spec.template.spec.expireAfter</h2>
 <p><code>expireAfter</code> is the duration the controller will wait before terminating a node, measured from when the node is created. This is useful to implement features like eventually consistent node upgrade, memory leak protection, and disruption testing.</p>
 <p>The default value is <code>720h</code> (30 days). You can disable node expiration by setting the value to <code>Never</code>.</p>
@@ -554,7 +554,7 @@ i.e at least 2 unique instance families from [D,E,F], 5 unique sku names, 10 uni
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">terminationGracePeriod</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">30s</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span></code></pre></div><h2 id="specdisruption">spec.disruption</h2>
-<p>You can configure Karpenter to disrupt Nodes through your NodePool in multiple ways. You can use <code>spec.disruption.consolidationPolicy</code>, <code>spec.disruption.consolidateAfter</code> or <code>spec.disruption.expireAfter</code>. Read <a href="//localhost:1313/docs/concepts/disruption/">Disruption</a> for more.</p>
+<p>You can configure Karpenter to disrupt Nodes through your NodePool in multiple ways. You can use <code>spec.disruption.consolidationPolicy</code>, <code>spec.disruption.consolidateAfter</code> or <code>spec.disruption.expireAfter</code>. Read <a href="/docs/concepts/disruption/">Disruption</a> for more.</p>
 <h2 id="speclimits">spec.limits</h2>
 <p>The NodePool spec includes a limits section (<code>spec.limits</code>), which constrains the maximum amount of resources that the NodePool will manage.</p>
 <p>Karpenter supports limits of any resource type reported by your cloudprovider. It limits instance types when scheduling to those that will not exceed the specified limits.  If a limit has been exceeded, nodes provisioning is prevented until some nodes have been terminated.</p>
@@ -589,7 +589,7 @@ i.e at least 2 unique instance families from [D,E,F], 5 unique sku names, 10 uni
 </code></pre><p>Review the <a href="https://github.com/kubernetes/api/blob/37748cca582229600a3599b40e9a82a951d8bbbf/core/v1/resource.go#L23">Kubernetes core API</a> (<code>k8s.io/api/core/v1</code>) for more information on <code>resources</code>.</p>
 <h2 id="specweight">spec.weight</h2>
 <p>Karpenter allows you to describe NodePool preferences through a <code>weight</code> mechanism similar to how weight is described with <a href="https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity">pod and node affinities</a>.</p>
-<p>For more information on weighting NodePools, see the <a href="//localhost:1313/docs/concepts/scheduling/#weighted-nodepools">Weighted NodePools section</a> in the scheduling docs.</p>
+<p>For more information on weighting NodePools, see the <a href="/docs/concepts/scheduling/#weighted-nodepools">Weighted NodePools section</a> in the scheduling docs.</p>
 <h2 id="examples">Examples</h2>
 <h3 id="isolating-expensive-hardware">Isolating Expensive Hardware</h3>
 <p>A NodePool can be set up to only provision nodes on particular processor types.
@@ -686,7 +686,7 @@ The following example sets a taint that only allows pods with tolerations for Nv
 
     </div>
     
-  <script src="/js/main.js"></script>
+  <script src="/js/main.min.bffcbd864f145da81ab1ddd55cf7bd327fce8e19cd5f26dfbf1b53e954491998.js" integrity="sha256-v/y9hk8UXagasd3VXPe9Mn/OjhnNXybfvxtT6VRJGZg=" crossorigin="anonymous"></script>
 <script src='/js/prism.js'></script>
 <script src='/js/tabpane-persist.js'></script>
 

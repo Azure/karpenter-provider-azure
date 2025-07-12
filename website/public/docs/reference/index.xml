@@ -1,12 +1,12 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Karpenter for Azure – Reference</title>
-    <link>//localhost:1313/docs/reference/</link>
+    <link>/docs/reference/</link>
     <description>Recent content in Reference on Karpenter for Azure</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
     
-	  <atom:link href="//localhost:1313/docs/reference/index.xml" rel="self" type="application/rss+xml" />
+	  <atom:link href="/docs/reference/index.xml" rel="self" type="application/rss+xml" />
     
     
       
@@ -16,10 +16,10 @@
     
     <item>
       <title>Docs: Settings</title>
-      <link>//localhost:1313/docs/reference/settings/</link>
+      <link>/docs/reference/settings/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/settings/</guid>
+      <guid>/docs/reference/settings/</guid>
       <description>
         
         
@@ -307,10 +307,10 @@
     
     <item>
       <title>Docs: Custom Networking</title>
-      <link>//localhost:1313/docs/reference/custom-networking/</link>
+      <link>/docs/reference/custom-networking/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/custom-networking/</guid>
+      <guid>/docs/reference/custom-networking/</guid>
       <description>
         
         
@@ -634,10 +634,10 @@
     
     <item>
       <title>Docs: Instance Types</title>
-      <link>//localhost:1313/docs/reference/instance-types/</link>
+      <link>/docs/reference/instance-types/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/instance-types/</guid>
+      <guid>/docs/reference/instance-types/</guid>
       <description>
         
         
@@ -958,10 +958,10 @@
     
     <item>
       <title>Docs: Metrics</title>
-      <link>//localhost:1313/docs/reference/metrics/</link>
+      <link>/docs/reference/metrics/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/metrics/</guid>
+      <guid>/docs/reference/metrics/</guid>
       <description>
         
         
@@ -1052,10 +1052,10 @@
     
     <item>
       <title>Docs: NodePool Examples</title>
-      <link>//localhost:1313/docs/reference/nodepool-examples/</link>
+      <link>/docs/reference/nodepool-examples/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/nodepool-examples/</guid>
+      <guid>/docs/reference/nodepool-examples/</guid>
       <description>
         
         
@@ -1644,10 +1644,10 @@
     
     <item>
       <title>Docs: </title>
-      <link>//localhost:1313/docs/reference/nodepools/</link>
+      <link>/docs/reference/nodepools/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
-      <guid>//localhost:1313/docs/reference/nodepools/</guid>
+      <guid>/docs/reference/nodepools/</guid>
       <description>
         
         
