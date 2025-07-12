@@ -188,25 +188,10 @@
             <div class="td-toc">
         <nav id="TableOfContents">
   <ul>
-    <li><a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#check-karpenter-status">Check Karpenter Status</a></li>
-        <li><a href="#verify-configuration">Verify Configuration</a></li>
-      </ul>
-    </li>
     <li><a href="#common-issues">Common Issues</a>
       <ul>
-        <li><a href="#pods-not-being-scheduled">Pods Not Being Scheduled</a></li>
-        <li><a href="#node-provisioning-failures">Node Provisioning Failures</a></li>
         <li><a href="#nodes-not-joining-cluster">Nodes Not Joining Cluster</a></li>
-        <li><a href="#slow-node-provisioning">Slow Node Provisioning</a></li>
         <li><a href="#nodes-not-being-removed">Nodes Not Being Removed</a></li>
-      </ul>
-    </li>
-    <li><a href="#performance-issues">Performance Issues</a>
-      <ul>
-        <li><a href="#high-memory-usage">High Memory Usage</a></li>
-        <li><a href="#api-rate-limiting">API Rate Limiting</a></li>
       </ul>
     </li>
     <li><a href="#networking-issues">Networking Issues</a>
@@ -220,18 +205,7 @@
         <li><a href="#quota-exceeded">Quota Exceeded</a></li>
       </ul>
     </li>
-    <li><a href="#log-analysis">Log Analysis</a>
-      <ul>
-        <li><a href="#important-log-patterns">Important Log Patterns</a></li>
-        <li><a href="#enabling-debug-logging">Enabling Debug Logging</a></li>
-      </ul>
-    </li>
-    <li><a href="#getting-help">Getting Help</a>
-      <ul>
-        <li><a href="#collecting-debug-information">Collecting Debug Information</a></li>
-        <li><a href="#community-resources">Community Resources</a></li>
-      </ul>
-    </li>
+    <li><a href="#community-resources">Community Resources</a></li>
   </ul>
 </nav>
       </div>
@@ -267,93 +241,7 @@
 		
 	</header>    
 	<p>This guide covers common issues you might encounter when using Karpenter for Azure and how to troubleshoot them.</p>
-<h2 id="getting-started">Getting Started</h2>
-<h3 id="check-karpenter-status">Check Karpenter Status</h3>
-<p>First, verify that Karpenter is running correctly:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Check Karpenter deployment</span>
-</span></span><span style="display:flex;"><span>kubectl get deployment -n karpenter
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Check Karpenter pods</span>
-</span></span><span style="display:flex;"><span>kubectl get pods -n karpenter
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># View Karpenter logs</span>
-</span></span><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter -f
-</span></span></code></pre></div><h3 id="verify-configuration">Verify Configuration</h3>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># List NodePools</span>
-</span></span><span style="display:flex;"><span>kubectl get nodepools
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># List AKSNodeClasses  </span>
-</span></span><span style="display:flex;"><span>kubectl get aksnodeclasses
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Describe your NodePool</span>
-</span></span><span style="display:flex;"><span>kubectl describe nodepool &lt;nodepool-name&gt;
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Describe your AKSNodeClass</span>
-</span></span><span style="display:flex;"><span>kubectl describe aksnodeclass &lt;nodeclass-name&gt;
-</span></span></code></pre></div><h2 id="common-issues">Common Issues</h2>
-<h3 id="pods-not-being-scheduled">Pods Not Being Scheduled</h3>
-<p><strong>Symptoms</strong>: Pods remain in Pending state, no new nodes are created.</p>
-<p><strong>Debugging Steps</strong>:</p>
-<ol>
-<li><strong>Check pod status</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl describe pod &lt;pod-name&gt;
-</span></span></code></pre></div><p>Look for events and scheduling failures.</p>
-<ol start="2">
-<li><strong>Verify NodePool matches pod requirements</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get nodepool &lt;nodepool-name&gt; -o yaml
-</span></span></code></pre></div><p>Ensure the NodePool requirements are compatible with your pod&rsquo;s nodeSelector, affinity, and tolerations.</p>
-<ol start="3">
-<li><strong>Check Karpenter logs</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter <span style="color:#000;font-weight:bold">|</span> grep -i <span style="color:#4e9a06">&#34;pod\|schedule\|provision&#34;</span>
-</span></span></code></pre></div><p><strong>Common Causes</strong>:</p>
-<ul>
-<li>Pod requirements don&rsquo;t match any NodePool</li>
-<li>NodePool limits exceeded</li>
-<li>Insufficient Azure quota</li>
-<li>Pod has unschedulable constraints</li>
-</ul>
-<p><strong>Solutions</strong>:</p>
-<ul>
-<li>Adjust NodePool requirements or pod constraints</li>
-<li>Increase NodePool limits</li>
-<li>Request Azure quota increases</li>
-<li>Review pod scheduling constraints</li>
-</ul>
-<h3 id="node-provisioning-failures">Node Provisioning Failures</h3>
-<p><strong>Symptoms</strong>: Karpenter attempts to provision nodes but they fail to join the cluster.</p>
-<p><strong>Debugging Steps</strong>:</p>
-<ol>
-<li><strong>Check Azure Activity Log</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az monitor activity-log list --resource-group &lt;node-resource-group&gt; --max-events <span style="color:#0000cf;font-weight:bold">20</span>
-</span></span></code></pre></div><ol start="2">
-<li><strong>Verify Azure permissions</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Check if Karpenter can create VMs</span>
-</span></span><span style="display:flex;"><span>az vm list --resource-group &lt;node-resource-group&gt;
-</span></span></code></pre></div><ol start="3">
-<li><strong>Check VM boot diagnostics</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az vm boot-diagnostics get-boot-log --resource-group &lt;rg&gt; --name &lt;vm-name&gt;
-</span></span></code></pre></div><p><strong>Common Causes</strong>:</p>
-<ul>
-<li>Insufficient Azure permissions</li>
-<li>Subnet has no available IP addresses</li>
-<li>VM size not available in the region/zone</li>
-<li>Azure quota exceeded</li>
-<li>Network security group blocking traffic</li>
-</ul>
-<p><strong>Solutions</strong>:</p>
-<ul>
-<li>Verify Karpenter service principal permissions</li>
-<li>Ensure subnet has sufficient IP addresses</li>
-<li>Check VM size availability: <code>az vm list-sizes --location &lt;region&gt;</code></li>
-<li>Request quota increases</li>
-<li>Review NSG rules for required ports</li>
-</ul>
+<h2 id="common-issues">Common Issues</h2>
 <h3 id="nodes-not-joining-cluster">Nodes Not Joining Cluster</h3>
 <p><strong>Symptoms</strong>: Azure VMs are created but don&rsquo;t appear as Kubernetes nodes.</p>
 <p><strong>Debugging Steps</strong>:</p>
@@ -385,31 +273,6 @@
 <li>Ensure proper managed identity configuration</li>
 <li>Verify image family in AKSNodeClass</li>
 </ul>
-<h3 id="slow-node-provisioning">Slow Node Provisioning</h3>
-<p><strong>Symptoms</strong>: Nodes take longer than expected to become ready.</p>
-<p><strong>Debugging Steps</strong>:</p>
-<ol>
-<li><strong>Monitor provisioning stages</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get events --field-selector <span style="color:#000">reason</span><span style="color:#ce5c00;font-weight:bold">=</span>ProvisioningLaunched,reason<span style="color:#ce5c00;font-weight:bold">=</span>ProvisioningSucceeded
-</span></span></code></pre></div><ol start="2">
-<li><strong>Check VM startup time</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>az vm show --resource-group &lt;rg&gt; --name &lt;vm-name&gt; --query <span style="color:#4e9a06">&#34;timeCreated&#34;</span>
-</span></span></code></pre></div><p><strong>Common Causes</strong>:</p>
-<ul>
-<li>Large VM images</li>
-<li>Slow image pulls</li>
-<li>Complex bootstrap scripts</li>
-<li>Azure region capacity constraints</li>
-</ul>
-<p><strong>Solutions</strong>:</p>
-<ul>
-<li>Use smaller, optimized images</li>
-<li>Pre-pull common container images</li>
-<li>Optimize bootstrap processes</li>
-<li>Consider multiple regions/zones</li>
-</ul>
 <h3 id="nodes-not-being-removed">Nodes Not Being Removed</h3>
 <p><strong>Symptoms</strong>: Underutilized nodes remain in the cluster longer than expected.</p>
 <p><strong>Debugging Steps</strong>:</p>
@@ -439,38 +302,6 @@
 <li>Review DaemonSet configurations</li>
 <li>Adjust pod disruption budgets</li>
 <li>Remove <code>do-not-disrupt</code> annotations if appropriate</li>
-</ul>
-<h2 id="performance-issues">Performance Issues</h2>
-<h3 id="high-memory-usage">High Memory Usage</h3>
-<p><strong>Symptoms</strong>: Karpenter controller consuming excessive memory.</p>
-<p><strong>Debugging Steps</strong>:</p>
-<ol>
-<li><strong>Check resource usage</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl top pod -n karpenter
-</span></span><span style="display:flex;"><span>kubectl describe pod -n karpenter &lt;karpenter-pod&gt;
-</span></span></code></pre></div><ol start="2">
-<li><strong>Review memory limits</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get deployment karpenter -n karpenter -o yaml <span style="color:#000;font-weight:bold">|</span> grep -A5 -B5 memory
-</span></span></code></pre></div><p><strong>Solutions</strong>:</p>
-<ul>
-<li>Increase memory limits for Karpenter deployment</li>
-<li>Reduce cluster size or node churn</li>
-<li>Consider multiple Karpenter instances for very large clusters</li>
-</ul>
-<h3 id="api-rate-limiting">API Rate Limiting</h3>
-<p><strong>Symptoms</strong>: Azure API rate limiting errors in logs.</p>
-<p><strong>Debugging Steps</strong>:</p>
-<ol>
-<li><strong>Check for rate limit errors</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter <span style="color:#000;font-weight:bold">|</span> grep -i <span style="color:#4e9a06">&#34;rate\|throttl\|429&#34;</span>
-</span></span></code></pre></div><p><strong>Solutions</strong>:</p>
-<ul>
-<li>Implement exponential backoff (usually automatic)</li>
-<li>Reduce provisioning frequency</li>
-<li>Use multiple Azure subscriptions for very large clusters</li>
 </ul>
 <h2 id="networking-issues">Networking Issues</h2>
 <h3 id="pod-connectivity-problems">Pod Connectivity Problems</h3>
@@ -530,59 +361,8 @@
 <ul>
 <li>Request quota increases through Azure portal</li>
 <li>Use different VM sizes with available quota</li>
-<li>Distribute workloads across multiple regions</li>
 </ul>
-<h2 id="log-analysis">Log Analysis</h2>
-<h3 id="important-log-patterns">Important Log Patterns</h3>
-<p>Search for these patterns in Karpenter logs:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Provisioning decisions</span>
-</span></span><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter <span style="color:#000;font-weight:bold">|</span> grep <span style="color:#4e9a06">&#34;provisioning&#34;</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Node termination events  </span>
-</span></span><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter <span style="color:#000;font-weight:bold">|</span> grep <span style="color:#4e9a06">&#34;terminating\|deleting&#34;</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Azure API errors</span>
-</span></span><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter <span style="color:#000;font-weight:bold">|</span> grep -i <span style="color:#4e9a06">&#34;azure.*error&#34;</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"># Scheduling failures</span>
-</span></span><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter <span style="color:#000;font-weight:bold">|</span> grep <span style="color:#4e9a06">&#34;unschedulable\|failed.*schedule&#34;</span>
-</span></span></code></pre></div><h3 id="enabling-debug-logging">Enabling Debug Logging</h3>
-<p>Increase log verbosity for more detailed information:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">apiVersion</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">apps/v1</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">kind</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">Deployment</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">metadata</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">namespace</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">karpenter</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline"></span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">  </span><span style="color:#204a87;font-weight:bold">template</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">    </span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span><span style="color:#204a87;font-weight:bold">containers</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">      </span>- <span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">controller</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span><span style="color:#204a87;font-weight:bold">env</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">        </span>- <span style="color:#204a87;font-weight:bold">name</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">LOG_LEVEL</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">          </span><span style="color:#204a87;font-weight:bold">value</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline"> </span><span style="color:#000">debug</span><span style="color:#f8f8f8;text-decoration:underline">
-</span></span></span></code></pre></div><h2 id="getting-help">Getting Help</h2>
-<h3 id="collecting-debug-information">Collecting Debug Information</h3>
-<p>When reporting issues, include:</p>
-<ol>
-<li><strong>Karpenter version and configuration</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get deployment karpenter -n karpenter -o yaml
-</span></span></code></pre></div><ol start="2">
-<li><strong>NodePool and AKSNodeClass configuration</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get nodepool,aksnodeclass -o yaml
-</span></span></code></pre></div><ol start="3">
-<li><strong>Recent events and logs</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get events --sort-by<span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#39;.lastTimestamp&#39;</span> <span style="color:#000;font-weight:bold">|</span> tail -50
-</span></span><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter --tail<span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#0000cf;font-weight:bold">100</span>
-</span></span></code></pre></div><ol start="4">
-<li><strong>Cluster information</strong>:</li>
-</ol>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl version
-</span></span><span style="display:flex;"><span>az aks show --resource-group &lt;rg&gt; --name &lt;cluster-name&gt;
-</span></span></code></pre></div><h3 id="community-resources">Community Resources</h3>
+<h2 id="community-resources">Community Resources</h2>
 <ul>
 <li><a href="https://github.com/Azure/karpenter-provider-azure/issues">GitHub Issues</a></li>
 <li><a href="https://kubernetes.slack.com/channels/azure-provider">Kubernetes Slack #azure-provider</a></li>
