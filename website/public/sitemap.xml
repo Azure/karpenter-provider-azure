@@ -2,42 +2,42 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>/docs/concepts/nodepools/</loc>
+    <loc>//localhost:1313/docs/concepts/nodepools/</loc>
   </url><url>
-    <loc>/docs/concepts/nodeclasses/</loc>
+    <loc>//localhost:1313/docs/concepts/nodeclasses/</loc>
   </url><url>
-    <loc>/docs/concepts/scheduling/</loc>
+    <loc>//localhost:1313/docs/concepts/scheduling/</loc>
   </url><url>
-    <loc>/docs/concepts/disruption/</loc>
+    <loc>//localhost:1313/docs/concepts/disruption/</loc>
   </url><url>
-    <loc>/docs/reference/settings/</loc>
+    <loc>//localhost:1313/docs/reference/settings/</loc>
   </url><url>
-    <loc>/docs/reference/custom-networking/</loc>
+    <loc>//localhost:1313/docs/reference/custom-networking/</loc>
   </url><url>
-    <loc>/docs/reference/instance-types/</loc>
+    <loc>//localhost:1313/docs/reference/instance-types/</loc>
   </url><url>
-    <loc>/docs/reference/metrics/</loc>
+    <loc>//localhost:1313/docs/reference/metrics/</loc>
   </url><url>
-    <loc>/docs/getting-started/</loc>
+    <loc>//localhost:1313/docs/getting-started/</loc>
   </url><url>
-    <loc>/docs/getting-started/quickstart/</loc>
+    <loc>//localhost:1313/docs/getting-started/quickstart/</loc>
   </url><url>
-    <loc>/docs/concepts/</loc>
+    <loc>//localhost:1313/docs/concepts/</loc>
   </url><url>
-    <loc>/docs/</loc>
+    <loc>//localhost:1313/docs/</loc>
   </url><url>
-    <loc>/docs/reference/nodepool-examples/</loc>
+    <loc>//localhost:1313/docs/reference/nodepool-examples/</loc>
   </url><url>
-    <loc>/docs/concepts/nap-vs-self-hosted/</loc>
+    <loc>//localhost:1313/docs/concepts/nap-vs-self-hosted/</loc>
   </url><url>
-    <loc>/docs/reference/</loc>
+    <loc>//localhost:1313/docs/reference/</loc>
   </url><url>
-    <loc>/docs/faq/</loc>
+    <loc>//localhost:1313/docs/faq/</loc>
   </url><url>
-    <loc>/docs/troubleshooting/</loc>
+    <loc>//localhost:1313/docs/troubleshooting/</loc>
   </url><url>
-    <loc>/docs/reference/nodepools/</loc>
+    <loc>//localhost:1313/docs/reference/nodepools/</loc>
   </url><url>
-    <loc>/</loc>
+    <loc>//localhost:1313/</loc>
   </url>
 </urlset>

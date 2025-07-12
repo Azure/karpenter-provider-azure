@@ -1,6 +1,6 @@
 <!doctype html>
 <html itemscope itemtype="http://schema.org/WebPage" lang="en" class="no-js">
-  <head>
+  <head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
     <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="generator" content="Hugo 0.145.0">
@@ -11,18 +11,18 @@
 <meta name="description" content="Frequently asked questions about Karpenter for Azure
 ">
 
-<meta property="og:url" content="/docs/faq/">
+<meta property="og:url" content="//localhost:1313/docs/faq/">
   <meta property="og:site_name" content="Karpenter for Azure">
   <meta property="og:title" content="FAQ">
   <meta property="og:description" content="Frequently asked questions about Karpenter for Azure">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="docs">
-    <meta property="og:image" content="/banner.png">
+    <meta property="og:image" content="//localhost:1313/banner.png">
 
 
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="/banner.png">
+  <meta name="twitter:image" content="//localhost:1313/banner.png">
   <meta name="twitter:title" content="FAQ">
   <meta name="twitter:description" content="Frequently asked questions about Karpenter for Azure">
 
@@ -30,8 +30,8 @@
 
 
 
-<link rel="preload" href="/scss/main.min.8d85b8b2feb2d1d5dd41ddf8b0a8e8b797d8f8becf784ef5a5a5f407c81415fb.css" as="style">
-<link href="/scss/main.min.8d85b8b2feb2d1d5dd41ddf8b0a8e8b797d8f8becf784ef5a5a5f407c81415fb.css" rel="stylesheet" integrity="">
+
+<link href="/scss/main.css" rel="stylesheet">
 
 
   </head>
@@ -205,7 +205,6 @@
     <li><a href="#node-management">Node Management</a>
       <ul>
         <li><a href="#which-azure-vm-sizes-does-karpenter-support">Which Azure VM sizes does Karpenter support?</a></li>
-        <li><a href="#can-i-use-custom-vm-images-with-karpenter">Can I use custom VM images with Karpenter?</a></li>
         <li><a href="#how-does-karpenter-handle-spot-vms">How does Karpenter handle spot VMs?</a></li>
         <li><a href="#can-i-mix-spot-and-regular-vms-in-the-same-nodepool">Can I mix spot and regular VMs in the same NodePool?</a></li>
       </ul>
@@ -219,7 +218,6 @@
     </li>
     <li><a href="#scaling-and-performance">Scaling and Performance</a>
       <ul>
-        <li><a href="#how-fast-can-karpenter-provision-new-nodes">How fast can Karpenter provision new nodes?</a></li>
         <li><a href="#whats-the-maximum-number-of-nodes-karpenter-can-manage">What&rsquo;s the maximum number of nodes Karpenter can manage?</a></li>
         <li><a href="#how-does-karpenter-decide-which-nodes-to-terminate">How does Karpenter decide which nodes to terminate?</a></li>
       </ul>
@@ -240,7 +238,6 @@
     </li>
     <li><a href="#integration-and-compatibility">Integration and Compatibility</a>
       <ul>
-        <li><a href="#can-i-use-karpenter-with-azure-container-instances-aci">Can I use Karpenter with Azure Container Instances (ACI)?</a></li>
         <li><a href="#does-karpenter-work-with-azure-policy">Does Karpenter work with Azure Policy?</a></li>
         <li><a href="#can-i-use-karpenter-with-gitops-tools">Can I use Karpenter with GitOps tools?</a></li>
         <li><a href="#does-karpenter-support-windows-nodes">Does Karpenter support Windows nodes?</a></li>
@@ -269,10 +266,10 @@
             <nav aria-label="breadcrumb" class="td-breadcrumbs">
   <ol class="breadcrumb">
   <li class="breadcrumb-item">
-    <a href="/docs/">Docs</a>
+    <a href="//localhost:1313/docs/">Docs</a>
   </li>
   <li class="breadcrumb-item active" aria-current="page">
-    <a href="/docs/faq/" aria-disabled="true" class="btn-link disabled">FAQ</a>
+    <a href="//localhost:1313/docs/faq/" aria-disabled="true" class="btn-link disabled">FAQ</a>
   </li>
   </ol>
 </nav>
@@ -311,9 +308,9 @@
 <li>Access spot VM pricing information</li>
 </ul>
 <h3 id="can-i-use-karpenter-with-existing-aks-clusters">Can I use Karpenter with existing AKS clusters?</h3>
-<p>Yes, Karpenter can be installed on existing AKS clusters. However, ensure you understand how it will interact with existing autoscaling solutions to avoid conflicts.</p>
+<p>Yes, Karpenter can be installed on existing AKS clusters. However, ensure you disable cluster autoscaler and understand how it will interact with existing autoscaling solutions to avoid conflicts.</p>
 <h3 id="do-i-need-to-remove-cluster-autoscaler-before-installing-karpenter">Do I need to remove Cluster Autoscaler before installing Karpenter?</h3>
-<p>It&rsquo;s recommended to remove or disable Cluster Autoscaler to avoid conflicts, though they can coexist if configured to manage different nodes.</p>
+<p>It&rsquo;s recommended to remove or disable Cluster Autoscaler to avoid conflicts. Eventually our team may support this path but for now its blocked.</p>
 <h2 id="node-management">Node Management</h2>
 <h3 id="which-azure-vm-sizes-does-karpenter-support">Which Azure VM sizes does Karpenter support?</h3>
 <p>Karpenter supports most Azure VM sizes that are:</p>
@@ -323,8 +320,6 @@
 <li>Support standard Azure managed disks</li>
 <li>Are available in your region and availability zones</li>
 </ul>
-<h3 id="can-i-use-custom-vm-images-with-karpenter">Can I use custom VM images with Karpenter?</h3>
-<p>Yes, you can specify custom VM images through the <code>AKSNodeClass</code> configuration. Custom images must include the necessary AKS components and configurations.</p>
 <h3 id="how-does-karpenter-handle-spot-vms">How does Karpenter handle spot VMs?</h3>
 <p>Karpenter supports Azure Spot VMs for cost savings. When using spot instances, be aware that they may be reclaimed by Azure when capacity is needed elsewhere.</p>
 <h3 id="can-i-mix-spot-and-regular-vms-in-the-same-nodepool">Can I mix spot and regular VMs in the same NodePool?</h3>
@@ -335,22 +330,13 @@
 <ul>
 <li>Azure CNI with subnet IP allocation</li>
 <li>Azure CNI with overlay networking</li>
-<li>kubenet networking</li>
 <li>Custom VNet configurations</li>
 </ul>
 <h3 id="how-does-karpenter-handle-network-security-groups">How does Karpenter handle network security groups?</h3>
 <p>Karpenter uses the network security groups configured for your AKS cluster. It doesn&rsquo;t create or modify NSG rules.</p>
 <h3 id="can-i-use-private-aks-clusters-with-karpenter">Can I use private AKS clusters with Karpenter?</h3>
-<p>Yes, Karpenter works with private AKS clusters. Ensure the Karpenter controller can reach Azure APIs through private endpoints or NAT gateway.</p>
+<p>Karpenter should work with private AKS clusters but has limited testing, so use at your own discretion. Ensure the Karpenter controller can reach Azure APIs through private endpoints or NAT gateway.</p>
 <h2 id="scaling-and-performance">Scaling and Performance</h2>
-<h3 id="how-fast-can-karpenter-provision-new-nodes">How fast can Karpenter provision new nodes?</h3>
-<p>Typical node provisioning times:</p>
-<ul>
-<li>Spot VMs: <TODO></li>
-<li>Regular VMs: 45-90 seconds</li>
-<li>GPU VMs: 60-120 seconds</li>
-</ul>
-<p>Actual times depend on VM size, region, and current Azure capacity.</p>
 <h3 id="whats-the-maximum-number-of-nodes-karpenter-can-manage">What&rsquo;s the maximum number of nodes Karpenter can manage?</h3>
 <p>Karpenter can manage thousands of nodes, but practical limits depend on:</p>
 <ul>
@@ -387,14 +373,15 @@
 <h3 id="how-can-i-debug-karpenter-issues">How can I debug Karpenter issues?</h3>
 <ol>
 <li>
-<p>Check Karpenter controller logs:</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl logs -n karpenter deployment/karpenter -f
-</span></span></code></pre></div></li>
-<li>
 <p>Examine NodePool and AKSNodeClass status:</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl describe nodepool &lt;name&gt;
 </span></span><span style="display:flex;"><span>kubectl describe aksnodeclass &lt;name&gt;
 </span></span></code></pre></div></li>
+<li>
+<p>Check NodeClaim status for provisioning failures:</p>
+<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl describe nodeclaim &lt;name&gt;
+</span></span></code></pre></div><p>Note: The NodeClaim messages sometimes contain details about why previous provisioning attempts failed.</p>
+</li>
 <li>
 <p>Review node and pod events:</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl get events --sort-by<span style="color:#ce5c00;font-weight:bold">=</span><span style="color:#4e9a06">&#39;.lastTimestamp&#39;</span>
@@ -410,7 +397,7 @@
 <li>Better bin packing efficiency</li>
 </ul>
 <h3 id="does-karpenter-support-azure-reserved-instances">Does Karpenter support Azure Reserved Instances?</h3>
-<p>Karpenter can provision VMs that benefit from Reserved Instance pricing, but it doesn&rsquo;t directly manage reservations. Purchase reservations for your expected baseline capacity.</p>
+<p>Karpenter can provision VMs that benefit from Reserved Instance pricing, but it doesn&rsquo;t directly manage reservations. Purchase reservations for your expected baseline capacity. You can configure a NodePool with higher weights and only the instance types from the reserved instances until you hit quota limits, then once that NodePool&rsquo;s instance types are exhausted it will fall back onto on-demand.</p>
 <h3 id="how-can-i-optimize-costs-with-karpenter">How can I optimize costs with Karpenter?</h3>
 <ul>
 <li>Use spot instances for fault-tolerant workloads</li>
@@ -420,14 +407,12 @@
 <li>Monitor and tune your NodePool configurations</li>
 </ul>
 <h2 id="integration-and-compatibility">Integration and Compatibility</h2>
-<h3 id="can-i-use-karpenter-with-azure-container-instances-aci">Can I use Karpenter with Azure Container Instances (ACI)?</h3>
-<p>Karpenter manages VM-based nodes only. For serverless containers, consider using AKS virtual nodes with ACI alongside Karpenter.</p>
 <h3 id="does-karpenter-work-with-azure-policy">Does Karpenter work with Azure Policy?</h3>
 <p>Yes, VMs provisioned by Karpenter are subject to Azure Policy rules applied to the resource group and subscription.</p>
 <h3 id="can-i-use-karpenter-with-gitops-tools">Can I use Karpenter with GitOps tools?</h3>
 <p>Yes, Karpenter resources (NodePools, AKSNodeClasses) can be managed through GitOps tools like ArgoCD or Flux.</p>
 <h3 id="does-karpenter-support-windows-nodes">Does Karpenter support Windows nodes?</h3>
-<p>Karpenter primarily focuses on Linux nodes. Windows node support may be considered for future releases.</p>
+<p>Karpenter primarily focuses on Linux nodes. Windows node support is estimated to be ready by the end of 2025.</p>
 <h2 id="getting-help">Getting Help</h2>
 <h3 id="where-can-i-find-more-information">Where can I find more information?</h3>
 <ul>
@@ -444,7 +429,7 @@
 <li>Relevant logs and error messages</li>
 </ul>
 <h3 id="is-there-commercial-support-available">Is there commercial support available?</h3>
-<p>Karpenter for Azure is an open-source project. Commercial support may be available through Azure support channels or third-party vendors.</p>
+<p>Yes, commercial support is offered through Azure support channels, so long as you are using the managed offering NAP rather than self hosted.</p>
 
 	
 	
@@ -504,7 +489,7 @@
 
     </div>
     
-  <script src="/js/main.min.bffcbd864f145da81ab1ddd55cf7bd327fce8e19cd5f26dfbf1b53e954491998.js" integrity="sha256-v/y9hk8UXagasd3VXPe9Mn/OjhnNXybfvxtT6VRJGZg=" crossorigin="anonymous"></script>
+  <script src="/js/main.js"></script>
 <script src='/js/prism.js'></script>
 <script src='/js/tabpane-persist.js'></script>
 
