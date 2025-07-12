@@ -69,7 +69,7 @@ The `--node-provisioning-default-pools` flag controls which default Karpenter No
 - **`None`**: No default NodePools are created - you must define your own
 
 {{% alert title="Warning" color="warning" %}}
-**Changing from Auto to None**: If you change this setting from `Auto` to `None` on an existing cluster, the default NodePools will be deleted, causing associated nodes to be drained and removed. Ensure you have alternative NodePools ready before making this change.
+**Changing from Auto to None**: If you change this setting from `Auto` to `None` on an existing cluster, the default NodePools aren't deleted by default.
 {{% /alert %}}
 
 Get cluster credentials:
