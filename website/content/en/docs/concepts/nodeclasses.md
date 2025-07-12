@@ -82,27 +82,13 @@ Refer to the [NodePool docs]({{<ref "./nodepools" >}}) for settings applicable t
 
 ## spec.imageFamily
 
-ImageFamily is an optional field that dictates the default VM image and bootstrapping logic for nodes provisioned through this `AKSNodeClass`. Currently, Karpenter supports `imageFamily` values `Ubuntu2204` and `AzureLinux`. If not specified, the default is `Ubuntu2204`. GPUs are supported with both image families on compatible VM sizes.
+ImageFamily is an optional field that dictates the default VM image and bootstrapping logic for nodes provisioned through this `AKSNodeClass`. If not specified, the default is `Ubuntu2204`. GPUs are supported with both image families on compatible VM sizes.
 
-### Ubuntu2204
+Karpenter supports two image family values:
 
-Ubuntu 22.04 is the default image family for AKS nodes. It provides a well-tested, stable foundation for Kubernetes workloads with full GPU support.
+- **`Ubuntu2204`** - [Ubuntu 22.04 LTS](https://learn.microsoft.com/en-us/azure/aks/cluster-configuration) is the default Linux distribution for AKS nodes.
 
-```bash
-#!/bin/bash
-# AKS Bootstrap Script for Ubuntu 22.04
-/opt/azure/containers/provision_source.sh
-```
-
-### AzureLinux
-
-Azure Linux is Microsoft's optimized Linux distribution designed specifically for Azure workloads. It provides improved performance and security for containerized applications.
-
-```bash
-#!/bin/bash
-# AKS Bootstrap Script for Azure Linux
-/opt/azure/containers/provision_source.sh
-```
+- **`AzureLinux`** - [Azure Linux](https://learn.microsoft.com/en-us/azure/aks/cluster-configuration) is Microsoft's alternative Linux distribution for AKS workloads.
 
 ## spec.vnetSubnetID
 

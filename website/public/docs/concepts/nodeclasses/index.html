@@ -184,12 +184,7 @@
             <div class="td-toc">
         <nav id="TableOfContents">
   <ul>
-    <li><a href="#specimagefamily">spec.imageFamily</a>
-      <ul>
-        <li><a href="#ubuntu2204">Ubuntu2204</a></li>
-        <li><a href="#azurelinux">AzureLinux</a></li>
-      </ul>
-    </li>
+    <li><a href="#specimagefamily">spec.imageFamily</a></li>
     <li><a href="#specvnetsubnetid">spec.vnetSubnetID</a>
       <ul>
         <li><a href="#default-subnet-behavior">Default Subnet Behavior</a></li>
@@ -320,18 +315,17 @@ Multiple NodePools may point to the same AKSNodeClass.</p>
 </span></span></span><span style="display:flex;"><span><span style="color:#f8f8f8;text-decoration:underline">            </span>- <span style="color:#000">arm64</span><span style="color:#f8f8f8;text-decoration:underline">
 </span></span></span></code></pre></div><p>Refer to the <a href="//localhost:1313/docs/concepts/nodepools/">NodePool docs</a> for settings applicable to all providers. To explore various <code>AKSNodeClass</code> configurations, refer to the examples provided <a href="https://github.com/Azure/karpenter-provider-azure/tree/main/examples/">in the Karpenter GitHub repository</a>.</p>
 <h2 id="specimagefamily">spec.imageFamily</h2>
-<p>ImageFamily is an optional field that dictates the default VM image and bootstrapping logic for nodes provisioned through this <code>AKSNodeClass</code>. Currently, Karpenter supports <code>imageFamily</code> values <code>Ubuntu2204</code> and <code>AzureLinux</code>. If not specified, the default is <code>Ubuntu2204</code>. GPUs are supported with both image families on compatible VM sizes.</p>
-<h3 id="ubuntu2204">Ubuntu2204</h3>
-<p>Ubuntu 22.04 is the default image family for AKS nodes. It provides a well-tested, stable foundation for Kubernetes workloads with full GPU support.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic">#!/bin/bash
-</span></span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"></span><span style="color:#8f5902;font-style:italic"># AKS Bootstrap Script for Ubuntu 22.04</span>
-</span></span><span style="display:flex;"><span>/opt/azure/containers/provision_source.sh
-</span></span></code></pre></div><h3 id="azurelinux">AzureLinux</h3>
-<p>Azure Linux is Microsoft&rsquo;s optimized Linux distribution designed specifically for Azure workloads. It provides improved performance and security for containerized applications.</p>
-<div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic">#!/bin/bash
-</span></span></span><span style="display:flex;"><span><span style="color:#8f5902;font-style:italic"></span><span style="color:#8f5902;font-style:italic"># AKS Bootstrap Script for Azure Linux</span>
-</span></span><span style="display:flex;"><span>/opt/azure/containers/provision_source.sh
-</span></span></code></pre></div><h2 id="specvnetsubnetid">spec.vnetSubnetID</h2>
+<p>ImageFamily is an optional field that dictates the default VM image and bootstrapping logic for nodes provisioned through this <code>AKSNodeClass</code>. If not specified, the default is <code>Ubuntu2204</code>. GPUs are supported with both image families on compatible VM sizes.</p>
+<p>Karpenter supports two image family values:</p>
+<ul>
+<li>
+<p><strong><code>Ubuntu2204</code></strong> - <a href="https://learn.microsoft.com/en-us/azure/aks/cluster-configuration">Ubuntu 22.04 LTS</a> is the default Linux distribution for AKS nodes.</p>
+</li>
+<li>
+<p><strong><code>AzureLinux</code></strong> - <a href="https://learn.microsoft.com/en-us/azure/aks/cluster-configuration">Azure Linux</a> is Microsoft&rsquo;s alternative Linux distribution for AKS workloads.</p>
+</li>
+</ul>
+<h2 id="specvnetsubnetid">spec.vnetSubnetID</h2>
 <p>The <code>vnetSubnetID</code> field specifies which Azure Virtual Network subnet should be used for provisioning node network interfaces. This field is optional; if not specified, Karpenter will use the default subnet configured in the Karpenter installation.</p>
 <p>The subnet ID must be in the full Azure Resource Manager format:</p>
 <pre tabindex="0"><code>/subscriptions/{subscription-id}/resourceGroups/{resource-group}/providers/Microsoft.Network/virtualNetworks/{vnet-name}/subnets/{subnet-name}
