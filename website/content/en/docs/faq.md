@@ -32,10 +32,10 @@ Karpenter requires permissions to:
 - Access spot VM pricing information
 
 ### Can I use Karpenter with existing AKS clusters?
-Yes, Karpenter can be installed on existing AKS clusters. However, ensure you understand how it will interact with existing autoscaling solutions to avoid conflicts.
+Yes, Karpenter can be installed on existing AKS clusters. However, ensure you disable cluster autoscaler and understand how it will interact with existing autoscaling solutions to avoid conflicts.
 
 ### Do I need to remove Cluster Autoscaler before installing Karpenter?
-It's recommended to remove or disable Cluster Autoscaler to avoid conflicts, though they can coexist if configured to manage different nodes.
+It's recommended to remove or disable Cluster Autoscaler to avoid conflicts. Eventually our team may support this path but for now its blocked.
 
 ## Node Management
 
@@ -46,8 +46,6 @@ Karpenter supports most Azure VM sizes that are:
 - Support standard Azure managed disks
 - Are available in your region and availability zones
 
-### Can I use custom VM images with Karpenter?
-Yes, you can specify custom VM images through the `AKSNodeClass` configuration. Custom images must include the necessary AKS components and configurations.
 
 ### How does Karpenter handle spot VMs?
 Karpenter supports Azure Spot VMs for cost savings. When using spot instances, be aware that they may be reclaimed by Azure when capacity is needed elsewhere.
@@ -61,24 +59,16 @@ Yes, you can specify both `spot` and `on-demand` in the capacity type requiremen
 Karpenter supports:
 - Azure CNI with subnet IP allocation
 - Azure CNI with overlay networking
-- kubenet networking
 - Custom VNet configurations
 
 ### How does Karpenter handle network security groups?
 Karpenter uses the network security groups configured for your AKS cluster. It doesn't create or modify NSG rules.
 
 ### Can I use private AKS clusters with Karpenter?
-Yes, Karpenter works with private AKS clusters. Ensure the Karpenter controller can reach Azure APIs through private endpoints or NAT gateway.
+Karpenter should work with private AKS clusters but has limited testing, so use at your own discretion. Ensure the Karpenter controller can reach Azure APIs through private endpoints or NAT gateway.
 
 ## Scaling and Performance
 
-### How fast can Karpenter provision new nodes?
-Typical node provisioning times:
-- Spot VMs: <TODO> 
-- Regular VMs: 45-90 seconds
-- GPU VMs: 60-120 seconds
-
-Actual times depend on VM size, region, and current Azure capacity.
 
 ### What's the maximum number of nodes Karpenter can manage?
 Karpenter can manage thousands of nodes, but practical limits depend on:
@@ -112,16 +102,17 @@ Possible causes:
 - Nodes marked with `do-not-disrupt` annotation
 
 ### How can I debug Karpenter issues?
-1. Check Karpenter controller logs:
-   ```bash
-   kubectl logs -n karpenter deployment/karpenter -f
-   ```
-
-2. Examine NodePool and AKSNodeClass status:
+1. Examine NodePool and AKSNodeClass status:
    ```bash
    kubectl describe nodepool <name>
    kubectl describe aksnodeclass <name>
    ```
+
+2. Check NodeClaim status for provisioning failures:
+   ```bash
+   kubectl describe nodeclaim <name>
+   ```
+   Note: The NodeClaim messages sometimes contain details about why previous provisioning attempts failed.
 
 3. Review node and pod events:
    ```bash
@@ -138,7 +129,7 @@ Savings vary by workload but typically range from 20-60% through:
 - Better bin packing efficiency
 
 ### Does Karpenter support Azure Reserved Instances?
-Karpenter can provision VMs that benefit from Reserved Instance pricing, but it doesn't directly manage reservations. Purchase reservations for your expected baseline capacity.
+Karpenter can provision VMs that benefit from Reserved Instance pricing, but it doesn't directly manage reservations. Purchase reservations for your expected baseline capacity. You can configure a NodePool with higher weights and only the instance types from the reserved instances until you hit quota limits, then once that NodePool's instance types are exhausted it will fall back onto on-demand.
 
 ### How can I optimize costs with Karpenter?
 - Use spot instances for fault-tolerant workloads
@@ -149,8 +140,6 @@ Karpenter can provision VMs that benefit from Reserved Instance pricing, but it 
 
 ## Integration and Compatibility
 
-### Can I use Karpenter with Azure Container Instances (ACI)?
-Karpenter manages VM-based nodes only. For serverless containers, consider using AKS virtual nodes with ACI alongside Karpenter.
 
 ### Does Karpenter work with Azure Policy?
 Yes, VMs provisioned by Karpenter are subject to Azure Policy rules applied to the resource group and subscription.
@@ -159,7 +148,7 @@ Yes, VMs provisioned by Karpenter are subject to Azure Policy rules applied to t
 Yes, Karpenter resources (NodePools, AKSNodeClasses) can be managed through GitOps tools like ArgoCD or Flux.
 
 ### Does Karpenter support Windows nodes?
-Karpenter primarily focuses on Linux nodes. Windows node support may be considered for future releases.
+Karpenter primarily focuses on Linux nodes. Windows node support is estimated to be ready by the end of 2025.
 
 ## Getting Help
 
@@ -176,4 +165,4 @@ Create an issue in the [GitHub repository](https://github.com/Azure/karpenter-pr
 - Relevant logs and error messages
 
 ### Is there commercial support available?
-Karpenter for Azure is an open-source project. Commercial support may be available through Azure support channels or third-party vendors.
+Yes, commercial support is offered through Azure support channels, so long as you are using the managed offering NAP rather than self hosted.
