@@ -60,12 +60,22 @@ Karpenter supports:
 - Azure CNI with subnet IP allocation
 - Azure CNI with overlay networking
 - Custom VNet configurations
+- Bring Your Own CNI (BYO CNI) configurations
 
 ### How does Karpenter handle network security groups?
 Karpenter uses the network security groups configured for your AKS cluster. It doesn't create or modify NSG rules.
 
 ### Can I use private AKS clusters with Karpenter?
 Karpenter should work with private AKS clusters but has limited testing, so use at your own discretion. Ensure the Karpenter controller can reach Azure APIs through private endpoints or NAT gateway.
+
+### What is the support policy for Bring Your Own CNI (BYO CNI)?
+Karpenter supports BYO CNI configurations following the same support policy as AKS:
+
+**Supported**: Karpenter-specific issues when using BYO CNI (node provisioning, scaling, lifecycle management)
+
+**Not Supported**: CNI-specific networking issues, configuration problems, or troubleshooting third-party CNI plugins
+
+If you encounter networking issues while using BYO CNI, first determine whether the problem is Karpenter-specific or CNI-related. For CNI-specific issues, contact your CNI vendor or community support channels. For Karpenter integration issues, contact Karpenter support.
 
 ## Scaling and Performance
 
