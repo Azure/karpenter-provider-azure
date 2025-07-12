@@ -16,34 +16,43 @@ This guide covers common issues you might encounter when using Karpenter for Azu
 
 **Debugging Steps**:
 
-1. **Check node bootstrap logs**:
+1. **Debug bootstrap by connecting to a Karpenter node**:
 ```bash
-# SSH to the node and check logs
-journalctl -u kubelet -f
+# Create a debug pod on an existing node with SSH client
+JUMP_NODE=$(kubectl get nodes -o name | head -n 1)
+JUMP_POD=$(kubectl debug $JUMP_NODE --image kroniak/ssh-client -- sh -c "mkdir /root/.ssh; sleep 1h" | cut -d' ' -f4)
+kubectl wait --for=condition=Ready pod/$JUMP_POD
+
+# Copy your SSH key to the debug pod
+kubectl cp ~/.ssh/id_rsa $JUMP_POD:/root/.ssh/id_rsa
+
+# Get the private IP of the first Karpenter-managed node
+NODE_IP=$(az network nic list -g MC_${AZURE_RESOURCE_GROUP}_${AZURE_CLUSTER_NAME}_${AZURE_LOCATION} \
+  --query '[?tags."karpenter.azure.com_cluster"]|[0].ipConfigurations[0].privateIPAddress' -o tsv)
+
+# SSH to the Karpenter node
+kubectl exec $JUMP_POD -it -- ssh -o StrictHostKeyChecking=accept-new azureuser@$NODE_IP
 ```
 
-2. **Verify cluster connectivity**:
+2. **Check node bootstrap logs**:
+```bash
+journalctl -u kubelet.service  
+cat /var/log/azure/aks/cluster-provision.log # has logs from the initial node bootstrapping, should contain clear errors 
+cat /var/log/azure/aks/cluster-provision-cse-output.log
+cat /var/log/syslog | grep containerd
+```
+
+3. **Verify cluster connectivity**:
 ```bash
 # Test connectivity to API server
 curl -k https://<cluster-endpoint>:443
 ```
-
-3. **Check AKS cluster status**:
-```bash
-az aks show --resource-group <rg> --name <cluster-name> --query "powerState"
-```
+4. Validate NSG Rules don't block any required binaries AKS is trying to pull
 
 **Common Causes**:
-- Incorrect cluster endpoint or CA bundle
 - Network connectivity issues
-- Authentication problems
-- Wrong AKS node image
-
-**Solutions**:
-- Verify CLUSTER_ENDPOINT and CLUSTER_CA_BUNDLE settings
-- Check network connectivity from node subnet to AKS
-- Ensure proper managed identity configuration
-- Verify image family in AKSNodeClass
+- Authentication problems with the bootstrap token
+- Broken AKS Node image
 
 
 ### Nodes Not Being Removed
@@ -100,6 +109,58 @@ kubectl exec -it <pod-name> -- nslookup kubernetes.default
 ```bash
 kubectl get pods -n kube-system | grep -E "azure-cni|kube-proxy"
 ```
+3. **If using azure cni with overlay or cilium** 
+Validate your nodes have these labels 
+
+```
+    kubernetes.azure.com/azure-cni-overlay: "true"
+    kubernetes.azure.com/network-name: aks-vnet-<redacted>
+    kubernetes.azure.com/network-resourcegroup: <redacted>
+    kubernetes.azure.com/network-subscription: <redacted>
+```
+
+4. **Validate the CNI configuration files**
+
+The CNI conflist files define network plugin configurations. Check which files are present:
+
+```bash
+# List CNI configuration files
+ls -la /etc/cni/net.d/
+
+# Example output:
+# 10-azure.conflist   15-azure-swift-overlay.conflist
+```
+
+**Understanding conflist files**:
+- `10-azure.conflist`: Standard Azure CNI configuration for traditional networking with node subnet
+- `15-azure-swift-overlay.conflist`: Azure CNI with overlay networking (used with Cilium or overlay mode)
+
+**Inspect the configuration content**:
+```bash
+# Check the actual CNI configuration
+cat /etc/cni/net.d/*.conflist
+
+# Look for key fields:
+# - "type": should be "azure-vnet" for Azure CNI
+# - "mode": "bridge" for standard, "transparent" for overlay
+# - "ipam": IP address management configuration
+```
+
+**Common conflist issues**:
+- Missing or corrupted configuration files
+- Incorrect network mode for your cluster setup
+- Mismatched IPAM configuration
+- Wrong plugin order in the configuration chain
+
+5. **Check CNI to CNS communication**:
+```bash
+# Check CNS logs for IP allocation requests from CNI
+kubectl logs -n kube-system -l k8s-app=azure-cns --tail=100
+```
+
+**CNI to CNS Troubleshooting**:
+- **If CNS logs show "no IPs available"**: This indicates a CNS or aks's watch on the NNCs.
+- **If CNI calls don't appear in CNS logs**: You likely have the wrong CNI installed. Verify the correct CNI plugin is deployed.
 
 **Common Causes**:
 - Network security group rules
@@ -112,6 +173,77 @@ kubectl get pods -n kube-system | grep -E "azure-cni|kube-proxy"
 - Verify subnet configuration in AKSNodeClass
 - Restart CNI plugin pods
 - Check CoreDNS configuration
+
+### DNS Service IP Issues
+
+**Note**: The `--dns-service-ip` parameter is only supported for NAP (Node Auto Provisioning) clusters and is not available for self-hosted Karpenter installations.
+
+**Symptoms**: Pods can't resolve DNS names or kubelet fails to register with API server due to DNS resolution failures.
+
+**Debugging Steps**:
+
+1. **Check kubelet DNS configuration**:
+```bash
+# SSH to the Karpenter node and check kubelet config
+sudo cat /var/lib/kubelet/config.yaml | grep -A 5 clusterDNS
+
+# Expected output should show the correct DNS service IP
+# clusterDNS:
+# - "10.0.0.10"  # This should match your cluster's DNS service IP
+```
+
+2. **Verify DNS service IP matches cluster configuration**:
+```bash
+# Get the actual DNS service IP from your cluster
+kubectl get service -n kube-system kube-dns -o jsonpath='{.spec.clusterIP}'
+
+# Compare with what AKS reports
+az aks show --resource-group <rg> --name <cluster-name> --query "networkProfile.dnsServiceIp" -o tsv
+```
+
+3. **Test DNS resolution from the node**:
+```bash
+# SSH to the Karpenter node and test DNS resolution
+# Test using the DNS service IP directly
+dig @10.0.0.10 kubernetes.default.svc.cluster.local
+
+# Test using system resolver
+nslookup kubernetes.default.svc.cluster.local
+
+# Test external DNS resolution
+dig google.com
+```
+
+4. **Check DNS pods status**:
+```bash
+# Verify CoreDNS pods are running
+kubectl get pods -n kube-system -l k8s-app=kube-dns
+
+# Check CoreDNS logs for errors
+kubectl logs -n kube-system -l k8s-app=kube-dns --tail=50
+```
+
+5. **Validate network connectivity to DNS service**:
+```bash
+# From the Karpenter node, test connectivity to DNS service
+telnet 10.0.0.10 53  # Replace with your actual DNS service IP
+# Or using nc if telnet is not available
+nc -zv 10.0.0.10 53
+```
+
+**Common Causes**:
+- Incorrect `--dns-service-ip` parameter in AKSNodeClass
+- DNS service IP not in the service CIDR range
+- Network connectivity issues between node and DNS service
+- CoreDNS pods not running or misconfigured
+- Firewall rules blocking DNS traffic
+
+**Solutions**:
+- Verify `--dns-service-ip` matches the actual DNS service: `kubectl get svc -n kube-system kube-dns -o jsonpath='{.spec.clusterIP}'`
+- Ensure DNS service IP is within the service CIDR range specified during cluster creation
+- Check that Karpenter nodes can reach the service subnet
+- Restart CoreDNS pods if they're in error state: `kubectl rollout restart deployment/coredns -n kube-system`
+- Verify NSG rules allow traffic on port 53 (TCP/UDP)
 
 ## Azure-Specific Issues
 
