@@ -1,12 +1,12 @@
 ---
-title: "Deployment Modes"
-linkTitle: "Deployment Modes" 
+title: "NAP vs Self-Hosted"
+linkTitle: "NAP vs Self-Hosted" 
 weight: 50
 description: >
-  Understanding Node Auto Provisioning (NAP) vs Self-hosted deployment modes
+  Understanding Node Auto Provisioning (NAP) vs Self-hosted deployment options
 ---
 
-Karpenter for Azure offers two distinct deployment modes to accommodate different user needs and preferences. Understanding these modes will help you choose the right approach for your AKS cluster.
+Karpenter for Azure offers two distinct deployment options to accommodate different user needs and preferences. Understanding these options will help you choose the right approach for your AKS cluster.
 
 ## Overview
 
