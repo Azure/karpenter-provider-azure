@@ -94,6 +94,17 @@ spec:
   vnetSubnetID: "/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet"
 ```
 
+### Default Subnet Behavior
+
+The `vnetSubnetID` field in AKSNodeClass is optional. When not specified, Karpenter automatically uses the default subnet configured during Karpenter installation via the `--vnet-subnet-id` CLI parameter or `VNET_SUBNET_ID` environment variable.
+
+This default subnet is typically the same subnet specified during AKS cluster creation with the `--vnet-subnet-id` flag in the `az aks create` command. This creates a fallback mechanism where:
+
+- **With vnetSubnetID specified**: Karpenter provisions nodes in the specified custom subnet
+- **Without vnetSubnetID specified**: Karpenter provisions nodes in the cluster's default subnet (from `--vnet-subnet-id`)
+
+This allows you to have a mix of NodeClasses - some using custom subnets for specific workloads, and others using the cluster's default subnet configuration.
+
 ## RBAC Configuration
 
 When using custom subnet configurations, Karpenter needs appropriate permissions to read subnet information and join nodes to the specified subnets. There are two recommended approaches for configuring these permissions.
@@ -388,3 +399,41 @@ Be aware of these potential conflicts:
 - **Plan for future expansion** with appropriately sized subnets
 - **Test configurations** in non-production environments first
 - **Monitor network utilization** and plan capacity accordingly
+
+## Bring Your Own CNI (BYO CNI) Support Policy
+
+Karpenter for Azure supports bring-your-own CNI configurations, following the same support policy as Azure Kubernetes Service (AKS).
+
+### Support Scope
+
+**Supported**: Karpenter-specific functionality and integration issues when using BYO CNI configurations.
+
+**Not Supported**: CNI-specific networking issues, configuration problems, or troubleshooting when using third-party CNI plugins.
+
+### Support Policy Details
+
+- **BYO CNI is supported** for use with Karpenter, but follows AKS BYO CNI support boundaries
+- **Networking issues** related to the CNI plugin itself are outside the scope of Karpenter support
+- **Karpenter-specific problems** (node provisioning, scaling, lifecycle management) will be supported regardless of CNI choice
+- **CNI configuration and troubleshooting** should be directed to the respective CNI vendor or community
+
+### When to Contact Support
+
+✅ **Contact Karpenter Support for**:
+- Node provisioning failures with BYO CNI
+- Karpenter controller issues when using custom CNI
+- Integration problems between Karpenter and CNI plugins
+- AKSNodeClass configuration issues
+
+❌ **Do NOT contact Karpenter Support for**:
+- CNI plugin installation or configuration problems
+- Network connectivity issues specific to the CNI
+- CNI plugin performance or feature issues
+- Troubleshooting CNI-specific networking behavior
+
+### Recommended Approach
+
+1. **Isolate the issue**: Determine if the problem is Karpenter-specific or CNI-related
+2. **Test with default Azure CNI**: If possible, reproduce the issue with standard Azure CNI to confirm scope
+3. **Check CNI documentation**: Consult your CNI vendor's documentation and support channels first
+4. **Contact appropriate support**: Use Karpenter support for Karpenter issues, CNI vendor support for CNI issues
