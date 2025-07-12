@@ -117,6 +117,17 @@ The subnet ID must be in the full Azure Resource Manager format:
 The specified subnet must be in the same region as your AKS cluster and must have sufficient IP addresses available for node provisioning. The subnet should also be configured with appropriate Network Security Group rules to allow cluster communication.
 {{% /alert %}}
 
+### Default Subnet Behavior
+
+The `vnetSubnetID` field in AKSNodeClass is optional. When not specified, Karpenter automatically uses the default subnet configured during Karpenter installation via the `--vnet-subnet-id` CLI parameter or `VNET_SUBNET_ID` environment variable.
+
+This default subnet is typically the same subnet specified during AKS cluster creation with the `--vnet-subnet-id` flag in the `az aks create` command. This creates a fallback mechanism where:
+
+- **With vnetSubnetID specified**: Karpenter provisions nodes in the specified custom subnet
+- **Without vnetSubnetID specified**: Karpenter provisions nodes in the cluster's default subnet (from `--vnet-subnet-id`)
+
+This allows you to have a mix of NodeClasses - some using custom subnets for specific workloads, and others using the cluster's default subnet configuration.
+
 ## spec.osDiskSizeGB
 
 The `osDiskSizeGB` field specifies the size of the OS disk in gigabytes. The default value is 128 GB, and the minimum value is 30 GB. This setting controls the root disk size for the VM instances.
