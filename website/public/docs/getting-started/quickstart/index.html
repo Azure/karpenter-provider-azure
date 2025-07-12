@@ -328,12 +328,15 @@
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">          operator: In
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">          values: [&#34;D&#34;]
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">      nodeClassRef:
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">        group: karpenter.azure.com
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">        kind: AKSNodeClass
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">        name: default
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">      expireAfter: Never
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  limits:
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    cpu: 100
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  disruption:
-</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    consolidationPolicy: WhenUnderutilized
-</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    expireAfter: Never
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    consolidationPolicy: WhenEmptyOrUnderutilized
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    consolidateAfter: 30s
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">---
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">apiVersion: karpenter.azure.com/v1beta1
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">kind: AKSNodeClass
@@ -468,12 +471,15 @@
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">          operator: In
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">          values: [D]
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">      nodeClassRef:
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">        group: karpenter.azure.com
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">        kind: AKSNodeClass
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">        name: default
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">      expireAfter: Never
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  limits:
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    cpu: 100
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">  disruption:
-</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    consolidationPolicy: WhenUnderutilized
-</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    expireAfter: Never
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    consolidationPolicy: WhenEmptyOrUnderutilized
+</span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">    consolidateAfter: 30s
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">---
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">apiVersion: karpenter.azure.com/v1beta1
 </span></span></span><span style="display:flex;"><span><span style="color:#4e9a06">kind: AKSNodeClass
