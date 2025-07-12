@@ -106,12 +106,15 @@ spec:
           operator: In
           values: ["D"]
       nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
         name: default
+      expireAfter: Never
   limits:
     cpu: 100
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: Never
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
 ---
 apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
@@ -309,12 +312,15 @@ spec:
           operator: In
           values: [D]
       nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
         name: default
+      expireAfter: Never
   limits:
     cpu: 100
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: Never
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
 ---
 apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass

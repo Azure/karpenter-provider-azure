@@ -38,14 +38,15 @@ spec:
           operator: In
           values: ["D"]
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: default
+      expireAfter: Never
   limits:
     cpu: 100
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: Never
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
 ```
 
 ### Cost-Optimized with Spot Instances
@@ -74,9 +75,9 @@ spec:
           values: ["D", "E", "F"]  # Multiple families for better availability
         - key: topology.kubernetes.io/zone
           operator: In
-          values: ["westus2-1", "westus2-2", "westus2-3"]  # All zones
+          values: ["0", "1", "2"]  # Update zones based on your region
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: default
       # Add toleration for spot instances
@@ -84,11 +85,12 @@ spec:
         - key: "spot-instance"
           value: "true"
           effect: NoSchedule
+      expireAfter: 2160h  # 90 days
   limits:
     cpu: 200
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: 2160h  # 90 days
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
   weight: 10  # Lower priority than on-demand pools
 ```
 
@@ -120,18 +122,19 @@ spec:
           operator: In
           values: ["on-demand"]
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: compute-nodeclass
       taints:
         - key: "compute-intensive"
           value: "true"
           effect: NoSchedule
+      expireAfter: Never
   limits:
     cpu: 500
   disruption:
     consolidationPolicy: WhenEmpty  # Don't consolidate active compute nodes
-    expireAfter: Never
+    consolidateAfter: 30s
   weight: 50  # High priority for matching workloads
 ```
 
@@ -166,7 +169,7 @@ spec:
           operator: In
           values: ["on-demand"]  # GPUs typically on-demand only
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: gpu-nodeclass
       taints:
@@ -177,11 +180,12 @@ spec:
         - key: "nvidia.com/gpu"
           value: "present"
           effect: NoSchedule
+      expireAfter: Never
   limits:
     cpu: 100
   disruption:
     consolidationPolicy: WhenEmpty
-    expireAfter: Never
+    consolidateAfter: 30s
   weight: 100  # Highest priority for GPU workloads
 ---
 apiVersion: karpenter.azure.com/v1beta1
@@ -221,7 +225,7 @@ spec:
           operator: In
           values: ["Standard_NC24rs_v3", "Standard_ND40rs_v2"]  # Specific multi-GPU SKUs
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: gpu-nodeclass
       taints:
@@ -263,18 +267,19 @@ spec:
           operator: In
           values: ["on-demand", "spot"]
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: memory-nodeclass
       taints:
         - key: "memory-intensive"
           value: "true"
           effect: NoSchedule
+      expireAfter: 720h  # 30 days
   limits:
     cpu: 200
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: 720h  # 30 days
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
 ---
 apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
@@ -315,13 +320,14 @@ spec:
           operator: In
           values: ["on-demand", "spot"]
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: default
   limits:
     cpu: 150
   disruption:
-    consolidationPolicy: WhenUnderutilized
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
   weight: 20
 ```
 
@@ -350,7 +356,7 @@ spec:
           operator: In
           values: ["D"]
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: default
   limits:
@@ -382,7 +388,7 @@ spec:
           operator: In
           values: ["D", "E"]
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: premium-storage-nodeclass
       taints:
@@ -420,7 +426,7 @@ spec:
           operator: In
           values: ["L"]  # Storage optimized
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: large-storage-nodeclass
 ---
@@ -460,7 +466,7 @@ spec:
           operator: In
           values: ["on-demand"]  # Only on-demand for security
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: secure-nodeclass
       taints:
@@ -509,52 +515,23 @@ spec:
           operator: Lt
           values: ["8"]  # Limit CPU for cost control
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: default
       taints:
         - key: "environment"
           value: "dev"
           effect: NoSchedule
+      expireAfter: 24h  # Aggressive expiration for cost savings
   limits:
     cpu: 20  # Lower limits for dev
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: 24h  # Aggressive expiration for cost savings
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
   weight: 5  # Low priority
 ```
 
 ## NAP-Specific Configurations
-
-### NAP with Node Image Pinning
-
-Pin specific node image versions in NAP:
-
-```yaml
-apiVersion: karpenter.sh/v1
-kind: NodePool
-metadata:
-  name: nap-pinned-image
-spec:
-  template:
-    spec:
-      requirements:
-        - key: karpenter.azure.com/sku-family
-          operator: In
-          values: ["D"]
-      nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
-        kind: AKSNodeClass
-        name: pinned-image-nodeclass
----
-apiVersion: karpenter.azure.com/v1beta1
-kind: AKSNodeClass
-metadata:
-  name: pinned-image-nodeclass
-spec:
-  imageFamily: Ubuntu2204
-  imageVersion: "202311.07.0"  # Pin to specific image version
-```
 
 ### NAP with Resource Limits
 
@@ -573,7 +550,7 @@ spec:
           operator: In
           values: ["D", "E"]
       nodeClassRef:
-        apiVersion: karpenter.azure.com/v1beta1
+        group: karpenter.azure.com
         kind: AKSNodeClass
         name: default
   limits:
@@ -656,16 +633,16 @@ Configure disruption based on workload characteristics:
 ```yaml
 disruption:
   # For stateless workloads
-  consolidationPolicy: WhenUnderutilized
-  expireAfter: 24h
+  consolidationPolicy: WhenEmptyOrUnderutilized
+  consolidateAfter: 30s
 
   # For stateful workloads  
   consolidationPolicy: WhenEmpty
-  expireAfter: Never
+  consolidateAfter: 30s
 
   # For batch workloads
-  consolidationPolicy: WhenUnderutilized
-  expireAfter: 1h
+  consolidationPolicy: WhenEmptyOrUnderutilized
+  consolidateAfter: 30s
 ```
 
 ## Troubleshooting NodePool Issues
