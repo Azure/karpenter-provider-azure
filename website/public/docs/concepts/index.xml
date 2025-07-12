@@ -514,6 +514,14 @@ Multiple NodePools may point to the same AKSNodeClass.&lt;/p&gt;
 
 &lt;/div&gt;
 
+&lt;h3 id=&#34;default-subnet-behavior&#34;&gt;Default Subnet Behavior&lt;/h3&gt;
+&lt;p&gt;The &lt;code&gt;vnetSubnetID&lt;/code&gt; field in AKSNodeClass is optional. When not specified, Karpenter automatically uses the default subnet configured during Karpenter installation via the &lt;code&gt;--vnet-subnet-id&lt;/code&gt; CLI parameter or &lt;code&gt;VNET_SUBNET_ID&lt;/code&gt; environment variable.&lt;/p&gt;
+&lt;p&gt;This default subnet is typically the same subnet specified during AKS cluster creation with the &lt;code&gt;--vnet-subnet-id&lt;/code&gt; flag in the &lt;code&gt;az aks create&lt;/code&gt; command. This creates a fallback mechanism where:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;With vnetSubnetID specified&lt;/strong&gt;: Karpenter provisions nodes in the specified custom subnet&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Without vnetSubnetID specified&lt;/strong&gt;: Karpenter provisions nodes in the cluster&amp;rsquo;s default subnet (from &lt;code&gt;--vnet-subnet-id&lt;/code&gt;)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;This allows you to have a mix of NodeClasses - some using custom subnets for specific workloads, and others using the cluster&amp;rsquo;s default subnet configuration.&lt;/p&gt;
 &lt;h2 id=&#34;specosdisksizegb&#34;&gt;spec.osDiskSizeGB&lt;/h2&gt;
 &lt;p&gt;The &lt;code&gt;osDiskSizeGB&lt;/code&gt; field specifies the size of the OS disk in gigabytes. The default value is 128 GB, and the minimum value is 30 GB. This setting controls the root disk size for the VM instances.&lt;/p&gt;
 &lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;&#34;&gt;&lt;code class=&#34;language-yaml&#34; data-lang=&#34;yaml&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;spec&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
@@ -1403,7 +1411,7 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
     </item>
     
     <item>
-      <title>Docs: Deployment Modes</title>
+      <title>Docs: NAP vs Self-Hosted</title>
       <link>//localhost:1313/docs/concepts/nap-vs-self-hosted/</link>
       <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
       
@@ -1411,7 +1419,7 @@ Follow the &lt;a href=&#34;https://kubernetes.io/docs/concepts/workloads/control
       <description>
         
         
-        &lt;p&gt;Karpenter for Azure offers two distinct deployment modes to accommodate different user needs and preferences. Understanding these modes will help you choose the right approach for your AKS cluster.&lt;/p&gt;
+        &lt;p&gt;Karpenter for Azure offers two distinct deployment options to accommodate different user needs and preferences. Understanding these options will help you choose the right approach for your AKS cluster.&lt;/p&gt;
 &lt;h2 id=&#34;overview&#34;&gt;Overview&lt;/h2&gt;
 &lt;p&gt;Karpenter provider for AKS can be deployed in two modes:&lt;/p&gt;
 &lt;ul&gt;

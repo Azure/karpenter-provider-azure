@@ -124,7 +124,7 @@
   
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsconceptsnap-vs-self-hosted-li">
   <input type="checkbox" id="m-docsconceptsnap-vs-self-hosted-check"/>
-  <label for="m-docsconceptsnap-vs-self-hosted-check"><a href="/docs/concepts/nap-vs-self-hosted/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsnap-vs-self-hosted"><span class="">Deployment Modes</span></a></label>
+  <label for="m-docsconceptsnap-vs-self-hosted-check"><a href="/docs/concepts/nap-vs-self-hosted/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsconceptsnap-vs-self-hosted"><span class="">NAP vs Self-Hosted</span></a></label>
   
 </li>
   </ul>
@@ -144,10 +144,6 @@
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferenceinstance-types-li">
   <input type="checkbox" id="m-docsreferenceinstance-types-check"/>
   <label for="m-docsreferenceinstance-types-check"><a href="/docs/reference/instance-types/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferenceinstance-types"><span class="">Instance Types</span></a></label>
-  
-</li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencemetrics-li">
-  <input type="checkbox" id="m-docsreferencemetrics-check"/>
-  <label for="m-docsreferencemetrics-check"><a href="/docs/reference/metrics/" class="align-left pl-0  td-sidebar-link td-sidebar-link__page" id="m-docsreferencemetrics"><span class="">Metrics</span></a></label>
   
 </li><li class="td-sidebar-nav__section-title td-sidebar-nav__section without-child" id="m-docsreferencenodepool-examples-li">
   <input type="checkbox" id="m-docsreferencenodepool-examples-check"/>
@@ -194,7 +190,11 @@
         <li><a href="#azurelinux">AzureLinux</a></li>
       </ul>
     </li>
-    <li><a href="#specvnetsubnetid">spec.vnetSubnetID</a></li>
+    <li><a href="#specvnetsubnetid">spec.vnetSubnetID</a>
+      <ul>
+        <li><a href="#default-subnet-behavior">Default Subnet Behavior</a></li>
+      </ul>
+    </li>
     <li><a href="#specosdisksizegb">spec.osDiskSizeGB</a></li>
     <li><a href="#specmaxpods">spec.maxPods</a></li>
     <li><a href="#speckubelet">spec.kubelet</a>
@@ -344,6 +344,14 @@ Multiple NodePools may point to the same AKSNodeClass.</p>
 
 </div>
 
+<h3 id="default-subnet-behavior">Default Subnet Behavior</h3>
+<p>The <code>vnetSubnetID</code> field in AKSNodeClass is optional. When not specified, Karpenter automatically uses the default subnet configured during Karpenter installation via the <code>--vnet-subnet-id</code> CLI parameter or <code>VNET_SUBNET_ID</code> environment variable.</p>
+<p>This default subnet is typically the same subnet specified during AKS cluster creation with the <code>--vnet-subnet-id</code> flag in the <code>az aks create</code> command. This creates a fallback mechanism where:</p>
+<ul>
+<li><strong>With vnetSubnetID specified</strong>: Karpenter provisions nodes in the specified custom subnet</li>
+<li><strong>Without vnetSubnetID specified</strong>: Karpenter provisions nodes in the cluster&rsquo;s default subnet (from <code>--vnet-subnet-id</code>)</li>
+</ul>
+<p>This allows you to have a mix of NodeClasses - some using custom subnets for specific workloads, and others using the cluster&rsquo;s default subnet configuration.</p>
 <h2 id="specosdisksizegb">spec.osDiskSizeGB</h2>
 <p>The <code>osDiskSizeGB</code> field specifies the size of the OS disk in gigabytes. The default value is 128 GB, and the minimum value is 30 GB. This setting controls the root disk size for the VM instances.</p>
 <div class="highlight"><pre tabindex="0" style="background-color:#f8f8f8;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#204a87;font-weight:bold">spec</span><span style="color:#000;font-weight:bold">:</span><span style="color:#f8f8f8;text-decoration:underline">
@@ -499,11 +507,6 @@ Multiple NodePools may point to the same AKSNodeClass.</p>
       
 <footer class="bg-dark py-5 row d-print-none">
   <div class="container-fluid mx-sm-5">
-    <div class="row">
-      <p class="mx-auto col-sm-3 text-center text-light">
-        Built with ❤️ at <a class="text-light" href="https://aws.amazon.com/">AWS</a>
-      </p>
-    </div>
     <div class="row">
       <div class="col-6 col-sm-4 text-xs-center order-sm-2">
         

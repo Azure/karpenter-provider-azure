@@ -52,6 +52,7 @@ az aks create \
   --name $CLUSTER_NAME \
   --resource-group $RESOURCE_GROUP \
   --node-provisioning-mode Auto \
+  --node-provisioning-default-pools Auto \
   --network-plugin azure \
   --network-plugin-mode overlay \
   --network-dataplane cilium \
@@ -59,6 +60,17 @@ az aks create \
   --generate-ssh-keys \
   --location $LOCATION
 ```
+
+#### Understanding Default NodePools
+
+The `--node-provisioning-default-pools` flag controls which default Karpenter NodePools are created:
+
+- **`Auto`** (default): Creates two standard NodePools for immediate use
+- **`None`**: No default NodePools are created - you must define your own
+
+{{% alert title="Warning" color="warning" %}}
+**Changing from Auto to None**: If you change this setting from `Auto` to `None` on an existing cluster, the default NodePools will be deleted, causing associated nodes to be drained and removed. Ensure you have alternative NodePools ready before making this change.
+{{% /alert %}}
 
 Get cluster credentials:
 
@@ -74,14 +86,19 @@ Check that Karpenter is running:
 # Verify NAP is enabled
 az aks show --name $CLUSTER_NAME --resource-group $RESOURCE_GROUP \
   --query "nodeProvisioningProfile.mode" -o tsv
-
-# Check for Karpenter pods
-kubectl get pods -n kube-system -l app.kubernetes.io/name=karpenter
 ```
 
-### Create Your First NodePool
+### Understanding the Default NodePools
 
-NAP automatically creates a default NodePool, but you can customize it:
+When using `--node-provisioning-default-pools Auto` or not specifying `--node-provisioning-default-pools`, NAP automatically creates two NodePools that cannot be deleted. `default` and `system-surge`. 
+
+{{% alert title="Note" color="primary" %}}
+**Default NodePools are protected**: When `--node-provisioning-default-pools` is set to `Auto`, the `default` and `system-surge` NodePools cannot be deleted and are managed by AKS. You can modify them, but not remove them.
+{{% /alert %}}
+
+### Create Custom NodePools
+
+You can create additional NodePools for specific needs:
 
 ```bash
 cat <<EOF | kubectl apply -f -
