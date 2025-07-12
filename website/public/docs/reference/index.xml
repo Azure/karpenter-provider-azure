@@ -384,7 +384,15 @@
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;name&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#000&#34;&gt;custom-networking&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;&lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;spec&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;  &lt;/span&gt;&lt;span style=&#34;color:#204a87;font-weight:bold&#34;&gt;vnetSubnetID&lt;/span&gt;&lt;span style=&#34;color:#000;font-weight:bold&#34;&gt;:&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt; &lt;/span&gt;&lt;span style=&#34;color:#4e9a06&#34;&gt;&amp;#34;/subscriptions/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/resourceGroups/my-aks-rg/providers/Microsoft.Network/virtualNetworks/my-aks-vnet/subnets/custom-subnet&amp;#34;&lt;/span&gt;&lt;span style=&#34;color:#f8f8f8;text-decoration:underline&#34;&gt;
-&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h2 id=&#34;rbac-configuration&#34;&gt;RBAC Configuration&lt;/h2&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;default-subnet-behavior&#34;&gt;Default Subnet Behavior&lt;/h3&gt;
+&lt;p&gt;The &lt;code&gt;vnetSubnetID&lt;/code&gt; field in AKSNodeClass is optional. When not specified, Karpenter automatically uses the default subnet configured during Karpenter installation via the &lt;code&gt;--vnet-subnet-id&lt;/code&gt; CLI parameter or &lt;code&gt;VNET_SUBNET_ID&lt;/code&gt; environment variable.&lt;/p&gt;
+&lt;p&gt;This default subnet is typically the same subnet specified during AKS cluster creation with the &lt;code&gt;--vnet-subnet-id&lt;/code&gt; flag in the &lt;code&gt;az aks create&lt;/code&gt; command. This creates a fallback mechanism where:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;With vnetSubnetID specified&lt;/strong&gt;: Karpenter provisions nodes in the specified custom subnet&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Without vnetSubnetID specified&lt;/strong&gt;: Karpenter provisions nodes in the cluster&amp;rsquo;s default subnet (from &lt;code&gt;--vnet-subnet-id&lt;/code&gt;)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;This allows you to have a mix of NodeClasses - some using custom subnets for specific workloads, and others using the cluster&amp;rsquo;s default subnet configuration.&lt;/p&gt;
+&lt;h2 id=&#34;rbac-configuration&#34;&gt;RBAC Configuration&lt;/h2&gt;
 &lt;p&gt;When using custom subnet configurations, Karpenter needs appropriate permissions to read subnet information and join nodes to the specified subnets. There are two recommended approaches for configuring these permissions.&lt;/p&gt;
 &lt;h3 id=&#34;approach-a-broad-vnet-permissions&#34;&gt;Approach A: Broad VNet Permissions&lt;/h3&gt;
 &lt;p&gt;This approach grants the cluster identity permissions to read and join any subnet within the main VNet, as well as overall network contributor. Its very permissive, investigate the &amp;ldquo;Network Contributor&amp;rdquo; role before applying this to your production cluster.&lt;/p&gt;
@@ -628,6 +636,40 @@
 &lt;li&gt;&lt;strong&gt;Test configurations&lt;/strong&gt; in non-production environments first&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Monitor network utilization&lt;/strong&gt; and plan capacity accordingly&lt;/li&gt;
 &lt;/ul&gt;
+&lt;h2 id=&#34;bring-your-own-cni-byo-cni-support-policy&#34;&gt;Bring Your Own CNI (BYO CNI) Support Policy&lt;/h2&gt;
+&lt;p&gt;Karpenter for Azure supports bring-your-own CNI configurations, following the same support policy as Azure Kubernetes Service (AKS).&lt;/p&gt;
+&lt;h3 id=&#34;support-scope&#34;&gt;Support Scope&lt;/h3&gt;
+&lt;p&gt;&lt;strong&gt;Supported&lt;/strong&gt;: Karpenter-specific functionality and integration issues when using BYO CNI configurations.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Not Supported&lt;/strong&gt;: CNI-specific networking issues, configuration problems, or troubleshooting when using third-party CNI plugins.&lt;/p&gt;
+&lt;h3 id=&#34;support-policy-details&#34;&gt;Support Policy Details&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;BYO CNI is supported&lt;/strong&gt; for use with Karpenter, but follows AKS BYO CNI support boundaries&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Networking issues&lt;/strong&gt; related to the CNI plugin itself are outside the scope of Karpenter support&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Karpenter-specific problems&lt;/strong&gt; (node provisioning, scaling, lifecycle management) will be supported regardless of CNI choice&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;CNI configuration and troubleshooting&lt;/strong&gt; should be directed to the respective CNI vendor or community&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;when-to-contact-support&#34;&gt;When to Contact Support&lt;/h3&gt;
+&lt;p&gt;✅ &lt;strong&gt;Contact Karpenter Support for&lt;/strong&gt;:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Node provisioning failures with BYO CNI&lt;/li&gt;
+&lt;li&gt;Karpenter controller issues when using custom CNI&lt;/li&gt;
+&lt;li&gt;Integration problems between Karpenter and CNI plugins&lt;/li&gt;
+&lt;li&gt;AKSNodeClass configuration issues&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;❌ &lt;strong&gt;Do NOT contact Karpenter Support for&lt;/strong&gt;:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;CNI plugin installation or configuration problems&lt;/li&gt;
+&lt;li&gt;Network connectivity issues specific to the CNI&lt;/li&gt;
+&lt;li&gt;CNI plugin performance or feature issues&lt;/li&gt;
+&lt;li&gt;Troubleshooting CNI-specific networking behavior&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3 id=&#34;recommended-approach&#34;&gt;Recommended Approach&lt;/h3&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Isolate the issue&lt;/strong&gt;: Determine if the problem is Karpenter-specific or CNI-related&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Test with default Azure CNI&lt;/strong&gt;: If possible, reproduce the issue with standard Azure CNI to confirm scope&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Check CNI documentation&lt;/strong&gt;: Consult your CNI vendor&amp;rsquo;s documentation and support channels first&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Contact appropriate support&lt;/strong&gt;: Use Karpenter support for Karpenter issues, CNI vendor support for CNI issues&lt;/li&gt;
+&lt;/ol&gt;
 
       </description>
     </item>

@@ -214,6 +214,7 @@
         <li><a href="#what-networking-configurations-does-karpenter-support">What networking configurations does Karpenter support?</a></li>
         <li><a href="#how-does-karpenter-handle-network-security-groups">How does Karpenter handle network security groups?</a></li>
         <li><a href="#can-i-use-private-aks-clusters-with-karpenter">Can I use private AKS clusters with Karpenter?</a></li>
+        <li><a href="#what-is-the-support-policy-for-bring-your-own-cni-byo-cni">What is the support policy for Bring Your Own CNI (BYO CNI)?</a></li>
       </ul>
     </li>
     <li><a href="#scaling-and-performance">Scaling and Performance</a>
@@ -331,11 +332,17 @@
 <li>Azure CNI with subnet IP allocation</li>
 <li>Azure CNI with overlay networking</li>
 <li>Custom VNet configurations</li>
+<li>Bring Your Own CNI (BYO CNI) configurations</li>
 </ul>
 <h3 id="how-does-karpenter-handle-network-security-groups">How does Karpenter handle network security groups?</h3>
 <p>Karpenter uses the network security groups configured for your AKS cluster. It doesn&rsquo;t create or modify NSG rules.</p>
 <h3 id="can-i-use-private-aks-clusters-with-karpenter">Can I use private AKS clusters with Karpenter?</h3>
 <p>Karpenter should work with private AKS clusters but has limited testing, so use at your own discretion. Ensure the Karpenter controller can reach Azure APIs through private endpoints or NAT gateway.</p>
+<h3 id="what-is-the-support-policy-for-bring-your-own-cni-byo-cni">What is the support policy for Bring Your Own CNI (BYO CNI)?</h3>
+<p>Karpenter supports BYO CNI configurations following the same support policy as AKS:</p>
+<p><strong>Supported</strong>: Karpenter-specific issues when using BYO CNI (node provisioning, scaling, lifecycle management)</p>
+<p><strong>Not Supported</strong>: CNI-specific networking issues, configuration problems, or troubleshooting third-party CNI plugins</p>
+<p>If you encounter networking issues while using BYO CNI, first determine whether the problem is Karpenter-specific or CNI-related. For CNI-specific issues, contact your CNI vendor or community support channels. For Karpenter integration issues, contact Karpenter support.</p>
 <h2 id="scaling-and-performance">Scaling and Performance</h2>
 <h3 id="whats-the-maximum-number-of-nodes-karpenter-can-manage">What&rsquo;s the maximum number of nodes Karpenter can manage?</h3>
 <p>Karpenter can manage thousands of nodes, but practical limits depend on:</p>
