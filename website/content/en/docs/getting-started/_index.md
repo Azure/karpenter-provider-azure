@@ -30,7 +30,11 @@ For advanced users who need full control:
 - **Full control** - Manage deployment, updates, and configuration
 - **Best for**: Development, testing, and advanced customization needs
 
-Learn more about [deployment modes](../concepts/deployment-modes/) to choose the right approach.
+Learn more about [deployment modes](../concepts/nap-vs-self-hosted/) to choose the right approach.
+
+{{% alert title="Warning" color="warning" %}}
+**Self-hosted mode considerations**: While self-hosted deployment offers maximum flexibility, it requires significant operational overhead and expertise. For most production use cases, we strongly recommend using **NAP (Node Auto Provisioning)** which provides enterprise support, automatic updates, and zero operational overhead. Review the complete [NAP vs Self-hosted comparison](../concepts/nap-vs-self-hosted/) before choosing self-hosted mode.
+{{% /alert %}}
 
 ## Alternative Installation Methods
 
