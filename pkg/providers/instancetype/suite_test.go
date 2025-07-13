@@ -1978,6 +1978,58 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(err.Error()).To(ContainSubstring("creating instance failed"))
 		})
 	})
+	FDescribe("VirtualMachinePromise", func() {
+		It("should delete nodeclaim when hitting async crp failure and belongs to a karpenter nodepool", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
+			)
+
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			nodeClaims := &karpv1.NodeClaimList{}
+			Expect(env.Client.List(ctx, nodeClaims)).To(Succeed())
+			Expect(nodeClaims.Items).To(HaveLen(0))
+		})
+
+		It("should NOT delete standalone nodeclaim when hitting async crp failure", func() {
+			standaloneNodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{NodeSelectorRequirement: v1.NodeSelectorRequirement{
+							Key:      karpv1.CapacityTypeLabelKey,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{karpv1.CapacityTypeOnDemand},
+						}},
+					},
+					NodeClassRef: &karpv1.NodeClassReference{
+						Group: object.GVK(nodeClass).Group,
+						Kind:  object.GVK(nodeClass).Kind,
+						Name:  nodeClass.Name,
+					},
+				},
+			})
+
+			ExpectApplied(ctx, env.Client, nodeClass, standaloneNodeClaim)
+
+			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
+				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
+			)
+
+			_, err := cloudProvider.Create(ctx, standaloneNodeClaim)
+			Expect(err).To(HaveOccurred())
+
+			// Verify that for standalone nodeclaims they remain
+			nodeClaims := &karpv1.NodeClaimList{}
+			Expect(env.Client.List(ctx, nodeClaims)).To(Succeed())
+			Expect(nodeClaims.Items).To(HaveLen(1))
+			Expect(nodeClaims.Items[0].Name).To(Equal(standaloneNodeClaim.Name))
+		})
+	})
+
 })
 
 var _ = Describe("Tax Calculator", func() {
