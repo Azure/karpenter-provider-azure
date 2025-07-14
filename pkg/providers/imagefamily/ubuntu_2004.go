@@ -48,6 +48,7 @@ func (u Ubuntu2004) DefaultImages() []types.DefaultImageOutput {
 	return []types.DefaultImageOutput{}
 }
 
+// FIPS images aren't supported in public galleries, only shared image galleries
 func (u Ubuntu2004) FIPSImages() []types.DefaultImageOutput {
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2004Gen2Fipscontainerd first in the FIPSImages
 	return []types.DefaultImageOutput{

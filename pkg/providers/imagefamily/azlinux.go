@@ -85,6 +85,7 @@ func (u AzureLinux) DefaultImages() []types.DefaultImageOutput {
 	}
 }
 
+// FIPS images aren't supported in public galleries, only shared image galleries
 func (u AzureLinux) FIPSImages() []types.DefaultImageOutput {
 	// image provider will select these images in order, first match wins. This is why we chose to put Gen2 first in the defaultImages, as we prefer gen2 over gen1
 	return []types.DefaultImageOutput{

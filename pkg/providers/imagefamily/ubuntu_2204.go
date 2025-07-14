@@ -83,6 +83,7 @@ func (u Ubuntu2204) DefaultImages() []types.DefaultImageOutput {
 	}
 }
 
+// FIPS images aren't supported in public galleries, only shared image galleries
 func (u Ubuntu2204) FIPSImages() []types.DefaultImageOutput {
 	//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
 	return []types.DefaultImageOutput{}

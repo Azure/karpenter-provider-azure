@@ -70,31 +70,26 @@ func getExpectedTestCIGImages(imageFamily string, version string, kubernetesVers
 //nolint:unparam // might always be using the same version in test, but could change in the future
 func getExpectedTestSIGImages(imageFamily string, fipsMode string, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
+	var actualImageFamily imagefamily.ImageFamily
+	if imageFamily == v1beta1.UbuntuImageFamily {
+		if fipsMode == v1beta1.FIPSEnabled {
+			actualImageFamily = &imagefamily.Ubuntu2004{}
+		} else {
+			actualImageFamily = &imagefamily.Ubuntu2204{}
+		}
+	} else if imageFamily == v1beta1.Ubuntu2204ImageFamily {
+		actualImageFamily = &imagefamily.Ubuntu2204{}
+	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
+		if imagefamily.UseAzureLinux3(kubernetesVersion) {
+			actualImageFamily = &imagefamily.AzureLinux3{}
+		} else {
+			actualImageFamily = &imagefamily.AzureLinux{}
+		}
+	}
 	if fipsMode == v1beta1.FIPSEnabled {
-		if imageFamily == v1beta1.UbuntuImageFamily {
-			images = imagefamily.Ubuntu2004{}.FIPSImages()
-		} else if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-			// coming soon
-			images = imagefamily.Ubuntu2204{}.FIPSImages()
-		} else if imageFamily == v1beta1.AzureLinuxImageFamily {
-			if imagefamily.UseAzureLinux3(kubernetesVersion) {
-				images = imagefamily.AzureLinux3{}.FIPSImages()
-			} else {
-				images = imagefamily.AzureLinux{}.FIPSImages()
-			}
-		}
+		images = actualImageFamily.FIPSImages()
 	} else {
-		if imageFamily == v1beta1.UbuntuImageFamily {
-			images = imagefamily.Ubuntu2204{}.DefaultImages()
-		} else if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-			images = imagefamily.Ubuntu2204{}.DefaultImages()
-		} else if imageFamily == v1beta1.AzureLinuxImageFamily {
-			if imagefamily.UseAzureLinux3(kubernetesVersion) {
-				images = imagefamily.AzureLinux3{}.DefaultImages()
-			} else {
-				images = imagefamily.AzureLinux{}.DefaultImages()
-			}
-		}
+		images = actualImageFamily.DefaultImages()
 	}
 	nodeImages := []imagefamily.NodeImage{}
 	for _, image := range images {
@@ -228,6 +223,14 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.FIPSMode = nil
 			})
 
+			It("should match expected images for default Ubuntu, effectively Ubuntu2204", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)))
+			})
+
 			It("should match expected images for default Ubuntu2204", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
@@ -251,6 +254,14 @@ var _ = Describe("NodeImageProvider tests", func() {
 		Context("List Default Images When FIPSMode Is Explicitly Disabled", func() {
 			BeforeEach(func() {
 				nodeClass.Spec.FIPSMode = lo.ToPtr(string(v1beta1.FIPSDisabled))
+			})
+
+			It("should match expected images for default Ubuntu, effectively Ubuntu2204", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)))
 			})
 
 			It("should match expected images for default Ubuntu2204", func() {

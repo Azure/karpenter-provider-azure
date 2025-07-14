@@ -85,6 +85,7 @@ func (u AzureLinux3) DefaultImages() []types.DefaultImageOutput {
 	}
 }
 
+// FIPS images aren't supported in public galleries, only shared image galleries
 func (u AzureLinux3) FIPSImages() []types.DefaultImageOutput {
 	// image provider will select these images in order, first match wins
 	return []types.DefaultImageOutput{
