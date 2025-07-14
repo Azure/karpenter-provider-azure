@@ -188,7 +188,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.FIPSMode = lo.ToPtr(string(v1beta1.FIPSEnabled))
 			})
 
-			It("should match expected images for FIPS Ubuntu2004", func() {
+			It("should match expected images for FIPS when using generic Ubuntu", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
@@ -223,7 +223,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.FIPSMode = nil
 			})
 
-			It("should match expected images for default Ubuntu, effectively Ubuntu2204", func() {
+			It("should match expected images for generic Ubuntu", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
@@ -231,7 +231,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)))
 			})
 
-			It("should match expected images for default Ubuntu2204", func() {
+			It("should match expected images for Ubuntu2204", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
@@ -256,15 +256,15 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.FIPSMode = lo.ToPtr(string(v1beta1.FIPSDisabled))
 			})
 
-			It("should match expected images for default Ubuntu, effectively Ubuntu2204", func() {
+			It("should match expected images for generic Ubuntu", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)))
+				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSDisabled, sigImageVersion, kubernetesVersion)))
 			})
 
-			It("should match expected images for default Ubuntu2204", func() {
+			It("should match expected images for Ubuntu2204", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)

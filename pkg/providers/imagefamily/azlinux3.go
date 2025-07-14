@@ -118,7 +118,7 @@ func (u AzureLinux3) FIPSImages() []types.DefaultImageOutput {
 			GalleryName:          AKSAzureLinuxGalleryName,
 			ImageDefinition:      AzureLinux3Gen2Arm64FIPSImageDefinition,
 			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
 			Distro: "aks-azurelinux-v3-arm64-gen2-fips",
