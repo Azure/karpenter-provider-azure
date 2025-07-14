@@ -285,18 +285,97 @@ Karpenter automatically considers pricing when making provisioning decisions and
 - Choose appropriate CPU-to-memory ratios for your workload type
 
 ### Ephemeral OS Disks
-Karpenter automatically chooses the best ephemeral disk placement when the OS disk size fits within available ephemeral storage:
+
+Karpenter uses a **failover logic** for OS disk provisioning where the `osDiskSizeGB` specification in your NodeClass is the primary constraint that determines disk type selection.
+
+#### Disk Selection Logic
+
+**1. Primary Constraint: osDiskSizeGB is Always Honored**
+- The `osDiskSizeGB` value from your AKSNodeClass specification is always respected
+- This size determines the actual OS disk that will be provisioned on the VM
+
+**2. Ephemeral vs Managed Disk Decision**
+- **Ephemeral Disk Used**: If `osDiskSizeGB` ≤ available ephemeral storage capacity on the VM
+- **Managed Disk Used**: If `osDiskSizeGB` > available ephemeral storage capacity on the VM
+
+**3. Automatic Placement Selection** (when ephemeral disk is used)
+Karpenter automatically chooses the best ephemeral disk placement:
 
 **Placement Priority (best to worst):**
 1. **NVMe Disk**: Highest performance local NVMe SSD
 2. **Cache Disk**: High-performance caching disk 
 3. **Resource Disk**: Standard temporary disk
 
-**Benefits:**
-- faster boot times
-- Better I/O performance for OS operations
-- No additional storage costs
-- Automatic selection based on VM capabilities
+#### Customer Configuration Guidelines
+
+**To Guarantee Ephemeral Disk Usage:**
+Set your `osDiskSizeGB` to be smaller than or equal to the ephemeral storage capacity of your target VM sizes. This ensures Karpenter will always use ephemeral disks instead of falling back to managed disks.
+
+```yaml
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: ephemeral-optimized
+spec:
+  osDiskSizeGB: 128  # Fits within most VM ephemeral capacities
+```
+
+**Common Ephemeral Capacities by VM Family:**
+- **Standard_D4s_v3**: ~150GB cache disk available
+- **Standard_E4s_v3**: ~100GB cache disk available  
+- **Standard_F4s_v2**: ~30GB resource disk available
+- **Standard_L8s_v3**: ~1.4TB NVMe disk available
+
+**Example: Guaranteed Ephemeral Usage**
+```yaml
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: guaranteed-ephemeral
+spec:
+  template:
+    spec:
+      requirements:
+        # Target D-series VMs with sufficient ephemeral capacity
+        - key: karpenter.azure.com/sku-family
+          operator: In
+          values: ["D"]
+        - key: karpenter.azure.com/sku-storage-ephemeral-os-max-size
+          operator: Gt
+          values: ["128"]  # Ensure VMs can fit our 128GB requirement
+      nodeClassRef:
+        apiVersion: karpenter.azure.com/v1beta1
+        kind: AKSNodeClass
+        name: ephemeral-128gb
+---
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: ephemeral-128gb
+spec:
+  osDiskSizeGB: 128  # Will use ephemeral disk on selected VMs
+```
+
+**Example: Large Disk (Likely Managed)**
+```yaml
+apiVersion: karpenter.azure.com/v1beta1
+kind: AKSNodeClass
+metadata:
+  name: large-disk
+spec:
+  osDiskSizeGB: 500  # Exceeds most ephemeral capacities, will use managed disk
+```
+
+#### Benefits of Ephemeral OS Disks
+- **Faster boot times**: No network-attached storage latency
+- **Better I/O performance**: Local storage for OS operations
+- **No additional storage costs**: Included with VM pricing
+- **Automatic optimization**: Karpenter selects the best available ephemeral placement
+
+#### Key Considerations
+- **Size Trade-off**: Smaller `osDiskSizeGB` values increase the likelihood of ephemeral disk usage
+- **VM Selection**: Use the `karpenter.azure.com/sku-storage-ephemeral-os-max-size` label to target VMs with sufficient ephemeral capacity
+- **Workload Requirements**: Ensure your applications can work with the available disk space when optimizing for ephemeral disks
 
 
 ## Spot VMs
