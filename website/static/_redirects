@@ -1,0 +1,21 @@
+# Redirects from what the browser requests to what we serve
+
+# Redirect all preview documentation to the new routes
+/preview/concepts/provisioners /preview/concepts/nodepools
+/preview/concepts/node-templates /preview/concepts/nodeclasses
+/preview/concepts/deprovisioning /preview/concepts/disruption
+/preview/upgrade-guide /preview/upgrading/upgrade-guide
+/preview/concepts/instance-types /preview/reference/instance-types
+/preview/concepts/metrics /preview/reference/metrics
+/preview/concepts/settings /preview/reference/settings
+/preview/concepts/threat-model /preview/reference/threat-model
+
+# Redirect all docs documentation to the new routes
+/docs/concepts/provisioners /docs/concepts/nodepools
+/docs/concepts/node-templates /docs/concepts/nodeclasses
+/docs/concepts/deprovisioning /docs/concepts/disruption
+/docs/upgrade-guide /docs/upgrading/upgrade-guide
+/docs/concepts/instance-types /docs/reference/instance-types
+/docs/concepts/metrics /docs/reference/metrics
+/docs/concepts/settings /docs/reference/settings
+/docs/concepts/threat-model /docs/reference/threat-model
