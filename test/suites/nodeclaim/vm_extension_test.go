@@ -37,8 +37,7 @@ var _ = Describe("VMExtension", func() {
 			installedExtensions = append(installedExtensions, lo.FromPtr(ext.Name))
 		}
 		expectedExtensions := []any{
-			// TODO: Uncomment when AKSLinuxExtension rolls out
-			// "AKSLinuxExtension",
+			"AKSLinuxExtension",
 			"computeAksLinuxBilling",
 		}
 		Expect(installedExtensions).To(ContainElements(expectedExtensions...))
