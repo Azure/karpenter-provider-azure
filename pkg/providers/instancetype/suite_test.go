@@ -538,8 +538,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(claim).To(BeNil())
 
 		})
-
-		FIt("should preserve standalone nodeclaim on VM creation error", func() {
+		It("should preserve standalone nodeclaim on VM creation error", func() {
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				Spec: karpv1.NodeClaimSpec{
 					NodeClassRef: &karpv1.NodeClassReference{
@@ -574,6 +573,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// Verify the status condition was set properly
 				launchedCondition := nodeClaims[0].StatusConditions().Get(karpv1.ConditionTypeLaunched)
 				g.Expect(launchedCondition).ToNot(BeNil())
+				// ----------------
 				g.Expect(launchedCondition.IsFalse()).To(BeTrue())
 				g.Expect(launchedCondition.Reason).To(Equal("InstanceCreationFailed"))
 			}).Should(Succeed())

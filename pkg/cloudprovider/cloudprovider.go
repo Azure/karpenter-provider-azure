@@ -199,12 +199,11 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, instancePromise *inst
 			freshNodeClaim := &karpv1.NodeClaim{}
 			if getErr := c.kubeClient.Get(ctx, client.ObjectKeyFromObject(nodeClaim), freshNodeClaim); getErr != nil {
 				log.FromContext(ctx).Error(getErr, "failed to get fresh nodeclaim for status update", "NodeClaim", nodeClaim.Name)
-				log.FromContext(ctx).Info("VM creation failed for standalone nodeclaim, preserving for retry", "NodeClaim", nodeClaim.Name)
 				return
 			}
-			
+			old := freshNodeClaim.DeepCopy()
 			freshNodeClaim.StatusConditions().SetFalse(karpv1.ConditionTypeLaunched, "InstanceCreationFailed", truncateMessage(err.Error()))
-			if patchErr := c.kubeClient.Status().Patch(ctx, freshNodeClaim, client.MergeFrom(freshNodeClaim.DeepCopy())); patchErr != nil {
+			if patchErr := c.kubeClient.Status().Patch(ctx, freshNodeClaim, client.MergeFrom(old)); patchErr != nil {
 				log.FromContext(ctx).Error(patchErr, "failed to update standalone nodeclaim status", "NodeClaim", nodeClaim.Name, "actualError", err.Error())
 			}
 			log.FromContext(ctx).Info("VM creation failed for standalone nodeclaim, preserving for retry", "NodeClaim", nodeClaim.Name)
