@@ -576,7 +576,6 @@ var _ = Describe("InstanceType Provider", func() {
 				// Verify the status condition was set properly
 				launchedCondition := nodeClaims[0].StatusConditions().Get(karpv1.ConditionTypeLaunched)
 				g.Expect(launchedCondition).ToNot(BeNil())
-				// ----------------
 				g.Expect(launchedCondition.IsFalse()).To(BeTrue())
 				g.Expect(launchedCondition.Reason).To(Equal("InstanceCreationFailed"))
 			}).Should(Succeed())
