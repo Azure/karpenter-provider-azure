@@ -32,7 +32,7 @@ import (
 
 const (
 	Ubuntu2004Gen2FIPSImageDefinition = "2004gen2fipscontainerd"
-	Ubuntu2004FIPSImageDefinition     = "2004fipscontainerd"
+	Ubuntu2004Gen1FIPSImageDefinition = "2004fipscontainerd"
 )
 
 type Ubuntu2004 struct {
@@ -67,7 +67,7 @@ func (u Ubuntu2004) FIPSImages() []types.DefaultImageOutput {
 			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
 			GalleryResourceGroup: AKSUbuntuResourceGroup,
 			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2004FIPSImageDefinition,
+			ImageDefinition:      Ubuntu2004Gen1FIPSImageDefinition,
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
