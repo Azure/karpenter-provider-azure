@@ -174,17 +174,13 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, instancePromise *inst
 	}()
 
 	err := instancePromise.Wait()
-	log.FromContext(ctx).Info("waitOnPromise: Wait() completed", "error", err, "nodeClaim", nodeClaim.Name)
 
 	// Wait until the claim is Launched, to avoid racing with creation.
 	// This isn't strictly required, but without this, failure test scenarios are harder
 	// to write because the nodeClaim gets deleted by error handling below before
 	// the EnsureApplied call finishes, so EnsureApplied creates it again (which is wrong/isn't how
 	// it would actually happen in production).
-	log.FromContext(ctx).Info("waitOnPromise: calling waitUntilLaunched", "nodeClaim", nodeClaim.Name)
 	c.waitUntilLaunched(ctx, nodeClaim)
-	log.FromContext(ctx).Info("waitOnPromise: waitUntilLaunched completed", "nodeClaim", nodeClaim.Name)
-
 	if err != nil {
 		// For both Standalone Nodeclaims + Nodepool Owned Nodeclaims we want to delete the vms
 		vmName := lo.FromPtr(instancePromise.VM.Name)
@@ -195,7 +191,6 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, instancePromise *inst
 
 		if c.isStandaloneNodeClaim(nodeClaim) {
 			// For standalone NodeClaims: preserve the NodeClaim, set status to failed, return error
-			// Fetch fresh copy to avoid working with stale object
 			freshNodeClaim := &karpv1.NodeClaim{}
 			if getErr := c.kubeClient.Get(ctx, client.ObjectKeyFromObject(nodeClaim), freshNodeClaim); getErr != nil {
 				log.FromContext(ctx).Error(getErr, "failed to get fresh nodeclaim for status update", "NodeClaim", nodeClaim.Name)
@@ -216,12 +211,12 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, instancePromise *inst
 				}
 			}
 			log.FromContext(ctx).Info("VM creation failed for nodepool-managed nodeclaim, deleting nodeclaim", "NodeClaim", nodeClaim.Name)
+			metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
+				metrics.ReasonLabel:       "async_provisioning",
+				metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+				metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
+			})
 		}
-		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
-			metrics.ReasonLabel:       "async_provisioning",
-			metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
-			metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
-		})
 	}
 }
 
