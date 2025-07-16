@@ -133,5 +133,6 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.Kube
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
+		ImageFamily:                    u.Name(),
 	}
 }

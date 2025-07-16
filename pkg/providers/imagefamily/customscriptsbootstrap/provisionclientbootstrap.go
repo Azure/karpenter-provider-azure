@@ -139,7 +139,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	case v1beta1.AzureLinuxImageFamily:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	default:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
+		return nil, fmt.Errorf("unsupported image family %s", p.ImageFamily)
 	}
 
 	if p.KubeletConfig != nil {

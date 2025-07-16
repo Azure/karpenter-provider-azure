@@ -371,6 +371,30 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 		},
 		{
+			name: "Unsupported image family - should error",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-unknown-distro",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				ImageFamily:               "UnsupportedFamily",
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
 			name: "With custom kubelet config",
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName: "test-cluster",
