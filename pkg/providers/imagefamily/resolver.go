@@ -200,9 +200,11 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
 	var imageInfo types.DefaultImageOutput
 	imageInfo.PopulateImageTraitsFromID(imageID)
-	for _, defaultImage := range imageFamily.DefaultImages() {
-		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
-			return defaultImage.Distro, nil
+	// checks both FIPS and default images
+	allImages := append(imageFamily.DefaultImages(), imageFamily.FIPSImages()...)
+	for _, image := range allImages {
+		if image.ImageDefinition == imageInfo.ImageDefinition {
+			return image.Distro, nil
 		}
 	}
 	return "", fmt.Errorf("no distro found for image id %s", imageID)
