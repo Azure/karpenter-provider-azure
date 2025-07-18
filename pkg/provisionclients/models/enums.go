@@ -31,7 +31,6 @@ const (
 	OSSKUWindows2019   int32 = 3
 	OSSKUWindows2022   int32 = 4
 	OSSKUWindowsAnnual int32 = 8
-	OSSKUAzureLinux3   int32 = 12
 )
 
 const (

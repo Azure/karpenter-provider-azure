@@ -146,7 +146,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	case ImageFamilyOSSKUAzureLinux2:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	case ImageFamilyOSSKUAzureLinux3:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux3)
+		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	default:
 		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
 	}

@@ -315,7 +315,7 @@ func TestConstructProvisionValues(t *testing.T) {
 
 				// Check Profile
 				profile := values.ProvisionProfile
-				assert.Equal(t, models.OSSKUAzureLinux3, *profile.OsSku)
+				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
 				assert.Equal(t, "aks-azurelinux-v3-gen2", *profile.Distro)
 				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
 
@@ -432,13 +432,13 @@ func TestConstructProvisionValues(t *testing.T) {
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
 				assert.NotNil(t, values.ProvisionProfile)
-				
+
 				// Check Profile
 				profile := values.ProvisionProfile
 				assert.Equal(t, "Arm64", *profile.Architecture)
 				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
 				assert.Equal(t, "aks-azurelinux-v2-arm64-gen2", *profile.Distro)
-				
+
 				// Artifact streaming should be disabled for ARM64
 				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
 			},
@@ -468,13 +468,13 @@ func TestConstructProvisionValues(t *testing.T) {
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
 				assert.NotNil(t, values.ProvisionProfile)
-				
+
 				// Check Profile
 				profile := values.ProvisionProfile
 				assert.Equal(t, "Arm64", *profile.Architecture)
-				assert.Equal(t, models.OSSKUAzureLinux3, *profile.OsSku)
+				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
 				assert.Equal(t, "aks-azurelinux-v3-arm64-gen2", *profile.Distro)
-				
+
 				// Artifact streaming should be disabled for ARM64
 				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
 			},
