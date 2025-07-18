@@ -93,7 +93,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.Equal(t, instanceType, provisionBootstrapper.InstanceType)
 	assert.Equal(t, storageProfile, provisionBootstrapper.StorageProfile)
 	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
-	assert.Equal(t, v1beta1.AzureLinuxImageFamily, provisionBootstrapper.ImageFamily, "ImageFamily field must be set to prevent unsupported image family errors")
+	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
 }
 
 func TestAzureLinux3_Name(t *testing.T) {

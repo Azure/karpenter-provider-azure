@@ -93,7 +93,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.Equal(t, instanceType, provisionBootstrapper.InstanceType)
 	assert.Equal(t, storageProfile, provisionBootstrapper.StorageProfile)
 	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
-	assert.Equal(t, v1beta1.Ubuntu2204ImageFamily, provisionBootstrapper.ImageFamily, "ImageFamily field must be set to prevent unsupported image family errors")
+	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
 }
 
 func TestUbuntu2204_Name(t *testing.T) {

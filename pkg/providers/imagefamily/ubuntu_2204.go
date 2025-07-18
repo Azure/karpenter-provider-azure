@@ -133,6 +133,6 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.Kube
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
-		ImageFamily:                    u.Name(),
+		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 	}
 }

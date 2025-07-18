@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/samber/lo"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
@@ -35,6 +34,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+)
+
+const (
+	ImageFamilyOSSKUUbuntu2204  = "Ubuntu2204"
+	ImageFamilyOSSKUAzureLinux2 = "AzureLinux2"
+	ImageFamilyOSSKUAzureLinux3 = "AzureLinux3"
 )
 
 type ProvisionClientBootstrap struct {
@@ -54,7 +59,7 @@ type ProvisionClientBootstrap struct {
 	IsWindows                      bool
 	InstanceType                   *cloudprovider.InstanceType
 	StorageProfile                 string
-	ImageFamily                    string
+	OSSKU                          string
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 }
 
@@ -99,7 +104,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, and for Azure Linux v3
 	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-		(p.ImageFamily == v1beta1.Ubuntu2204ImageFamily || p.ImageFamily == v1beta1.AzureLinuxImageFamily)
+		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
 
 	provisionProfile := &models.ProvisionProfile{
 		Name:                     lo.ToPtr(""),
@@ -133,13 +138,17 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		},
 	}
 
-	switch p.ImageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
+	// Map OS SKU to AKS provision client's expectation
+	// Note that the direction forward is to be more specific with OS versions. Be careful when supporting new ones.
+	switch p.OSSKU {
+	case ImageFamilyOSSKUUbuntu2204:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case v1beta1.AzureLinuxImageFamily:
+	case ImageFamilyOSSKUAzureLinux2:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
+	case ImageFamilyOSSKUAzureLinux3:
+		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux3)
 	default:
-		return nil, fmt.Errorf("unsupported image family %s", p.ImageFamily)
+		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
 	}
 
 	if p.KubeletConfig != nil {
