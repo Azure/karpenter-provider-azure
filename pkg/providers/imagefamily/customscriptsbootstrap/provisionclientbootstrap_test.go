@@ -287,6 +287,43 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 		},
 		{
+			name: "Azure Linux 3 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-azurelinux-v3-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+				Labels:                    map[string]string{"key": "value"},
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				assert.NotNil(t, values.ProvisionProfile)
+
+				// Check Profile
+				profile := values.ProvisionProfile
+				assert.Equal(t, models.OSSKUAzureLinux3, *profile.OsSku)
+				assert.Equal(t, "aks-azurelinux-v3-gen2", *profile.Distro)
+				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
+
+				// Check artifact streaming is disabled for AzureLinux3
+				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
+			},
+		},
+		{
 			name: "Windows configuration - should error",
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:               "test-cluster",
@@ -368,6 +405,78 @@ func TestConstructProvisionValues(t *testing.T) {
 
 				// Artifact streaming should be disabled for ARM64
 				assert.False(t, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
+			},
+		},
+		{
+			name: "ARM64 AzureLinux2 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureArm64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-azurelinux-v2-arm64-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2ps_v5", // ARM64 instance
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				assert.NotNil(t, values.ProvisionProfile)
+				
+				// Check Profile
+				profile := values.ProvisionProfile
+				assert.Equal(t, "Arm64", *profile.Architecture)
+				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
+				assert.Equal(t, "aks-azurelinux-v2-arm64-gen2", *profile.Distro)
+				
+				// Artifact streaming should be disabled for ARM64
+				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
+			},
+		},
+		{
+			name: "ARM64 AzureLinux3 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureArm64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-azurelinux-v3-arm64-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2ps_v5", // ARM64 instance
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				assert.NotNil(t, values.ProvisionProfile)
+				
+				// Check Profile
+				profile := values.ProvisionProfile
+				assert.Equal(t, "Arm64", *profile.Architecture)
+				assert.Equal(t, models.OSSKUAzureLinux3, *profile.OsSku)
+				assert.Equal(t, "aks-azurelinux-v3-arm64-gen2", *profile.Distro)
+				
+				// Artifact streaming should be disabled for ARM64
+				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
 			},
 		},
 		{
