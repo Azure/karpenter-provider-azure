@@ -185,15 +185,17 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 		Context("List FIPS Images When FIPSMode Is Explicitly FIPS", func() {
 			BeforeEach(func() {
-				nodeClass.Spec.FIPSMode = lo.ToPtr(string(v1beta1.FIPSEnabled))
+				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSEnabled)
 			})
 
 			It("should match expected images for FIPS when using generic Ubuntu", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSEnabled, sigImageVersion, kubernetesVersion)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSEnabled, sigImageVersion, kubernetesVersion)))
+				// equal functions as a checker for both content (including length) and order of image sets
+				Expect(foundImages).To(Equal(expectedImages))
 			})
 
 			//TODO: Modify when Ubuntu 22.04 with FIPS becomes available
@@ -209,10 +211,12 @@ var _ = Describe("NodeImageProvider tests", func() {
 			// They are still kept for clarity and to ensure that the behavior is explicitly tested.
 			It("should match expected images for FIPS AzureLinux, depending on the Kubernetes version", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSEnabled, sigImageVersion, kubernetesVersion)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSEnabled, sigImageVersion, kubernetesVersion)))
+				// equal functions as a checker for both content (including length) and order of image sets
+				Expect(foundImages).To(Equal(expectedImages))
 			})
 
 		})
@@ -225,28 +229,33 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			It("should match expected images for generic Ubuntu", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)))
+				// equal functions as a checker for both content (including length) and order of image sets
+				Expect(foundImages).To(Equal(expectedImages))
 			})
 
 			It("should match expected images for Ubuntu2204", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)))
+				// equal functions as a checker for both content (including length) and order of image sets
+				Expect(foundImages).To(Equal(expectedImages))
 			})
 
 			// This test changes depending on the Kubernetes version, in effect making version-specific tests unnecessary.
 			// They are still kept for clarity and to ensure that the behavior is explicitly tested.
 			It("should match expected images for default AzureLinux, depending on the Kubernetes version", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSUnspecified, sigImageVersion, kubernetesVersion)))
+				Expect(foundImages).To(Equal(expectedImages))
 			})
 
 		})
@@ -258,28 +267,35 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			It("should match expected images for generic Ubuntu", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSDisabled, sigImageVersion, kubernetesVersion)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSDisabled, sigImageVersion, kubernetesVersion)))
+				// equal functions as a checker for both content (including length) and order of image sets
+				Expect(foundImages).To(Equal(expectedImages))
+
 			})
 
 			It("should match expected images for Ubuntu2204", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSDisabled, sigImageVersion, kubernetesVersion)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSDisabled, sigImageVersion, kubernetesVersion)))
+				// equal functions as a checker for both content (including length) and order of image sets
+				Expect(foundImages).To(Equal(expectedImages))
 			})
 
 			// This test changes depending on the Kubernetes version, in effect making version-specific tests unnecessary.
 			// They are still kept for clarity and to ensure that the behavior is explicitly tested.
 			It("should match expected images for default AzureLinux, depending on the Kubernetes version", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSDisabled, sigImageVersion, kubernetesVersion)
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, v1beta1.FIPSDisabled, sigImageVersion, kubernetesVersion)))
+				// equal functions as a checker for both content (including length) and order of image sets
+				Expect(foundImages).To(Equal(expectedImages))
 			})
 		})
 
@@ -293,8 +309,9 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Status.KubernetesVersion = kubernetesVersion
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, fipsMode, sigImageVersion, kubernetesVersion)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, fipsMode, sigImageVersion, kubernetesVersion)))
+				Expect(foundImages).To(Equal(expectedImages))
 			},
 			Entry("for default AzureLinux with version < 1.32 when FIPSMode is explicitly set to Disabled", lo.ToPtr(v1beta1.AzureLinuxImageFamily), v1beta1.FIPSDisabled, sigImageVersion, "1.31.0"),
 			Entry("for default AzureLinux with version < 1.32 when FIPSMode is not explicitly set", lo.ToPtr(v1beta1.AzureLinuxImageFamily), v1beta1.FIPSUnspecified, sigImageVersion, "1.31.0"),
