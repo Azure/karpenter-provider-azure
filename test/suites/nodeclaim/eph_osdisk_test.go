@@ -21,7 +21,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 )
@@ -29,9 +29,9 @@ import (
 var _ = Describe("Ephemeral OS Disk", func() {
 	It("should use a node with an ephemeral os disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: v1.NodeSelectorRequirement{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-				Operator: v1.NodeSelectorOpGt,
+				Operator: corev1.NodeSelectorOpGt,
 				// NOTE: this is the size of our nodeclass OSDiskSizeGB.
 				// If the size of the ephemeral disk requested is lower than AKSNodeClass OSDiskGB
 				// we fallback to managed disks, honoring OSDiskSizeGB
@@ -50,5 +50,45 @@ var _ = Describe("Ephemeral OS Disk", func() {
 		// We should be specifying os disk placement now
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement).ToNot(BeNil())
 		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
+	})
+	It("should provision VM with SKU that does not support ephemeral OS disk", func() {
+		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+				Operator: corev1.NodeSelectorOpDoesNotExist,
+			}})
+
+		pod := test.Pod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.EventuallyExpectHealthy(pod)
+		env.ExpectCreatedNodeCount("==", 1)
+		vm := env.GetVM(pod.Spec.NodeName)
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+	})
+	It("should provision VM with SKU that does not support ephemeral OS disk, even if OS disk fits on cache disk", func() {
+		test.ReplaceRequirements(nodePool,
+			karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+					Key:      corev1.LabelArchStable,
+					Operator: corev1.NodeSelectorOpExists, // relax to allow arm
+				}},
+			karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+					Key:      corev1.LabelInstanceTypeStable,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2pls_v5"}, // 53GB cache disk, does not support ephemeral OS disk
+				}},
+		)
+
+		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](40) // < 53GB cache disk
+
+		pod := test.Pod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.EventuallyExpectHealthy(pod)
+		env.ExpectCreatedNodeCount("==", 1)
+		vm := env.GetVM(pod.Spec.NodeName)
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
 	})
 })

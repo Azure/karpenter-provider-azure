@@ -70,10 +70,10 @@ buildAndPublish() {
     exit 1
   fi
 
-  img="$(GOFLAGS=${GOFLAGS:-} \
+  img="$(GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}" \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"     ./cmd/controller)"
-  img_nap="$(GOFLAGS="${GOFLAGS:-} -tags=ccp" \
+  img_nap="$(GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}-aks -tags=ccp" \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"-aks ./cmd/controller)"
 

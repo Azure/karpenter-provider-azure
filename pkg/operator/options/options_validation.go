@@ -21,6 +21,7 @@ import (
 	"net/netip"
 	"net/url"
 	"regexp"
+	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -42,6 +43,7 @@ func (o *Options) Validate() error {
 		o.validateProvisionMode(),
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
+		o.validateAdditionalTags(),
 		o.validateClusterDNSIP(),
 		validate.Struct(o),
 	)
@@ -172,6 +174,32 @@ func (o *Options) validateAdminUsername() error {
 	}
 	if !match {
 		return fmt.Errorf("linux-admin-username must start with a letter and only contain letters, numbers, hyphens, and underscores")
+	}
+
+	return nil
+}
+
+// validateAdditionalTags checks that additional tags are valid according to Azure's tag rules.
+// - Keys must be unique (case-insensitive)
+// - Keys must not exceed 512 characters
+// - Values must not exceed 256 characters
+// - Keys must not contain invalid characters: <, >, %, &, \, ?, /
+func (o *Options) validateAdditionalTags() error {
+	seen := make(map[string]struct{}, len(o.AdditionalTags))
+	for key, value := range o.AdditionalTags {
+		if len(key) > 512 {
+			return fmt.Errorf("additional-tags key %q exceeds maximum length of 512 characters", key)
+		}
+		if len(value) > 256 {
+			return fmt.Errorf("additional-tags value for key %q exceeds maximum length of 256 characters", key)
+		}
+		if strings.ContainsAny(key, `<>%&\?/`) {
+			return fmt.Errorf("additional-tags key %q contains invalid characters. <, >, %%, &, \\, ?, / are not allowed", key)
+		}
+		if _, exists := seen[strings.ToLower(key)]; exists {
+			return fmt.Errorf("additional-tags key %q is not unique (case-insensitive). Duplicate key found", key)
+		}
+		seen[strings.ToLower(key)] = struct{}{}
 	}
 
 	return nil
