@@ -74,7 +74,6 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
-
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
 
