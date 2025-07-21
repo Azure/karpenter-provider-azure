@@ -26,6 +26,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
+	"github.com/samber/lo"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -164,6 +166,38 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 
 			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+		})
+
+		Context("FIPS Validation With UseSIG", func() {
+			var (
+				imageReconciler *status.NodeImageReconciler
+			)
+
+			BeforeEach(func() {
+				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
+			})
+
+			It("images ready status should be false if FIPS is enabled but UseSIG is false", func() {
+				// set up test options with UseSIG disabled (false)
+				options := test.Options(test.OptionsFields{
+					UseSIG: lo.ToPtr(false),
+				})
+				ctx = options.ToContext(ctx)
+
+				fipsMode := v1beta1.FIPSEnabled
+				nodeClass.Spec.FIPSMode = &fipsMode
+
+				// set ImageFamily to AzureLinux (to bypass unsupported FIPS on the default Ubuntu2204)
+				imageFamily := v1beta1.AzureLinuxImageFamily
+				nodeClass.Spec.ImageFamily = &imageFamily
+
+				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
+				Expect(condition.Reason).To(Equal("SIGRequiredForFIPS"))
+				Expect(condition.Message).To(Equal("FIPS images require UseSIG to be enabled, but UseSIG is false"))
+			})
 		})
 
 		When("SYSTEM_NAMESPACE is set", func() {
