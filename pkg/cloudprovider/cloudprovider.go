@@ -94,6 +94,48 @@ func New(
 }
 
 // Create a node given the constraints.
+func (c *CloudProvider) handleInstanceCreation(ctx context.Context, instancePromise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) error {
+	if c.isStandaloneNodeClaim(nodeClaim) {
+		// For standalone nodeclaims, wait synchronously
+		err := instancePromise.Wait()
+		if err != nil {
+			// Clean up the VM
+			vmName := lo.FromPtr(instancePromise.VM.Name)
+			deleteErr := c.instanceProvider.Delete(ctx, vmName)
+			if cloudprovider.IgnoreNodeClaimNotFoundError(deleteErr) != nil {
+				log.FromContext(ctx).Error(deleteErr, "failed to delete VM", "vmName", vmName)
+			}
+			return cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+		}
+	} else {
+		// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
+		// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
+		// crashes should be rare, and even in the case of a crash, as long as the node comes up successfully there's
+		// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
+		// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
+		// only held in memory.
+		go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+	}
+	return nil
+}
+
+func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error {
+	nodeClassReady := nodeClass.StatusConditions().Get(status.ConditionReady)
+	if nodeClassReady.IsFalse() {
+		return cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
+	}
+	if nodeClassReady.IsUnknown() {
+		return cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
+	}
+	if _, err := nodeClass.GetKubernetesVersion(); err != nil {
+		return err
+	}
+	if _, err := nodeClass.GetImages(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
 	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
 	if err != nil {
@@ -115,21 +157,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 			return nil, err
 		}
 	*/
-	nodeClassReady := nodeClass.StatusConditions().Get(status.ConditionReady)
-	if nodeClassReady.IsFalse() {
-		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
-	}
-	if nodeClassReady.IsUnknown() {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
-	}
-	// Note: we make a call for GetKubernetesVersion here, as it has an internal check for the kubernetes version readiness KubernetesVersionReady,
-	//     where we don't want to proceed if it is unready.
-	if _, err = nodeClass.GetKubernetesVersion(); err != nil {
-		return nil, err
-	}
-	// Note: we make a call for GetImages here, as it has an internal check for the image's readiness ImagesReady, where we don't
-	//     want to proceed if they are unready.
-	if _, err = nodeClass.GetImages(); err != nil {
+	if err = c.validateNodeClass(nodeClass); err != nil {
 		return nil, err
 	}
 
@@ -145,26 +173,8 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
 
-	if c.isStandaloneNodeClaim(nodeClaim) {
-		// For standalone nodeclaims, wait synchronously
-		err = instancePromise.Wait()
-		if err != nil {
-			// Clean up the VM
-			vmName := lo.FromPtr(instancePromise.VM.Name)
-			deleteErr := c.instanceProvider.Delete(ctx, vmName)
-			if cloudprovider.IgnoreNodeClaimNotFoundError(deleteErr) != nil {
-				log.FromContext(ctx).Error(deleteErr, "failed to delete VM", "vmName", vmName)
-			}
-			return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
-		}
-	} else {
-		// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
-		// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
-		// crashes should be rare, and even in the case of a crash, as long as the node comes up successfully there's
-		// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
-		// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
-		// only held in memory.
-		go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+	if err = c.handleInstanceCreation(ctx, instancePromise, nodeClaim); err != nil {
+		return nil, err
 	}
 
 	instance := instancePromise.VM
