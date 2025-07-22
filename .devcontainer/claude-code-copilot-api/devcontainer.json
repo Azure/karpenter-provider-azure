@@ -45,10 +45,10 @@
 		"disable metrics": "skaffold config set --global collect-metrics false",
 		"make toolchain": "make toolchain",
 		"configure pre-commit": "pre-commit install --install-hooks",
-		"install copilot-api": "npm config set @tallaxes:registry=https://npm.pkg.github.com //npm.pkg.github.com/:_authToken=$GITHUB_TOKEN && npm install -g @tallaxes/copilot-api"
+		"install copilot-api": "yarn global add tallaxes/copilot-api#npm-github" // temp from fork until upstream is fixed
 	},
 
-	"postStartCommand": "nohup bash -c 'copilot-api start --github-token $GITHUB_TOKEN > /tmp/copilot-api.log &'",
+	"postStartCommand": "nohup bash -c '$(yarn global bin)/copilot-api start --github-token $GITHUB_TOKEN > /tmp/copilot-api.log &'",
 
 	// Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
 	"remoteUser": "vscode",
@@ -63,7 +63,7 @@
 			"upgradePackages": "true"
 		},
 		"ghcr.io/devcontainers/features/go:1": { "version": "none" },
-		"ghcr.io/devcontainers/features/node:1": {},
+		"ghcr.io/devcontainers/features/node:1": { "version": "latest" },
 		"ghcr.io/devcontainers/features/git:1": {
 			"version": "latest",
 			"ppa": "false"
