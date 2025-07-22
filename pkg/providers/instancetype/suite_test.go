@@ -541,47 +541,6 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(claim).To(BeNil())
 
 		})
-		It("should preserve standalone nodeclaim on VM creation error", func() {
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-				Spec: karpv1.NodeClaimSpec{
-					NodeClassRef: &karpv1.NodeClassReference{
-						Name:  nodeClass.Name,
-						Group: object.GVK(nodeClass).Group,
-						Kind:  object.GVK(nodeClass).Kind,
-					},
-				},
-			})
-
-			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
-				&azcore.ResponseError{
-					ErrorCode:  "VMCreationFailed",
-					StatusCode: 400,
-				},
-			)
-
-			ExpectApplied(ctx, env.Client, nodeClass, nodeClaim)
-			_, err := cloudProvider.Create(ctx, nodeClaim)
-			Expect(err).ToNot(HaveOccurred())
-
-			// After cloudprovider create we typically see it set the nodeclaim to launched if no error is returned from create
-			nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
-			ExpectApplied(ctx, env.Client, nodeClaim)
-
-			// Verify nodeclaim is preserved and status condition is set
-			Eventually(func(g Gomega) {
-				nodeClaims := ExpectNodeClaims(ctx, env.Client)
-				g.Expect(nodeClaims).To(HaveLen(1))
-				g.Expect(nodeClaims[0].DeletionTimestamp).To(BeNil())
-
-				// Verify the status condition was set properly
-				launchedCondition := nodeClaims[0].StatusConditions().Get(karpv1.ConditionTypeLaunched)
-				g.Expect(launchedCondition).ToNot(BeNil())
-				g.Expect(launchedCondition.IsFalse()).To(BeTrue())
-				g.Expect(launchedCondition.Reason).To(Equal("InstanceCreationFailed"))
-			}).Should(Succeed())
-
-			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(nil)
-		})
 	})
 
 	Context("Filtering in InstanceType Provider List", func() {

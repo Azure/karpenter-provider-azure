@@ -145,13 +145,27 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
 
-	// Launch a single goroutine to poll the returned promise.
-	// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
-	// crashes should be rare, and even in the case of a crash, as long as the node comes up successfully there's
-	// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
-	// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
-	// only held in memory.
-	go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+	if c.isStandaloneNodeClaim(nodeClaim) {
+		// For standalone nodeclaims, wait synchronously
+		err = instancePromise.Wait()
+		if err != nil {
+			// Clean up the VM
+			vmName := lo.FromPtr(instancePromise.VM.Name)
+			deleteErr := c.instanceProvider.Delete(ctx, vmName)
+			if cloudprovider.IgnoreNodeClaimNotFoundError(deleteErr) != nil {
+				log.FromContext(ctx).Error(deleteErr, "failed to delete VM", "vmName", vmName)
+			}
+			return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+		}
+	} else {
+		// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
+		// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
+		// crashes should be rare, and even in the case of a crash, as long as the node comes up successfully there's
+		// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
+		// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
+		// only held in memory.
+		go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+	}
 
 	instance := instancePromise.VM
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
@@ -165,7 +179,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	return nc, err
 }
 
-func (c *CloudProvider) waitOnPromise(ctx context.Context, instancePromise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {
+func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("%v", r)
@@ -173,7 +187,7 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, instancePromise *inst
 		}
 	}()
 
-	err := instancePromise.Wait()
+	err := promise.Wait()
 
 	// Wait until the claim is Launched, to avoid racing with creation.
 	// This isn't strictly required, but without this, failure test scenarios are harder
@@ -181,42 +195,31 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, instancePromise *inst
 	// the EnsureApplied call finishes, so EnsureApplied creates it again (which is wrong/isn't how
 	// it would actually happen in production).
 	c.waitUntilLaunched(ctx, nodeClaim)
+
 	if err != nil {
-		// For both Standalone Nodeclaims + Nodepool Owned Nodeclaims we want to delete the vms
-		vmName := lo.FromPtr(instancePromise.VM.Name)
-		deleteErr := c.instanceProvider.Delete(ctx, vmName)
-		if cloudprovider.IgnoreNodeClaimNotFoundError(deleteErr) != nil {
-			log.FromContext(ctx).Error(deleteErr, "failed to delete VM", "vmName", vmName)
+		c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
+		log.FromContext(ctx).Error(err, "failed launching nodeclaim")
+
+		// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
+		vmName := lo.FromPtr(promise.VM.Name)
+		err = c.instanceProvider.Delete(ctx, vmName)
+		if cloudprovider.IgnoreNodeClaimNotFoundError(err) != nil {
+			log.FromContext(ctx).Error(err, "failed to delete VM", "vmName", vmName)
 		}
 
-		if c.isStandaloneNodeClaim(nodeClaim) {
-			// For standalone NodeClaims: preserve the NodeClaim, set status to failed, return error
-			freshNodeClaim := &karpv1.NodeClaim{}
-			if getErr := c.kubeClient.Get(ctx, client.ObjectKeyFromObject(nodeClaim), freshNodeClaim); getErr != nil {
-				log.FromContext(ctx).Error(getErr, "failed to get fresh nodeclaim for status update", "NodeClaim", nodeClaim.Name)
-				return
+		if err = c.kubeClient.Delete(ctx, nodeClaim); err != nil {
+			err = client.IgnoreNotFound(err)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "failed to delete nodeclaim, will wait for liveness TTL", "NodeClaim", nodeClaim.Name)
 			}
-			old := freshNodeClaim.DeepCopy()
-			freshNodeClaim.StatusConditions().SetFalse(karpv1.ConditionTypeLaunched, "InstanceCreationFailed", truncateMessage(err.Error()))
-			if patchErr := c.kubeClient.Status().Patch(ctx, freshNodeClaim, client.MergeFrom(old)); patchErr != nil {
-				log.FromContext(ctx).Error(patchErr, "failed to update standalone nodeclaim status", "NodeClaim", nodeClaim.Name, "actualError", err.Error())
-			}
-			log.FromContext(ctx).Info("VM creation failed for standalone nodeclaim, preserving for retry", "NodeClaim", nodeClaim.Name)
-		} else {
-			// For NodePool-managed NodeClaims: delete the NodeClaim and return error
-			if deleteErr := c.kubeClient.Delete(ctx, nodeClaim); deleteErr != nil {
-				deleteErr = client.IgnoreNotFound(deleteErr)
-				if deleteErr != nil {
-					log.FromContext(ctx).Error(deleteErr, "failed to delete nodeclaim", "NodeClaim", nodeClaim.Name)
-				}
-			}
-			log.FromContext(ctx).Info("VM creation failed for nodepool-managed nodeclaim, deleting nodeclaim", "NodeClaim", nodeClaim.Name)
-			metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
-				metrics.ReasonLabel:       "async_provisioning",
-				metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
-				metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
-			})
 		}
+		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
+			metrics.ReasonLabel:       "async_provisioning",
+			metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+			metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
+		})
+
+		return
 	}
 }
 
