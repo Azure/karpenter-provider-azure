@@ -94,6 +94,69 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid resource group name with unsupported chars 'name@with*unsupported&chars'", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/name@with*unsupported&chars/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", false),
 		)
 	})
+
+	Context("ImageFamily", func() {
+		It("should reject invalid ImageFamily", func() {
+			invalidImageFamily := "123"
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: &invalidImageFamily,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("FIPSMode", func() {
+		It("should reject invalid FIPSMode", func() {
+			invalidFIPSMode := "123"
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					FIPSMode: &invalidFIPSMode,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
+	Context("ImageFamily and FIPSMode", func() {
+		DescribeTable("should only accept valid ImageFamily and FIPSMode combinations", func(imageFamily string, fipsMode string, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{},
+			}
+			// allows for leaving imageFamily unset, which currently defaults to Ubuntu2204
+			if imageFamily != "" {
+				nodeClass.Spec.ImageFamily = &imageFamily
+			}
+			// allows for leaving fipsMode unset, which currently effectively behaves like setting fipsMode to Disabled
+			if fipsMode != v1beta1.FIPSUnspecified {
+				nodeClass.Spec.FIPSMode = &fipsMode
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("generic Ubuntu when FIPSMode is explicitly Disabled should succeed", v1beta1.UbuntuImageFamily, v1beta1.FIPSDisabled, true),
+			Entry("generic Ubuntu when FIPSMode is not explicitly set should succeed", v1beta1.UbuntuImageFamily, v1beta1.FIPSUnspecified, true),
+			Entry("generic Ubuntu when FIPSMode is explicitly FIPS should succeed", v1beta1.UbuntuImageFamily, v1beta1.FIPSEnabled, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2204ImageFamily, v1beta1.FIPSDisabled, true),
+			Entry("Ubuntu2204 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2204ImageFamily, v1beta1.FIPSUnspecified, true),
+			//TODO: Modify when Ubuntu 22.04 with FIPS becomes available
+			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2204ImageFamily, v1beta1.FIPSEnabled, false),
+			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1beta1.AzureLinuxImageFamily, v1beta1.FIPSDisabled, true),
+			Entry("generic AzureLinux when FIPSMode is not explicitly set should succeed", v1beta1.AzureLinuxImageFamily, v1beta1.FIPSUnspecified, true),
+			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1beta1.AzureLinuxImageFamily, v1beta1.FIPSEnabled, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly Disabled should succeed", "", v1beta1.FIPSDisabled, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is not explicitly set should succeed", "", v1beta1.FIPSUnspecified, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly FIPS should fail", "", v1beta1.FIPSEnabled, false),
+		)
+	})
+
 	Context("Requirements", func() {
 		It("should allow restricted domains exceptions", func() {
 			oldNodePool := nodePool.DeepCopy()

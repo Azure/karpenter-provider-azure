@@ -26,6 +26,7 @@ import (
 
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
+// +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204",rule="has(self.imageFamily) && has(self.fipsMode) ? !(self.imageFamily == 'Ubuntu2204' && self.fipsMode == 'FIPS') : true"
 type AKSNodeClassSpec struct {
 	// VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -41,8 +42,12 @@ type AKSNodeClassSpec struct {
 	ImageID *string `json:"-"`
 	// ImageFamily is the image family that instances use.
 	// +kubebuilder:default=Ubuntu2204
-	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux}
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,AzureLinux}
 	ImageFamily *string `json:"imageFamily,omitempty"`
+	// FIPSMode controls FIPS compliance for the provisioned nodes
+	// +kubebuilder:validation:Enum:={FIPS,Disabled}
+	// +optional
+	FIPSMode *string `json:"fipsMode,omitempty"`
 	// Tags to be applied on Azure resources like instances.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
