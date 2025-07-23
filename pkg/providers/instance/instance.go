@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -50,8 +49,6 @@ import (
 )
 
 var (
-	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
-
 	CapacityTypeToPriority = map[string]string{
 		karpv1.CapacityTypeSpot:     string(armcompute.VirtualMachinePriorityTypesSpot),
 		karpv1.CapacityTypeOnDemand: string(armcompute.VirtualMachinePriorityTypesRegular),
@@ -572,13 +569,6 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	}
 }
 
-// setNodePoolNameTag sets "karpenter.sh/nodepool" tag
-func setNodePoolNameTag(tags map[string]*string, nodeClaim *karpv1.NodeClaim) {
-	if val, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
-		tags[NodePoolTagKey] = &val
-	}
-}
-
 type createResult struct {
 	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
 	VM     *armcompute.VirtualMachine
@@ -635,9 +625,6 @@ func (p *DefaultProvider) beginLaunchInstance(
 	if err != nil {
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
-
-	// set nodepool tag for NIC, VM, and Disk
-	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
 
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)

@@ -33,6 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -147,7 +148,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 				TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 			}
 			vm.Tags = lo.OmitBy(vm.Tags, func(key string, value *string) bool {
-				return key == instance.NodePoolTagKey
+				return key == launchtemplate.NodePoolTagKey
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 

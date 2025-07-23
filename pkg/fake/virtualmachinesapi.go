@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -195,7 +196,10 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 
 		// If other fields need to be updated in the future, you can similarly
 		// update the VM object by merging with updates.<New Field>.
-		vm.Tags = updates.Tags
+		if updates.Tags != nil {
+			// VM tags are full-replace if they're specified
+			vm.Tags = maps.Clone(updates.Tags)
+		}
 		if updates.Identity != nil {
 			if vm.Identity == nil {
 				vm.Identity = &armcompute.VirtualMachineIdentity{}

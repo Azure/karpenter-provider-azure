@@ -49,7 +49,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 )
@@ -343,7 +343,7 @@ var _ = Describe("InstanceProvider", func() {
 		vm, err := azureEnv.InstanceProvider.Get(ctx, vmName)
 		Expect(err).To(BeNil())
 		tags := vm.Tags
-		Expect(lo.FromPtr(tags[instance.NodePoolTagKey])).To(Equal(nodePool.Name))
+		Expect(lo.FromPtr(tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
 		Expect(lo.PickBy(tags, func(key string, value *string) bool {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
@@ -352,7 +352,7 @@ var _ = Describe("InstanceProvider", func() {
 		nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
 		Expect(nic).ToNot(BeNil())
 		nicTags := nic.Tags
-		Expect(lo.FromPtr(nicTags[instance.NodePoolTagKey])).To(Equal(nodePool.Name))
+		Expect(lo.FromPtr(nicTags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
 		Expect(lo.PickBy(nicTags, func(key string, value *string) bool {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
