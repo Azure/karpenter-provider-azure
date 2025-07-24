@@ -77,6 +77,6 @@
 		"ghcr.io/CargoSense/devcontainer-features/shellcheck:1": {},
 		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" },
 		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
-	    "ghcr.io/devcontainers-extra/features/ripgrep:1": {}
+		"ghcr.io/devcontainers-extra/features/ripgrep:1": {}
 	}
 }
