@@ -70,10 +70,10 @@
 		// custom
 		"ghcr.io/devcontainers/features/sshd:1": {},
 		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
-		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1.2.1": {}, // 1.2.2 seems to be broken
+		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": { "version": "v1.33.2" }, // sometimes fails to determine the stable version, so just specify it
 		"ghcr.io/devcontainers/features/azure-cli:1": {},
 		"ghcr.io/devcontainers-extra/features/pre-commit:2": {},
-		"ghcr.io/froazin/devcontainer-features/shellcheck:0": {},
+		"ghcr.io/CargoSense/devcontainer-features/shellcheck:1": {},
 		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" }
 	}
 }

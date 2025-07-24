@@ -74,8 +74,9 @@
 		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": { "version": "v1.33.2" }, // sometimes fails to determine the stable version, so just specify it
 		"ghcr.io/devcontainers/features/azure-cli:1": {},
 		"ghcr.io/devcontainers-extra/features/pre-commit:2": {},
-		"ghcr.io/froazin/devcontainer-features/shellcheck:0": {},
+		"ghcr.io/CargoSense/devcontainer-features/shellcheck:1": {},
 		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" },
-		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+	    "ghcr.io/devcontainers-extra/features/ripgrep:1": {}
 	}
 }
