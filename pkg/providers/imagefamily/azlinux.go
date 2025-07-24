@@ -44,7 +44,7 @@ func (u AzureLinux) Name() string {
 	return v1beta1.AzureLinuxImageFamily
 }
 
-func (u AzureLinux) DefaultImages() []types.DefaultImageOutput {
+func (u AzureLinux) DefaultImages(useSIG bool) []types.DefaultImageOutput {
 	// image provider will select these images in order, first match wins. This is why we chose to put Gen2 first in the defaultImages, as we prefer gen2 over gen1
 	return []types.DefaultImageOutput{
 		{
