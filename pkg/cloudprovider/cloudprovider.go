@@ -96,7 +96,11 @@ func New(
 // Create a node given the constraints.
 func (c *CloudProvider) handleInstanceCreation(ctx context.Context, instancePromise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) error {
 	if c.isStandaloneNodeClaim(nodeClaim) {
-		// For standalone nodeclaims, wait synchronously
+		// processStandaloneNodeClaimDeletion:
+		//   Standalone NodeClaims aren’t re-queued for reconciliation in the provision_trigger controller,
+		//   so we delete them synchronously. After marking Launched=true,
+		//   their status can’t be reverted to false once the delete completes due to how core caches nodeclaims in
+		// 	 the lanch controller. This ensures we retry continiously until we hit the registration TTL
 		err := instancePromise.Wait()
 		if err != nil {
 			return c.handleNodeClaimCreationError(ctx, err, instancePromise, nodeClaim, false)
