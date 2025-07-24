@@ -24,7 +24,7 @@ import (
 // which is when Azure Linux 3 support starts
 func UseAzureLinux3(kubernetesVersion string) bool {
 	// Parse version, stripping any 'v' prefix if present
-	version, err := semver.Parse(strings.TrimPrefix(kubernetesVersion, "v"))
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
 	if err != nil {
 		// If we can't parse the version, default to AzureLinux (false)
 		return false

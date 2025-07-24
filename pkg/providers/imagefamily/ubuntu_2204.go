@@ -44,7 +44,7 @@ func (u Ubuntu2204) Name() string {
 	return v1beta1.Ubuntu2204ImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages() []types.DefaultImageOutput {
+func (u Ubuntu2204) DefaultImages(useSIG bool) []types.DefaultImageOutput {
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
 	return []types.DefaultImageOutput{
 		{
