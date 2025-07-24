@@ -1582,6 +1582,9 @@ var _ = Describe("InstanceType Provider", func() {
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
 				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+				if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
+					Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
