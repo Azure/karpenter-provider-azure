@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8sflag "k8s.io/component-base/cli/flag"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	"sigs.k8s.io/karpenter/pkg/utils/env"
 
@@ -81,13 +82,14 @@ type Options struct {
 	SubnetID                string   `json:"subnetId,omitempty"`                // => VnetSubnetID to use (for nodes in Azure CNI Overlay and Azure CNI + pod subnet; for for nodes and pods in Azure CNI), unless overridden via AKSNodeClass
 	setFlags                map[string]bool
 
-	ProvisionMode              string `json:"provisionMode,omitempty"`
-	NodeBootstrappingServerURL string `json:"-"`
-	UseSIG                     bool   `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
-	SIGAccessTokenServerURL    string `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
-	SIGAccessTokenScope        string `json:"-"`                // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
-	SIGSubscriptionID          string `json:"sigSubscriptionId,omitempty"`
-	NodeResourceGroup          string `json:"nodeResourceGroup,omitempty"`
+	ProvisionMode              string            `json:"provisionMode,omitempty"`
+	NodeBootstrappingServerURL string            `json:"-"`
+	UseSIG                     bool              `json:"useSIG,omitempty"` // => UseSIG is true if Karpenter is managed by AKS, false if it is a self-hosted karpenter installation
+	SIGAccessTokenServerURL    string            `json:"-"`                // => SIGAccessTokenServerURL used to access SIG, not set if it is a self-hosted karpenter installation
+	SIGAccessTokenScope        string            `json:"-"`                // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
+	SIGSubscriptionID          string            `json:"sigSubscriptionId,omitempty"`
+	NodeResourceGroup          string            `json:"nodeResourceGroup,omitempty"`
+	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -112,6 +114,13 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGAccessTokenScope, "sig-access-token-scope", env.WithDefaultString("SIG_ACCESS_TOKEN_SCOPE", ""), "The scope for the SIG access token. Only used for AKS managed karpenter. UseSIG must be set to true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
+
+	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
+	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {
+		panic(fmt.Sprintf("failed to parse ADDITIONAL_TAGS from string %q: %s", env.WithDefaultString("ADDITIONAL_TAGS", ""), err))
+	}
+	// See https://github.com/Azure/karpenter-provider-azure/issues/1042 for issue discussing improvements around this
+	fs.Var(additionalTagsFlag, "additional-tags", "Additional tags to apply to the resources in Azure. Format is key1=value1,key2=value2. These tags will be merged with the tags specified on the NodePool. In the case of a tag collision, the NodePool tag wins. These tags only apply to new nodes and do not trigger drift, which means that adding tags to this collection will not update existing nodes until drift triggers for some other reason.")
 }
 
 func (o *Options) GetAPIServerName() string {

@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
 
@@ -51,6 +52,9 @@ var _ = Describe("Utilization", func() {
 		ExpectProvisionPodPerNode(env.AZLinuxNodeClass, env.DefaultNodePool)
 	})
 	It("should provision one pod per node (AzureLinux, arm64)", func() {
+		if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.InClusterController {
+			Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+		}
 		ExpectProvisionPodPerNode(env.AZLinuxNodeClass, env.ArmNodepool)
 	})
 	It("should provision one pod per node (Ubuntu, amd64)", func() {
