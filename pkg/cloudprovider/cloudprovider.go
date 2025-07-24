@@ -100,7 +100,7 @@ func (c *CloudProvider) handleInstanceCreation(ctx context.Context, instanceProm
 		//   Standalone NodeClaims aren’t re-queued for reconciliation in the provision_trigger controller,
 		//   so we delete them synchronously. After marking Launched=true,
 		//   their status can’t be reverted to false once the delete completes due to how core caches nodeclaims in
-		// 	 the lanch controller. This ensures we retry continiously until we hit the registration TTL
+		// 	 the launch controller. Buy running this sync we will end up retrying the launch controllers cloudprovider.Create() call
 		err := instancePromise.Wait()
 		if err != nil {
 			return c.handleNodeClaimCreationError(ctx, err, instancePromise, nodeClaim, false)
@@ -538,4 +538,3 @@ func truncateMessage(msg string) string {
 		return msg
 	}
 	return msg[:truncateAt] + "..."
-}
