@@ -99,13 +99,7 @@ func (c *CloudProvider) handleInstanceCreation(ctx context.Context, instanceProm
 		// For standalone nodeclaims, wait synchronously
 		err := instancePromise.Wait()
 		if err != nil {
-			// Clean up the VM
-			vmName := lo.FromPtr(instancePromise.VM.Name)
-			deleteErr := c.instanceProvider.Delete(ctx, vmName)
-			if cloudprovider.IgnoreNodeClaimNotFoundError(deleteErr) != nil {
-				log.FromContext(ctx).Error(deleteErr, "failed to delete VM", "vmName", vmName)
-			}
-			return cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+			return c.handleNodeClaimCreationError(ctx, err, instancePromise, nodeClaim, false)
 		}
 	} else {
 		// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
@@ -207,28 +201,7 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 	c.waitUntilLaunched(ctx, nodeClaim)
 
 	if err != nil {
-		c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
-		log.FromContext(ctx).Error(err, "failed launching nodeclaim")
-
-		// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
-		vmName := lo.FromPtr(promise.VM.Name)
-		err = c.instanceProvider.Delete(ctx, vmName)
-		if cloudprovider.IgnoreNodeClaimNotFoundError(err) != nil {
-			log.FromContext(ctx).Error(err, "failed to delete VM", "vmName", vmName)
-		}
-
-		if err = c.kubeClient.Delete(ctx, nodeClaim); err != nil {
-			err = client.IgnoreNotFound(err)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "failed to delete nodeclaim, will wait for liveness TTL", "NodeClaim", nodeClaim.Name)
-			}
-		}
-		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
-			metrics.ReasonLabel:       "async_provisioning",
-			metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
-			metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
-		})
-
+		_ = c.handleNodeClaimCreationError(ctx, err, promise, nodeClaim, true)
 		return
 	}
 }
@@ -254,6 +227,41 @@ func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1
 			return // context was canceled
 		}
 	}
+}
+
+// handleNodeClaimCreationError handles common error processing for both standalone and async node claim creation failures
+func (c *CloudProvider) handleNodeClaimCreationError(ctx context.Context, err error, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim, removeNodeClaim bool) error {
+	c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
+	log.FromContext(ctx).Error(err, "failed launching nodeclaim")
+
+	// Clean up the VM
+	// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
+	vmName := lo.FromPtr(promise.VM.Name)
+	deleteErr := c.instanceProvider.Delete(ctx, vmName)
+	if cloudprovider.IgnoreNodeClaimNotFoundError(deleteErr) != nil {
+		log.FromContext(ctx).Error(deleteErr, "failed to delete VM", "vmName", vmName)
+	}
+
+	// For async provisioning, also delete the NodeClaim
+	if removeNodeClaim {
+		if deleteErr := c.kubeClient.Delete(ctx, nodeClaim); deleteErr != nil {
+			deleteErr = client.IgnoreNotFound(deleteErr)
+			if deleteErr != nil {
+				log.FromContext(ctx).Error(deleteErr, "failed to delete nodeclaim, will wait for liveness TTL", "NodeClaim", nodeClaim.Name)
+			}
+		}
+		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
+			metrics.ReasonLabel:       "async_provisioning",
+			metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+			metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
+		})
+	}
+
+	// For standalone node claims, return a CreateError
+	if !removeNodeClaim {
+		return cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+	}
+	return nil
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
