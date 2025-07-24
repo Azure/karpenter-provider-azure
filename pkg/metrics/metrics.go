@@ -17,10 +17,15 @@ limitations under the License.
 package metrics
 
 import (
+	"context"
+
 	"github.com/prometheus/client_golang/prometheus"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+	"sigs.k8s.io/karpenter/pkg/operator/injection"
 )
 
+// Note: If this grows too large, this package could be splitted into multiple, one per subsystem.
+// That pattern is being used in Karpenter core (as of v1.5.0).
 var (
 	ImageSelectionErrorCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -31,10 +36,38 @@ var (
 		},
 		[]string{"family"},
 	)
+
+	MethodDurationWithAsync = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: Namespace,
+			Subsystem: cloudProviderSubsystem,
+			Name:      "duration_seconds_with_async",
+			Help:      "Duration of cloud provider method calls. Includes async/LRO operations in routines that run beyond the initial call.",
+			Buckets:   prometheus.DefBuckets,
+		},
+		[]string{metricLabelController, metricLabelMethod, metricLabelError},
+	)
 )
 
 func init() {
 	crmetrics.Registry.MustRegister(
 		ImageSelectionErrorCount,
+		MethodDurationWithAsync,
 	)
+}
+
+func GetLabelsMapForCloudProviderDurationWithAsync(ctx context.Context, method string, err error) map[string]string {
+	// TODO
+	return map[string]string{
+		metricLabelController: injection.GetControllerName(ctx),
+		metricLabelMethod:     method,
+		metricLabelError: func() string {
+			switch {
+			case err == nil:
+				return cloudProviderMetricLabelErrorNone
+			default:
+				return cloudProviderMetricLabelErrorUnknown
+			}
+		}(),
+	}
 }
