@@ -132,6 +132,28 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", 1)
 		})
+		It("should support well-known deprecated labels -- Instance Type", func() {
+			// NOTE: this isn't tested alongside the rest of the deprecated labels, because the restriction for
+			// instance type + zone is flakey when recieving zonal allocation errors from azure
+			// by splitting out this test, we avoid some test flake
+			nodeSelector := map[string]string{
+				// Deprecated Labels
+				corev1.LabelInstanceType: "Standard_D4s_v5",
+			}
+			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
+			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
+				return corev1.NodeSelectorRequirement{Key: key, Operator: corev1.NodeSelectorOpIn, Values: []string{value}}
+			})
+			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
+				NodeSelector:     nodeSelector,
+				NodePreferences:  requirements,
+				NodeRequirements: requirements,
+			}})
+			env.ExpectCreated(nodeClass, nodePool, deployment)
+			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+			env.ExpectCreatedNodeCount("==", 1)
+
+		})
 		It("should support well-known deprecated labels", func() {
 			nodeSelector := map[string]string{
 				// Deprecated Labels
@@ -140,7 +162,6 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				"topology.disk.csi.azure.com/zone":  fmt.Sprintf("%s-1", env.Region),
 				"beta.kubernetes.io/arch":           "amd64",
 				"beta.kubernetes.io/os":             "linux",
-				corev1.LabelInstanceType:            "Standard_D4s_v5",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
