@@ -8,6 +8,10 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "westus3"
+      suites:
+        type: string
+        description: "comma-separated list of suites to run (e.g., 'Scheduling,GPU,Drift'). If empty, runs all suites"
+        default: ""
   push:
     branches: [main]
 
@@ -28,6 +32,7 @@ jobs:
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
       location: ${{ inputs.location || 'westus3' }}
+      suites: ${{ inputs.suites || '' }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}

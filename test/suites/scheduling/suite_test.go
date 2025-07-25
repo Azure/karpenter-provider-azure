@@ -432,7 +432,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				}, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 						Key:      v1beta1.LabelSKUFamily,
-						Operator: corev1.NodeSelectorOpIn,
+						Operator: corev1.NodeSelectorOpNotIn,
 						Values:   []string{"D"},
 					},
 				})
