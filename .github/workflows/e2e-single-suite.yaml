@@ -1,0 +1,84 @@
+name: E2E Single Suite
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Test suite to run'
+        required: true
+        type: choice
+        options:
+          - Scheduling
+          - Utilization
+          - GPU
+          - Drift
+          - Integration
+          - NodeClaim
+          - Consolidation
+          - Chaos
+          - ACR
+          - KubernetesUpgrade
+          - Spot
+      location:
+        description: 'Azure location for the test'
+        required: false
+        type: choice
+        default: 'eastus'
+        options:
+          - eastus
+          - westus
+          - southcentralus
+          - northeurope
+          - westeurope
+      git_ref:
+        description: 'Git ref (branch, tag, or SHA) to checkout'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  initialize-generative-params:
+    runs-on: ubuntu-latest
+    outputs:
+      E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
+      GIT_REF: ${{ steps.resolve-git-ref.outputs.GIT_REF }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        with:
+          disable-telemetry: true
+          disable-sudo: true
+          egress-policy: block
+          allowed-endpoints: >
+
+      - id: generate-e2e-run-hash
+        run: |
+          E2E_HASH="$RANDOM$RANDOM"
+          echo "Using e2e hash \"$E2E_HASH\""
+          echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
+      
+      - id: resolve-git-ref
+        run: |
+          if [ -z "${{ inputs.git_ref }}" ]; then
+            echo "GIT_REF=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "GIT_REF=${{ inputs.git_ref }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  e2e-single-suite:
+    needs: [initialize-generative-params]
+    permissions:
+      contents: read
+      id-token: write
+      statuses: write
+    uses: ./.github/workflows/e2e.yaml
+    with:
+      git_ref: ${{ needs.initialize-generative-params.outputs.GIT_REF }}
+      suite: ${{ inputs.suite }}
+      hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
+      location: ${{ inputs.location }}
+    secrets:
+      E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
+      E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
+      E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
