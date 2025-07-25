@@ -79,9 +79,9 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 		return []NodeImage{}, err
 	}
 
-	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, kubernetesVersion)
 	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
 	useSIG := options.FromContext(ctx).UseSIG
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, kubernetesVersion, useSIG)
 
 	key, err := p.cacheKey(
 		supportedImages,

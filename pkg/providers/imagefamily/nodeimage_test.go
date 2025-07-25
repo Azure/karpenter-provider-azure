@@ -49,12 +49,12 @@ const (
 func getExpectedTestCIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages()
+		images = imagefamily.Ubuntu2204{}.DefaultImages(false)
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
 		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			images = imagefamily.AzureLinux3{}.DefaultImages()
+			images = imagefamily.AzureLinux3{}.DefaultImages(false)
 		} else {
-			images = imagefamily.AzureLinux{}.DefaultImages()
+			images = imagefamily.AzureLinux{}.DefaultImages(false)
 		}
 	}
 	nodeImages := []imagefamily.NodeImage{}
@@ -71,12 +71,12 @@ func getExpectedTestCIGImages(imageFamily string, version string, kubernetesVers
 func getExpectedTestSIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages()
+		images = imagefamily.Ubuntu2204{}.DefaultImages(true)
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
 		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			images = imagefamily.AzureLinux3{}.DefaultImages()
+			images = imagefamily.AzureLinux3{}.DefaultImages(true)
 		} else {
-			images = imagefamily.AzureLinux{}.DefaultImages()
+			images = imagefamily.AzureLinux{}.DefaultImages(true)
 		}
 	}
 	nodeImages := []imagefamily.NodeImage{}
@@ -158,6 +158,9 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 			azLinuxV3Images := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, cigImageVersion, "1.32.0")
 			Expect(foundImages).To(ContainElements(azLinuxV3Images))
+
+			// Explicitly verify ARM64 image is NOT included in CIG (Community Image Gallery)
+			Expect(foundImages).ToNot(ContainElement(HaveField("ID", ContainSubstring("V3gen2arm64"))))
 		})
 	})
 
@@ -203,6 +206,9 @@ var _ = Describe("NodeImageProvider tests", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(foundImages).To(ContainElements(getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, "1.32.0")))
+
+			// Explicitly verify ARM64 image IS included in SIG (Shared Image Gallery)
+			Expect(foundImages).To(ContainElement(HaveField("ID", ContainSubstring("V3gen2arm64"))))
 		})
 	})
 

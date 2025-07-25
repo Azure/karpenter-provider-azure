@@ -543,6 +543,37 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("additional-tags", func() {
+		It("should add additional tags to the node", func() {
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				AdditionalTags: map[string]string{
+					"karpenter.azure.com/test-tag": "test-value",
+				},
+			}))
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+			Expect(vm.Tags).To(Equal(map[string]*string{
+				"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
+				"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
+				"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
+			}))
+
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			Expect(nic.Interface.Tags).To(Equal(map[string]*string{
+				"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
+				"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
+				"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
+			}))
+		})
+	})
+
 	Context("Filtering in InstanceType Provider List", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
 		var err error
@@ -1551,6 +1582,9 @@ var _ = Describe("InstanceType Provider", func() {
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
 				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+				if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
+					Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{

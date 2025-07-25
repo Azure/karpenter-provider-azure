@@ -145,16 +145,20 @@ func ApplySIGImages(nodeClass *v1beta1.AKSNodeClass) {
 }
 
 func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion string) {
-	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)
+	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion, nodeClass.Status.KubernetesVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
-func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
+func getExpectedTestSIGImages(imageFamily string, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages()
+		images = imagefamily.Ubuntu2204{}.DefaultImages(true)
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
-		images = imagefamily.AzureLinux{}.DefaultImages()
+		if imagefamily.UseAzureLinux3(kubernetesVersion) {
+			images = imagefamily.AzureLinux3{}.DefaultImages(true)
+		} else {
+			images = imagefamily.AzureLinux{}.DefaultImages(true)
+		}
 	}
 	nodeImages := []imagefamily.NodeImage{}
 	for _, image := range images {
