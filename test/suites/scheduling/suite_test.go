@@ -132,7 +132,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 			env.ExpectCreatedNodeCount("==", 1)
 		})
-		It("should support well-known deprecated labels -- Instance Type", func() {
+		It("should support well-known deprecated labels -- beta.kubernetes.io/instance-type", func() {
 			// NOTE: this isn't tested alongside the rest of the deprecated labels, because the restriction for
 			// instance type + zone is flakey when receiving zonal allocation errors from azure
 			// by splitting out this test, we avoid some test flake
