@@ -134,7 +134,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		})
 		It("should support well-known deprecated labels -- beta.kubernetes.io/instance-type", func() {
 			// NOTE: this isn't tested alongside the rest of the deprecated labels, because the restriction for
-			// instance type + zone is flakey when receiving zonal allocation errors from azure
+			// instance type + zone is flaky when receiving zonal allocation errors from azure
 			// by splitting out this test, we avoid some test flake
 			nodeSelector := map[string]string{
 				// Deprecated Labels
