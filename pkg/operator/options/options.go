@@ -89,7 +89,7 @@ type Options struct {
 	SIGAccessTokenScope        string            `json:"-"`                // => SIGAccessTokenScope is the scope for the auxiliary token, not set if it is a self-hosted karpenter installation
 	SIGSubscriptionID          string            `json:"sigSubscriptionId,omitempty"`
 	NodeResourceGroup          string            `json:"nodeResourceGroup,omitempty"`
-  EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
+	EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
 	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
 }
 

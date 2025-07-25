@@ -188,4 +188,3 @@ func (o *NodeBootstrappingGetDefault) String() string {
 func (o *NodeBootstrappingGetDefault) GetPayload() string {
 	return o.Payload
 }
-
