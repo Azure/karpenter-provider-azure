@@ -79,7 +79,7 @@ func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([
 
 	// CIG has no FIPS images; FIPS images can only be accessed through SIG
 	// (this won't be an error since there just aren't any FIPS images for CIG)
-	if nodeClass.Spec.FIPSMode != nil && *nodeClass.Spec.FIPSMode == v1beta1.FIPSEnabled && !useSIG {
+	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSEnabled && !useSIG {
 		return []NodeImage{}, nil
 	}
 

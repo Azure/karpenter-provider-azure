@@ -43,42 +43,43 @@ func (u Ubuntu2004) Name() string {
 	return v1beta1.UbuntuImageFamily
 }
 
-func (u Ubuntu2004) DefaultImages() []types.DefaultImageOutput {
-	// Ubuntu2004 doesn't have default node images (only FIPS)
+func (u Ubuntu2004) DefaultImages(fipsMode v1beta1.FIPSMode) []types.DefaultImageOutput {
+	if fipsMode == v1beta1.FIPSModeFIPS {
+		// FIPS images aren't supported in public galleries, only shared image galleries
+		// Ubuntu2004 doesn't have default node images (only FIPS)
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2004Gen2FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-ubuntu-fips-containerd-20.04-gen2",
+			},
+			{
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2004Gen1FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
+				),
+				Distro: "aks-ubuntu-fips-containerd-20.04",
+			},
+		}
+	}
 	return []types.DefaultImageOutput{}
 }
 
-// FIPS images aren't supported in public galleries, only shared image galleries
-func (u Ubuntu2004) FIPSImages() []types.DefaultImageOutput {
-	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2004Gen2Fipscontainerd first in the FIPSImages
-	return []types.DefaultImageOutput{
-		{
-			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-			GalleryResourceGroup: AKSUbuntuResourceGroup,
-			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2004Gen2FIPSImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-ubuntu-fips-containerd-20.04-gen2",
-		},
-		{
-			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-			GalleryResourceGroup: AKSUbuntuResourceGroup,
-			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2004Gen1FIPSImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
-			),
-			Distro: "aks-ubuntu-fips-containerd-20.04",
-		},
-	}
-}
-
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2004) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u Ubuntu2004) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration,
+	taints []v1.Taint,
+	labels map[string]string,
+	caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -109,7 +110,14 @@ func (u Ubuntu2004) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2004) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string, nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
+func (u Ubuntu2004) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration,
+	taints []v1.Taint,
+	startupTaints []v1.Taint,
+	labels map[string]string,
+	instanceType *cloudprovider.InstanceType,
+	imageDistro string,
+	storageProfile string,
+	nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,

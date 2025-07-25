@@ -116,11 +116,11 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	// validate FIPS + useSIG
 	fipsMode := nodeClass.Spec.FIPSMode
 	useSIG := options.FromContext(ctx).UseSIG
-	if fipsMode != nil && *fipsMode == v1beta1.FIPSEnabled && !useSIG {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSEnabled && !useSIG {
 		nodeClass.Status.Images = nil
 		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "SIGRequiredForFIPS", "FIPS images require UseSIG to be enabled, but UseSIG is false")
 		logger.Info("FIPS images require SIG")
-		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+		return reconcile.Result{}, fmt.Errorf("FIPS images require UseSIG to be enabled, but UseSIG is false")
 	}
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)

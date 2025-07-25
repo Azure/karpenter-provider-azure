@@ -28,6 +28,7 @@ import (
 
 	"github.com/samber/lo"
 
+	opstatus "github.com/awslabs/operatorpkg/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -184,19 +185,21 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				})
 				ctx = options.ToContext(ctx)
 
-				fipsMode := v1beta1.FIPSEnabled
-				nodeClass.Spec.FIPSMode = &fipsMode
+				nodeClass.Spec.FIPSMode = v1beta1.FIPSModeFIPS
 
 				// set ImageFamily to AzureLinux (to bypass unsupported FIPS on the default Ubuntu2204)
 				imageFamily := v1beta1.AzureLinuxImageFamily
 				nodeClass.Spec.ImageFamily = &imageFamily
 
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(Equal("FIPS images require UseSIG to be enabled, but UseSIG is false"))
 
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
 				Expect(condition.Reason).To(Equal("SIGRequiredForFIPS"))
 				Expect(condition.Message).To(Equal("FIPS images require UseSIG to be enabled, but UseSIG is false"))
+				readyCondition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
+				Expect(readyCondition.IsFalse()).To(BeTrue())
 			})
 		})
 
