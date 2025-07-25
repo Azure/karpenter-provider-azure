@@ -43,9 +43,9 @@
 	// Use 'postCreateCommand' to run commands after the container is created.
 	"postCreateCommand": {
 		"disable metrics": "skaffold config set --global collect-metrics false",
-		"make toolchain": "make toolchain",
 		"configure pre-commit": "pre-commit install --install-hooks",
-		"install copilot-api": "yarn global add tallaxes/copilot-api#npm-github" // temp from fork until upstream is fixed
+		"install copilot-api": "yarn global add tallaxes/copilot-api#npm-github", // temp from fork until upstream is fixed
+		"make toolchain": "make toolchain"
 	},
 
 	"postStartCommand": "nohup bash -c '$(yarn global bin)/copilot-api start --github-token $GITHUB_TOKEN > /tmp/copilot-api.log &'",
@@ -77,6 +77,7 @@
 		"ghcr.io/CargoSense/devcontainer-features/shellcheck:1": {},
 		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" },
 		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
-		"ghcr.io/devcontainers-extra/features/ripgrep:1": {}
+		"ghcr.io/devcontainers-extra/features/ripgrep:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
 	}
 }
