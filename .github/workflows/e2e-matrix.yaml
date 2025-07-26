@@ -8,6 +8,10 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "eastus"
+      suites:
+        type: string
+        description: "comma-separated list of suites to run. If empty, runs all default suites"
+        default: ""
   #     k8s_version:
   #       type: string
   #       default: "1.27"
@@ -27,6 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
+      suite_matrix: ${{ steps.generate-suite-matrix.outputs.suite_matrix }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
@@ -42,12 +47,32 @@ jobs:
           E2E_HASH="$RANDOM$RANDOM"
           echo "Using e2e hash \"$E2E_HASH\""
           echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
+      
+      - id: generate-suite-matrix
+        run: |
+          if [ -z "${{ inputs.suites }}" ]; then
+            # Default suite list
+            SUITES='["Scheduling", "Utilization", "GPU", "Drift", "Integration", "NodeClaim", "Consolidation", "Chaos", "ACR", "KubernetesUpgrade", "Spot"]'
+          else
+            # Convert comma-separated list to JSON array
+            SUITES=$(echo "${{ inputs.suites }}" | awk -F',' '{
+              printf "["
+              for(i=1;i<=NF;i++){
+                gsub(/^[ \t]+|[ \t]+$/, "", $i);
+                printf "\"%s\"", $i
+                if(i<NF) printf ", "
+              }
+              printf "]"
+            }')
+          fi
+          echo "Generated suite matrix: $SUITES"
+          echo "suite_matrix=$SUITES" >> "$GITHUB_OUTPUT"
   e2e:
     needs: [initialize-generative-params]
     strategy:
       fail-fast: false
       matrix:
-        suite: [Scheduling, Utilization, GPU, Drift, Integration, NodeClaim, Consolidation, Chaos, ACR, KubernetesUpgrade, Spot]
+        suite: ${{ fromJson(needs.initialize-generative-params.outputs.suite_matrix) }}
     permissions:
       contents: read
       id-token: write
