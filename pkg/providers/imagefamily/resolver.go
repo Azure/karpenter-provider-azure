@@ -231,7 +231,7 @@ func getSupportedImages(familyName *string, fipsMode v1beta1.FIPSMode, kubernete
 func getImageFamily(familyName *string, fipsMode v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.UbuntuImageFamily:
-		if fipsMode == v1beta1.FIPSModeFIPS {
+		if lo.FromPtr(fipsMode) == v1beta1.FIPSEnabled {
 			return &Ubuntu2004{Options: parameters}
 		}
 		return &Ubuntu2204{Options: parameters}

@@ -72,7 +72,7 @@ func getExpectedTestSIGImages(imageFamily string, fipsMode v1beta1.FIPSMode, ver
 	var images []imagefamilytypes.DefaultImageOutput
 	var actualImageFamily imagefamily.ImageFamily
 	if imageFamily == v1beta1.UbuntuImageFamily {
-		if fipsMode == v1beta1.FIPSModeFIPS {
+		if lo.FromPtr(fipsMode) == v1beta1.FIPSEnabled {
 			actualImageFamily = &imagefamily.Ubuntu2004{}
 		} else {
 			actualImageFamily = &imagefamily.Ubuntu2204{}

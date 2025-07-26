@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/samber/lo"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -48,7 +49,7 @@ func (u AzureLinux3) Name() string {
 }
 
 func (u AzureLinux3) DefaultImages(fipsMode v1beta1.FIPSMode) []types.DefaultImageOutput {
-	if fipsMode == v1beta1.FIPSModeFIPS {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSEnabled {
 		// FIPS images aren't supported in public galleries, only shared image galleries
 		// image provider will select these images in order, first match wins
 		return []types.DefaultImageOutput{

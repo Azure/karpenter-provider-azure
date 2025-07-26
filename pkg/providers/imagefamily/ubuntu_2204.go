@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/samber/lo"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -45,7 +46,7 @@ func (u Ubuntu2204) Name() string {
 }
 
 func (u Ubuntu2204) DefaultImages(fipsMode v1beta1.FIPSMode) []types.DefaultImageOutput {
-	if fipsMode == v1beta1.FIPSModeFIPS {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSEnabled {
 		//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
 		return []types.DefaultImageOutput{}
 	}
