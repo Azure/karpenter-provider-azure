@@ -50,20 +50,12 @@ jobs:
       
       - id: generate-suite-matrix
         run: |
-          if [ -z "${{ inputs.suites }}" ]; then
-            # Default suite list
+          if [ -z "${{ inputs.suites }}" ] || [ "${{ inputs.suites }}" = "All" ]; then
+            # Default suite list when empty or "All" is selected
             SUITES='["Scheduling", "Utilization", "GPU", "Drift", "Integration", "NodeClaim", "Consolidation", "Chaos", "ACR", "KubernetesUpgrade", "Spot"]'
           else
-            # Convert comma-separated list to JSON array
-            SUITES=$(echo "${{ inputs.suites }}" | awk -F',' '{
-              printf "["
-              for(i=1;i<=NF;i++){
-                gsub(/^[ \t]+|[ \t]+$/, "", $i);
-                printf "\"%s\"", $i
-                if(i<NF) printf ", "
-              }
-              printf "]"
-            }')
+            # Single suite passed as choice
+            SUITES='["${{ inputs.suites }}"]'
           fi
           echo "Generated suite matrix: $SUITES"
           echo "suite_matrix=$SUITES" >> "$GITHUB_OUTPUT"

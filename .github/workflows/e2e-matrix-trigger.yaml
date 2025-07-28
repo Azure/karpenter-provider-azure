@@ -9,9 +9,23 @@ on:
         description: "the azure location to run the e2e test in"
         default: "westus3"
       suites:
-        type: string
-        description: "comma-separated list of suites to run (e.g., 'Scheduling,GPU,Drift'). If empty, runs all suites"
-        default: ""
+        type: choice
+        description: "Select a suite to run (or All for all suites)"
+        required: false
+        default: "All"
+        options:
+          - All
+          - Scheduling
+          - Utilization
+          - GPU
+          - Drift
+          - Integration
+          - NodeClaim
+          - Consolidation
+          - Chaos
+          - ACR
+          - KubernetesUpgrade
+          - Spot
   push:
     branches: [main]
 
