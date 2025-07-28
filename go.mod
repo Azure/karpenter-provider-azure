@@ -3,7 +3,7 @@ module github.com/Azure/karpenter-provider-azure
 go 1.24.4
 
 require (
-	github.com/Azure/aks-middleware v0.0.40
+	github.com/Azure/aks-middleware v0.0.41
 	github.com/Azure/azure-kusto-go v0.16.1
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/Azure/azure-sdk-for-go-extensions v0.1.10
@@ -34,7 +34,7 @@ require (
 	github.com/jongio/azidext/go/azidext v0.5.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/onsi/ginkgo/v2 v2.23.4
-	github.com/onsi/gomega v1.37.0
+	github.com/onsi/gomega v1.38.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/prometheus/client_golang v1.22.0
 	github.com/samber/lo v1.51.0
