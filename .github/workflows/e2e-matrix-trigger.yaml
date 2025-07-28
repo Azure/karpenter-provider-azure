@@ -10,7 +10,7 @@ on:
         default: "westus3"
       suites:
         type: choice
-        description: "Select a suite to run (or All for all suites)"
+        description: "Select a suite to run"
         required: false
         default: "All"
         options:
