@@ -32,66 +32,52 @@ import (
 )
 
 const (
-	Ubuntu2204Gen2ImageDefinition    = "2204gen2containerd"
-	Ubuntu2204Gen1ImageDefinition    = "2204containerd"
-	Ubuntu2204Gen2ArmImageDefinition = "2204gen2arm64containerd"
+	Ubuntu2004Gen2FIPSImageDefinition = "2004gen2fipscontainerd"
+	Ubuntu2004Gen1FIPSImageDefinition = "2004fipscontainerd"
 )
 
-type Ubuntu2204 struct {
+type Ubuntu2004 struct {
 	Options *parameters.StaticParameters
 }
 
-func (u Ubuntu2204) Name() string {
-	return v1beta1.Ubuntu2204ImageFamily
+func (u Ubuntu2004) Name() string {
+	return v1beta1.UbuntuImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u Ubuntu2004) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
-		//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
-		return []types.DefaultImageOutput{}
+		// Ubuntu2004 doesn't have default node images (only FIPS)
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2004Gen2FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-ubuntu-fips-containerd-20.04-gen2",
+			},
+			{
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2004Gen1FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
+				),
+				Distro: "aks-ubuntu-fips-containerd-20.04",
+			},
+		}
 	}
-
-	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
-	return []types.DefaultImageOutput{
-		{
-			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-			GalleryResourceGroup: AKSUbuntuResourceGroup,
-			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2204Gen2ImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-ubuntu-containerd-22.04-gen2",
-		},
-		{
-			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-			GalleryResourceGroup: AKSUbuntuResourceGroup,
-			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2204Gen1ImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
-			),
-			Distro: "aks-ubuntu-containerd-22.04",
-		},
-		{
-			PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
-			GalleryResourceGroup: AKSUbuntuResourceGroup,
-			GalleryName:          AKSUbuntuGalleryName,
-			ImageDefinition:      Ubuntu2204Gen2ArmImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-ubuntu-arm64-containerd-22.04-gen2",
-		},
-	}
+	return []types.DefaultImageOutput{}
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration,
+func (u Ubuntu2004) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	labels map[string]string,
 	caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
@@ -125,7 +111,7 @@ func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration,
+func (u Ubuntu2004) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	startupTaints []v1.Taint,
 	labels map[string]string,
