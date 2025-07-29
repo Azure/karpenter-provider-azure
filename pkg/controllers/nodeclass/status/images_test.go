@@ -185,7 +185,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				})
 				ctx = options.ToContext(ctx)
 
-				nodeClass.Spec.FIPSMode = v1beta1.FIPSModeFIPS
+				nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
 
 				// set ImageFamily to AzureLinux (to bypass unsupported FIPS on the default Ubuntu2204)
 				imageFamily := v1beta1.AzureLinuxImageFamily

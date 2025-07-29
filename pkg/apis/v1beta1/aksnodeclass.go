@@ -24,11 +24,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type FIPSMode *string
+type FIPSMode string
 
 var (
-	FIPSModeFIPS     = FIPSMode(lo.ToPtr(FIPSEnabled))
-	FIPSModeDisabled = FIPSMode(lo.ToPtr(FIPSDisabled))
+	FIPSModeFIPS     = FIPSMode("FIPS")
+	FIPSModeDisabled = FIPSMode("Disabled")
 )
 
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
@@ -54,7 +54,7 @@ type AKSNodeClassSpec struct {
 	// FIPSMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
-	FIPSMode FIPSMode `json:"fipsMode,omitempty"`
+	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
 	// Tags to be applied on Azure resources like instances.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`

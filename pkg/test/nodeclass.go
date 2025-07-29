@@ -149,7 +149,7 @@ func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion 
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
-func getExpectedTestSIGImages(imageFamily string, fipsMode v1beta1.FIPSMode, version string) []imagefamily.NodeImage {
+func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
 		images = imagefamily.Ubuntu2204{}.DefaultImages(fipsMode)

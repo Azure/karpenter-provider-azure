@@ -110,7 +110,7 @@ var _ = Describe("CEL/Validation", func() {
 
 	Context("FIPSMode", func() {
 		It("should reject invalid FIPSMode", func() {
-			invalidFIPSMode := "123"
+			invalidFIPSMode := v1beta1.FIPSMode("123")
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
@@ -122,7 +122,7 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("ImageFamily and FIPSMode", func() {
-		DescribeTable("should only accept valid ImageFamily and FIPSMode combinations", func(imageFamily string, fipsMode v1beta1.FIPSMode, expected bool) {
+		DescribeTable("should only accept valid ImageFamily and FIPSMode combinations", func(imageFamily string, fipsMode *v1beta1.FIPSMode, expected bool) {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec:       v1beta1.AKSNodeClassSpec{},
@@ -138,19 +138,19 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("generic Ubuntu when FIPSMode is explicitly Disabled should succeed", v1beta1.UbuntuImageFamily, v1beta1.FIPSModeDisabled, true),
+			Entry("generic Ubuntu when FIPSMode is explicitly Disabled should succeed", v1beta1.UbuntuImageFamily, &v1beta1.FIPSModeDisabled, true),
 			Entry("generic Ubuntu when FIPSMode is not explicitly set should succeed", v1beta1.UbuntuImageFamily, nil, true),
-			Entry("generic Ubuntu when FIPSMode is explicitly FIPS should succeed", v1beta1.UbuntuImageFamily, v1beta1.FIPSModeFIPS, true),
-			Entry("Ubuntu2204 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2204ImageFamily, v1beta1.FIPSModeDisabled, true),
+			Entry("generic Ubuntu when FIPSMode is explicitly FIPS should succeed", v1beta1.UbuntuImageFamily, &v1beta1.FIPSModeFIPS, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly Disabled should succeed", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeDisabled, true),
 			Entry("Ubuntu2204 when FIPSMode is not explicitly set should succeed", v1beta1.Ubuntu2204ImageFamily, nil, true),
 			//TODO: Modify when Ubuntu 22.04 with FIPS becomes available
-			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2204ImageFamily, v1beta1.FIPSModeFIPS, false),
-			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1beta1.AzureLinuxImageFamily, v1beta1.FIPSModeDisabled, true),
+			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1beta1.Ubuntu2204ImageFamily, &v1beta1.FIPSModeFIPS, false),
+			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeDisabled, true),
 			Entry("generic AzureLinux when FIPSMode is not explicitly set should succeed", v1beta1.AzureLinuxImageFamily, nil, true),
-			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1beta1.AzureLinuxImageFamily, v1beta1.FIPSModeFIPS, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly Disabled should succeed", "", v1beta1.FIPSModeDisabled, true),
+			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1beta1.AzureLinuxImageFamily, &v1beta1.FIPSModeFIPS, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly Disabled should succeed", "", &v1beta1.FIPSModeDisabled, true),
 			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is not explicitly set should succeed", "", nil, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly FIPS should fail", "", v1beta1.FIPSModeFIPS, false),
+			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly FIPS should fail", "", &v1beta1.FIPSModeFIPS, false),
 		)
 	})
 

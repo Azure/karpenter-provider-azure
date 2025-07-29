@@ -45,8 +45,8 @@ func (u Ubuntu2204) Name() string {
 	return v1beta1.Ubuntu2204ImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages(fipsMode v1beta1.FIPSMode) []types.DefaultImageOutput {
-	if lo.FromPtr(fipsMode) == v1beta1.FIPSEnabled {
+func (u Ubuntu2204) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
 		return []types.DefaultImageOutput{}
 	}
