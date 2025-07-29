@@ -50,7 +50,7 @@ func (u AzureLinux3) Name() string {
 
 func (u AzureLinux3) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
-		// FIPS images aren't supported in public galleries, only shared image galleries
+		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// image provider will select these images in order, first match wins
 		return []types.DefaultImageOutput{
 			{

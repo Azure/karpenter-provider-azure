@@ -197,7 +197,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
 				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal("SIGRequiredForFIPS"))
-				Expect(condition.Message).To(Equal("FIPS images require UseSIG to be enabled, but UseSIG is false"))
+				Expect(condition.Message).To(Equal("FIPS images require UseSIG to be enabled, but UseSIG is false (note: UseSIG is only supported in AKS managed NAP)"))
 
 				readyCondition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
 				Expect(readyCondition.IsFalse()).To(BeTrue())

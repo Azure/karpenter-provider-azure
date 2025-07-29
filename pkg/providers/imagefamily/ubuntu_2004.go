@@ -46,7 +46,7 @@ func (u Ubuntu2004) Name() string {
 
 func (u Ubuntu2004) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
-		// FIPS images aren't supported in public galleries, only shared image galleries
+		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// Ubuntu2004 doesn't have default node images (only FIPS)
 		return []types.DefaultImageOutput{
 			{
