@@ -20,8 +20,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/clusterdns"
-
 	gomegaformat "github.com/onsi/gomega/format"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
@@ -134,10 +132,9 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	// Providers
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
-	clusterDNSProvider := clusterdns.NewClusterDNSProvider(env.KubernetesInterface)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
 	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
-	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI, clusterDNSProvider)
+	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageFamilyResolver,

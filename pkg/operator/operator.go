@@ -20,10 +20,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"net"
 	"time"
-
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/clusterdns"
-
+	
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/go-logr/logr"
@@ -91,6 +91,21 @@ type Operator struct {
 	LoadBalancerProvider      *loadbalancer.Provider
 }
 
+func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
+	if kubernetesInterface == nil {
+		return nil, fmt.Errorf("no K8s client provided")
+	}
+	dnsService, err := kubernetesInterface.CoreV1().Services("kube-system").Get(ctx, "kube-dns", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	kubeDNSIP := net.ParseIP(dnsService.Spec.ClusterIP)
+	if kubeDNSIP == nil {
+		return nil, fmt.Errorf("parsing cluster IP")
+	}
+	return kubeDNSIP, nil
+}
+
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
 	azConfig, err := GetAZConfig()
 	lo.Must0(err, "creating Azure config") // NOTE: we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as when initializing the client there are helpful error messages in initializing clients and the azure config
@@ -115,6 +130,12 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 
+	if options.FromContext(ctx).DNSServiceIP == "" {
+		ip, err := kubeDNSIP(ctx, inClusterClient)
+		lo.Must0(err, "discovering kubernetes DNS IP address")
+		options.FromContext(ctx).DNSServiceIP = ip.String()
+	}
+
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
 		ctx,
@@ -123,9 +144,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		operator.Elected(),
 	)
 
-	clusterDNSProvider := clusterdns.NewClusterDNSProvider(
-		operator.KubernetesInterface,
-	)
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(
 		operator.KubernetesInterface,
 		cache.New(azurecache.KubernetesVersionTTL,
@@ -151,7 +169,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		imageProvider,
 		instanceTypeProvider,
 		azClient.NodeBootstrappingClient,
-		clusterDNSProvider,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,

@@ -63,15 +63,13 @@ NETWORK_PLUGIN=$(jq -r ".networkProfile.networkPlugin // empty | if . == \"none\
 NETWORK_PLUGIN_MODE=$(jq -r ".networkProfile.networkPluginMode // empty | if . == \"none\" then \"\" else . end" <<< "$AKS_JSON")
 NETWORK_POLICY=$(jq -r ".networkProfile.networkPolicy // empty | if . == \"none\" then \"\" else . end" <<< "$AKS_JSON")
 
-DNS_SERVICE_IP=$(jq -r ".networkProfile.dnsServiceIp // empty | if . == \"none\" then \"\" else . end" <<< "$AKS_JSON")
-
 NODE_IDENTITIES=$(jq -r ".identityProfile.kubeletidentity.resourceId" <<< "$AKS_JSON")
 
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv)
 
 export CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME \
     CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID KARPENTER_USER_ASSIGNED_CLIENT_ID NODE_IDENTITIES AZURE_SUBSCRIPTION_ID NETWORK_PLUGIN NETWORK_PLUGIN_MODE NETWORK_POLICY \
-    DNS_SERVICE_IP LOG_LEVEL VNET_GUID
+    LOG_LEVEL VNET_GUID
 
 # get karpenter-values-template.yaml, if not already present (e.g. outside of repo context)
 if [ ! -f karpenter-values-template.yaml ]; then

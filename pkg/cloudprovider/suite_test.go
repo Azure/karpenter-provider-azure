@@ -79,23 +79,6 @@ var _ = BeforeSuite(func() {
 	testOptions = test.Options()
 	ctx = options.ToContext(ctx, testOptions)
 	ctx, stop = context.WithCancel(ctx)
-	_, err := env.KubernetesInterface.CoreV1().Services("kube-system").Create(ctx, &v1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "kube-system",
-			Name:      "kube-dns",
-		},
-		Spec: v1.ServiceSpec{
-			//ClusterIP: "10.0.0.77",
-			Ports: []v1.ServicePort{{
-				Name:     "dns",
-				Protocol: "UDP",
-				Port:     53,
-			}},
-		},
-	}, metav1.CreateOptions{})
-	if err != nil {
-		panic("failed to create service: " + err.Error())
-	}
 	azureEnv = test.NewEnvironment(ctx, env)
 	fakeClock = clock.NewFakeClock(time.Now())
 	recorder = events.NewRecorder(&record.FakeRecorder{})
