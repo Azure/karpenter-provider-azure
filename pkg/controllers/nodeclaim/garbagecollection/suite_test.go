@@ -369,7 +369,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		})
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 		managedVM := test.VirtualMachine(test.VirtualMachineOptions{Name: lo.FromPtr(managedNic.Name), NodepoolName: nodePool.Name})
-		azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
 		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 		// We should still have a network interface here
 		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
@@ -389,7 +389,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 				TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 16)), // Needs to be older than the nodeclaim registration ttl
 			},
 		})
-		azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+		azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
 		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
 		// We should still have a network interface here
 		nicsAfterGC, err := azureEnv.InstanceProvider.ListNics(ctx)
