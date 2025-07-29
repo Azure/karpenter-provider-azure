@@ -186,18 +186,19 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				ctx = options.ToContext(ctx)
 
 				nodeClass.Spec.FIPSMode = &v1beta1.FIPSModeFIPS
-
 				// set ImageFamily to AzureLinux (to bypass unsupported FIPS on the default Ubuntu2204)
 				imageFamily := v1beta1.AzureLinuxImageFamily
 				nodeClass.Spec.ImageFamily = &imageFamily
 
 				_, err := imageReconciler.Reconcile(ctx, nodeClass)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("FIPS images require UseSIG to be enabled, but UseSIG is false"))
+				Expect(err).ToNot(HaveOccurred())
+				Expect(nodeClass.Status.Images).To(BeNil())
 
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)
+				Expect(condition.IsFalse()).To(BeTrue())
 				Expect(condition.Reason).To(Equal("SIGRequiredForFIPS"))
 				Expect(condition.Message).To(Equal("FIPS images require UseSIG to be enabled, but UseSIG is false"))
+
 				readyCondition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
 				Expect(readyCondition.IsFalse()).To(BeTrue())
 			})
