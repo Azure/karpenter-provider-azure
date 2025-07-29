@@ -162,7 +162,7 @@ func TestKubeletConfigMap(t *testing.T) {
 			"memory.available": {Duration: 90 * time.Second},
 		},
 		EvictionMaxPodGracePeriod: to.Ptr[int32](11),
-		DNSServiceIP:              "10.20.0.10",
+		ClusterDNSServiceIP:       "10.20.0.10",
 	}
 
 	expectedKubeletConfigs := map[string]string{

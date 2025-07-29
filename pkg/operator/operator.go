@@ -131,10 +131,10 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 
-	if options.FromContext(ctx).DNSServiceIP == "" {
+	if options.FromContext(ctx).ClusterDNSServiceIP == "" {
 		ip, err := kubeDNSIP(ctx, inClusterClient)
 		lo.Must0(err, "discovering kubernetes DNS IP address")
-		options.FromContext(ctx).DNSServiceIP = ip.String()
+		options.FromContext(ctx).ClusterDNSServiceIP = ip.String()
 	}
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()

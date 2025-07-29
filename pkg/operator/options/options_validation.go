@@ -50,8 +50,8 @@ func (o *Options) Validate() error {
 }
 
 func (o *Options) validateClusterDNSIP() error {
-	if o.DNSServiceIP != "" {
-		if _, err := netip.ParseAddr(o.DNSServiceIP); err != nil {
+	if o.ClusterDNSServiceIP != "" {
+		if _, err := netip.ParseAddr(o.ClusterDNSServiceIP); err != nil {
 			return fmt.Errorf("dns-service-ip is invalid %w", err)
 		}
 	}

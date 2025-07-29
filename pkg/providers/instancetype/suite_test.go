@@ -891,7 +891,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ctx = options.ToContext(
 				ctx,
 				test.Options(test.OptionsFields{
-					DNSServiceIP: lo.ToPtr("10.244.0.1"),
+					ClusterDNSServiceIP: lo.ToPtr("10.244.0.1"),
 				}),
 			)
 
