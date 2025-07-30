@@ -1,7 +1,7 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
 // https://github.com/devcontainers/images/tree/main/src/go
 {
-	"name": "Go-karpenter",
+	"name": "Go-karpenter - claude-code w/copilot-api",
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
@@ -30,7 +30,9 @@
 				"GitHub.vscode-pull-request-github",
 				"jinliming2.vscode-go-template",
 				"tekumara.typos-vscode",
-				"github.vscode-github-actions"
+				"github.vscode-github-actions",
+				"GitHub.copilot",
+				"Anthropic.claude-code"
 			]
 		}
 	},
@@ -41,9 +43,12 @@
 	// Use 'postCreateCommand' to run commands after the container is created.
 	"postCreateCommand": {
 		"disable metrics": "skaffold config set --global collect-metrics false",
-		"make toolchain": "make toolchain",
-		"configure pre-commit": "pre-commit install --install-hooks"
+		"configure pre-commit": "pre-commit install --install-hooks",
+		"install copilot-api": "yarn global add tallaxes/copilot-api#npm-github", // temp from fork until upstream is fixed
+		"make toolchain": "make toolchain"
 	},
+
+	"postStartCommand": "nohup bash -c '$(yarn global bin)/copilot-api start --github-token $GITHUB_TOKEN > /tmp/copilot-api.log &'",
 
 	// Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
 	"remoteUser": "vscode",
@@ -57,12 +62,8 @@
 			"userGid": "1000",
 			"upgradePackages": "true"
 		},
-		"ghcr.io/devcontainers/features/go:1": {
-			"version": "none"
-		},
-		"ghcr.io/devcontainers/features/node:1": {
-			"version": "none"
-		},
+		"ghcr.io/devcontainers/features/go:1": { "version": "none" },
+		"ghcr.io/devcontainers/features/node:1": { "version": "latest" },
 		"ghcr.io/devcontainers/features/git:1": {
 			"version": "latest",
 			"ppa": "false"
@@ -74,6 +75,9 @@
 		"ghcr.io/devcontainers/features/azure-cli:1": {},
 		"ghcr.io/devcontainers-extra/features/pre-commit:2": {},
 		"ghcr.io/CargoSense/devcontainer-features/shellcheck:1": {},
-		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" }
+		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" },
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+		"ghcr.io/devcontainers-extra/features/ripgrep:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
 	}
 }

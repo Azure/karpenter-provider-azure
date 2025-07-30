@@ -83,8 +83,8 @@ type ImageFamily interface {
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
 	// Our Release pipeline ensures all images are released together within 24 hours of each other for community image gallery, so selecting based on image feature priorities, then by date, and not vice-versa is acceptable.
-	// If fipsMode is FIPSModeFIPS, only FIPS-enabled images will be returned.
-	DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput
+  // If fipsMode is FIPSModeFIPS, only FIPS-enabled images will be returned
+	DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
@@ -123,7 +123,8 @@ func (r *defaultResolver) Resolve(
 	log.FromContext(ctx).Info("resolved image", "imageID", imageID, "instance-type", instanceType.Name)
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
-	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily)
+	useSIG := options.FromContext(ctx).UseSIG
+	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG)
 	if err != nil {
 		return nil, err
 	}
@@ -195,10 +196,10 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 	return consts.StorageProfileManagedDisks, placement, nil
 }
 
-func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily) (string, error) {
+func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool) (string, error) {
 	var imageInfo types.DefaultImageOutput
 	imageInfo.PopulateImageTraitsFromID(imageID)
-	for _, defaultImage := range imageFamily.DefaultImages(fipsMode) {
+	for _, defaultImage := range imageFamily.DefaultImages(useSIG, fipsMode) {
 		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
 			return defaultImage.Distro, nil
 		}
@@ -222,10 +223,10 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string) []types.DefaultImageOutput {
-	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
+
+func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool) []types.DefaultImageOutput {
 	imageFamily := getImageFamily(familyName, fipsMode, kubernetesVersion, nil)
-	return imageFamily.DefaultImages(fipsMode)
+	return imageFamily.DefaultImages(useSIG, fipsMode)
 }
 
 func getImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {

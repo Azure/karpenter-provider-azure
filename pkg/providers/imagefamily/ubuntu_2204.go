@@ -45,13 +45,12 @@ func (u Ubuntu2204) Name() string {
 	return v1beta1.Ubuntu2204ImageFamily
 }
 
-func (u Ubuntu2204) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
-	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+  if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		//TODO: Fill out when Ubuntu 22.04 with FIPS becomes available
 		return []types.DefaultImageOutput{}
 	}
-
 	// image provider will select these images in order, first match wins. This is why we chose to put Ubuntu2204Gen2containerd first in the defaultImages
 	return []types.DefaultImageOutput{
 		{
@@ -150,5 +149,6 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.Kube
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
+		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 	}
 }

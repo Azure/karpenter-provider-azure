@@ -11,6 +11,7 @@ go.work.sum
 .idea
 # .vscode - do check in to share settings
 .DS_Store
+.claude/settings.local.json
 
 # Go Benchmarking
 *.cpuprofile

@@ -48,8 +48,8 @@ func (u AzureLinux3) Name() string {
 	return v1beta1.AzureLinuxImageFamily
 }
 
-func (u AzureLinux3) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
-	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+  if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// image provider will select these images in order, first match wins
 		return []types.DefaultImageOutput{
@@ -88,9 +88,8 @@ func (u AzureLinux3) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultIm
 			},
 		}
 	}
-
 	// image provider will select these images in order, first match wins
-	return []types.DefaultImageOutput{
+	images := []types.DefaultImageOutput{
 		{
 			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
 			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
@@ -113,7 +112,11 @@ func (u AzureLinux3) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultIm
 			),
 			Distro: "aks-azurelinux-v3",
 		},
-		{
+	}
+
+	if useSIG {
+		// AzLinux3 ARM64 VHD is not available in CIG right now
+		images = append(images, types.DefaultImageOutput{
 			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
 			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
 			GalleryName:          AKSAzureLinuxGalleryName,
@@ -123,8 +126,10 @@ func (u AzureLinux3) DefaultImages(fipsMode *v1beta1.FIPSMode) []types.DefaultIm
 				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 			),
 			Distro: "aks-azurelinux-v3-arm64-gen2",
-		},
+		})
 	}
+
+	return images
 }
 
 // UserData returns the default userdata script for the image Family
@@ -187,5 +192,6 @@ func (u AzureLinux3) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.Kub
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
+		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
 	}
 }

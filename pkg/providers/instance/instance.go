@@ -74,6 +74,13 @@ var (
 	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
 )
 
+const (
+	aksIdentifyingExtensionName = "computeAksLinuxBilling"
+	// TODO: Why bother with a different CSE name for Windows?
+	cseNameWindows = "windows-cse-agent-karpenter"
+	cseNameLinux   = "cse-agent-karpenter"
+)
+
 type Resource = map[string]interface{}
 
 type VirtualMachinePromise struct {
@@ -86,7 +93,6 @@ type Provider interface {
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
-	// CreateTags(context.Context, string, map[string]string) error
 	Update(context.Context, string, armcompute.VirtualMachineUpdate) error
 	GetNic(context.Context, string, string) (*armnetwork.Interface, error)
 	DeleteNic(context.Context, string) error
@@ -182,8 +188,66 @@ func (p *DefaultProvider) BeginCreate(
 	return vmPromise, nil
 }
 
+// Update updates the VM with the given updates. If Tags are specified, the tags are also updated on the associated network interface and VM extensions.
+// Note that this means that this method can fail if the extensions have not been created yet. It is expected that the caller handles this and retries the update
+// to propagate the tags to the extensions once they're created.
 func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
-	return UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, update)
+	if update.Tags != nil {
+		// If there are tags for other resources, do those first. This is a hedge to avoid updating the VM first which may cause us to think subsequent updates aren't needed
+		// because the VM already has the updates
+
+		// Update tags
+		_, err := p.azClient.networkInterfacesClient.UpdateTags(
+			ctx,
+			p.resourceGroup,
+			vmName, // NIC is named the same as the VM
+			armnetwork.TagsObject{
+				Tags: update.Tags,
+			},
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("updating NIC tags for %q: %w", vmName, err)
+		}
+
+		extensionNames := []string{
+			aksIdentifyingExtensionName,
+			cseNameLinux, // TODO: Windows
+		}
+
+		pollers := make(map[string]*runtime.Poller[armcompute.VirtualMachineExtensionsClientUpdateResponse], len(extensionNames))
+		// Update tags on VM extensions
+		for _, extName := range extensionNames {
+			poller, err := p.azClient.virtualMachinesExtensionClient.BeginUpdate(
+				ctx,
+				p.resourceGroup,
+				vmName,
+				extName,
+				armcompute.VirtualMachineExtensionUpdate{
+					Tags: update.Tags,
+				},
+				nil,
+			)
+			if err != nil {
+				return fmt.Errorf("updating VM extension %q for VM %q: %w", extName, vmName, err)
+			}
+			pollers[extName] = poller
+		}
+
+		for extName, poller := range pollers {
+			_, err := poller.PollUntilDone(ctx, nil)
+			if err != nil {
+				return fmt.Errorf("polling VM extension %q for VM %q: %w", extName, vmName, err)
+			}
+		}
+	}
+
+	err := UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, update)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.VirtualMachine, error) {
@@ -274,11 +338,7 @@ func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmN
 	log.FromContext(ctx).V(1).Info("creating virtual machine AKS identifying extension", "vmName", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to create VM AKS identifying extension",
-			"vmName", vmName,
-			"extensionName", vmExtName,
-		)
-		return fmt.Errorf("creating VM AKS identifying extension for VM %q, %w failed", vmName, err)
+		return fmt.Errorf("creating VM AKS identifying extension %q for VM %q: %w", vmExtName, vmName, err)
 	}
 	log.FromContext(ctx).V(1).Info("created virtual machine AKS identifying extension",
 		"vmName", vmName,
@@ -293,8 +353,7 @@ func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, 
 	log.FromContext(ctx).V(1).Info("creating virtual machine CSE", "vmName", vmName)
 	v, err := createVirtualMachineExtension(ctx, p.azClient.virtualMachinesExtensionClient, p.resourceGroup, vmName, vmExtName, *vmExt)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to create VM CSE", "vmName", vmName)
-		return fmt.Errorf("creating VM CSE for VM %q, %w failed", vmName, err)
+		return fmt.Errorf("creating VM CSE for VM %q: %w", vmName, err)
 	}
 	log.FromContext(ctx).V(1).Info("created virtual machine CSE",
 		"vmName", vmName,
@@ -553,7 +612,6 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "creating virtual machine failed", "vmName", opts.VMName)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
@@ -643,8 +701,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 		if skuErr != nil {
-			log.FromContext(ctx).Error(err, "failed to get instance type", "instanceType", instanceType.Name)
-			return nil, err
+			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 		}
 		azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 		return nil, azErr
@@ -671,8 +728,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 			if err != nil {
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 				if skuErr != nil {
-					log.FromContext(ctx).Error(err, "failed to get instance type", "instanceType", instanceType.Name)
-					return err
+					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
 				azErr := p.handleResponseErrors(ctx, sku, instanceType, zone, capacityType, err)
 				return azErr
@@ -703,8 +759,7 @@ func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.
 			return handler.handleResponseError(ctx, p, sku, instanceType, zone, capacityType, responseError)
 		}
 	}
-	// responseError didn't match any of our handlers, so we log details about it and return it as is
-	log.FromContext(ctx).Error(responseError, "Unknown response error")
+	// responseError didn't match any of our handlers, return it as is
 	return responseError
 }
 
@@ -788,13 +843,19 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 	// then we attempt to delete the nic.
 
 	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
-	if nicErr != nil {
-		log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "nicName", resourceName)
-	}
 
 	if mustDeleteNic {
+		// Don't log NIC error here since mustDeleteNic is true (critical cleanup scenario).
+		// Both VM and NIC errors are returned to the caller for proper handling and logging.
+		// Logging here would create duplicate logs when the caller processes the joined error.
 		return errors.Join(vmErr, nicErr)
 	} else {
+		// Log NIC error here since mustDeleteNic is false (best-effort cleanup scenario).
+		// Because we're not returning nicErr to the caller we need to log here.
+		// Without this log, NIC deletion failures would be silently ignored.
+		if nicErr != nil {
+			log.FromContext(ctx).Error(nicErr, "networkinterface.Delete failed", "nicName", resourceName)
+		}
 		return vmErr
 	}
 }
@@ -846,7 +907,6 @@ func GetCapacityType(instance *armcompute.VirtualMachine) string {
 func (p *DefaultProvider) getAKSIdentifyingExtension(tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType                  = "Microsoft.Compute/virtualMachines/extensions"
-		aksIdentifyingExtensionName      = "computeAksLinuxBilling"
 		aksIdentifyingExtensionPublisher = "Microsoft.AKS"
 		aksIdentifyingExtensionTypeLinux = "Compute.AKS.Linux.Billing"
 	)
@@ -871,11 +931,9 @@ func (p *DefaultProvider) getAKSIdentifyingExtension(tags map[string]*string) *a
 func (p *DefaultProvider) getCSExtension(cse string, isWindows bool, tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType     = "Microsoft.Compute/virtualMachines/extensions"
-		cseNameWindows      = "windows-cse-agent-karpenter"
 		cseTypeWindows      = "CustomScriptExtension"
 		csePublisherWindows = "Microsoft.Compute"
 		cseVersionWindows   = "1.10"
-		cseNameLinux        = "cse-agent-karpenter"
 		cseTypeLinux        = "CustomScript"
 		csePublisherLinux   = "Microsoft.Azure.Extensions"
 		cseVersionLinux     = "2.0"
