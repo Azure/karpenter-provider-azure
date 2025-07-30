@@ -37,6 +37,7 @@ import (
 )
 
 const (
+	ImageFamilyOSSKUUbuntu2004  = "Ubuntu2004"
 	ImageFamilyOSSKUUbuntu2204  = "Ubuntu2204"
 	ImageFamilyOSSKUAzureLinux2 = "AzureLinux2"
 	ImageFamilyOSSKUAzureLinux3 = "AzureLinux3"
@@ -141,6 +142,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	// Map OS SKU to AKS provision client's expectation
 	// Note that the direction forward is to be more specific with OS versions. Be careful when supporting new ones.
 	switch p.OSSKU {
+	// TODO: Confirm with NPS or RP
+	case ImageFamilyOSSKUUbuntu2004:
+		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUUbuntu2204:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUAzureLinux2:

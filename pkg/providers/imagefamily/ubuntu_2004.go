@@ -136,5 +136,6 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.Kube
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
+		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
 	}
 }
