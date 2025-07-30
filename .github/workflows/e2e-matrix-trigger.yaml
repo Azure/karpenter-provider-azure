@@ -8,6 +8,24 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "westus3"
+      suites:
+        type: choice
+        description: "Select a suite to run"
+        required: false
+        default: "All"
+        options:
+          - All
+          - Scheduling
+          - Utilization
+          - GPU
+          - Drift
+          - Integration
+          - NodeClaim
+          - Consolidation
+          - Chaos
+          - ACR
+          - KubernetesUpgrade
+          - Spot
   push:
     branches: [main]
 
@@ -28,6 +46,7 @@ jobs:
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
       location: ${{ inputs.location || 'westus3' }}
+      suites: ${{ inputs.suites || '' }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
