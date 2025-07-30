@@ -83,7 +83,7 @@ type ImageFamily interface {
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
 	// Our Release pipeline ensures all images are released together within 24 hours of each other for community image gallery, so selecting based on image feature priorities, then by date, and not vice-versa is acceptable.
-  // If fipsMode is FIPSModeFIPS, only FIPS-enabled images will be returned
+	// If fipsMode is FIPSModeFIPS, only FIPS-enabled images will be returned
 	DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput
 }
 
@@ -223,8 +223,8 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-
 func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool) []types.DefaultImageOutput {
+	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
 	imageFamily := getImageFamily(familyName, fipsMode, kubernetesVersion, nil)
 	return imageFamily.DefaultImages(useSIG, fipsMode)
 }
