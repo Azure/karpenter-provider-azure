@@ -67,7 +67,7 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			cond := nodeClass.StatusConditions().Get(status.ConditionTypeSubnetReady)
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
 			Expect(cond.IsTrue()).To(BeTrue())
 		})
 
@@ -80,7 +80,7 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			cond := nodeClass.StatusConditions().Get(status.ConditionTypeSubnetReady)
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
 			Expect(cond.IsFalse()).To(BeTrue())
 			Expect(cond.Reason).To(Equal("SubnetNotFound"))
 		})
@@ -106,7 +106,7 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			cond := nodeClass.StatusConditions().Get(status.ConditionTypeSubnetReady)
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
 			Expect(cond.IsTrue()).To(BeTrue())
 		})
 	})
