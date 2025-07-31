@@ -23,7 +23,6 @@ import (
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -40,16 +39,30 @@ func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
 	}
 }
 
-const ConditionTypeSubnetReady = "VNETSubnetIDReady"
-
 // We can share some of the validation reasons between vnetSubnetID + podSubnetID
 const (
-	SubnetReadyReasonNotFound  = "SubnetNotFound"
+	SubnetReadyReasonNotFound = "SubnetNotFound"
+
+	//TODO: Add additional case that checks that subscription, rg, and vnet are the same for incoming
+	// subnet-ids
 	SubnetReadyReasonIDInvalid = "SubnetIDInvalid"
 
-	// TODO:
-	SubnetReadyReasonFull        = "SubnetFull"
-	SubnetReadyReasonCidrInvalid = "SubnetCIDRInvalid"
+	// TODO(bsoghigian): Support SubnetFull readiness reason
+	SubnetReadyReasonFull = "SubnetFull"
+
+	// Azure reserves the first four addresses and the last address, for a total of 5 ips for each subnet.
+	// For example 192.168.1.0/24 has the following reserved addresses
+	// 192.168.1.0 Network Address
+	// 192.168.1.1 Reserved by azure for the default gateway
+	// 192.168.1.2, 192.168.1.3: Reserved by Azure to map the Azure DNS IP addresses to the virtual network space.
+	// 192.168.1.255: Network broadcast address
+	AzureReservedIPs = 5
+
+	// TODO(bsoghigian): check if the cidr of a subnet-id is overlapping with any of the static agentpools,
+	// AKSNodeClass subnets, or any defaulting reserved networking addresses for AKS (--dns-service-ip)
+	SubnetReadyReasonCIDROverlapping = "SubnetCIDROverlapping"
+
+	// TODO(bsoghigian): check cluster identity has rbac for subnet/read subnet/join for a given vnetSubnetID
 	SubnetReadyReasonRBACInvalid = "SubnetRBACInvalid"
 )
 
@@ -64,59 +77,23 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 	subnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(
-			ConditionTypeSubnetReady,
+			v1beta1.ConditionTypeSubnetReady,
 			SubnetReadyReasonIDInvalid,
 			fmt.Sprintf("Failed to parse subnet ID: %s", err.Error()),
 		)
 		return reconcile.Result{}, nil
 	}
 
-	subnet, err := r.subnetClient.Get(ctx, subnetComponents.ResourceGroupName, subnetComponents.VNetName, subnetComponents.SubnetName, nil)
+	_, err = r.subnetClient.Get(ctx, subnetComponents.ResourceGroupName, subnetComponents.VNetName, subnetComponents.SubnetName, nil)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(
-			ConditionTypeSubnetReady,
+			v1beta1.ConditionTypeSubnetReady,
 			SubnetReadyReasonNotFound,
 			fmt.Sprintf("Subnet does not exist: %s", err.Error()),
 		)
 		return reconcile.Result{}, nil
 	}
 
-	if err := r.validateSubnetCapacity(&subnet.Subnet); err != nil {
-		nodeClass.StatusConditions().SetFalse(
-			ConditionTypeSubnetReady,
-			SubnetReadyReasonFull,
-			fmt.Sprintf("Subnet capacity issue: %s", err.Error()),
-		)
-		return reconcile.Result{}, nil
-	}
-
-	nodeClass.StatusConditions().SetTrue(ConditionTypeSubnetReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetReady)
 	return reconcile.Result{}, nil
-}
-
-// TODO: Implement in followup pr, check
-// subnet/read subnet/join for each subnet
-func (r *SubnetReconciler) validateRBAC(ctx, subnet *armnetwork.Subnet) error {
-	return nil
-}
-
-// TODO: Implement in a followup pr
-func (r *SubnetReconciler) validateSubnetCidr(ctx context.Context, subnet *armnetwork.Subnet) error {
-	return nil
-}
-
-// TODO: Figure out all of the required validation for ips and capacity to declare a subnet as full before caching it from being
-// selected and moving onto a subnet that isn't exhausted
-// TODO: Evaluate if this also can be done dynamically via SubnetFull error returned back from NRP on provisinoing,
-// then setting this value dynamically
-func (r *SubnetReconciler) validateSubnetCapacity(subnet *armnetwork.Subnet) error {
-	// Azure reserves the first four addresses and the last address, for a total of 5 ips for each subnet.
-	// For example 192.168.1.0/24 has the following reserved addresses
-	// 192.168.1.0 Network Address
-	// 192.168.1.1 Reserved by azure for the default gateway
-	// 192.168.1.2, 192.168.1.3: Reserved by Azure to map the Azure DNS IP addresses to the virtual network space.
-	// 192.168.1.255: Network broadcast address
-	const azureReservedIPs = 5
-
-	return nil
 }
