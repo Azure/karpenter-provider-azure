@@ -49,7 +49,26 @@ var _ = Describe("Subnets", func() {
 		})
 		selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 	})
+	It("should disrupt nodes that drifted due to VNETSubnetID", func() {
+		env.ExpectCreated(dep, nodeClass, nodePool)
+		env.EventuallyExpectHealthyPodCount(selector, numPods)
+		By("expect created node count to be 1")
+		env.ExpectCreatedNodeCount("==", 1)
+		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
 
+		subnetName := "test-subnet"
+		subnet := &armnetwork.Subnet{
+			Name: lo.ToPtr(subnetName),
+			Properties: &armnetwork.SubnetPropertiesFormat{
+				AddressPrefix: lo.ToPtr("10.225.0.0/16"),
+			},
+		}
+		vnet := env.GetClusterVNET()
+		env.ExpectCreatedSubnet(lo.FromPtr(vnet.Name), subnet)
+		nodeClass.Spec.VNETSubnetID = subnet.ID // Should be populated by the Expect call above
+		env.ExpectCreatedOrUpdated(nodeClass)
+		env.EventuallyExpectDrifted(nodeClaim)
+	})
 	It("should allocate node in NodeClass subnet", func() {
 		subnetName := "test-subnet"
 		subnet := &armnetwork.Subnet{
