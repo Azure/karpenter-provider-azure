@@ -51,10 +51,11 @@ func NewControllers(
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
+	azClient *instance.AZClient,
 ) []controller.Controller {
 	controllers := []controller.Controller{
 		nodeclasshash.NewController(kubeClient),
-		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface),
+		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, azClient.SubnetsClient()),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
 		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),
