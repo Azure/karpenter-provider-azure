@@ -60,12 +60,17 @@ type NetworkInterfacesAPI interface {
 	Get(ctx context.Context, resourceGroupName string, networkInterfaceName string, options *armnetwork.InterfacesClientGetOptions) (armnetwork.InterfacesClientGetResponse, error)
 }
 
+type SubnetsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
+}
+
 // TODO: Move this to another package that more correctly reflects its usage across multiple providers
 type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
+	subnetsClient                  SubnetsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
@@ -76,11 +81,16 @@ type AZClient struct {
 	NetworkSecurityGroupsClient networksecuritygroup.API
 }
 
+func (c *AZClient) SubnetsClient() SubnetsAPI {
+	return c.subnetsClient
+}
+
 func NewAZClientFromAPI(
 	virtualMachinesClient VirtualMachinesAPI,
 	azureResourceGraphClient AzureResourceGraphAPI,
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
+	subnetsClient SubnetsAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
@@ -93,6 +103,7 @@ func NewAZClientFromAPI(
 		azureResourceGraphClient:       azureResourceGraphClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
+		subnetsClient:                  subnetsClient,
 		ImageVersionsClient:            imageVersionsClient,
 		NodeImageVersionsClient:        nodeImageVersionsClient,
 		NodeBootstrappingClient:        nodeBootstrappingClient,
@@ -123,6 +134,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	}
 
 	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	subnetsClient, err := armnetwork.NewSubnetsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +201,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		azureResourceGraphClient,
 		extensionsClient,
 		interfacesClient,
+		subnetsClient,
 		loadBalancersClient,
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,
