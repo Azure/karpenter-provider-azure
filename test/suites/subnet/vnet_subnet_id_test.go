@@ -27,6 +27,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -88,26 +89,16 @@ var _ = Describe("Subnets", func() {
 		Expect(nic.Properties.NetworkSecurityGroup.ID).ToNot(BeNil())
 		Expect(*nic.Properties.NetworkSecurityGroup.ID).To(MatchRegexp(`aks-agentpool-\d{8}-nsg`))
 	})
-	It("should mark the AKSNodeClass as unready if the subnet ID is invalid", func() {
-		newNodeClass := env.DefaultAKSNodeClass()
-		newNodepool := env.DefaultNodePool(newNodeClass)
-		// Set a high weight to ensure that we select this nodepool with priority if its ready
-		newNodepool.Spec.Weight = lo.ToPtr(int32(10))
-		newNodeClass.Spec.VNETSubnetID = lo.ToPtr("/subnets/fake-subnet")
-		env.ExpectCreated(nodeClass, nodePool, newNodeClass, newNodepool, dep)
-
-		By("falling back to original nodeclass")
-		env.EventuallyExpectCreatedNodeClaimCount("==", 1)
-		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-		env.EventuallyExpectHealthyPodCount(selector, numPods)
-
-		// Get the AKSNodeClass and check the status
-		// Expect provisioning to still work
-		Expect(node.Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePool.Name))
+	It("should reject the AKSNodeClass if the subnet ID is invalid", func() {
+		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subnets/fake-subnet")
+		err := env.Client.Create(env.Context, nodeClass)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("Invalid value"))
+		Expect(err.Error()).To(ContainSubstring("spec.vnetSubnetID"))
+		Expect(err.Error()).To(ContainSubstring("should match"))
 	})
 
 	It("should mark the AKSNodeClass as unready if the subnet is NotFound and all back to a different nodeclass", func() {
-
 		newNodeClass := env.DefaultAKSNodeClass()
 		newNodepool := env.DefaultNodePool(newNodeClass)
 		newNodepool.Spec.Weight = lo.ToPtr(int32(10))
@@ -123,7 +114,7 @@ var _ = Describe("Subnets", func() {
 		// Verify the new nodeclass with full subnet has SubnetReady condition set to false
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(newNodeClass), newNodeClass)).To(Succeed())
-			condition := newNodeClass.StatusConditions().Get("SubnetReady")
+			condition := newNodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
 			g.Expect(condition.IsFalse()).To(BeTrue())
 		}).Should(Succeed())
 	})
