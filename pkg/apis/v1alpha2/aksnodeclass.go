@@ -44,6 +44,10 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux}
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// Tags to be applied on Azure resources like instances.
+	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
+	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
+	// +kubebuilder:validation:XValidation:message="tags keys must not contain '\\'",rule="self.all(k, !k.contains('\\\\'))"
+	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
 	// Kubelet defines args to be used when configuring kubelet on provisioned nodes.
