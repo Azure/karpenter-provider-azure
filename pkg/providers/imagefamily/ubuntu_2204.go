@@ -90,7 +90,8 @@ func (u Ubuntu2204) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []typ
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration,
+func (u Ubuntu2204) ScriptlessCustomData(
+	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	labels map[string]string,
 	caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
@@ -124,7 +125,8 @@ func (u Ubuntu2204) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfigu
 }
 
 // UserData returns the default userdata script for the image Family
-func (u Ubuntu2204) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration,
+func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
+	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	startupTaints []v1.Taint,
 	labels map[string]string,

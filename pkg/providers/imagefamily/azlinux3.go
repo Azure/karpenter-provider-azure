@@ -133,7 +133,8 @@ func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []ty
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux3) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration,
+func (u AzureLinux3) ScriptlessCustomData(
+	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	labels map[string]string,
 	caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
@@ -167,7 +168,8 @@ func (u AzureLinux3) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfig
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux3) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration,
+func (u AzureLinux3) CustomScriptsNodeBootstrapping(
+	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	startupTaints []v1.Taint,
 	labels map[string]string,
