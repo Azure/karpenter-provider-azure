@@ -28,6 +28,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 var _ = Describe("SubnetStatus", func() {
@@ -64,7 +65,7 @@ var _ = Describe("SubnetStatus", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeFalse())
+			Expect(result).To(Equal(reconcile.Result{}))
 
 			cond := nodeClass.StatusConditions().Get(status.ConditionTypeSubnetReady)
 			Expect(cond.IsTrue()).To(BeTrue())
@@ -77,7 +78,7 @@ var _ = Describe("SubnetStatus", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeFalse())
+			Expect(result).To(Equal(reconcile.Result{}))
 
 			cond := nodeClass.StatusConditions().Get(status.ConditionTypeSubnetReady)
 			Expect(cond.IsFalse()).To(BeTrue())
@@ -103,11 +104,10 @@ var _ = Describe("SubnetStatus", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Requeue).To(BeFalse())
+			Expect(result).To(Equal(reconcile.Result{}))
 
 			cond := nodeClass.StatusConditions().Get(status.ConditionTypeSubnetReady)
 			Expect(cond.IsTrue()).To(BeTrue())
 		})
 	})
 })
-

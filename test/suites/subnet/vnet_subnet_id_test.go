@@ -17,17 +17,15 @@ limitations under the License.
 package subnet_test
 
 import (
-	"fmt"
-	
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -107,48 +105,26 @@ var _ = Describe("Subnets", func() {
 		// Expect provisioning to still work
 		Expect(node.Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePool.Name))
 	})
-	It("should mark the AKSNodeClass as unready if the subnet is full, fall back to old nodeclass", func() {
-		subnetName := "full-subnet"
-		// Create a subnet with small address space (/28 = 16 total IPs, 5 reserved by Azure = 11 available)
-		// Then we'll simulate it being full by adding IP configurations
-		ipConfigs := make([]*armnetwork.IPConfiguration, 11) // Use all available IPs
-		for i := range ipConfigs {
-			ipConfigs[i] = &armnetwork.IPConfiguration{
-				Name: lo.ToPtr(fmt.Sprintf("ip-config-%d", i)),
-			}
-		}
-		
-		subnet := &armnetwork.Subnet{
-			Name: lo.ToPtr(subnetName),
-			Properties: &armnetwork.SubnetPropertiesFormat{
-				AddressPrefix:    lo.ToPtr("10.225.1.0/28"), // 16 total IPs minus 5 reserved = 11 available
-				IPConfigurations: ipConfigs,                   // All 11 available IPs are used
-			},
-		}
-		vnet := env.GetClusterVNET()
-		env.ExpectCreatedSubnet(lo.FromPtr(vnet.Name), subnet)
-		
+
+	It("should mark the AKSNodeClass as unready if the subnet is NotFound and all back to a different nodeclass", func() {
+
 		newNodeClass := env.DefaultAKSNodeClass()
 		newNodepool := env.DefaultNodePool(newNodeClass)
-		// Set a high weight to ensure that we select this nodepool with priority if its ready
 		newNodepool.Spec.Weight = lo.ToPtr(int32(10))
-		newNodeClass.Spec.VNETSubnetID = subnet.ID // Should be populated by the Expect call above
+		newNodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
 		env.ExpectCreated(nodeClass, nodePool, newNodeClass, newNodepool, dep)
 
-		By("falling back to original nodeclass due to subnet capacity issues")
+		By("falling back to original nodeclass due to misconfigured subnet")
 		env.EventuallyExpectCreatedNodeClaimCount("==", 1)
 		node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
+		Expect(node.Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePool.Name)) // Validate we are are falling back to the original nodepool
 
-		// Verify that the original nodeclass was used (not the one with full subnet)
-		Expect(node.Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePool.Name))
-		
 		// Verify the new nodeclass with full subnet has SubnetReady condition set to false
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(newNodeClass), newNodeClass)).To(Succeed())
 			condition := newNodeClass.StatusConditions().Get("SubnetReady")
 			g.Expect(condition.IsFalse()).To(BeTrue())
-			g.Expect(condition.GetReason()).To(Equal("SubnetFull"))
 		}).Should(Succeed())
 	})
 })

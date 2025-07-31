@@ -19,7 +19,6 @@ package status
 import (
 	"context"
 	"fmt"
-	"net"
 
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -41,29 +40,32 @@ func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
 	}
 }
 
-const ConditionTypeSubnetReady = "SubnetReady"
+const ConditionTypeSubnetReady = "VNETSubnetIDReady"
 
+// We can share some of the validation reasons between vnetSubnetID + podSubnetID
 const (
-	SubnetReadyReasonNotFound = "SubnetNotFound"
-	SubnetReadyReasonFull     = "SubnetFull"
-	SubnetReadyReasonInvalid  = "SubnetIDInvalid"
+	SubnetReadyReasonNotFound  = "SubnetNotFound"
+	SubnetReadyReasonIDInvalid = "SubnetIDInvalid"
+
+	// TODO:
+	SubnetReadyReasonFull        = "SubnetFull"
+	SubnetReadyReasonCidrInvalid = "SubnetCIDRInvalid"
+	SubnetReadyReasonRBACInvalid = "SubnetRBACInvalid"
 )
 
-// Azure reserves the first four addresses and the last address, for a total of 5 ips for each subnet.
-// For example 192.168.1.0/24 has the following reserved addresses
-// 192.168.1.0 Network Address
-// 192.168.1.1 Reserved by azure for the default gateway
-// 192.168.1.2, 192.168.1.3: Reserved by Azure to map the Azure DNS IP addresses to the virtual network space.
-// 192.168.1.255: Network broadcast address
-const azureReservedIPs = 5
-
 func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	return r.validateVNETSubnetID(ctx, nodeClass)
+	// TODO: Handle podSubnetID readiness here as well
+	// Access to state from the cluster only needs to be retrieved once for cidr validation
+}
+
+func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
 	subnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(
 			ConditionTypeSubnetReady,
-			SubnetReadyReasonInvalid,
+			SubnetReadyReasonIDInvalid,
 			fmt.Sprintf("Failed to parse subnet ID: %s", err.Error()),
 		)
 		return reconcile.Result{}, nil
@@ -92,29 +94,29 @@ func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKS
 	return reconcile.Result{}, nil
 }
 
+// TODO: Implement in followup pr, check
+// subnet/read subnet/join for each subnet
+func (r *SubnetReconciler) validateRBAC(ctx, subnet *armnetwork.Subnet) error {
+	return nil
+}
+
+// TODO: Implement in a followup pr
+func (r *SubnetReconciler) validateSubnetCidr(ctx context.Context, subnet *armnetwork.Subnet) error {
+	return nil
+}
+
+// TODO: Figure out all of the required validation for ips and capacity to declare a subnet as full before caching it from being
+// selected and moving onto a subnet that isn't exhausted
+// TODO: Evaluate if this also can be done dynamically via SubnetFull error returned back from NRP on provisinoing,
+// then setting this value dynamically
 func (r *SubnetReconciler) validateSubnetCapacity(subnet *armnetwork.Subnet) error {
-	if subnet.Properties == nil || subnet.Properties.AddressPrefix == nil {
-		return fmt.Errorf("subnet has no address prefix configured")
-	}
-
-	_, network, err := net.ParseCIDR(*subnet.Properties.AddressPrefix)
-	if err != nil {
-		return fmt.Errorf("invalid subnet address prefix: %w", err)
-	}
-
-	ones, bits := network.Mask.Size()
-	totalIPs := 1 << (bits - ones)
-
-	availableIPs := totalIPs - azureReservedIPs
-
-	if subnet.Properties.IPConfigurations != nil {
-		usedIPs := len(subnet.Properties.IPConfigurations)
-		remainingIPs := availableIPs - usedIPs
-
-		if remainingIPs <= 0 {
-			return fmt.Errorf("insufficient IPs available: %d remaining out of %d total", remainingIPs, availableIPs)
-		}
-	}
+	// Azure reserves the first four addresses and the last address, for a total of 5 ips for each subnet.
+	// For example 192.168.1.0/24 has the following reserved addresses
+	// 192.168.1.0 Network Address
+	// 192.168.1.1 Reserved by azure for the default gateway
+	// 192.168.1.2, 192.168.1.3: Reserved by Azure to map the Azure DNS IP addresses to the virtual network space.
+	// 192.168.1.255: Network broadcast address
+	const azureReservedIPs = 5
 
 	return nil
 }
