@@ -29,6 +29,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -66,6 +67,7 @@ type Environment struct {
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
+	SubnetsAPI                  *fake.SubnetsAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
 
 	// Cache
@@ -159,11 +161,23 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		networkSecurityGroupAPI,
 		testOptions.NodeResourceGroup,
 	)
+	subnetsAPI := &fake.SubnetsAPI{}
+	// Set up default GetFunc to return a valid subnet for tests
+	subnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
+		return armnetwork.SubnetsClientGetResponse{
+			Subnet: armnetwork.Subnet{
+				Properties: &armnetwork.SubnetPropertiesFormat{
+					AddressPrefix: lo.ToPtr("10.0.0.0/16"),
+				},
+			},
+		}, nil
+	}
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
+		subnetsAPI,
 		loadBalancersAPI,
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
@@ -193,6 +207,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
+		SubnetsAPI:                  subnetsAPI,
 		MockSkuClientSingleton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
 
@@ -227,6 +242,7 @@ func (env *Environment) Reset() {
 	env.NetworkInterfacesAPI.Reset()
 	env.LoadBalancersAPI.Reset()
 	env.NetworkSecurityGroupAPI.Reset()
+	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
 	env.MockSkuClientSingleton.Reset()
 	env.PricingAPI.Reset()

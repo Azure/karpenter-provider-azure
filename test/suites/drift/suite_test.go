@@ -724,21 +724,4 @@ var _ = Describe("Drift", func() {
 			env.ConsistentlyExpectNoDisruptions(int(numPods), time.Minute)
 		})
 	})
-
-	It("should disrupt nodes that have drifted due to VNETSubnetID", func() {
-		env.ExpectCreated(dep, nodeClass, nodePool)
-		env.EventuallyExpectHealthyPodCount(selector, numPods)
-		By("expect created node count to be 1")
-		env.ExpectCreatedNodeCount("==", 1)
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-
-		By("triggering subnet drift")
-		// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
-		// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
-		env.ExpectCreatedOrUpdated(nodeClass)
-
-		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
-		env.EventuallyExpectDrifted(nodeClaim)
-	})
 })

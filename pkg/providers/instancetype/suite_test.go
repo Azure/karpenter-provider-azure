@@ -64,6 +64,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -154,6 +155,17 @@ var _ = Describe("InstanceType Provider", func() {
 		clusterNonZonal.Reset()
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
+
+		// Set up subnet fake after reset
+		azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
+			return armnetwork.SubnetsClientGetResponse{
+				Subnet: armnetwork.Subnet{
+					Properties: &armnetwork.SubnetPropertiesFormat{
+						AddressPrefix: lo.ToPtr("10.0.0.0/16"),
+					},
+				},
+			}, nil
+		}
 
 		// Populate the expected cluster NSG
 		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, fmt.Sprintf("aks-agentpool-%s-nsg", options.FromContext(ctx).ClusterID))
@@ -1498,7 +1510,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1547,7 +1559,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1581,7 +1593,7 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 				if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
 					Skip("AzureLinux3 ARM64 VHD is not available in CIG")
 				}
@@ -1985,7 +1997,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		It("should return error when instance type resolution fails", func() {
 			// Create and set up the status controller
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			// Set NodeClass to Ready
 			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
