@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	karpenterManagedTagKey = "karpenter.azure.com_cluster"
+	KarpenterManagedTagKey = "karpenter.azure.com_cluster"
 )
 
 var (
@@ -41,19 +41,25 @@ func Tags(
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *v1.NodeClaim,
 ) map[string]*string {
-	// TODO: This may not quite work because we assign some additional labels during the creation
-	// of the static parameters for the launch template, which we are not passing here
 	defaultTags := map[string]string{
-		karpenterManagedTagKey: options.ClusterName,
+		KarpenterManagedTagKey: options.ClusterName,
 	}
+	// Note: Be careful depending on nodeClaim.Labels here, as we assign some additional labels during the creation
+	// of the static parameters for the launch template. Those labels haven't actually been applied to the nodeClaim yet,
+	// so if you try to use them here you will find they are missing.
+	// For now, we only depend on labels that are added to the nodeClaim itself.
 	if val, ok := nodeClaim.Labels[v1.NodePoolLabelKey]; ok {
 		defaultTags[NodePoolTagKey] = val
 	}
 
-	return lo.MapEntries(
-		lo.Assign(options.AdditionalTags, nodeClass.Spec.Tags, defaultTags),
-		func(key string, value string) (string, *string) {
-			return strings.ReplaceAll(key, "/", "_"), lo.ToPtr(value)
-		},
-	)
+	// MapEntries first so that karpenter.azure.com_cluster and karpenter.azure.com/cluster collide
+	additionalTags := lo.MapEntries(options.AdditionalTags, mapTags)
+	nodeClassTags := lo.MapEntries(nodeClass.Spec.Tags, mapTags)
+	defaultTagsMapped := lo.MapEntries(defaultTags, mapTags)
+
+	return lo.Assign(additionalTags, nodeClassTags, defaultTagsMapped)
+}
+
+func mapTags(key string, value string) (string, *string) {
+	return strings.ReplaceAll(key, "/", "_"), lo.ToPtr(value)
 }

@@ -182,20 +182,20 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
 
-	// TODO: Is this the right nodeclaim? We also have nc below, it's not 100% clear to me what the difference is
-	// though in this case I think it doesn't matter?
-	inPlaceUpdateHash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), nodeClaim, nodeClass)
+	nc, err := c.instanceToNodeClaim(ctx, instance, instanceType)
+	if err != nil {
+		return nil, err
+	}
+	inPlaceUpdateHash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), nc, nodeClass)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate in place update hash, %w", err)
 	}
-
-	nc, err := c.instanceToNodeClaim(ctx, instance, instanceType)
 	nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
 		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
 		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
 		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
 	})
-	return nc, err
+	return nc, nil
 }
 
 func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {

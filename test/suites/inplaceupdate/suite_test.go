@@ -27,12 +27,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
-	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
 )
 
 var env *azure.Environment
@@ -108,8 +108,8 @@ var _ = Describe("Inplace Update", func() {
 			env.EventuallyExpectTags(expectedTags)
 
 			// Expect the nodeClaims and nodes to not be drifted
-			env.ExpectAllExist(common.CoerceToObject(nodeClaims...)...)
-			env.ExpectAllExist(common.CoerceToObject(nodes...)...)
+			env.ExpectAllExist(lo.Map(nodeClaims, func(obj *karpv1.NodeClaim, _ int) client.Object { return obj })...)
+			env.ExpectAllExist(lo.Map(nodes, func(obj *corev1.Node, _ int) client.Object { return obj })...)
 		})
 
 		It("should remove tags in-place on all resources without drifting the nodeClaim", func() {
@@ -154,11 +154,11 @@ var _ = Describe("Inplace Update", func() {
 			env.EventuallyExpectMissingTags(expectedMissingTags)
 
 			// Expect the nodeClaims and nodes to not be drifted
-			env.ExpectAllExist(common.CoerceToObject(nodeClaims...)...)
-			env.ExpectAllExist(common.CoerceToObject(nodes...)...)
+			env.ExpectAllExist(lo.Map(nodeClaims, func(obj *karpv1.NodeClaim, _ int) client.Object { return obj })...)
+			env.ExpectAllExist(lo.Map(nodes, func(obj *corev1.Node, _ int) client.Object { return obj })...)
 		})
 
-		FIt("should update tags in-place on all resources even when new nodes are being created", func() {
+		It("should update tags in-place on all resources even when new nodes are being created", func() {
 			var numPods int32 = 3
 			appLabels := map[string]string{"app": "large-app"}
 			dep = coretest.Deployment(coretest.DeploymentOptions{
@@ -194,7 +194,6 @@ var _ = Describe("Inplace Update", func() {
 				map[string]string{
 					"karpenter.azure.com_cluster": env.ClusterName,
 					"karpenter.sh_nodepool":       nodePool.Name,
-					"fail":                        "tag",
 				})
 
 			env.ExpectUpdated(nodeClass)
@@ -205,7 +204,7 @@ var _ = Describe("Inplace Update", func() {
 			env.EventuallyExpectTags(expectedTags)
 
 			// Expect the nodeClaims to not be drifted
-			env.ExpectAllExist(common.CoerceToObject(nodeClaims...)...)
+			env.ExpectAllExist(lo.Map(nodeClaims, func(obj *karpv1.NodeClaim, _ int) client.Object { return obj })...)
 		})
 	})
 })

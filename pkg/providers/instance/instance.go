@@ -78,7 +78,8 @@ const (
 	cseNameLinux   = "cse-agent-karpenter"
 )
 
-// TODO: Is there a better place to put this?
+// GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
+// This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
 func GetManagedExtensionNames(provisionMode string) []string {
 	result := []string{
 		aksIdentifyingExtensionName,
