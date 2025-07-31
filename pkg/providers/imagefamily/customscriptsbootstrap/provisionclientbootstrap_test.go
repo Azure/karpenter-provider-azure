@@ -201,7 +201,54 @@ func TestConstructProvisionValues(t *testing.T) {
 		validate     func(t *testing.T, values *models.ProvisionValues)
 	}{
 		{
-			name: "Basic Ubuntu configuration",
+			name: "Basic Ubuntu 2004 configuration",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:               "test-cluster",
+				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                      karpv1.ArchitectureAmd64,
+				ResourceGroup:             "test-rg",
+				KubernetesVersion:         "1.31.0",
+				ImageDistro:               "aks-ubuntu-fips-containerd-20.04-gen2",
+				IsWindows:                 false,
+				StorageProfile:            consts.StorageProfileManagedDisks,
+				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
+				Labels:                    map[string]string{"key": "value"},
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, values *models.ProvisionValues) {
+				assert.NotNil(t, values.ProvisionProfile)
+				assert.NotNil(t, values.ProvisionHelperValues)
+
+				// Check Profile
+				profile := values.ProvisionProfile
+				assert.Equal(t, "x64", *profile.Architecture)
+				assert.Equal(t, models.OSTypeLinux, *profile.OsType)
+				assert.Equal(t, models.OSSKUUbuntu, *profile.OsSku)
+				assert.Equal(t, "Standard_D2s_v3", *profile.VMSize)
+				assert.Equal(t, "aks-ubuntu-fips-containerd-20.04-gen2", *profile.Distro)
+				assert.Equal(t, "1.31.0", *profile.OrchestratorVersion)
+				assert.Equal(t, "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", *profile.VnetSubnetID)
+				assert.Equal(t, consts.StorageProfileManagedDisks, *profile.StorageProfile)
+				assert.Equal(t, int32(110), *profile.MaxPods)
+				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
+
+				// Check Helper Values
+				helperValues := values.ProvisionHelperValues
+				assert.Equal(t, float64(2), *helperValues.SkuCPU)
+				assert.InDelta(t, float64(9), *helperValues.SkuMemory, 0.1) // Checking approximate value due to overhead calculation
+			},
+		},
+		{
+			name: "Basic Ubuntu 2204 configuration",
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:               "test-cluster",
 				KubeletConfig:             &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
@@ -628,6 +675,14 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 		expectedArtifactStreamingEnabled bool
 		description                      string
 	}{
+		{
+			name:                             "AMD64 Ubuntu2004 FIPS - Artifact streaming disabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
+			imageDistro:                      "aks-ubuntu-fips-containerd-20.04-gen2",
+			expectedArtifactStreamingEnabled: false,
+			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2004 FIPS",
+		},
 		{
 			name:                             "AMD64 Ubuntu2204 - Artifact streaming enabled",
 			arch:                             karpv1.ArchitectureAmd64,
