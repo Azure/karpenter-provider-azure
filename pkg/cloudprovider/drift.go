@@ -247,12 +247,3 @@ func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.N
 
 	return n, nil
 }
-
-func getSubnetFromPrimaryIPConfig(nic *armnetwork.Interface) string {
-	for _, ipConfig := range nic.Properties.IPConfigurations {
-		if ipConfig.Properties.Subnet != nil && lo.FromPtr(ipConfig.Properties.Primary) {
-			return lo.FromPtr(ipConfig.Properties.Subnet.ID)
-		}
-	}
-	return ""
-}
