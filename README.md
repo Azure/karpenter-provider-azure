@@ -136,7 +136,7 @@ The Karpenter Helm chart requires specific configuration values to work with an 
 
 ```bash
 # Select version to install
-export KARPENTER_VERSION=0.7.0
+export KARPENTER_VERSION=1.6.1
 
 # Download the specific's version template
 curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/karpenter-values-template.yaml
