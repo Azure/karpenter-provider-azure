@@ -525,6 +525,8 @@ var _ = Describe("Drift", func() {
 		})
 	})
 	It("should update the aksnodeclass-hash annotation on the aksnodeclass and nodeclaim when the aksnodeclass's aksnodeclass-hash-version annotation does not match the controller hash version", func() {
+		nodeClass.Spec.MaxPods = lo.ToPtr[int32](110)
+
 		env.ExpectCreated(dep, nodeClass, nodePool)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]

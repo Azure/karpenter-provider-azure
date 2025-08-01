@@ -19,7 +19,7 @@ package launchtemplate
 import (
 	"strings"
 
-	v1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -31,7 +31,7 @@ const (
 )
 
 var (
-	NodePoolTagKey = strings.ReplaceAll(v1.NodePoolLabelKey, "/", "_")
+	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
 // TODO: Would like to refactor this out of launchtemplate at some point
@@ -39,7 +39,7 @@ var (
 func Tags(
 	options *options.Options,
 	nodeClass *v1beta1.AKSNodeClass,
-	nodeClaim *v1.NodeClaim,
+	nodeClaim *karpv1.NodeClaim,
 ) map[string]*string {
 	defaultTags := map[string]string{
 		KarpenterManagedTagKey: options.ClusterName,
@@ -48,7 +48,7 @@ func Tags(
 	// of the static parameters for the launch template. Those labels haven't actually been applied to the nodeClaim yet,
 	// so if you try to use them here you will find they are missing.
 	// For now, we only depend on labels that are added to the nodeClaim itself.
-	if val, ok := nodeClaim.Labels[v1.NodePoolLabelKey]; ok {
+	if val, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
 		defaultTags[NodePoolTagKey] = val
 	}
 

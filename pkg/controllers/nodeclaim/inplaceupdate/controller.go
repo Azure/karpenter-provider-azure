@@ -18,9 +18,7 @@ package inplaceupdate
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/awslabs/operatorpkg/reasonable"
@@ -42,7 +40,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -65,12 +62,6 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	ctx = injection.WithControllerName(ctx, "nodeclaim.inplaceupdate")
 	// No need to add nodeClaim name to the context as it's already there
 
-	if shouldProcess, result := c.shouldProcess(ctx, nodeClaim); !shouldProcess {
-		return result, nil
-	}
-
-	stored := nodeClaim.DeepCopy()
-
 	// Get the NodeClass
 	nodeClass, err := c.resolveAKSNodeClass(ctx, nodeClaim)
 	if err != nil {
@@ -89,12 +80,18 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 	actualHash := nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]
 
-	log.FromContext(ctx).V(1).Info("comparing hashes", "goalHash", goalHash, "actualHash", actualHash)
+	log.FromContext(ctx).V(1).Info("comparing in-place update hashes", "goalHash", goalHash, "actualHash", actualHash)
 
 	// If there's no difference from goal state, no need to do anything else
 	if goalHash == actualHash {
 		return reconcile.Result{}, nil
 	}
+
+	if shouldProcess, result := c.shouldProcess(ctx, nodeClaim); !shouldProcess {
+		return result, nil
+	}
+
+	stored := nodeClaim.DeepCopy()
 
 	vm, err := c.getVM(ctx, nodeClaim)
 	if err != nil {
@@ -120,6 +117,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	return reconcile.Result{}, nil
 }
 
+// TODO (matthchr): Refactor to utils/nodeclaim
 // TODO: duplicate from resolveNodeClassFromNodeClaim for CloudProvider
 // resolveAKSNodeClass resolves the AKSNodeClass from the NodeClaim's NodeClassRef
 func (c *Controller) resolveAKSNodeClass(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1beta1.AKSNodeClass, error) {
@@ -149,17 +147,18 @@ func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeCl
 	// If the node isn't registered yet, we need to wait until it is as otherwise all the resources we need to update may not exist yet
 	if !nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue() {
 		log.FromContext(ctx).V(1).Info("can't update yet as the claim is not registered")
-		return false, reconcile.Result{RequeueAfter: 20 * time.Second}
+		return false, reconcile.Result{RequeueAfter: 60 * time.Second}
 	}
 
 	if nodeClaim.Status.ProviderID == "" {
 		log.FromContext(ctx).V(1).Info("can't update yet as there's no provider ID")
-		return false, reconcile.Result{RequeueAfter: 20 * time.Second}
+		return false, reconcile.Result{RequeueAfter: 60 * time.Second}
 	}
 
 	return true, reconcile.Result{}
 }
 
+// TODO (matthchr): Refactor to utils/nodeclaim
 func (c *Controller) getVM(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*armcompute.VirtualMachine, error) {
 	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
@@ -218,106 +217,4 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 			MaxConcurrentReconciles: 10,
 		}).
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
-}
-
-func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
-	if log.FromContext(ctx).V(1).Enabled() {
-		rawStr := "<nil>"
-		if update != nil {
-			raw, _ := json.Marshal(update)
-			rawStr = string(raw)
-		}
-		log.FromContext(ctx).V(1).Info("patching Azure VM", "vmPatch", rawStr)
-	} else {
-		log.FromContext(ctx).V(0).Info("patching Azure VM")
-	}
-}
-
-type patchParameters struct {
-	opts      *options.Options
-	nodeClaim *karpv1.NodeClaim
-	nodeClass *v1beta1.AKSNodeClass
-}
-
-var patchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *armcompute.VirtualMachine) bool{
-	patchIdentities,
-	patchTags,
-}
-
-func CalculateVMPatch(
-	options *options.Options,
-	nodeClaim *karpv1.NodeClaim,
-	nodeClass *v1beta1.AKSNodeClass,
-	currentVM *armcompute.VirtualMachine,
-) *armcompute.VirtualMachineUpdate {
-	update := &armcompute.VirtualMachineUpdate{}
-	hasPatches := false
-	params := &patchParameters{
-		opts:      options,
-		nodeClass: nodeClass,
-		nodeClaim: nodeClaim,
-	}
-
-	for _, patcher := range patchers {
-		patched := patcher(update, params, currentVM)
-		hasPatches = hasPatches || patched
-	}
-
-	if !hasPatches {
-		return nil // No update to perform
-	}
-
-	return update
-}
-
-func patchIdentities(
-	update *armcompute.VirtualMachineUpdate,
-	params *patchParameters,
-	currentVM *armcompute.VirtualMachine,
-) bool {
-	expectedIdentities := params.opts.NodeIdentities
-	var currentIdentities []string
-	if currentVM.Identity != nil {
-		currentIdentities = lo.Keys(currentVM.Identity.UserAssignedIdentities)
-	}
-
-	// It's not possible to PATCH identities away, so for now we never remove them even if they've been removed from
-	// the configmap. This matches the RPs behavior and also ensures that we don't remove identities which users have
-	// manually added.
-	toAdd, _ := lo.Difference(expectedIdentities, currentIdentities)
-	if len(toAdd) == 0 {
-		return false // No update to perform
-	}
-
-	update.Identity = instance.ConvertToVirtualMachineIdentity(toAdd)
-	return true
-}
-
-func patchTags(
-	update *armcompute.VirtualMachineUpdate,
-	params *patchParameters,
-	currentVM *armcompute.VirtualMachine,
-) bool {
-	expectedTags := launchtemplate.Tags(
-		params.opts,
-		params.nodeClass,
-		params.nodeClaim,
-	)
-
-	eq := func(v1, v2 *string) bool {
-		if v1 == nil && v2 == nil {
-			return true
-		}
-		if v1 == nil || v2 == nil {
-			return false
-		}
-		return *v1 == *v2
-	}
-
-	if maps.EqualFunc(expectedTags, currentVM.Tags, eq) {
-		return false // No update to perform
-	}
-
-	update.Tags = expectedTags
-	return true
 }
