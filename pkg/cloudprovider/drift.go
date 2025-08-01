@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strings"
 
-	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -29,7 +28,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
