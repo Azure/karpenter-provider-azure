@@ -41,7 +41,6 @@ const (
 	NodeClassDrift       cloudprovider.DriftReason = "NodeClassDrift"
 	K8sVersionDrift      cloudprovider.DriftReason = "K8sVersionDrift"
 	ImageDrift           cloudprovider.DriftReason = "ImageDrift"
-	SubnetDrift          cloudprovider.DriftReason = "SubnetDrift"
 	KubeletIdentityDrift cloudprovider.DriftReason = "KubeletIdentityDrift"
 
 	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
@@ -56,7 +55,6 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 		c.isK8sVersionDrifted,
 		c.isKubeletIdentityDrifted,
 		c.isImageVersionDrifted,
-		c.isSubnetDrifted,
 	}
 	for _, check := range checks {
 		driftReason, err := check(ctx, nodeClaim, nodeClass)
@@ -195,29 +193,6 @@ func (c *CloudProvider) isImageVersionDrifted(
 		"driftType", ImageDrift,
 		"actualImageID", vmImageID)
 	return ImageDrift, nil
-}
-
-// isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
-func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
-	expectedSubnet := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
-	nicName := instance.GenerateResourceName(nodeClaim.Name)
-
-	// TODO: Refactor all of AzConfig to be part of options
-	nic, err := c.instanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
-	if err != nil {
-		if sdkerrors.IsNotFoundErr(err) {
-			return "", nil
-		}
-		return "", err
-	}
-	nicSubnet := getSubnetFromPrimaryIPConfig(nic)
-	if nicSubnet == "" {
-		return "", fmt.Errorf("no subnet found for nic: %s", nicName)
-	}
-	if nicSubnet != expectedSubnet {
-		return SubnetDrift, nil
-	}
-	return "", nil
 }
 
 // isKubeletIdentityDrifted returns drift if the kubelet identity has drifted
