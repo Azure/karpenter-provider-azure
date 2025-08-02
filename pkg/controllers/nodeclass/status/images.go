@@ -36,6 +36,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
@@ -111,6 +112,16 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
+
+	// validate FIPS + useSIG
+	fipsMode := nodeClass.Spec.FIPSMode
+	useSIG := options.FromContext(ctx).UseSIG
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS && !useSIG {
+		nodeClass.Status.Images = nil
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "SIGRequiredForFIPS", "FIPS images require UseSIG to be enabled, but UseSIG is false (note: UseSIG is only supported in AKS managed NAP)")
+		logger.Info("FIPS images require SIG", "error", fmt.Errorf("FIPS images require UseSIG to be enabled, but UseSIG is false (note: UseSIG is only supported in AKS managed NAP)"))
+		return reconcile.Result{}, nil
+	}
 
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
