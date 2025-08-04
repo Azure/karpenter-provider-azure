@@ -468,7 +468,7 @@ func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, ins
 }
 
 func (c *CloudProvider) resolveNodePoolFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) (*karpv1.NodePool, error) {
-	nodePoolName, ok := instance.Tags[karpv1.NodePoolLabelKey]
+	nodePoolName, ok := instance.Tags[launchtemplate.NodePoolTagKey]
 	if ok && *nodePoolName != "" {
 		nodePool := &karpv1.NodePool{}
 		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: *nodePoolName}, nodePool); err != nil {
