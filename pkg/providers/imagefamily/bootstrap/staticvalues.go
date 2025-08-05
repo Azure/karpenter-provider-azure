@@ -178,7 +178,7 @@ func getStaticNodeBootstrapVars() *NodeBootstrapVariables {
 		HTTPSProxyURLs:                          "",                                                                  // cd
 		NoProxyURLs:                             "",                                                                  // cd
 		TLSBootstrappingEnabled:                 true,                                                                // s
-		SecureTLSBootstrappingEnabled:           false,                                                               // s
+		SecureTLSBootstrappingEnabled:           true,                                                                // s
 		EnableKubeletServingCertificateRotation: false,                                                               // s
 		THPEnabled:                              "",                                                                  // cd
 		THPDefrag:                               "",                                                                  // cd

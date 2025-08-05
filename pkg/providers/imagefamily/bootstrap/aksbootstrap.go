@@ -281,7 +281,6 @@ func CredentialProviderURL(kubernetesVersion, arch string) string {
 func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeCACrt = *a.CABundle
 	nbv.APIServerName = a.APIServerName
-	nbv.TLSBootstrapToken = a.KubeletClientTLSBootstrapToken
 
 	nbv.TenantID = a.TenantID
 	nbv.SubscriptionID = a.SubscriptionID
