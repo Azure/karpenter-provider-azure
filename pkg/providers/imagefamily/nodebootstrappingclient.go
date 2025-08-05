@@ -26,6 +26,7 @@ import (
 
 	"github.com/Azure/aks-middleware/http/client/direct/restlogger"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
@@ -45,14 +46,17 @@ type tokenProvider struct {
 	// This could produce unnecessarily more traffic with the token provider service, and more tokens to be issued if there is no server-side caching.
 	// MSAL-side issue: https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/569
 	mu sync.Mutex
+
+	cloud cloud.Configuration
 }
 
 func (t *tokenProvider) getToken(ctx context.Context, credential azcore.TokenCredential) (azcore.AccessToken, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	resourceManagerConfig := t.cloud.Services[cloud.ResourceManager]
 	return credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
+		Scopes: []string{fmt.Sprintf("%s/.default", resourceManagerConfig.Audience)},
 	})
 }
 
@@ -67,14 +71,24 @@ type NodeBootstrappingClient struct {
 }
 
 // NewNodeBootstrappingClient creates a new NodeBootstrappingClient with token caching enabled.
-func NewNodeBootstrappingClient(ctx context.Context, subscriptionID string, resourceGroupName string, resourceName string, credential azcore.TokenCredential, serverURL string) (*NodeBootstrappingClient, error) {
+func NewNodeBootstrappingClient(
+	ctx context.Context,
+	cloud cloud.Configuration,
+	subscriptionID string,
+	resourceGroupName string,
+	resourceName string,
+	credential azcore.TokenCredential,
+	serverURL string,
+) (*NodeBootstrappingClient, error) {
 	return &NodeBootstrappingClient{
 		serverURL:         serverURL,
 		subscriptionID:    subscriptionID,
 		resourceGroupName: resourceGroupName,
 		resourceName:      resourceName,
 		credential:        credential,
-		tokenProvider:     &tokenProvider{},
+		tokenProvider: &tokenProvider{
+			cloud: cloud,
+		},
 	}, nil
 }
 
