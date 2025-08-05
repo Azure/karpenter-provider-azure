@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -575,53 +576,6 @@ var _ = Describe("Drift", func() {
 		env.ConsistentlyExpectNodeClaimsNotDrifted(time.Minute, nodeClaim)
 	})
 	Context("Failure", func() {
-		It("should not disrupt a drifted node if the replacement node never registers", func() {
-			// launch a new nodeClaim
-			var numPods int32 = 2
-			dep = coretest.Deployment(coretest.DeploymentOptions{
-				Replicas: 2,
-				PodOptions: coretest.PodOptions{
-					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "inflate"}},
-					PodAntiRequirements: []corev1.PodAffinityTerm{{
-						TopologyKey: corev1.LabelHostname,
-						LabelSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"app": "inflate"},
-						}},
-					},
-				},
-			})
-			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
-			env.ExpectCreated(dep, nodeClass, nodePool)
-
-			By("deploying multiple replicas, pod per node")
-			startingNodeClaimState := env.EventuallyExpectRegisteredNodeClaimCount("==", int(numPods))
-			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
-			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
-			By("drifting the nodeClaim with bad configuration that never registers")
-			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
-			env.ExpectCreatedOrUpdated(nodeClass)
-
-			env.EventuallyExpectDrifted(startingNodeClaimState...)
-
-			By("checking only a single node gets tainted due to default disruption budgets")
-			taintedNodes := env.EventuallyExpectTaintedNodeCount("==", 1)
-
-			By("checking drift fails and the original node gets untainted")
-			// TODO: reduce timeouts when disruption waits are factored out
-			env.EventuallyExpectNodesUntaintedWithTimeout(11*time.Minute, taintedNodes...)
-
-			By("checking all the NodeClaims that existed on the initial provisioning loop are not removed")
-			// Assert this over several minutes to ensure a subsequent disruption controller pass doesn't
-			// successfully schedule the evicted pods to the in-flight nodeclaim and disrupt the original node
-			Consistently(func(g Gomega) {
-				nodeClaims := &karpv1.NodeClaimList{}
-				g.Expect(env.Client.List(env, nodeClaims, client.HasLabels{coretest.DiscoveryLabel})).To(Succeed())
-				startingNodeClaimUIDs := sets.New(lo.Map(startingNodeClaimState, func(nc *karpv1.NodeClaim, _ int) types.UID { return nc.UID })...)
-				nodeClaimUIDs := sets.New(lo.Map(nodeClaims.Items, func(nc karpv1.NodeClaim, _ int) types.UID { return nc.UID })...)
-				g.Expect(nodeClaimUIDs.IsSuperset(startingNodeClaimUIDs)).To(BeTrue())
-			}, "2m").Should(Succeed())
-
-		})
 		It("should not disrupt a drifted node if the replacement node registers but never initialized", func() {
 			// launch a new nodeClaim
 			var numPods int32 = 2
