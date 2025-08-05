@@ -78,7 +78,7 @@ var _ = Describe("SubnetStatus", func() {
 			}
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(err).To(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute}))
 
 			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
