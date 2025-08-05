@@ -19,7 +19,6 @@ package instance
 import (
 	"context"
 
-	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -105,7 +104,11 @@ func NewAZClientFromAPI(
 }
 
 func CreateAZClient(ctx context.Context, cfg *auth.Config, cred azcore.TokenCredential) (*AZClient, error) {
-	env := azclient.EnvironmentFromName(cfg.Cloud)
+	env, err := auth.ResolveCloudEnvironment(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	azClient, err := NewAZClient(ctx, cfg, env, cred)
 	if err != nil {
 		return nil, err
@@ -115,10 +118,9 @@ func CreateAZClient(ctx context.Context, cfg *auth.Config, cred azcore.TokenCred
 }
 
 // nolint: gocyclo
-func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environment, cred azcore.TokenCredential) (*AZClient, error) {
+func NewAZClient(ctx context.Context, cfg *auth.Config, env auth.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	o := options.FromContext(ctx)
-	opts := armopts.DefaultArmOpts()
-
+	opts := armopts.DefaultARMOpts(env.Cloud)
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
@@ -135,7 +137,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	if o.UseSIG {
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
-		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope)
+		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope) // TODO(matthchr): Fix SIGAccessTokenScope to come from cloud
 		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
@@ -153,7 +155,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		return nil, err
 	}
 
-	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred)
+	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred, opts.Cloud)
 
 	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
@@ -167,12 +169,13 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
-	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
+	skuClient := skuclient.NewSkuClient(ctx, cfg, env.Environment)
 
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI = nil
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		nodeBootstrappingClient, err = imagefamily.NewNodeBootstrappingClient(
 			ctx,
+			env.Cloud,
 			cfg.SubscriptionID,
 			cfg.ResourceGroup,
 			o.ClusterName,
@@ -183,7 +186,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		}
 	}
 
-	return NewAZClientFromAPI(virtualMachinesClient,
+	return NewAZClientFromAPI(
+		virtualMachinesClient,
 		azureResourceGraphClient,
 		extensionsClient,
 		interfacesClient,
@@ -192,5 +196,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
 		nodeBootstrappingClient,
-		skuClient), nil
+		skuClient,
+	), nil
 }
