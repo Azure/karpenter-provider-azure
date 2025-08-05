@@ -80,7 +80,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeSubnetReady,
 			SubnetUnreadyReasonIDInvalid,
-			fmt.Sprintf("Failed to parse subnet ID: %s", err.Error()),
+			fmt.Sprintf("Failed to parse vnetSubnetID %s", subnetID),
 		)
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
@@ -90,7 +90,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeSubnetReady,
 			SubnetUnreadyReasonNotFound,
-			fmt.Sprintf("Subnet does not exist: %s", err.Error()),
+			fmt.Sprintf("resource not found: %s", subnetID),
 		)
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
