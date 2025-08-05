@@ -19,6 +19,7 @@ package status_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -65,7 +66,7 @@ var _ = Describe("SubnetStatus", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute * 3}))
 
 			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
 			Expect(cond.IsTrue()).To(BeTrue())
@@ -78,7 +79,7 @@ var _ = Describe("SubnetStatus", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute}))
 
 			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
 			Expect(cond.IsFalse()).To(BeTrue())
@@ -104,7 +105,7 @@ var _ = Describe("SubnetStatus", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(Equal(reconcile.Result{}))
+			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute * 3}))
 
 			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
 			Expect(cond.IsTrue()).To(BeTrue())
