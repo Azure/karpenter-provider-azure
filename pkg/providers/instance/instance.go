@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -50,8 +49,6 @@ import (
 )
 
 var (
-	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
-
 	CapacityTypeToPriority = map[string]string{
 		karpv1.CapacityTypeSpot:     string(armcompute.VirtualMachinePriorityTypesSpot),
 		karpv1.CapacityTypeOnDemand: string(armcompute.VirtualMachinePriorityTypesRegular),
@@ -80,6 +77,18 @@ const (
 	cseNameWindows = "windows-cse-agent-karpenter"
 	cseNameLinux   = "cse-agent-karpenter"
 )
+
+// GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
+// This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
+func GetManagedExtensionNames(provisionMode string) []string {
+	result := []string{
+		aksIdentifyingExtensionName,
+	}
+	if provisionMode == consts.ProvisionModeBootstrappingClient {
+		result = append(result, cseNameLinux) // TODO: Windows
+	}
+	return result
+}
 
 type Resource = map[string]interface{}
 
@@ -196,7 +205,7 @@ func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armc
 		// If there are tags for other resources, do those first. This is a hedge to avoid updating the VM first which may cause us to think subsequent updates aren't needed
 		// because the VM already has the updates
 
-		// Update tags
+		// Update NIC tags
 		_, err := p.azClient.networkInterfacesClient.UpdateTags(
 			ctx,
 			p.resourceGroup,
@@ -210,11 +219,7 @@ func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armc
 			return fmt.Errorf("updating NIC tags for %q: %w", vmName, err)
 		}
 
-		extensionNames := []string{
-			aksIdentifyingExtensionName,
-			cseNameLinux, // TODO: Windows
-		}
-
+		extensionNames := GetManagedExtensionNames(p.provisionMode)
 		pollers := make(map[string]*runtime.Poller[armcompute.VirtualMachineExtensionsClientUpdateResponse], len(extensionNames))
 		// Update tags on VM extensions
 		for _, extName := range extensionNames {
@@ -572,13 +577,6 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	}
 }
 
-// setNodePoolNameTag sets "karpenter.sh/nodepool" tag
-func setNodePoolNameTag(tags map[string]*string, nodeClaim *karpv1.NodeClaim) {
-	if val, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
-		tags[NodePoolTagKey] = &val
-	}
-}
-
 type createResult struct {
 	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
 	VM     *armcompute.VirtualMachine
@@ -635,9 +633,6 @@ func (p *DefaultProvider) beginLaunchInstance(
 	if err != nil {
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
-
-	// set nodepool tag for NIC, VM, and Disk
-	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
 
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
