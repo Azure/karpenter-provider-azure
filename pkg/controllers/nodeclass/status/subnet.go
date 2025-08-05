@@ -96,7 +96,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 	}
 
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetReady)
-	// Periodicaly check the subnet health conditions haven't been violated
+	// Periodically check the subnet health conditions haven't been violated
 	const healthyRequeueInterval = time.Minute * 3
 	return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
 }
