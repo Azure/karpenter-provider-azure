@@ -42,14 +42,14 @@ func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
 
 // We can share some of the validation reasons between vnetSubnetID + podSubnetID
 const (
-	SubnetReadyReasonNotFound = "SubnetNotFound"
+	SubnetUnreadyReasonNotFound = "SubnetNotFound"
 
 	//TODO: Add additional case that checks that subscription, rg, and vnet are the same for incoming
 	// subnet-ids
-	SubnetReadyReasonIDInvalid = "SubnetIDInvalid"
+	SubnetUnreadyReasonIDInvalid = "SubnetIDInvalid"
 
 	// TODO(bsoghigian): Support SubnetFull readiness reason
-	SubnetReadyReasonFull = "SubnetFull"
+	SubnetUnreadyReasonFull = "SubnetFull"
 
 	// Azure reserves the first four addresses and the last address, for a total of 5 ips for each subnet.
 	// For example 192.168.1.0/24 has the following reserved addresses
@@ -61,10 +61,10 @@ const (
 
 	// TODO(bsoghigian): check if the cidr of a subnet-id is overlapping with any of the static agentpools,
 	// AKSNodeClass subnets, or any defaulting reserved networking addresses for AKS (--dns-service-ip)
-	SubnetReadyReasonCIDROverlapping = "SubnetCIDROverlapping"
+	SubnetUnreadyReasonCIDROverlapping = "SubnetCIDROverlapping"
 
 	// TODO(bsoghigian): check cluster identity has rbac for subnet/read subnet/join for a given vnetSubnetID
-	SubnetReadyReasonRBACInvalid = "SubnetRBACInvalid"
+	SubnetUnreadyReasonRBACInvalid = "SubnetRBACInvalid"
 )
 
 func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
@@ -79,7 +79,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeSubnetReady,
-			SubnetReadyReasonIDInvalid,
+			SubnetUnreadyReasonIDInvalid,
 			fmt.Sprintf("Failed to parse subnet ID: %s", err.Error()),
 		)
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
@@ -89,7 +89,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeSubnetReady,
-			SubnetReadyReasonNotFound,
+			SubnetUnreadyReasonNotFound,
 			fmt.Sprintf("Subnet does not exist: %s", err.Error()),
 		)
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
