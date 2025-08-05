@@ -37,13 +37,16 @@ func GetSubnetResourceID(subscriptionID, resourceGroupName, virtualNetworkName, 
 
 // GetVnetSubnetIDComponents parses an Azure subnet resource ID into its component parts.
 // Input: A fully qualified Azure subnet resource ID in the format:
-//   /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{virtualNetworkName}/subnets/{subnetName}
+//
+//	/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{virtualNetworkName}/subnets/{subnetName}
+//
 // The input is case-insensitive and must contain exactly 11 slash-separated segments.
 // Output: A vnetSubnetResource struct containing:
 //   - SubscriptionID: The Azure subscription ID
 //   - ResourceGroupName: The resource group name
 //   - VNetName: The virtual network name
 //   - SubnetName: The subnet name
+//
 // Returns an error if the input format is invalid or doesn't match the expected structure.
 func GetVnetSubnetIDComponents(vnetSubnetID string) (vnetSubnetResource, error) {
 	parts := strings.Split(vnetSubnetID, "/")
