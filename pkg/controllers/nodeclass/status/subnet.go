@@ -19,6 +19,7 @@ package status
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -81,7 +82,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 			SubnetReadyReasonIDInvalid,
 			fmt.Sprintf("Failed to parse subnet ID: %s", err.Error()),
 		)
-		return reconcile.Result{}, nil
+		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
 	_, err = r.subnetClient.Get(ctx, subnetComponents.ResourceGroupName, subnetComponents.VNetName, subnetComponents.SubnetName, nil)
@@ -91,9 +92,11 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 			SubnetReadyReasonNotFound,
 			fmt.Sprintf("Subnet does not exist: %s", err.Error()),
 		)
-		return reconcile.Result{}, nil
+		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetReady)
-	return reconcile.Result{}, nil
+	// Periodicaly check the subnet health conditions haven't been violated
+	const healthyRequeueInterval = time.Minute * 3
+	return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
 }
