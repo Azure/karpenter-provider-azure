@@ -226,7 +226,13 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 }
 
 func getVnetGUID(creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
-	opts := armopts.DefaultArmOpts()
+	// TODO: We should possibly just put the vnet client on azclient and use it here
+	env, err := auth.ResolveCloudEnvironment(cfg)
+	if err != nil {
+		return "", err
+	}
+
+	opts := armopts.DefaultARMOpts(env.Cloud)
 	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, creds, opts)
 	if err != nil {
 		return "", err
