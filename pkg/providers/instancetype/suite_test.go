@@ -64,7 +64,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -155,17 +154,6 @@ var _ = Describe("InstanceType Provider", func() {
 		clusterNonZonal.Reset()
 		azureEnv.Reset()
 		azureEnvNonZonal.Reset()
-
-		// Set up subnet fake after reset
-		azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
-			return armnetwork.SubnetsClientGetResponse{
-				Subnet: armnetwork.Subnet{
-					Properties: &armnetwork.SubnetPropertiesFormat{
-						AddressPrefix: lo.ToPtr("10.0.0.0/16"),
-					},
-				},
-			}, nil
-		}
 
 		// Populate the expected cluster NSG
 		nsg := test.MakeNetworkSecurityGroup(options.FromContext(ctx).NodeResourceGroup, fmt.Sprintf("aks-agentpool-%s-nsg", options.FromContext(ctx).ClusterID))

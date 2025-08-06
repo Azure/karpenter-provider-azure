@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/samber/lo"
 )
 
 type SubnetsAPI struct {
@@ -30,7 +31,13 @@ func (s *SubnetsAPI) Get(ctx context.Context, resourceGroupName string, virtualN
 	if s.GetFunc != nil {
 		return s.GetFunc(ctx, resourceGroupName, virtualNetworkName, subnetName, options)
 	}
-	return armnetwork.SubnetsClientGetResponse{}, nil
+	return armnetwork.SubnetsClientGetResponse{
+		Subnet: armnetwork.Subnet{
+			Properties: &armnetwork.SubnetPropertiesFormat{
+				AddressPrefix: lo.ToPtr("10.0.0.0/16"),
+			},
+		},
+	}, nil
 }
 
 func (s *SubnetsAPI) Reset() {
