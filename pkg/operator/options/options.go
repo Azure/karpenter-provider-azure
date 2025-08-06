@@ -67,8 +67,8 @@ type Options struct {
 	ClusterEndpoint                string  `json:"clusterEndpoint,omitempty"` // => APIServerName in bootstrap, except needs to be w/o https/port
 	VMMemoryOverheadPercent        float64 `json:"vmMemoryOverheadPercent,omitempty"`
 	ClusterID                      string  `json:"clusterId,omitempty"`
-	KubeletClientTLSBootstrapToken string  `json:"-"`                                // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
-	EnableSecureTLSBootstrapping   bool    `json:"secureTlsBootstrapping,omitempty"` // => EnableSecureTLSBootstrapping in bootstrap
+	KubeletClientTLSBootstrapToken string  `json:"-"`                                      // => TLSBootstrapToken in bootstrap (may need to be per node/nodepool)
+	EnableSecureTLSBootstrapping   bool    `json:"enableSecureTLSBootstrapping,omitempty"` // => EnableSecureTLSBootstrapping in bootstrap
 	LinuxAdminUsername             string  `json:"-"`
 	SSHPublicKey                   string  `json:"-"` // ssh.publicKeys.keyData => VM SSH public key // TODO: move to v1beta1.AKSNodeClass?
 
