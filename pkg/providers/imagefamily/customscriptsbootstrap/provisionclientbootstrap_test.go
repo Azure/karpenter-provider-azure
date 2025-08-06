@@ -73,6 +73,35 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "Success with valid parameters and secure TLS bootstrapping",
+			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:                    "test-cluster",
+				KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                           karpv1.ArchitectureAmd64,
+				SubscriptionID:                 "test-sub",
+				ClusterResourceGroup:           "test-cluster-rg",
+				ResourceGroup:                  "test-rg",
+				KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+				KubernetesVersion:              "1.31.0",
+				ImageDistro:                    "aks-ubuntu-containerd-22.04-gen2",
+				IsWindows:                      false,
+				StorageProfile:                 consts.StorageProfileManagedDisks,
+				OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{
+					SimulateSecureTLSBootstrapping: true,
+				},
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
 			name: "Error with nil NodeBootstrapping provider",
 			bootstrapper: &customscriptsbootstrap.ProvisionClientBootstrap{
 				ClusterName:                    "test-cluster",
