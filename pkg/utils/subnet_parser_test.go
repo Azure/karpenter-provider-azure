@@ -125,3 +125,111 @@ var _ = Describe("GetVnetSubnetIDComponents", func() {
 		Expect(err).ToNot(BeNil())
 	})
 })
+
+var _ = Describe("IsSameVNET", func() {
+	var baseResource VnetSubnetResource
+
+	BeforeEach(func() {
+		baseResource = VnetSubnetResource{
+			SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+			ResourceGroupName: "my-resource-group",
+			VNetName:          "my-vnet",
+			SubnetName:        "my-subnet",
+		}
+	})
+
+	It("should return true when all VNET components match", func() {
+		compareResource := VnetSubnetResource{
+			SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+			ResourceGroupName: "my-resource-group",
+			VNetName:          "my-vnet",
+			SubnetName:        "different-subnet", // Subnet name can be different
+		}
+		Expect(baseResource.IsSameVNET(compareResource)).To(BeTrue())
+	})
+
+	It("should return true when subnet names are different but VNET components match", func() {
+		compareResource := VnetSubnetResource{
+			SubscriptionID:    baseResource.SubscriptionID,
+			ResourceGroupName: baseResource.ResourceGroupName,
+			VNetName:          baseResource.VNetName,
+			SubnetName:        "completely-different-subnet",
+		}
+		Expect(baseResource.IsSameVNET(compareResource)).To(BeTrue())
+	})
+
+	It("should return false when subscription IDs are different", func() {
+		compareResource := VnetSubnetResource{
+			SubscriptionID:    "87654321-4321-4321-4321-210987654321",
+			ResourceGroupName: baseResource.ResourceGroupName,
+			VNetName:          baseResource.VNetName,
+			SubnetName:        baseResource.SubnetName,
+		}
+		Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+	})
+
+	It("should return false when resource group names are different", func() {
+		compareResource := VnetSubnetResource{
+			SubscriptionID:    baseResource.SubscriptionID,
+			ResourceGroupName: "different-resource-group",
+			VNetName:          baseResource.VNetName,
+			SubnetName:        baseResource.SubnetName,
+		}
+		Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+	})
+
+	It("should return false when VNET names are different", func() {
+		compareResource := VnetSubnetResource{
+			SubscriptionID:    baseResource.SubscriptionID,
+			ResourceGroupName: baseResource.ResourceGroupName,
+			VNetName:          "different-vnet",
+			SubnetName:        baseResource.SubnetName,
+		}
+		Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+	})
+
+	It("should return false when multiple components are different", func() {
+		compareResource := VnetSubnetResource{
+			SubscriptionID:    "87654321-4321-4321-4321-210987654321",
+			ResourceGroupName: "different-resource-group",
+			VNetName:          "different-vnet",
+			SubnetName:        "different-subnet",
+		}
+		Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+	})
+
+	It("should handle empty string comparisons correctly", func() {
+		emptyResource := VnetSubnetResource{
+			SubscriptionID:    "",
+			ResourceGroupName: "",
+			VNetName:          "",
+			SubnetName:        "",
+		}
+		
+		// Comparing empty with empty should return true
+		Expect(emptyResource.IsSameVNET(emptyResource)).To(BeTrue())
+		
+		// Comparing empty with non-empty should return false
+		Expect(emptyResource.IsSameVNET(baseResource)).To(BeFalse())
+		Expect(baseResource.IsSameVNET(emptyResource)).To(BeFalse())
+	})
+
+	It("should be case-sensitive for all components", func() {
+		// IsSameVNET is case-sensitive, unlike the parsing functions
+		compareResource := VnetSubnetResource{
+			SubscriptionID:    baseResource.SubscriptionID,
+			ResourceGroupName: "My-Resource-Group", // Different case
+			VNetName:          baseResource.VNetName,
+			SubnetName:        baseResource.SubnetName,
+		}
+		Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+		
+		compareResource = VnetSubnetResource{
+			SubscriptionID:    baseResource.SubscriptionID,
+			ResourceGroupName: baseResource.ResourceGroupName,
+			VNetName:          "My-VNet", // Different case
+			SubnetName:        baseResource.SubnetName,
+		}
+		Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+	})
+})

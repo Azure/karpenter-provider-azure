@@ -24,6 +24,7 @@ import (
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -44,20 +45,10 @@ func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
 const (
 	SubnetUnreadyReasonNotFound = "SubnetNotFound"
 
-	//TODO: Add additional case that checks that subscription, rg, and vnet are the same for incoming
-	// subnet-ids
 	SubnetUnreadyReasonIDInvalid = "SubnetIDInvalid"
 
 	// TODO(bsoghigian): Support SubnetFull readiness reason
 	SubnetUnreadyReasonFull = "SubnetFull"
-
-	// Azure reserves the first four addresses and the last address, for a total of 5 ips for each subnet.
-	// For example 192.168.1.0/24 has the following reserved addresses
-	// 192.168.1.0 Network Address
-	// 192.168.1.1 Reserved by azure for the default gateway
-	// 192.168.1.2, 192.168.1.3: Reserved by Azure to map the Azure DNS IP addresses to the virtual network space.
-	// 192.168.1.255: Network broadcast address
-	AzureReservedIPs = 5
 
 	// TODO(bsoghigian): check if the cidr of a subnet-id is overlapping with any of the static agentpools,
 	// AKSNodeClass subnets, or any defaulting reserved networking addresses for AKS (--dns-service-ip)
@@ -67,6 +58,17 @@ const (
 	SubnetUnreadyReasonRBACInvalid = "SubnetRBACInvalid"
 )
 
+const (
+	// TODO: Use this in SubnetFull logic
+	// Azure reserves the first four addresses and the last address, for a total of 5 ips for each subnet.
+	// For example 192.168.1.0/24 has the following reserved addresses
+	// 192.168.1.0 Network Address
+	// 192.168.1.1 Reserved by azure for the default gateway
+	// 192.168.1.2, 192.168.1.3: Reserved by Azure to map the Azure DNS IP addresses to the virtual network space.
+	// 192.168.1.255: Network broadcast address
+	AzureReservedIPs = 5
+)
+
 func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	return r.validateVNETSubnetID(ctx, nodeClass)
 	// TODO: Handle podSubnetID readiness here as well
@@ -74,19 +76,36 @@ func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKS
 }
 
 func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	clusterSubnetID := options.FromContext(ctx).SubnetID
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
-	subnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
+	nodeClassSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeSubnetReady,
 			SubnetUnreadyReasonIDInvalid,
 			fmt.Sprintf("Failed to parse vnetSubnetID %s", subnetID),
 		)
-		return reconcile.Result{RequeueAfter: time.Minute}, err
+		return reconcile.Result{}, err
 	}
 
-	_, err = r.subnetClient.Get(ctx, subnetComponents.ResourceGroupName, subnetComponents.VNetName, subnetComponents.SubnetName, nil)
-	if err != nil {
+	if subnetID != clusterSubnetID {
+		clusterSubnetIDParts, _ := utils.GetVnetSubnetIDComponents(clusterSubnetID) // Assume valid cluster subnet id
+		if !clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeSubnetReady,
+				SubnetUnreadyReasonIDInvalid,
+				fmt.Sprintf("SubnetID does not match the cluster vnet: %s", subnetID),
+			)
+		}
+	}
+
+	_, err = r.subnetClient.Get(ctx, nodeClassSubnetComponents.ResourceGroupName, nodeClassSubnetComponents.VNetName, nodeClassSubnetComponents.SubnetName, nil)
+	// Not Found errors can occur for 3 resource scopes here
+	// 1. ResourceGroup
+	// 2. Vnet
+	// 3. SubnetID
+	// We are checking if any of those return not found when setting the reason like this
+	if err != nil && sdkerrors.IsNotFoundErr(err) {
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeSubnetReady,
 			SubnetUnreadyReasonNotFound,

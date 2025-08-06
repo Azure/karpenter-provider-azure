@@ -22,11 +22,24 @@ import (
 )
 
 // this parsing function replaces three different functions in different packages that all had bugs. Please don't use a regex to parse these
-type vnetSubnetResource struct {
+type VnetSubnetResource struct {
 	SubscriptionID    string
 	ResourceGroupName string
 	VNetName          string
 	SubnetName        string
+}
+
+func (v VnetSubnetResource) IsSameVNET(cmp VnetSubnetResource) bool {
+	if v.SubscriptionID != cmp.SubscriptionID {
+		return false
+	}
+	if v.ResourceGroupName != cmp.ResourceGroupName {
+		return false
+	}
+	if v.VNetName != cmp.VNetName {
+		return false
+	}
+	return true
 }
 
 // GetSubnetResourceID constructs the subnet resource id
@@ -48,13 +61,13 @@ func GetSubnetResourceID(subscriptionID, resourceGroupName, virtualNetworkName, 
 //   - SubnetName: The subnet name
 //
 // Returns an error if the input format is invalid or doesn't match the expected structure.
-func GetVnetSubnetIDComponents(vnetSubnetID string) (vnetSubnetResource, error) {
+func GetVnetSubnetIDComponents(vnetSubnetID string) (VnetSubnetResource, error) {
 	parts := strings.Split(vnetSubnetID, "/")
 	if len(parts) != 11 {
-		return vnetSubnetResource{}, fmt.Errorf("invalid vnet subnet id: %s", vnetSubnetID)
+		return VnetSubnetResource{}, fmt.Errorf("invalid vnet subnet id: %s", vnetSubnetID)
 	}
 
-	vs := vnetSubnetResource{
+	vs := VnetSubnetResource{
 		SubscriptionID:    parts[2],
 		ResourceGroupName: parts[4],
 		VNetName:          parts[8],
@@ -64,7 +77,7 @@ func GetVnetSubnetIDComponents(vnetSubnetID string) (vnetSubnetResource, error) 
 	//this is a cheap way of ensure all the names match
 	mirror := GetSubnetResourceID(vs.SubscriptionID, vs.ResourceGroupName, vs.VNetName, vs.SubnetName)
 	if !strings.EqualFold(mirror, vnetSubnetID) {
-		return vnetSubnetResource{}, fmt.Errorf("invalid vnet subnet id: %s", vnetSubnetID)
+		return VnetSubnetResource{}, fmt.Errorf("invalid vnet subnet id: %s", vnetSubnetID)
 	}
 	return vs, nil
 }

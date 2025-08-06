@@ -17,6 +17,8 @@ limitations under the License.
 package subnet_test
 
 import (
+	"fmt"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
@@ -28,6 +30,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -79,6 +82,7 @@ var _ = Describe("Subnets", func() {
 		}
 		vnet := env.GetClusterVNET()
 		env.ExpectCreatedSubnet(lo.FromPtr(vnet.Name), subnet)
+
 		nodeClass.Spec.VNETSubnetID = subnet.ID // Should be populated by the Expect call above
 
 		env.ExpectCreated(nodeClass, nodePool, dep)
@@ -117,11 +121,80 @@ var _ = Describe("Subnets", func() {
 		Expect(err.Error()).To(ContainSubstring("should match"))
 	})
 
-	It("should mark the AKSNodeClass as unready if the subnet is NotFound and all back to a different nodeclass", func() {
+	DescribeTable("should mark the AKSNodeClass as unready if the subnetID doesn't belong to the cluster vnet",
+		func(modifyComponents func(utils.VnetSubnetResource) utils.VnetSubnetResource, expectedErrorPattern string) {
+			vnet := env.GetClusterVNET()
+			vnetID := lo.FromPtr(vnet.ID)
+			
+			// Parse the cluster VNET ID to extract components
+			vnetResourceID, err := arm.ParseResourceID(vnetID)
+			Expect(err).ToNot(HaveOccurred())
+			
+			// Create base components from cluster VNET
+			baseComponents := utils.VnetSubnetResource{
+				SubscriptionID:    vnetResourceID.SubscriptionID,
+				ResourceGroupName: vnetResourceID.ResourceGroupName,
+				VNetName:          vnetResourceID.Name,
+				SubnetName:        "test-subnet",
+			}
+			
+			// Modify components based on test case
+			modifiedComponents := modifyComponents(baseComponents)
+			
+			// Create subnet ID using the utils function
+			subnetID := utils.GetSubnetResourceID(
+				modifiedComponents.SubscriptionID,
+				modifiedComponents.ResourceGroupName,
+				modifiedComponents.VNetName,
+				modifiedComponents.SubnetName,
+			)
+			
+			nodeClass.Spec.VNETSubnetID = lo.ToPtr(subnetID)
+			env.ExpectCreated(nodeClass)
+			
+			Eventually(func(g Gomega) {
+				g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
+				g.Expect(condition).ToNot(BeNil())
+				g.Expect(condition.IsFalse()).To(BeTrue())
+				g.Expect(condition.Message).To(MatchRegexp(expectedErrorPattern))
+			}).Should(Succeed())
+		},
+		Entry("different subscription",
+			func(components utils.VnetSubnetResource) utils.VnetSubnetResource {
+				components.SubscriptionID = "12345678-1234-1234-1234-123456789012"
+				return components
+			},
+			"subscription"),
+		Entry("different resource group",
+			func(components utils.VnetSubnetResource) utils.VnetSubnetResource {
+				components.ResourceGroupName = "different-rg"
+				return components
+			},
+			"resource group"),
+		Entry("different virtual network",
+			func(components utils.VnetSubnetResource) utils.VnetSubnetResource {
+				components.VNetName = "different-vnet"
+				return components
+			},
+			"virtual network"),
+	)
+	It("should mark the AKSNodeClass as unready if the subnet is NotFound and fall back to a different nodeclass", func() {
 		newNodeClass := env.DefaultAKSNodeClass()
 		newNodepool := env.DefaultNodePool(newNodeClass)
 		newNodepool.Spec.Weight = lo.ToPtr(int32(10))
-		newNodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
+
+		vnet := env.GetClusterVNET() // Use cluster vnet in fake subnet id
+		vnetResourceID, err := arm.ParseResourceID(lo.FromPtr(vnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+		
+		// Create a subnet ID that doesn't exist but is in the same vnet
+		newNodeClass.Spec.VNETSubnetID = lo.ToPtr(utils.GetSubnetResourceID(
+			vnetResourceID.SubscriptionID,
+			vnetResourceID.ResourceGroupName,
+			vnetResourceID.Name,
+			"nodeClassSubnet2", // This subnet doesn't exist
+		))
 		env.ExpectCreated(nodeClass, nodePool, newNodeClass, newNodepool, dep)
 
 		By("falling back to original nodeclass due to misconfigured subnet")
