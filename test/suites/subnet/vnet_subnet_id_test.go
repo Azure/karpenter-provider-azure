@@ -17,8 +17,6 @@ limitations under the License.
 package subnet_test
 
 import (
-	"fmt"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
@@ -125,11 +123,11 @@ var _ = Describe("Subnets", func() {
 		func(modifyComponents func(utils.VnetSubnetResource) utils.VnetSubnetResource, expectedErrorPattern string) {
 			vnet := env.GetClusterVNET()
 			vnetID := lo.FromPtr(vnet.ID)
-			
+
 			// Parse the cluster VNET ID to extract components
 			vnetResourceID, err := arm.ParseResourceID(vnetID)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// Create base components from cluster VNET
 			baseComponents := utils.VnetSubnetResource{
 				SubscriptionID:    vnetResourceID.SubscriptionID,
@@ -137,10 +135,10 @@ var _ = Describe("Subnets", func() {
 				VNetName:          vnetResourceID.Name,
 				SubnetName:        "test-subnet",
 			}
-			
+
 			// Modify components based on test case
 			modifiedComponents := modifyComponents(baseComponents)
-			
+
 			// Create subnet ID using the utils function
 			subnetID := utils.GetSubnetResourceID(
 				modifiedComponents.SubscriptionID,
@@ -148,10 +146,10 @@ var _ = Describe("Subnets", func() {
 				modifiedComponents.VNetName,
 				modifiedComponents.SubnetName,
 			)
-			
+
 			nodeClass.Spec.VNETSubnetID = lo.ToPtr(subnetID)
 			env.ExpectCreated(nodeClass)
-			
+
 			Eventually(func(g Gomega) {
 				g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
@@ -187,7 +185,7 @@ var _ = Describe("Subnets", func() {
 		vnet := env.GetClusterVNET() // Use cluster vnet in fake subnet id
 		vnetResourceID, err := arm.ParseResourceID(lo.FromPtr(vnet.ID))
 		Expect(err).ToNot(HaveOccurred())
-		
+
 		// Create a subnet ID that doesn't exist but is in the same vnet
 		newNodeClass.Spec.VNETSubnetID = lo.ToPtr(utils.GetSubnetResourceID(
 			vnetResourceID.SubscriptionID,
