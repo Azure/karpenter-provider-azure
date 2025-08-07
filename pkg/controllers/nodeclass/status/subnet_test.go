@@ -86,11 +86,11 @@ var _ = Describe("SubnetStatus", func() {
 	})
 
 	It("should use nodeclass subnet ID when specified", func() {
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/87654321-4321-4321-4321-210987654321/resourceGroups/nodeclass-rg/providers/Microsoft.Network/virtualNetworks/nodeclass-vnet/subnets/nodeclass-subnet")
+		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/nodeclass-subnet")
 
 		azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
-			Expect(resourceGroupName).To(Equal("nodeclass-rg"))
-			Expect(virtualNetworkName).To(Equal("nodeclass-vnet"))
+			Expect(resourceGroupName).To(Equal("test-resourceGroup"))
+			Expect(virtualNetworkName).To(Equal("aks-vnet-12345678"))
 			Expect(subnetName).To(Equal("nodeclass-subnet"))
 
 			return armnetwork.SubnetsClientGetResponse{
@@ -161,11 +161,11 @@ var _ = Describe("SubnetStatus", func() {
 		})
 
 		It("should use nodeclass subnet ID when specified", func() {
-			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/87654321-4321-4321-4321-210987654321/resourceGroups/nodeclass-rg/providers/Microsoft.Network/virtualNetworks/nodeclass-vnet/subnets/nodeclass-subnet")
+			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/nodeclass-subnet")
 
 			azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
-				Expect(resourceGroupName).To(Equal("nodeclass-rg"))
-				Expect(virtualNetworkName).To(Equal("nodeclass-vnet"))
+				Expect(resourceGroupName).To(Equal("test-resourceGroup"))
+				Expect(virtualNetworkName).To(Equal("aks-vnet-12345678"))
 				Expect(subnetName).To(Equal("nodeclass-subnet"))
 
 				return armnetwork.SubnetsClientGetResponse{
