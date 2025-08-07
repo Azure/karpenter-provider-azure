@@ -26,7 +26,7 @@ import (
 const (
 	ConditionTypeImagesReady            = "ImagesReady"
 	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
-	ConditionTypeSubnetReady            = "VnetSubnetIDReady"
+	ConditionTypeSubnetReady            = "SubnetReady"
 )
 
 // NodeImage contains resolved image selector values utilized for node launch
