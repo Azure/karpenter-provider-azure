@@ -301,7 +301,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 
 			env.ConsistentlyExpectDisruptionsUntilNoneLeft(3, 2, 10*time.Minute)
 		})
-		It("should respect budgets for non-empty replace consolidation", func() {
+		It("should respect budgets for non-empty replace consolidation", Label("flaky"), func() {
 			appLabels := map[string]string{"app": "large-app"}
 			// This test will hold consolidation until we are ready to execute it
 			nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("Never")
@@ -566,8 +566,8 @@ var _ = Describe("Consolidation", Ordered, func() {
 			By("deleting the deployment")
 			env.ExpectDeleted(dep)
 		},
-		Entry("if the nodes are on-demand nodes", false),
-		Entry("if the nodes are spot nodes", true),
+		Entry("if the nodes are on-demand nodes", Label("flaky"), false),
+		Entry("if the nodes are spot nodes", Label("flaky"), true),
 	)
 	DescribeTable("should consolidate nodes (replace)",
 		func(spotToSpot bool) {
@@ -730,8 +730,8 @@ var _ = Describe("Consolidation", Ordered, func() {
 
 			env.ExpectDeleted(largeDep, smallDep)
 		},
-		Entry("if the nodes are on-demand nodes", false),
-		Entry("if the nodes are spot nodes", true),
+		Entry("if the nodes are on-demand nodes", Label("flaky"), false),
+		Entry("if the nodes are spot nodes", Label("flaky"), true),
 	)
 	It("should consolidate on-demand nodes to spot (replace)", func() {
 		nodePool := coretest.NodePool(karpv1.NodePool{

@@ -200,7 +200,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		// note: this test can fail on subscription that don't have quota for GPU SKUs
-		It("should support well-known labels for a gpu (nvidia)", func() {
+		It("should support well-known labels for a gpu (nvidia)", Label("gpu"), func() {
 			nodeSelector := map[string]string{
 				v1beta1.LabelSKUGPUManufacturer: "nvidia",
 				v1beta1.LabelSKUGPUCount:        "1",
@@ -494,7 +494,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				},
 			}),
 		)
-		It("should provision a right-sized node when a pod has InitContainers (mixed resources)", func() {
+		It("should provision a right-sized node when a pod has InitContainers (mixed resources)", Label("flaky"), func() {
 			if env.K8sMinorVersion() < 29 {
 				Skip("native sidecar containers are only enabled on AKS 1.29+")
 			}

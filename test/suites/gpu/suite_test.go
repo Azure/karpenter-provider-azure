@@ -50,7 +50,7 @@ var _ = BeforeEach(func() { env.BeforeEach() })
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
-var _ = Describe("GPU", func() {
+var _ = Describe("GPU", Label("gpu"), func() {
 	DescribeTable("should provision one GPU node and one GPU Pod",
 		func(nodeClass *v1beta1.AKSNodeClass) {
 			// Enable NodeRepair feature gate if running in-cluster

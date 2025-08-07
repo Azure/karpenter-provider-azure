@@ -14,6 +14,10 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "southcentralus"
+      include_flaky:
+        type: boolean
+        description: "whether to include flaky tests"
+        default: true
     #   k8s_version:
     #     type: string
     #     default: "1.27"
@@ -168,7 +172,11 @@ jobs:
           GIT_REF: ${{ github.sha }}
         run: |
           make az-creds
-          make e2etests
+          if [ "${{ inputs.include_flaky }}" == "true" ]; then
+            make e2etests
+          else
+            make e2etests-non-flaky
+          fi
       - name: dump logs on failure
         uses: ./.github/actions/e2e/dump-logs
         if: failure() || cancelled()

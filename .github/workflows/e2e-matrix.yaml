@@ -8,6 +8,10 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "eastus"
+      include_flaky:
+        type: boolean
+        description: "whether to include flaky tests"
+        default: true
   #     k8s_version:
   #       type: string
   #       default: "1.27"
@@ -58,6 +62,7 @@ jobs:
       suite: ${{ matrix.suite }}
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
       location: ${{ inputs.location }}
+      include_flaky: ${{ inputs.include_flaky }}
   #     k8s_version: ${{ inputs.k8s_version }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}

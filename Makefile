@@ -62,6 +62,25 @@ e2etests: ## Run the e2e suite against your local cluster
 		--ginkgo.grace-period=3m \
 		--ginkgo.vv
 
+e2etests-non-flaky: ## Run only non-flaky e2e tests against your local cluster
+	# Notes:
+	# -p: the number of programs, such as build commands or test binaries, that can be run in parallel?
+	# -count 1: prevents caching
+	# -timeout: If a test binary runs longer than TEST_TIMEOUT, panic
+	# -v: verbose output
+	# --ginkgo.label-filter="!flaky": excludes tests labeled as flaky
+	cd test && AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} go test \
+		-p 1 \
+		-count 1 \
+		-timeout ${TEST_TIMEOUT} \
+		-v \
+		./suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
+		--ginkgo.focus="${FOCUS}" \
+		--ginkgo.label-filter="!flaky" \
+		--ginkgo.timeout=${TEST_TIMEOUT} \
+		--ginkgo.grace-period=3m \
+		--ginkgo.vv
+
 upstream-e2etests:
 	AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} \
 	go test \
@@ -129,7 +148,7 @@ tidy: ## Recursively "go mod tidy" on all directories where go.mod exists
 download: ## Recursively "go mod download" on all directories where go.mod exists
 	$(foreach dir,$(MOD_DIRS),cd $(dir) && go mod download $(newline))
 
-.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests upstream-e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
+.PHONY: help presubmit ci-test ci-non-test test deflake deflake-until-it-fails e2etests e2etests-non-flaky upstream-e2etests coverage verify vulncheck licenses codegen snapshot release toolchain tidy download
 
 define newline
 
