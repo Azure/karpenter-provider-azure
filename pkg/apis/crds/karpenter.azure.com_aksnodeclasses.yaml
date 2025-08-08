@@ -325,14 +325,6 @@ spec:
       name: ImageFamily
       priority: 1
       type: string
-    - jsonPath: .spec.maxPods
-      name: MaxPods
-      priority: 1
-      type: integer
-    - jsonPath: .spec.vnetSubnetID
-      name: SubnetID
-      priority: 1
-      type: string
     name: v1beta1
     schema:
       openAPIV3Schema:

@@ -158,8 +158,6 @@ type KubeletConfiguration struct {
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="ImageFamily",type=string,JSONPath=".spec.imageFamily",priority=1
-// +kubebuilder:printcolumn:name="MaxPods",type=integer,JSONPath=".spec.maxPods",priority=1
-// +kubebuilder:printcolumn:name="SubnetID",type=string,JSONPath=".spec.vnetSubnetID",priority=1
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 type AKSNodeClass struct {
