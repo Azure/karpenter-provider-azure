@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -190,7 +189,7 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 
 		instance, ok := c.Instances.Load(id)
 		if !ok {
-			return nil, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+			return nil, &azcore.ResponseError{StatusCode: 404}
 		}
 		vm := instance.(armcompute.VirtualMachine)
 
@@ -237,7 +236,7 @@ func (c *VirtualMachinesAPI) Get(_ context.Context, resourceGroupName string, vm
 		}
 		instance, ok := c.Instances.Load(MkVMID(input.ResourceGroupName, input.VMName))
 		if !ok {
-			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{StatusCode: 404}
 		}
 		return armcompute.VirtualMachinesClientGetResponse{
 			VirtualMachine: instance.(armcompute.VirtualMachine),
