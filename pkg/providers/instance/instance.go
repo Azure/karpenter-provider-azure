@@ -600,7 +600,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 		return &createResult{VM: &resp.VirtualMachine}, nil
 	}
 	// if status != ok, and for a reason other than we did not find the vm
-	if sdkerrors.IsNotFoundErr(err) {
+	if !sdkerrors.IsNotFoundErr(err) {
 		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
 	vm := newVMObject(opts)
