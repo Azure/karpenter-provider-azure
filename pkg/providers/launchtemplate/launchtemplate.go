@@ -37,14 +37,14 @@ import (
 )
 
 const (
-	karpenterManagedTagKey = "karpenter.azure.com/cluster"
+	karpenterManagedTagKey = v1beta1.Group + "/cluster"
 
-	dataplaneLabel           = "kubernetes.azure.com/ebpf-dataplane"
-	azureCNIOverlayLabel     = "kubernetes.azure.com/azure-cni-overlay"
-	subnetNameLabel          = "kubernetes.azure.com/network-subnet"
-	vnetGUIDLabel            = "kubernetes.azure.com/nodenetwork-vnetguid"
-	podNetworkTypeLabel      = "kubernetes.azure.com/podnetwork-type"
-	networkStatelessCNILabel = "kubernetes.azure.com/network-stateless-cni"
+	dataplaneLabel           = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
+	azureCNIOverlayLabel     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
+	subnetNameLabel          = v1beta1.AKSLabelDomain + "/network-subnet"
+	vnetGUIDLabel            = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
+	podNetworkTypeLabel      = v1beta1.AKSLabelDomain + "/podnetwork-type"
+	networkStatelessCNILabel = v1beta1.AKSLabelDomain + "/network-stateless-cni"
 )
 
 type Template struct {
