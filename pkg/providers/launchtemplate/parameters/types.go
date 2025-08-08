@@ -40,6 +40,7 @@ type StaticParameters struct {
 	ClusterID                      string
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
+	EnableSecureTLSBootstrapping   bool
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string

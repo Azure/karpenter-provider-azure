@@ -23,12 +23,14 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
+	"github.com/samber/lo"
 )
 
 // NodeBootstrappingAPI implements a fake version of the imagefamily.types.NodeBootstrappingAPI
 // for testing purposes.
 type NodeBootstrappingAPI struct {
-	SimulateDown bool
+	SimulateDown                   bool
+	SimulateSecureTLSBootstrapping bool
 }
 
 // Ensure NodeBootstrappingAPI implements the types.NodeBootstrappingAPI interface
@@ -47,9 +49,15 @@ func (n *NodeBootstrappingAPI) Get(ctx context.Context, params *models.Provision
 		return types.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
 	}
 
+	// assume that server-side enablement of secure TLS bootstrapping won't provide a placelolder for the token
+	tokenPart := lo.Ternary(n.SimulateSecureTLSBootstrapping,
+		"NO_TLS_BOOTSTRAP_TOKEN",                                    // without token placeholder
+		"OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}", // with token placeholder
+	)
+
 	return types.NodeBootstrapping{
-		CSEDehydratable:               fmt.Sprintf("CORRECT_CSE_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *params),
-		CustomDataEncodedDehydratable: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("CORRECT_CUSTOM_DATA_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *params))),
+		CSEDehydratable:               fmt.Sprintf("CORRECT_CSE_WITH_%s: %v", tokenPart, *params),
+		CustomDataEncodedDehydratable: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("CORRECT_CUSTOM_DATA_WITH_%s: %v", tokenPart, *params))),
 	}, nil
 }
 
