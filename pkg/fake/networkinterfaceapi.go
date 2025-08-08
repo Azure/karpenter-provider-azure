@@ -99,7 +99,7 @@ func (c *NetworkInterfacesAPI) Get(_ context.Context, resourceGroupName string, 
 	id := MakeNetworkInterfaceID(resourceGroupName, interfaceName)
 	iface, ok := c.NetworkInterfaces.Load(id)
 	if !ok {
-		return armnetwork.InterfacesClientGetResponse{}, &azcore.ResponseError{StatusCode: 404}
+		return armnetwork.InterfacesClientGetResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 	}
 	return armnetwork.InterfacesClientGetResponse{
 		Interface: iface.(armnetwork.Interface),

@@ -189,7 +189,7 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 
 		instance, ok := c.Instances.Load(id)
 		if !ok {
-			return nil, &azcore.ResponseError{StatusCode: 404}
+			return nil, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 		}
 		vm := instance.(armcompute.VirtualMachine)
 
