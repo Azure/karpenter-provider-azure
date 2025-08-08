@@ -65,7 +65,7 @@ var _ = Describe("SubnetStatus", func() {
 	// Note: This test uses direct reconciler because ExpectObjectReconciled doesn't handle errors
 	It("should mark nodeclass as not ready when subnet doesn't exist", func() {
 		reconciler := status.NewSubnetReconciler(azureEnv.SubnetsAPI)
-		
+
 		azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
 			return armnetwork.SubnetsClientGetResponse{}, &azcore.ResponseError{
 				ErrorCode:  "ResourceNotFound",

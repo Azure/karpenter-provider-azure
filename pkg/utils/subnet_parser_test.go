@@ -205,10 +205,10 @@ var _ = Describe("IsSameVNET", func() {
 			VNetName:          "",
 			SubnetName:        "",
 		}
-		
+
 		// Comparing empty with empty should return true
 		Expect(emptyResource.IsSameVNET(emptyResource)).To(BeTrue())
-		
+
 		// Comparing empty with non-empty should return false
 		Expect(emptyResource.IsSameVNET(baseResource)).To(BeFalse())
 		Expect(baseResource.IsSameVNET(emptyResource)).To(BeFalse())
@@ -223,7 +223,7 @@ var _ = Describe("IsSameVNET", func() {
 			SubnetName:        baseResource.SubnetName,
 		}
 		Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
-		
+
 		compareResource = VnetSubnetResource{
 			SubscriptionID:    baseResource.SubscriptionID,
 			ResourceGroupName: baseResource.ResourceGroupName,
