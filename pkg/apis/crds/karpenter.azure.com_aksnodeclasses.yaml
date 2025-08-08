@@ -321,10 +321,6 @@ spec:
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    - jsonPath: .spec.vnetSubnetID
-      name: SubnetID
-      priority: 1
-      type: string
     - jsonPath: .spec.imageFamily
       name: ImageFamily
       priority: 1
@@ -333,6 +329,10 @@ spec:
       name: MaxPods
       priority: 1
       type: integer
+    - jsonPath: .spec.vnetSubnetID
+      name: SubnetID
+      priority: 1
+      type: string
     name: v1beta1
     schema:
       openAPIV3Schema:
