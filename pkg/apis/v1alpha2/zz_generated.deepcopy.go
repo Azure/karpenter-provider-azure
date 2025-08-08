@@ -108,6 +108,11 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.FIPSMode != nil {
+		in, out := &in.FIPSMode, &out.FIPSMode
+		*out = new(FIPSMode)
+		**out = **in
+	}
 	if in.Tags != nil {
 		in, out := &in.Tags, &out.Tags
 		*out = make(map[string]string, len(*in))
