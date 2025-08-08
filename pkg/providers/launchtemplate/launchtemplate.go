@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
@@ -35,12 +36,13 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
-const (
-	dataplaneLabel       = "kubernetes.azure.com/ebpf-dataplane"
-	azureCNIOverlayLabel = "kubernetes.azure.com/azure-cni-overlay"
-	subnetNameLabel      = "kubernetes.azure.com/network-subnet"
-	vnetGUIDLabel        = "kubernetes.azure.com/nodenetwork-vnetguid"
-	podNetworkTypeLabel  = "kubernetes.azure.com/podnetwork-type"
+var (
+	dataplaneLabel           = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
+	azureCNIOverlayLabel     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
+	subnetNameLabel          = v1beta1.AKSLabelDomain + "/network-subnet"
+	vnetGUIDLabel            = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
+	podNetworkTypeLabel      = v1beta1.AKSLabelDomain + "/podnetwork-type"
+	networkStatelessCNILabel = v1beta1.AKSLabelDomain + "/network-stateless-cni"
 )
 
 type Template struct {
@@ -140,7 +142,11 @@ func (p *Provider) getStaticParameters(
 
 	if isAzureCNIOverlay(ctx) {
 		// TODO: make conditional on pod subnet
-		vnetLabels, err := p.getVnetInfoLabels(subnetID)
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return nil, err
+		}
+		vnetLabels, err := p.getVnetInfoLabels(subnetID, kubernetesVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +238,7 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 	return template, nil
 }
 
-func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error) {
+func (p *Provider) getVnetInfoLabels(subnetID string, kubernetesVersion string) (map[string]string, error) {
 	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		return nil, err
@@ -243,5 +249,14 @@ func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error)
 		azureCNIOverlayLabel: strconv.FormatBool(true),
 		podNetworkTypeLabel:  consts.NetworkPluginModeOverlay,
 	}
+
+	// Add stateless CNI label for Kubernetes 1.34+
+	if kubernetesVersion != "" {
+		parsedVersion, err := semver.Parse(kubernetesVersion)
+		if err == nil && parsedVersion.Minor >= 34 {
+			vnetLabels[networkStatelessCNILabel] = "true"
+		}
+	}
+
 	return vnetLabels, nil
 }

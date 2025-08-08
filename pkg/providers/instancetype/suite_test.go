@@ -246,6 +246,34 @@ var _ = Describe("InstanceType Provider", func() {
 				ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
 			))
 		})
+		It("should include stateless CNI label for kubernetes 1.34+", func() {
+			// Set kubernetes version to 1.34.0
+			nodeClass.Status.KubernetesVersion = "1.34.0"
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			decodedString := ExpectDecodedCustomData(azureEnv)
+			Expect(decodedString).To(SatisfyAll(
+				ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
+				ContainSubstring("kubernetes.azure.com/network-stateless-cni=true"),
+			))
+		})
+		It("should not include stateless CNI label for kubernetes < 1.34", func() {
+			// Set kubernetes version to 1.33.0
+			nodeClass.Status.KubernetesVersion = "1.33.0"
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			decodedString := ExpectDecodedCustomData(azureEnv)
+			Expect(decodedString).To(SatisfyAll(
+				ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
+				Not(ContainSubstring("kubernetes.azure.com/network-stateless-cni")),
+			))
+		})
 		It("should use the subnet specified in the nodeclass", func() {
 			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet")
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
