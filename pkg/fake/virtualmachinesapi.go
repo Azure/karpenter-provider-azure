@@ -236,7 +236,7 @@ func (c *VirtualMachinesAPI) Get(_ context.Context, resourceGroupName string, vm
 		}
 		instance, ok := c.Instances.Load(MkVMID(input.ResourceGroupName, input.VMName))
 		if !ok {
-			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{StatusCode: 404}
+			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{StatusCode:  http.StatusNotFound}
 		}
 		return armcompute.VirtualMachinesClientGetResponse{
 			VirtualMachine: instance.(armcompute.VirtualMachine),
