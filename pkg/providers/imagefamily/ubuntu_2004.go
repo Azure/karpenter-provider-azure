@@ -138,5 +138,6 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
+		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
 	}
 }

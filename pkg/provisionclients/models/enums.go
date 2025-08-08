@@ -27,6 +27,7 @@ const (
 const (
 	OSSKUUnspecified   int32 = 0
 	OSSKUUbuntu        int32 = 1
+	OSSKUUbuntu2204    int32 = 9
 	OSSKUAzureLinux    int32 = 7
 	OSSKUWindows2019   int32 = 3
 	OSSKUWindows2022   int32 = 4
