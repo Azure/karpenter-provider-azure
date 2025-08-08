@@ -36,10 +36,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
-const (
-	karpenterManagedTagKey = v1beta1.Group + "/cluster"
-)
-
 var (
 	dataplaneLabel           = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
 	azureCNIOverlayLabel     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
