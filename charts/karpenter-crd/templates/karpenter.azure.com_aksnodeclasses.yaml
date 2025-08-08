@@ -314,7 +314,26 @@ spec:
     storage: false
     subresources:
       status: {}
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    - jsonPath: .spec.maxPods
+      name: MaxPods
+      priority: 1
+      type: integer
+    - jsonPath: .spec.vnetSubnetID
+      name: SubnetID
+      priority: 1
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: AKSNodeClass is the Schema for the AKSNodeClass API
