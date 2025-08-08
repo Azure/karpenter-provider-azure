@@ -115,3 +115,32 @@ func ExpectCleanUp(ctx context.Context, c client.Client) {
 	}
 	wg.Wait()
 }
+
+func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv *test.Environment, tags map[string]*string) *armcompute.VirtualMachine {
+	GinkgoHelper()
+
+	// The VM should be updated
+	updatedVM, err := azureEnv.InstanceProvider.Get(ctx, name)
+	Expect(err).ToNot(HaveOccurred())
+
+	Expect(updatedVM.Tags).To(Equal(tags), "Expected VM tags to match")
+	// Expect the identities to remain unchanged
+	Expect(updatedVM.Identity).To(BeNil())
+
+	// The NIC should be updated
+	updatedNIC, err := azureEnv.NetworkInterfacesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, name, nil)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(updatedNIC.Tags).To(Equal(tags), "Expected NIC tags to match")
+
+	// The extensions should be updated -- Note that we expect only 1 Extension update here because we're simulating scriptless
+	// mode which doesn't have a CSE extension.
+	Expect(azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+	for i := 0; i < 1; i++ {
+		extUpdate := azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsUpdateBehavior.CalledWithInput.Pop().VirtualMachineExtensionUpdate
+		Expect(extUpdate).ToNot(BeNil())
+		Expect(extUpdate.Tags).ToNot(BeNil())
+		Expect(extUpdate.Tags).To(Equal(tags), "Expected VM extension tags to match")
+	}
+
+	return updatedVM
+}

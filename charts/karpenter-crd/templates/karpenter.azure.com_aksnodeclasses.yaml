@@ -185,6 +185,15 @@ spec:
                   type: string
                 description: Tags to be applied on Azure resources like instances.
                 type: object
+                x-kubernetes-validations:
+                - message: tags keys must be less than 512 characters
+                  rule: self.all(k, size(k) <= 512)
+                - message: tags keys must not contain '<', '>', '%', '&', or '?'
+                  rule: self.all(k, !k.matches('[<>%&?]'))
+                - message: tags keys must not contain '\'
+                  rule: self.all(k, !k.contains('\\'))
+                - message: tags values must be less than 256 characters
+                  rule: self.all(k, size(self[k]) <= 256)
               vnetSubnetID:
                 description: |-
                   VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -488,6 +497,15 @@ spec:
                   type: string
                 description: Tags to be applied on Azure resources like instances.
                 type: object
+                x-kubernetes-validations:
+                - message: tags keys must be less than 512 characters
+                  rule: self.all(k, size(k) <= 512)
+                - message: tags keys must not contain '<', '>', '%', '&', or '?'
+                  rule: self.all(k, !k.matches('[<>%&?]'))
+                - message: tags keys must not contain '\'
+                  rule: self.all(k, !k.contains('\\'))
+                - message: tags values must be less than 256 characters
+                  rule: self.all(k, size(self[k]) <= 256)
               vnetSubnetID:
                 description: |-
                   VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
