@@ -33,6 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -147,7 +148,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 				TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
 			}
 			vm.Tags = lo.OmitBy(vm.Tags, func(key string, value *string) bool {
-				return key == instance.NodePoolTagKey
+				return key == launchtemplate.NodePoolTagKey
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
@@ -248,9 +249,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 		})
 		It("should not delete an instance if it is within the nodeClaim resolution window (5m)", func() {
 			// Launch time just happened
-			vm.Properties = &armcompute.VirtualMachineProperties{
-				TimeCreated: lo.ToPtr(time.Now()),
-			}
+			vm.Properties.TimeCreated = lo.ToPtr(time.Now())
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 			ExpectSingletonReconciled(ctx, virtualMachineGCController)
@@ -259,9 +258,7 @@ var _ = Describe("VirtualMachine Garbage Collection", func() {
 		})
 		It("should not delete the instance or node if it already has a nodeClaim that matches it", func() {
 			// Launch time was 10m ago
-			vm.Properties = &armcompute.VirtualMachineProperties{
-				TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
-			}
+			vm.Properties.TimeCreated = lo.ToPtr(time.Now().Add(-time.Minute * 10))
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
