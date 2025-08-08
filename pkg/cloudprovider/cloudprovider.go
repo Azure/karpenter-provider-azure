@@ -52,6 +52,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -137,7 +138,7 @@ func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error
 }
 
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
-	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
+	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			c.recorder.Publish(cloudproviderevents.NodeClaimFailedToResolveNodeClass(nodeClaim))
@@ -302,7 +303,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 }
 
 func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.NodeClaim, error) {
-	vmName, err := utils.GetVMName(providerID)
+	vmName, err := nodeclaimutils.GetVMName(providerID)
 	if err != nil {
 		return nil, fmt.Errorf("getting vm name, %w", err)
 	}
@@ -343,7 +344,7 @@ func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.N
 
 func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("NodeClaim", nodeClaim.Name))
-	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
+	vmName, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return fmt.Errorf("getting VM name, %w", err)
 	}
@@ -403,20 +404,6 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 	}
 }
 
-func (c *CloudProvider) resolveNodeClassFromNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1beta1.AKSNodeClass, error) {
-	nodeClass := &v1beta1.AKSNodeClass{}
-	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
-		return nil, err
-	}
-	// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound
-	if !nodeClass.DeletionTimestamp.IsZero() {
-		// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound,
-		// but we return a different error message to be clearer to users
-		return nil, newTerminatingNodeClassError(nodeClass.Name)
-	}
-	return nodeClass, nil
-}
-
 func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1beta1.AKSNodeClass, error) {
 	nodeClass := &v1beta1.AKSNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
@@ -426,7 +413,7 @@ func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePo
 	if !nodeClass.DeletionTimestamp.IsZero() {
 		// For the purposes of NodeClass CloudProvider resolution, we treat deleting NodeClasses as NotFound,
 		// but we return a different error message to be clearer to users
-		return nil, newTerminatingNodeClassError(nodeClass.Name)
+		return nil, utils.NewTerminatingResourceError(schema.GroupResource{Group: apis.Group, Resource: "aksnodeclasses"}, nodeClass.Name)
 	}
 	return nodeClass, nil
 }
@@ -520,14 +507,6 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 func GenerateNodeClaimName(vmName string) string {
 	return strings.TrimLeft("aks-", vmName)
-}
-
-// newTerminatingNodeClassError returns a NotFound error for handling by
-func newTerminatingNodeClassError(name string) *errors.StatusError {
-	qualifiedResource := schema.GroupResource{Group: apis.Group, Resource: "aksnodeclasses"}
-	err := errors.NewNotFound(qualifiedResource, name)
-	err.ErrStatus.Message = fmt.Sprintf("%s %q is terminating, treating as not found", qualifiedResource.String(), name)
-	return err
 }
 
 const truncateAt = 1200
