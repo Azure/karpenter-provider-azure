@@ -82,6 +82,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelWindowsBuild,
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
+			// GPU labels are tested in the GPU suite
+			v1beta1.LabelSKUGPUManufacturer,
+			v1beta1.LabelSKUGPUCount,
 			// TODO: review the use of "kubernetes.azure.com/cluster"
 			v1beta1.AKSLabelCluster,
 		)
@@ -185,25 +188,6 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				corev1.LabelOSStable:        "linux",
 				corev1.LabelArchStable:      "amd64",
 				karpv1.CapacityTypeLabelKey: karpv1.CapacityTypeOnDemand,
-			}
-			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
-			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
-				return corev1.NodeSelectorRequirement{Key: key, Operator: corev1.NodeSelectorOpIn, Values: []string{value}}
-			})
-			deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
-				NodeSelector:     nodeSelector,
-				NodePreferences:  requirements,
-				NodeRequirements: requirements,
-			}})
-			env.ExpectCreated(nodeClass, nodePool, deployment)
-			env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
-			env.ExpectCreatedNodeCount("==", 1)
-		})
-		// note: this test can fail on subscription that don't have quota for GPU SKUs
-		It("should support well-known labels for a gpu (nvidia)", func() {
-			nodeSelector := map[string]string{
-				v1beta1.LabelSKUGPUManufacturer: "nvidia",
-				v1beta1.LabelSKUGPUCount:        "1",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {

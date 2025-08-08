@@ -51,6 +51,37 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("GPU", func() {
+	It("should support well-known labels for a gpu (nvidia)", func() {
+		nodeClass := env.DefaultAKSNodeClass()
+		nodePool := env.DefaultNodePool(nodeClass)
+		
+		// Make the NodePool requirements fully flexible, so we can match well-known label keys
+		nodePool = test.ReplaceRequirements(nodePool,
+			karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+					Key:      v1beta1.LabelSKUFamily,
+					Operator: corev1.NodeSelectorOpExists,
+				},
+			},
+		)
+		
+		nodeSelector := map[string]string{
+			v1beta1.LabelSKUGPUManufacturer: "nvidia",
+			v1beta1.LabelSKUGPUCount:        "1",
+		}
+		requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
+			return corev1.NodeSelectorRequirement{Key: key, Operator: corev1.NodeSelectorOpIn, Values: []string{value}}
+		})
+		deployment := test.Deployment(test.DeploymentOptions{Replicas: 1, PodOptions: test.PodOptions{
+			NodeSelector:     nodeSelector,
+			NodePreferences:  requirements,
+			NodeRequirements: requirements,
+		}})
+		env.ExpectCreated(nodeClass, nodePool, deployment)
+		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+		env.ExpectCreatedNodeCount("==", 1)
+	})
+
 	DescribeTable("should provision one GPU node and one GPU Pod",
 		func(nodeClass *v1beta1.AKSNodeClass) {
 			// Enable NodeRepair feature gate if running in-cluster
