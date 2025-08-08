@@ -418,6 +418,9 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if len(kubeletConfig.AllowedUnsafeSysctls) > 0 {
 		args["--allowed-unsafe-sysctls"] = strings.Join(kubeletConfig.AllowedUnsafeSysctls, ",")
 	}
+	if kubeletConfig.ClusterDNSServiceIP != "" {
+		args["--cluster-dns"] = kubeletConfig.ClusterDNSServiceIP
+	}
 
 	return args
 }
