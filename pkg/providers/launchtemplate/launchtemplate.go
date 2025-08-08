@@ -38,7 +38,9 @@ import (
 
 const (
 	karpenterManagedTagKey = v1beta1.Group + "/cluster"
+)
 
+var (
 	dataplaneLabel           = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
 	azureCNIOverlayLabel     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
 	subnetNameLabel          = v1beta1.AKSLabelDomain + "/network-subnet"
