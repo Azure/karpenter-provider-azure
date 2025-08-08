@@ -18,6 +18,7 @@ package scheduling_test
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -61,6 +62,19 @@ var _ = BeforeEach(func() {
 })
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
+
+var gpuSpecsRan atomic.Bool
+
+// This runs after every spec that *actually executed* (filtered-out specs never show up here).
+var _ = ReportAfterEach(func(report SpecReport) {
+	for _, label := range report.LeafNodeLabels {
+		if label == "GPU" {
+			gpuSpecsRan.Store(true)
+			break
+		}
+	}
+})
+
 var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 	var selectors sets.Set[string]
 
@@ -85,6 +99,16 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			// TODO: review the use of "kubernetes.azure.com/cluster"
 			v1beta1.AKSLabelCluster,
 		)
+
+		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
+		// ignore GPU labels in the coverage assertion.
+		if !gpuSpecsRan.Load() {
+			selectors.Insert(
+				v1beta1.LabelSKUGPUCount,
+				v1beta1.LabelSKUGPUManufacturer,
+			)
+		}
+
 	})
 	AfterAll(func() {
 		// Ensure that we're exercising all well known labels (with the above exceptions)
@@ -200,7 +224,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		// note: this test can fail on subscription that don't have quota for GPU SKUs
-		It("should support well-known labels for a gpu (nvidia)", func() {
+		It("should support well-known labels for a gpu (nvidia)", Label("GPU"), func() {
 			nodeSelector := map[string]string{
 				v1beta1.LabelSKUGPUManufacturer: "nvidia",
 				v1beta1.LabelSKUGPUCount:        "1",
