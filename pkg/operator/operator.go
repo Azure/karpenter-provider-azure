@@ -87,6 +87,7 @@ type Operator struct {
 	InstanceTypesProvider     instancetype.Provider
 	InstanceProvider          *instance.DefaultProvider
 	LoadBalancerProvider      *loadbalancer.Provider
+	AZClient                  *instance.AZClient
 }
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
@@ -196,6 +197,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		InstanceTypesProvider:        instanceTypeProvider,
 		InstanceProvider:             instanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
+		AZClient:                     azClient,
 	}
 }
 
