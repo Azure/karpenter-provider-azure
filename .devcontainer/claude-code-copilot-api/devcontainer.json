@@ -1,0 +1,83 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/devcontainers/images/tree/main/src/go
+{
+	"name": "Go-karpenter - claude-code w/copilot-api",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"runArgs": [ "--cap-add=SYS_PTRACE", "--security-opt", "seccomp=unconfined" ],
+
+	// Configure tool-specific properties.
+	"customizations": {
+		// Configure properties specific to VS Code.
+		"vscode": {
+			// Set *default* container specific settings.json values on container create.
+			"settings": {
+				"go.toolsManagement.checkForUpdates": "local",
+				"go.useLanguageServer": true,
+				"go.gopath": "/go"
+			},
+
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"golang.Go",
+				"ms-kubernetes-tools.vscode-kubernetes-tools",
+				"ms-kubernetes-tools.vscode-aks-tools",
+				"timonwong.shellcheck",
+				"mutantdino.resourcemonitor",
+				"Gruntfuggly.todo-tree",
+				"ms-azuretools.vscode-bicep",
+				"GitHub.vscode-pull-request-github",
+				"jinliming2.vscode-go-template",
+				"tekumara.typos-vscode",
+				"github.vscode-github-actions",
+				"GitHub.copilot",
+				"Anthropic.claude-code"
+			]
+		}
+	},
+
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+
+	// Use 'postCreateCommand' to run commands after the container is created.
+	"postCreateCommand": {
+		"disable metrics": "skaffold config set --global collect-metrics false",
+		"configure pre-commit": "pre-commit install --install-hooks",
+		"install copilot-api": "yarn global add tallaxes/copilot-api#npm-github", // temp from fork until upstream is fixed
+		"make toolchain": "make toolchain"
+	},
+
+	"postStartCommand": "nohup bash -c '$(yarn global bin)/copilot-api start --github-token $GITHUB_TOKEN > /tmp/copilot-api.log &'",
+
+	// Comment out to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
+	"remoteUser": "vscode",
+
+	"features": {
+		// https://github.com/devcontainers/images/blob/main/src/go/.devcontainer/devcontainer.json
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installZsh": "true",
+			"username": "vscode",
+			"userUid": "1000",
+			"userGid": "1000",
+			"upgradePackages": "true"
+		},
+		"ghcr.io/devcontainers/features/go:1": { "version": "none" },
+		"ghcr.io/devcontainers/features/node:1": { "version": "latest" },
+		"ghcr.io/devcontainers/features/git:1": {
+			"version": "latest",
+			"ppa": "false"
+		},
+		// custom
+		"ghcr.io/devcontainers/features/sshd:1": {},
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": { "version": "v1.33.2" }, // sometimes fails to determine the stable version, so just specify it
+		"ghcr.io/devcontainers/features/azure-cli:1": {},
+		"ghcr.io/devcontainers-extra/features/pre-commit:2": {},
+		"ghcr.io/CargoSense/devcontainer-features/shellcheck:1": {},
+		"ghcr.io/rio/features/skaffold:2": { "version": "v2.14.2" },
+		"ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+		"ghcr.io/devcontainers-extra/features/ripgrep:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
+	}
+}

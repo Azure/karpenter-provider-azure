@@ -281,6 +281,20 @@ func (env *Environment) ExpectExists(obj client.Object) client.Object {
 	return obj
 }
 
+func (env *Environment) ExpectAllExist(objs ...client.Object) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var errs []error
+		for _, obj := range objs {
+			err := env.Client.Get(env, client.ObjectKeyFromObject(obj), obj)
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+		g.Expect(errs).To(BeEmpty())
+	}).WithTimeout(time.Second * 5).Should(Succeed())
+}
+
 func (env *Environment) EventuallyExpectBound(pods ...*corev1.Pod) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {

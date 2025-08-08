@@ -19,7 +19,6 @@ package launchtemplate
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -37,8 +36,6 @@ import (
 )
 
 const (
-	karpenterManagedTagKey = "karpenter.azure.com/cluster"
-
 	dataplaneLabel       = "kubernetes.azure.com/ebpf-dataplane"
 	azureCNIOverlayLabel = "kubernetes.azure.com/azure-cni-overlay"
 	subnetNameLabel      = "kubernetes.azure.com/network-subnet"
@@ -96,8 +93,13 @@ func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvi
 	}
 }
 
-func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim,
-	instanceType *cloudprovider.InstanceType, additionalLabels map[string]string) (*Template, error) {
+func (p *Provider) GetTemplate(
+	ctx context.Context,
+	nodeClass *v1beta1.AKSNodeClass,
+	nodeClaim *karpv1.NodeClaim,
+	instanceType *cloudprovider.InstanceType,
+	additionalLabels map[string]string,
+) (*Template, error) {
 	staticParameters, err := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(nodeClaim.Labels, additionalLabels))
 	if err != nil {
 		return nil, err
@@ -118,10 +120,17 @@ func (p *Provider) GetTemplate(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 		return nil, err
 	}
 
+	launchTemplate.Tags = Tags(options.FromContext(ctx), nodeClass, nodeClaim)
+
 	return launchTemplate, nil
 }
 
-func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass, labels map[string]string) (*parameters.StaticParameters, error) {
+func (p *Provider) getStaticParameters(
+	ctx context.Context,
+	instanceType *cloudprovider.InstanceType,
+	nodeClass *v1beta1.AKSNodeClass,
+	labels map[string]string,
+) (*parameters.StaticParameters, error) {
 	var arch string = karpv1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
 		arch = karpv1.ArchitectureArm64
@@ -152,7 +161,6 @@ func (p *Provider) getStaticParameters(ctx context.Context, instanceType *cloudp
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
-		Tags:                           nodeClass.Spec.Tags,
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
@@ -195,11 +203,8 @@ func isAzureCNIOverlay(ctx context.Context) bool {
 }
 
 func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
-	// merge and convert to ARM tags
-	azureTags := mergeTags(params.Tags, map[string]string{karpenterManagedTagKey: params.ClusterName})
 	template := &Template{
 		ImageID:                   params.ImageID,
-		Tags:                      azureTags,
 		SubnetID:                  params.SubnetID,
 		IsWindows:                 params.IsWindows,
 		StorageProfileDiskType:    params.StorageProfileDiskType,
@@ -225,14 +230,6 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 	}
 
 	return template, nil
-}
-
-// MergeTags takes a variadic list of maps and merges them together
-// with format acceptable to ARM (no / in keys, pointer to strings as values)
-func mergeTags(tags ...map[string]string) (result map[string]*string) {
-	return lo.MapEntries(lo.Assign(tags...), func(key string, value string) (string, *string) {
-		return strings.ReplaceAll(key, "/", "_"), lo.ToPtr(value)
-	})
 }
 
 func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error) {

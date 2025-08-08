@@ -30,11 +30,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"sigs.k8s.io/karpenter/pkg/metrics"
 
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/karpenter/pkg/metrics"
 
 	// nolint SA1019 - deprecated package
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -42,6 +42,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
 	"github.com/samber/lo"
 
@@ -49,6 +50,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
@@ -94,6 +96,46 @@ func New(
 }
 
 // Create a node given the constraints.
+func (c *CloudProvider) handleInstanceCreation(ctx context.Context, instancePromise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) error {
+	if c.isStandaloneNodeClaim(nodeClaim) {
+		// processStandaloneNodeClaimDeletion:
+		//   Standalone NodeClaims aren’t re-queued for reconciliation in the provision_trigger controller,
+		//   so we delete them synchronously. After marking Launched=true,
+		//   their status can’t be reverted to false once the delete completes due to how core caches nodeclaims in
+		// 	 the lanch controller. This ensures we retry continuously until we hit the registration TTL
+		err := instancePromise.Wait()
+		if err != nil {
+			return c.handleNodeClaimCreationError(ctx, err, instancePromise, nodeClaim, false)
+		}
+	} else {
+		// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
+		// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
+		// crashes should be rare, and even in the case of a crash, as long as the node comes up successfully there's
+		// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
+		// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
+		// only held in memory.
+		go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+	}
+	return nil
+}
+
+func (c *CloudProvider) validateNodeClass(nodeClass *v1beta1.AKSNodeClass) error {
+	nodeClassReady := nodeClass.StatusConditions().Get(status.ConditionReady)
+	if nodeClassReady.IsFalse() {
+		return cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
+	}
+	if nodeClassReady.IsUnknown() {
+		return cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
+	}
+	if _, err := nodeClass.GetKubernetesVersion(); err != nil {
+		return err
+	}
+	if _, err := nodeClass.GetImages(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*karpv1.NodeClaim, error) {
 	nodeClass, err := c.resolveNodeClassFromNodeClaim(ctx, nodeClaim)
 	if err != nil {
@@ -115,21 +157,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 			return nil, err
 		}
 	*/
-	nodeClassReady := nodeClass.StatusConditions().Get(status.ConditionReady)
-	if nodeClassReady.IsFalse() {
-		return nil, cloudprovider.NewNodeClassNotReadyError(stderrors.New(nodeClassReady.Message))
-	}
-	if nodeClassReady.IsUnknown() {
-		return nil, cloudprovider.NewCreateError(fmt.Errorf("resolving NodeClass readiness, NodeClass is in Ready=Unknown, %s", nodeClassReady.Message), NodeClassReadinessUnknownReason, "NodeClass is in Ready=Unknown")
-	}
-	// Note: we make a call for GetKubernetesVersion here, as it has an internal check for the kubernetes version readiness KubernetesVersionReady,
-	//     where we don't want to proceed if it is unready.
-	if _, err = nodeClass.GetKubernetesVersion(); err != nil {
-		return nil, err
-	}
-	// Note: we make a call for GetImages here, as it has an internal check for the image's readiness ImagesReady, where we don't
-	//     want to proceed if they are unready.
-	if _, err = nodeClass.GetImages(); err != nil {
+	if err = c.validateNodeClass(nodeClass); err != nil {
 		return nil, err
 	}
 
@@ -145,24 +173,29 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
 
-	// Launch a single goroutine to poll the returned promise.
-	// Note that we could store the LRO details on the NodeClaim, but we don't bother today because Karpenter
-	// crashes should be rare, and even in the case of a crash, as long as the node comes up successfully there's
-	// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
-	// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
-	// only held in memory.
-	go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+	if err = c.handleInstanceCreation(ctx, instancePromise, nodeClaim); err != nil {
+		return nil, err
+	}
 
 	instance := instancePromise.VM
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
+
 	nc, err := c.instanceToNodeClaim(ctx, instance, instanceType)
+	if err != nil {
+		return nil, err
+	}
+	inPlaceUpdateHash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), nc, nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate in place update hash, %w", err)
+	}
 	nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
 		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
 		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
 	})
-	return nc, err
+	return nc, nil
 }
 
 func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {
@@ -183,28 +216,7 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 	c.waitUntilLaunched(ctx, nodeClaim)
 
 	if err != nil {
-		c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
-		log.FromContext(ctx).Error(err, "failed launching nodeclaim")
-
-		// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
-		vmName := lo.FromPtr(promise.VM.Name)
-		err = c.instanceProvider.Delete(ctx, vmName)
-		if cloudprovider.IgnoreNodeClaimNotFoundError(err) != nil {
-			log.FromContext(ctx).Error(err, "failed to delete VM", "vmName", vmName)
-		}
-
-		if err = c.kubeClient.Delete(ctx, nodeClaim); err != nil {
-			err = client.IgnoreNotFound(err)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "failed to delete nodeclaim, will wait for liveness TTL", "NodeClaim", nodeClaim.Name)
-			}
-		}
-		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
-			metrics.ReasonLabel:       "async_provisioning",
-			metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
-			metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
-		})
-
+		_ = c.handleNodeClaimCreationError(ctx, err, promise, nodeClaim, true)
 		return
 	}
 }
@@ -230,6 +242,41 @@ func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1
 			return // context was canceled
 		}
 	}
+}
+
+// handleNodeClaimCreationError handles common error processing for both standalone and async node claim creation failures
+func (c *CloudProvider) handleNodeClaimCreationError(ctx context.Context, err error, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim, removeNodeClaim bool) error {
+	c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
+	log.FromContext(ctx).Error(err, "failed launching nodeclaim")
+
+	// Clean up the VM
+	// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
+	vmName := lo.FromPtr(promise.VM.Name)
+	deleteErr := c.instanceProvider.Delete(ctx, vmName)
+	if cloudprovider.IgnoreNodeClaimNotFoundError(deleteErr) != nil {
+		log.FromContext(ctx).Error(deleteErr, "failed to delete VM", "vmName", vmName)
+	}
+
+	// For async provisioning, also delete the NodeClaim
+	if removeNodeClaim {
+		if deleteErr := c.kubeClient.Delete(ctx, nodeClaim); deleteErr != nil {
+			deleteErr = client.IgnoreNotFound(deleteErr)
+			if deleteErr != nil {
+				log.FromContext(ctx).Error(deleteErr, "failed to delete nodeclaim, will wait for liveness TTL", "NodeClaim", nodeClaim.Name)
+			}
+		}
+		metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
+			metrics.ReasonLabel:       "async_provisioning",
+			metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+			metrics.CapacityTypeLabel: nodeClaim.Labels[karpv1.CapacityTypeLabelKey],
+		})
+	}
+
+	// For standalone node claims, return a CreateError
+	if !removeNodeClaim {
+		return cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
+	}
+	return nil
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
@@ -421,7 +468,7 @@ func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, ins
 }
 
 func (c *CloudProvider) resolveNodePoolFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) (*karpv1.NodePool, error) {
-	nodePoolName, ok := instance.Tags[karpv1.NodePoolLabelKey]
+	nodePoolName, ok := instance.Tags[launchtemplate.NodePoolTagKey]
 	if ok && *nodePoolName != "" {
 		nodePool := &karpv1.NodePool{}
 		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: *nodePoolName}, nodePool); err != nil {
@@ -452,15 +499,9 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
 
-	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
+	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
-
-	inPlaceUpdateHash, err := inplaceupdate.HashFromVM(vm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate in place update hash, %w", err)
-	}
-	annotations[v1beta1.AnnotationInPlaceUpdateHash] = inPlaceUpdateHash
 
 	nodeClaim.Name = GenerateNodeClaimName(*vm.Name)
 	nodeClaim.Labels = labels
@@ -490,6 +531,12 @@ func newTerminatingNodeClassError(name string) *errors.StatusError {
 }
 
 const truncateAt = 1200
+
+func (c *CloudProvider) isStandaloneNodeClaim(nodeClaim *karpv1.NodeClaim) bool {
+	// NodeClaims without the nodepool label are considered standalone
+	_, hasNodePoolLabel := nodeClaim.Labels[karpv1.NodePoolLabelKey]
+	return !hasNodePoolLabel
+}
 
 func truncateMessage(msg string) string {
 	if len(msg) < truncateAt {

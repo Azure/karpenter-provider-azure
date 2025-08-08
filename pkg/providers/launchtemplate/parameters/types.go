@@ -46,7 +46,6 @@ type StaticParameters struct {
 	SubnetID                       string
 	ClusterResourceGroup           string
 
-	Tags   map[string]string
 	Labels map[string]string
 }
 
