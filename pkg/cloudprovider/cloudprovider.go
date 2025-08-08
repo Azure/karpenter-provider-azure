@@ -42,6 +42,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 
 	"github.com/samber/lo"
 
@@ -49,6 +50,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
@@ -179,12 +181,21 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
 	})
+
 	nc, err := c.instanceToNodeClaim(ctx, instance, instanceType)
+	if err != nil {
+		return nil, err
+	}
+	inPlaceUpdateHash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), nc, nodeClass)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate in place update hash, %w", err)
+	}
 	nc.Annotations = lo.Assign(nc.Annotations, map[string]string{
 		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
 		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
 	})
-	return nc, err
+	return nc, nil
 }
 
 func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {
@@ -457,7 +468,7 @@ func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, ins
 }
 
 func (c *CloudProvider) resolveNodePoolFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) (*karpv1.NodePool, error) {
-	nodePoolName, ok := instance.Tags[karpv1.NodePoolLabelKey]
+	nodePoolName, ok := instance.Tags[launchtemplate.NodePoolTagKey]
 	if ok && *nodePoolName != "" {
 		nodePool := &karpv1.NodePool{}
 		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: *nodePoolName}, nodePool); err != nil {
@@ -488,15 +499,9 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 
 	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
 
-	if tag, ok := vm.Tags[instance.NodePoolTagKey]; ok {
+	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
-
-	inPlaceUpdateHash, err := inplaceupdate.HashFromVM(vm)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate in place update hash, %w", err)
-	}
-	annotations[v1beta1.AnnotationInPlaceUpdateHash] = inPlaceUpdateHash
 
 	nodeClaim.Name = GenerateNodeClaimName(*vm.Name)
 	nodeClaim.Labels = labels

@@ -19,7 +19,6 @@ package launchtemplate
 import (
 	"context"
 	"strconv"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -37,8 +36,6 @@ import (
 )
 
 const (
-	karpenterManagedTagKey = "karpenter.azure.com/cluster"
-
 	dataplaneLabel       = "kubernetes.azure.com/ebpf-dataplane"
 	azureCNIOverlayLabel = "kubernetes.azure.com/azure-cni-overlay"
 	subnetNameLabel      = "kubernetes.azure.com/network-subnet"
@@ -123,6 +120,8 @@ func (p *Provider) GetTemplate(
 		return nil, err
 	}
 
+	launchTemplate.Tags = Tags(options.FromContext(ctx), nodeClass, nodeClaim)
+
 	return launchTemplate, nil
 }
 
@@ -159,12 +158,9 @@ func (p *Provider) getStaticParameters(
 		labels[dataplaneLabel] = consts.NetworkDataplaneCilium
 	}
 
-	tags := lo.Assign(options.FromContext(ctx).AdditionalTags, nodeClass.Spec.Tags)
-
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
-		Tags:                           tags,
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
@@ -207,11 +203,8 @@ func isAzureCNIOverlay(ctx context.Context) bool {
 }
 
 func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
-	// merge and convert to ARM tags
-	azureTags := mergeTags(params.Tags, map[string]string{karpenterManagedTagKey: params.ClusterName})
 	template := &Template{
 		ImageID:                   params.ImageID,
-		Tags:                      azureTags,
 		SubnetID:                  params.SubnetID,
 		IsWindows:                 params.IsWindows,
 		StorageProfileDiskType:    params.StorageProfileDiskType,
@@ -237,14 +230,6 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 	}
 
 	return template, nil
-}
-
-// MergeTags takes a variadic list of maps and merges them together
-// with format acceptable to ARM (no / in keys, pointer to strings as values)
-func mergeTags(tags ...map[string]string) (result map[string]*string) {
-	return lo.MapEntries(lo.Assign(tags...), func(key string, value string) (string, *string) {
-		return strings.ReplaceAll(key, "/", "_"), lo.ToPtr(value)
-	})
 }
 
 func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error) {

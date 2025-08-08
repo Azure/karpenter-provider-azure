@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -50,8 +49,6 @@ import (
 )
 
 var (
-	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
-
 	CapacityTypeToPriority = map[string]string{
 		karpv1.CapacityTypeSpot:     string(armcompute.VirtualMachinePriorityTypesSpot),
 		karpv1.CapacityTypeOnDemand: string(armcompute.VirtualMachinePriorityTypesRegular),
@@ -74,6 +71,25 @@ var (
 	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
 )
 
+const (
+	aksIdentifyingExtensionName = "computeAksLinuxBilling"
+	// TODO: Why bother with a different CSE name for Windows?
+	cseNameWindows = "windows-cse-agent-karpenter"
+	cseNameLinux   = "cse-agent-karpenter"
+)
+
+// GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
+// This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
+func GetManagedExtensionNames(provisionMode string) []string {
+	result := []string{
+		aksIdentifyingExtensionName,
+	}
+	if provisionMode == consts.ProvisionModeBootstrappingClient {
+		result = append(result, cseNameLinux) // TODO: Windows
+	}
+	return result
+}
+
 type Resource = map[string]interface{}
 
 type VirtualMachinePromise struct {
@@ -86,7 +102,6 @@ type Provider interface {
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
 	Delete(context.Context, string) error
-	// CreateTags(context.Context, string, map[string]string) error
 	Update(context.Context, string, armcompute.VirtualMachineUpdate) error
 	GetNic(context.Context, string, string) (*armnetwork.Interface, error)
 	DeleteNic(context.Context, string) error
@@ -182,8 +197,62 @@ func (p *DefaultProvider) BeginCreate(
 	return vmPromise, nil
 }
 
+// Update updates the VM with the given updates. If Tags are specified, the tags are also updated on the associated network interface and VM extensions.
+// Note that this means that this method can fail if the extensions have not been created yet. It is expected that the caller handles this and retries the update
+// to propagate the tags to the extensions once they're created.
 func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
-	return UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, update)
+	if update.Tags != nil {
+		// If there are tags for other resources, do those first. This is a hedge to avoid updating the VM first which may cause us to think subsequent updates aren't needed
+		// because the VM already has the updates
+
+		// Update NIC tags
+		_, err := p.azClient.networkInterfacesClient.UpdateTags(
+			ctx,
+			p.resourceGroup,
+			vmName, // NIC is named the same as the VM
+			armnetwork.TagsObject{
+				Tags: update.Tags,
+			},
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("updating NIC tags for %q: %w", vmName, err)
+		}
+
+		extensionNames := GetManagedExtensionNames(p.provisionMode)
+		pollers := make(map[string]*runtime.Poller[armcompute.VirtualMachineExtensionsClientUpdateResponse], len(extensionNames))
+		// Update tags on VM extensions
+		for _, extName := range extensionNames {
+			poller, err := p.azClient.virtualMachinesExtensionClient.BeginUpdate(
+				ctx,
+				p.resourceGroup,
+				vmName,
+				extName,
+				armcompute.VirtualMachineExtensionUpdate{
+					Tags: update.Tags,
+				},
+				nil,
+			)
+			if err != nil {
+				return fmt.Errorf("updating VM extension %q for VM %q: %w", extName, vmName, err)
+			}
+			pollers[extName] = poller
+		}
+
+		for extName, poller := range pollers {
+			_, err := poller.PollUntilDone(ctx, nil)
+			if err != nil {
+				return fmt.Errorf("polling VM extension %q for VM %q: %w", extName, vmName, err)
+			}
+		}
+	}
+
+	err := UpdateVirtualMachine(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, vmName, update)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.VirtualMachine, error) {
@@ -508,13 +577,6 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 	}
 }
 
-// setNodePoolNameTag sets "karpenter.sh/nodepool" tag
-func setNodePoolNameTag(tags map[string]*string, nodeClaim *karpv1.NodeClaim) {
-	if val, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
-		tags[NodePoolTagKey] = &val
-	}
-}
-
 type createResult struct {
 	Poller *runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse]
 	VM     *armcompute.VirtualMachine
@@ -571,9 +633,6 @@ func (p *DefaultProvider) beginLaunchInstance(
 	if err != nil {
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
-
-	// set nodepool tag for NIC, VM, and Disk
-	setNodePoolNameTag(launchTemplate.Tags, nodeClaim)
 
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
@@ -843,7 +902,6 @@ func GetCapacityType(instance *armcompute.VirtualMachine) string {
 func (p *DefaultProvider) getAKSIdentifyingExtension(tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType                  = "Microsoft.Compute/virtualMachines/extensions"
-		aksIdentifyingExtensionName      = "computeAksLinuxBilling"
 		aksIdentifyingExtensionPublisher = "Microsoft.AKS"
 		aksIdentifyingExtensionTypeLinux = "Compute.AKS.Linux.Billing"
 	)
@@ -868,11 +926,9 @@ func (p *DefaultProvider) getAKSIdentifyingExtension(tags map[string]*string) *a
 func (p *DefaultProvider) getCSExtension(cse string, isWindows bool, tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType     = "Microsoft.Compute/virtualMachines/extensions"
-		cseNameWindows      = "windows-cse-agent-karpenter"
 		cseTypeWindows      = "CustomScriptExtension"
 		csePublisherWindows = "Microsoft.Compute"
 		cseVersionWindows   = "1.10"
-		cseNameLinux        = "cse-agent-karpenter"
 		cseTypeLinux        = "CustomScript"
 		csePublisherLinux   = "Microsoft.Azure.Extensions"
 		cseVersionLinux     = "2.0"

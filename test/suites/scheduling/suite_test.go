@@ -417,7 +417,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 						Key:      v1beta1.LabelSKUFamily,
 						Operator: corev1.NodeSelectorOpNotIn,
-						Values:   []string{"D"},
+						// remove some cheap burstable types so we have more control over what gets provisioned
+						Values: []string{"B"},
 					},
 				})
 				pod := test.Pod(test.PodOptions{
