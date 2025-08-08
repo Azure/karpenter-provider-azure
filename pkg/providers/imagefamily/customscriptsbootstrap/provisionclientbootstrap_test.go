@@ -214,6 +214,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				StorageProfile:            consts.StorageProfileManagedDisks,
 				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
 				Labels:                    map[string]string{"key": "value"},
+				FIPSMode:                  &v1beta1.FIPSModeFIPS,
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
 				InstanceType: &cloudprovider.InstanceType{
 					Name: "Standard_D2s_v3",
@@ -240,6 +241,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				assert.Equal(t, consts.StorageProfileManagedDisks, *profile.StorageProfile)
 				assert.Equal(t, int32(110), *profile.MaxPods)
 				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
+				assert.True(t, *profile.EnableFIPS)
 
 				// Check Helper Values
 				helperValues := values.ProvisionHelperValues
@@ -261,6 +263,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				StorageProfile:            consts.StorageProfileManagedDisks,
 				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 				Labels:                    map[string]string{"key": "value"},
+				FIPSMode:                  &v1beta1.FIPSModeDisabled,
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
 				InstanceType: &cloudprovider.InstanceType{
 					Name: "Standard_D2s_v3",
@@ -279,7 +282,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				profile := values.ProvisionProfile
 				assert.Equal(t, "x64", *profile.Architecture)
 				assert.Equal(t, models.OSTypeLinux, *profile.OsType)
-				assert.Equal(t, models.OSSKUUbuntu, *profile.OsSku)
+				assert.Equal(t, models.OSSKUUbuntu2204, *profile.OsSku)
 				assert.Equal(t, "Standard_D2s_v3", *profile.VMSize)
 				assert.Equal(t, "aks-ubuntu-containerd-22.04-gen2", *profile.Distro)
 				assert.Equal(t, "1.31.0", *profile.OrchestratorVersion)
@@ -287,6 +290,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				assert.Equal(t, consts.StorageProfileManagedDisks, *profile.StorageProfile)
 				assert.Equal(t, int32(110), *profile.MaxPods)
 				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
+				assert.False(t, *profile.EnableFIPS)
 
 				// Check Helper Values
 				helperValues := values.ProvisionHelperValues
@@ -331,6 +335,9 @@ func TestConstructProvisionValues(t *testing.T) {
 
 				// Check artifact streaming is enabled
 				assert.True(t, *profile.ArtifactStreamingProfile.Enabled)
+
+				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
+				assert.False(t, *profile.EnableFIPS)
 			},
 		},
 		{
@@ -341,7 +348,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                      karpv1.ArchitectureAmd64,
 				ResourceGroup:             "test-rg",
-				KubernetesVersion:         "1.31.0",
+				KubernetesVersion:         "1.32.0",
 				ImageDistro:               "aks-azurelinux-v3-gen2",
 				IsWindows:                 false,
 				StorageProfile:            consts.StorageProfileManagedDisks,
@@ -368,6 +375,9 @@ func TestConstructProvisionValues(t *testing.T) {
 
 				// Check artifact streaming is disabled for AzureLinux3
 				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
+
+				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
+				assert.False(t, *profile.EnableFIPS)
 			},
 		},
 		{
@@ -498,7 +508,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				SubnetID:                  "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
 				Arch:                      karpv1.ArchitectureArm64,
 				ResourceGroup:             "test-rg",
-				KubernetesVersion:         "1.31.0",
+				KubernetesVersion:         "1.32.0",
 				ImageDistro:               "aks-azurelinux-v3-arm64-gen2",
 				IsWindows:                 false,
 				StorageProfile:            consts.StorageProfileManagedDisks,
@@ -654,7 +664,6 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 		ClusterResourceGroup:           "test-cluster-rg",
 		ResourceGroup:                  "test-rg",
 		KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
-		KubernetesVersion:              "1.31.0",
 		IsWindows:                      false,
 		StorageProfile:                 consts.StorageProfileManagedDisks,
 		NodeBootstrappingProvider:      &fake.NodeBootstrappingAPI{},
@@ -671,6 +680,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 		name                             string
 		arch                             string
 		ossku                            string
+		kubernetesVersion                string
 		imageDistro                      string
 		expectedArtifactStreamingEnabled bool
 		description                      string
@@ -679,6 +689,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			name:                             "AMD64 Ubuntu2004 FIPS - Artifact streaming disabled",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
+			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-fips-containerd-20.04-gen2",
 			expectedArtifactStreamingEnabled: false,
 			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2004 FIPS",
@@ -687,6 +698,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			name:                             "AMD64 Ubuntu2204 - Artifact streaming enabled",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
 			expectedArtifactStreamingEnabled: true,
 			description:                      "Artifact streaming should be enabled for AMD64 with Ubuntu2204",
@@ -695,14 +707,25 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			name:                             "AMD64 AzureLinux2 - Artifact streaming enabled",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-azurelinux-v2-gen2",
 			expectedArtifactStreamingEnabled: true,
 			description:                      "Artifact streaming should be enabled for AMD64 with AzureLinux2",
 		},
 		{
+			name:                             "AMD64 AzureLinux3 - Artifact streaming disabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:                "1.32.0",
+			imageDistro:                      "aks-azurelinux-v3-gen2",
+			expectedArtifactStreamingEnabled: false,
+			description:                      "Artifact streaming should be disabled for AzureLinux3 even on AMD64",
+		},
+		{
 			name:                             "ARM64 Ubuntu2204 - Artifact streaming disabled",
 			arch:                             karpv1.ArchitectureArm64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-arm64-containerd-22.04-gen2",
 			expectedArtifactStreamingEnabled: false,
 			description:                      "Artifact streaming should be disabled for ARM64 architecture",
@@ -711,6 +734,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			name:                             "ARM64 AzureLinux2 - Artifact streaming disabled",
 			arch:                             karpv1.ArchitectureArm64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-azurelinux-v2-arm64-gen2",
 			expectedArtifactStreamingEnabled: false,
 			description:                      "Artifact streaming should be disabled for ARM64 architecture even with supported OS",
@@ -718,6 +742,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 		{
 			name:                             "AMD64 AzureLinux3 - Artifact streaming disabled",
 			arch:                             karpv1.ArchitectureAmd64,
+			kubernetesVersion:                "1.32.0",
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
 			imageDistro:                      "aks-azurelinux-v3-gen2",
 			expectedArtifactStreamingEnabled: false,
@@ -727,6 +752,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			name:                             "ARM64 AzureLinux3 - Artifact streaming disabled",
 			arch:                             karpv1.ArchitectureArm64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:                "1.32.0",
 			imageDistro:                      "aks-azurelinux-v3-arm64-gen2",
 			expectedArtifactStreamingEnabled: false,
 			description:                      "Artifact streaming should be disabled for ARM64 + AzureLinux3 combination",
@@ -735,6 +761,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			name:                             "AMD64 Custom OSSKU - Artifact streaming disabled",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            "CustomUnsupportedOSSKU",
+			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-custom-distro",
 			expectedArtifactStreamingEnabled: false,
 			description:                      "Artifact streaming should be disabled for unsupported OSSKU",
@@ -747,6 +774,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			bootstrapper := *baseBootstrapper
 			bootstrapper.Arch = tt.arch
 			bootstrapper.OSSKU = tt.ossku
+			bootstrapper.KubernetesVersion = tt.kubernetesVersion
 			bootstrapper.ImageDistro = tt.imageDistro
 
 			// Setup context with options
@@ -789,6 +817,150 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			} else {
 				assert.False(t, actualEnabled, "Artifact streaming should be disabled for %s", tt.description)
 			}
+		})
+	}
+}
+
+func TestFIPSEnablement(t *testing.T) {
+	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{
+		ClusterName:                    "test-cluster",
+		KubeletConfig:                  &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+		SubnetID:                       "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+		Arch:                           karpv1.ArchitectureAmd64,
+		SubscriptionID:                 "test-sub",
+		ClusterResourceGroup:           "test-cluster-rg",
+		ResourceGroup:                  "test-rg",
+		KubeletClientTLSBootstrapToken: "testbtokenid.testbtokensecret",
+		IsWindows:                      false,
+		StorageProfile:                 consts.StorageProfileManagedDisks,
+		NodeBootstrappingProvider:      &fake.NodeBootstrappingAPI{},
+		InstanceType: &cloudprovider.InstanceType{
+			Name: "Standard_D2s_v3",
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("2"),
+				v1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+		},
+	}
+
+	tests := []struct {
+		name               string
+		ossku              string
+		kubernetesVersion  string
+		imageDistro        string
+		fipsMode           *v1beta1.FIPSMode
+		expectedEnableFIPS bool
+		description        string
+	}{
+		{
+			name:               "FIPSMode FIPS Ubuntu2004 - EnableFIPS true",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-ubuntu-fips-containerd-20.04-gen2",
+			fipsMode:           &v1beta1.FIPSModeFIPS,
+			expectedEnableFIPS: true,
+			description:        "FIPS should be enabled for Ubuntu2004 with FIPSMode FIPS",
+		},
+		{
+			name:               "FIPSMode nil Ubuntu2204 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-ubuntu-containerd-22.04-gen2",
+			fipsMode:           nil,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for Ubuntu2204 with FIPSMode nil",
+		},
+		{
+			name:               "FIPSMode Disabled Ubuntu2204 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-ubuntu-containerd-22.04-gen2",
+			fipsMode:           &v1beta1.FIPSModeDisabled,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for Ubuntu2204 with FIPSMode Disabled",
+		},
+		{
+			name:               "FIPSMode FIPS AzureLinux2 - EnableFIPS true",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-azurelinux-v2-gen2",
+			fipsMode:           &v1beta1.FIPSModeFIPS,
+			expectedEnableFIPS: true,
+			description:        "FIPS should be enabled for AzureLinux2 with FIPSMode FIPS",
+		},
+		{
+			name:               "FIPSMode nil AzureLinux2 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-azurelinux-v2-gen2",
+			fipsMode:           nil,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for AzureLinux2 with FIPSMode nil",
+		},
+		{
+			name:               "FIPSMode Disabled AzureLinux2 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			kubernetesVersion:  "1.31.0",
+			imageDistro:        "aks-azurelinux-v2-gen2",
+			fipsMode:           &v1beta1.FIPSModeDisabled,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for AzureLinux2 with FIPSMode Disabled",
+		},
+		{
+			name:               "FIPSMode FIPS AzureLinux3 - EnableFIPS true",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:  "1.32.0",
+			imageDistro:        "aks-azurelinux-v3-gen2",
+			fipsMode:           &v1beta1.FIPSModeFIPS,
+			expectedEnableFIPS: true,
+			description:        "FIPS should be enabled for AzureLinux3 with FIPSMode FIPS",
+		},
+		{
+			name:               "FIPSMode nil AzureLinux3 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:  "1.32.0",
+			imageDistro:        "aks-azurelinux-v3-gen2",
+			fipsMode:           nil,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for AzureLinux3 with FIPSMode nil",
+		},
+		{
+			name:               "FIPSMode Disabled AzureLinux3 - EnableFIPS false",
+			ossku:              customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			kubernetesVersion:  "1.32.0",
+			imageDistro:        "aks-azurelinux-v3-gen2",
+			fipsMode:           &v1beta1.FIPSModeDisabled,
+			expectedEnableFIPS: false,
+			description:        "FIPS should be disabled for AzureLinux3 with FIPSMode Disabled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a copy of the base bootstrapper and modify for this test
+			bootstrapper := *baseBootstrapper
+			bootstrapper.OSSKU = tt.ossku
+			bootstrapper.KubernetesVersion = tt.kubernetesVersion
+			bootstrapper.ImageDistro = tt.imageDistro
+			bootstrapper.FIPSMode = tt.fipsMode
+
+			// Setup context with options
+			ctx := options.ToContext(context.Background(), &options.Options{
+				VMMemoryOverheadPercent: 0.075,
+				KubeletIdentityClientID: "test-kubelet-client-id",
+			})
+
+			// Call ConstructProvisionValues
+			values, err := bootstrapper.ConstructProvisionValues(ctx)
+
+			// For all cases, expect success
+			assert.NoError(t, err, tt.description)
+			assert.NotNil(t, values, "ProvisionValues should not be nil")
+			assert.NotNil(t, values.ProvisionProfile, "ProvisionProfile should not be nil")
+
+			assert.Equal(t, lo.ToPtr(tt.expectedEnableFIPS), values.ProvisionProfile.EnableFIPS,
+				"FIPS enablement mismatch: %s. Expected: %v, Actual: %v",
+				tt.description, tt.expectedEnableFIPS, values.ProvisionProfile.EnableFIPS)
 		})
 	}
 }

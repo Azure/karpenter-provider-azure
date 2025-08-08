@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/samber/lo"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
@@ -62,6 +63,7 @@ type ProvisionClientBootstrap struct {
 	StorageProfile                 string
 	OSSKU                          string
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
+	FIPSMode                       *v1beta1.FIPSMode
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -107,6 +109,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
 		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
 
+	// unspecified FIPSMode is effectively no FIPS for now
+	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
+
 	provisionProfile := &models.ProvisionProfile{
 		Name:                     lo.ToPtr(""),
 		Architecture:             lo.ToPtr(lo.Ternary(p.Arch == karpv1.ArchitectureAmd64, "x64", "Arm64")),
@@ -131,7 +136,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		// AgentPoolWindowsProfile: &models.AgentPoolWindowsProfile{},               // Unsupported as of now; TODO(Windows)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
-		// EnableFIPS:              lo.ToPtr(false),                                 // Unsupported as of now
+		EnableFIPS: lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
@@ -142,11 +147,10 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	// Map OS SKU to AKS provision client's expectation
 	// Note that the direction forward is to be more specific with OS versions. Be careful when supporting new ones.
 	switch p.OSSKU {
-	// TODO: Confirm with NPS or RP
 	case ImageFamilyOSSKUUbuntu2004:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUUbuntu2204:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
+		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu2204)
 	case ImageFamilyOSSKUAzureLinux2:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	case ImageFamilyOSSKUAzureLinux3:
