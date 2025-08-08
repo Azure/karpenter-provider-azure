@@ -18,7 +18,6 @@ package scheduling_test
 
 import (
 	"fmt"
-	"sync/atomic"
 	"testing"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -63,18 +62,6 @@ var _ = BeforeEach(func() {
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
-var gpuSpecsRan atomic.Bool
-
-// This runs after every spec that *actually executed* (filtered-out specs never show up here).
-var _ = ReportAfterEach(func(report SpecReport) {
-	for _, label := range report.LeafNodeLabels {
-		if label == "GPU" {
-			gpuSpecsRan.Store(true)
-			break
-		}
-	}
-})
-
 var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 	var selectors sets.Set[string]
 
@@ -102,7 +89,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 
 		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
 		// ignore GPU labels in the coverage assertion.
-		if !gpuSpecsRan.Load() {
+		if !Label("GPU").MatchesLabelFilter(GinkgoLabelFilter()) {
 			selectors.Insert(
 				v1beta1.LabelSKUGPUCount,
 				v1beta1.LabelSKUGPUManufacturer,
