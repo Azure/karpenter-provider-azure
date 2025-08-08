@@ -20,7 +20,18 @@ spec:
     singular: aksnodeclass
   scope: Cluster
   versions:
-  - deprecated: true
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    deprecated: true
     deprecationWarning: use v1beta1.AKSNodeClass instead
     name: v1alpha2
     schema:
@@ -323,7 +334,18 @@ spec:
     storage: false
     subresources:
       status: {}
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: AKSNodeClass is the Schema for the AKSNodeClass API
