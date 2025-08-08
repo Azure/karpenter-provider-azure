@@ -107,8 +107,7 @@ func deleteNic(ctx context.Context, client NetworkInterfacesAPI, rg, nicName str
 func deleteNicIfExists(ctx context.Context, client NetworkInterfacesAPI, rg, nicName string) error {
 	_, err := client.Get(ctx, rg, nicName, nil)
 	if err != nil {
-		azErr := sdkerrors.IsResponseError(err)
-		if azErr != nil && (azErr.ErrorCode == "NotFound" || azErr.ErrorCode == "ResourceNotFound") {
+		if sdkerrors.IsNotFoundErr(err) {
 			return nil
 		}
 		return err
@@ -120,8 +119,7 @@ func deleteNicIfExists(ctx context.Context, client NetworkInterfacesAPI, rg, nic
 func deleteVirtualMachineIfExists(ctx context.Context, client VirtualMachinesAPI, rg, vmName string) error {
 	_, err := client.Get(ctx, rg, vmName, nil)
 	if err != nil {
-		azErr := sdkerrors.IsResponseError(err)
-		if azErr != nil && (azErr.ErrorCode == "NotFound" || azErr.ErrorCode == "ResourceNotFound") {
+		if sdkerrors.IsNotFoundErr(err) {
 			return nil
 		}
 		return err
