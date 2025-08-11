@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 )
 
@@ -51,7 +52,7 @@ func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscripti
 	)
 
 	token, err := l.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{resourceManagerConfig.Audience + "/.default"},
+		Scopes: []string{auth.TokenScope(l.cloud)},
 	})
 	if err != nil {
 		return types.NodeImageVersionsResponse{}, err

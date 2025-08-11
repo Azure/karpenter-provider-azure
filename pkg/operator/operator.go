@@ -37,7 +37,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/flowcontrol"
-	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator"
@@ -303,14 +302,17 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 // ensureToken ensures we can get a token for the Azure environment. Note that this doesn't actually
 // use the token for anything, it just checks that we can get one.
 func ensureToken(cred azcore.TokenCredential, cfg *auth.Config) error {
-	cloudEnv := azclient.EnvironmentFromName(cfg.Cloud)
+	env, err := auth.ResolveCloudEnvironment(cfg)
+	if err != nil {
+		return fmt.Errorf("resolving cloud environment: %w", err)
+	}
 
 	// Short timeout to avoid hanging forever if something bad happens
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{cloudEnv.ServiceManagementEndpoint + "/.default"},
+	_, err = cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{auth.TokenScope(env.Cloud)},
 	})
 	if err != nil {
 		return err
