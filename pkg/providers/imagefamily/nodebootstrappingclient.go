@@ -28,6 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/client/operations"
@@ -54,9 +55,8 @@ func (t *tokenProvider) getToken(ctx context.Context, credential azcore.TokenCre
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	resourceManagerConfig := t.cloud.Services[cloud.ResourceManager]
 	return credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{fmt.Sprintf("%s/.default", resourceManagerConfig.Audience)},
+		Scopes: []string{auth.TokenScope(t.cloud)},
 	})
 }
 
