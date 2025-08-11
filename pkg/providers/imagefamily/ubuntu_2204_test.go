@@ -61,6 +61,9 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	imageDistro := "aks-ubuntu-containerd-22.04-gen2"
 	storageProfile := "ManagedDisks"
 	nodeBootstrappingClient := &fake.NodeBootstrappingAPI{}
+
+	// Note: FIPSMode test scenarios is distributed across image families rather than comprehensively tested in each.
+	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(

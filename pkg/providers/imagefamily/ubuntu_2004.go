@@ -40,6 +40,7 @@ type Ubuntu2004 struct {
 	Options *parameters.StaticParameters
 }
 
+// TODO (charliedmcb): look into .Name() usage, and implications
 func (u Ubuntu2004) Name() string {
 	return v1beta1.UbuntuImageFamily
 }
