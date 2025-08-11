@@ -159,6 +159,9 @@ type KubeletConfiguration struct {
 // AKSNodeClass is the Schema for the AKSNodeClass API
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories={karpenter,nap},shortName={aksnc,aksncs}
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="ImageFamily",type=string,JSONPath=".spec.imageFamily",priority=1
 // +kubebuilder:subresource:status
 // +kubebuilder:deprecatedversion:warning="use v1beta1.AKSNodeClass instead"
 type AKSNodeClass struct {
