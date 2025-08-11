@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -60,6 +61,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	imageDistro := "aks-ubuntu-containerd-22.04-gen2"
 	storageProfile := "ManagedDisks"
 	nodeBootstrappingClient := &fake.NodeBootstrappingAPI{}
+	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -70,6 +72,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		imageDistro,
 		storageProfile,
 		nodeBootstrappingClient,
+		fipsMode,
 	)
 
 	// Verify the returned bootstrapper is of the correct type
@@ -94,6 +97,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.Equal(t, storageProfile, provisionBootstrapper.StorageProfile)
 	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
 	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
+	assert.Equal(t, fipsMode, provisionBootstrapper.FIPSMode, "FIPSMode field must match the input parameter")
 }
 
 func TestUbuntu2204_Name(t *testing.T) {

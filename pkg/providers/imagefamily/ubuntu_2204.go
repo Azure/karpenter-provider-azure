@@ -133,7 +133,8 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
 	instanceType *cloudprovider.InstanceType,
 	imageDistro string,
 	storageProfile string,
-	nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
+	nodeBootstrappingClient types.NodeBootstrappingAPI,
+	fipsMode *v1beta1.FIPSMode) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,
@@ -152,5 +153,6 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+		FIPSMode:                       fipsMode,
 	}
 }

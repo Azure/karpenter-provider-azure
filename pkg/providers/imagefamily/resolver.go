@@ -78,6 +78,7 @@ type ImageFamily interface {
 		imageDistro string,
 		storageProfile string,
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
+		fipsMode *v1beta1.FIPSMode,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
@@ -149,6 +150,8 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
+	fipsMode := nodeClass.Spec.FIPSMode
+
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
@@ -167,6 +170,7 @@ func (r *defaultResolver) Resolve(
 			imageDistro,
 			diskType,
 			r.nodeBootstrappingProvider,
+			fipsMode,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
