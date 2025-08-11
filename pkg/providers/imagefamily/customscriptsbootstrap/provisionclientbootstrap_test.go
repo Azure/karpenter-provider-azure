@@ -282,7 +282,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				profile := values.ProvisionProfile
 				assert.Equal(t, "x64", *profile.Architecture)
 				assert.Equal(t, models.OSTypeLinux, *profile.OsType)
-				assert.Equal(t, models.OSSKUUbuntu2204, *profile.OsSku)
+				assert.Equal(t, models.OSSKUUbuntu, *profile.OsSku)
 				assert.Equal(t, "Standard_D2s_v3", *profile.VMSize)
 				assert.Equal(t, "aks-ubuntu-containerd-22.04-gen2", *profile.Distro)
 				assert.Equal(t, "1.31.0", *profile.OrchestratorVersion)

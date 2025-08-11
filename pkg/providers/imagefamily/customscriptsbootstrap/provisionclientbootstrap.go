@@ -150,7 +150,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	case ImageFamilyOSSKUUbuntu2004:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUUbuntu2204:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu2204)
+		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUAzureLinux2:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	case ImageFamilyOSSKUAzureLinux3:
