@@ -159,7 +159,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env auth.Environment, cr
 	if o.UseSIG {
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
-		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, o.SIGAccessTokenScope) // TODO(matthchr): Fix SIGAccessTokenScope to come from cloud
+		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
 		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)

@@ -29,6 +29,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -109,7 +110,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	var auxiliaryTokenServer *fake.AuxiliaryTokenServer
 	if testOptions.UseSIG {
 		auxiliaryTokenServer = fake.NewAuxiliaryTokenServer("test-token", time.Now().Add(1*time.Hour), time.Now().Add(5*time.Minute))
-		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, testOptions.SIGAccessTokenScope)
+		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, auth.TokenScope(cloud.AzurePublic))
 	}
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{AuxiliaryTokenPolicy: auxTokenPolicy}
 
