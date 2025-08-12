@@ -23,7 +23,6 @@ import (
 
 	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/samber/lo"
-	"k8s.io/apimachinery/pkg/types"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,13 +33,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
-	nodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
+	corenodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
 type Controller struct {
@@ -63,7 +62,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	// No need to add nodeClaim name to the context as it's already there
 
 	// Get the NodeClass
-	nodeClass, err := c.resolveAKSNodeClass(ctx, nodeClaim)
+	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("resolving AKSNodeClass, %w", err)
 	}
@@ -93,7 +92,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	stored := nodeClaim.DeepCopy()
 
-	vm, err := c.getVM(ctx, nodeClaim)
+	vm, err := nodeclaimutils.GetVM(ctx, c.instanceProvider, nodeClaim)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
 	}
@@ -117,28 +116,6 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	return reconcile.Result{}, nil
 }
 
-// TODO (matthchr): Refactor to utils/nodeclaim
-// TODO: duplicate from resolveNodeClassFromNodeClaim for CloudProvider
-// resolveAKSNodeClass resolves the AKSNodeClass from the NodeClaim's NodeClassRef
-func (c *Controller) resolveAKSNodeClass(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1beta1.AKSNodeClass, error) {
-	if nodeClaim.Spec.NodeClassRef == nil {
-		return nil, fmt.Errorf("nodeClaim %s does not have a nodeClassRef", nodeClaim.Name)
-	}
-
-	nodeClass := &v1beta1.AKSNodeClass{}
-	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodeClaim.Spec.NodeClassRef.Name}, nodeClass); err != nil {
-		return nil, fmt.Errorf("getting AKSNodeClass %s: %w", nodeClaim.Spec.NodeClassRef.Name, err)
-	}
-
-	// For the purposes of in-place updates, we treat deleting NodeClasses as an error
-	// This error should ideally be transient and the NodeClaim itself will be deleted
-	if !nodeClass.DeletionTimestamp.IsZero() {
-		return nil, fmt.Errorf("AKSNodeClass %s is being deleted", nodeClass.Name)
-	}
-
-	return nodeClass, nil
-}
-
 func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeClaim) (bool, reconcile.Result) {
 	if !nodeClaim.DeletionTimestamp.IsZero() {
 		return false, reconcile.Result{}
@@ -156,21 +133,6 @@ func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeCl
 	}
 
 	return true, reconcile.Result{}
-}
-
-// TODO (matthchr): Refactor to utils/nodeclaim
-func (c *Controller) getVM(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*armcompute.VirtualMachine, error) {
-	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
-	if err != nil {
-		return nil, err
-	}
-
-	vm, err := c.instanceProvider.Get(ctx, vmName)
-	if err != nil {
-		return nil, fmt.Errorf("getting azure VM for machine, %w", err)
-	}
-
-	return vm, nil
 }
 
 func (c *Controller) applyPatch(
@@ -206,7 +168,7 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 					predicate.GenerationChangedPredicate{}, // Note that this will trigger on pod restart for all Machines.
 				),
 			)).
-		Watches(&v1beta1.AKSNodeClass{}, nodeclaimutils.NodeClassEventHandler(m.GetClient()), builder.WithPredicates(tagsChangedPredicate{})).
+		Watches(&v1beta1.AKSNodeClass{}, corenodeclaimutils.NodeClassEventHandler(m.GetClient()), builder.WithPredicates(tagsChangedPredicate{})).
 		// TODO: Can add .Watches(&karpv1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
 		// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
 		// TODO: if/when we need to monitor provisioner changes and flow updates on the NodePool down to the underlying VMs.
