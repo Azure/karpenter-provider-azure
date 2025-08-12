@@ -34,7 +34,7 @@ import (
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	karpnodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
+	corenodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 )
 
 const (
@@ -254,15 +254,15 @@ func (c *CloudProvider) isKubeletIdentityDrifted(ctx context.Context, nodeClaim 
 func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1.Node, error) {
 	logger := log.FromContext(ctx)
 
-	n, err := karpnodeclaimutils.NodeForNodeClaim(ctx, c.kubeClient, nodeClaim)
+	n, err := corenodeclaimutils.NodeForNodeClaim(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
-		if karpnodeclaimutils.IsNodeNotFoundError(err) {
+		if corenodeclaimutils.IsNodeNotFoundError(err) {
 			// We do not return an error here as its expected within the lifecycle of the nodeclaims registration.
 			// Core's checks only for Launched status which means we've started the create, but the node doesn't nessicarially exist yet
 			// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
 			return nil, nil
 		}
-		if karpnodeclaimutils.IsDuplicateNodeError(err) {
+		if corenodeclaimutils.IsDuplicateNodeError(err) {
 			logger.Info("duplicate node error detected, invariant violated")
 		}
 		return nil, err
