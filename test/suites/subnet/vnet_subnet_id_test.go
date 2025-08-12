@@ -120,7 +120,7 @@ var _ = Describe("Subnets", func() {
 	})
 
 	DescribeTable("should mark the AKSNodeClass as unready if the subnetID doesn't belong to the cluster vnet",
-		func(modifyComponents func(utils.VnetSubnetResource) utils.VnetSubnetResource, expectedErrorPattern string) {
+		func(modifyComponents func(utils.VnetSubnetResource) utils.VnetSubnetResource) {
 			vnet := env.GetClusterVNET()
 			vnetID := lo.FromPtr(vnet.ID)
 
@@ -155,27 +155,26 @@ var _ = Describe("Subnets", func() {
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
 				g.Expect(condition).ToNot(BeNil())
 				g.Expect(condition.IsFalse()).To(BeTrue())
-				g.Expect(condition.Message).To(MatchRegexp(expectedErrorPattern))
+				// Generic assertion - just check that the message mentions the subnet doesn't match
+				g.Expect(condition.Message).To(ContainSubstring("does not match"))
+				g.Expect(condition.Message).To(ContainSubstring(subnetID))
 			}).Should(Succeed())
 		},
 		Entry("different subscription",
 			func(components utils.VnetSubnetResource) utils.VnetSubnetResource {
 				components.SubscriptionID = "12345678-1234-1234-1234-123456789012"
 				return components
-			},
-			"subscription"),
+			}),
 		Entry("different resource group",
 			func(components utils.VnetSubnetResource) utils.VnetSubnetResource {
 				components.ResourceGroupName = "different-rg"
 				return components
-			},
-			"resource group"),
+			}),
 		Entry("different virtual network",
 			func(components utils.VnetSubnetResource) utils.VnetSubnetResource {
 				components.VNetName = "different-vnet"
 				return components
-			},
-			"virtual network"),
+			}),
 	)
 	It("should mark the AKSNodeClass as unready if the subnet is NotFound and fall back to a different nodeclass", func() {
 		newNodeClass := env.DefaultAKSNodeClass()

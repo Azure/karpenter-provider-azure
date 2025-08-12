@@ -95,21 +95,12 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 	if subnetID != clusterSubnetID {
 		clusterSubnetIDParts, _ := utils.GetVnetSubnetIDComponents(clusterSubnetID) // Assume valid cluster subnet id
 		if !clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
-			var mismatchReason string
-			if nodeClassSubnetComponents.SubscriptionID != clusterSubnetIDParts.SubscriptionID {
-				mismatchReason = "subscription"
-			} else if nodeClassSubnetComponents.ResourceGroupName != clusterSubnetIDParts.ResourceGroupName {
-				mismatchReason = "resource group"
-			} else if nodeClassSubnetComponents.VNetName != clusterSubnetIDParts.VNetName {
-				mismatchReason = "virtual network"
-			}
-
 			nodeClass.StatusConditions().SetFalse(
 				v1beta1.ConditionTypeSubnetReady,
 				SubnetUnreadyReasonIDInvalid,
-				fmt.Sprintf("vnetSubnetID does not match the cluster %s: %s", mismatchReason, subnetID),
+				fmt.Sprintf("vnetSubnetID does not match the cluster subscription, resource group, or virtual network: %s", subnetID),
 			)
-			return reconcile.Result{RequeueAfter: time.Minute}, fmt.Errorf("subnet %s does not match cluster %s", subnetID, mismatchReason)
+			return reconcile.Result{RequeueAfter: time.Minute}, fmt.Errorf("subnet %s does not match cluster subscription, resource group, or virtual network", subnetID)
 		}
 	}
 
