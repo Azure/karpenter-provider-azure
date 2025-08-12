@@ -260,8 +260,7 @@ func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.V
 	var err error
 
 	if vm, err = p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
-		azErr := sdkerrors.IsResponseError(err)
-		if azErr != nil && (azErr.ErrorCode == "NotFound" || azErr.ErrorCode == "ResourceNotFound") {
+		if sdkerrors.IsNotFoundErr(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return nil, fmt.Errorf("failed to get VM instance, %w", err)
@@ -601,8 +600,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 		return &createResult{VM: &resp.VirtualMachine}, nil
 	}
 	// if status != ok, and for a reason other than we did not find the vm
-	azErr := sdkerrors.IsResponseError(err)
-	if azErr != nil && (azErr.ErrorCode != "NotFound" && azErr.ErrorCode != "ResourceNotFound") {
+	if !sdkerrors.IsNotFoundErr(err) {
 		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
 	vm := newVMObject(opts)
