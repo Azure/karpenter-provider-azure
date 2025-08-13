@@ -100,7 +100,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 				SubnetUnreadyReasonIDInvalid,
 				fmt.Sprintf("vnetSubnetID does not match the cluster subscription, resource group, or virtual network: %s", subnetID),
 			)
-			return reconcile.Result{RequeueAfter: time.Minute}, fmt.Errorf("subnet %s does not match cluster subscription, resource group, or virtual network", subnetID)
+			return reconcile.Result{}, fmt.Errorf("subnet %s does not match cluster subscription, resource group, or virtual network", subnetID)
 		}
 	}
 
