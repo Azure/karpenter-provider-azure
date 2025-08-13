@@ -187,7 +187,7 @@ func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 	skuZones := lo.Keys(sku.AvailabilityZones(region))
 	if hasZonalSupport(region) && len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
-			return utils.MakeZone(region, zone)
+			return utils.GetAKSZoneFromARMZone(region, zone)
 		})...)
 	}
 	return sets.New("") // empty string means non-zonal offering

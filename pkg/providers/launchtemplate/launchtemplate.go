@@ -43,6 +43,8 @@ const (
 	podNetworkTypeLabel  = "kubernetes.azure.com/podnetwork-type"
 )
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 type Template struct {
 	ScriptlessCustomData      string
 	ImageID                   string
@@ -74,6 +76,8 @@ type Provider struct {
 
 // TODO: add caching of launch templates
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvider imagefamily.NodeImageProvider, caBundle *string, clusterEndpoint string,
 	tenantID, subscriptionID, clusterResourceGroup string, kubeletIdentityClientID, resourceGroup, location, vnetGUID, provisionMode string,
 ) *Provider {
@@ -93,6 +97,8 @@ func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvi
 	}
 }
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (p *Provider) GetTemplate(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -125,6 +131,8 @@ func (p *Provider) GetTemplate(
 	return launchTemplate, nil
 }
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (p *Provider) getStaticParameters(
 	ctx context.Context,
 	instanceType *cloudprovider.InstanceType,
@@ -158,6 +166,8 @@ func (p *Provider) getStaticParameters(
 		labels[dataplaneLabel] = consts.NetworkDataplaneCilium
 	}
 
+	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+	// Refactoring for code unification is not being invested immediately.
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
@@ -202,6 +212,8 @@ func isAzureCNIOverlay(ctx context.Context) bool {
 	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay
 }
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
 	template := &Template{
 		ImageID:                   params.ImageID,
@@ -220,7 +232,7 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 		}
 		template.CustomScriptsCustomData = customData
 		template.CustomScriptsCSE = cse
-	} else {
+	} else if p.provisionMode == consts.ProvisionModeAKSScriptless {
 		// render user data
 		userData, err := params.ScriptlessCustomData.Script()
 		if err != nil {

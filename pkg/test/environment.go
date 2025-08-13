@@ -31,6 +31,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -51,6 +52,7 @@ func init() {
 }
 
 const (
+	clusterName   = "test-cluster"
 	resourceGroup = "test-resourceGroup"
 	subscription  = "12345678-1234-1234-1234-123456789012"
 )
@@ -67,6 +69,11 @@ type Environment struct {
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
+	AKSMachinesAPI              *fake.AKSMachinesAPI
+	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
+
+	// Fake data stores for the APIs
+	SharedStores *fake.SharedAKSDataStores
 
 	// Cache
 	KubernetesVersionCache    *cache.Cache
@@ -77,7 +84,8 @@ type Environment struct {
 
 	// Providers
 	InstanceTypesProvider        instancetype.Provider
-	InstanceProvider             instance.Provider
+	VMInstanceProvider           instance.VMProvider
+	AKSMachineProvider           instance.AKSMachineProvider
 	PricingProvider              *pricing.Provider
 	KubernetesVersionProvider    kubernetesversion.KubernetesVersionProvider
 	ImageProvider                imagefamily.NodeImageProvider
@@ -89,17 +97,23 @@ type Environment struct {
 	// Settings
 	nonZonal       bool
 	SubscriptionID string
+	coreEnv        *coretest.Environment
+	region         string
 }
 
 func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment {
-	return NewRegionalEnvironment(ctx, env, fake.Region, false)
+	return NewRegionalEnvironment(ctx, env, fake.Region, false, false)
 }
 
 func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Environment {
-	return NewRegionalEnvironment(ctx, env, fake.RegionNonZonal, true)
+	return NewRegionalEnvironment(ctx, env, fake.RegionNonZonal, true, false)
 }
 
-func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
+func NewEnvironmentWithExistingAKSMachinesPool(ctx context.Context, env *coretest.Environment) *Environment {
+	return NewRegionalEnvironment(ctx, env, fake.Region, false, true)
+}
+
+func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool, withExistingAKSMachinesPool bool) *Environment {
 	testOptions := options.FromContext(ctx)
 
 	// API
@@ -120,6 +134,13 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
+
+	// Create shared data stores for AKS agent pools and machines
+	sharedStores := fake.NewSharedAKSDataStores()
+
+	// Create APIs that share the data stores
+	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(sharedStores)
+	aksMachinesAPI := fake.NewAKSMachinesAPI(sharedStores)
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -162,6 +183,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
+		aksMachinesAPI,
+		aksAgentPoolsAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
 		loadBalancersAPI,
@@ -171,7 +194,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		nodeBootstrappingAPI,
 		skuClientSingleton,
 	)
-	instanceProvider := instance.NewDefaultProvider(
+	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypesProvider,
 		launchTemplateProvider,
@@ -182,6 +205,38 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.NodeResourceGroup,
 		subscription,
 		testOptions.ProvisionMode,
+	)
+
+	if withExistingAKSMachinesPool {
+		// This should create an AKS machines pool as if it comes from a previous instance of Karpenter.
+		// Assuming no other side effects.
+		_ = instance.NewAKSMachineProvider(
+			ctx,
+			consts.ProvisionModeAKSMachineAPI,
+			azClient,
+			instanceTypesProvider,
+			imageFamilyResolver,
+			unavailableOfferingsCache,
+			subscription,
+			testOptions.NodeResourceGroup,
+			clusterName,
+			testOptions.AKSMachinesPoolName,
+			region,
+		)
+	}
+
+	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
+		ctx,
+		testOptions.ProvisionMode,
+		azClient,
+		instanceTypesProvider,
+		imageFamilyResolver,
+		unavailableOfferingsCache,
+		subscription,
+		testOptions.NodeResourceGroup,
+		clusterName,
+		testOptions.AKSMachinesPoolName,
+		region,
 	)
 
 	return &Environment{
@@ -195,6 +250,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
 		MockSkuClientSingleton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
+		AKSMachinesAPI:              aksMachinesAPI,
+		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
+
+		SharedStores: sharedStores,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
 		NodeImagesCache:           nodeImagesCache,
@@ -203,7 +262,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancerCache:         loadBalancerCache,
 
 		InstanceTypesProvider:        instanceTypesProvider,
-		InstanceProvider:             instanceProvider,
+		VMInstanceProvider:           vmInstanceProvider,
+		AKSMachineProvider:           aksMachineInstanceProvider,
 		PricingProvider:              pricingProvider,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageFamilyProvider,
@@ -214,7 +274,148 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 		nonZonal:       nonZonal,
 		SubscriptionID: subscription,
+		region:         region,
+		coreEnv:        env,
 	}
+}
+
+// Reinitialize the environment, but keep the state from data stores
+func (env *Environment) ReapplyContextWithOptions(ctx context.Context) {
+	testOptions := options.FromContext(ctx)
+
+	// API
+	var auxTokenPolicy *auth.AuxiliaryTokenPolicy
+	var auxiliaryTokenServer *fake.AuxiliaryTokenServer
+	if testOptions.UseSIG {
+		auxiliaryTokenServer = fake.NewAuxiliaryTokenServer("test-token", time.Now().Add(1*time.Hour), time.Now().Add(5*time.Minute))
+		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, testOptions.SIGAccessTokenScope)
+	}
+	virtualMachinesAPI := &fake.VirtualMachinesAPI{AuxiliaryTokenPolicy: auxTokenPolicy}
+
+	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
+	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
+	pricingAPI := &fake.PricingAPI{}
+	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: env.region}}
+	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
+	loadBalancersAPI := &fake.LoadBalancersAPI{}
+	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
+	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
+	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
+
+	// Create APIs that share the data stores
+	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(env.SharedStores)
+	aksMachinesAPI := fake.NewAKSMachinesAPI(env.SharedStores)
+
+	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
+	// Cache
+	kubernetesVersionCache := cache.New(azurecache.KubernetesVersionTTL, azurecache.DefaultCleanupInterval)
+	nodeImagesCache := cache.New(imagefamily.ImageExpirationInterval, imagefamily.ImageCacheCleaningInterval)
+	instanceTypeCache := cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval)
+	loadBalancerCache := cache.New(loadbalancer.LoadBalancersCacheTTL, azurecache.DefaultCleanupInterval)
+	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
+
+	// Providers
+	pricingProvider := pricing.NewProvider(ctx, pricingAPI, env.region, make(chan struct{}))
+	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.coreEnv.KubernetesInterface, kubernetesVersionCache)
+	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, env.region, subscription, nodeImageVersionsAPI, nodeImagesCache)
+	instanceTypesProvider := instancetype.NewDefaultProvider(env.region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
+	imageFamilyResolver := imagefamily.NewDefaultResolver(env.coreEnv.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
+	launchTemplateProvider := launchtemplate.NewProvider(
+		ctx,
+		imageFamilyResolver,
+		imageFamilyProvider,
+		lo.ToPtr("ca-bundle"),
+		testOptions.ClusterEndpoint,
+		"test-tenant",
+		subscription,
+		"test-cluster-resource-group",
+		"test-kubelet-identity-client-id",
+		testOptions.NodeResourceGroup,
+		env.region,
+		testOptions.VnetGUID,
+		testOptions.ProvisionMode,
+	)
+	loadBalancerProvider := loadbalancer.NewProvider(
+		loadBalancersAPI,
+		loadBalancerCache,
+		testOptions.NodeResourceGroup,
+	)
+	networkSecurityGroupProvider := networksecuritygroup.NewProvider(
+		networkSecurityGroupAPI,
+		testOptions.NodeResourceGroup,
+	)
+	azClient := instance.NewAZClientFromAPI(
+		env.VirtualMachinesAPI,
+		azureResourceGraphAPI,
+		aksMachinesAPI,
+		aksAgentPoolsAPI,
+		virtualMachinesExtensionsAPI,
+		networkInterfacesAPI,
+		loadBalancersAPI,
+		networkSecurityGroupAPI,
+		communityImageVersionsAPI,
+		nodeImageVersionsAPI,
+		nodeBootstrappingAPI,
+		skuClientSingleton,
+	)
+	vmInstanceProvider := instance.NewDefaultVMProvider(
+		azClient,
+		instanceTypesProvider,
+		launchTemplateProvider,
+		loadBalancerProvider,
+		networkSecurityGroupProvider,
+		unavailableOfferingsCache,
+		env.region,
+		testOptions.NodeResourceGroup,
+		subscription,
+		testOptions.ProvisionMode,
+	)
+
+	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
+		ctx,
+		testOptions.ProvisionMode,
+		azClient,
+		instanceTypesProvider,
+		imageFamilyResolver,
+		unavailableOfferingsCache,
+		subscription,
+		testOptions.NodeResourceGroup,
+		clusterName,
+		testOptions.AKSMachinesPoolName,
+		env.region,
+	)
+
+	env.VirtualMachinesAPI = virtualMachinesAPI
+	env.AuxiliaryTokenServer = auxiliaryTokenServer
+	env.AzureResourceGraphAPI = azureResourceGraphAPI
+	env.VirtualMachineExtensionsAPI = virtualMachinesExtensionsAPI
+	env.NetworkInterfacesAPI = networkInterfacesAPI
+	env.CommunityImageVersionsAPI = communityImageVersionsAPI
+	env.LoadBalancersAPI = loadBalancersAPI
+	env.NetworkSecurityGroupAPI = networkSecurityGroupAPI
+	env.MockSkuClientSingleton = skuClientSingleton
+	env.PricingAPI = pricingAPI
+	env.AKSMachinesAPI = aksMachinesAPI
+	env.AKSAgentPoolsAPI = aksAgentPoolsAPI
+
+	env.KubernetesVersionCache = kubernetesVersionCache
+	env.NodeImagesCache = nodeImagesCache
+	env.InstanceTypeCache = instanceTypeCache
+	env.UnavailableOfferingsCache = unavailableOfferingsCache
+	env.LoadBalancerCache = loadBalancerCache
+
+	env.InstanceTypesProvider = instanceTypesProvider
+	env.VMInstanceProvider = vmInstanceProvider
+	env.AKSMachineProvider = aksMachineInstanceProvider
+	env.PricingProvider = pricingProvider
+	env.KubernetesVersionProvider = kubernetesVersionProvider
+	env.ImageProvider = imageFamilyProvider
+	env.ImageResolver = imageFamilyResolver
+	env.LaunchTemplateProvider = launchTemplateProvider
+	env.LoadBalancerProvider = loadBalancerProvider
+	env.NetworkSecurityGroupProvider = networkSecurityGroupProvider
+
+	env.SubscriptionID = subscription
 }
 
 func (env *Environment) Reset() {
@@ -232,6 +433,8 @@ func (env *Environment) Reset() {
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
 	env.MockSkuClientSingleton.SKUClient.Reset()
+	env.AKSMachinesAPI.Reset()
+	env.AKSAgentPoolsAPI.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()

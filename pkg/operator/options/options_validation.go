@@ -97,12 +97,19 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
+	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
+		}
+	} else if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		if o.AKSMachinesPoolName == "" {
+			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is aksmachineapi")
+		}
+		if !o.UseSIG {
+			return fmt.Errorf("use-sig is required to be true when provision-mode is aksmachineapi")
 		}
 	}
 	return nil
