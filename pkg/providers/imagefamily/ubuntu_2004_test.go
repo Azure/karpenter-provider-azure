@@ -62,7 +62,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 	storageProfile := "ManagedDisks"
 	nodeBootstrappingClient := &fake.NodeBootstrappingAPI{}
 
-	// Note: FIPSMode test scenarios is distributed across image families rather than comprehensively tested in each.
+	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeFIPS)
 

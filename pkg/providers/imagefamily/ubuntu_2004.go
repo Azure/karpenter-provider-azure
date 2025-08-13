@@ -82,7 +82,8 @@ func (u Ubuntu2004) ScriptlessCustomData(
 	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	labels map[string]string,
-	caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+	caBundle *string, _ *cloudprovider.InstanceType,
+) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -122,7 +123,8 @@ func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 	imageDistro string,
 	storageProfile string,
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
-	fipsMode *v1beta1.FIPSMode) customscriptsbootstrap.Bootstrapper {
+	fipsMode *v1beta1.FIPSMode,
+) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,

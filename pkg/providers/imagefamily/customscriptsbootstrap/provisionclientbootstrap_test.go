@@ -783,7 +783,6 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 				KubeletIdentityClientID: "test-kubelet-client-id",
 			})
 
-			// Call ConstructProvisionValues
 			values, err := bootstrapper.ConstructProvisionValues(ctx)
 
 			// For unsupported OSSKU, we expect an error and should not continue validation
@@ -950,7 +949,6 @@ func TestFIPSEnablement(t *testing.T) {
 				KubeletIdentityClientID: "test-kubelet-client-id",
 			})
 
-			// Call ConstructProvisionValues
 			values, err := bootstrapper.ConstructProvisionValues(ctx)
 
 			// For all cases, expect success
@@ -959,7 +957,7 @@ func TestFIPSEnablement(t *testing.T) {
 			assert.NotNil(t, values.ProvisionProfile, "ProvisionProfile should not be nil")
 
 			assert.Equal(t, lo.ToPtr(tt.expectedEnableFIPS), values.ProvisionProfile.EnableFIPS,
-				"FIPS enablement mismatch: %s. Expected: %v, Actual: %v",
+				"FIPS enablement mismatch: %s",
 				tt.description, tt.expectedEnableFIPS, values.ProvisionProfile.EnableFIPS)
 		})
 	}

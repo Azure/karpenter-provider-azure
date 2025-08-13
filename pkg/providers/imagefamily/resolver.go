@@ -150,8 +150,6 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	fipsMode := nodeClass.Spec.FIPSMode
-
 	template := &template.Parameters{
 		StaticParameters: staticParameters,
 		ScriptlessCustomData: imageFamily.ScriptlessCustomData(
@@ -170,7 +168,7 @@ func (r *defaultResolver) Resolve(
 			imageDistro,
 			diskType,
 			r.nodeBootstrappingProvider,
-			fipsMode,
+			nodeClass.Spec.FIPSMode,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
