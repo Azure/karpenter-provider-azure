@@ -250,13 +250,8 @@ func (p *Provider) getVnetInfoLabels(subnetID string, kubernetesVersion string) 
 		podNetworkTypeLabel:  consts.NetworkPluginModeOverlay,
 	}
 
-	// Add stateless CNI label for Kubernetes 1.34+
-	if kubernetesVersion != "" {
-		parsedVersion, err := semver.Parse(kubernetesVersion)
-		if err == nil && parsedVersion.Minor >= 34 {
-			vnetLabels[networkStatelessCNILabel] = "true"
-		}
-	}
+	parsedVersion, _ := semver.Parse(kubernetesVersion)
+	vnetLabels[networkStatelessCNILabel] = lo.Ternary(parsedVersion.Minor >= 34, "true", "false")
 
 	return vnetLabels, nil
 }
