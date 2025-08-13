@@ -37,23 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// GetVMName parses the provider ID stored on the node to get the vmName
-// associated with a node
-func GetVMName(providerID string) (string, error) {
-	// standalone VMs have providerID in the format: azure:///subscriptions/<subscriptionID>/resourceGroups/<resourceGroup>/providers/Microsoft.Compute/virtualMachines/<instanceID>
-	r := regexp.MustCompile(`azure:///subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/virtualMachines/(?P<InstanceID>.*)`)
-	matches := r.FindStringSubmatch(providerID)
-	if matches == nil {
-		return "", fmt.Errorf("parsing vm name %s", providerID)
-	}
-	for i, name := range r.SubexpNames() {
-		if name == "InstanceID" {
-			return matches[i], nil
-		}
-	}
-	return "", fmt.Errorf("parsing vm name %s", providerID)
-}
-
 // extractVersionFromVMSize extracts and normalizes the version from VMSizeType, dropping "v" prefix and backfilling "1"
 func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
 	// safety-check to avoid panics, shouldn't happen in practice
