@@ -957,8 +957,8 @@ func TestFIPSEnablement(t *testing.T) {
 			assert.NotNil(t, values.ProvisionProfile, "ProvisionProfile should not be nil")
 
 			assert.Equal(t, lo.ToPtr(tt.expectedEnableFIPS), values.ProvisionProfile.EnableFIPS,
-				"FIPS enablement mismatch: %s",
-				tt.description, tt.expectedEnableFIPS, values.ProvisionProfile.EnableFIPS)
+				"FIPS enablement mismatch: %s. Expected: %t, Actual: %t",
+				tt.description, tt.expectedEnableFIPS, *values.ProvisionProfile.EnableFIPS)
 		})
 	}
 }
