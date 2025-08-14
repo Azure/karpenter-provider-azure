@@ -33,7 +33,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -172,73 +171,7 @@ func NewAKSMachineProvider(
 		},
 	}
 
-	if provisionMode == consts.ProvisionModeAKSMachineAPI {
-		// Karpenter cannot create nodes without it when creating AKS machines. So, it is fair to panic, which will retry upon restart.
-		lo.Must0(provider.ensureAKSMachinesPoolExists(ctx), "failed to ensure AKS machines pool exists")
-	}
-
 	return provider
-}
-
-// ensureAKSMachinesPoolExists checks if the machines pool exists, and if not, creates it
-func (p *DefaultAKSMachineProvider) ensureAKSMachinesPoolExists(ctx context.Context) error {
-	// Check if AKS machines pool already exists
-	exists, existingAKSMachinesPool, err := p.doesAKSMachinesPoolExists(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to check if AKS machines pool exists: %w", err)
-	}
-	if exists {
-		// ASSUMPTION: existing AKS machines pool has correct a mode ("Machines")
-		log.FromContext(ctx).Info("AKS machines pool already exists, reusing...", "aksMachinesPoolName", p.aksMachinesPoolName)
-
-		if existingAKSMachinesPool == nil ||
-			existingAKSMachinesPool.Properties == nil ||
-			existingAKSMachinesPool.Properties.ProvisioningState == nil ||
-			*existingAKSMachinesPool.Properties.ProvisioningState != "Succeeded" {
-			// If the below still fail, we don't panic/fail, as:
-			// - We only handle for the case of: Karpenter is just enabled --> unsuccessfully attempted to create AKS machines pool (or attempting, then got cut off) --> then restarted once
-			// - In most (if not all) cases, an AgentPool with a failed ProvisioningState is actually usable by AKS machine API, as the failed state just indicate latest operation status
-			// - If we keep retrying, it could take time (e.g, keep hitting conflict from other reconcilers, or server-side issue), blocking Karpenter ops. that could have been successful or increasing latency unnecessarily.
-			// Thus, it is safer to proceed. The case where it continues to be a problem should be notably rare at this point.
-			// In which a manual restart (or re-enablement of Karpenter) can retry.
-			log.FromContext(ctx).Info("AKS machines pool unhealthy, reconciling...", "aksMachinesPoolName", p.aksMachinesPoolName)
-			poller, err := p.azClient.agentPoolsClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, armcontainerservice.AgentPool{}, nil)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "failed to reconcile AKS machines pool: agentPools.BeginCreateOrUpdate failed for %q", p.aksMachinesPoolName)
-			}
-			_, err = poller.PollUntilDone(ctx, nil)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "failed to reconcile AKS machines pool: agentPools.BeginCreateOrUpdate failed during LRO for %q", p.aksMachinesPoolName)
-			}
-
-			// XPMT: TODO: alternatively, we could consider having a controller (create at the beginning, and can retry/heal in background however we want to)
-		}
-
-		return nil
-	}
-
-	log.FromContext(ctx).Info("creating AKS machines pool", "aksMachinesPoolName", p.aksMachinesPoolName)
-
-	// Create the AKS machines pool
-	aksMachinesPool := &armcontainerservice.AgentPool{
-		Properties: &armcontainerservice.ManagedClusterAgentPoolProfileProperties{
-			Mode: lo.ToPtr(armcontainerservice.AgentPoolModeMachines),
-		},
-	}
-	poller, err := p.azClient.agentPoolsClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, *aksMachinesPool, nil)
-	if err != nil {
-		return fmt.Errorf("agentPools.BeginCreateOrUpdate for AKS machines pool failed for %q: %w", p.aksMachinesPoolName, err)
-	}
-
-	// Wait for the LRO to complete
-	_, err = poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		// At this point, the pool should already be visible through GET, but with failed ProvisioningState.
-		return fmt.Errorf("AKS machines pool creation failed during LRO for %q: %w", p.aksMachinesPoolName, err)
-	}
-
-	log.FromContext(ctx).Info("successfully created AKS machines pool", "aksMachinesPoolName", p.aksMachinesPoolName)
-	return nil
 }
 
 // doesAKSMachinesPoolExists checks if the AKS machines pool exists
@@ -251,19 +184,6 @@ func (p *DefaultAKSMachineProvider) doesAKSMachinesPoolExists(ctx context.Contex
 		return false, nil, fmt.Errorf("failed to check if AKS machines pool exists: %w", err)
 	}
 	return true, lo.ToPtr(resp.AgentPool), nil
-}
-
-func (p *DefaultAKSMachineProvider) panicIfAKSMachinesPoolDoesNotExist(ctx context.Context, originalErr error) error {
-	if IsARMNotFound(originalErr) {
-		machinesPoolExists, _, err := p.doesAKSMachinesPoolExists(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to check if AKS machines pool exists: %w", err)
-		}
-		if !machinesPoolExists {
-			panic(fmt.Sprintf("AKS machines pool %q has ceased to exist. It will be created upon restart...", p.aksMachinesPoolName))
-		}
-	}
-	return nil
 }
 
 // BeginCreate creates an instance given the constraints.
@@ -365,7 +285,7 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if IsARMNotFound(err) {
-				// XPMT: TODO: check API: see what happens when Machines pool is not found when calling Machines list.
+				// XPMT: TODO: check API: see what happens when Machines pool is not found when calling Machines list. It is probably just one of this and the above.
 				// AKS machines pool not found (deleted mid-air?). Handle gracefully.
 				break
 			}
@@ -551,11 +471,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctxWithHeader, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
-		innerErr := p.panicIfAKSMachinesPoolDoesNotExist(ctx, err)
-		if innerErr != nil {
-			// Not fatal. Retry will likely anyway from returning original error.
-			log.FromContext(ctx).Error(innerErr, "failed to check AKS machines pool existence during AKS machine creation")
-		}
 		return nil, fmt.Errorf("aksMachine.BeginCreateOrUpdate for AKS machine %q failed: %w", aksMachineName, err)
 	}
 
