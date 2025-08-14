@@ -29,6 +29,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -104,18 +105,14 @@ type Environment struct {
 }
 
 func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment {
-	return NewRegionalEnvironment(ctx, env, fake.Region, false, false)
+	return NewRegionalEnvironment(ctx, env, fake.Region, false)
 }
 
 func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Environment {
-	return NewRegionalEnvironment(ctx, env, fake.RegionNonZonal, true, false)
+	return NewRegionalEnvironment(ctx, env, fake.RegionNonZonal, true)
 }
 
-func NewEnvironmentWithExistingAKSMachinesPool(ctx context.Context, env *coretest.Environment) *Environment {
-	return NewRegionalEnvironment(ctx, env, fake.Region, false, true)
-}
-
-func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool, withExistingAKSMachinesPool bool) *Environment {
+func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
 	testOptions := options.FromContext(ctx)
 
 	azureEnv := lo.Must(auth.EnvironmentFromName("AzurePublicCloud"))
@@ -220,21 +217,16 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.ProvisionMode,
 	)
 
-	if withExistingAKSMachinesPool {
-		// This should create an AKS machines pool as if it comes from a previous instance of Karpenter.
-		// Assuming no other side effects.
-		_ = instance.NewAKSMachineProvider(
-			ctx,
-			consts.ProvisionModeAKSMachineAPI,
-			azClient,
-			instanceTypesProvider,
-			imageFamilyResolver,
-			unavailableOfferingsCache,
-			subscription,
-			testOptions.NodeResourceGroup,
-			clusterName,
-			testOptions.AKSMachinesPoolName,
-			region,
+	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI && testOptions.AKSMachinesPoolName != "" {
+		// For this configuration, we assume the AKS machines pool already exists
+		sharedStores.AgentPools.Store(
+			fake.MkAgentPoolID(testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName),
+			armcontainerservice.AgentPool{
+				Name: lo.ToPtr(testOptions.AKSMachinesPoolName),
+				Properties: &armcontainerservice.ManagedClusterAgentPoolProfileProperties{
+					Mode: lo.ToPtr(armcontainerservice.AgentPoolModeMachines),
+				},
+			},
 		)
 	}
 

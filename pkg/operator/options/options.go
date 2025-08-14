@@ -121,7 +121,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	// See https://github.com/Azure/karpenter-provider-azure/issues/1042 for issue discussing improvements around this
 	fs.Var(additionalTagsFlag, "additional-tags", "Additional tags to apply to the resources in Azure. Format is key1=value1,key2=value2. These tags will be merged with the tags specified on the NodePool. In the case of a tag collision, the NodePool tag wins. These tags only apply to new nodes and do not trigger drift, which means that adding tags to this collection will not update existing nodes until drift triggers for some other reason.")
 
-	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", "aksmanagedap"), "The name of the agent pool that the AKS machines are in/will be created with PROVISION_MODE=aksmachineapi. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE=aksmachineapi.")
+	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", "aksmanagedap"), "The name of the agent pool that the AKS machines are/will be in with PROVISION_MODE=aksmachineapi. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE=aksmachineapi.")
 	// XPMT: TODO: default to "" before merging. This is for the ease of testing. Also applies to ProvisionMode and UseSIG
 }
 

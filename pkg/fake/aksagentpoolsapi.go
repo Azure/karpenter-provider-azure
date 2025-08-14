@@ -25,7 +25,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/samber/lo"
 )
 
 type AgentPoolDeleteMachinesInput struct {
@@ -54,7 +53,6 @@ type AgentPoolCreateOrUpdateInput struct {
 type AgentPoolsBehavior struct {
 	AgentPoolDeleteMachinesBehavior MockedLRO[AgentPoolDeleteMachinesInput, armcontainerservice.AgentPoolsClientDeleteMachinesResponse]
 	AgentPoolGetBehavior            MockedFunction[AgentPoolGetInput, armcontainerservice.AgentPoolsClientGetResponse]
-	AgentPoolCreateOrUpdateBehavior MockedLRO[AgentPoolCreateOrUpdateInput, armcontainerservice.AgentPoolsClientCreateOrUpdateResponse]
 }
 
 // XPMT: TODO: check API: all these
@@ -88,7 +86,6 @@ func NewAKSAgentPoolsAPI(sharedStores *SharedAKSDataStores) *AKSAgentPoolsAPI {
 func (c *AKSAgentPoolsAPI) Reset() {
 	c.AgentPoolDeleteMachinesBehavior.Reset()
 	c.AgentPoolGetBehavior.Reset()
-	c.AgentPoolCreateOrUpdateBehavior.Reset()
 	c.sharedStores.AgentPools.Range(func(k, v any) bool {
 		c.sharedStores.AgentPools.Delete(k)
 		return true
@@ -112,38 +109,6 @@ func (c *AKSAgentPoolsAPI) Get(ctx context.Context, resourceGroupName string, re
 		return armcontainerservice.AgentPoolsClientGetResponse{
 			AgentPool: agentPool.(armcontainerservice.AgentPool),
 		}, nil
-	})
-}
-
-func (c *AKSAgentPoolsAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, parameters armcontainerservice.AgentPool, options *armcontainerservice.AgentPoolsClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcontainerservice.AgentPoolsClientCreateOrUpdateResponse], error) {
-	input := &AgentPoolCreateOrUpdateInput{
-		ResourceGroupName: resourceGroupName,
-		ResourceName:      resourceName,
-		AgentPoolName:     agentPoolName,
-		Parameters:        parameters,
-		Options:           options,
-	}
-
-	agentPool := input.Parameters
-	agentPoolID := MkAgentPoolID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName)
-
-	// Set some default values
-	if agentPool.ID == nil {
-		agentPool.ID = &agentPoolID
-	}
-	if agentPool.Name == nil {
-		agentPool.Name = &input.AgentPoolName
-	}
-
-	agentPool.Properties.ProvisioningState = lo.ToPtr("Creating")
-
-	c.sharedStores.AgentPools.Store(agentPoolID, agentPool)
-
-	// This does not handle the case where the agent pool already exists; it will overwrite it.
-	return c.AgentPoolCreateOrUpdateBehavior.Invoke(input, func(input *AgentPoolCreateOrUpdateInput) (*armcontainerservice.AgentPoolsClientCreateOrUpdateResponse, error) {
-		agentPool.Properties.ProvisioningState = lo.ToPtr("Succeeded")
-		c.sharedStores.AgentPools.Store(agentPoolID, agentPool)
-		return &armcontainerservice.AgentPoolsClientCreateOrUpdateResponse{AgentPool: agentPool}, nil
 	})
 }
 

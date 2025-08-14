@@ -359,21 +359,6 @@ var _ = Describe("VMInstanceProvider", func() {
 		})).To(HaveLen(0))
 	})
 
-	It("should skip AKS pool management when not in aksmachineapi mode", func() {
-		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-
-		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-		ExpectScheduled(ctx, env.Client, pod)
-
-		// Should NOT attempt any pool operations since we're in VM provision mode
-		Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-		Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(0))
-
-		// Should create VMs instead
-		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-	})
-
 	It("should not allow the user to override Karpenter-managed tags", func() {
 		nodeClass.Spec.Tags = map[string]string{
 			"karpenter.azure.com/cluster": "my-override-cluster",

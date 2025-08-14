@@ -231,11 +231,6 @@ var _ = Describe("CloudProvider", func() {
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider)
 
-			// Expect the logic on ensuring AKS machines pool exists work as expected
-			// ProvisionModeAKSScriptless: not forcing creation
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(0))
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
 		})
@@ -286,7 +281,6 @@ var _ = Describe("CloudProvider", func() {
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
 		})
 
 		Context("AKS Machines Pool Management", func() {
@@ -307,17 +301,6 @@ var _ = Describe("CloudProvider", func() {
 				err = cloudProvider.Delete(ctx, nodeClaims[0])
 				Expect(err).ToNot(HaveOccurred())
 			})
-
-			// Note that the case where it doesn't exist is already the default of every test in this context.
-			It("should handle AKS machines pool existing at the beginning", func() {
-
-				testAzureEnv := test.NewEnvironmentWithExistingAKSMachinesPool(ctx, env)
-
-				// Nothing should be called since this provision mode does not care
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(1))            // One for the fake pool creation, and none for the test
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1)) // One for the fake pool creation, none for the test
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
-			})
 		})
 	})
 
@@ -337,14 +320,6 @@ var _ = Describe("CloudProvider", func() {
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
-
-			// Expect the logic on ensuring AKS machines pool exists work as expected
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(1))
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-
-			// Reset the count in case other tests need to use them
-			azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Reset()
-			azureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Reset()
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
@@ -877,63 +852,6 @@ var _ = Describe("CloudProvider", func() {
 				validateAKSMachineNodeClaim(nodeClaim, nodePool)
 				Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(utils.GetAKSZoneFromARMZone(fake.Region, "2")))
 				Expect(nodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v5"))
-			})
-		})
-
-		Context("AKS Machines Pool Management", func() {
-			It("should handle AKS machines pool not found on each CloudProvider operation", func() {
-				// First create a successful AKS machine
-				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
-				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-				ExpectScheduled(ctx, env.Client, pod)
-
-				// Get the created nodeclaim
-				nodeClaims, err := cloudProvider.List(ctx)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(nodeClaims).To(HaveLen(1))
-				originalNodeClaim := nodeClaims[0]
-				validateAKSMachineNodeClaim(originalNodeClaim, nodePool)
-				originalNodeClaim.Spec.NodeClassRef = &karpv1.NodeClassReference{ // Normally core would do this.
-					Group: object.GVK(nodeClass).Group,
-					Kind:  object.GVK(nodeClass).Kind,
-					Name:  nodeClass.Name,
-				}
-
-				// Delete the AKS machines pool from the record
-				agentPoolID := fake.MkAgentPoolID(testOptions.NodeResourceGroup, testOptions.ClusterName, testOptions.AKSMachinesPoolName)
-				azureEnv.SharedStores.AgentPools.Delete(agentPoolID)
-				// (then, mostly relying on fake API to reflect the correct behavior)
-
-				// cloudprovider.Get should return NodeClaimNotFoundError, but not panic
-				nodeClaim, err := cloudProvider.Get(ctx, originalNodeClaim.Status.ProviderID)
-				Expect(err).To(HaveOccurred())
-				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-				Expect(nodeClaim).To(BeNil())
-
-				// cloudprovider.List should return empty list, but not panic
-				nodeClaims, err = cloudProvider.List(ctx)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(nodeClaims).To(BeEmpty())
-
-				// cloudprovider.Delete should return NodeClaimNotFoundError, but not panic
-				err = cloudProvider.Delete(ctx, originalNodeClaim)
-				Expect(err).To(HaveOccurred())
-				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-
-				// cloudprovider.Create should panic
-				Expect(func() {
-					_, _ = cloudProvider.Create(ctx, nodeClaim)
-				}).To(Panic())
-			})
-
-			// Note that the case where it doesn't exist is already the default of every test in this context.
-			It("should handle AKS machines pool existing at the beginning", func() {
-
-				testAzureEnv := test.NewEnvironmentWithExistingAKSMachinesPool(ctx, env)
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(2))            // One for the fake pool creation, and one for the test
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1)) // One for the fake pool creation, and none for the test
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0)) // No delete operation yet
 			})
 		})
 
@@ -2679,14 +2597,6 @@ var _ = Describe("CloudProvider", func() {
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 
-			// Expect the logic on ensuring AKS machines pool exists work as expected
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(1))
-			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
-
-			// Reset the count in case other tests need to use them
-			azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Reset()
-			azureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Reset()
-
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
@@ -2922,15 +2832,6 @@ var _ = Describe("CloudProvider", func() {
 				Expect(func() {
 					_, _ = cloudProvider.Create(ctx, nodeClaim)
 				}).To(Panic())
-			})
-
-			// Note that the case where it doesn't exist is already the default of every test in this context.
-			It("should handle AKS machines pool existing at the beginning", func() {
-
-				testAzureEnv := test.NewEnvironmentWithExistingAKSMachinesPool(ctx, env)
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(2))            // One for the fake pool creation, and one for the test
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1)) // one for the fake pool creation, none for the test
-				Expect(testAzureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0)) // No delete operation yet
 			})
 		})
 
