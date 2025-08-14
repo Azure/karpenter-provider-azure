@@ -296,16 +296,12 @@ var _ = Describe("NodeImageProvider tests", func() {
 				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
 				Expect(foundImages).To(Equal(expectedImages))
 
-				if imagefamily.UseAzureLinux3(kubernetesVersion) {
+				if imagefamily.UseAzureLinux3(kubernetesVersion) && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
 					// Explicitly verify ARM64 image IS included in SIG (Shared Image Gallery)
-					if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
-						Expect(foundImages).To(ContainElement(HaveField("ID", ContainSubstring("V3gen2arm64fips"))))
-					} else {
-						Expect(foundImages).To(ContainElement(And(
-							HaveField("ID", ContainSubstring("V3gen2arm64")),
-							Not(HaveField("ID", ContainSubstring("V3gen2arm64fips"))),
-						)))
-					}
+					Expect(foundImages).To(ContainElement(And(
+						HaveField("ID", ContainSubstring("V3gen2arm64")),
+						Not(HaveField("ID", ContainSubstring("V3gen2arm64fips"))),
+					)))
 				}
 			},
 			Entry("for default AzureLinux with version < 1.32 when FIPSMode is explicitly set to Disabled", lo.ToPtr(v1beta1.AzureLinuxImageFamily), &v1beta1.FIPSModeDisabled, sigImageVersion, "1.31.0"),
