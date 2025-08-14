@@ -95,10 +95,10 @@ func mapTrack1ToTrack2Environment(env *azclient.Environment) (cloud.Configuratio
 	return config, nil
 }
 
-// EnvironmentFromName returns a Track1-style environment from a cloud name.
+// environmentFromName returns a Track1-style environment from a cloud name.
 // This is very similar to https://github.com/kubernetes-sigs/cloud-provider-azure/blob/master/pkg/azclient/cloud.go#L361
 // but returns an error rather than defaulting to PublicCloud if the user provides an unknown cloud name.
-func EnvironmentFromName(cloudName string) (*azclient.Environment, error) {
+func environmentFromName(cloudName string) (*azclient.Environment, error) {
 	cloudName = strings.ToUpper(strings.TrimSpace(cloudName))
 	if cloudConfig, ok := azclient.EnvironmentMapping[cloudName]; ok {
 		return cloudConfig, nil
@@ -106,24 +106,41 @@ func EnvironmentFromName(cloudName string) (*azclient.Environment, error) {
 	return nil, fmt.Errorf("unknown cloud name: %s", cloudName)
 }
 
+func EnvironmentFromName(cloudName string) (*Environment, error) {
+	env, err := environmentFromName(cloudName)
+	if err != nil {
+		return nil, err
+	}
+
+	cloudConfig, err := mapTrack1ToTrack2Environment(env)
+	if err != nil {
+		return nil, fmt.Errorf("failed to map known cloud %s to Track2 format: %w", cloudName, err)
+	}
+
+	return &Environment{
+		Environment: env,
+		Cloud:       cloudConfig,
+	}, nil
+}
+
 // ResolveCloudEnvironment resolves the cloud environment using the following precedence:
 // 1. File-based environment (AZURE_ENVIRONMENT_FILEPATH)
 // 2. Known cloud names (ARM_CLOUD)
 // 3. Default (Azure Public Cloud)
-func ResolveCloudEnvironment(cfg *Config) (Environment, error) {
+func ResolveCloudEnvironment(cfg *Config) (*Environment, error) {
 	// 1. Try file-based environment first (highest precedence)
 	if cfg.AzureEnvironmentFilepath != "" {
 		env, err := readEnvironmentFromFile(cfg.AzureEnvironmentFilepath)
 		if err != nil {
-			return Environment{}, fmt.Errorf("failed to read environment from file: %w", err)
+			return nil, fmt.Errorf("failed to read environment from file: %w", err)
 		}
 
 		cloudConfig, err := mapTrack1ToTrack2Environment(env)
 		if err != nil {
-			return Environment{}, fmt.Errorf("failed to map environment to Track2 format: %w", err)
+			return nil, fmt.Errorf("failed to map environment to Track2 format: %w", err)
 		}
 
-		return Environment{
+		return &Environment{
 			Environment: env,
 			Cloud:       cloudConfig,
 		}, nil
@@ -131,35 +148,9 @@ func ResolveCloudEnvironment(cfg *Config) (Environment, error) {
 
 	// 2. Try known cloud names (ARM_CLOUD)
 	if cfg.Cloud != "" {
-		env, err := EnvironmentFromName(cfg.Cloud)
-		if err != nil {
-			return Environment{}, err
-		}
-
-		cloudConfig, err := mapTrack1ToTrack2Environment(env)
-		if err != nil {
-			return Environment{}, fmt.Errorf("failed to map known cloud %s to Track2 format: %w", cfg.Cloud, err)
-		}
-
-		return Environment{
-			Environment: env,
-			Cloud:       cloudConfig,
-		}, nil
+		return EnvironmentFromName(cfg.Cloud)
 	}
 
 	// 3. Default to Azure Public Cloud
-	env, err := EnvironmentFromName("AzurePublicCloud")
-	if err != nil {
-		return Environment{}, fmt.Errorf("failed to get default Azure Public Cloud environment: %w", err)
-	}
-
-	cloudConfig, err := mapTrack1ToTrack2Environment(env)
-	if err != nil {
-		return Environment{}, fmt.Errorf("failed to map default cloud to Track2 format: %w", err)
-	}
-
-	return Environment{
-		Environment: env,
-		Cloud:       cloudConfig,
-	}, nil
+	return EnvironmentFromName("AzurePublicCloud")
 }
