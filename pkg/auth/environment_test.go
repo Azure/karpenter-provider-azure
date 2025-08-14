@@ -278,8 +278,7 @@ func TestResolveCloudEnvironment(t *testing.T) {
 				if tt.expectedErrMsg != "" {
 					g.Expect(err.Error()).To(ContainSubstring(tt.expectedErrMsg))
 				}
-				g.Expect(env.Environment).To(BeNil())
-				g.Expect(env.Cloud).To(Equal(cloud.Configuration{}))
+				g.Expect(env).To(BeNil())
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(env.Environment).ToNot(BeNil())

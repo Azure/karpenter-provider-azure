@@ -96,10 +96,13 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	cred, err := getCredential()
 	lo.Must0(err, "getting Azure credential")
 
-	// Get a token to ensure we can
-	lo.Must0(ensureToken(cred, azConfig), "ensuring Azure token can be retrieved")
+	env, err := auth.ResolveCloudEnvironment(azConfig)
+	lo.Must0(err, "resolving cloud environment")
 
-	azClient, err := instance.CreateAZClient(ctx, azConfig, cred)
+	// Get a token to ensure we can
+	lo.Must0(ensureToken(cred, env), "ensuring Azure token can be retrieved")
+
+	azClient, err := instance.NewAZClient(ctx, azConfig, env, cred)
 	lo.Must0(err, "creating Azure client")
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
 		vnetGUID, err := getVnetGUID(cred, azConfig, options.FromContext(ctx).SubnetID)
@@ -116,7 +119,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
 		ctx,
-		pricing.NewAPI(),
+		env,
+		pricing.NewAPI(env.Cloud),
 		azConfig.Location,
 		operator.Elected(),
 	)
@@ -225,7 +229,10 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 }
 
 func getVnetGUID(creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
-	// TODO: We should possibly just put the vnet client on azclient and use it here
+	// TODO: Current the VNET client isn't used anywhere but this method. As such, it is not
+	// held on azclient like the other clients.
+	// We should possibly just put the vnet client on azclient, and then pass azclient in here, rather than
+	// constructing the VNET client here separate from all the other Azure clients.
 	env, err := auth.ResolveCloudEnvironment(cfg)
 	if err != nil {
 		return "", err
@@ -301,17 +308,12 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 
 // ensureToken ensures we can get a token for the Azure environment. Note that this doesn't actually
 // use the token for anything, it just checks that we can get one.
-func ensureToken(cred azcore.TokenCredential, cfg *auth.Config) error {
-	env, err := auth.ResolveCloudEnvironment(cfg)
-	if err != nil {
-		return fmt.Errorf("resolving cloud environment: %w", err)
-	}
-
+func ensureToken(cred azcore.TokenCredential, env *auth.Environment) error {
 	// Short timeout to avoid hanging forever if something bad happens
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err = cred.GetToken(ctx, policy.TokenRequestOptions{
+	_, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{auth.TokenScope(env.Cloud)},
 	})
 	if err != nil {
