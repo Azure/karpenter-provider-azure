@@ -254,7 +254,7 @@ func (p *Provider) getVnetInfoLabels(subnetID string, kubernetesVersion string) 
 	parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
 	// Sanity Check: in production we should always have a k8s version set
 	if err != nil {
-		return map[string]string{}, err
+		return nil, err
 	}
 	vnetLabels[networkStatelessCNILabel] = lo.Ternary(parsedVersion.GE(semver.Version{Major: 1, Minor: 34}), "true", "false")
 
