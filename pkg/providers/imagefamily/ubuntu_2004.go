@@ -49,6 +49,9 @@ func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []typ
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// Ubuntu2004 doesn't have default node images (only FIPS)
+		if !useSIG {
+			return []types.DefaultImageOutput{}
+		}
 		return []types.DefaultImageOutput{
 			{
 				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,

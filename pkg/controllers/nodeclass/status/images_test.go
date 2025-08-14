@@ -190,8 +190,9 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				imageFamily := v1beta1.AzureLinuxImageFamily
 				nodeClass.Spec.ImageFamily = &imageFamily
 
-				_, err := imageReconciler.Reconcile(ctx, nodeClass)
+				result, err := imageReconciler.Reconcile(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
 				Expect(nodeClass.Status.Images).To(BeNil())
 
 				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady)

@@ -51,6 +51,9 @@ func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []typ
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
 		// image provider will select these images in order, first match wins
+		if !useSIG {
+			return []types.DefaultImageOutput{}
+		}
 		return []types.DefaultImageOutput{
 			{
 				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
@@ -119,7 +122,8 @@ func (u AzureLinux) ScriptlessCustomData(
 	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	labels map[string]string,
-	caBundle *string, _ *cloudprovider.InstanceType,
+	caBundle *string,
+	_ *cloudprovider.InstanceType,
 ) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
