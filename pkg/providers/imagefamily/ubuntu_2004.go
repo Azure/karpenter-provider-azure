@@ -85,7 +85,8 @@ func (u Ubuntu2004) ScriptlessCustomData(
 	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	labels map[string]string,
-	caBundle *string, _ *cloudprovider.InstanceType,
+	caBundle *string,
+	_ *cloudprovider.InstanceType,
 ) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
