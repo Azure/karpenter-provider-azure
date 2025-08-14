@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/samber/lo"
@@ -322,4 +323,36 @@ func convertPodMaxPids(podPidsLimit int64) *int32 {
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
 	return customscriptsbootstrap.ConvertPodMaxPids(lo.ToPtr(podPidsLimit))
+}
+
+// parseVMImageID parses a VM image ID and extracts the required components for custom OS image headers.
+// Expected format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/galleries/{galleryName}/images/{imageName}/versions/{version}
+func parseVMImageID(vmImageID string) (subscriptionID, resourceGroup, gallery, imageName, version string, err error) {
+	if vmImageID == "" {
+		return "", "", "", "", "", fmt.Errorf("vmImageID is empty")
+	}
+
+	parts := strings.Split(vmImageID, "/")
+	if len(parts) < 12 {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: expected at least 12 parts, got %d", len(parts))
+	}
+
+	// Validate expected static parts
+	if parts[1] != "subscriptions" || parts[3] != "resourceGroups" ||
+		parts[5] != "providers" || parts[6] != "Microsoft.Compute" ||
+		parts[7] != "galleries" || parts[9] != "images" || parts[11] != "versions" {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: unexpected path structure")
+	}
+
+	if len(parts) < 13 {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: missing version")
+	}
+
+	subscriptionID = parts[2]
+	resourceGroup = parts[4]
+	gallery = parts[8]
+	imageName = parts[10]
+	version = parts[12]
+
+	return subscriptionID, resourceGroup, gallery, imageName, version, nil
 }
