@@ -448,12 +448,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
 
-	// Resolve VM image ID
-	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
-	}
-
 	// Build the AKS machine template
 	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim)
 	if err != nil {
@@ -464,8 +458,23 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Call the AKS machine API with the template to create the AKS machine instance
 	log.FromContext(ctx).V(1).Info("creating AKS machine instance", "aksMachineName", aksMachineName, "instance-type", instanceType.Name)
 
+	// Resolve VM image ID
+	// E.g., "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
+	}
+	osImageSubscriptionID, osImageResourceGroup, osImageGallery, osImageName, osImageVersion, err := parseVMImageID(vmImageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse VM image ID %q: %w", vmImageID, err)
+	}
 	header := http.Header{}
-	header.Set("vmimageid", vmImageID)                              // XPMT: TODO: image version header
+	header.Set("AKSHTTPCustomFeatures", "Microsoft.ContainerService/UseCustomizedOSImage")
+	header.Set("OSImageName", osImageName)                          // E.g. "2204gen2containerd"
+	header.Set("OSImageResourceGroup", osImageResourceGroup)        // E.g. "AKS-Ubuntu"
+	header.Set("OSImageSubscriptionID", osImageSubscriptionID)      // E.g., "10945678-1234-1234-1234-123456789012"
+	header.Set("OSImageGallery", osImageGallery)                    // E.g., "AKSUbuntu"
+	header.Set("OSImageVersion", osImageVersion)                    // E.g., "2022.10.03"
 	ctxWithHeader := context.WithValue(ctx, "vmimageid", vmImageID) // This line is really just for testing (see fake/aksmachinesapi.go). Azure-sdk-for-go is restrictive in extracting the header out.
 	ctxWithHeader = policy.WithHTTPHeader(ctxWithHeader, header)
 
