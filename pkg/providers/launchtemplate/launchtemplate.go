@@ -251,7 +251,7 @@ func (p *Provider) getVnetInfoLabels(subnetID string, kubernetesVersion string) 
 	}
 
 	parsedVersion, _ := semver.Parse(kubernetesVersion)
-	vnetLabels[networkStatelessCNILabel] = lo.Ternary(parsedVersion.Minor >= 34, "true", "false")
+	vnetLabels[networkStatelessCNILabel] = lo.Ternary(parsedVersion.GE(semver.Version{Major: 1, Minor: 34}), "true", "false")
 
 	return vnetLabels, nil
 }
