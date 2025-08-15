@@ -34,6 +34,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 )
 
+var mainCtx context.Context
 var ctx context.Context
 var stop context.CancelFunc
 
@@ -41,32 +42,28 @@ var fakePricingAPI *fake.PricingAPI
 var env *auth.Environment
 
 func TestAzure(t *testing.T) {
-	ctx = TestContextWithLogger(t)
+	mainCtx = TestContextWithLogger(t)
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Providers/Pricing/Azure")
 }
 
 var _ = BeforeSuite(func() {
-	ctx, stop = context.WithCancel(ctx)
-
 	fakePricingAPI = &fake.PricingAPI{}
 	env = &auth.Environment{
 		Cloud: cloud.AzurePublic,
 	}
 })
 
-var _ = AfterSuite(func() {
-	stop()
-})
-
 var _ = BeforeEach(func() {
+	ctx, stop = context.WithCancel(mainCtx)
 	fakePricingAPI.Reset()
 })
 
+var _ = AfterEach(func() {
+	stop()
+})
+
 var _ = Describe("Pricing", func() {
-	BeforeEach(func() {
-		fakePricingAPI.Reset()
-	})
 	It("should return static on-demand data if pricing API fails", func() {
 		fakePricingAPI.NextError.Set(fmt.Errorf("failed"))
 		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
@@ -117,7 +114,6 @@ var _ = Describe("Pricing", func() {
 	})
 
 	It("each supported instance type should have pricing at least somewhere", func() {
-
 		// for now just print the names of the SKUs that don't have pricing
 		fmt.Println("\nSKUs that don't have pricing:")
 
@@ -179,7 +175,7 @@ var _ = Describe("Pricing", func() {
 
 	It("should not poll pricing data in non-public clouds", func() {
 		fakePricingAPI.NextError.Set(fmt.Errorf("failed"))
-		env = &auth.Environment{
+		env := &auth.Environment{
 			Cloud: cloud.AzureGovernment,
 		}
 		start := make(chan struct{}, 1)
