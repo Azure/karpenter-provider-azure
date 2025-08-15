@@ -32,111 +32,56 @@ import (
 )
 
 const (
-	AzureLinux3Gen2ImageDefinition          = "V3gen2"
-	AzureLinux3Gen1ImageDefinition          = "V3"
-	AzureLinux3Gen2ArmImageDefinition       = "V3gen2arm64"
-	AzureLinux3Gen2FIPSImageDefinition      = "V3gen2fips"
-	AzureLinux3Gen1FIPSImageDefinition      = "V3fips"
-	AzureLinux3Gen2Arm64FIPSImageDefinition = "V3gen2arm64fips"
+	Ubuntu2004Gen2FIPSImageDefinition = "2004gen2fipscontainerd"
+	Ubuntu2004Gen1FIPSImageDefinition = "2004fipscontainerd"
 )
 
-type AzureLinux3 struct {
+type Ubuntu2004 struct {
 	Options *parameters.StaticParameters
 }
 
-func (u AzureLinux3) Name() string {
-	return v1beta1.AzureLinuxImageFamily
+// TODO (charliedmcb): look into .Name() usage, and implications
+func (u Ubuntu2004) Name() string {
+	return v1beta1.UbuntuImageFamily
 }
 
-func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+func (u Ubuntu2004) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
 	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 		// Note: FIPS images aren't supported in public galleries, only shared image galleries
-		// image provider will select these images in order, first match wins
+		// Ubuntu2004 doesn't have default node images (only FIPS)
 		if !useSIG {
 			return []types.DefaultImageOutput{}
 		}
 		return []types.DefaultImageOutput{
 			{
-				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-				GalleryName:          AKSAzureLinuxGalleryName,
-				ImageDefinition:      AzureLinux3Gen2FIPSImageDefinition,
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2004Gen2FIPSImageDefinition,
 				Requirements: scheduling.NewRequirements(
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
 				),
-				Distro: "aks-azurelinux-v3-gen2-fips",
+				Distro: "aks-ubuntu-fips-containerd-20.04-gen2",
 			},
 			{
-				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-				GalleryName:          AKSAzureLinuxGalleryName,
-				ImageDefinition:      AzureLinux3Gen1FIPSImageDefinition,
+				PublicGalleryURL:     AKSUbuntuPublicGalleryURL,
+				GalleryResourceGroup: AKSUbuntuResourceGroup,
+				GalleryName:          AKSUbuntuGalleryName,
+				ImageDefinition:      Ubuntu2004Gen1FIPSImageDefinition,
 				Requirements: scheduling.NewRequirements(
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
 				),
-				Distro: "aks-azurelinux-v3-fips",
-			},
-			{
-				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-				GalleryName:          AKSAzureLinuxGalleryName,
-				ImageDefinition:      AzureLinux3Gen2Arm64FIPSImageDefinition,
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
-					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-				),
-				Distro: "aks-azurelinux-v3-arm64-gen2-fips",
+				Distro: "aks-ubuntu-fips-containerd-20.04",
 			},
 		}
 	}
-	// image provider will select these images in order, first match wins
-	images := []types.DefaultImageOutput{
-		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureLinux3Gen2ImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-azurelinux-v3-gen2",
-		},
-		{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureLinux3Gen1ImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
-			),
-			Distro: "aks-azurelinux-v3",
-		},
-	}
-
-	if useSIG {
-		// AzLinux3 ARM64 VHD is not available in CIG right now
-		images = append(images, types.DefaultImageOutput{
-			PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
-			GalleryResourceGroup: AKSAzureLinuxResourceGroup,
-			GalleryName:          AKSAzureLinuxGalleryName,
-			ImageDefinition:      AzureLinux3Gen2ArmImageDefinition,
-			Requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
-				scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
-			),
-			Distro: "aks-azurelinux-v3-arm64-gen2",
-		})
-	}
-
-	return images
+	return []types.DefaultImageOutput{}
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux3) ScriptlessCustomData(
+func (u Ubuntu2004) ScriptlessCustomData(
 	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	labels map[string]string,
@@ -173,7 +118,7 @@ func (u AzureLinux3) ScriptlessCustomData(
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux3) CustomScriptsNodeBootstrapping(
+func (u Ubuntu2004) CustomScriptsNodeBootstrapping(
 	kubeletConfig *bootstrap.KubeletConfiguration,
 	taints []v1.Taint,
 	startupTaints []v1.Taint,
@@ -201,7 +146,7 @@ func (u AzureLinux3) CustomScriptsNodeBootstrapping(
 		StorageProfile:                 storageProfile,
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
-		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
 		FIPSMode:                       fipsMode,
 	}
 }

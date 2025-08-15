@@ -78,12 +78,14 @@ type ImageFamily interface {
 		imageDistro string,
 		storageProfile string,
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
+		fipsMode *v1beta1.FIPSMode,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
 	// Our Release pipeline ensures all images are released together within 24 hours of each other for community image gallery, so selecting based on image feature priorities, then by date, and not vice-versa is acceptable.
-	DefaultImages(useSIG bool) []types.DefaultImageOutput
+	// If fipsMode is FIPSModeFIPS, only FIPS-enabled images will be returned
+	DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
@@ -112,7 +114,7 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, kubernetesVersion, staticParameters)
+	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
 	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
@@ -123,7 +125,7 @@ func (r *defaultResolver) Resolve(
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
 	useSIG := options.FromContext(ctx).UseSIG
-	imageDistro, err := mapToImageDistro(imageID, imageFamily, useSIG)
+	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +168,7 @@ func (r *defaultResolver) Resolve(
 			imageDistro,
 			diskType,
 			r.nodeBootstrappingProvider,
+			nodeClass.Spec.FIPSMode,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
@@ -195,10 +198,10 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 	return consts.StorageProfileManagedDisks, placement, nil
 }
 
-func mapToImageDistro(imageID string, imageFamily ImageFamily, useSIG bool) (string, error) {
+func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool) (string, error) {
 	var imageInfo types.DefaultImageOutput
 	imageInfo.PopulateImageTraitsFromID(imageID)
-	for _, defaultImage := range imageFamily.DefaultImages(useSIG) {
+	for _, defaultImage := range imageFamily.DefaultImages(useSIG, fipsMode) {
 		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
 			return defaultImage.Distro, nil
 		}
@@ -222,13 +225,19 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string, kubernetesVersion string, useSIG bool) []types.DefaultImageOutput {
-	imageFamily := getImageFamily(familyName, kubernetesVersion, nil)
-	return imageFamily.DefaultImages(useSIG)
+func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool) []types.DefaultImageOutput {
+	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
+	imageFamily := getImageFamily(familyName, fipsMode, kubernetesVersion, nil)
+	return imageFamily.DefaultImages(useSIG, fipsMode)
 }
 
-func getImageFamily(familyName *string, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+func getImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
+	case v1beta1.UbuntuImageFamily:
+		if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+			return &Ubuntu2004{Options: parameters}
+		}
+		return &Ubuntu2204{Options: parameters}
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.AzureLinuxImageFamily:

@@ -74,14 +74,21 @@ func NewProvider(versionsClient types.CommunityGalleryImageVersionsAPI, location
 
 // Returns the list of available NodeImages for the given AKSNodeClass sorted in priority ordering
 func (p *provider) List(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) ([]NodeImage, error) {
+	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
+	useSIG := options.FromContext(ctx).UseSIG
+
+	// CIG has no FIPS images; FIPS images can only be accessed through SIG
+	// (this won't be an error since there just aren't any FIPS images for CIG)
+	if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS && !useSIG {
+		return []NodeImage{}, nil
+	}
+
 	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 	if err != nil {
 		return []NodeImage{}, err
 	}
 
-	// TODO: refactor to be part of construction, since this is a karpenter setting and won't change across the process.
-	useSIG := options.FromContext(ctx).UseSIG
-	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, kubernetesVersion, useSIG)
+	supportedImages := getSupportedImages(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, useSIG)
 
 	key, err := p.cacheKey(
 		supportedImages,
