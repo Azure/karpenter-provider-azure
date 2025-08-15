@@ -23,6 +23,7 @@ import (
 	gomegaformat "github.com/onsi/gomega/format"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/clock"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
@@ -136,7 +137,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
-	zoneProvider := zone.NewProvider(subscriptionAPI, subscription)
+	zoneProvider := zone.NewProvider(subscriptionAPI, clock.RealClock{}, subscription)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
 		region,
 		instanceTypeCache,

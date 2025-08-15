@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -27,7 +28,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-const maxFailures = 10
+// We don't want to retry too aggressively here because this API is somewhat slow,
+// but at the same time we want to wake back up eventually and try again in the case of an outage.
+// These values were picked somewhat arbitrarily to achieve that.
+const (
+	maxFailuresPerWindow = 10
+	windowBackoff        = 60 * time.Minute
+)
+
+type Clock interface {
+	Now() time.Time
+}
 
 // SubscriptionsAPI defines the interface for Azure Subscriptions client operations
 type SubscriptionsAPI interface {
@@ -41,23 +52,31 @@ type SubscriptionsAPI interface {
 type Provider struct {
 	subscriptionsAPI SubscriptionsAPI
 	subscriptionID   string
+	clock            Clock
 
 	// Cached zone support data - maps region name to zone support boolean
 	zoneSupport map[string]bool
 	hasLoaded   bool
 	// failures is the number of times loading zone support from the Azure API has failed
-	failures int
-	mu       sync.Mutex
+	failures    int
+	lastAttempt time.Time
+	mu          sync.Mutex
 }
 
 // NewProvider creates a new zone provider
-func NewProvider(subscriptionsAPI SubscriptionsAPI, subscriptionID string) *Provider {
-	return &Provider{
+func NewProvider(
+	subscriptionsAPI SubscriptionsAPI,
+	clock Clock,
+	subscriptionID string,
+) *Provider {
+	result := &Provider{
 		subscriptionsAPI: subscriptionsAPI,
 		subscriptionID:   subscriptionID,
+		clock:            clock,
 		zoneSupport:      lo.Assign(fallbackZonalRegions), // deepcopy
-
 	}
+
+	return result
 }
 
 // SupportsZones returns true if the given region supports availability zones
@@ -65,10 +84,16 @@ func (p *Provider) SupportsZones(ctx context.Context, region string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.hasLoaded && p.failures < maxFailures {
+	// NOTE: We considered doing this in a separate goroutine or inline on provider construction but
+	// we want:
+	// 1. To block provisioning until we've at least attempted to load zone support data from the API once.
+	// 2. To avoid blocking provisioning forever and eventually fall back to the hardcoded list.
+	// It seems like this is the simplest way to accomplish that.
+	if !p.hasLoaded && p.shouldTryAgain() {
 		// Try to load zone support data from Azure API
 		if err := p.loadFromAzure(ctx); err != nil {
 			p.failures++
+			p.lastAttempt = p.clock.Now()
 			log.FromContext(ctx).Error(err, "failed to load zone support from Azure API, falling back to hardcoded list")
 		} else {
 			p.hasLoaded = true
@@ -104,6 +129,22 @@ func (p *Provider) loadFromAzure(ctx context.Context) error {
 	log.Info("discovered zone support for regions", "regionCount", len(result))
 	p.zoneSupport = lo.Assign(p.zoneSupport, result) // Merge with existing cache in case some regions are not returned
 	return nil
+}
+
+// shouldTryAgain determines if the provider should attempt to load zone support data again
+// after failures have happened.
+func (p *Provider) shouldTryAgain() bool {
+	now := p.clock.Now()
+	if p.lastAttempt.Add(windowBackoff).Before(now) {
+		p.failures = 0
+		return true
+	}
+
+	if p.failures < maxFailuresPerWindow {
+		return true
+	}
+
+	return false
 }
 
 // TODO: We may be able to remove this fallback entirely if we have data that suggests this API is very reliable

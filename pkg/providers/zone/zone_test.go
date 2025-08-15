@@ -20,9 +20,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	clock "k8s.io/utils/clock/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -40,7 +42,7 @@ func TestProvider_SupportsZones_ZonalRegions(t *testing.T) {
 	fakeAPI.Locations.Store("centralus", createZonalLocation("centralus", []string{"1", "2"}))
 
 	// Create provider
-	provider := zone.NewProvider(fakeAPI, "test-subscription")
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
 	// Test regions
 	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
@@ -60,7 +62,7 @@ func TestProvider_SupportsZones_NonZonalRegions(t *testing.T) {
 	fakeAPI.Locations.Store("westus", createNonZonalLocation("westus"))
 
 	// Create provider
-	provider := zone.NewProvider(fakeAPI, "test-subscription")
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
 	// Test regions
 	g.Expect(provider.SupportsZones(ctx, "westus")).To(BeFalse())
@@ -79,7 +81,7 @@ func TestProvider_SupportsZones_FallbackToHardcodedListOnError(t *testing.T) {
 	fakeAPI.NewListLocationsPagerBehavior.Error.Set(errors.New("API error"))
 
 	// Create provider
-	provider := zone.NewProvider(fakeAPI, "test-subscription")
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
 	// Test regions that are in the hardcoded fallback list
 	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
@@ -90,7 +92,7 @@ func TestProvider_SupportsZones_FallbackToHardcodedListOnError(t *testing.T) {
 	g.Expect(provider.SupportsZones(ctx, "unknownregion")).To(BeFalse())
 }
 
-func TestProvider_SupportsZones_StopsLoadingAfterMaxFailures(t *testing.T) {
+func TestProvider_SupportsZones_StopsLoadingAfterMaxFailuresAndStartsAgainAfterWindow(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 	ctx := context.Background()
@@ -100,14 +102,52 @@ func TestProvider_SupportsZones_StopsLoadingAfterMaxFailures(t *testing.T) {
 	fakeAPI.NewListLocationsPagerBehavior.Error.Set(errors.New("API error"), fake.MaxCalls(50))
 
 	// Create provider
-	provider := zone.NewProvider(fakeAPI, "test-subscription")
+	clk := clock.NewFakeClock(time.Now())
+	provider := zone.NewProvider(fakeAPI, clk, "test-subscription")
 
-	// Test regions that are in the hardcoded fallback list
+	// Test that failures don't keep being tried
 	for i := 0; i < 20; i++ {
 		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
 	}
-
 	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(10))
+
+	// Wait an hour and one minute
+	clk.Step(61 * time.Minute)
+
+	// Try some more
+	for i := 0; i < 20; i++ {
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+	}
+	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(20))
+}
+
+func TestProvider_SupportsZones_ResetsFailuresAfterWindow(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+	ctx := context.Background()
+
+	// Setup fake API with error
+	fakeAPI := &fake.SubscriptionsAPI{}
+	fakeAPI.NewListLocationsPagerBehavior.Error.Set(errors.New("API error"), fake.MaxCalls(50))
+
+	// Create provider
+	clk := clock.NewFakeClock(time.Now())
+	provider := zone.NewProvider(fakeAPI, clk, "test-subscription")
+
+	// Test that failures don't keep being tried
+	for i := 0; i < 5; i++ {
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+	}
+	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(5))
+
+	// Wait an hour and one minute
+	clk.Step(61 * time.Minute)
+
+	// Try some more
+	for i := 0; i < 20; i++ {
+		g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
+	}
+	g.Expect(fakeAPI.NewListLocationsPagerBehavior.FailedCalls()).To(Equal(15))
 }
 
 func TestProvider_SupportsZones_Caching(t *testing.T) {
@@ -122,7 +162,7 @@ func TestProvider_SupportsZones_Caching(t *testing.T) {
 	fakeAPI.Locations.Store("northeurope", createZonalLocation("northeurope", []string{"1"}))
 
 	// Create provider
-	provider := zone.NewProvider(fakeAPI, "test-subscription")
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
 	// First call should trigger API call
 	g.Expect(provider.SupportsZones(ctx, "eastus")).To(BeTrue())
@@ -148,7 +188,7 @@ func TestProvider_SupportsZones_ThreadSafety(t *testing.T) {
 	// Add mock location using helper function
 	fakeAPI.Locations.Store("eastus", createZonalLocation("eastus", []string{"1"}))
 
-	provider := zone.NewProvider(fakeAPI, "test-subscription")
+	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
 	// Test concurrent access
 	done := make(chan bool, 10)
