@@ -85,7 +85,8 @@ type Operator struct {
 	LaunchTemplateProvider    *launchtemplate.Provider
 	PricingProvider           *pricing.Provider
 	InstanceTypesProvider     instancetype.Provider
-	InstanceProvider          *instance.DefaultProvider
+	VMInstanceProvider        *instance.DefaultVMProvider
+	AKSMachineProvider        *instance.DefaultAKSMachineProvider
 	LoadBalancerProvider      *loadbalancer.Provider
 }
 
@@ -171,7 +172,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.NetworkSecurityGroupsClient,
 		options.FromContext(ctx).NodeResourceGroup,
 	)
-	instanceProvider := instance.NewDefaultProvider(
+	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypeProvider,
 		launchTemplateProvider,
@@ -182,6 +183,19 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
+	)
+	aksMachineProvider := instance.NewAKSMachineProvider(
+		ctx,
+		options.FromContext(ctx).ProvisionMode,
+		azClient,
+		instanceTypeProvider,
+		imageResolver,
+		unavailableOfferingsCache,
+		azConfig.SubscriptionID,
+		azConfig.ResourceGroup,
+		options.FromContext(ctx).ClusterName,
+		options.FromContext(ctx).AKSMachinesPoolName,
+		azConfig.Location,
 	)
 
 	return ctx, &Operator{
@@ -194,7 +208,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		LaunchTemplateProvider:       launchTemplateProvider,
 		PricingProvider:              pricingProvider,
 		InstanceTypesProvider:        instanceTypeProvider,
-		InstanceProvider:             instanceProvider,
+		VMInstanceProvider:           vmInstanceProvider,
+		AKSMachineProvider:           aksMachineProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 	}
 }
