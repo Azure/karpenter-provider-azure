@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -35,6 +36,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 )
@@ -76,6 +78,7 @@ type AZClient struct {
 	SKUClient                   skuclient.SkuClient
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
 	NetworkSecurityGroupsClient networksecuritygroup.API
+	SubscriptionsClient         zone.SubscriptionsAPI
 }
 
 func NewAZClientFromAPI(
@@ -89,6 +92,7 @@ func NewAZClientFromAPI(
 	nodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI,
 	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
 	skuClient skuclient.SkuClient,
+	subscriptionsClient zone.SubscriptionsAPI,
 ) *AZClient {
 	return &AZClient{
 		virtualMachinesClient:          virtualMachinesClient,
@@ -101,6 +105,7 @@ func NewAZClientFromAPI(
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
+		SubscriptionsClient:            subscriptionsClient,
 	}
 }
 
@@ -165,6 +170,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		return nil, err
 	}
 
+	subscriptionsClient, err := armsubscriptions.NewClient(cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
@@ -183,7 +193,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		}
 	}
 
-	return NewAZClientFromAPI(virtualMachinesClient,
+	return NewAZClientFromAPI(
+		virtualMachinesClient,
 		azureResourceGraphClient,
 		extensionsClient,
 		interfacesClient,
@@ -192,5 +203,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
 		nodeBootstrappingClient,
-		skuClient), nil
+		skuClient,
+		subscriptionsClient,
+	), nil
 }
