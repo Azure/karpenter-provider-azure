@@ -49,6 +49,8 @@ type SubscriptionsAPI interface {
 }
 
 // Provider handles zone support detection for Azure regions
+// TODO: This provider is currently unused. Keeping it around for now though as we will likely want to adapt it
+// to provide physical to logical zone mappings.
 type Provider struct {
 	subscriptionsAPI SubscriptionsAPI
 	subscriptionID   string

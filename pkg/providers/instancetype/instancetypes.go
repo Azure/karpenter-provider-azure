@@ -44,7 +44,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 
 	"github.com/Azure/skewer"
 	"github.com/alecthomas/units"
@@ -76,7 +75,6 @@ type DefaultProvider struct {
 	skuClient            skuclient.SkuClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
-	zoneProvider         *zone.Provider
 
 	// Has one cache entry for all the instance types (key: InstanceTypesCacheKey)
 	// Values cached *before* considering insufficient capacity errors from the unavailableOfferings cache.
@@ -95,7 +93,6 @@ func NewDefaultProvider(
 	cache *cache.Cache,
 	skuClient skuclient.SkuClient,
 	pricingProvider *pricing.Provider,
-	zoneProvider *zone.Provider,
 	offeringsCache *kcache.UnavailableOfferings,
 ) *DefaultProvider {
 	return &DefaultProvider{
@@ -104,7 +101,6 @@ func NewDefaultProvider(
 		skuClient:            skuClient,
 		pricingProvider:      pricingProvider,
 		unavailableOfferings: offeringsCache,
-		zoneProvider:         zoneProvider,
 		instanceTypesCache:   cache,
 		cm:                   pretty.NewChangeMonitor(),
 		instanceTypesSeqNum:  0,
@@ -152,7 +148,7 @@ func (p *DefaultProvider) List(
 			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
 			continue
 		}
-		instanceTypeZones := p.instanceTypeZones(ctx, sku, p.region)
+		instanceTypeZones := p.instanceTypeZones(sku, p.region)
 		// !!! Important !!!
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
@@ -189,13 +185,13 @@ func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeCla
 
 // instanceTypeZones generates the set of all supported zones for a given SKU
 // The strings have to match Zone labels that will be placed on Node
-func (p *DefaultProvider) instanceTypeZones(ctx context.Context, sku *skewer.SKU, region string) sets.Set[string] {
+func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
 	// If an offering is non-zonal, the availability zones will be empty.
 	skuZones := lo.Keys(sku.AvailabilityZones(region))
-	if p.zoneProvider.SupportsZones(ctx, region) && len(skuZones) > 0 {
+	if len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
 			return utils.MakeZone(region, zone)
 		})...)

@@ -37,7 +37,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/flowcontrol"
-	"k8s.io/utils/clock"
 	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -62,7 +61,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 )
@@ -136,17 +134,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
-	zoneProvider := zone.NewProvider(
-		azClient.SubscriptionsClient,
-		clock.RealClock{},
-		azConfig.SubscriptionID,
-	)
 	instanceTypeProvider := instancetype.NewDefaultProvider(
 		azConfig.Location,
 		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
 		azClient.SKUClient,
 		pricingProvider,
-		zoneProvider,
 		unavailableOfferingsCache,
 	)
 	imageResolver := imagefamily.NewDefaultResolver(
