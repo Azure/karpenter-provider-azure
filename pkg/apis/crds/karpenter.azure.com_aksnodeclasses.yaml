@@ -20,7 +20,18 @@ spec:
     singular: aksnodeclass
   scope: Cluster
   versions:
-  - deprecated: true
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    deprecated: true
     deprecationWarning: use v1beta1.AKSNodeClass instead
     name: v1alpha2
     schema:
@@ -193,6 +204,15 @@ spec:
                   type: string
                 description: Tags to be applied on Azure resources like instances.
                 type: object
+                x-kubernetes-validations:
+                - message: tags keys must be less than 512 characters
+                  rule: self.all(k, size(k) <= 512)
+                - message: tags keys must not contain '<', '>', '%', '&', or '?'
+                  rule: self.all(k, !k.matches('[<>%&?]'))
+                - message: tags keys must not contain '\'
+                  rule: self.all(k, !k.contains('\\'))
+                - message: tags values must be less than 256 characters
+                  rule: self.all(k, size(self[k]) <= 256)
               vnetSubnetID:
                 description: |-
                   VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -326,7 +346,18 @@ spec:
     storage: false
     subresources:
       status: {}
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: AKSNodeClass is the Schema for the AKSNodeClass API
@@ -497,6 +528,15 @@ spec:
                   type: string
                 description: Tags to be applied on Azure resources like instances.
                 type: object
+                x-kubernetes-validations:
+                - message: tags keys must be less than 512 characters
+                  rule: self.all(k, size(k) <= 512)
+                - message: tags keys must not contain '<', '>', '%', '&', or '?'
+                  rule: self.all(k, !k.matches('[<>%&?]'))
+                - message: tags keys must not contain '\'
+                  rule: self.all(k, !k.contains('\\'))
+                - message: tags values must be less than 256 characters
+                  rule: self.all(k, size(self[k]) <= 256)
               vnetSubnetID:
                 description: |-
                   VNETSubnetID is the subnet used by nics provisioned with this nodeclass.

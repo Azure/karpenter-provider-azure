@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
@@ -36,14 +37,13 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
-const (
-	karpenterManagedTagKey = "karpenter.azure.com/cluster"
-
-	dataplaneLabel       = "kubernetes.azure.com/ebpf-dataplane"
-	azureCNIOverlayLabel = "kubernetes.azure.com/azure-cni-overlay"
-	subnetNameLabel      = "kubernetes.azure.com/network-subnet"
-	vnetGUIDLabel        = "kubernetes.azure.com/nodenetwork-vnetguid"
-	podNetworkTypeLabel  = "kubernetes.azure.com/podnetwork-type"
+var (
+	dataplaneLabel           = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
+	azureCNIOverlayLabel     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
+	subnetNameLabel          = v1beta1.AKSLabelDomain + "/network-subnet"
+	vnetGUIDLabel            = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
+	podNetworkTypeLabel      = v1beta1.AKSLabelDomain + "/podnetwork-type"
+	networkStatelessCNILabel = v1beta1.AKSLabelDomain + "/network-stateless-cni"
 )
 
 type Template struct {
@@ -123,6 +123,8 @@ func (p *Provider) GetTemplate(
 		return nil, err
 	}
 
+	launchTemplate.Tags = Tags(options.FromContext(ctx), nodeClass, nodeClaim)
+
 	return launchTemplate, nil
 }
 
@@ -141,7 +143,11 @@ func (p *Provider) getStaticParameters(
 
 	if isAzureCNIOverlay(ctx) {
 		// TODO: make conditional on pod subnet
-		vnetLabels, err := p.getVnetInfoLabels(subnetID)
+		kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+		if err != nil {
+			return nil, err
+		}
+		vnetLabels, err := p.getVnetInfoLabels(subnetID, kubernetesVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -159,12 +165,9 @@ func (p *Provider) getStaticParameters(
 		labels[dataplaneLabel] = consts.NetworkDataplaneCilium
 	}
 
-	tags := lo.Assign(options.FromContext(ctx).AdditionalTags, nodeClass.Spec.Tags)
-
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
-		Tags:                           tags,
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
@@ -207,11 +210,8 @@ func isAzureCNIOverlay(ctx context.Context) bool {
 }
 
 func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
-	// merge and convert to ARM tags
-	azureTags := mergeTags(params.Tags, map[string]string{karpenterManagedTagKey: params.ClusterName})
 	template := &Template{
 		ImageID:                   params.ImageID,
-		Tags:                      azureTags,
 		SubnetID:                  params.SubnetID,
 		IsWindows:                 params.IsWindows,
 		StorageProfileDiskType:    params.StorageProfileDiskType,
@@ -239,15 +239,7 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 	return template, nil
 }
 
-// MergeTags takes a variadic list of maps and merges them together
-// with format acceptable to ARM (no / in keys, pointer to strings as values)
-func mergeTags(tags ...map[string]string) (result map[string]*string) {
-	return lo.MapEntries(lo.Assign(tags...), func(key string, value string) (string, *string) {
-		return strings.ReplaceAll(key, "/", "_"), lo.ToPtr(value)
-	})
-}
-
-func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error) {
+func (p *Provider) getVnetInfoLabels(subnetID string, kubernetesVersion string) (map[string]string, error) {
 	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		return nil, err
@@ -258,5 +250,13 @@ func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error)
 		azureCNIOverlayLabel: strconv.FormatBool(true),
 		podNetworkTypeLabel:  consts.NetworkPluginModeOverlay,
 	}
+
+	parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	// Sanity Check: in production we should always have a k8s version set
+	if err != nil {
+		return nil, err
+	}
+	vnetLabels[networkStatelessCNILabel] = lo.Ternary(parsedVersion.GE(semver.Version{Major: 1, Minor: 34}), "true", "false")
+
 	return vnetLabels, nil
 }

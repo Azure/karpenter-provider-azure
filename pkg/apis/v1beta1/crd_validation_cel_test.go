@@ -272,4 +272,69 @@ var _ = Describe("CEL/Validation", func() {
 			}
 		})
 	})
+
+	Context("Tags", func() {
+		It("should allow tags with valid keys and values", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Tags: map[string]string{
+						"valid-key":  "valid-value",
+						"anotherKey": "anotherValue",
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		DescribeTable(
+			"should reject tags with invalid keys",
+			func(key string) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						Tags: map[string]string{
+							key: "value",
+						},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			},
+			Entry("key contains <", "invalid<key"),
+			Entry("key contains >", "invalid>key"),
+			Entry("key contains %", "invalid%key"),
+			Entry("key contains &", "invalid&key"),
+			Entry(`key contains \`, `invalid\key`),
+			Entry("key contains ?", "invalid?key"),
+			Entry("key exceeds max length", strings.Repeat("a", 513)),
+		)
+
+		DescribeTable(
+			"should reject tags with invalid values",
+			func(value string) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						Tags: map[string]string{
+							"valid-key": value,
+						},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			},
+			Entry("value exceeds max length", strings.Repeat("b", 257)),
+		)
+
+		It("should allow tags with keys and values at max valid length", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					Tags: map[string]string{
+						strings.Repeat("a", 512): strings.Repeat("b", 256),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
 })
