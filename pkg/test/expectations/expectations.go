@@ -132,9 +132,10 @@ func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv 
 	Expect(err).ToNot(HaveOccurred())
 	Expect(updatedNIC.Tags).To(Equal(tags), "Expected NIC tags to match")
 
-	// The extensions should be updated
-	Expect(azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsUpdateBehavior.CalledWithInput.Len()).To(Equal(2))
-	for i := 0; i < 2; i++ {
+	// The extensions should be updated -- Note that we expect only 1 Extension update here because we're simulating scriptless
+	// mode which doesn't have a CSE extension.
+	Expect(azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+	for i := 0; i < 1; i++ {
 		extUpdate := azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsUpdateBehavior.CalledWithInput.Pop().VirtualMachineExtensionUpdate
 		Expect(extUpdate).ToNot(BeNil())
 		Expect(extUpdate.Tags).ToNot(BeNil())

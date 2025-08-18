@@ -149,6 +149,7 @@ var _ = Describe("CloudProvider", func() {
 		Expect(*queryRequest.Query).To(Equal(instance.GetVMListQueryBuilder(azureEnv.AzureResourceGraphAPI.ResourceGroup).String()))
 		Expect(nodeClaims).To(HaveLen(1))
 		Expect(nodeClaims[0]).ToNot(BeNil())
+		Expect(nodeClaims[0].Status.Capacity).ToNot(BeEmpty())
 		resp, _ := azureEnv.VirtualMachinesAPI.Get(ctx, azureEnv.AzureResourceGraphAPI.ResourceGroup, nodeClaims[0].Name, nil)
 		Expect(resp.VirtualMachine).ToNot(BeNil())
 	})

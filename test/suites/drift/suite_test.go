@@ -467,7 +467,6 @@ var _ = Describe("Drift", func() {
 		Entry("OSDiskSizeGB", v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr[int32](100)}),
 		// ImageID TBD
 		Entry("ImageFamily", v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}),
-		Entry("Tags", v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}),
 		Entry("KubeletConfiguration", v1beta1.AKSNodeClassSpec{
 			Kubelet: &v1beta1.KubeletConfiguration{
 				ImageGCLowThresholdPercent:  lo.ToPtr[int32](10),
@@ -526,6 +525,8 @@ var _ = Describe("Drift", func() {
 		})
 	})
 	It("should update the aksnodeclass-hash annotation on the aksnodeclass and nodeclaim when the aksnodeclass's aksnodeclass-hash-version annotation does not match the controller hash version", func() {
+		nodeClass.Spec.MaxPods = lo.ToPtr[int32](110)
+
 		env.ExpectCreated(dep, nodeClass, nodePool)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
@@ -547,12 +548,11 @@ var _ = Describe("Drift", func() {
 			v1beta1.AnnotationAKSNodeClassHash:        "test-hash-1",
 			v1beta1.AnnotationAKSNodeClassHashVersion: "test-hash-version-1",
 		})
-		// Updating `nodeClass.Spec.Tags` would normally trigger drift on all nodeclaims using the
+
+		// Updating `nodeClass.Spec.MaxPods` would normally trigger drift on all nodeclaims using the
 		// nodeclass. However, the aksnodeclass-hash-version does not match the controller hash version, so we will see that
 		// none of the nodeclaims will be drifted and all nodeclaims will have an updated `aksnodeclass-hash` and `aksnodeclass-hash-version` annotation
-		nodeClass.Spec.Tags = lo.Assign(nodeClass.Spec.Tags, map[string]string{
-			"test-key": "test-value",
-		})
+		nodeClass.Spec.MaxPods = lo.ToPtr[int32](10)
 		nodeClaim.Annotations = lo.Assign(nodePool.Annotations, map[string]string{
 			v1beta1.AnnotationAKSNodeClassHash:        "test-hash-2",
 			v1beta1.AnnotationAKSNodeClassHashVersion: "test-hash-version-2",

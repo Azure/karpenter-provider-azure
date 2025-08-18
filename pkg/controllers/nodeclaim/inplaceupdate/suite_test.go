@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -37,6 +39,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -58,6 +61,7 @@ var _ = BeforeSuite(func() {
 	// ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.InstanceProvider)
+
 })
 
 var _ = AfterSuite(func() {
@@ -66,50 +70,39 @@ var _ = AfterSuite(func() {
 })
 
 var _ = Describe("Unit tests", func() {
-	Context("HashFromVM", func() {
-		It("should not depend on identity ordering", func() {
-			vm1 := &armcompute.VirtualMachine{
-				Identity: &armcompute.VirtualMachineIdentity{
-					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2": {},
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3": {},
-					},
+	var nodeClass *v1beta1.AKSNodeClass
+	var nodeClaim *karpv1.NodeClaim
+	var vm *armcompute.VirtualMachine
+	var currentVM *armcompute.VirtualMachine
+
+	BeforeEach(func() {
+		vmName := "vm-a"
+		vm = &armcompute.VirtualMachine{
+			ID:   lo.ToPtr(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+			Name: lo.ToPtr(vmName),
+		}
+
+		nodeClass = test.AKSNodeClass()
+		nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+			Spec: karpv1.NodeClaimSpec{
+				NodeClassRef: &karpv1.NodeClassReference{
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
 				},
-			}
-
-			vm2 := &armcompute.VirtualMachine{
-				Identity: &armcompute.VirtualMachineIdentity{
-					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2": {},
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3": {},
-					},
-				},
-			}
-
-			vm3 := &armcompute.VirtualMachine{
-				Identity: &armcompute.VirtualMachineIdentity{
-					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3": {},
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2": {},
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
-					},
-				},
-			}
-
-			hash1, err := inplaceupdate.HashFromVM(vm1)
-			Expect(err).ToNot(HaveOccurred())
-
-			hash2, err := inplaceupdate.HashFromVM(vm2)
-			Expect(err).ToNot(HaveOccurred())
-
-			hash3, err := inplaceupdate.HashFromVM(vm3)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(hash1).To(Equal(hash2))
-			Expect(hash2).To(Equal(hash3))
+			},
+			Status: karpv1.NodeClaimStatus{
+				ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
+			},
 		})
+
+		currentVM = &armcompute.VirtualMachine{
+			ID:   lo.ToPtr(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+			Name: lo.ToPtr(vmName),
+			Tags: map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			},
+		}
 	})
 
 	Context("HashFromNodeClaim", func() {
@@ -121,7 +114,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 			}
 
-			hash1, err := inplaceupdate.HashFromNodeClaim(options, nil)
+			hash1, err := inplaceupdate.HashFromNodeClaim(options, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			options.NodeIdentities = []string{
@@ -129,7 +122,7 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid3",
 			}
-			hash2, err := inplaceupdate.HashFromNodeClaim(options, nil)
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			options.NodeIdentities = []string{
@@ -137,23 +130,72 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			hash3, err := inplaceupdate.HashFromNodeClaim(options, nil)
+			hash3, err := inplaceupdate.HashFromNodeClaim(options, nil, nil)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(hash1).To(Equal(hash2))
 			Expect(hash2).To(Equal(hash3))
 		})
+
+		It("should include both AdditionalTags and AKSNodeClass.Spec.Tags in hash calculation", func() {
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"global-tag": "global-value",
+			}
+
+			// Create NodeClass with tags
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag1": "nodeclass-value",
+				"nodeclass-tag2": "nodeclass-value",
+			}
+
+			hash1, err := inplaceupdate.HashFromNodeClaim(options, nil, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Hash should be different without NodeClass tags
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, nil, nil)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash1).ToNot(Equal(hash2))
+
+			// Hash should be the same with the same NodeClass tags
+			nodeClass2 := test.AKSNodeClass()
+			nodeClass2.Spec.Tags = map[string]string{
+				"nodeclass-tag1": "nodeclass-value",
+				"nodeclass-tag2": "nodeclass-value",
+			}
+			hash3, err := inplaceupdate.HashFromNodeClaim(options, nil, nodeClass2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash1).To(Equal(hash3))
+		})
+
+		It("should prioritize NodeClass tags over AdditionalTags", func() {
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"priority-tag": "additional-value",
+			}
+
+			nodeClass.Spec.Tags = map[string]string{
+				"priority-tag": "nodeclass-value",
+			}
+
+			hash1, err := inplaceupdate.HashFromNodeClaim(options, nil, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, nil, nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Should be different because NodeClass overrides AdditionalTags
+			Expect(hash1).ToNot(Equal(hash2))
+		})
 	})
 
 	Context("calculateVMPatch", func() {
 		It("should add missing identities when there are no existing identities", func() {
-			currentVM := &armcompute.VirtualMachine{}
-
 			options := test.Options()
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := inplaceupdate.CalculateVMPatch(options, currentVM)
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
 
 			Expect(update).ToNot(BeNil())
 			Expect(update.Identity).ToNot(BeNil())
@@ -162,11 +204,9 @@ var _ = Describe("Unit tests", func() {
 		})
 
 		It("should add missing identities when there are existing identities", func() {
-			currentVM := &armcompute.VirtualMachine{
-				Identity: &armcompute.VirtualMachineIdentity{
-					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
-					},
+			currentVM.Identity = &armcompute.VirtualMachineIdentity{
+				UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
+					"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
 				},
 			}
 
@@ -174,7 +214,7 @@ var _ = Describe("Unit tests", func() {
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 			}
-			update := inplaceupdate.CalculateVMPatch(options, currentVM)
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
 
 			Expect(update).ToNot(BeNil())
 			Expect(update.Identity).ToNot(BeNil())
@@ -183,12 +223,10 @@ var _ = Describe("Unit tests", func() {
 		})
 
 		It("should add no identities when identities already exist", func() {
-			currentVM := &armcompute.VirtualMachine{
-				Identity: &armcompute.VirtualMachineIdentity{
-					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2": {},
-					},
+			currentVM.Identity = &armcompute.VirtualMachineIdentity{
+				UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
+					"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1": {},
+					"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2": {},
 				},
 			}
 
@@ -197,18 +235,16 @@ var _ = Describe("Unit tests", func() {
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid2",
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := inplaceupdate.CalculateVMPatch(options, currentVM)
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
 
 			Expect(update).To(BeNil())
 		})
 
 		It("should not remove identities", func() {
-			currentVM := &armcompute.VirtualMachine{
-				Identity: &armcompute.VirtualMachineIdentity{
-					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1":           {},
-						"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myotheridentity": {},
-					},
+			currentVM.Identity = &armcompute.VirtualMachineIdentity{
+				UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
+					"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1":           {},
+					"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myotheridentity": {},
 				},
 			}
 
@@ -216,9 +252,87 @@ var _ = Describe("Unit tests", func() {
 			options.NodeIdentities = []string{
 				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
 			}
-			update := inplaceupdate.CalculateVMPatch(options, currentVM)
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
 
 			Expect(update).To(BeNil())
+		})
+
+		It("should add missing tags from AdditionalTags", func() {
+			currentVM.Tags = map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
+
+			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"), // Should always be included
+					"test-tag":                    lo.ToPtr("my-tag"),
+				},
+			}))
+		})
+
+		It("should add missing tags from NodeClass", func() {
+			currentVM.Tags = map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			}
+
+			options := test.Options()
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
+
+			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"), // Should always be included
+					"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
+				},
+			}))
+		})
+
+		It("should add missing tags from NodeClass if conflicting with AdditionalTags", func() {
+			currentVM.Tags = map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+				"test-tag":                    lo.ToPtr("my-tag"),
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+			nodeClass.Spec.Tags = map[string]string{
+				"test-tag": "nodeclass-value",
+			}
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
+
+			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"), // Should always be included
+					"test-tag":                    lo.ToPtr("nodeclass-value"),
+				},
+			}))
+		})
+
+		// NOTE: It is expected that this will remove manually added user tags as well
+		It("should remove unneeded tags", func() {
+			currentVM.Tags = map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+				"test-tag":                    lo.ToPtr("my-tag"),
+			}
+
+			options := test.Options()
+			update := inplaceupdate.CalculateVMPatch(options, nodeClaim, nodeClass, currentVM)
+
+			Expect(update).To(Equal(&armcompute.VirtualMachineUpdate{
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"), // Should always be included
+				},
+			}))
 		})
 	})
 })
@@ -226,20 +340,63 @@ var _ = Describe("Unit tests", func() {
 var _ = Describe("In Place Update Controller", func() {
 	var vmName string
 	var vm *armcompute.VirtualMachine
+	var nic *armnetwork.Interface
+	var billingExt *armcompute.VirtualMachineExtension
+	var cseExt *armcompute.VirtualMachineExtension
 	var nodeClaim *karpv1.NodeClaim
+	var nodeClass *v1beta1.AKSNodeClass
 
 	BeforeEach(func() {
 		vmName = "vm-a"
 		vm = &armcompute.VirtualMachine{
 			ID:   lo.ToPtr(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
 			Name: lo.ToPtr(vmName),
+			Tags: map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			},
+		}
+		nic = &armnetwork.Interface{
+			ID:   lo.ToPtr(fake.MakeNetworkInterfaceID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+			Name: lo.ToPtr(vmName),
+			Tags: map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			},
+		}
+		billingExt = &armcompute.VirtualMachineExtension{
+			ID:   lo.ToPtr(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "computeAksLinuxBilling")),
+			Name: lo.ToPtr("computeAksLinuxBilling"),
+			Tags: map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			},
+		}
+		cseExt = &armcompute.VirtualMachineExtension{
+			ID:   lo.ToPtr(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "cse-agent-karpenter")),
+			Name: lo.ToPtr("cse-agent-karpenter"),
+			Tags: map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			},
 		}
 
+		// Create a test AKSNodeClass that the NodeClaim can reference
+		nodeClass = test.AKSNodeClass()
 		nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+			Spec: karpv1.NodeClaimSpec{
+				NodeClassRef: &karpv1.NodeClassReference{
+					Group: object.GVK(nodeClass).Group,
+					Kind:  object.GVK(nodeClass).Kind,
+					Name:  nodeClass.Name,
+				},
+			},
 			Status: karpv1.NodeClaimStatus{
 				ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
 			},
 		})
+		// Claims are launched and registered by default
+		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+		nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+
+		// Apply the nodeClass to the test environment
+		ExpectApplied(ctx, env.Client, nodeClass)
 
 		ctx = options.ToContext(ctx, test.Options())
 
@@ -253,7 +410,7 @@ var _ = Describe("In Place Update Controller", func() {
 	Context("Basic tests", func() {
 		It("should not call Azure if the hash matches", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-			hash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), nodeClaim)
+			hash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), nodeClaim, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Force the goal hash into annotations here, which should prevent the reconciler from doing anything on Azure
@@ -268,10 +425,8 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
 			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
 		})
-	})
 
-	Context("Identity tests", func() {
-		It("should add a hash annotation to NodeClaim if there are no identities", func() {
+		It("should add a hash annotation to NodeClaim if there are no identities or tags", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 			ExpectApplied(ctx, env.Client, nodeClaim)
@@ -287,7 +442,9 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
 			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
 		})
+	})
 
+	Context("Identity tests", func() {
 		It("should add a hash annotation to NodeClaim and update VM if there are missing identities", func() {
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
@@ -309,6 +466,10 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedVM).ToNot(Equal(vm))
 			Expect(updatedVM.Identity).ToNot(BeNil())
 			Expect(updatedVM.Identity.UserAssignedIdentities).To(HaveKey("/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1"))
+			// Expect the tags to remain unchanged
+			Expect(updatedVM.Tags).To(Equal(map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			}))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
@@ -322,6 +483,15 @@ var _ = Describe("In Place Update Controller", func() {
 				},
 			}
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+
+			ctx = options.ToContext(
+				ctx,
+				test.Options(
+					test.OptionsFields{
+						NodeIdentities: []string{
+							"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
+						},
+					}))
 
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
@@ -339,6 +509,7 @@ var _ = Describe("In Place Update Controller", func() {
 					"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myotheridentity": {},
 				},
 			}
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
 
 			ctx = options.ToContext(
 				ctx,
@@ -349,8 +520,6 @@ var _ = Describe("In Place Update Controller", func() {
 						},
 					}))
 
-			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
-
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
@@ -360,10 +529,211 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedVM.Identity).ToNot(BeNil())
 			Expect(updatedVM.Identity.UserAssignedIdentities).To(HaveKey("/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1"))
 			Expect(updatedVM.Identity.UserAssignedIdentities).To(HaveKey("/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myotheridentity"))
+			// Expect the tags to remain unchanged
+			Expect(updatedVM.Tags).To(Equal(map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+			}))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
 			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+		})
+	})
+
+	Context("Tags tests", func() {
+		It("should add a hash annotation to NodeClaim and update VM, NIC, and Extensions if there are missing tags", func() {
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(billingExt.ID), *billingExt)
+			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(cseExt.ID), *cseExt)
+
+			ctx = options.ToContext(
+				ctx,
+				test.Options(
+					test.OptionsFields{
+						AdditionalTags: map[string]string{
+							"test-tag": "my-tag",
+						},
+					}))
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+
+			ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+			// The VM should be updated
+			updatedVM := ExpectInstanceResourcesHaveTags(
+				ctx,
+				vmName,
+				azureEnv,
+				map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
+					"test-tag":                    lo.ToPtr("my-tag"),
+				})
+			Expect(updatedVM).ToNot(Equal(vm))
+			// Expect the identities to remain unchanged
+			Expect(updatedVM.Identity).To(BeNil())
+
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+		})
+
+		It("should not call Azure if the expected tags already exist on the VM", func() {
+			vm.Tags["test-tag"] = lo.ToPtr("my-tag")
+			vm.Tags["nodeclass-tag"] = lo.ToPtr("nodeclass-value")
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+
+			ctx = options.ToContext(
+				ctx,
+				test.Options(
+					test.OptionsFields{
+						AdditionalTags: map[string]string{
+							"test-tag": "my-tag",
+						},
+					}))
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+
+			ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineUpdateBehavior.Calls()).To(Equal(0))
+
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+		})
+
+		It("should clear existing tags on VM", func() {
+			vm.Tags = map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+				"test-tag":                    lo.ToPtr("my-tag"),
+				"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
+			}
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(billingExt.ID), *billingExt)
+			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(cseExt.ID), *cseExt)
+
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+
+			ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+			// The VM should be updated
+			updatedVM := ExpectInstanceResourcesHaveTags(
+				ctx,
+				vmName,
+				azureEnv,
+				map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
+					// "test-tag" should be removed
+				})
+			// Expect the identities to remain unchanged
+			Expect(updatedVM.Identity).To(BeNil())
+
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+		})
+
+		DescribeTable(
+			"should propagate update to tags from NodeClass",
+			func(newTags map[string]string, expectedTags map[string]*string) {
+				azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+				azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+				azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(billingExt.ID), *billingExt)
+				azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(cseExt.ID), *cseExt)
+
+				ExpectApplied(ctx, env.Client, nodeClaim)
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+				nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+				Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+				Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+				initialHash := nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]
+
+				nodeClass.Spec.Tags = newTags
+				ExpectApplied(ctx, env.Client, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+				updatedVM := ExpectInstanceResourcesHaveTags(
+					ctx,
+					vmName,
+					azureEnv,
+					expectedTags)
+				Expect(updatedVM).ToNot(Equal(vm))
+
+				nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+				Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+				Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+				Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(Equal(initialHash))
+			},
+			Entry(
+				"standard tags",
+				map[string]string{"nodeclass-tag": "nodeclass-value"},
+				map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
+				},
+			),
+			Entry(
+				"tags with '/' should be replaced with '_'",
+				map[string]string{"this/tag/has/slashes": "nodeclass-value"},
+				map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"this_tag_has_slashes":        lo.ToPtr("nodeclass-value"),
+				},
+			),
+		)
+
+		It("should not apply tags if claim is not registered yet. Retry succeeds", func() {
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+			// Not registering the billing and CSE extensions to simulate situation where VM is still being provisioned
+			// when tags update happens.
+			nodeClaim.StatusConditions().SetUnknown(karpv1.ConditionTypeRegistered) // Claim not registered yet
+
+			ExpectApplied(ctx, env.Client, nodeClaim)
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+			ExpectApplied(ctx, env.Client, nodeClass)
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+			// Expect no calls yet
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+			Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesUpdateTagsBehavior.CalledWithInput.Len()).To(Equal(0))
+
+			// Now claim registers
+			nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+			ExpectApplied(ctx, env.Client, nodeClaim)
+			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(billingExt.ID), *billingExt)
+			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(lo.FromPtr(cseExt.ID), *cseExt)
+
+			// Retry should succeed
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationInPlaceUpdateHash))
+			Expect(nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]).ToNot(BeEmpty())
+
+			updatedVM := ExpectInstanceResourcesHaveTags(
+				ctx,
+				vmName,
+				azureEnv,
+				map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"nodeclass-tag":               lo.ToPtr("nodeclass-value"),
+				})
+			Expect(updatedVM).ToNot(Equal(vm))
 		})
 	})
 })

@@ -61,6 +61,7 @@ var _ = BeforeEach(func() {
 })
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
+
 var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 	var selectors sets.Set[string]
 
@@ -85,6 +86,16 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			// TODO: review the use of "kubernetes.azure.com/cluster"
 			v1beta1.AKSLabelCluster,
 		)
+
+		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
+		// ignore GPU labels in the coverage assertion.
+		if !Label("GPU").MatchesLabelFilter(GinkgoLabelFilter()) {
+			selectors.Insert(
+				v1beta1.LabelSKUGPUCount,
+				v1beta1.LabelSKUGPUManufacturer,
+			)
+		}
+
 	})
 	AfterAll(func() {
 		// Ensure that we're exercising all well known labels (with the above exceptions)
@@ -200,7 +211,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		// note: this test can fail on subscription that don't have quota for GPU SKUs
-		It("should support well-known labels for a gpu (nvidia)", func() {
+		It("should support well-known labels for a gpu (nvidia)", Label("GPU"), func() {
 			nodeSelector := map[string]string{
 				v1beta1.LabelSKUGPUManufacturer: "nvidia",
 				v1beta1.LabelSKUGPUCount:        "1",

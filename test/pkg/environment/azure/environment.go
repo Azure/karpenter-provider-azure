@@ -69,13 +69,24 @@ type Environment struct {
 	managedClusterClient *containerservice.ManagedClustersClient
 }
 
+func readEnv(name string) string {
+	value, exists := os.LookupEnv(name)
+	if !exists {
+		panic(fmt.Sprintf("Environment variable %s is not set", name))
+	}
+	if value == "" {
+		panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+	}
+	return value
+}
+
 func NewEnvironment(t *testing.T) *Environment {
 	azureEnv := &Environment{
 		Environment:          common.NewEnvironment(t),
-		SubscriptionID:       lo.Must(os.LookupEnv("AZURE_SUBSCRIPTION_ID")),
-		ClusterName:          lo.Must(os.LookupEnv("AZURE_CLUSTER_NAME")),
-		ClusterResourceGroup: lo.Must(os.LookupEnv("AZURE_RESOURCE_GROUP")),
-		ACRName:              lo.Must(os.LookupEnv("AZURE_ACR_NAME")),
+		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID"),
+		ClusterName:          readEnv("AZURE_CLUSTER_NAME"),
+		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP"),
+		ACRName:              readEnv("AZURE_ACR_NAME"),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		tracker:              azure.NewTracker(),
 	}
