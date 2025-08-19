@@ -43,45 +43,29 @@ func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
 	}
 }
 
-// We can share some of the validation reasons between vnetSubnetID + podSubnetID
 const (
 	SubnetUnreadyReasonNotFound = "SubnetNotFound"
 
 	SubnetUnreadyReasonIDInvalid = "SubnetIDInvalid"
-
-	// TODO(bsoghigian): Support SubnetFull readiness reason
-	SubnetUnreadyReasonFull = "SubnetFull"
-
-	// TODO(bsoghigian): check if the cidr of a subnet-id is overlapping with any of the static agentpools,
-	// AKSNodeClass subnets, or any defaulting reserved networking addresses for AKS (--dns-service-ip)
-	SubnetUnreadyReasonCIDROverlapping = "SubnetCIDROverlapping"
-
-	// TODO(bsoghigian): check cluster identity has rbac for subnet/read subnet/join for a given vnetSubnetID
-	SubnetUnreadyReasonRBACInvalid = "SubnetRBACInvalid"
 )
 
 const (
-	// TODO: Use this in SubnetFull logic
-	// Azure reserves the first four addresses and the last address, for a total of 5 ips for each subnet.
-	// For example 192.168.1.0/24 has the following reserved addresses
-	// 192.168.1.0 Network Address
-	// 192.168.1.1 Reserved by azure for the default gateway
-	// 192.168.1.2, 192.168.1.3: Reserved by Azure to map the Azure DNS IP addresses to the virtual network space.
-	// 192.168.1.255: Network broadcast address
-	AzureReservedIPs = 5
+	subnetReconcilerName = "nodeclass.subnet"
+	// we set 3 minutes for a healthy requeue interval because NRP reserves NICs for 180 seconds.
+	// which means that we will not be able to free a given NIC for up to 3 minutes, for now setting it as
+	// the default requeue interval at that timestamp, we may choose to redesign as we implement subnet fullness
+	healthyRequeueInterval = time.Minute * 3
 )
 
 func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	// TODO: Handle podSubnetID readiness here as well
-	result, err := r.validateVNETSubnetID(ctx, nodeClass)
-	return result, err
+	return r.validateVNETSubnetID(ctx, nodeClass)
 }
 
 func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	logger := log.FromContext(ctx)
 	clusterSubnetID := options.FromContext(ctx).SubnetID
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
-	logger.V(2).Info("validating os.spec.vnetSubnetID: %s", subnetID)
+	logger := log.FromContext(ctx).WithName(subnetReconcilerName).WithValues("subnetID", subnetID)
 
 	nodeClassSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
@@ -93,7 +77,10 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		return reconcile.Result{}, err
 	}
 	if subnetID != clusterSubnetID {
-		clusterSubnetIDParts, _ := utils.GetVnetSubnetIDComponents(clusterSubnetID) // Assume valid cluster subnet id
+		clusterSubnetIDParts, err := utils.GetVnetSubnetIDComponents(clusterSubnetID) // Assume valid cluster subnet id
+		if err != nil {                                                               // Highly unlikely case but putting it in nontheless
+			return reconcile.Result{}, err
+		}
 		if !clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
 			nodeClass.StatusConditions().SetFalse(
 				v1beta1.ConditionTypeSubnetReady,
@@ -115,13 +102,12 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 			)
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
-		// Log generic error since we don't have any reason + message for it
-		logger.Error(err, "subnet reconciliation failed")
+		logger.Error(err, "getting subnet failed during reconciliation with unknown error", "error", err.Error())
 		return reconcile.Result{}, err
 	}
 
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetReady)
-	// Periodically check the subnet health conditions haven't been violated
-	const healthyRequeueInterval = time.Minute * 3
+
+	// Periodically requeue just in case subnet has been removed or later revalidating things like fullness etc
 	return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil
 }

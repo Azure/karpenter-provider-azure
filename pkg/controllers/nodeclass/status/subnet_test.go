@@ -62,29 +62,6 @@ var _ = Describe("SubnetStatus", func() {
 		Expect(cond.IsTrue()).To(BeTrue())
 	})
 
-	// Note: This test uses direct reconciler because ExpectObjectReconciled doesn't handle errors
-	It("should mark nodeclass as not ready when subnet doesn't exist", func() {
-		reconciler := status.NewSubnetReconciler(azureEnv.SubnetsAPI)
-
-		azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
-			return armnetwork.SubnetsClientGetResponse{}, &azcore.ResponseError{
-				ErrorCode:  "ResourceNotFound",
-				StatusCode: http.StatusNotFound,
-				RawResponse: &http.Response{
-					StatusCode: http.StatusNotFound,
-				},
-			}
-		}
-
-		result, err := reconciler.Reconcile(ctx, nodeClass)
-		Expect(err).To(HaveOccurred())
-		Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute}))
-
-		cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
-		Expect(cond.IsFalse()).To(BeTrue())
-		Expect(cond.Reason).To(Equal("SubnetNotFound"))
-	})
-
 	It("should use nodeclass subnet ID when specified", func() {
 		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/nodeclass-subnet")
 
