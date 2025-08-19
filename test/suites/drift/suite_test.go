@@ -494,8 +494,8 @@ var _ = Describe("Drift", func() {
 
 			env.ExpectCreated(dep, initialNodeClass, nodePool)
 
-			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 			pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 			node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 			env.ExpectCreatedOrUpdated(updatedNodeClass)
