@@ -479,7 +479,7 @@ var _ = Describe("Drift", func() {
 	Context("FIPS Drift", func() {
 		BeforeEach(func() {
 			if env.InClusterController {
-				Skip("FIPS  drift tests require SIG access - skipping in self-hosted mode")
+				Skip("FIPS drift tests require SIG access - skipping in self-hosted mode")
 			}
 		})
 
