@@ -154,8 +154,7 @@ func (p *Provider) shouldTryAgain() bool {
 // Source: https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1
 var fallbackZonalRegions = map[string]bool{
 	// Special
-	"centraluseuap": true,
-	"eastus2euap":   true,
+	"eastus2euap": true,
 	// Americas
 	"brazilsouth":    true,
 	"canadacentral":  true,
@@ -169,6 +168,7 @@ var fallbackZonalRegions = map[string]bool{
 	"chilecentral":   true,
 	"mexicocentral":  true,
 	// Europe
+	"austriaeast":        true,
 	"francecentral":      true,
 	"italynorth":         true,
 	"germanywestcentral": true,
@@ -197,4 +197,5 @@ var fallbackZonalRegions = map[string]bool{
 	"indonesiacentral": true,
 	"japanwest":        true,
 	"newzealandnorth":  true,
+	"malaysiawest":     true,
 }

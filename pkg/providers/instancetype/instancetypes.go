@@ -148,7 +148,7 @@ func (p *DefaultProvider) List(
 			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
 			continue
 		}
-		instanceTypeZones := p.instanceTypeZones(sku, p.region)
+		instanceTypeZones := p.instanceTypeZones(sku)
 		// !!! Important !!!
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
@@ -185,15 +185,15 @@ func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeCla
 
 // instanceTypeZones generates the set of all supported zones for a given SKU
 // The strings have to match Zone labels that will be placed on Node
-func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
+func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
 	// If an offering is non-zonal, the availability zones will be empty.
-	skuZones := lo.Keys(sku.AvailabilityZones(region))
+	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
 	if len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
-			return utils.MakeZone(region, zone)
+			return utils.MakeZone(p.region, zone)
 		})...)
 	}
 	return sets.New("") // empty string means non-zonal offering
