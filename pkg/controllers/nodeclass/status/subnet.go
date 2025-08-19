@@ -78,7 +78,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 	}
 	if subnetID != clusterSubnetID {
 		clusterSubnetIDParts, err := utils.GetVnetSubnetIDComponents(clusterSubnetID) // Assume valid cluster subnet id
-		if err != nil {                                                               // Highly unlikely case but putting it in nontheless
+		if err != nil {                                                               // Highly unlikely case but putting it in nonetheless
 			return reconcile.Result{}, err
 		}
 		if !clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
