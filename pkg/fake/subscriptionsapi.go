@@ -18,9 +18,9 @@ package fake
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"sync"
 
@@ -30,6 +30,9 @@ import (
 	"github.com/samber/lo"
 )
 
+//go:embed locations.json
+var fakeLocationsJSON string
+
 type ListLocationsInput struct {
 	SubscriptionID string
 	Options        *armsubscriptions.ClientListLocationsOptions
@@ -38,7 +41,7 @@ type ListLocationsInput struct {
 type SubscriptionsAPIBehavior struct {
 	NewListLocationsPagerBehavior MockedFunction[ListLocationsInput, armsubscriptions.ClientListLocationsResponse]
 	Locations                     sync.Map
-	FakeDataFilepath              string
+	UseFakeData                   bool
 }
 
 var _ zone.SubscriptionsAPI = &SubscriptionsAPI{}
@@ -52,7 +55,7 @@ func NewSubscriptionsAPI() (*SubscriptionsAPI, error) {
 		SubscriptionsAPIBehavior: SubscriptionsAPIBehavior{
 			NewListLocationsPagerBehavior: MockedFunction[ListLocationsInput, armsubscriptions.ClientListLocationsResponse]{},
 			Locations:                     sync.Map{},
-			FakeDataFilepath:              "pkg/fake/locations.json",
+			UseFakeData:                   true,
 		},
 	}
 
@@ -69,7 +72,7 @@ func (api *SubscriptionsAPI) Reset() {
 		api.Locations.Delete(k)
 		return true
 	})
-	if api.FakeDataFilepath != "" {
+	if api.UseFakeData {
 		err := loadLocationsFromFile(api)
 		if err != nil {
 			panic(err) // Not ideal, but shouldn't happen
@@ -120,13 +123,10 @@ func (api *SubscriptionsAPI) NewListLocationsPager(
 }
 
 func loadLocationsFromFile(api *SubscriptionsAPI) error {
-	data, err := os.ReadFile(api.FakeDataFilepath)
-	if err != nil {
-		return fmt.Errorf("failed to read locations from file %s: %w", api.FakeDataFilepath, err)
-	}
+	data := []byte(fakeLocationsJSON)
 
 	var locations []*armsubscriptions.Location
-	err = json.Unmarshal(data, &locations)
+	err := json.Unmarshal(data, &locations)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal locations JSON: %w", err)
 	}

@@ -221,11 +221,3 @@ func createZonalLocation(name string, zones []string) armsubscriptions.Location 
 		AvailabilityZoneMappings: zoneMappings,
 	}
 }
-
-// createNonZonalLocation creates a location without availability zone mappings
-func createNonZonalLocation(name string) armsubscriptions.Location {
-	return armsubscriptions.Location{
-		Name: lo.ToPtr(name),
-		// No AvailabilityZoneMappings for non-zonal regions
-	}
-}
