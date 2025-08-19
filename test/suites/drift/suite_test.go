@@ -476,6 +476,59 @@ var _ = Describe("Drift", func() {
 		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr[int32](10)}),
 	)
 
+	Context("FIPS Drift", func() {
+		BeforeEach(func() {
+			if env.InClusterController {
+				Skip("FIPS drift tests require SIG access - skipping in self-hosted mode")
+			}
+		})
+
+		DescribeTable("AKSNodeClass FIPS", func(initialNodeClassSpec, updatedNodeClassSpec v1beta1.AKSNodeClassSpec) {
+			// Apply initial modifications to ensure we start with the right base state
+			initialNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: initialNodeClassSpec})
+			initialNodeClass.ObjectMeta = nodeClass.ObjectMeta
+
+			// Create the updated nodeClass for drift
+			updatedNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *initialNodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: updatedNodeClassSpec})
+			updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
+
+			env.ExpectCreated(dep, initialNodeClass, nodePool)
+
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+			pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
+			node := env.ExpectCreatedNodeCount("==", 1)[0]
+
+			env.ExpectCreatedOrUpdated(updatedNodeClass)
+
+			env.EventuallyExpectDrifted(nodeClaim)
+
+			delete(pod.Annotations, karpv1.DoNotDisruptAnnotationKey)
+			env.ExpectUpdated(pod)
+			env.EventuallyExpectNotFound(pod, node)
+			env.EventuallyExpectHealthyPodCount(selector, numPods)
+		},
+			Entry("FIPSMode: Disabled -> FIPS",
+				v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+				},
+				v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
+				},
+			),
+			Entry("FIPSMode: FIPS -> Disabled",
+				v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
+				},
+				v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeDisabled),
+				},
+			),
+		)
+	})
+
 	It("should update the nodepool-hash annotation on the nodepool and nodeclaim when the nodepool's nodepool-hash-version annotation does not match the controller hash version", func() {
 		env.ExpectCreated(dep, nodeClass, nodePool)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
