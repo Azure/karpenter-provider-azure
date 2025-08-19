@@ -124,11 +124,9 @@ var _ = Describe("Subnets", func() {
 			vnet := env.GetClusterVNET()
 			vnetID := lo.FromPtr(vnet.ID)
 
-			// Parse the cluster VNET ID to extract components
 			vnetResourceID, err := arm.ParseResourceID(vnetID)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Create base components from cluster VNET
 			baseComponents := utils.VnetSubnetResource{
 				SubscriptionID:    vnetResourceID.SubscriptionID,
 				ResourceGroupName: vnetResourceID.ResourceGroupName,
@@ -136,10 +134,8 @@ var _ = Describe("Subnets", func() {
 				SubnetName:        "test-subnet",
 			}
 
-			// Modify components based on test case
 			modifiedComponents := modifyComponents(baseComponents)
 
-			// Create subnet ID using the utils function
 			subnetID := utils.GetSubnetResourceID(
 				modifiedComponents.SubscriptionID,
 				modifiedComponents.ResourceGroupName,
@@ -152,7 +148,7 @@ var _ = Describe("Subnets", func() {
 
 			Eventually(func(g Gomega) {
 				g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
-				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
+				condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 				g.Expect(condition).ToNot(BeNil())
 				g.Expect(condition.IsFalse()).To(BeTrue())
 				// Generic assertion - just check that the message mentions the subnet doesn't match
@@ -203,7 +199,7 @@ var _ = Describe("Subnets", func() {
 		// Verify the new nodeclass with full subnet has SubnetReady condition set to false
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(newNodeClass), newNodeClass)).To(Succeed())
-			condition := newNodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
+			condition := newNodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 			g.Expect(condition.IsFalse()).To(BeTrue())
 		}).Should(Succeed())
 	})

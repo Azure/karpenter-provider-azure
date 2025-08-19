@@ -26,7 +26,7 @@ import (
 const (
 	ConditionTypeImagesReady            = "ImagesReady"
 	ConditionTypeKubernetesVersionReady = "KubernetesVersionReady"
-	ConditionTypeSubnetReady            = "SubnetReady"
+	ConditionTypeSubnetsReady           = "SubnetsReady"
 )
 
 // NodeImage contains resolved image selector values utilized for node launch
@@ -60,7 +60,7 @@ func (in *AKSNodeClass) StatusConditions() status.ConditionSet {
 	conds := []string{
 		ConditionTypeImagesReady,
 		ConditionTypeKubernetesVersionReady,
-		ConditionTypeSubnetReady,
+		ConditionTypeSubnetsReady,
 	}
 	return status.NewReadyConditions(conds...).For(in)
 }

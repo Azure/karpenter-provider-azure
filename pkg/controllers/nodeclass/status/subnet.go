@@ -70,7 +70,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 	nodeClassSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
 		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeSubnetReady,
+			v1beta1.ConditionTypeSubnetsReady,
 			SubnetUnreadyReasonIDInvalid,
 			fmt.Sprintf("Failed to parse vnetSubnetID %s", subnetID),
 		)
@@ -83,7 +83,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		}
 		if !clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
 			nodeClass.StatusConditions().SetFalse(
-				v1beta1.ConditionTypeSubnetReady,
+				v1beta1.ConditionTypeSubnetsReady,
 				SubnetUnreadyReasonIDInvalid,
 				fmt.Sprintf("vnetSubnetID does not match the cluster subscription, resource group, or virtual network: %s", subnetID),
 			)
@@ -96,7 +96,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		azErr := sdkerrors.IsResponseError(err)
 		if azErr != nil && (azErr.StatusCode == http.StatusNotFound) {
 			nodeClass.StatusConditions().SetFalse(
-				v1beta1.ConditionTypeSubnetReady,
+				v1beta1.ConditionTypeSubnetsReady,
 				SubnetUnreadyReasonNotFound,
 				fmt.Sprintf("resource not found: %s", subnetID),
 			)
@@ -106,7 +106,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		return reconcile.Result{}, err
 	}
 
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
 
 	// Periodically requeue just in case subnet has been removed or later revalidating things like fullness etc
 	return reconcile.Result{RequeueAfter: healthyRequeueInterval}, nil

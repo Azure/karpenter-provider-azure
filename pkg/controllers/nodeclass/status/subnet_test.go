@@ -26,6 +26,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -58,8 +59,11 @@ var _ = Describe("SubnetStatus", func() {
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
+		cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 		Expect(cond.IsTrue()).To(BeTrue())
+
+		readyCondition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
+		Expect(readyCondition.IsTrue()).To(BeTrue())
 	})
 
 	It("should use nodeclass subnet ID when specified", func() {
@@ -83,8 +87,11 @@ var _ = Describe("SubnetStatus", func() {
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
+		cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 		Expect(cond.IsTrue()).To(BeTrue())
+
+		readyCondition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
+		Expect(readyCondition.IsTrue()).To(BeTrue())
 	})
 
 	Context("SubnetReconciler direct tests", func() {
@@ -113,7 +120,7 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute * 3}))
 
-			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 			Expect(cond.IsTrue()).To(BeTrue())
 		})
 
@@ -132,7 +139,7 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute}))
 
-			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 			Expect(cond.IsFalse()).To(BeTrue())
 			Expect(cond.Reason).To(Equal("SubnetNotFound"))
 		})
@@ -158,7 +165,7 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{RequeueAfter: time.Minute * 3}))
 
-			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetReady)
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
 			Expect(cond.IsTrue()).To(BeTrue())
 		})
 	})
