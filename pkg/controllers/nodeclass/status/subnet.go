@@ -69,25 +69,28 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 
 	nodeClassSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
 	if err != nil {
+		logger.Error(err, "failed to parse vnetSubnetID", "subnetID", subnetID)
 		nodeClass.StatusConditions().SetFalse(
 			v1beta1.ConditionTypeSubnetsReady,
 			SubnetUnreadyReasonIDInvalid,
 			fmt.Sprintf("Failed to parse vnetSubnetID %s", subnetID),
 		)
-		return reconcile.Result{}, err
+		return reconcile.Result{}, nil
 	}
 	if subnetID != clusterSubnetID {
 		clusterSubnetIDParts, err := utils.GetVnetSubnetIDComponents(clusterSubnetID) // Assume valid cluster subnet id
 		if err != nil {                                                               // Highly unlikely case but putting it in nonetheless
-			return reconcile.Result{}, err
+			logger.Error(err, "failed to parse cluster subnet ID", "clusterSubnetID", clusterSubnetID)
+			return reconcile.Result{}, nil
 		}
 		if !clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
+			logger.Error(nil, "subnet does not match cluster subscription, resource group, or virtual network", "subnetID", subnetID)
 			nodeClass.StatusConditions().SetFalse(
 				v1beta1.ConditionTypeSubnetsReady,
 				SubnetUnreadyReasonIDInvalid,
 				fmt.Sprintf("vnetSubnetID does not match the cluster subscription, resource group, or virtual network: %s", subnetID),
 			)
-			return reconcile.Result{}, fmt.Errorf("subnet %s does not match cluster subscription, resource group, or virtual network", subnetID)
+			return reconcile.Result{}, nil
 		}
 	}
 
@@ -103,7 +106,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
 		logger.Error(err, "getting subnet failed during reconciliation with unknown error", "error", err.Error())
-		return reconcile.Result{}, err
+		return reconcile.Result{}, nil
 	}
 
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
