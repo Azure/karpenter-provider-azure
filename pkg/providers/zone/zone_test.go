@@ -37,9 +37,8 @@ func TestProvider_SupportsZones_ZonalRegions(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup fake API
-	fakeAPI := &fake.SubscriptionsAPI{}
-	fakeAPI.Locations.Store("eastus", createZonalLocation("eastus", []string{"1"}))
-	fakeAPI.Locations.Store("centralus", createZonalLocation("centralus", []string{"1", "2"}))
+	fakeAPI, err := fake.NewSubscriptionsAPI()
+	g.Expect(err).To(BeNil())
 
 	// Create provider
 	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
@@ -58,14 +57,14 @@ func TestProvider_SupportsZones_NonZonalRegions(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup fake API
-	fakeAPI := &fake.SubscriptionsAPI{}
-	fakeAPI.Locations.Store("westus", createNonZonalLocation("westus"))
+	fakeAPI, err := fake.NewSubscriptionsAPI()
+	g.Expect(err).To(BeNil())
 
 	// Create provider
 	provider := zone.NewProvider(fakeAPI, &clock.FakeClock{}, "test-subscription")
 
 	// Test regions
-	g.Expect(provider.SupportsZones(ctx, "westus")).To(BeFalse())
+	g.Expect(provider.SupportsZones(ctx, "canadaeast")).To(BeFalse())
 
 	// Test unknown region
 	g.Expect(provider.SupportsZones(ctx, "unknownregion")).To(BeFalse())

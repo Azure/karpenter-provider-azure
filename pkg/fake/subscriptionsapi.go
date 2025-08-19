@@ -18,6 +18,9 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
 	"sort"
 	"sync"
 
@@ -35,6 +38,7 @@ type ListLocationsInput struct {
 type SubscriptionsAPIBehavior struct {
 	NewListLocationsPagerBehavior MockedFunction[ListLocationsInput, armsubscriptions.ClientListLocationsResponse]
 	Locations                     sync.Map
+	FakeDataFilepath              string
 }
 
 var _ zone.SubscriptionsAPI = &SubscriptionsAPI{}
@@ -43,12 +47,34 @@ type SubscriptionsAPI struct {
 	SubscriptionsAPIBehavior
 }
 
+func NewSubscriptionsAPI() (*SubscriptionsAPI, error) {
+	result := &SubscriptionsAPI{
+		SubscriptionsAPIBehavior: SubscriptionsAPIBehavior{
+			NewListLocationsPagerBehavior: MockedFunction[ListLocationsInput, armsubscriptions.ClientListLocationsResponse]{},
+			Locations:                     sync.Map{},
+			FakeDataFilepath:              "pkg/fake/locations.json",
+		},
+	}
+
+	err := loadLocationsFromFile(result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (api *SubscriptionsAPI) Reset() {
 	api.NewListLocationsPagerBehavior.Reset()
 	api.Locations.Range(func(k, v any) bool {
 		api.Locations.Delete(k)
 		return true
 	})
+	if api.FakeDataFilepath != "" {
+		err := loadLocationsFromFile(api)
+		if err != nil {
+			panic(err) // Not ideal, but shouldn't happen
+		}
+	}
 }
 
 func (api *SubscriptionsAPI) NewListLocationsPager(
@@ -91,4 +117,23 @@ func (api *SubscriptionsAPI) NewListLocationsPager(
 	}
 
 	return runtime.NewPager(pagingHandler)
+}
+
+func loadLocationsFromFile(api *SubscriptionsAPI) error {
+	data, err := os.ReadFile(api.FakeDataFilepath)
+	if err != nil {
+		return fmt.Errorf("failed to read locations from file %s: %w", api.FakeDataFilepath, err)
+	}
+
+	var locations []*armsubscriptions.Location
+	err = json.Unmarshal(data, &locations)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal locations JSON: %w", err)
+	}
+
+	for _, location := range locations {
+		api.Locations.Store(lo.FromPtr(location.Name), *location)
+	}
+
+	return nil
 }
