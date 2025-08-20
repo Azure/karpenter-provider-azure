@@ -39,7 +39,7 @@ func TestSubnet(t *testing.T) {
 	AfterSuite(func() {
 		env.Stop()
 	})
-	RunSpecs(t, "Integration")
+	RunSpecs(t, "Subnets")
 }
 
 var _ = BeforeEach(func() {

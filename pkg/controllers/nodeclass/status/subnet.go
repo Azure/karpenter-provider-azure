@@ -106,7 +106,7 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
 		logger.Error(err, "getting subnet failed during reconciliation with unknown error", "error", err.Error())
-		return reconcile.Result{}, nil
+		return reconcile.Result{}, err
 	}
 
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
