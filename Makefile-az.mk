@@ -20,7 +20,7 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
 
-.DEFAULT_GOAL := help	# make without arguments will show help
+.DEFAULT_GOAL := help	# make without arguments will show help 
 
 az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
