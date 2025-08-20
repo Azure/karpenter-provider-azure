@@ -68,6 +68,7 @@ type Environment struct {
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
 	SubnetsAPI                  *fake.SubnetsAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
+	SubscriptionAPI             *fake.SubscriptionsAPI
 
 	// Cache
 	KubernetesVersionCache    *cache.Cache
@@ -121,6 +122,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
+	subscriptionAPI := &fake.SubscriptionsAPI{}
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -134,7 +136,12 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
-	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
+	instanceTypesProvider := instancetype.NewDefaultProvider(
+		region,
+		instanceTypeCache,
+		skuClientSingleton,
+		pricingProvider,
+		unavailableOfferingsCache)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -173,6 +180,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		nodeImageVersionsAPI,
 		nodeBootstrappingAPI,
 		skuClientSingleton,
+		subscriptionAPI,
 	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,
@@ -199,6 +207,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		SubnetsAPI:                  subnetsAPI,
 		MockSkuClientSingleton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
+		SubscriptionAPI:             subscriptionAPI,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
 		NodeImagesCache:           nodeImagesCache,
