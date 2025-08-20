@@ -29,6 +29,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	opstatus "github.com/awslabs/operatorpkg/status"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -85,9 +86,9 @@ var _ = Describe("Subnets", func() {
 
 		env.ExpectCreated(nodeClass, nodePool, dep)
 
+		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		env.EventuallyExpectCreatedNodeClaimCount("==", 1)
 		nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
-		env.EventuallyExpectHealthyPodCount(selector, numPods)
 
 		vm := env.GetVM(nodes[0].Name)
 		Expect(vm.Properties).ToNot(BeNil())
@@ -196,11 +197,14 @@ var _ = Describe("Subnets", func() {
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		Expect(node.Labels[karpv1.NodePoolLabelKey]).To(Equal(nodePool.Name)) // Validate we are are falling back to the original nodepool
 
-		// Verify the new nodeclass with full subnet has SubnetReady condition set to false
 		Eventually(func(g Gomega) {
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(newNodeClass), newNodeClass)).To(Succeed())
 			condition := newNodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
-			g.Expect(condition.IsFalse()).To(BeTrue())
+			g.Expect(condition.IsTrue()).To(BeFalse())
+			Expect(condition.Reason).To(Equal("SubnetNotFound"))
+
+			rootCondition := newNodeClass.StatusConditions().Get(opstatus.ConditionReady)
+			Expect(rootCondition.IsTrue()).To(BeFalse())
 		}).Should(Succeed())
 	})
 })
