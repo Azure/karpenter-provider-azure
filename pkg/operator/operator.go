@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/flowcontrol"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -92,6 +93,8 @@ type Operator struct {
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
 	azConfig, err := GetAZConfig()
 	lo.Must0(err, "creating Azure config") // NOTE: we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as when initializing the client there are helpful error messages in initializing clients and the azure config
+
+	log.FromContext(ctx).V(0).Info("Initial AZConfig", "azConfig", azConfig.String())
 
 	cred, err := getCredential()
 	lo.Must0(err, "getting Azure credential")

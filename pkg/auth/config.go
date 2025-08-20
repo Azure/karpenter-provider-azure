@@ -17,6 +17,7 @@ limitations under the License.
 package auth
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -107,4 +108,13 @@ func (cfg *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (cfg *Config) String() string {
+	json, err := json.Marshal(cfg)
+	if err != nil {
+		return "couldn't marshal Config JSON"
+	}
+
+	return string(json)
 }
