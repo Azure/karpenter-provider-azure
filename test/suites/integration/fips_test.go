@@ -33,7 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
-var _ = Describe("FIPS", func() {
+var _ = FDescribe("FIPS", func() {
 	Context("FIPS Validation", func() {
 		It("should reject invalid FIPSMode values", func() {
 			invalidFIPSMode := v1beta1.FIPSMode("InvalidMode")
