@@ -66,6 +66,7 @@ type Environment struct {
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
+	SubnetsAPI                  *fake.SubnetsAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
 	SubscriptionAPI             *fake.SubscriptionsAPI
 
@@ -166,11 +167,13 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		networkSecurityGroupAPI,
 		testOptions.NodeResourceGroup,
 	)
+	subnetsAPI := &fake.SubnetsAPI{}
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
+		subnetsAPI,
 		loadBalancersAPI,
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
@@ -201,6 +204,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
+		SubnetsAPI:                  subnetsAPI,
 		MockSkuClientSingleton:      skuClientSingleton,
 		PricingAPI:                  pricingAPI,
 		SubscriptionAPI:             subscriptionAPI,
@@ -236,6 +240,7 @@ func (env *Environment) Reset() {
 	env.NetworkInterfacesAPI.Reset()
 	env.LoadBalancersAPI.Reset()
 	env.NetworkSecurityGroupAPI.Reset()
+	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
 	env.MockSkuClientSingleton.Reset()
 	env.PricingAPI.Reset()
