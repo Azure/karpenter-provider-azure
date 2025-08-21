@@ -21,8 +21,6 @@ import (
 	"os"
 	"strings"
 
-	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
-
 	"github.com/Azure/go-autorest/autorest"
 )
 
@@ -65,18 +63,6 @@ func BuildAzureConfig() (*Config, error) {
 	}
 
 	return cfg, nil
-}
-
-func (cfg *Config) GetAzureClientConfig(authorizer autorest.Authorizer, env *azclient.Environment) *ClientConfig {
-	azClientConfig := &ClientConfig{
-		Location:                cfg.Location,
-		SubscriptionID:          cfg.SubscriptionID,
-		ResourceManagerEndpoint: env.ResourceManagerEndpoint,
-		Authorizer:              authorizer,
-		UserAgent:               GetUserAgentExtension(),
-	}
-
-	return azClientConfig
 }
 
 func (cfg *Config) Build() error {
