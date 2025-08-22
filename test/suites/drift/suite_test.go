@@ -488,7 +488,6 @@ var _ = Describe("Drift", func() {
 			initialNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: initialNodeClassSpec})
 			initialNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
-			// Create the updated nodeClass for drift
 			updatedNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *initialNodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: updatedNodeClassSpec})
 			updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
 
@@ -498,6 +497,7 @@ var _ = Describe("Drift", func() {
 			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 			node := env.ExpectCreatedNodeCount("==", 1)[0]
 
+			// Create the updated nodeClass for drift
 			env.ExpectCreatedOrUpdated(updatedNodeClass)
 
 			env.EventuallyExpectDrifted(nodeClaim)
