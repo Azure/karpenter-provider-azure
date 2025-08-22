@@ -476,7 +476,7 @@ var _ = Describe("Drift", func() {
 		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr[int32](10)}),
 	)
 
-	FContext("FIPS Drift", func() {
+	Context("FIPS Drift", func() {
 		BeforeEach(func() {
 			if env.InClusterController {
 				Skip("FIPS drift tests require SIG access - skipping in self-hosted mode")
