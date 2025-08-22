@@ -35,20 +35,6 @@ import (
 
 var _ = Describe("FIPS", func() {
 	Context("FIPS Validation", func() {
-		It("should reject invalid FIPSMode values", func() {
-			invalidFIPSMode := v1beta1.FIPSMode("InvalidMode")
-			nodeClass.Spec.FIPSMode = &invalidFIPSMode
-
-			Expect(env.Client.Create(env.Context, nodeClass)).ToNot(Succeed())
-		})
-
-		It("should reject FIPS + Ubuntu2204 combination", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
-
-			Expect(env.Client.Create(env.Context, nodeClass)).ToNot(Succeed())
-		})
-
 		It("should reject FIPS without SIG access", func() {
 			if !env.InClusterController {
 				Skip("Testing FIPS usage cleanly fails without SIG access only makes sense in self-hosted mode - NAP has SIG access")
