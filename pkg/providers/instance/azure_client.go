@@ -182,7 +182,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
-	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Environment)
+	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
 
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI = nil
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
