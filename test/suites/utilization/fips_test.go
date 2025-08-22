@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package integration_test
+package utilization_test
 
 import (
 	"fmt"
@@ -33,7 +33,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
-var _ = FDescribe("FIPS", func() {
+var _ = Describe("FIPS", func() {
 	Context("FIPS Validation", func() {
 		It("should reject invalid FIPSMode values", func() {
 			invalidFIPSMode := v1beta1.FIPSMode("InvalidMode")
