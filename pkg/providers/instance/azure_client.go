@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
+	"github.com/Azure/skewer"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 )
@@ -80,7 +81,7 @@ type AZClient struct {
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
 	NodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
-	SKUClient                   skuclient.SkuClient
+	SKUClient                   skewer.ResourceClient
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
 	NetworkSecurityGroupsClient networksecuritygroup.API
 	SubscriptionsClient         zone.SubscriptionsAPI
@@ -101,7 +102,7 @@ func NewAZClientFromAPI(
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
 	nodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI,
 	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
-	skuClient skuclient.SkuClient,
+	skuClient skewer.ResourceClient,
 	subscriptionsClient zone.SubscriptionsAPI,
 ) *AZClient {
 	return &AZClient{
@@ -193,7 +194,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
-	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
+	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env)
 
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI = nil
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
