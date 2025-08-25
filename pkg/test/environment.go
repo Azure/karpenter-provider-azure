@@ -104,11 +104,7 @@ func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Env
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
 	testOptions := options.FromContext(ctx)
 
-	azureEnv, err := auth.EnvironmentFromName("AzurePublicCloud")
-	if err != nil {
-		// This really shouldn't happen
-		panic(err)
-	}
+	azureEnv := lo.Must(auth.EnvironmentFromName("AzurePublicCloud"))
 
 	// API
 	var auxTokenPolicy *auth.AuxiliaryTokenPolicy
