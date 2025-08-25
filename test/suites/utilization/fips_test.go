@@ -136,8 +136,7 @@ func expectNodeUsesFIPS(node *v1.Node) string {
 	// FIPS images require SIG (Shared Image Gallery) access
 	// SIG images have ID field populated, while CIG (Community Gallery)
 	// images use CommunityGalleryImageID
-	isSIGImage := vm.Properties.StorageProfile.ImageReference.ID != nil &&
-		*vm.Properties.StorageProfile.ImageReference.ID != ""
+	isSIGImage := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID) != ""
 
 	// Verify that FIPS images are using SIG (as required)
 	Expect(isSIGImage).To(BeTrue(),
