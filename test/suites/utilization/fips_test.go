@@ -77,7 +77,7 @@ var _ = Describe("FIPS", func() {
 			node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 			imageRef := ExpectNodeUsesFIPS(node)
-			ExpectNodeClassHasExpectedImages(imageRef, true) // true = expect FIPS images
+			ExpectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
 		})
 
 		It("should provision FIPS-enabled AzureLinux nodes", func() {
@@ -90,7 +90,7 @@ var _ = Describe("FIPS", func() {
 			node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 			imageRef := ExpectNodeUsesFIPS(node)
-			ExpectNodeClassHasExpectedImages(imageRef, true) // true = expect FIPS images
+			ExpectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
 		})
 	})
 
@@ -110,7 +110,7 @@ var _ = Describe("FIPS", func() {
 			node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 			imageRef := ExpectNodeDoesNotUseFIPS(node)
-			ExpectNodeClassHasExpectedImages(imageRef, false) // false = expect non-FIPS images
+			ExpectNodeClassHasExpectedImages(nodeClass, imageRef, false) // false = expect non-FIPS images
 		})
 	})
 })
@@ -179,7 +179,7 @@ func ExpectNodeDoesNotUseFIPS(node *v1.Node) string {
 
 // ExpectNodeClassHasExpectedImages ensures that the given image reference exists in the NodeClass's resolved images
 // and that all images in the NodeClass match the expected FIPS status
-func ExpectNodeClassHasExpectedImages(imageReference string, expectFIPS bool) {
+func ExpectNodeClassHasExpectedImages(nodeClass *v1beta1.AKSNodeClass, imageReference string, expectFIPS bool) {
 	GinkgoHelper()
 
 	// Ensure NodeClass has been properly reconciled with available images
