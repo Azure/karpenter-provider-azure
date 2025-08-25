@@ -76,8 +76,8 @@ var _ = Describe("FIPS", func() {
 			env.EventuallyExpectHealthy(pod)
 			node := env.ExpectCreatedNodeCount("==", 1)[0]
 
-			imageRef := ExpectNodeUsesFIPS(node)
-			ExpectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
+			imageRef := expectNodeUsesFIPS(node)
+			expectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
 		})
 
 		It("should provision FIPS-enabled AzureLinux nodes", func() {
@@ -89,8 +89,8 @@ var _ = Describe("FIPS", func() {
 			env.EventuallyExpectHealthy(pod)
 			node := env.ExpectCreatedNodeCount("==", 1)[0]
 
-			imageRef := ExpectNodeUsesFIPS(node)
-			ExpectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
+			imageRef := expectNodeUsesFIPS(node)
+			expectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
 		})
 	})
 
@@ -109,14 +109,14 @@ var _ = Describe("FIPS", func() {
 			env.EventuallyExpectHealthy(pod)
 			node := env.ExpectCreatedNodeCount("==", 1)[0]
 
-			imageRef := ExpectNodeDoesNotUseFIPS(node)
-			ExpectNodeClassHasExpectedImages(nodeClass, imageRef, false) // false = expect non-FIPS images
+			imageRef := expectNodeDoesNotUseFIPS(node)
+			expectNodeClassHasExpectedImages(nodeClass, imageRef, false) // false = expect non-FIPS images
 		})
 	})
 })
 
-// ExpectNodeUsesFIPS checks that the node is using a FIPS-compliant image and returns the image reference
-func ExpectNodeUsesFIPS(node *v1.Node) string {
+// expectNodeUsesFIPS checks that the node is using a FIPS-compliant image and returns the image reference
+func expectNodeUsesFIPS(node *v1.Node) string {
 	GinkgoHelper()
 
 	// Extract VM name from the node's providerID
@@ -151,8 +151,8 @@ func ExpectNodeUsesFIPS(node *v1.Node) string {
 	return imageReference
 }
 
-// ExpectNodeDoesNotUseFIPS checks that the node is using a non-FIPS image and returns the image reference
-func ExpectNodeDoesNotUseFIPS(node *v1.Node) string {
+// expectNodeDoesNotUseFIPS checks that the node is using a non-FIPS image and returns the image reference
+func expectNodeDoesNotUseFIPS(node *v1.Node) string {
 	GinkgoHelper()
 
 	// Extract VM name from the node's providerID
@@ -177,9 +177,9 @@ func ExpectNodeDoesNotUseFIPS(node *v1.Node) string {
 	return imageReference
 }
 
-// ExpectNodeClassHasExpectedImages ensures that the given image reference exists in the NodeClass's resolved images
+// expectNodeClassHasExpectedImages ensures that the given image reference exists in the NodeClass's resolved images
 // and that all images in the NodeClass match the expected FIPS status
-func ExpectNodeClassHasExpectedImages(nodeClass *v1beta1.AKSNodeClass, imageReference string, expectFIPS bool) {
+func expectNodeClassHasExpectedImages(nodeClass *v1beta1.AKSNodeClass, imageReference string, expectFIPS bool) {
 	GinkgoHelper()
 
 	// Ensure NodeClass has been properly reconciled with available images
