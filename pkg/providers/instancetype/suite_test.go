@@ -2020,7 +2020,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Reconcile the NodeClass to ensure status is updated
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
-			azureEnv.MockSkuClientSingleton.SKUClient.Error = fmt.Errorf("failed to list SKUs")
+			azureEnv.SKUsAPI.Error = fmt.Errorf("failed to list SKUs")
 
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{

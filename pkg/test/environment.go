@@ -62,7 +62,7 @@ type Environment struct {
 	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
 	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
-	MockSkuClientSingleton      *fake.MockSkuClientSingleton
+	SKUsAPI                     *fake.ResourceSKUsAPI
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
@@ -116,7 +116,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
-	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
+	skusAPI := &fake.ResourceSKUsAPI{Location: region}
 	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
@@ -139,7 +139,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	instanceTypesProvider := instancetype.NewDefaultProvider(
 		region,
 		instanceTypeCache,
-		skuClientSingleton,
+		skusAPI,
 		pricingProvider,
 		unavailableOfferingsCache)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
@@ -179,7 +179,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		communityImageVersionsAPI,
 		nodeImageVersionsAPI,
 		nodeBootstrappingAPI,
-		skuClientSingleton,
+		skusAPI,
 		subscriptionAPI,
 	)
 	instanceProvider := instance.NewDefaultProvider(
@@ -205,7 +205,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
 		SubnetsAPI:                  subnetsAPI,
-		MockSkuClientSingleton:      skuClientSingleton,
+		SKUsAPI:                     skusAPI,
 		PricingAPI:                  pricingAPI,
 		SubscriptionAPI:             subscriptionAPI,
 
@@ -242,10 +242,9 @@ func (env *Environment) Reset() {
 	env.NetworkSecurityGroupAPI.Reset()
 	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
-	env.MockSkuClientSingleton.Reset()
+	env.SKUsAPI.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
-	env.MockSkuClientSingleton.SKUClient.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()
