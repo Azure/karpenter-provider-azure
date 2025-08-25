@@ -97,6 +97,11 @@ var _ = Describe("FIPS", func() {
 	Context("FIPS Disabled", func() {
 		It("should provision nodes with FIPS explicitly disabled", func() {
 			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+			// Explicitly testing Disabled here.
+			// - This should have the same behavior as not being set, which other tests will already cover.
+			// However, since we don't have the defaulting actually set "Disabled" on the NodeClass, and instead
+			// leaves it unset, this tests is run to ensure "Disabled" behavior is expected.
+			// - Additionally, the default (unset behavior) may change in the future depending upon other settings.
 			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
 
 			pod := test.Pod()
