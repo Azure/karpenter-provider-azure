@@ -25,28 +25,34 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 )
 
 type NodeImageVersionsClient struct {
-	cred azcore.TokenCredential
+	cred  azcore.TokenCredential
+	cloud cloud.Configuration
 }
 
-func NewNodeImageVersionsClient(cred azcore.TokenCredential) *NodeImageVersionsClient {
+func NewNodeImageVersionsClient(cred azcore.TokenCredential, cloud cloud.Configuration) *NodeImageVersionsClient {
 	return &NodeImageVersionsClient{
-		cred: cred,
+		cred:  cred,
+		cloud: cloud,
 	}
 }
 
 func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscription string) (types.NodeImageVersionsResponse, error) {
+	resourceManagerConfig := l.cloud.Services[cloud.ResourceManager]
+
 	resourceURL := fmt.Sprintf(
-		"https://management.azure.com/subscriptions/%s/providers/Microsoft.ContainerService/locations/%s/nodeImageVersions?api-version=%s",
-		subscription, location, "2024-04-02-preview",
+		"%s/subscriptions/%s/providers/Microsoft.ContainerService/locations/%s/nodeImageVersions?api-version=%s",
+		resourceManagerConfig.Endpoint, subscription, location, "2024-04-02-preview",
 	)
 
 	token, err := l.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
+		Scopes: []string{auth.TokenScope(l.cloud)},
 	})
 	if err != nil {
 		return types.NodeImageVersionsResponse{}, err

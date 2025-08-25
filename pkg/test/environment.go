@@ -104,12 +104,14 @@ func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Env
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
 	testOptions := options.FromContext(ctx)
 
+	azureEnv := lo.Must(auth.EnvironmentFromName("AzurePublicCloud"))
+
 	// API
 	var auxTokenPolicy *auth.AuxiliaryTokenPolicy
 	var auxiliaryTokenServer *fake.AuxiliaryTokenServer
 	if testOptions.UseSIG {
 		auxiliaryTokenServer = fake.NewAuxiliaryTokenServer("test-token", time.Now().Add(1*time.Hour), time.Now().Add(5*time.Minute))
-		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, testOptions.SIGAccessTokenScope)
+		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, auth.TokenScope(azureEnv.Cloud))
 	}
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{AuxiliaryTokenPolicy: auxTokenPolicy}
 
@@ -133,7 +135,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 
 	// Providers
-	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
+	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
 	instanceTypesProvider := instancetype.NewDefaultProvider(
