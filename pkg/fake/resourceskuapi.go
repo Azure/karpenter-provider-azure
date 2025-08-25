@@ -29,18 +29,6 @@ import (
 // ResourceSkus is a map of location to resource skus
 var ResourceSkus = make(map[string][]compute.ResourceSku)
 
-type MockSkuClientSingleton struct {
-	SKUClient *ResourceSKUsAPI
-}
-
-func (sc *MockSkuClientSingleton) GetInstance() skewer.ResourceClient {
-	return sc.SKUClient
-}
-
-func (sc *MockSkuClientSingleton) Reset() {
-	sc.SKUClient.Reset()
-}
-
 // assert that the fake implements the interface
 var _ skewer.ResourceClient = &ResourceSKUsAPI{}
 

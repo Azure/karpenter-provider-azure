@@ -42,7 +42,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 
 	"github.com/Azure/skewer"
@@ -72,7 +71,7 @@ var _ Provider = (*DefaultProvider)(nil)
 
 type DefaultProvider struct {
 	region               string
-	skuClient            skuclient.SkuClient
+	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
 
@@ -91,7 +90,7 @@ type DefaultProvider struct {
 func NewDefaultProvider(
 	region string,
 	cache *cache.Cache,
-	skuClient skuclient.SkuClient,
+	skuClient skewer.ResourceClient,
 	pricingProvider *pricing.Provider,
 	offeringsCache *kcache.UnavailableOfferings,
 ) *DefaultProvider {
@@ -283,7 +282,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 	instanceTypes := map[string]*skewer.SKU{}
 
-	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient.GetInstance()))
+	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
 	if err != nil {
 		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
