@@ -42,19 +42,16 @@ func readEnvironmentFromFile(filepath string) (*azclient.Environment, error) {
 		return nil, fmt.Errorf("filepath must be absolute: %s", filepath)
 	}
 
-	// Read file content
 	content, err := os.ReadFile(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read environment file %s: %w", filepath, err)
 	}
 
-	// Parse JSON content into azclient.Environment
 	var env azclient.Environment
 	if err := json.Unmarshal(content, &env); err != nil {
 		return nil, fmt.Errorf("failed to parse environment file %s as JSON: %w", filepath, err)
 	}
 
-	// Validate required fields
 	if err := validateEnvironment(&env); err != nil {
 		return nil, fmt.Errorf("invalid environment configuration in file %s: %w", filepath, err)
 	}
