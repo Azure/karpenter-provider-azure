@@ -55,6 +55,11 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = BeforeEach(func() {
+	// Create and use ctx in the tests below rather than mainCtx because some of
+	// the tests start the pricing poller. Stopping the poller requires canceling the context
+	// but if we cancel the main context, it will break tests that run afterwards.
+	// We still need the mainCtx because it attaches the test logger which we cannot do
+	// in BeforeEach.
 	ctx, stop = context.WithCancel(mainCtx)
 	fakePricingAPI.Reset()
 })
