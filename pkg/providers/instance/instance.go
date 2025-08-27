@@ -604,7 +604,23 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
 	vm := newVMObject(opts)
-	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, "instance-type", opts.InstanceType.Name)
+	log.FromContext(ctx).V(1).Info("creating virtual machine",
+		// Be careful modifying this log, as it provides useful information on VM creation,
+		// which might be relied on by other sources.
+		"metric", "VMCreateStart",
+		"vmName", opts.VMName,
+		"location", opts.Location,
+		"zone", opts.Zone,
+		"instance-type", opts.InstanceType.Name,
+		"capacity-type", opts.CapacityType,
+		"useSIG", opts.UseSIG,
+		"imageFamily", opts.NodeClass.Spec.ImageFamily,
+		"fipsMode", opts.NodeClass.Spec.FIPSMode,
+		"imageID", opts.LaunchTemplate.ImageID,
+		"subnetID", opts.LaunchTemplate.SubnetID,
+		"osDiskSizeGB", opts.NodeClass.Spec.OSDiskSizeGB,
+		"storageProfileIsEphemeral", opts.LaunchTemplate.StorageProfileIsEphemeral,
+		"provisionMode", opts.ProvisionMode)
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
