@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -35,6 +36,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
+	"github.com/Azure/skewer"
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 )
@@ -62,20 +65,30 @@ type NetworkInterfacesAPI interface {
 	UpdateTags(ctx context.Context, resourceGroupName string, networkInterfaceName string, tags armnetwork.TagsObject, options *armnetwork.InterfacesClientUpdateTagsOptions) (armnetwork.InterfacesClientUpdateTagsResponse, error)
 }
 
+type SubnetsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
+}
+
 // TODO: Move this to another package that more correctly reflects its usage across multiple providers
 type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
+	subnetsClient                  SubnetsAPI
 
 	NodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI
 	ImageVersionsClient     imagefamilytypes.CommunityGalleryImageVersionsAPI
 	NodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	// SKU CLIENT is still using track 1 because skewer does not support the track 2 path. We need to refactor this once skewer supports track 2
-	SKUClient                   skuclient.SkuClient
+	SKUClient                   skewer.ResourceClient
 	LoadBalancersClient         loadbalancer.LoadBalancersAPI
 	NetworkSecurityGroupsClient networksecuritygroup.API
+	SubscriptionsClient         zone.SubscriptionsAPI
+}
+
+func (c *AZClient) SubnetsClient() SubnetsAPI {
+	return c.subnetsClient
 }
 
 func NewAZClientFromAPI(
@@ -83,24 +96,28 @@ func NewAZClientFromAPI(
 	azureResourceGraphClient AzureResourceGraphAPI,
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
+	subnetsClient SubnetsAPI,
 	loadBalancersClient loadbalancer.LoadBalancersAPI,
 	networkSecurityGroupsClient networksecuritygroup.API,
 	imageVersionsClient imagefamilytypes.CommunityGalleryImageVersionsAPI,
 	nodeImageVersionsClient imagefamilytypes.NodeImageVersionsAPI,
 	nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI,
-	skuClient skuclient.SkuClient,
+	skuClient skewer.ResourceClient,
+	subscriptionsClient zone.SubscriptionsAPI,
 ) *AZClient {
 	return &AZClient{
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
+		subnetsClient:                  subnetsClient,
 		ImageVersionsClient:            imageVersionsClient,
 		NodeImageVersionsClient:        nodeImageVersionsClient,
 		NodeBootstrappingClient:        nodeBootstrappingClient,
 		SKUClient:                      skuClient,
 		LoadBalancersClient:            loadBalancersClient,
 		NetworkSecurityGroupsClient:    networkSecurityGroupsClient,
+		SubscriptionsClient:            subscriptionsClient,
 	}
 }
 
@@ -125,6 +142,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 	}
 
 	interfacesClient, err := armnetwork.NewInterfacesClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	subnetsClient, err := armnetwork.NewSubnetsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -165,9 +187,14 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		return nil, err
 	}
 
+	subscriptionsClient, err := armsubscriptions.NewClient(cred, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	// TODO: this one is not enabled for rate limiting / throttling ...
 	// TODO Move this over to track 2 when skewer is migrated
-	skuClient := skuclient.NewSkuClient(ctx, cfg, env)
+	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env)
 
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI = nil
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
@@ -183,14 +210,18 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *azclient.Environmen
 		}
 	}
 
-	return NewAZClientFromAPI(virtualMachinesClient,
+	return NewAZClientFromAPI(
+		virtualMachinesClient,
 		azureResourceGraphClient,
 		extensionsClient,
 		interfacesClient,
+		subnetsClient,
 		loadBalancersClient,
 		networkSecurityGroupsClient,
 		communityImageVersionsClient,
 		nodeImageVersionsClient,
 		nodeBootstrappingClient,
-		skuClient), nil
+		skuClient,
+		subscriptionsClient,
+	), nil
 }

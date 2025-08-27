@@ -62,11 +62,13 @@ type Environment struct {
 	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
 	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
-	MockSkuClientSingleton      *fake.MockSkuClientSingleton
+	SKUsAPI                     *fake.ResourceSKUsAPI
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
+	SubnetsAPI                  *fake.SubnetsAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
+	SubscriptionAPI             *fake.SubscriptionsAPI
 
 	// Cache
 	KubernetesVersionCache    *cache.Cache
@@ -114,12 +116,13 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
-	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
+	skusAPI := &fake.ResourceSKUsAPI{Location: region}
 	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
+	subscriptionAPI := &fake.SubscriptionsAPI{}
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -133,7 +136,12 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
-	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
+	instanceTypesProvider := instancetype.NewDefaultProvider(
+		region,
+		instanceTypeCache,
+		skusAPI,
+		pricingProvider,
+		unavailableOfferingsCache)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -159,17 +167,20 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		networkSecurityGroupAPI,
 		testOptions.NodeResourceGroup,
 	)
+	subnetsAPI := &fake.SubnetsAPI{}
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
+		subnetsAPI,
 		loadBalancersAPI,
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
 		nodeImageVersionsAPI,
 		nodeBootstrappingAPI,
-		skuClientSingleton,
+		skusAPI,
+		subscriptionAPI,
 	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,
@@ -193,8 +204,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
-		MockSkuClientSingleton:      skuClientSingleton,
+		SubnetsAPI:                  subnetsAPI,
+		SKUsAPI:                     skusAPI,
 		PricingAPI:                  pricingAPI,
+		SubscriptionAPI:             subscriptionAPI,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
 		NodeImagesCache:           nodeImagesCache,
@@ -227,11 +240,11 @@ func (env *Environment) Reset() {
 	env.NetworkInterfacesAPI.Reset()
 	env.LoadBalancersAPI.Reset()
 	env.NetworkSecurityGroupAPI.Reset()
+	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
-	env.MockSkuClientSingleton.Reset()
+	env.SKUsAPI.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
-	env.MockSkuClientSingleton.SKUClient.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()

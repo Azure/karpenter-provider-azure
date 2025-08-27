@@ -450,8 +450,8 @@ var _ = Describe("Drift", func() {
 
 		env.ExpectCreated(dep, nodeClass, nodePool)
 
-		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
+		nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
 		node := env.ExpectCreatedNodeCount("==", 1)[0]
 
 		env.ExpectCreatedOrUpdated(updatedNodeClass)
@@ -475,6 +475,59 @@ var _ = Describe("Drift", func() {
 		}),
 		Entry("MaxPods", v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr[int32](10)}),
 	)
+
+	Context("FIPS Drift", func() {
+		BeforeEach(func() {
+			if env.InClusterController {
+				Skip("FIPS drift tests require SIG access - skipping in self-hosted mode")
+			}
+		})
+
+		DescribeTable("AKSNodeClass FIPS", func(initialNodeClassSpec, updatedNodeClassSpec v1beta1.AKSNodeClassSpec) {
+			// Apply initial modifications to ensure we start with the right base state
+			initialNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *nodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: initialNodeClassSpec})
+			initialNodeClass.ObjectMeta = nodeClass.ObjectMeta
+
+			updatedNodeClass := test.AKSNodeClass(v1beta1.AKSNodeClass{Spec: *initialNodeClass.Spec.DeepCopy()}, v1beta1.AKSNodeClass{Spec: updatedNodeClassSpec})
+			updatedNodeClass.ObjectMeta = nodeClass.ObjectMeta
+
+			env.ExpectCreated(dep, initialNodeClass, nodePool)
+
+			pod := env.EventuallyExpectHealthyPodCount(selector, numPods)[0]
+			nodeClaim := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)[0]
+			node := env.ExpectCreatedNodeCount("==", 1)[0]
+
+			// Create the updated nodeClass for drift
+			env.ExpectCreatedOrUpdated(updatedNodeClass)
+
+			env.EventuallyExpectDrifted(nodeClaim)
+
+			delete(pod.Annotations, karpv1.DoNotDisruptAnnotationKey)
+			env.ExpectUpdated(pod)
+			env.EventuallyExpectNotFound(pod, node)
+			env.EventuallyExpectHealthyPodCount(selector, numPods)
+		},
+			Entry("FIPSMode: Disabled -> FIPS",
+				v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+				},
+				v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
+				},
+			),
+			Entry("FIPSMode: FIPS -> Disabled",
+				v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeFIPS),
+				},
+				v1beta1.AKSNodeClassSpec{
+					ImageFamily: lo.ToPtr(v1beta1.AzureLinuxImageFamily),
+					FIPSMode:    lo.ToPtr(v1beta1.FIPSModeDisabled),
+				},
+			),
+		)
+	})
 
 	It("should update the nodepool-hash annotation on the nodepool and nodeclaim when the nodepool's nodepool-hash-version annotation does not match the controller hash version", func() {
 		env.ExpectCreated(dep, nodeClass, nodePool)
@@ -575,53 +628,6 @@ var _ = Describe("Drift", func() {
 		env.ConsistentlyExpectNodeClaimsNotDrifted(time.Minute, nodeClaim)
 	})
 	Context("Failure", func() {
-		It("should not disrupt a drifted node if the replacement node never registers", func() {
-			// launch a new nodeClaim
-			var numPods int32 = 2
-			dep = coretest.Deployment(coretest.DeploymentOptions{
-				Replicas: 2,
-				PodOptions: coretest.PodOptions{
-					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "inflate"}},
-					PodAntiRequirements: []corev1.PodAffinityTerm{{
-						TopologyKey: corev1.LabelHostname,
-						LabelSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"app": "inflate"},
-						}},
-					},
-				},
-			})
-			selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
-			env.ExpectCreated(dep, nodeClass, nodePool)
-
-			By("deploying multiple replicas, pod per node")
-			startingNodeClaimState := env.EventuallyExpectRegisteredNodeClaimCount("==", int(numPods))
-			env.EventuallyExpectCreatedNodeCount("==", int(numPods))
-			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
-			By("drifting the nodeClaim with bad configuration that never registers")
-			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
-			env.ExpectCreatedOrUpdated(nodeClass)
-
-			env.EventuallyExpectDrifted(startingNodeClaimState...)
-
-			By("checking only a single node gets tainted due to default disruption budgets")
-			taintedNodes := env.EventuallyExpectTaintedNodeCount("==", 1)
-
-			By("checking drift fails and the original node gets untainted")
-			// TODO: reduce timeouts when disruption waits are factored out
-			env.EventuallyExpectNodesUntaintedWithTimeout(11*time.Minute, taintedNodes...)
-
-			By("checking all the NodeClaims that existed on the initial provisioning loop are not removed")
-			// Assert this over several minutes to ensure a subsequent disruption controller pass doesn't
-			// successfully schedule the evicted pods to the in-flight nodeclaim and disrupt the original node
-			Consistently(func(g Gomega) {
-				nodeClaims := &karpv1.NodeClaimList{}
-				g.Expect(env.Client.List(env, nodeClaims, client.HasLabels{coretest.DiscoveryLabel})).To(Succeed())
-				startingNodeClaimUIDs := sets.New(lo.Map(startingNodeClaimState, func(nc *karpv1.NodeClaim, _ int) types.UID { return nc.UID })...)
-				nodeClaimUIDs := sets.New(lo.Map(nodeClaims.Items, func(nc karpv1.NodeClaim, _ int) types.UID { return nc.UID })...)
-				g.Expect(nodeClaimUIDs.IsSuperset(startingNodeClaimUIDs)).To(BeTrue())
-			}, "2m").Should(Succeed())
-
-		})
 		It("should not disrupt a drifted node if the replacement node registers but never initialized", func() {
 			// launch a new nodeClaim
 			var numPods int32 = 2
@@ -723,22 +729,5 @@ var _ = Describe("Drift", func() {
 			env.EventuallyExpectDrifted(nodeClaims...)
 			env.ConsistentlyExpectNoDisruptions(int(numPods), time.Minute)
 		})
-	})
-
-	It("should disrupt nodes that have drifted due to VNETSubnetID", func() {
-		env.ExpectCreated(dep, nodeClass, nodePool)
-		env.EventuallyExpectHealthyPodCount(selector, numPods)
-		By("expect created node count to be 1")
-		env.ExpectCreatedNodeCount("==", 1)
-		nodeClaim := env.EventuallyExpectCreatedNodeClaimCount("==", 1)[0]
-
-		By("triggering subnet drift")
-		// TODO: Introduce azure clients to the tests to get values dynamically and be able to create azure resources inside of tests rather than using a fake id.
-		// this will fail to actually create a new nodeclaim for the drift replacement but should still test that we are marking the nodeclaim as drifted.
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet2")
-		env.ExpectCreatedOrUpdated(nodeClass)
-
-		By(fmt.Sprintf("waiting for nodeclaim %s to be marked as drifted", nodeClaim.Name))
-		env.EventuallyExpectDrifted(nodeClaim)
 	})
 })
