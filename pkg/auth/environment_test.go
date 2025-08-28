@@ -62,22 +62,22 @@ func TestReadEnvironmentFromFile(t *testing.T) {
 			wantErr:     false,
 		},
 		{
-			name: "empty filepath",
+			name: "empty path",
 			setupFile: func(t *testing.T) string {
 				return ""
 			},
 			expectedEnv:    nil,
 			wantErr:        true,
-			expectedErrMsg: "filepath is empty",
+			expectedErrMsg: "path is empty",
 		},
 		{
-			name: "relative filepath",
+			name: "relative path",
 			setupFile: func(t *testing.T) string {
 				return "relative/path.json"
 			},
 			expectedEnv:    nil,
 			wantErr:        true,
-			expectedErrMsg: "filepath must be absolute",
+			expectedErrMsg: "path must be absolute",
 		},
 		{
 			name: "non-existent file",
