@@ -22,7 +22,12 @@ updates:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
   - package-ecosystem: docker
-    directory: /.devcontainer
+    directories:
+      - /.devcontainer/**/*
+    groups:
+      devcontainer-deps:
+        patterns:
+          - "*"
     schedule:
       interval: "weekly"
   - package-ecosystem: docker

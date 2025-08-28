@@ -112,7 +112,6 @@ var _ = Describe("Options", func() {
 			os.Setenv("NODEBOOTSTRAPPING_SERVER_URL", "https://nodebootstrapping-server-url")
 			os.Setenv("USE_SIG", "true")
 			os.Setenv("SIG_ACCESS_TOKEN_SERVER_URL", "http://valid-server.com")
-			os.Setenv("SIG_ACCESS_TOKEN_SCOPE", "http://valid-scope.com/.default")
 			os.Setenv("SIG_SUBSCRIPTION_ID", "my-subscription-id")
 			os.Setenv("VNET_GUID", "a519e60a-cac0-40b2-b883-084477fe6f5c")
 			os.Setenv("AZURE_NODE_RESOURCE_GROUP", "my-node-rg")
@@ -143,7 +142,6 @@ var _ = Describe("Options", func() {
 				VnetGUID:                       lo.ToPtr("a519e60a-cac0-40b2-b883-084477fe6f5c"),
 				UseSIG:                         lo.ToPtr(true),
 				SIGAccessTokenServerURL:        lo.ToPtr("http://valid-server.com"),
-				SIGAccessTokenScope:            lo.ToPtr("http://valid-scope.com/.default"),
 				SIGSubscriptionID:              lo.ToPtr("my-subscription-id"),
 				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
 				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
@@ -385,24 +383,10 @@ var _ = Describe("Options", func() {
 				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
-				"--sig-access-token-scope", "http://valid-scope.com/.default",
 				"--sig-subscription-id", "my-subscription-id",
 				"--use-sig",
 			)
 			Expect(err).To(MatchError(ContainSubstring("sig-access-token-server-url")))
-		})
-		It("should fail if use-sig is enabled, but sig-access-token-scope is not set", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--sig-access-token-server-url", "http://valid-server.com",
-				"--sig-subscription-id", "my-subscription-id",
-				"--use-sig",
-			)
-			Expect(err).To(MatchError(ContainSubstring("sig-access-token-scope")))
 		})
 		It("should fail if use-sig is enabled, but sig-subscription-id is not set", func() {
 			err := opts.Parse(
@@ -412,7 +396,6 @@ var _ = Describe("Options", func() {
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--sig-access-token-server-url", "http://valid-server.com",
-				"--sig-access-token-scope", "http://valid-scope.com/.default",
 				"--use-sig",
 			)
 			Expect(err).To(MatchError(ContainSubstring("sig-subscription-id")))
@@ -425,7 +408,6 @@ var _ = Describe("Options", func() {
 				"--kubelet-bootstrap-token", "flag-bootstrap-token",
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--sig-access-token-server-url", "fake url",
-				"--sig-access-token-scope", "http://valid-scope.com/.default",
 				"--sig-subscription-id", "my-subscription-id",
 				"--use-sig",
 			)
