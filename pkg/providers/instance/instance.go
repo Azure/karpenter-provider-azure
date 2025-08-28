@@ -607,25 +607,14 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 	}
 	vm := newVMObject(opts)
 
-	// DO NOT remove any value fields from this metric
-	metrics.VMCreateStartMetric.Emit(ctx, "creating virtual machine",
-		metricvalues.VMName(opts.VMName),
-		metricvalues.Location(opts.Location),
-		metricvalues.Zone(opts.Zone),
-		metricvalues.InstanceType(opts.InstanceType.Name),
-		metricvalues.CapacityType(opts.CapacityType),
-		metricvalues.UseSIG(opts.UseSIG),
-		metricvalues.ImageFamily(opts.NodeClass.Spec.ImageFamily),
-		metricvalues.FipsMode(opts.NodeClass.Spec.FIPSMode),
-		metricvalues.ImageID(opts.LaunchTemplate.ImageID),
-		metricvalues.SubnetID(opts.LaunchTemplate.SubnetID),
-		metricvalues.OSDiskSizeGB(opts.NodeClass.Spec.OSDiskSizeGB),
-		metricvalues.StorageProfileIsEphemeral(opts.LaunchTemplate.StorageProfileIsEphemeral),
-		metricvalues.ProvisionMode(opts.ProvisionMode),
-	)
+	baseVMCreateMetrics := getBaseVMCreateMetrics(opts)
+	metrics.VMCreateStartMetric.Emit(ctx, "creating virtual machine", baseVMCreateMetrics...)
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
+		// Include the error in the failure metric
+		failureMetricValues := append(baseVMCreateMetrics, metricvalues.Error(err))
+		metrics.VMCreateSyncFailureMetric.Emit(ctx, "failed to create virtual machine on initial put", failureMetricValues...)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
@@ -694,7 +683,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 		return nil, err
 	}
 
-	result, err := p.createVirtualMachine(ctx, &createVMOptions{
+	opts := &createVMOptions{
 		VMName:             resourceName,
 		NicReference:       nicReference,
 		Zone:               zone,
@@ -708,7 +697,9 @@ func (p *DefaultProvider) beginLaunchInstance(
 		InstanceType:       instanceType,
 		ProvisionMode:      p.provisionMode,
 		UseSIG:             options.FromContext(ctx).UseSIG,
-	})
+	}
+	baseVMCreateMetrics := getBaseVMCreateMetrics(opts)
+	result, err := p.createVirtualMachine(ctx, opts)
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 		if skuErr != nil {
@@ -737,6 +728,9 @@ func (p *DefaultProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
+				// Include the error in the failure metric
+				failureMetricValues := append(baseVMCreateMetrics, metricvalues.Error(err))
+				metrics.VMCreateAsyncFailureMetric.Emit(ctx, "failed to create virtual machine during LRO", failureMetricValues...)
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)

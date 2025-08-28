@@ -90,6 +90,10 @@ func ProvisionMode(value string) MetricValue {
 	return MetricValue{key: "provisionMode", value: value}
 }
 
+func Error(value error) MetricValue {
+	return MetricValue{key: "error", value: value}
+}
+
 // Helper function to convert a slice of MetricValues to their key-value pairs
 func ValuesToKeyValuePairs(values ...MetricValue) []any {
 	var pairs []any

@@ -27,6 +27,12 @@ var (
 	VMCreateStartMetric = &metric{
 		name: "VMCreateStart",
 	}
+	VMCreateSyncFailureMetric = &metric{
+		name: "VMCreateSyncFailure",
+	}
+	VMCreateAsyncFailureMetric = &metric{
+		name: "VMCreateAsyncFailure",
+	}
 )
 
 type metric struct {
