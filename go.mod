@@ -52,7 +52,7 @@ require (
 	sigs.k8s.io/cloud-provider-azure v1.33.2
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.8.6
 	sigs.k8s.io/controller-runtime v0.21.0
-	sigs.k8s.io/karpenter v1.6.1
+	sigs.k8s.io/karpenter v1.6.2
 )
 
 require (
