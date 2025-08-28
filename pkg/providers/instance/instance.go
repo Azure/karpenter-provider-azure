@@ -40,6 +40,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	"github.com/Azure/karpenter-provider-azure/pkg/metrics/logvalues"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -604,23 +606,23 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 		return nil, fmt.Errorf("getting VM %q: %w", opts.VMName, err)
 	}
 	vm := newVMObject(opts)
-	log.FromContext(ctx).V(1).Info("creating virtual machine",
-		// Be careful modifying this log, as it provides useful information on VM creation,
-		// which might be relied on by other sources.
-		"metric", "VMCreateStart",
-		"vmName", opts.VMName,
-		"location", opts.Location,
-		"zone", opts.Zone,
-		"instance-type", opts.InstanceType.Name,
-		"capacity-type", opts.CapacityType,
-		"useSIG", opts.UseSIG,
-		"imageFamily", opts.NodeClass.Spec.ImageFamily,
-		"fipsMode", opts.NodeClass.Spec.FIPSMode,
-		"imageID", opts.LaunchTemplate.ImageID,
-		"subnetID", opts.LaunchTemplate.SubnetID,
-		"osDiskSizeGB", opts.NodeClass.Spec.OSDiskSizeGB,
-		"storageProfileIsEphemeral", opts.LaunchTemplate.StorageProfileIsEphemeral,
-		"provisionMode", opts.ProvisionMode)
+
+	// Emit the metric with individual values
+	metrics.VMCreateStartMetric.Emit(ctx, "creating virtual machine",
+		logvalues.VMName(opts.VMName),
+		logvalues.Location(opts.Location),
+		logvalues.Zone(opts.Zone),
+		logvalues.InstanceType(opts.InstanceType.Name),
+		logvalues.CapacityType(opts.CapacityType),
+		logvalues.UseSIG(opts.UseSIG),
+		logvalues.ImageFamily(opts.NodeClass.Spec.ImageFamily),
+		logvalues.FipsMode(opts.NodeClass.Spec.FIPSMode),
+		logvalues.ImageID(opts.LaunchTemplate.ImageID),
+		logvalues.SubnetID(opts.LaunchTemplate.SubnetID),
+		logvalues.OSDiskSizeGB(opts.NodeClass.Spec.OSDiskSizeGB),
+		logvalues.StorageProfileIsEphemeral(opts.LaunchTemplate.StorageProfileIsEphemeral),
+		logvalues.ProvisionMode(opts.ProvisionMode),
+	)
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
