@@ -34,6 +34,8 @@ import (
 )
 
 var env *azure.Environment
+var nodeClass *v1beta1.AKSNodeClass
+var nodePool *karpv1.NodePool
 
 func TestUtilization(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -43,7 +45,12 @@ func TestUtilization(t *testing.T) {
 	RunSpecs(t, "Utilization")
 }
 
-var _ = BeforeEach(func() { env.BeforeEach() })
+var _ = BeforeEach(func() {
+	env.BeforeEach()
+	nodeClass = env.DefaultAKSNodeClass()
+	nodePool = env.DefaultNodePool(nodeClass)
+})
+
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
