@@ -29,6 +29,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 	"github.com/samber/lo"
 )
@@ -122,13 +124,20 @@ func generatePricing(filePath string) {
 	fmt.Fprintf(src, "var initialPriceUpdate, _ = time.Parse(time.RFC3339, \"%s\")\n", now)
 	fmt.Fprintln(src, "var initialOnDemandPrices = map[string]map[string]float64{}")
 	fmt.Fprintln(src, "func init() {")
+
+	// Pin cloud to public for now
+	cloud := cloud.AzurePublic
+	env := &auth.Environment{
+		Cloud: cloud,
+	}
+
 	// record prices for each region
 	var pricingProviderByRegion = map[string]chan *pricing.Provider{}
 	for _, region := range regions {
 		resultsChan := make(chan *pricing.Provider)
 		log.Println("fetching pricing data in region", region)
 		go func(region string, resultsChan chan *pricing.Provider) {
-			pricingProvider := pricing.NewProvider(ctx, pricing.NewAPI(), region, make(chan struct{}))
+			pricingProvider := pricing.NewProvider(ctx, env, pricing.NewAPI(cloud), region, make(chan struct{}))
 			attempts := 0
 			for {
 				if pricingProvider.OnDemandLastUpdated().After(updateStarted) {
