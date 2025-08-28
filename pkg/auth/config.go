@@ -113,7 +113,7 @@ func (cfg *Config) Validate() error {
 func (cfg *Config) String() string {
 	json, err := json.Marshal(cfg)
 	if err != nil {
-		return "couldn't marshal Config JSON"
+		return fmt.Sprintf("couldn't marshal Config JSON: %s", err)
 	}
 
 	return string(json)

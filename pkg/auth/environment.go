@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
@@ -33,27 +34,31 @@ type Environment struct {
 	Cloud cloud.Configuration
 }
 
-// readEnvironmentFromFile reads environment configuration from a JSON file
-func readEnvironmentFromFile(filepath string) (*azclient.Environment, error) {
-	if filepath == "" {
-		return nil, fmt.Errorf("filepath is empty")
-	}
-	if !strings.HasPrefix(filepath, "/") {
-		return nil, fmt.Errorf("filepath must be absolute: %s", filepath)
+// readEnvironmentFromFile reads environment configuration from a JSON file.
+// The expected file format is the same one that CloudProvider expects:
+// https://github.com/kubernetes-sigs/cloud-provider-azure/blob/master/pkg/azclient/cloud.go#L153.
+// This also happens to be the original Track1 SDK format.
+func readEnvironmentFromFile(path string) (*azclient.Environment, error) {
+	if path == "" {
+		return nil, fmt.Errorf("path is empty")
 	}
 
-	content, err := os.ReadFile(filepath)
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("path must be absolute: %s", path)
+	}
+
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read environment file %s: %w", filepath, err)
+		return nil, fmt.Errorf("failed to read environment file %s: %w", path, err)
 	}
 
 	var env azclient.Environment
 	if err := json.Unmarshal(content, &env); err != nil {
-		return nil, fmt.Errorf("failed to parse environment file %s as JSON: %w", filepath, err)
+		return nil, fmt.Errorf("failed to parse environment file %s as JSON: %w", path, err)
 	}
 
 	if err := validateEnvironment(&env); err != nil {
-		return nil, fmt.Errorf("invalid environment configuration in file %s: %w", filepath, err)
+		return nil, fmt.Errorf("invalid environment configuration in file %s: %w", path, err)
 	}
 
 	return &env, nil
@@ -73,7 +78,12 @@ func validateEnvironment(env *azclient.Environment) error {
 	return nil
 }
 
-// mapTrack1ToTrack2Environment converts azclient.Environment (Track1 format) to cloud.Configuration (Track2 format)
+// mapTrack1ToTrack2Environment converts azclient.Environment (Track1 and CloudProvider format, written to all nodes automatically by AKS)
+// to cloud.Configuration (Track2 format).
+// This is similar to what CloudProvider does here: https://github.com/kubernetes-sigs/cloud-provider-azure/blob/master/pkg/azclient/cloud.go#L121
+// but we don't use that as it couples loading the file and mapping track1 to track2, in addition to allowing partial overrides
+// which is less than ideal.
+// TODO: We could move this upstream to azure-sdk-for-go-extensions or refactor how CloudProvider parses and share that.
 func mapTrack1ToTrack2Environment(env *azclient.Environment) (cloud.Configuration, error) {
 	if env == nil {
 		return cloud.Configuration{}, fmt.Errorf("environment cannot be nil")
@@ -125,6 +135,10 @@ func EnvironmentFromName(cloudName string) (*Environment, error) {
 // 2. Known cloud names (ARM_CLOUD)
 // 3. Default (Azure Public Cloud)
 func ResolveCloudEnvironment(cfg *Config) (*Environment, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("cfg is nil")
+	}
+
 	// 1. Try file-based environment first (highest precedence)
 	if cfg.AzureEnvironmentFilepath != "" {
 		env, err := readEnvironmentFromFile(cfg.AzureEnvironmentFilepath)
@@ -148,6 +162,7 @@ func ResolveCloudEnvironment(cfg *Config) (*Environment, error) {
 		return EnvironmentFromName(cfg.Cloud)
 	}
 
-	// 3. Default to Azure Public Cloud
+	// 3. Default to Azure Public Cloud -- this code shouldn't be hit regularly
+	// as we already default cfg.Cloud to AzurePublicCloud in the Config.Default method.
 	return EnvironmentFromName("AzurePublicCloud")
 }
