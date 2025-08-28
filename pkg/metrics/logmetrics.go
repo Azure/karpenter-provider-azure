@@ -19,7 +19,7 @@ package metrics
 import (
 	"context"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/metrics/logvalues"
+	"github.com/Azure/karpenter-provider-azure/pkg/metrics/metricvalues"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -33,7 +33,7 @@ type metric struct {
 	name string
 }
 
-func (m *metric) Emit(ctx context.Context, msg string, values ...logvalues.MetricValue) {
+func (m *metric) Emit(ctx context.Context, msg string, values ...metricvalues.MetricValue) {
 	logger := log.FromContext(ctx)
 
 	// Each metric should emit its own name, under the "metric" key.
@@ -41,11 +41,8 @@ func (m *metric) Emit(ctx context.Context, msg string, values ...logvalues.Metri
 		"metric", m.name,
 	}
 
-	// Add all metric values using using their known key, and stored value
-	for _, value := range values {
-		key, val := value.ToKeyValuePair()
-		fields = append(fields, key, val)
-	}
+	// Get and include the set of metrics key value pairs.
+	fields = append(fields, metricvalues.ValuesToKeyValuePairs(values...)...)
 
 	logger.Info(msg, fields...)
 }

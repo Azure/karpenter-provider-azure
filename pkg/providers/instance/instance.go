@@ -41,7 +41,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
-	"github.com/Azure/karpenter-provider-azure/pkg/metrics/logvalues"
+	"github.com/Azure/karpenter-provider-azure/pkg/metrics/metricvalues"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -607,21 +607,21 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 	}
 	vm := newVMObject(opts)
 
-	// Emit the metric with individual values
+	// DO NOT remove any value fields from this metric
 	metrics.VMCreateStartMetric.Emit(ctx, "creating virtual machine",
-		logvalues.VMName(opts.VMName),
-		logvalues.Location(opts.Location),
-		logvalues.Zone(opts.Zone),
-		logvalues.InstanceType(opts.InstanceType.Name),
-		logvalues.CapacityType(opts.CapacityType),
-		logvalues.UseSIG(opts.UseSIG),
-		logvalues.ImageFamily(opts.NodeClass.Spec.ImageFamily),
-		logvalues.FipsMode(opts.NodeClass.Spec.FIPSMode),
-		logvalues.ImageID(opts.LaunchTemplate.ImageID),
-		logvalues.SubnetID(opts.LaunchTemplate.SubnetID),
-		logvalues.OSDiskSizeGB(opts.NodeClass.Spec.OSDiskSizeGB),
-		logvalues.StorageProfileIsEphemeral(opts.LaunchTemplate.StorageProfileIsEphemeral),
-		logvalues.ProvisionMode(opts.ProvisionMode),
+		metricvalues.VMName(opts.VMName),
+		metricvalues.Location(opts.Location),
+		metricvalues.Zone(opts.Zone),
+		metricvalues.InstanceType(opts.InstanceType.Name),
+		metricvalues.CapacityType(opts.CapacityType),
+		metricvalues.UseSIG(opts.UseSIG),
+		metricvalues.ImageFamily(opts.NodeClass.Spec.ImageFamily),
+		metricvalues.FipsMode(opts.NodeClass.Spec.FIPSMode),
+		metricvalues.ImageID(opts.LaunchTemplate.ImageID),
+		metricvalues.SubnetID(opts.LaunchTemplate.SubnetID),
+		metricvalues.OSDiskSizeGB(opts.NodeClass.Spec.OSDiskSizeGB),
+		metricvalues.StorageProfileIsEphemeral(opts.LaunchTemplate.StorageProfileIsEphemeral),
+		metricvalues.ProvisionMode(opts.ProvisionMode),
 	)
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
