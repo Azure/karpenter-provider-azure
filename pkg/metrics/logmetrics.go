@@ -42,7 +42,7 @@ type metric struct {
 // https://github.com/awslabs/operatorpkg/blob/e9977193119b38a3f85ebb7df4f0543a8b5a2a20/metrics/prometheus.go#L17
 // > Note: since we are logging behind the scenes, rather that emitting an actual prometheus metric we do still accept
 // > a context, and msg for the logging.
-func (m *metric) Inc(ctx context.Context, msg string, values ...MetricValue) {
+func (m *metric) Inc(ctx context.Context, msg string, values ...Value) {
 	logger := log.FromContext(ctx)
 
 	// Each metric should emit its own name, under the "metric" key.

@@ -16,31 +16,31 @@ limitations under the License.
 
 package metrics
 
-// MetricValue represents a key-value pair for logging with a known key
-type MetricValue struct {
+// Value represents a key-value pair for logging with a known key
+type Value struct {
 	key   string
 	value any
 }
 
 // Key returns the logging key
-func (m MetricValue) Key() string {
+func (m Value) Key() string {
 	return m.key
 }
 
 // Value returns the logging value
-func (m MetricValue) Value() any {
+func (m Value) Value() any {
 	return m.value
 }
 
 // Constructor functions for each metric value type with known keys
 
-func ImageID(value string) MetricValue {
+func ImageID(value string) Value {
 	// TODO (charliedmcb): refactor this key into a sharable consts.
-	return MetricValue{key: "imageID", value: value}
+	return Value{key: "imageID", value: value}
 }
 
-// Helper function to convert a slice of MetricValues to their key-value pairs
-func ValuesToKeyValuePairs(values ...MetricValue) []any {
+// Helper function to convert a slice of Values to their key-value pairs
+func ValuesToKeyValuePairs(values ...Value) []any {
 	var pairs []any
 	for _, v := range values {
 		pairs = append(pairs, v.Key(), v.Value())
