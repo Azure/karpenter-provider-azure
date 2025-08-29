@@ -19,7 +19,7 @@ package metrics
 import (
 	"context"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/metrics/metricvalues"
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -39,7 +39,11 @@ type metric struct {
 	name string
 }
 
-func (m *metric) Emit(ctx context.Context, msg string, values ...metricvalues.MetricValue) {
+// Emulating the prometheus method here:
+// https://github.com/awslabs/operatorpkg/blob/e9977193119b38a3f85ebb7df4f0543a8b5a2a20/metrics/prometheus.go#L17
+// > Note: since we are logging behind the scenes, rather that emitting an actual prometheus metric we do still accept
+// > a context, and msg for the logging.
+func (m *metric) Inc(ctx context.Context, msg string, values ...logging.LogValue) {
 	logger := log.FromContext(ctx)
 
 	// Each metric should emit its own name, under the "metric" key.
@@ -48,7 +52,7 @@ func (m *metric) Emit(ctx context.Context, msg string, values ...metricvalues.Me
 	}
 
 	// Get and include the set of metrics key value pairs.
-	fields = append(fields, metricvalues.ValuesToKeyValuePairs(values...)...)
+	fields = append(fields, logging.ValuesToKeyValuePairs(values...)...)
 
 	logger.Info(msg, fields...)
 }

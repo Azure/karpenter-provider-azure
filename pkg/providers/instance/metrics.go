@@ -16,23 +16,23 @@ limitations under the License.
 
 package instance
 
-import "github.com/Azure/karpenter-provider-azure/pkg/metrics/metricvalues"
+import "github.com/Azure/karpenter-provider-azure/pkg/logging"
 
-func getBaseVMCreateMetrics(opts *createVMOptions) []metricvalues.MetricValue {
+func getBaseVMCreateMetrics(opts *createVMOptions) []logging.LogValue {
 	// DO NOT remove any value fields from this metric
-	return []metricvalues.MetricValue{
-		metricvalues.VMName(opts.VMName),
-		metricvalues.Location(opts.Location),
-		metricvalues.Zone(opts.Zone),
-		metricvalues.InstanceType(opts.InstanceType.Name),
-		metricvalues.CapacityType(opts.CapacityType),
-		metricvalues.UseSIG(opts.UseSIG),
-		metricvalues.ImageFamily(opts.NodeClass.Spec.ImageFamily),
-		metricvalues.FIPSMode(opts.NodeClass.Spec.FIPSMode),
-		metricvalues.ImageID(opts.LaunchTemplate.ImageID),
-		metricvalues.SubnetID(opts.LaunchTemplate.SubnetID),
-		metricvalues.OSDiskSizeGB(opts.NodeClass.Spec.OSDiskSizeGB),
-		metricvalues.StorageProfileIsEphemeral(opts.LaunchTemplate.StorageProfileIsEphemeral),
-		metricvalues.ProvisionMode(opts.ProvisionMode),
+	return []logging.LogValue{
+		logging.VMName(opts.VMName),
+		logging.Location(opts.Location),
+		logging.Zone(opts.Zone),
+		logging.InstanceType(opts.InstanceType.Name),
+		logging.CapacityType(opts.CapacityType),
+		logging.UseSIG(opts.UseSIG),
+		logging.ImageFamily(opts.NodeClass.Spec.ImageFamily),
+		logging.FIPSMode(opts.NodeClass.Spec.FIPSMode),
+		logging.ImageID(opts.LaunchTemplate.ImageID),
+		logging.SubnetID(opts.LaunchTemplate.SubnetID),
+		logging.OSDiskSizeGB(opts.NodeClass.Spec.OSDiskSizeGB),
+		logging.StorageProfileIsEphemeral(opts.LaunchTemplate.StorageProfileIsEphemeral),
+		logging.ProvisionMode(opts.ProvisionMode),
 	}
 }

@@ -40,8 +40,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
-	"github.com/Azure/karpenter-provider-azure/pkg/metrics/metricvalues"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -608,11 +608,11 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 	vm := newVMObject(opts)
 
 	baseVMCreateMetrics := getBaseVMCreateMetrics(opts)
-	metrics.VMCreateStartMetric.Emit(ctx, "creating virtual machine", baseVMCreateMetrics...)
+	metrics.VMCreateStartMetric.Inc(ctx, "creating virtual machine", baseVMCreateMetrics...)
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		metrics.VMCreateSyncFailureMetric.Emit(ctx, "failed to create virtual machine on initial put", append(baseVMCreateMetrics, metricvalues.Error(err))...)
+		metrics.VMCreateSyncFailureMetric.Inc(ctx, "failed to create virtual machine on initial put", append(baseVMCreateMetrics, logging.Error(err))...)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
@@ -726,7 +726,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				metrics.VMCreateAsyncFailureMetric.Emit(ctx, "failed to create virtual machine during LRO", append(baseVMCreateMetrics, metricvalues.Error(err))...)
+				metrics.VMCreateAsyncFailureMetric.Inc(ctx, "failed to create virtual machine during LRO", append(baseVMCreateMetrics, logging.Error(err))...)
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
