@@ -66,7 +66,7 @@ func ImageFamily(value *string) MetricValue {
 	return MetricValue{key: "imageFamily", value: value}
 }
 
-func FipsMode(value *v1beta1.FIPSMode) MetricValue {
+func FIPSMode(value *v1beta1.FIPSMode) MetricValue {
 	return MetricValue{key: "fipsMode", value: value}
 }
 

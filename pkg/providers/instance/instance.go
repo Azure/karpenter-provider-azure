@@ -612,8 +612,6 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		// Include the error in the failure metric
-		failureMetricValues := append(baseVMCreateMetrics, metricvalues.Error(err))
 		metrics.VMCreateSyncFailureMetric.Emit(ctx, "failed to create virtual machine on initial put", append(baseVMCreateMetrics, metricvalues.Error(err))...)
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
@@ -728,9 +726,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				// Include the error in the failure metric
-				failureMetricValues := append(baseVMCreateMetrics, metricvalues.Error(err))
-				metrics.VMCreateAsyncFailureMetric.Emit(ctx, "failed to create virtual machine during LRO", failureMetricValues...)
+				metrics.VMCreateAsyncFailureMetric.Emit(ctx, "failed to create virtual machine during LRO", append(baseVMCreateMetrics, metricvalues.Error(err))...)
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)

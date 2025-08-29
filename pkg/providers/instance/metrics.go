@@ -28,7 +28,7 @@ func getBaseVMCreateMetrics(opts *createVMOptions) []metricvalues.MetricValue {
 		metricvalues.CapacityType(opts.CapacityType),
 		metricvalues.UseSIG(opts.UseSIG),
 		metricvalues.ImageFamily(opts.NodeClass.Spec.ImageFamily),
-		metricvalues.FipsMode(opts.NodeClass.Spec.FIPSMode),
+		metricvalues.FIPSMode(opts.NodeClass.Spec.FIPSMode),
 		metricvalues.ImageID(opts.LaunchTemplate.ImageID),
 		metricvalues.SubnetID(opts.LaunchTemplate.SubnetID),
 		metricvalues.OSDiskSizeGB(opts.NodeClass.Spec.OSDiskSizeGB),
