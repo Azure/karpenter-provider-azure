@@ -35,7 +35,7 @@ func (m MetricValue) Value() any {
 // Constructor functions for each metric value type with known keys
 
 func ImageID(value string) MetricValue {
-	// TODO: refactor this key into a sharable consts.
+	// TODO (charliedmcb): refactor this key into a sharable consts.
 	return MetricValue{key: "imageID", value: value}
 }
 
