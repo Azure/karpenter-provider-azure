@@ -18,8 +18,9 @@ package auth
 
 import (
 	"os"
-	"reflect"
 	"testing"
+
+	. "github.com/onsi/gomega"
 )
 
 func TestBuildAzureConfig(t *testing.T) {
@@ -37,6 +38,7 @@ func TestBuildAzureConfig(t *testing.T) {
 		{
 			name: "default",
 			expected: &Config{
+				Cloud:          "AzurePublicCloud",
 				SubscriptionID: "12345",
 				ResourceGroup:  "my-rg",
 			},
@@ -52,6 +54,7 @@ func TestBuildAzureConfig(t *testing.T) {
 		{
 			name: "vmType=vm", // tests setVMType()
 			expected: &Config{
+				Cloud:          "AzurePublicCloud",
 				SubscriptionID: "12345",
 				ResourceGroup:  "my-rg",
 			},
@@ -65,30 +68,77 @@ func TestBuildAzureConfig(t *testing.T) {
 				"ARM_VM_TYPE":         "vm",
 			},
 		},
+		{
+			name:     "both ARM_CLOUD and AZURE_ENVIRONMENT_FILEPATH set",
+			expected: nil,
+			wantErr:  true,
+			env: map[string]string{
+				"ARM_RESOURCE_GROUP":         "my-rg",
+				"ARM_SUBSCRIPTION_ID":        "12345",
+				"AZURE_SUBNET_ID":            "12345",
+				"AZURE_SUBNET_NAME":          "my-subnet",
+				"AZURE_VNET_NAME":            "my-vnet",
+				"ARM_CLOUD":                  "AzurePublicCloud",
+				"AZURE_ENVIRONMENT_FILEPATH": "/etc/kubernetes/AzureStackCloud.json",
+			},
+		},
+		{
+			name: "only ARM_CLOUD set",
+			expected: &Config{
+				SubscriptionID: "12345",
+				ResourceGroup:  "my-rg",
+				Cloud:          "AzurePublicCloud",
+			},
+			wantErr: false,
+			env: map[string]string{
+				"ARM_RESOURCE_GROUP":  "my-rg",
+				"ARM_SUBSCRIPTION_ID": "12345",
+				"AZURE_SUBNET_ID":     "12345",
+				"AZURE_SUBNET_NAME":   "my-subnet",
+				"AZURE_VNET_NAME":     "my-vnet",
+				"ARM_CLOUD":           "AzurePublicCloud",
+			},
+		},
+		{
+			name: "only AZURE_ENVIRONMENT_FILEPATH set",
+			expected: &Config{
+				SubscriptionID:           "12345",
+				ResourceGroup:            "my-rg",
+				AzureEnvironmentFilepath: "/etc/kubernetes/AzureStackCloud.json",
+			},
+			wantErr: false,
+			env: map[string]string{
+				"ARM_RESOURCE_GROUP":         "my-rg",
+				"ARM_SUBSCRIPTION_ID":        "12345",
+				"AZURE_SUBNET_ID":            "12345",
+				"AZURE_SUBNET_NAME":          "my-subnet",
+				"AZURE_VNET_NAME":            "my-vnet",
+				"AZURE_ENVIRONMENT_FILEPATH": "/etc/kubernetes/AzureStackCloud.json",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
 			for k, v := range tt.env {
 				err := os.Setenv(k, v)
-				if err != nil {
-					t.Errorf("error setting environment %v = %s", tt.env, err)
-					return
-				}
+				g.Expect(err).ToNot(HaveOccurred(), "error setting environment variable %s = %s", k, v)
 			}
+
 			got, err := BuildAzureConfig()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("BuildAzureConfig() error = %v, wantErr %v", err, tt.wantErr)
-				return
+
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(got).To(BeNil())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(got).To(Equal(tt.expected))
 			}
-			if equal := reflect.DeepEqual(got, tt.expected); !equal {
-				t.Errorf("BuildAzureConfig() = %v, want %v", got, tt.expected)
-			}
+
 			for k := range tt.env {
 				err := os.Unsetenv(k)
-				if err != nil {
-					t.Errorf("error unsetting environment %v = %s", tt.env, err)
-					return
-				}
+				g.Expect(err).ToNot(HaveOccurred(), "error unsetting environment variable %s", k)
 			}
 		})
 	}

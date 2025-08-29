@@ -135,17 +135,11 @@ func (o *Options) validateUseSIG() error {
 		if o.SIGAccessTokenServerURL == "" {
 			return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
 		}
-		if o.SIGAccessTokenScope == "" {
-			return fmt.Errorf("sig-access-token-scope is required when use-sig is true")
-		}
 		if o.SIGSubscriptionID == "" {
 			return fmt.Errorf("sig-subscription-id is required when use-sig is true")
 		}
 		if !isValidURL(o.SIGAccessTokenServerURL) {
 			return fmt.Errorf("sig-access-token-server-url is not a valid URL")
-		}
-		if !isValidURL(o.SIGAccessTokenScope) {
-			return fmt.Errorf("sig-access-token-scope is not a valid URL")
 		}
 	}
 	return nil
