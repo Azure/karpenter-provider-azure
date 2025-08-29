@@ -607,12 +607,11 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 	}
 	vm := newVMObject(opts)
 
-	baseVMCreateMetrics := getBaseVMCreateMetrics(opts)
-	metrics.VMCreateStartMetric.Inc(ctx, "creating virtual machine", baseVMCreateMetrics...)
+	metrics.VMCreateStartMetric.Inc(ctx, "creating virtual machine", logging.ImageID(opts.LaunchTemplate.ImageID))
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		metrics.VMCreateSyncFailureMetric.Inc(ctx, "failed to create virtual machine on initial put", append(baseVMCreateMetrics, logging.Error(err))...)
+		metrics.VMCreateSyncFailureMetric.Inc(ctx, "failed to create virtual machine on initial put", logging.ImageID(opts.LaunchTemplate.ImageID))
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
@@ -681,7 +680,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 		return nil, err
 	}
 
-	opts := &createVMOptions{
+	result, err := p.createVirtualMachine(ctx, &createVMOptions{
 		VMName:             resourceName,
 		NicReference:       nicReference,
 		Zone:               zone,
@@ -695,9 +694,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 		InstanceType:       instanceType,
 		ProvisionMode:      p.provisionMode,
 		UseSIG:             options.FromContext(ctx).UseSIG,
-	}
-	baseVMCreateMetrics := getBaseVMCreateMetrics(opts)
-	result, err := p.createVirtualMachine(ctx, opts)
+	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 		if skuErr != nil {
@@ -726,7 +723,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				metrics.VMCreateAsyncFailureMetric.Inc(ctx, "failed to create virtual machine during LRO", append(baseVMCreateMetrics, logging.Error(err))...)
+				metrics.VMCreateAsyncFailureMetric.Inc(ctx, "failed to create virtual machine during LRO", logging.ImageID(launchTemplate.ImageID))
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
