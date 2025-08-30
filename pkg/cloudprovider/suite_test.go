@@ -1080,6 +1080,7 @@ var _ = Describe("CloudProvider", func() {
 				// Set up test context with additional tags
 				aksTestOptions := test.Options(test.OptionsFields{
 					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+					UseSIG:        lo.ToPtr(true),
 					AdditionalTags: map[string]string{
 						"karpenter.azure.com/test-tag": "test-value",
 					},
