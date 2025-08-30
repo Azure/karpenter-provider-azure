@@ -16,6 +16,8 @@ limitations under the License.
 
 package metrics
 
+import "github.com/Azure/karpenter-provider-azure/pkg/logging"
+
 // Value represents a key-value pair for logging with a known key
 type Value struct {
 	key   string
@@ -35,8 +37,7 @@ func (m Value) Value() any {
 // Constructor functions for each metric value type with known keys
 
 func ImageID(value string) Value {
-	// TODO (charliedmcb): refactor this key into a sharable consts.
-	return Value{key: "imageID", value: value}
+	return Value{key: logging.ImageIDKey, value: value}
 }
 
 // Helper function to convert a slice of Values to their key-value pairs
