@@ -118,8 +118,8 @@ type AKSMachineProvider interface {
 	BeginCreate(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*AKSMachinePromise, error)
 	// Update updates the AKS machine instance with the specified name. Return NodeClaimNotFoundError if not found.
 	Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine) error
-	// Get retrieves the AKS machine instance with the specified name. This could be either VM name or AKS machine name. Return NodeClaimNotFoundError if not found.
-	Get(ctx context.Context, aksMachineNameOrVMName string) (*armcontainerservice.Machine, error)
+	// Get retrieves the AKS machine instance with the specified AKS machine name. Return NodeClaimNotFoundError if not found.
+	Get(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error)
 	// List lists all AKS machine instances in the cluster.
 	List(ctx context.Context) ([]*armcontainerservice.Machine, error)
 	// Delete deletes the AKS machine instance with the specified name. Return NodeClaimNotFoundError if not found.
@@ -239,7 +239,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 }
 
 // ASSUMPTION: the AKS machine will be in the current p.aksMachinesPoolName. Otherwise need rework to pass the pool name in.
-func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineNameOrVMName string) (*armcontainerservice.Machine, error) { // XPMT: ✅
+func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) { // XPMT: ✅
 	if p.aksMachinesPoolName == "" {
 		// Possible when this option field is not populated, which is not required when PROVISION_MODE is not aksmachineapi.
 		// But an AKS machine instance exists, whether added manually or from before switching PROVISION_MODE.
@@ -247,8 +247,8 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineNameOrVMN
 		return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to get AKS machine instance, AKS machines pool name is empty"))
 	}
 
-	// ASSUMPTION: AKS machines API accepts either VM name or AKS machine name.
-	resp, err := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineNameOrVMName, nil)
+	// ASSUMPTION: AKS machines API accepts only AKS machine name.
+	resp, err := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		if IsARMNotFound(err) {
 			// XPMT: TODO: check API: see what happens when Machines pool is not found when calling Machines get.
