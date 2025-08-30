@@ -29,7 +29,7 @@ const (
 		> In the cases where a key is defined in upstream logs we match their casing regardless of if it aligns with our general casing pattern here.
 		> Each upstream key should have a code reference to upstream documented with it.
 	*/
-	// INSTANCE_TYPE_KEY is defined with kebab-casing within upstream here:
+	// InstanceType is defined with kebab-casing within upstream here:
 	// https://github.com/kubernetes-sigs/karpenter/blob/0f4e19a3e8d6eb07ffc5157caa1d296badce8221/pkg/controllers/nodeclaim/lifecycle/launch.go#L119
 	InstanceType = "instance-type"
 )
