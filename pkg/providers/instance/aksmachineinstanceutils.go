@@ -174,7 +174,7 @@ func FindNodePoolFromAKSMachine(ctx context.Context, aksMachine *armcontainerser
 }
 
 // E.g., default-2jf98.
-// Real node name would be aks-<machinesPoolName>-<aksMachineName>-########-vms#. E.g., aks-aksmanagedap-default-2jf98-11274290-vms2.
+// Real node name would be aks-<machinesPoolName>-<aksMachineName>-########-vm#. E.g., aks-aksmanagedap-default-2jf98-11274290-vm2.
 func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) string {
 	// ASSUMPTION: all AKS machines are named after the NodeClaim name.
 	// Does not guarantee that the NodeClaim is already associated with an AKS machine.
@@ -203,9 +203,9 @@ func GetCapacityTypeFromAKSScaleSetPriority(scaleSetPriority armcontainerservice
 	return AKSScaleSetPriorityToKarpCapacityType[scaleSetPriority]
 }
 
-// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vms#
+// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
 // Note: there is no accurate way to tell from the VM name that the VM is created by AKS machine API.
-// E.g., a non-AKS machine VM from Karpenter nodepool named "aksmanagedap-aks-nodepool-abcde-12345678" with suffix "vms12" would result in VM name "aks-aksmanagedap-aks-nodepool-abcde-12345678-vms12", which can be interpreted as a AKS machine with pool name "aksmanagedap" and name "aks-nodepool-abcde".
+// E.g., a non-AKS machine VM from Karpenter nodepool named "aksmanagedap-aks-nodepool-abcde-12345678" with suffix "vms12" would result in VM name "aks-aksmanagedap-aks-nodepool-abcde-12345678-vm12", which can be interpreted as a AKS machine with pool name "aksmanagedap" and name "aks-nodepool-abcde".
 // The validation below is, thus, best-effort.
 func GetAKSMachineNameFromVMName(aksMachinesPoolName, vmName string) (string, error) {
 	if !strings.HasPrefix(vmName, "aks-"+aksMachinesPoolName+"-") {
@@ -217,11 +217,11 @@ func GetAKSMachineNameFromVMName(aksMachinesPoolName, vmName string) (string, er
 	if len(splitted) < 3 {
 		return "", fmt.Errorf("vm name %s does not have enough parts after prefix aks-%s-", vmName, aksMachinesPoolName)
 	}
-	// Check whether the last part starts with "vms"
-	if !strings.HasPrefix(splitted[len(splitted)-1], "vms") {
-		return "", fmt.Errorf("vm name %s does not end with expected suffix vms#", vmName)
+	// Check whether the last part starts with "vm"
+	if !strings.HasPrefix(splitted[len(splitted)-1], "vm") {
+		return "", fmt.Errorf("vm name %s does not end with expected suffix vm#", vmName)
 	}
-	// Remove the last two parts (########-vms#) and join the rest to get the AKS machine name
+	// Remove the last two parts (########-vm#) and join the rest to get the AKS machine name
 	aksMachineName := strings.Join(splitted[:len(splitted)-2], "-")
 
 	return aksMachineName, nil

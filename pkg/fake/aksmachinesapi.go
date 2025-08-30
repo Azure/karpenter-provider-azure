@@ -524,9 +524,9 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	}
 
 	// Set ResourceID - simulates VM resource ID
-	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vms#
+	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
 	if machine.Properties.ResourceID == nil {
-		vmName := fmt.Sprintf("aks-%s-%s-12345678-vms0", agentPoolName, *machine.Name)
+		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm0", agentPoolName, *machine.Name)
 		vmResourceID := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Compute/virtualMachines/%s", vmName)
 		machine.Properties.ResourceID = lo.ToPtr(vmResourceID)
 	}
