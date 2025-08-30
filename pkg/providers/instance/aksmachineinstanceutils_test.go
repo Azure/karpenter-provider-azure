@@ -322,7 +322,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 	Context("GetAKSMachineNameFromVMName", func() {
 		It("should extract AKS machine name from valid VM name", func() {
 			poolName := "aksmanagedap"
-			vmName := "aks-aksmanagedap-some-nodepool-a1b2c-12345678-vms0"
+			vmName := "aks-aksmanagedap-some-nodepool-a1b2c-12345678-vm0"
 
 			machineName, err := GetAKSMachineNameFromVMName(poolName, vmName)
 
@@ -332,7 +332,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should handle complex machine names with multiple dashes", func() {
 			poolName := "aksmanagedap-aks-nodepool-abcde-12345678"
-			vmName := "aks-aksmanagedap-aks-nodepool-abcde-12345678-my-complex-machine-name-87654321-vms1"
+			vmName := "aks-aksmanagedap-aks-nodepool-abcde-12345678-my-complex-machine-name-87654321-vm1"
 
 			machineName, err := GetAKSMachineNameFromVMName(poolName, vmName)
 
@@ -342,7 +342,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error for invalid prefix", func() {
 			poolName := "machines"
-			vmName := "invalid-prefix-test-machine-123-12345678-vms0"
+			vmName := "invalid-prefix-test-machine-123-12345678-vm0"
 
 			_, err := GetAKSMachineNameFromVMName(poolName, vmName)
 
@@ -372,7 +372,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should handle different VMS suffixes", func() {
 			poolName := "pool1"
-			vmName := "aks-pool1-machine-name-87654321-vms99"
+			vmName := "aks-pool1-machine-name-87654321-vm99"
 
 			machineName, err := GetAKSMachineNameFromVMName(poolName, vmName)
 
