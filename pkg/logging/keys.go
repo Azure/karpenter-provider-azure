@@ -22,7 +22,7 @@ const (
 		> Note: we should only define common log keys here, that we want to ensure consistency between logging occurrences
 		> No need to define every adhoc key.
 	*/
-	ImageIDKey = "imageID"
+	ImageID = "imageID"
 
 	/*
 		MARK: Upstream Log Keys
@@ -31,5 +31,5 @@ const (
 	*/
 	// INSTANCE_TYPE_KEY is defined with kebab-casing within upstream here:
 	// https://github.com/kubernetes-sigs/karpenter/blob/0f4e19a3e8d6eb07ffc5157caa1d296badce8221/pkg/controllers/nodeclaim/lifecycle/launch.go#L119
-	InstanceTypeKey = "instance-type"
+	InstanceType = "instance-type"
 )

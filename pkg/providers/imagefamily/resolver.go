@@ -123,8 +123,8 @@ func (r *defaultResolver) Resolve(
 	}
 
 	log.FromContext(ctx).Info("resolved image",
-		logging.ImageIDKey, imageID,
-		logging.InstanceTypeKey, instanceType.Name,
+		logging.ImageID, imageID,
+		logging.InstanceType, instanceType.Name,
 	)
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.

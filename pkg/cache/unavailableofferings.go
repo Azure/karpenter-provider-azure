@@ -157,7 +157,7 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 	// even if the key is already in the cache, we still need to call Set to extend the cached entry's TTL
 	log.FromContext(ctx).V(1).Info("removing offering from offerings",
 		"unavailable", unavailableReason,
-		logging.InstanceTypeKey, instanceType,
+		logging.InstanceType, instanceType,
 		"zone", zone,
 		"capacity-type", capacityType,
 		"ttl", ttl)

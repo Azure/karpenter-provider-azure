@@ -37,7 +37,7 @@ func (m Value) Value() any {
 // Constructor functions for each metric value type with known keys
 
 func ImageID(value string) Value {
-	return Value{key: logging.ImageIDKey, value: value}
+	return Value{key: logging.ImageID, value: value}
 }
 
 // Helper function to convert a slice of Values to their key-value pairs
