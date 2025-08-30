@@ -381,7 +381,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		// XPMT: (topic) cloudprovider.Get(providerID) to get VM or AKS machine
 		ctx := log.IntoContext(ctx, log.FromContext(ctx).WithValues("aksMachineName", aksMachineName))
 
-		aksMachine, err := c.aksMachineProvider.Get(ctx, vmName)
+		aksMachine, err := c.aksMachineProvider.Get(ctx, aksMachineName)
 		if err == nil {
 			nodeClaim, err := c.resolveNodeClaimFromAKSMachine(ctx, aksMachine)
 			if err != nil {

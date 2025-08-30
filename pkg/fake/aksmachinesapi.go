@@ -352,39 +352,9 @@ func (c *AKSMachinesAPI) Get(ctx context.Context, resourceGroupName string, reso
 			return armcontainerservice.MachinesClientGetResponse{
 				Machine: aksMachine.(armcontainerservice.Machine),
 			}, nil
-		}
-
-		// If not found, try to find by VM name
-		c.sharedStores.AKSMachines.Range(func(key, value interface{}) bool {
-			storedMachine := value.(armcontainerservice.Machine)
-
-			// Check if the input matches the AKS machine name
-			if storedMachine.Name != nil && *storedMachine.Name == input.AKSMachineName {
-				aksMachine = storedMachine
-				ok = true
-				return false
-			}
-
-			// Check if the input matches the VM name from ResourceID
-			if storedMachine.Properties != nil && storedMachine.Properties.ResourceID != nil {
-				vmResourceID := *storedMachine.Properties.ResourceID
-				// Extract VM name from resource ID: /subscriptions/.../virtualMachines/vmName
-				if vmName := extractVMNameFromResourceID(vmResourceID); vmName == input.AKSMachineName {
-					aksMachine = storedMachine
-					ok = true
-					return false
-				}
-			}
-
-			return true
-		})
-
-		if !ok {
+		} else {
 			return armcontainerservice.MachinesClientGetResponse{}, AKSMachineAPIErrorFromAKSMachineNotFound
 		}
-		return armcontainerservice.MachinesClientGetResponse{
-			Machine: aksMachine.(armcontainerservice.Machine),
-		}, nil
 	})
 }
 
