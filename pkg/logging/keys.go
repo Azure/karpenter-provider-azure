@@ -20,13 +20,13 @@ const (
 	// MARK: Common Keys
 	// > Note: we should only define common log keys here, that we want to ensure consistency between logging occurrences
 	// > No need to define every adhoc key.
-	// ---
+
 	ImageID = "imageID"
 
 	// MARK: Upstream Log Keys
 	// > In the cases where a key is defined in upstream logs we match their casing regardless of if it aligns with our general casing pattern here.
 	// > Each upstream key should have a code reference to upstream documented with it.
-	// ---
+
 	// InstanceType is defined with kebab-casing within upstream here:
 	// https://github.com/kubernetes-sigs/karpenter/blob/0f4e19a3e8d6eb07ffc5157caa1d296badce8221/pkg/controllers/nodeclaim/lifecycle/launch.go#L119
 	InstanceType = "instance-type"
