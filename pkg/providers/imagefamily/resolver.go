@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -121,7 +122,10 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	log.FromContext(ctx).Info("resolved image", "imageID", imageID, "instance-type", instanceType.Name)
+	log.FromContext(ctx).Info("resolved image",
+		logging.ImageID, imageID,
+		logging.InstanceType, instanceType.Name,
+	)
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
 	useSIG := options.FromContext(ctx).UseSIG
