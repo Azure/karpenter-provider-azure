@@ -44,6 +44,7 @@ type AKS struct {
 	ClusterID                      string
 	APIServerName                  string
 	KubeletClientTLSBootstrapToken string
+	EnableSecureTLSBootstrapping   bool
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
@@ -281,7 +282,6 @@ func CredentialProviderURL(kubernetesVersion, arch string) string {
 func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeCACrt = *a.CABundle
 	nbv.APIServerName = a.APIServerName
-	nbv.TLSBootstrapToken = a.KubeletClientTLSBootstrapToken
 
 	nbv.TenantID = a.TenantID
 	nbv.SubscriptionID = a.SubscriptionID
@@ -293,6 +293,10 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 
 	nbv.NetworkPolicy = a.NetworkPolicy
 	nbv.KubernetesVersion = a.KubernetesVersion
+
+	// Set TLS bootstrapping configuration
+	nbv.TLSBootstrapToken = a.KubeletClientTLSBootstrapToken
+	nbv.SecureTLSBootstrappingEnabled = a.EnableSecureTLSBootstrapping
 
 	nbv.KubeBinaryURL = kubeBinaryURL(a.KubernetesVersion, a.Arch)
 	nbv.VNETCNILinuxPluginsURL = fmt.Sprintf("%s/azure-cni/v1.4.32/binaries/azure-vnet-cni-linux-%s-v1.4.32.tgz", globalAKSMirror, a.Arch)
