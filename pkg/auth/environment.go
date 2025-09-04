@@ -130,6 +130,16 @@ func EnvironmentFromName(cloudName string) (*Environment, error) {
 	}, nil
 }
 
+// IsPublic returns if the specified configuration is public.
+// This takes the track2 format rather than being a method on Environment because
+// usage in api/sdk contexts use the track2 format and may not have access to the
+// auth.Environment struct.
+func IsPublic(env cloud.Configuration) bool {
+	endpointA := strings.TrimRight(env.Services[cloud.ResourceManager].Endpoint, "/")
+	endpointB := strings.TrimRight(cloud.AzurePublic.Services[cloud.ResourceManager].Endpoint, "/")
+	return strings.EqualFold(endpointA, endpointB) // Shouldn't differ by case but let's be safe
+}
+
 // ResolveCloudEnvironment resolves the cloud environment using the following precedence:
 // 1. File-based environment (AZURE_ENVIRONMENT_FILEPATH)
 // 2. Known cloud names (ARM_CLOUD)

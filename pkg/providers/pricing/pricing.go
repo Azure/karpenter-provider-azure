@@ -94,8 +94,9 @@ func NewProvider(
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("pricing").WithValues("region", region))
 
 	// Only poll in public cloud. Other clouds aren't supported currently
-	if env.Cloud.Services[cloud.ResourceManager].Endpoint == cloud.AzurePublic.Services[cloud.ResourceManager].Endpoint {
+	if auth.IsPublic(env.Cloud) {
 		go func() {
+			log.FromContext(ctx).V(0).Info("starting pricing update loop")
 			// perform an initial price update at startup
 			p.updatePricing(ctx)
 

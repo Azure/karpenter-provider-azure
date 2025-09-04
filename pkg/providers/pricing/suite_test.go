@@ -49,9 +49,9 @@ func TestAzure(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	fakePricingAPI = &fake.PricingAPI{}
-	env = &auth.Environment{
-		Cloud: cloud.AzurePublic,
-	}
+	var err error
+	env, err = auth.EnvironmentFromName("AzurePublicCloud")
+	Expect(err).ToNot(HaveOccurred())
 })
 
 var _ = BeforeEach(func() {
