@@ -444,3 +444,97 @@ az-codegen-nodeimageversions: ## List node image versions (to be used in fake/no
 	az rest --method get \
 		--url "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/providers/Microsoft.ContainerService/locations/$(AZURE_LOCATION)/nodeImageVersions?api-version=2024-04-02-preview" \
 		| jq -r '.values[] | "{\n\tFullName: \"\(.fullName)\",\n\tOS:       \"\(.os)\",\n\tSKU:      \"\(.sku)\",\n\tVersion:  \"\(.version)\",\n},"'
+
+## BYOK (Bring Your Own Key) Infrastructure Setup
+
+az-create-keyvault: az-mkrg ## Create a Key Vault for CMK
+	@if az keyvault show --name $(AZURE_KEYVAULT_NAME) --resource-group $(AZURE_RESOURCE_GROUP) > /dev/null 2>&1; then \
+		echo "Key Vault $(AZURE_KEYVAULT_NAME) already exists."; \
+	else \
+		echo "Attempting to create Key Vault $(AZURE_KEYVAULT_NAME)..."; \
+		if az keyvault create --name $(AZURE_KEYVAULT_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) > /dev/null 2>&1; then \
+			echo "Key Vault $(AZURE_KEYVAULT_NAME) created successfully."; \
+		else \
+			if az keyvault show-deleted --name $(AZURE_KEYVAULT_NAME) > /dev/null 2>&1; then \
+				echo "ERROR: Key Vault name $(AZURE_KEYVAULT_NAME) is unavailable due to soft-delete or purge protection retention."; \
+				echo "If purge protection is enabled, you must wait for the retention period to expire before reusing this name."; \
+				echo "To use a different Key Vault name, set the AZURE_KEYVAULT_NAME environment variable when running make:"; \
+				echo "  make <target> AZURE_KEYVAULT_NAME=yournewkvname"; \
+			else \
+				echo "ERROR: Failed to create Key Vault $(AZURE_KEYVAULT_NAME). Please check your Azure permissions and configuration."; \
+			fi; \
+			exit 1; \
+		fi \
+	fi
+
+az-enable-keyvault-purge-protection: az-create-keyvault ## Enable purge protection on the Key Vault (required for CMK)
+	az keyvault update --name $(AZURE_KEYVAULT_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --enable-purge-protection true
+
+az-grant-kv-admin: az-create-keyvault ## Assign Key Vault Administrator role to the signed-in user
+	$(eval USER_OBJECT_ID := $(shell az ad signed-in-user show --query objectId -o tsv))
+	$(eval USER_UPN := $(shell az ad signed-in-user show --query userPrincipalName -o tsv))
+	$(eval KV_ID := $(shell az keyvault show --name $(AZURE_KEYVAULT_NAME) --query id -o tsv))
+	@if [ -n "$(USER_OBJECT_ID)" ]; then \
+		ASSIGNEE="$(USER_OBJECT_ID)"; \
+	elif [ -n "$(USER_UPN)" ]; then \
+		ASSIGNEE="$(USER_UPN)"; \
+	else \
+		echo "ERROR: Could not determine user objectId or UPN. Please check your Azure login context."; \
+		exit 1; \
+	fi; \
+	if ! az role assignment list --assignee "$$ASSIGNEE" --scope $(KV_ID) --role "Key Vault Administrator" | grep -q '"roleDefinitionName": "Key Vault Administrator"'; then \
+		az role assignment create --role "Key Vault Administrator" --assignee "$$ASSIGNEE" --scope $(KV_ID); \
+	else \
+		echo "Key Vault Administrator role already assigned to user."; \
+	fi
+
+az-create-keyvault-key: az-grant-kv-admin ## Create a key in the Key Vault for CMK
+	if ! az keyvault key show --vault-name $(AZURE_KEYVAULT_NAME) --name $(AZURE_KEYVAULT_KEY_NAME) > /dev/null 2>&1; then \
+		az keyvault key create --vault-name $(AZURE_KEYVAULT_NAME) --name $(AZURE_KEYVAULT_KEY_NAME) --protection software; \
+	else \
+		echo "Key $(AZURE_KEYVAULT_KEY_NAME) already exists in Key Vault $(AZURE_KEYVAULT_NAME)."; \
+	fi
+
+az-create-disk-encryption-set: az-create-keyvault-key ## Create a Disk Encryption Set referencing the Key Vault key
+	if ! az disk-encryption-set show --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) > /dev/null 2>&1; then \
+		az disk-encryption-set create --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) \
+			--location $(AZURE_LOCATION) \
+			--source-vault $(shell az keyvault show --name $(AZURE_KEYVAULT_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query id -o tsv) \
+			--key-url $(shell az keyvault key show --vault-name $(AZURE_KEYVAULT_NAME) --name $(AZURE_KEYVAULT_KEY_NAME) --query key.kid -o tsv) \
+			--mi-system-assigned; \
+	else \
+		echo "Disk Encryption Set $(AZURE_DES_NAME) already exists."; \
+	fi
+
+az-grant-des-key-permissions: az-create-disk-encryption-set ## Grant DES access to the Key Vault key
+	$(eval DES_PRINCIPAL_ID := $(shell az disk-encryption-set show --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query "identity.principalId" -o tsv))
+	$(eval KV_ID := $(shell az keyvault show --name $(AZURE_KEYVAULT_NAME) --query id -o tsv))
+	if ! az role assignment list --assignee $(DES_PRINCIPAL_ID) --scope $(KV_ID) --role "Key Vault Crypto Service Encryption User" | grep -q '"roleDefinitionName": "Key Vault Crypto Service Encryption User"'; then \
+		az role assignment create --assignee $(DES_PRINCIPAL_ID) --role "Key Vault Crypto Service Encryption User" --scope $(KV_ID); \
+	else \
+		echo "DES principal already has RBAC permissions in Key Vault."; \
+	fi
+
+az-grant-msi-des-reader: ## Grant Karpenter MSI Reader access to the Disk Encryption Set
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -o tsv))
+	$(eval DES_ID=$(shell az disk-encryption-set show --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query id -o tsv))
+	if ! az role assignment list --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope $(DES_ID) --role "Reader" | grep -q '"roleDefinitionName": "Reader"'; then \
+		az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --role "Reader" --scope $(DES_ID); \
+	else \
+		echo "Karpenter MSI already has Reader role on DES."; \
+	fi
+
+az-grant-msi-key-permissions: ## Grant Karpenter MSI access to the Key Vault key
+	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -o tsv))
+	$(eval KV_ID := $(shell az keyvault show --name $(AZURE_KEYVAULT_NAME) --query id -o tsv))
+	if ! az role assignment list --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --scope $(KV_ID) --role "Key Vault Crypto User" | grep -q '"roleDefinitionName": "Key Vault Crypto User"'; then \
+		az role assignment create --assignee $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --role "Key Vault Crypto User" --scope $(KV_ID); \
+	else \
+		echo "Karpenter MSI already has RBAC permissions in Key Vault."; \
+	fi
+
+az-show-des-id: ## Show the Disk Encryption Set ID (for use in AKSNodeClass)
+	$(eval DES_ID=$(shell az disk-encryption-set show --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query id -o tsv))
+	@echo "$(DES_ID)"
+
+az-cmk-all: az-create-keyvault az-enable-keyvault-purge-protection az-grant-kv-admin az-create-keyvault-key az-create-disk-encryption-set az-grant-des-key-permissions ## Create Key Vault, Key, Disk Encryption Set and grant necessary permissions for CMK

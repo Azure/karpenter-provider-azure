@@ -130,19 +130,21 @@ Karpenter will initially adopt the same limitations as AKS:
 
 We will be introducing tests that ensure OS Disks for ephemeral disk + Network Attached Disks are properly encrypted with BYOK.
 
-### Test Organization Approaches
+### Test Organization Goals
 
-#### Approach A: Dedicated Storage Test Suite
-We could move all storage scenarios into their own suite. We have a couple of storage scenarios in integration, and some ephemeral OS disk testing in nodeclaim. It would make sense to move these scenarios into their own suite.
+We need to solve two distinct testing challenges:
 
-#### Approach B: Use Ginkgo Label Filtering
-We could keep the existing storage e2es where they are in the integration suite, and the ephemeral tests where they are. Add the new scenario for BYOK to integration, but then use ginkgo label filtering to trigger a new run of the scenarios labeled with Storage, so that we can keep the tests co-located but not move them to their own suites.
+#### 1. BYOK Test Suite
+Create a dedicated test suite for BYOK encryption scenarios that requires additional infrastructure setup before cluster creation. BYOK tests need Key Vault creation, disk encryption set setup, and additional RBAC permissions that are expensive and only relevant for encryption scenarios. These tests require fundamentally different cluster creation steps (using `az-mkaks-cmk` instead of standard cluster creation) and should only run when specifically testing encryption functionality.
 
-### Pros and Cons
+#### 2. Storage Test Suite 
+Move existing storage-related tests into their own organized suite. We have storage scenarios scattered in integration and some ephemeral OS disk testing in nodeclaim. As we have more scenarios relating to storage that are cloudprovider specific (our ephemeral disk with v6 SKU testing), we risk polluting other test suites. Storage is a clearly defined domain that warrants its own organization.
+
+### Tradeoffs
 - Moving tests like the storage scenarios for PVC into their own suite rather than integration breaks the alignment we have with the EKS provider and their testing directory structure, which is a valuable reference for coverage our provider may be missing
-- As we have more scenarios relating to storage that are cloudprovider specific (our ephemeral disk with v6 SKU testing), we risk polluting other test suites. Storage is a clearly defined domain.
+- However, Azure-specific storage features justify the separate organization and prevent test suite pollution
 
-### Testing Decision: Dual Suite Approach
+### Implementation: Dual Suite Approach
 While ginkgo labeling is nice for keeping things filtered and allowing us to pick up a subset of scenarios to run in cases where an e2e may belong to multiple domains, we have enough cases for storage related to just our cloudprovider that dumping them all into integration for parity, or in nodeclaim doesn't make a ton of sense.
 
 We will implement a dual suite approach:
@@ -168,6 +170,7 @@ test/suites/
 - Ephemeral OS disk functionality (without encryption)
 - Managed OS disk functionality (without encryption)
 - No new test development required - pure reorganization
+- Note: While ginkgo label filtering could keep tests co-located, the volume of Azure-specific storage scenarios justifies dedicated organization
 
 **BYOK Suite (`test/suites/byok/`)**
 - **New tests only**: BYOK-specific encryption scenarios
@@ -177,27 +180,9 @@ test/suites/
 - Error handling for invalid DiskEncryptionSetID
 - Uses BYOK-enabled cluster creation (`az-mkaks-cmk`)
 
-### Infrastructure Setup Strategy
+### Implementation Benefits
 
-#### Makefile Targets
-```makefile
-# Standard cluster creation - used by storage and most other suites
-az-mkaks-cniv1: az-mkacr
-    az aks create ... (standard creation)
-
-# BYOK-enabled cluster creation - ONLY used by byok suite
-az-mkaks-cmk: az-cmk-all
-    $(eval DES_ID := $(shell az disk-encryption-set show --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query id -o tsv))
-    az aks create ... --node-osdisk-diskencryptionset-id $(DES_ID)
-```
-
-#### Cost and Infrastructure Optimization
-- **Storage tests**: Run frequently with standard infrastructure (cost-effective)
-- **BYOK tests**: Run on-demand or in dedicated workflows (cost-controlled)
-- **Separation of concerns**: BYOK infrastructure only created when specifically testing encryption
-- **GitHub Actions efficiency**: Separate workflow steps for different infrastructure needs
-
-This approach ensures we don't add expensive BYOK infrastructure to all test runs while providing comprehensive coverage of both general storage scenarios and encryption-specific functionality. 
+This dual suite approach ensures we don't add expensive BYOK infrastructure to all test runs while providing comprehensive coverage of both general storage scenarios and encryption-specific functionality. 
 
 
 ## References
