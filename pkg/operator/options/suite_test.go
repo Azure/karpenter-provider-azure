@@ -66,6 +66,7 @@ var _ = Describe("Options", func() {
 		"KUBELET_IDENTITY_CLIENT_ID",
 		"LINUX_ADMIN_USERNAME",
 		"ADDITIONAL_TAGS",
+		"ENABLE_AZURE_SDK_LOGGING",
 	}
 
 	var fs *coreoptions.FlagSet
