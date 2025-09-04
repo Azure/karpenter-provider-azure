@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 )
 
 const (
@@ -48,7 +49,7 @@ func New(cloud cloud.Configuration) PricingAPI {
 func (papi *pricingAPI) GetProductsPricePages(_ context.Context, filters []*Filter, pageHandler func(output *ProductsPricePage)) error {
 	nextURL := pricingURL
 
-	if papi.cloud.Services[cloud.ResourceManager].Endpoint != cloud.AzurePublic.Services[cloud.ResourceManager].Endpoint {
+	if !auth.IsPublic(papi.cloud) {
 		// If the cloud is not Azure Public, the pricing API isn't supported and we return an error
 		return fmt.Errorf("pricing API is not supported in non-public clouds")
 	}
