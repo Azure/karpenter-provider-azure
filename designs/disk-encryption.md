@@ -138,7 +138,7 @@ We need to solve two distinct testing challenges:
 Create a dedicated test suite for BYOK encryption scenarios that requires additional infrastructure setup before cluster creation. BYOK tests need Key Vault creation, disk encryption set setup, and additional RBAC permissions that are expensive and only relevant for encryption scenarios. These tests require fundamentally different cluster creation steps (using `az-mkaks-cmk` instead of standard cluster creation) and should only run when specifically testing encryption functionality.
 
 #### 2. Storage Test Suite 
-Move existing storage-related tests into their own organized suite. We have storage scenarios scattered in integration and some ephemeral OS disk testing in nodeclaim. As we have more scenarios relating to storage that are cloudprovider specific (our ephemeral disk with v6 SKU testing), we risk polluting other test suites. Storage is a clearly defined domain that warrants its own organization.
+Move existing storage-related tests into their own organized suite. We have storage scenarios scattered in integration and some ephemeral OS disk testing in nodeclaim. As we have more scenarios relating to storage that are cloudprovider specific (our ephemeral disk with v6 SKU testing), we risk polluting other test suites. Storage is a clearly defined domain that warrants its own organization. Since this work touches the storage area, its worth revisiting this test organization inside of this effort. 
 
 ### Tradeoffs
 - Moving tests like the storage scenarios for PVC into their own suite rather than integration breaks the alignment we have with the EKS provider and their testing directory structure, which is a valuable reference for coverage our provider may be missing
@@ -156,7 +156,6 @@ test/suites/
 │   ├── suite_test.go
 │   ├── storage_test.go         # Moved from integration/storage_test.go  
 │   ├── ephemeral_os_disk_test.go # Moved from nodeclaim/eph_osdisk_test.go
-│   └── pvc_test.go            # Any other existing PVC tests
 ├── byok/             # BYOK-specific encryption tests only
 │   ├── suite_test.go
 │   └── disk_encryption_byok_test.go
@@ -173,11 +172,12 @@ test/suites/
 - Note: While ginkgo label filtering could keep tests co-located, the volume of Azure-specific storage scenarios justifies dedicated organization
 
 **BYOK Suite (`test/suites/byok/`)**
-- **New tests only**: BYOK-specific encryption scenarios
 - OS disk encryption with ephemeral disks + BYOK
 - OS disk encryption with managed disks + BYOK  
 - Data disk encryption with PVCs + BYOK
 - Error handling for invalid DiskEncryptionSetID
+- each test should handle key value access revocation gracefully 
+- should recover when DES access is restored
 - Uses BYOK-enabled cluster creation (`az-mkaks-cmk`)
 
 ### Implementation Benefits
