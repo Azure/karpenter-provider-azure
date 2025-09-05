@@ -104,7 +104,16 @@ var _ = Describe("GPU", func() {
 			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
 		},
 		Entry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass()),
-		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2204)", env.DefaultAKSNodeClass()),
+		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2204)", func() *v1beta1.AKSNodeClass {
+			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			return nodeClass
+		}()),
+		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2404)", func() *v1beta1.AKSNodeClass {
+			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			return nodeClass
+		}()),
 	)
 })
 

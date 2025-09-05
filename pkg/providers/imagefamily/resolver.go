@@ -244,13 +244,15 @@ func getImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
+	case v1beta1.Ubuntu2404ImageFamily:
+		return &Ubuntu2404{Options: parameters}
 	case v1beta1.AzureLinuxImageFamily:
 		if UseAzureLinux3(kubernetesVersion) {
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
 	default:
-		return &Ubuntu2204{Options: parameters}
+		return &Ubuntu2404{Options: parameters}
 	}
 }
 

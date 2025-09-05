@@ -260,6 +260,8 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	switch imageFamily {
 	case v1beta1.Ubuntu2204ImageFamily:
 		return utils.IsNvidiaEnabledSKU(skuName)
+	case v1beta1.Ubuntu2404ImageFamily:
+		return utils.IsNvidiaEnabledSKU(skuName)
 	case v1beta1.AzureLinuxImageFamily:
 		return utils.IsMarinerEnabledGPUSKU(skuName)
 	default:

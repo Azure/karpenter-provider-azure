@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
@@ -70,11 +71,57 @@ var _ = Describe("Utilization", func() {
 	It("should provision one pod per node (Ubuntu, arm64)", func() {
 		ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.ArmNodepool)
 	})
+	It("should provision one pod per node (Ubuntu2404, amd64)", func() {
+		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+		ExpectProvisionPodPerNodeWithNodeClass(nodeClass, env.DefaultNodePool)
+	})
+	It("should provision one pod per node (Ubuntu2404, arm64)", func() {
+		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+		ExpectProvisionPodPerNodeWithNodeClass(nodeClass, env.ArmNodepool)
+	})
+	It("should provision one pod per node (Ubuntu2204, amd64)", func() {
+		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+		ExpectProvisionPodPerNodeWithNodeClass(nodeClass, env.DefaultNodePool)
+	})
+	It("should provision one pod per node (Ubuntu2204, arm64)", func() {
+		nodeClass := env.DefaultAKSNodeClass()
+		nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+		ExpectProvisionPodPerNodeWithNodeClass(nodeClass, env.ArmNodepool)
+	})
 })
 
 func ExpectProvisionPodPerNode(getNodeClass func() *v1beta1.AKSNodeClass, getNodePool func(*v1beta1.AKSNodeClass) *karpv1.NodePool) {
 	GinkgoHelper()
 	nodeClass := getNodeClass()
+	nodePool := getNodePool(nodeClass)
+	test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+		NodeSelectorRequirement: v1.NodeSelectorRequirement{
+			Key:      v1beta1.LabelSKUCPU,
+			Operator: v1.NodeSelectorOpLt,
+			Values:   []string{"3"},
+		}})
+
+	deployment := test.Deployment(test.DeploymentOptions{
+		Replicas: 10,
+		PodOptions: test.PodOptions{
+			ResourceRequirements: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceCPU: resource.MustParse("1.1"),
+				},
+			},
+		},
+	})
+
+	env.ExpectCreated(nodePool, nodeClass, deployment)
+	env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
+	env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas)) // One pod per node enforced by instance size
+}
+
+func ExpectProvisionPodPerNodeWithNodeClass(nodeClass *v1beta1.AKSNodeClass, getNodePool func(*v1beta1.AKSNodeClass) *karpv1.NodePool) {
+	GinkgoHelper()
 	nodePool := getNodePool(nodeClass)
 	test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 		NodeSelectorRequirement: v1.NodeSelectorRequirement{

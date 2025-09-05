@@ -40,6 +40,7 @@ import (
 const (
 	ImageFamilyOSSKUUbuntu2004  = "Ubuntu2004"
 	ImageFamilyOSSKUUbuntu2204  = "Ubuntu2204"
+	ImageFamilyOSSKUUbuntu2404  = "Ubuntu2404"
 	ImageFamilyOSSKUAzureLinux2 = "AzureLinux2"
 	ImageFamilyOSSKUAzureLinux3 = "AzureLinux3"
 )
@@ -107,7 +108,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, and for Azure Linux v3
 	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
+		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUUbuntu2404 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
@@ -150,6 +151,8 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	case ImageFamilyOSSKUUbuntu2004:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUUbuntu2204:
+		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
+	case ImageFamilyOSSKUUbuntu2404:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
 	case ImageFamilyOSSKUAzureLinux2:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)

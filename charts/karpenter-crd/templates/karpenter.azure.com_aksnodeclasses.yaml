@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.18.0
   name: aksnodeclasses.karpenter.azure.com
 spec:
   group: karpenter.azure.com
@@ -68,11 +68,12 @@ spec:
                 - Disabled
                 type: string
               imageFamily:
-                default: Ubuntu2204
+                default: Ubuntu2404
                 description: ImageFamily is the image family that instances use.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
@@ -221,9 +222,10 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204
-              rule: 'has(self.imageFamily) && has(self.fipsMode) ? !(self.imageFamily
-                == ''Ubuntu2204'' && self.fipsMode == ''FIPS'') : true'
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.imageFamily) && has(self.fipsMode) ? !((self.imageFamily
+                == ''Ubuntu2204'' || self.imageFamily == ''Ubuntu2404'') && self.fipsMode
+                == ''FIPS'') : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:
@@ -392,11 +394,12 @@ spec:
                 - Disabled
                 type: string
               imageFamily:
-                default: Ubuntu2204
+                default: Ubuntu2404
                 description: ImageFamily is the image family that instances use.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
@@ -545,9 +548,10 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204
-              rule: 'has(self.imageFamily) && has(self.fipsMode) ? !(self.imageFamily
-                == ''Ubuntu2204'' && self.fipsMode == ''FIPS'') : true'
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.imageFamily) && has(self.fipsMode) ? !((self.imageFamily
+                == ''Ubuntu2204'' || self.imageFamily == ''Ubuntu2404'') && self.fipsMode
+                == ''FIPS'') : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:
