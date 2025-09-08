@@ -290,24 +290,27 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 func (env *Environment) ReapplyContextWithOptions(ctx context.Context) {
 	testOptions := options.FromContext(ctx)
 
+	azureEnv := lo.Must(auth.EnvironmentFromName("AzurePublicCloud"))
+
 	// API
 	var auxTokenPolicy *auth.AuxiliaryTokenPolicy
 	var auxiliaryTokenServer *fake.AuxiliaryTokenServer
 	if testOptions.UseSIG {
 		auxiliaryTokenServer = fake.NewAuxiliaryTokenServer("test-token", time.Now().Add(1*time.Hour), time.Now().Add(5*time.Minute))
-		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, testOptions.SIGAccessTokenScope)
+		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, auth.TokenScope(azureEnv.Cloud))
 	}
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{AuxiliaryTokenPolicy: auxTokenPolicy}
 
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
-	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: env.region}}
+	skusAPI := &fake.ResourceSKUsAPI{Location: env.region}
 	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
+	subscriptionAPI := &fake.SubscriptionsAPI{}
 
 	// Create APIs that share the data stores
 	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(env.SharedStores)
@@ -322,10 +325,10 @@ func (env *Environment) ReapplyContextWithOptions(ctx context.Context) {
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 
 	// Providers
-	pricingProvider := pricing.NewProvider(ctx, pricingAPI, env.region, make(chan struct{}))
+	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, env.region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.coreEnv.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, env.region, subscription, nodeImageVersionsAPI, nodeImagesCache)
-	instanceTypesProvider := instancetype.NewDefaultProvider(env.region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
+	instanceTypesProvider := instancetype.NewDefaultProvider(env.region, instanceTypeCache, skusAPI, pricingProvider, unavailableOfferingsCache)
 	imageFamilyResolver := imagefamily.NewDefaultResolver(env.coreEnv.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
@@ -351,6 +354,7 @@ func (env *Environment) ReapplyContextWithOptions(ctx context.Context) {
 		networkSecurityGroupAPI,
 		testOptions.NodeResourceGroup,
 	)
+	subnetsAPI := &fake.SubnetsAPI{}
 	azClient := instance.NewAZClientFromAPI(
 		env.VirtualMachinesAPI,
 		azureResourceGraphAPI,
@@ -358,12 +362,14 @@ func (env *Environment) ReapplyContextWithOptions(ctx context.Context) {
 		aksAgentPoolsAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
+		subnetsAPI,
 		loadBalancersAPI,
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
 		nodeImageVersionsAPI,
 		nodeBootstrappingAPI,
-		skuClientSingleton,
+		skusAPI,
+		subscriptionAPI,
 	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
@@ -400,7 +406,7 @@ func (env *Environment) ReapplyContextWithOptions(ctx context.Context) {
 	env.CommunityImageVersionsAPI = communityImageVersionsAPI
 	env.LoadBalancersAPI = loadBalancersAPI
 	env.NetworkSecurityGroupAPI = networkSecurityGroupAPI
-	env.MockSkuClientSingleton = skuClientSingleton
+	env.SKUsAPI = skusAPI
 	env.PricingAPI = pricingAPI
 	env.AKSMachinesAPI = aksMachinesAPI
 	env.AKSAgentPoolsAPI = aksAgentPoolsAPI

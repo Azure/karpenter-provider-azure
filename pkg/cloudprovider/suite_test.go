@@ -311,7 +311,7 @@ var _ = Describe("CloudProvider", func() {
 				UseSIG:        lo.ToPtr(true),
 			})
 
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
 
@@ -2079,7 +2079,7 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should return error when instance type resolution fails"
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
@@ -2088,7 +2088,7 @@ var _ = Describe("CloudProvider", func() {
 				// Reconcile the NodeClass to ensure status is updated
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
-				azureEnv.MockSkuClientSingleton.SKUClient.Error = fmt.Errorf("failed to list SKUs")
+				azureEnv.SKUsAPI.Error = fmt.Errorf("failed to list SKUs")
 
 				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2112,7 +2112,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err.Error()).To(ContainSubstring("failed to list SKUs"))
 
 				// Clean up the error for other tests
-				azureEnv.MockSkuClientSingleton.SKUClient.Error = nil
+				azureEnv.SKUsAPI.Error = nil
 			})
 
 			// Ported from VM test: "should return error when instance creation fails"
@@ -2588,7 +2588,7 @@ var _ = Describe("CloudProvider", func() {
 				UseSIG:        lo.ToPtr(true),
 			})
 
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
 

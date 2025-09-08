@@ -21,6 +21,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
