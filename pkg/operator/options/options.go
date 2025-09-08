@@ -89,7 +89,7 @@ type Options struct {
 	SIGSubscriptionID          string            `json:"sigSubscriptionId,omitempty"`
 	NodeResourceGroup          string            `json:"nodeResourceGroup,omitempty"`
 	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
-	AKSMachinesPoolName        string            `json:"AKSMachinesPoolName,omitempty"` // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision mode.
+	AKSMachinesPoolName        string            `json:"aksMachinesPoolName,omitempty"` // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision mode.
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
