@@ -56,49 +56,57 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Utilization", func() {
-	It("should provision one pod per node (AzureLinux, amd64)", func() {
-		ExpectProvisionPodPerNode(env.AZLinuxNodeClass, env.DefaultNodePool)
+	Context("AzureLinux", func() {
+		It("should provision one pod per node (AzureLinux, amd64)", func() {
+			ExpectProvisionPodPerNode(env.AZLinuxNodeClass, env.DefaultNodePool)
+		})
+		It("should provision one pod per node (AzureLinux, arm64)", func() {
+			if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.InClusterController {
+				Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+			}
+			ExpectProvisionPodPerNode(env.AZLinuxNodeClass, env.ArmNodepool)
+		})
 	})
-	It("should provision one pod per node (AzureLinux, arm64)", func() {
-		if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.InClusterController {
-			Skip("AzureLinux3 ARM64 VHD is not available in CIG")
-		}
-		ExpectProvisionPodPerNode(env.AZLinuxNodeClass, env.ArmNodepool)
+	Context("Ubuntu", func() {
+		It("should provision one pod per node (Ubuntu, amd64)", func() {
+			ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.DefaultNodePool)
+
+			// Default Image Family Should be Ubuntu2404
+		})
+		It("should provision one pod per node (Ubuntu, arm64)", func() {
+			ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.ArmNodepool)
+		})
+		It("should provision one pod per node (Ubuntu2404, amd64)", Label(v1beta1.Ubuntu2404ImageFamily), func() {
+			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
+				nodeClass := env.DefaultAKSNodeClass()
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				return nodeClass
+			}, env.DefaultNodePool)
+		})
+		It("should provision one pod per node (Ubuntu2404, arm64)", Label(v1beta1.Ubuntu2404ImageFamily), func() {
+			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
+				nodeClass := env.DefaultAKSNodeClass()
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				return nodeClass
+			}, env.ArmNodepool)
+		})
+		It("should provision one pod per node (Ubuntu2204, amd64)", Label(v1beta1.Ubuntu2204ImageFamily), func() {
+			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
+				nodeClass := env.DefaultAKSNodeClass()
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				return nodeClass
+			}, env.DefaultNodePool)
+		})
+		It("should provision one pod per node (Ubuntu2204, arm64)", Label(v1beta1.Ubuntu2204ImageFamily), func() {
+			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
+				nodeClass := env.DefaultAKSNodeClass()
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				return nodeClass
+			}, env.ArmNodepool)
+		})
+
 	})
-	It("should provision one pod per node (Ubuntu, amd64)", func() {
-		ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.DefaultNodePool)
-	})
-	It("should provision one pod per node (Ubuntu, arm64)", func() {
-		ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.ArmNodepool)
-	})
-	It("should provision one pod per node (Ubuntu2404, amd64)", func() {
-		ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-			nodeClass := env.DefaultAKSNodeClass()
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
-			return nodeClass
-		}, env.DefaultNodePool)
-	})
-	It("should provision one pod per node (Ubuntu2404, arm64)", func() {
-		ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-			nodeClass := env.DefaultAKSNodeClass()
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
-			return nodeClass
-		}, env.ArmNodepool)
-	})
-	It("should provision one pod per node (Ubuntu2204, amd64)", func() {
-		ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-			nodeClass := env.DefaultAKSNodeClass()
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-			return nodeClass
-		}, env.DefaultNodePool)
-	})
-	It("should provision one pod per node (Ubuntu2204, arm64)", func() {
-		ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-			nodeClass := env.DefaultAKSNodeClass()
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-			return nodeClass
-		}, env.ArmNodepool)
-	})
+
 })
 
 func ExpectProvisionPodPerNode(getNodeClass func() *v1beta1.AKSNodeClass, getNodePool func(*v1beta1.AKSNodeClass) *karpv1.NodePool) {
@@ -127,4 +135,3 @@ func ExpectProvisionPodPerNode(getNodeClass func() *v1beta1.AKSNodeClass, getNod
 	env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(deployment.Spec.Selector.MatchLabels), int(*deployment.Spec.Replicas))
 	env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas)) // One pod per node enforced by instance size
 }
-
