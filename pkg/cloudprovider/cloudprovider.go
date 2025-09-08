@@ -170,7 +170,8 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 		return nil, err
 	}
 
-	vm := vmPromise.VM // This may not be thoroughly populated
+	vm := vmPromise.VM // This is best-effort populated by Karpenter to be used to create the VM server-side. Not all fields are guaranteed to be populated, especially status fields.
+	// Double-check the code before making assumptions on their presence.
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
 	})
