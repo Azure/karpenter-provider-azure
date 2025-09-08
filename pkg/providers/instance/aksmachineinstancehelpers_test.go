@@ -72,13 +72,14 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				)
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.28.0")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeTrue())
+				Expect(enableFIPs).To(BeNil())
 			})
 
 			It("should configure Ubuntu2204 with ARM64 architecture and disable artifact streaming", func() {
@@ -86,13 +87,14 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				)
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.28.0")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).To(BeNil())
 			})
 
 			It("should handle multiple architecture requirements and pick ARM64", func() {
@@ -100,7 +102,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64, karpv1.ArchitectureArm64),
 				)
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.29.0")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.29.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
@@ -108,18 +110,20 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				// Should disable artifact streaming when ARM64 is compatible
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).To(BeNil())
 			})
 
 			It("should default to AMD64 when no architecture requirement is specified", func() {
 				instanceType.Requirements = scheduling.NewRequirements()
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.28.0")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeTrue())
+				Expect(enableFIPs).To(BeNil())
 			})
 		})
 
@@ -133,13 +137,14 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				)
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.28.0")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeTrue())
+				Expect(enableFIPs).To(BeNil())
 			})
 
 			It("should configure AzureLinux with ARM64 for older Kubernetes version and disable artifact streaming", func() {
@@ -147,13 +152,14 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				)
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.28.0")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).To(BeNil())
 			})
 
 			It("should configure AzureLinux3 with AMD64 for newer Kubernetes version and disable artifact streaming", func() {
@@ -161,13 +167,14 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
 				)
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.32.0")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.32.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).To(BeNil())
 			})
 
 			It("should configure AzureLinux3 with ARM64 for newer Kubernetes version and disable artifact streaming", func() {
@@ -175,13 +182,89 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
 				)
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.30.0")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.30.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).To(BeNil())
+			})
+		})
+
+		Context("Generic Ubuntu Image Family with FIPS Mode", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+			})
+
+			It("should configure Ubuntu with FIPS mode enabled and disable artifact streaming", func() {
+				instanceType.Requirements = scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+				)
+
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu))
+				Expect(artifactStreaming).ToNot(BeNil())
+				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeTrue())
+			})
+
+			It("should configure Ubuntu with FIPS mode enabled for ARM64 and disable artifact streaming", func() {
+				instanceType.Requirements = scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
+				)
+
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu))
+				Expect(artifactStreaming).ToNot(BeNil())
+				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).ToNot(BeNil())
+				Expect(*enableFIPs).To(BeTrue())
+			})
+		})
+
+		Context("Generic Ubuntu Image Family without FIPS Mode", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+			})
+
+			It("should configure Ubuntu without FIPS mode for AMD64 and enable artifact streaming", func() {
+				instanceType.Requirements = scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+				)
+
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
+				Expect(artifactStreaming).ToNot(BeNil())
+				Expect(*artifactStreaming).To(BeTrue())
+				Expect(enableFIPs).To(BeNil())
+			})
+
+			It("should configure Ubuntu without FIPS mode for ARM64 and disable artifact streaming", func() {
+				instanceType.Requirements = scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
+				)
+
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(ossku).ToNot(BeNil())
+				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
+				Expect(artifactStreaming).ToNot(BeNil())
+				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).To(BeNil())
 			})
 		})
 
@@ -189,7 +272,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should return error for unsupported image family", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr("UnsupportedFamily")
 
-				_, _, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.28.0")
+				_, _, _, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
 
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unsupported image family"))
@@ -199,7 +282,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should return error when ImageFamily is nil", func() {
 				nodeClass.Spec.ImageFamily = nil
 
-				_, _, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "1.28.0")
+				_, _, _, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "1.28.0")
 
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("ImageFamily is not set"))
@@ -208,13 +291,14 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			It("should handle empty Kubernetes version gracefully", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 
-				ossku, artifactStreaming, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, "")
+				ossku, artifactStreaming, enableFIPs, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, "")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
 				Expect(artifactStreaming).ToNot(BeNil())
 				Expect(*artifactStreaming).To(BeFalse())
+				Expect(enableFIPs).To(BeNil())
 			})
 		})
 	})

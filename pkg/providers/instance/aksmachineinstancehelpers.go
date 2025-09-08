@@ -69,7 +69,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// OSSKU, ArtifactStreamingProfile
-	osskuPtr, enabledArtifactStreamingPtr, err := configureOSSKUAndArtifactStreaming(nodeClass, instanceType, orchestratorVersion)
+	osskuPtr, enabledArtifactStreamingPtr, enableFIPsPtr, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, orchestratorVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				OSSKU:        osskuPtr,                                  // XPMT: ✅ (CSE)
 				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB,               // AKS machine API defaults it if nil   // XPMT ✅ (VM)
 				OSDiskType:   osDiskTypePtr,                             // XPMT: ✅ (VM and CSE)
-				// EnableFIPS:     nil,                  // XPMT: 🚫
+				EnableFIPS:   enableFIPsPtr,                             // XPMT: ✅ (CSE)
 				// LinuxProfile:   nil,                  // XPMT: 🚫
 				// WindowsProfile: nil,                  // XPMT: 🚫
 			},
@@ -162,17 +162,32 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}, nil
 }
 
-func configureOSSKUAndArtifactStreaming(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, error) {
+func configureOSSKUArtifactStreamingAndFIPs(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, *bool, error) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go
 
 	var osskuPtr *armcontainerservice.OSSKU
 	var enabledArtifactStreamingPtr *bool
+	var enableFIPsPtr *bool
 	var arch string = karpv1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
 		arch = karpv1.ArchitectureArm64
 	}
 	if nodeClass.Spec.ImageFamily != nil {
 		switch *nodeClass.Spec.ImageFamily {
+		case v1beta1.UbuntuImageFamily:
+			if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+				osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu)
+				enabledArtifactStreamingPtr = lo.ToPtr(false)
+				enableFIPsPtr = lo.ToPtr(true)
+			} else {
+				if arch == karpv1.ArchitectureAmd64 {
+					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu2204)
+					enabledArtifactStreamingPtr = lo.ToPtr(true)
+				} else {
+					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu2204)
+					enabledArtifactStreamingPtr = lo.ToPtr(false)
+				}
+			}
 		case v1beta1.Ubuntu2204ImageFamily:
 			if arch == karpv1.ArchitectureAmd64 {
 				osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu2204)
@@ -210,12 +225,12 @@ func configureOSSKUAndArtifactStreaming(nodeClass *v1beta1.AKSNodeClass, instanc
 				}
 			}
 		default:
-			return nil, nil, fmt.Errorf("unsupported image family %q in NodeClass %q", *nodeClass.Spec.ImageFamily, nodeClass.Name)
+			return nil, nil, nil, fmt.Errorf("unsupported image family %q in NodeClass %q", *nodeClass.Spec.ImageFamily, nodeClass.Name)
 		}
 	} else {
-		return nil, nil, fmt.Errorf("ImageFamily is not set in NodeClass %q", nodeClass.Name)
+		return nil, nil, nil, fmt.Errorf("ImageFamily is not set in NodeClass %q", nodeClass.Name)
 	}
-	return osskuPtr, enabledArtifactStreamingPtr, nil
+	return osskuPtr, enabledArtifactStreamingPtr, enableFIPsPtr, nil
 }
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
