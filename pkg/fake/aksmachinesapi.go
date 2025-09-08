@@ -287,6 +287,17 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupN
 	if ok {
 		existing := existingMachine.(armcontainerservice.Machine)
 
+		// Check ETag for optimistic concurrency control
+		if input.Options != nil && input.Options.IfMatch != nil {
+			if existing.Properties == nil || existing.Properties.ETag == nil || 
+				*existing.Properties.ETag != *input.Options.IfMatch {
+				return nil, &azcore.ResponseError{
+					StatusCode: http.StatusPreconditionFailed,
+					ErrorCode:  "ConditionNotMet",
+				}
+			}
+		}
+
 		// Validate immutable properties not violated
 		if c.doImmutablePropertiesChanged(&existing, &aksMachine) {
 			return nil, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
@@ -298,6 +309,11 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupN
 				existing.Properties = &armcontainerservice.MachineProperties{}
 			}
 			existing.Properties.Tags = aksMachine.Properties.Tags
+		}
+
+		// Update ETag after successful update
+		if existing.Properties != nil {
+			existing.Properties.ETag = lo.ToPtr(fmt.Sprintf(`"etag-%d"`, time.Now().UnixNano()))
 		}
 
 		// Write the updated machine
@@ -511,5 +527,10 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	if machine.Properties.NodeImageVersion == nil {
 		// Default node image version if none provided
 		machine.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")
+	}
+
+	// Set ETag for optimistic concurrency control
+	if machine.Properties.ETag == nil {
+		machine.Properties.ETag = lo.ToPtr(fmt.Sprintf(`"etag-%d"`, time.Now().UnixNano()))
 	}
 }

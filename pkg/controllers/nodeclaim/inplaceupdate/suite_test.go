@@ -18,9 +18,11 @@ package inplaceupdate_test
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
@@ -1400,6 +1402,102 @@ var _ = Describe("In Place Update Controller", func() {
 					"karpenter.azure.com_aksmachine": lo.ToPtr("true"),
 					"nodeclass-tag":                  lo.ToPtr("nodeclass-value"),
 				}))
+			})
+
+			It("should handle ETag mismatch during AKS machine update", func() {
+				// Setup machine with ETag
+				aksMachine.Properties.ETag = lo.ToPtr(`"initial-etag"`)
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				ctx = options.ToContext(
+					ctx,
+					test.Options(
+						test.OptionsFields{
+							AdditionalTags: map[string]string{
+								"test-tag": "my-tag",
+							},
+						}))
+
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// Set up a behavior that will fail on CreateOrUpdate with ETag mismatch
+				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Error.Set(&azcore.ResponseError{
+					StatusCode: http.StatusPreconditionFailed,
+					ErrorCode:  "ConditionNotMet",
+				})
+
+				// Controller should fail when trying to update due to ETag mismatch
+				result, err := inPlaceUpdateController.Reconcile(ctx, nodeClaim)
+
+				// Should fail due to ETag mismatch
+				Expect(err).To(HaveOccurred())
+				Expect(result).To(Equal(reconcile.Result{}))
+				Expect(err.Error()).To(ContainSubstring("failed to apply update to AKS machine"))
+
+				// Reset the error for other tests
+				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Error.Reset()
+			})
+
+			It("should successfully update AKS machine with correct ETag", func() {
+				// Setup machine with ETag  
+				aksMachine.Properties.ETag = lo.ToPtr(`"valid-etag"`)
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				ctx = options.ToContext(
+					ctx,
+					test.Options(
+						test.OptionsFields{
+							AdditionalTags: map[string]string{
+								"test-tag": "my-tag",
+							},
+						}))
+
+				ExpectApplied(ctx, env.Client, nodeClaim)
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+				// Verify update succeeded
+				updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify tags were applied
+				Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
+				Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+
+				// Verify ETag was updated after successful operation
+				Expect(updatedAKSMachine.Properties.ETag).ToNot(BeNil())
+				Expect(*updatedAKSMachine.Properties.ETag).ToNot(Equal("valid-etag"))
+
+				// Verify API was called
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
+			})
+
+			It("should handle missing ETag gracefully (backward compatibility)", func() {
+				// Setup machine without ETag
+				aksMachine.Properties.ETag = nil
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				ctx = options.ToContext(
+					ctx,
+					test.Options(
+						test.OptionsFields{
+							AdditionalTags: map[string]string{
+								"test-tag": "my-tag",
+							},
+						}))
+
+				ExpectApplied(ctx, env.Client, nodeClaim)
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+				// Should succeed even without ETag
+				updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Verify tags were applied
+				Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
+				Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+
+				// Verify API was called
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
 			})
 		})
 	})

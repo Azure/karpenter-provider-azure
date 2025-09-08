@@ -191,9 +191,16 @@ func (c *Controller) applyAKSMachinePatch(
 
 	// Apply the update, if one is needed
 	if update != nil {
+		// Extract ETag for optimistic concurrency control
+		var etag *string
+		if aksMachine.Properties != nil && aksMachine.Properties.ETag != nil {
+			etag = aksMachine.Properties.ETag
+		}
+
 		// Given AKS machine support PUT, but not PATCH, the AKS machine object will be patched directly.
-		err := c.aksMachineInstanceProvider.Update(ctx, aksMachineName, *aksMachine)
+		err := c.aksMachineInstanceProvider.Update(ctx, aksMachineName, *aksMachine, etag)
 		if err != nil {
+			// ASSUMPTION: if it is etag mismatch, the next try would work (if without another mismatch)
 			return fmt.Errorf("failed to apply update to AKS machine %s, %w", aksMachineName, err)
 		}
 	}

@@ -116,8 +116,9 @@ type AKSMachineProvider interface {
 	// BeginCreate starts the creation of an AKS machine instance.
 	// Returns a promise that must be waited on to complete the creation.
 	BeginCreate(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType) (*AKSMachinePromise, error)
-	// Update updates the AKS machine instance with the specified name. Return NodeClaimNotFoundError if not found.
-	Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine) error
+	// Update updates the AKS machine instance with the specified name. Uses ETag for optimistic concurrency control.
+	// Return NodeClaimNotFoundError if not found.
+	Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine, etag *string) error
 	// Get retrieves the AKS machine instance with the specified AKS machine name. Return NodeClaimNotFoundError if not found.
 	Get(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error)
 	// List lists all AKS machine instances in the cluster.
@@ -222,8 +223,15 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	return aksMachinePromise, nil
 }
 
-func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine) error {
-	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, nil)
+func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine, etag *string) error {
+	var options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions
+	if etag != nil {
+		options = &armcontainerservice.MachinesClientBeginCreateOrUpdateOptions{
+			IfMatch: etag,
+		}
+	}
+	
+	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
 		if IsARMNotFound(err) {
 			// XPMT: TODO: check API: see what happens when Machines pool is not found when calling Machines get.
