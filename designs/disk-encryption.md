@@ -126,6 +126,18 @@ Karpenter will initially adopt the same limitations as AKS:
 **Important**: Read this doc for context as to what happens to disk I/O when the key is either [deleted, disabled or expired](https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#full-control-of-your-keys)
 
 
+## RBAC: Azure RBAC Requirements 
+1. DES Access: The DES is the azure resource that links the AKS disks to the Key Vault Key. To allow AKS to use CMKs, the user must grant the Cluster Identity permission to use the Disk Encryption Set. 
+2. Key Vault Access: The managed identity associated with AKS must be able to access the keys within the key vault, this allows AKS to wrap and unwrap the data encryption keys used for disk encryption with the master key
+
+| Principal | Role Assignment | Scope | 
+| - | - | - | 
+| Cluster Identity | Disk Encryption Set Reader | diskEncryptionSetID | 
+| Cluster Identity | Key Vault Crypto Service Encryption User | Key Vault Resource | 
+
+**Optional/Alternative**
+Some Vaults have `rbac-authorization` disabled on the key vault. Instead of leveraging Azure RBAC, Key Vault has its own access policies. Its strongly recommended to use RBAC instead of this legacy model. But if needed user can follow [this doc](https://learn.microsoft.com/en-us/azure/key-vault/general/assign-access-policy?tabs=azure-portal)
+
 ## End-to-End Testing Strategy
 
 We will be introducing tests that ensure OS Disks for ephemeral disk + Network Attached Disks are properly encrypted with BYOK.
@@ -135,7 +147,7 @@ We will be introducing tests that ensure OS Disks for ephemeral disk + Network A
 We need to solve two distinct testing challenges:
 
 #### 1. BYOK Test Suite
-Create a dedicated test suite for BYOK encryption scenarios that requires additional infrastructure setup before cluster creation. BYOK tests need Key Vault creation, disk encryption set setup, and additional RBAC permissions that are expensive and only relevant for encryption scenarios. These tests require fundamentally different cluster creation steps (using `az-mkaks-cmk` instead of standard cluster creation) and should only run when specifically testing encryption functionality.
+Create a dedicated test suite for BYOK encryption scenarios that requires additional infrastructure setup before cluster creation. BYOK tests need Key Vault creation, disk encryption set setup, and additional RBAC permissions that are expensive and only relevant for encryption scenarios. These tests require fundamentally different cluster creation steps (using `az-mkaks-cmk` instead of standard cluster creation) and should only run when specifically testing encryption functionality. Due to additional cluster create constraints, we will leverage e2e suites located somewhere outside of the scope of the karpenter repo.
 
 #### 2. Storage Test Suite 
 Move existing storage-related tests into their own organized suite. We have storage scenarios scattered in integration and some ephemeral OS disk testing in nodeclaim. As we have more scenarios relating to storage that are cloudprovider specific (our ephemeral disk with v6 SKU testing), we risk polluting other test suites. Storage is a clearly defined domain that warrants its own organization. Since this work touches the storage area, its worth revisiting this test organization inside of this effort. 
@@ -144,10 +156,7 @@ Move existing storage-related tests into their own organized suite. We have stor
 - Moving tests like the storage scenarios for PVC into their own suite rather than integration breaks the alignment we have with the EKS provider and their testing directory structure, which is a valuable reference for coverage our provider may be missing
 - However, Azure-specific storage features justify the separate organization and prevent test suite pollution
 
-### Implementation: Dual Suite Approach
 While ginkgo labeling is nice for keeping things filtered and allowing us to pick up a subset of scenarios to run in cases where an e2e may belong to multiple domains, we have enough cases for storage related to just our cloudprovider that dumping them all into integration for parity, or in nodeclaim doesn't make a ton of sense.
-
-We will implement a dual suite approach:
 
 #### Directory Structure
 ```
@@ -156,10 +165,9 @@ test/suites/
 │   ├── suite_test.go
 │   ├── storage_test.go         # Moved from integration/storage_test.go  
 │   ├── ephemeral_os_disk_test.go # Moved from nodeclaim/eph_osdisk_test.go
-├── byok/             # BYOK-specific encryption tests only
-│   ├── suite_test.go
-│   └── disk_encryption_byok_test.go
 ```
+
+
 
 #### Test Suite Responsibilities
 
@@ -171,7 +179,7 @@ test/suites/
 - No new test development required - pure reorganization
 - Note: While ginkgo label filtering could keep tests co-located, the volume of Azure-specific storage scenarios justifies dedicated organization
 
-**BYOK Suite (`test/suites/byok/`)**
+**BYOK Testing Needs to Cover**
 - OS disk encryption with ephemeral disks + BYOK
 - OS disk encryption with managed disks + BYOK  
 - Data disk encryption with PVCs + BYOK
@@ -180,13 +188,9 @@ test/suites/
 - should recover when DES access is restored
 - Uses BYOK-enabled cluster creation (`az-mkaks-cmk`)
 
-### Implementation Benefits
-
-This dual suite approach ensures we don't add expensive BYOK infrastructure to all test runs while providing comprehensive coverage of both general storage scenarios and encryption-specific functionality. 
-
 
 ## References
-
+- [Key Vault Access Policies](https://learn.microsoft.com/en-us/azure/key-vault/general/assign-access-policy?tabs=azure-portal)
 - [Azure Disk Encryption Overview](https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption)
 - [Encryption Key Management](https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#about-encryption-key-management)
 - [AKS Customer-Managed Keys](https://learn.microsoft.com/en-us/azure/aks/azure-disk-customer-managed-keys)
