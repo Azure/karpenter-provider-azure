@@ -41,15 +41,15 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 	t.Run("should return correct default images", func(t *testing.T) {
 		images := ubuntu.DefaultImages(false, nil)
 		assert.Len(t, images, 3)
-		
+
 		// Check Gen2 AMD64 image
 		assert.Equal(t, imagefamily.Ubuntu2404Gen2ImageDefinition, images[0].ImageDefinition)
 		assert.Equal(t, "aks-ubuntu-containerd-24.04-gen2", images[0].Distro)
-		
+
 		// Check Gen1 AMD64 image
 		assert.Equal(t, imagefamily.Ubuntu2404Gen1ImageDefinition, images[1].ImageDefinition)
 		assert.Equal(t, "aks-ubuntu-containerd-24.04", images[1].Distro)
-		
+
 		// Check Gen2 ARM64 image
 		assert.Equal(t, imagefamily.Ubuntu2404Gen2ArmImageDefinition, images[2].ImageDefinition)
 		assert.Equal(t, "aks-ubuntu-arm64-containerd-24.04-gen2", images[2].Distro)
@@ -71,22 +71,22 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 func TestUbuntu2404_CustomScriptsNodeBootstrapping(t *testing.T) {
 	ubuntu := &imagefamily.Ubuntu2404{
 		Options: &template.StaticParameters{
-			ClusterName:             "test-cluster",
-			ClusterEndpoint:         "https://test-cluster.hcp.westus2.azmk8s.io:443",
-			KubeletIdentityClientID: "test-client-id",
-			TenantID:                "test-tenant-id",
-			SubscriptionID:          "test-subscription-id",
-			ResourceGroup:           "test-resource-group",
-			Location:                "westus2",
-			ClusterResourceGroup:    "test-cluster-resource-group",
-			ClusterID:               "test-cluster-id",
-			APIServerName:           "test-api-server",
+			ClusterName:                    "test-cluster",
+			ClusterEndpoint:                "https://test-cluster.hcp.westus2.azmk8s.io:443",
+			KubeletIdentityClientID:        "test-client-id",
+			TenantID:                       "test-tenant-id",
+			SubscriptionID:                 "test-subscription-id",
+			ResourceGroup:                  "test-resource-group",
+			Location:                       "westus2",
+			ClusterResourceGroup:           "test-cluster-resource-group",
+			ClusterID:                      "test-cluster-id",
+			APIServerName:                  "test-api-server",
 			KubeletClientTLSBootstrapToken: "test-bootstrap-token",
-			NetworkPlugin:           "azure",
-			NetworkPolicy:           "none",
-			KubernetesVersion:       "1.28.0",
-			Arch:                    "amd64",
-			SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
+			NetworkPlugin:                  "azure",
+			NetworkPolicy:                  "none",
+			KubernetesVersion:              "1.34.0",
+			Arch:                           "amd64",
+			SubnetID:                       "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
 		},
 	}
 
@@ -97,3 +97,4 @@ func TestUbuntu2404_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.True(t, ok, "Expected ProvisionClientBootstrap type")
 	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
 }
+

@@ -115,7 +115,7 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
+	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
 	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
@@ -231,11 +231,11 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 
 func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
-	imageFamily := getImageFamily(familyName, fipsMode, kubernetesVersion, nil)
+	imageFamily := GetImageFamily(familyName, fipsMode, kubernetesVersion, nil)
 	return imageFamily.DefaultImages(useSIG, fipsMode)
 }
 
-func getImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.UbuntuImageFamily:
 		if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
@@ -252,7 +252,10 @@ func getImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 		}
 		return &AzureLinux{Options: parameters}
 	default:
-		return &Ubuntu2404{Options: parameters}
+		if UseUbuntu2404(kubernetesVersion) {
+			return &Ubuntu2404{Options: parameters}
+		}
+		return &Ubuntu2204{Options: parameters}
 	}
 }
 
