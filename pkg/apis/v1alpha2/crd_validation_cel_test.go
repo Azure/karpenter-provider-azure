@@ -127,7 +127,7 @@ var _ = Describe("CEL/Validation", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec:       v1alpha2.AKSNodeClassSpec{},
 			}
-			// allows for leaving imageFamily unset, which currently defaults to Ubuntu2204
+			// allows for leaving imageFamily unset, which defaults to Ubuntu
 			if imageFamily != "" {
 				nodeClass.Spec.ImageFamily = &imageFamily
 			}
@@ -152,9 +152,9 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeDisabled, true),
 			Entry("generic AzureLinux when FIPSMode is not explicitly set should succeed", v1alpha2.AzureLinuxImageFamily, nil, true),
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeFIPS, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu2404) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu2404) when FIPSMode is not explicitly set should succeed", "", nil, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu2404) when FIPSMode is explicitly FIPS should fail", "", &v1alpha2.FIPSModeFIPS, false),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1alpha2.FIPSModeFIPS, true),
 		)
 	})
 
