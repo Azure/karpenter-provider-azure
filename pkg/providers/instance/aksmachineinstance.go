@@ -469,6 +469,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 
 	// Get once after begin create to retrieve VMResourceID.
+	// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
+	// TODO: find a way to access that instead of making another GET call like this.
 	getResp, err := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: %w", aksMachineName, err)
