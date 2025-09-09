@@ -68,7 +68,7 @@ spec:
                 - Disabled
                 type: string
               imageFamily:
-                default: Ubuntu2404
+                default: Ubuntu
                 description: ImageFamily is the image family that instances use.
                 enum:
                 - Ubuntu
