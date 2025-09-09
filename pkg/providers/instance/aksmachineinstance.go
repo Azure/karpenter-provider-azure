@@ -43,16 +43,6 @@ var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
-// Intended for lifecycle handling on the higher abstractions.
-type InstancePromise interface {
-	// Cleanup removes the instance from the cloud provider.
-	Cleanup(ctx context.Context) error
-	// Wait blocks until the instance is ready.
-	Wait() error
-	// GetInstanceName returns the name of the instance. Recommended to be used for logging only due to generic nature.
-	GetInstanceName() string
-}
-
 // Notes on terminology:
 // An "instance" is a remote object, created by the API based on the template.
 // A "template" is a local struct, populated from Karpenter-provided parameters with the logic further below.
@@ -230,7 +220,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 			IfMatch: etag,
 		}
 	}
-	
+
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
 		if IsARMNotFound(err) {
