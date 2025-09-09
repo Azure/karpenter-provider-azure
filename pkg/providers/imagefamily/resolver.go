@@ -241,6 +241,9 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 		if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
 			return &Ubuntu2004{Options: parameters}
 		}
+		if UseUbuntu2404(kubernetesVersion) {
+			return &Ubuntu2404{Options: parameters}
+		}
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}

@@ -70,7 +70,7 @@ func getExpectedTestCIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, ve
 //nolint:unparam // might always be using the same version in test, but could change in the future
 func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
-	actualImageFamily := imagefamily.GetImageFamily(lo.ToPtr(imageFamily), fipsMode, version, nil)
+	actualImageFamily := imagefamily.GetImageFamily(lo.ToPtr(imageFamily), fipsMode, kubernetesVersion, nil)
 	images = actualImageFamily.DefaultImages(true, fipsMode)
 	nodeImages := []imagefamily.NodeImage{}
 	for _, image := range images {
@@ -294,6 +294,89 @@ var _ = Describe("NodeImageProvider tests", func() {
 			Entry("for default AzureLinux with version >= 1.32 when FIPSMode is not explicitly set", lo.ToPtr(v1beta1.AzureLinuxImageFamily), nil, sigImageVersion, "1.32.0"),
 			Entry("for FIPS AzureLinux with version >= 1.32 when FIPSMode is explicitly set to FIPS", lo.ToPtr(v1beta1.AzureLinuxImageFamily), &v1beta1.FIPSModeFIPS, sigImageVersion, "1.32.0"),
 		)
+
+		Context("Ubuntu default image selection based on Kubernetes version", func() {
+			It("should select Ubuntu2204 for generic Ubuntu when K8s < 1.34", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				nodeClass.Spec.FIPSMode = nil
+				nodeClass.Status.KubernetesVersion = "1.33.0"
+
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				
+				// Should use Ubuntu2204 for K8s < 1.34
+				expectedImages := []imagefamily.NodeImage{}
+				ubuntu2204Images := imagefamily.Ubuntu2204{}.DefaultImages(true, nil)
+				for _, image := range ubuntu2204Images {
+					expectedImages = append(expectedImages, imagefamily.NodeImage{
+						ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, sigImageVersion),
+						Requirements: image.Requirements,
+					})
+				}
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
+			It("should select Ubuntu2404 for generic Ubuntu when K8s >= 1.34", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				nodeClass.Spec.FIPSMode = nil
+				nodeClass.Status.KubernetesVersion = "1.34.0"
+
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				
+				// Should use Ubuntu2404 for K8s >= 1.34
+				expectedImages := []imagefamily.NodeImage{}
+				ubuntu2404Images := imagefamily.Ubuntu2404{}.DefaultImages(true, nil)
+				for _, image := range ubuntu2404Images {
+					expectedImages = append(expectedImages, imagefamily.NodeImage{
+						ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, sigImageVersion),
+						Requirements: image.Requirements,
+					})
+				}
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
+			// Default case when no image family is specified
+			It("should select Ubuntu2204 as default when K8s < 1.34 and no image family specified", func() {
+				nodeClass.Spec.ImageFamily = nil // No image family specified
+				nodeClass.Spec.FIPSMode = nil
+				nodeClass.Status.KubernetesVersion = "1.33.0"
+
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				
+				// Should default to Ubuntu2204 for K8s < 1.34
+				expectedImages := []imagefamily.NodeImage{}
+				ubuntu2204Images := imagefamily.Ubuntu2204{}.DefaultImages(true, nil)
+				for _, image := range ubuntu2204Images {
+					expectedImages = append(expectedImages, imagefamily.NodeImage{
+						ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, sigImageVersion),
+						Requirements: image.Requirements,
+					})
+				}
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
+			It("should select Ubuntu2404 as default when K8s >= 1.34 and no image family specified", func() {
+				nodeClass.Spec.ImageFamily = nil // No image family specified
+				nodeClass.Spec.FIPSMode = nil
+				nodeClass.Status.KubernetesVersion = "1.34.0"
+
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				
+				// Should default to Ubuntu2404 for K8s >= 1.34
+				expectedImages := []imagefamily.NodeImage{}
+				ubuntu2404Images := imagefamily.Ubuntu2404{}.DefaultImages(true, nil)
+				for _, image := range ubuntu2404Images {
+					expectedImages = append(expectedImages, imagefamily.NodeImage{
+						ID:           fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s", sigSubscription, image.GalleryResourceGroup, image.GalleryName, image.ImageDefinition, sigImageVersion),
+						Requirements: image.Requirements,
+					})
+				}
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+		})
 	})
 
 	Context("Caching tests", func() {
