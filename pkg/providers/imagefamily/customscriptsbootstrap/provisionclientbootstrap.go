@@ -106,9 +106,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	// changed recently. This is OK because drift will correct it.
 	labels.AddAgentBakerGeneratedLabels(p.ResourceGroup, options.FromContext(ctx).KubeletIdentityClientID, nodeLabels)
 
-	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, and for Azure Linux v3
+	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
 	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUUbuntu2404 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
+		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
