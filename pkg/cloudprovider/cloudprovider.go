@@ -179,15 +179,9 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 	if err != nil {
 		return nil, err
 	}
-	inPlaceUpdateHash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), newNodeClaim, nodeClass)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate in place update hash, %w", err)
+	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
+		return nil, err
 	}
-	newNodeClaim.Annotations = lo.Assign(newNodeClaim.Annotations, map[string]string{
-		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
-		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
-		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
-	})
 	return newNodeClaim, nil
 }
 
@@ -219,19 +213,9 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 		return nil, fmt.Errorf("failed to build NodeClaim from AKS machine template, %w", err)
 	}
 
-	// Additional annotations
-	// ASSUMPTION: this is not needed in other places that the core also wants NodeClaim (e.g., Get, List).
-	// As of the time of writing, AWS is doing something similar.
-	// Suggestion: could have added this in instance.BuildNodeClaimFromAKSMachine, but might sacrifice some performance (little?), and need to consider that the calculated hash may change.
-	inPlaceUpdateHash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), newNodeClaim, nodeClass)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate in place update hash, %w", err)
+	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
+		return nil, err
 	}
-	newNodeClaim.Annotations = lo.Assign(newNodeClaim.Annotations, map[string]string{
-		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
-		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
-		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
-	})
 
 	return newNodeClaim, nil
 }
@@ -621,6 +605,23 @@ func truncateMessage(msg string) string {
 		return msg
 	}
 	return msg[:truncateAt] + "..."
+}
+
+func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) error {
+	// Additional annotations
+	// ASSUMPTION: this is not needed in other places that the core also wants NodeClaim (e.g., Get, List).
+	// As of the time of writing, AWS is doing something similar.
+	// Suggestion: could have added this in instance.BuildNodeClaimFromAKSMachine, but might sacrifice some performance (little?), and need to consider that the calculated hash may change.
+	inPlaceUpdateHash, err := inplaceupdate.HashFromNodeClaim(options.FromContext(ctx), nodeClaim, nodeClass)
+	if err != nil {
+		return fmt.Errorf("failed to calculate in place update hash, %w", err)
+	}
+	nodeClaim.Annotations = lo.Assign(nodeClaim.Annotations, map[string]string{
+		v1beta1.AnnotationAKSNodeClassHash:        nodeClass.Hash(),
+		v1beta1.AnnotationAKSNodeClassHashVersion: v1beta1.AKSNodeClassHashVersion,
+		v1beta1.AnnotationInPlaceUpdateHash:       inPlaceUpdateHash,
+	})
+	return nil
 }
 
 func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine) (*karpv1.NodeClaim, error) {
