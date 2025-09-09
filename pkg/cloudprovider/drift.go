@@ -175,7 +175,7 @@ func (c *CloudProvider) isImageVersionDrifted( // XPMT: ☑️
 
 	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		// AKS machine node
-		aksMachine, err := c.aksMachineProvider.Get(ctx, aksMachineName)
+		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
 		if err != nil {
 			// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
 			//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
@@ -364,7 +364,7 @@ func (c *CloudProvider) isMachineDriftActionAvailable(ctx context.Context, nodeC
 		return "", nil
 	}
 
-	aksMachine, err := c.aksMachineProvider.Get(ctx, aksMachineName)
+	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
 	if err != nil {
 		return "", err
 	}

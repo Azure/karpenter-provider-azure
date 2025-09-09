@@ -191,7 +191,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
 	)
-	aksMachineProvider := instance.NewAKSMachineProvider(
+	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		ctx,
 		options.FromContext(ctx).ProvisionMode,
 		azClient,
@@ -216,7 +216,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		PricingProvider:              pricingProvider,
 		InstanceTypesProvider:        instanceTypeProvider,
 		VMInstanceProvider:           vmInstanceProvider,
-		AKSMachineProvider:           aksMachineProvider,
+		AKSMachineProvider:           aksMachineInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		AZClient:                     azClient,
 	}

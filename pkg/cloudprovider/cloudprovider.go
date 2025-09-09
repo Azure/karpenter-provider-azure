@@ -76,29 +76,29 @@ const (
 var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
 type CloudProvider struct {
-	instanceTypeProvider instancetype.Provider
-	vmInstanceProvider   instance.VMProvider // Note that even when provision mode does not create with VM instance provider, it is still being used to handle existing VM instances.
-	aksMachineProvider   instance.AKSMachineProvider
-	kubeClient           client.Client
-	imageProvider        imagefamily.NodeImageProvider
-	recorder             events.Recorder
+	instanceTypeProvider       instancetype.Provider
+	vmInstanceProvider         instance.VMProvider // Note that even when provision mode does not create with VM instance provider, it is still being used to handle existing VM instances.
+	aksMachineInstanceProvider instance.AKSMachineProvider
+	kubeClient                 client.Client
+	imageProvider              imagefamily.NodeImageProvider
+	recorder                   events.Recorder
 }
 
 func New(
 	instanceTypeProvider instancetype.Provider,
 	vmInstanceProvider instance.VMProvider,
-	aksMachineProvider instance.AKSMachineProvider,
+	aksMachineInstanceProvider instance.AKSMachineProvider,
 	recorder events.Recorder,
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
 ) *CloudProvider {
 	return &CloudProvider{
-		instanceTypeProvider: instanceTypeProvider,
-		vmInstanceProvider:   vmInstanceProvider,
-		aksMachineProvider:   aksMachineProvider,
-		kubeClient:           kubeClient,
-		imageProvider:        imageProvider,
-		recorder:             recorder,
+		instanceTypeProvider:       instanceTypeProvider,
+		vmInstanceProvider:         vmInstanceProvider,
+		aksMachineInstanceProvider: aksMachineInstanceProvider,
+		kubeClient:                 kubeClient,
+		imageProvider:              imageProvider,
+		recorder:                   recorder,
 	}
 }
 
@@ -187,7 +187,7 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 
 func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*cloudprovider.InstanceType) (*karpv1.NodeClaim, error) { // XPMT: ✅
 	// Begin the creation of the instance
-	aksMachinePromise, err := c.aksMachineProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+	aksMachinePromise, err := c.aksMachineInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating AKS machine failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
@@ -318,7 +318,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	var nodeClaims []*karpv1.NodeClaim
 
 	// List AKS machine-based nodes
-	aksMachineInstances, err := c.aksMachineProvider.List(ctx)
+	aksMachineInstances, err := c.aksMachineInstanceProvider.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing AKS machine instances, %w", err)
 	}
@@ -366,7 +366,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		// XPMT: (topic) cloudprovider.Get(providerID) to get VM or AKS machine
 		ctx := log.IntoContext(ctx, log.FromContext(ctx).WithValues("aksMachineName", aksMachineName))
 
-		aksMachine, err := c.aksMachineProvider.Get(ctx, aksMachineName)
+		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
 		if err == nil {
 			nodeClaim, err := c.resolveNodeClaimFromAKSMachine(ctx, aksMachine)
 			if err != nil {
@@ -422,7 +422,7 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	// AKS machine-based node?
 	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
-		return c.aksMachineProvider.Delete(ctx, aksMachineName)
+		return c.aksMachineInstanceProvider.Delete(ctx, aksMachineName)
 	}
 
 	// VM-based node
@@ -642,7 +642,7 @@ func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksM
 	}
 	// If FindNodePoolFromAKSMachine returns not found, we tolerate. But, possible instance types will be empty.
 
-	nodeClaim, err := instance.BuildNodeClaimFromAKSMachine(ctx, aksMachine, instanceTypes, c.aksMachineProvider.GetMachinesPoolLocation()) // ASSUMPTION: all machines are in the same location, and in the current pool.
+	nodeClaim, err := instance.BuildNodeClaimFromAKSMachine(ctx, aksMachine, instanceTypes, c.aksMachineInstanceProvider.GetMachinesPoolLocation()) // ASSUMPTION: all machines are in the same location, and in the current pool.
 	if err != nil {
 		return nil, fmt.Errorf("converting AKS machine instance to node claim, %w", err)
 	}
