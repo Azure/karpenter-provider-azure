@@ -269,9 +269,6 @@ func IsARMNotFound(err error) bool {
 }
 
 func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.Machine) error {
-	if len(aksMachine.Zones) == 0 || aksMachine.Zones[0] == nil {
-		return fmt.Errorf("irretrievable zone")
-	}
 	if aksMachine.Properties == nil {
 		return fmt.Errorf("irretrievable properties")
 	}

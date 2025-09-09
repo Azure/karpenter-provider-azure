@@ -374,7 +374,12 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		if err := validateRetrievedAKSMachineBasicProperties(&resp.Machine); err != nil {
 			return nil, fmt.Errorf("found existing AKS machine instance %s, but %w", aksMachineName, err)
 		}
-		aksMachineZone := lo.FromPtr(resp.Machine.Zones[0])
+		var aksMachineZone string
+		if len(resp.Machine.Zones) == 0 || resp.Machine.Zones[0] == nil {
+			aksMachineZone = "" // No zone
+		} else {
+			aksMachineZone = lo.FromPtr(resp.Machine.Zones[0])
+		}
 		aksMachineVMSize := lo.FromPtr(resp.Machine.Properties.Hardware.VMSize)
 		aksMachinePriority := lo.FromPtr(resp.Machine.Properties.Priority)
 		aksMachineCreationTimestamp := lo.FromPtr(resp.Machine.Properties.Status.CreationTimestamp)
