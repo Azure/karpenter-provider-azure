@@ -375,15 +375,15 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			return nil, fmt.Errorf("found existing AKS machine instance %s, but %w", aksMachineName, err)
 		}
 		aksMachineZone := lo.FromPtr(resp.Machine.Zones[0])
-		machineVMSize := lo.FromPtr(resp.Machine.Properties.Hardware.VMSize)
-		machinePriority := lo.FromPtr(resp.Machine.Properties.Priority)
-		machineCreationTimestamp := lo.FromPtr(resp.Machine.Properties.Status.CreationTimestamp)
-		vmResourceID := lo.FromPtr(resp.Machine.Properties.ResourceID)
+		aksMachineVMSize := lo.FromPtr(resp.Machine.Properties.Hardware.VMSize)
+		aksMachinePriority := lo.FromPtr(resp.Machine.Properties.Priority)
+		aksMachineCreationTimestamp := lo.FromPtr(resp.Machine.Properties.Status.CreationTimestamp)
+		aksMachineVMResourceID := lo.FromPtr(resp.Machine.Properties.ResourceID)
 		aksMachineID := lo.FromPtr(resp.Machine.ID)
 		aksMachineNodeImageVersion := lo.FromPtr(resp.Machine.Properties.NodeImageVersion)
 
-		instanceType := offerings.GetInstanceTypeFromVMSize(machineVMSize, instanceTypes)
-		capacityType := GetCapacityTypeFromAKSScaleSetPriority(machinePriority)
+		instanceType := offerings.GetInstanceTypeFromVMSize(aksMachineVMSize, instanceTypes)
+		capacityType := GetCapacityTypeFromAKSScaleSetPriority(aksMachinePriority)
 		zone := utils.GetAKSZoneFromARMZone(p.aksMachinesPoolLocation, aksMachineZone)
 
 		if resp.Machine.Properties.ProvisioningState != nil && lo.FromPtr(resp.Machine.Properties.ProvisioningState) == "Failed" {
@@ -411,10 +411,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			instanceType,
 			capacityType,
 			zone,
-			machineCreationTimestamp,
+			aksMachineCreationTimestamp,
 			aksMachineID,
 			aksMachineNodeImageVersion,
-			vmResourceID,
+			aksMachineVMResourceID,
 		), nil
 	} else if !IsARMNotFound(err) {
 		// Not fatal. Will fall back to normal creation.
