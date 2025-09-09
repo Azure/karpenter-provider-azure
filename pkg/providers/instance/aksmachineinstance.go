@@ -371,30 +371,31 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// Existing AKS machine found, reuse it.
 
 		// Reconstruct properties from existing AKS machine instance.
-		if err := validateRetrievedAKSMachineBasicProperties(&resp.Machine); err != nil {
+		gotAKSMachine := &resp.Machine
+		if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
 			return nil, fmt.Errorf("found existing AKS machine instance %s, but %w", aksMachineName, err)
 		}
-		var aksMachineZone string
-		if len(resp.Machine.Zones) == 0 || resp.Machine.Zones[0] == nil {
-			aksMachineZone = "" // No zone
+		var gotAKSMachineZone string
+		if len(gotAKSMachine.Zones) == 0 || gotAKSMachine.Zones[0] == nil {
+			gotAKSMachineZone = "" // No zone
 		} else {
-			aksMachineZone = lo.FromPtr(resp.Machine.Zones[0])
+			gotAKSMachineZone = lo.FromPtr(gotAKSMachine.Zones[0])
 		}
-		aksMachineVMSize := lo.FromPtr(resp.Machine.Properties.Hardware.VMSize)
-		aksMachinePriority := lo.FromPtr(resp.Machine.Properties.Priority)
-		aksMachineCreationTimestamp := lo.FromPtr(resp.Machine.Properties.Status.CreationTimestamp)
-		aksMachineVMResourceID := lo.FromPtr(resp.Machine.Properties.ResourceID)
-		aksMachineID := lo.FromPtr(resp.Machine.ID)
-		aksMachineNodeImageVersion := lo.FromPtr(resp.Machine.Properties.NodeImageVersion)
+		gotAKSMachineVMSize := lo.FromPtr(gotAKSMachine.Properties.Hardware.VMSize)
+		gotAKSMachinePriority := lo.FromPtr(gotAKSMachine.Properties.Priority)
+		gotAKSMachineCreationTimestamp := lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp)
+		gotAKSMachineVMResourceID := lo.FromPtr(gotAKSMachine.Properties.ResourceID)
+		gotAKSMachineID := lo.FromPtr(gotAKSMachine.ID)
+		gotAKSMachineNodeImageVersion := lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion)
 
-		instanceType := offerings.GetInstanceTypeFromVMSize(aksMachineVMSize, instanceTypes)
-		capacityType := GetCapacityTypeFromAKSScaleSetPriority(aksMachinePriority)
-		zone := utils.GetAKSZoneFromARMZone(p.aksMachinesPoolLocation, aksMachineZone)
+		instanceType := offerings.GetInstanceTypeFromVMSize(gotAKSMachineVMSize, instanceTypes)
+		capacityType := GetCapacityTypeFromAKSScaleSetPriority(gotAKSMachinePriority)
+		zone := utils.GetAKSZoneFromARMZone(p.aksMachinesPoolLocation, gotAKSMachineZone)
 
-		if resp.Machine.Properties.ProvisioningState != nil && lo.FromPtr(resp.Machine.Properties.ProvisioningState) == "Failed" {
+		if gotAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == "Failed" {
 			// Unfortunately, that was more like a remain than a usable aksMachine.
 			// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
-			return nil, p.handleMachineProvisioningError(ctx, "reusing existing AKS machine instance", aksMachineName, nodeClass, instanceType, zone, capacityType, resp.Machine.Properties.Status.ProvisioningError)
+			return nil, p.handleMachineProvisioningError(ctx, "reusing existing AKS machine instance", aksMachineName, nodeClass, instanceType, zone, capacityType, gotAKSMachine.Properties.Status.ProvisioningError)
 		}
 
 		log.FromContext(ctx).V(1).Info("reused existing AKS machine instance",
@@ -406,7 +407,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 
 		return NewAKSMachinePromise(
 			p,
-			lo.ToPtr(resp.Machine),
+			gotAKSMachine,
 			func() error {
 				// We hope the AKS machine completed provisioning at this point. Otherwise, if fails, it would not be handled until registration TTL.
 				// Suggestion: create a new poller just to handle it the same way as new machines. That will improve performance for such cases.
@@ -416,10 +417,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 			instanceType,
 			capacityType,
 			zone,
-			aksMachineCreationTimestamp,
-			aksMachineID,
-			aksMachineNodeImageVersion,
-			aksMachineVMResourceID,
+			gotAKSMachineCreationTimestamp,
+			gotAKSMachineID,
+			gotAKSMachineNodeImageVersion,
+			gotAKSMachineVMResourceID,
 		), nil
 	} else if !IsARMNotFound(err) {
 		// Not fatal. Will fall back to normal creation.

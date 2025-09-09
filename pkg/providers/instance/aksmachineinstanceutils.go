@@ -269,6 +269,8 @@ func IsARMNotFound(err error) bool {
 }
 
 func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.Machine) error {
+	// Assumptions may be made after this function returns no error.
+	// Thus, check every usage before removing each validation.
 	if aksMachine.Properties == nil {
 		return fmt.Errorf("irretrievable properties")
 	}
