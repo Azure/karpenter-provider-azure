@@ -267,3 +267,31 @@ func IsARMNotFound(err error) bool {
 	}
 	return false
 }
+
+func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.Machine) error {
+	if len(aksMachine.Zones) == 0 || aksMachine.Zones[0] == nil {
+		return fmt.Errorf("irretrievable zone")
+	}
+	if aksMachine.Properties == nil {
+		return fmt.Errorf("irretrievable properties")
+	}
+	if aksMachine.Properties.Hardware == nil || aksMachine.Properties.Hardware.VMSize == nil {
+		return fmt.Errorf("irretrievable VM size")
+	}
+	if aksMachine.Properties.Priority == nil {
+		return fmt.Errorf("irretrievable priority")
+	}
+	if aksMachine.Properties.Status == nil || aksMachine.Properties.Status.CreationTimestamp == nil {
+		return fmt.Errorf("irretrievable creation timestamp")
+	}
+	if aksMachine.Properties.ResourceID == nil {
+		return fmt.Errorf("irretrievable VM resource ID")
+	}
+	if aksMachine.ID == nil {
+		return fmt.Errorf("irretrievable ID")
+	}
+	if aksMachine.Properties.NodeImageVersion == nil {
+		return fmt.Errorf("irretrievable node image version")
+	}
+	return nil
+}

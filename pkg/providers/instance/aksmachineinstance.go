@@ -371,27 +371,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// Existing AKS machine found, reuse it.
 
 		// Reconstruct properties from existing AKS machine instance.
-		if len(resp.Machine.Zones) == 0 || resp.Machine.Zones[0] == nil {
-			// ASSUMPTION: always single zone, for now
-			return nil, fmt.Errorf("found existing AKS machine instance %s, but corrupted due to irretrievable zone", aksMachineName)
-		}
-		if resp.Machine.Properties == nil {
-			return nil, fmt.Errorf("found existing AKS machine instance %s, but corrupted due to irretrievable properties", aksMachineName)
-		}
-		if resp.Machine.Properties.Hardware == nil || resp.Machine.Properties.Hardware.VMSize == nil {
-			return nil, fmt.Errorf("found existing AKS machine instance %s, but corrupted due to irretrievable VM size", aksMachineName)
-		}
-		if resp.Machine.Properties.Priority == nil {
-			return nil, fmt.Errorf("found existing AKS machine instance %s, but corrupted due to irretrievable priority", aksMachineName)
-		}
-		if resp.Machine.Properties.Status == nil || resp.Machine.Properties.Status.CreationTimestamp == nil {
-			return nil, fmt.Errorf("found existing AKS machine instance %s, but corrupted due to irretrievable creation timestamp", aksMachineName)
-		}
-		if resp.Machine.Properties.ResourceID == nil {
-			return nil, fmt.Errorf("found existing AKS machine instance %s, but corrupted due to irretrievable VM resource ID", aksMachineName)
-		}
-		if resp.Machine.ID == nil {
-			return nil, fmt.Errorf("found existing AKS machine instance %s, but corrupted due to irretrievable ID", aksMachineName)
+		if err := validateRetrievedAKSMachineBasicProperties(&resp.Machine); err != nil {
+			return nil, fmt.Errorf("found existing AKS machine instance %s, but %w", aksMachineName, err)
 		}
 		aksMachineZone := lo.FromPtr(resp.Machine.Zones[0])
 		machineVMSize := lo.FromPtr(resp.Machine.Properties.Hardware.VMSize)
@@ -488,20 +469,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 	gotAKSMachine := lo.ToPtr(getResp.Machine)
 	// Process what we got.
-	if gotAKSMachine.ID == nil {
-		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: AKS machine ID is nil", aksMachineName)
-	}
-	if gotAKSMachine.Properties == nil {
-		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: AKS machine properties is nil", aksMachineName)
-	}
-	if gotAKSMachine.Properties.ResourceID == nil {
-		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: AKS machine VM resource ID is nil", aksMachineName)
-	}
-	if gotAKSMachine.Properties.Status == nil || gotAKSMachine.Properties.Status.CreationTimestamp == nil {
-		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: AKS machine creation timestamp is nil", aksMachineName)
-	}
-	if gotAKSMachine.Properties.NodeImageVersion == nil {
-		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: AKS machine node image version is nil", aksMachineName)
+	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
+		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: %w", aksMachineName, err)
 	}
 	if gotAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == "Failed" {
 		// We luckily catch failed state early (compared to during polling).
