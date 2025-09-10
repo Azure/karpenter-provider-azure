@@ -255,6 +255,9 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 		}
 		return &AzureLinux{Options: parameters}
 	default:
+		if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+			return &Ubuntu2004{Options: parameters}
+		}
 		if UseUbuntu2404(kubernetesVersion) {
 			return &Ubuntu2404{Options: parameters}
 		}

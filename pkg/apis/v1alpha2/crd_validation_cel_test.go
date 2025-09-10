@@ -152,9 +152,9 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeDisabled, true),
 			Entry("generic AzureLinux when FIPSMode is not explicitly set should succeed", v1alpha2.AzureLinuxImageFamily, nil, true),
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeFIPS, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1alpha2.FIPSModeFIPS, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is not explicitly set should succeed", "", nil, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu2004) when FIPSMode is explicitly FIPS should succeed", "", &v1alpha2.FIPSModeFIPS, true),
 		)
 	})
 
