@@ -165,72 +165,47 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 func configureOSSKUArtifactStreamingAndFIPs(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, *bool, error) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go
 
-	var osskuPtr *armcontainerservice.OSSKU
-	var enabledArtifactStreamingPtr *bool
-	var enableFIPsPtr *bool
-	var arch string = karpv1.ArchitectureAmd64
-	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
-		arch = karpv1.ArchitectureArm64
-	}
-	if nodeClass.Spec.ImageFamily != nil {
-		switch *nodeClass.Spec.ImageFamily {
-		case v1beta1.UbuntuImageFamily:
-			if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
-				osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu)
-				enabledArtifactStreamingPtr = lo.ToPtr(false)
-				enableFIPsPtr = lo.ToPtr(true)
-			} else {
-				if arch == karpv1.ArchitectureAmd64 {
-					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu2204)
-					enabledArtifactStreamingPtr = lo.ToPtr(true)
-				} else {
-					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu2204)
-					enabledArtifactStreamingPtr = lo.ToPtr(false)
-				}
-			}
-		case v1beta1.Ubuntu2204ImageFamily:
-			if arch == karpv1.ArchitectureAmd64 {
-				osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu2204)
-				enabledArtifactStreamingPtr = lo.ToPtr(true)
-			} else {
-				osskuPtr = lo.ToPtr(armcontainerservice.OSSKUUbuntu2204)
-				enabledArtifactStreamingPtr = lo.ToPtr(false)
-			}
-		case v1beta1.AzureLinuxImageFamily:
-			if imagefamily.UseAzureLinux3(orchestratorVersion) {
-				if arch == karpv1.ArchitectureAmd64 {
-					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
-					enabledArtifactStreamingPtr = lo.ToPtr(false)
-				} else {
-					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
-					enabledArtifactStreamingPtr = lo.ToPtr(false)
-				}
-			} else if orchestratorVersion == "" {
-				// Not enable artifact streaming to be safe, as we cannot really control AzureLinux version, and we don't know what the API will default us to
-				// Although, in practice, this is not really possible as version should always be populated.
-				if arch == karpv1.ArchitectureAmd64 {
-					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
-					enabledArtifactStreamingPtr = lo.ToPtr(false)
-				} else {
-					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
-					enabledArtifactStreamingPtr = lo.ToPtr(false)
-				}
-			} else {
-				if arch == karpv1.ArchitectureAmd64 {
-					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
-					enabledArtifactStreamingPtr = lo.ToPtr(true)
-				} else {
-					osskuPtr = lo.ToPtr(armcontainerservice.OSSKUAzureLinux)
-					enabledArtifactStreamingPtr = lo.ToPtr(false)
-				}
-			}
-		default:
-			return nil, nil, nil, fmt.Errorf("unsupported image family %q in NodeClass %q", *nodeClass.Spec.ImageFamily, nodeClass.Name)
-		}
-	} else {
+	if nodeClass.Spec.ImageFamily == nil {
 		return nil, nil, nil, fmt.Errorf("ImageFamily is not set in NodeClass %q", nodeClass.Name)
 	}
-	return osskuPtr, enabledArtifactStreamingPtr, enableFIPsPtr, nil
+
+	var ossku armcontainerservice.OSSKU
+	var enabledArtifactStreaming bool
+	var enableFIPs *bool
+	var isAmd64 = true
+	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
+		isAmd64 = false
+	}
+
+	switch *nodeClass.Spec.ImageFamily {
+	case v1beta1.UbuntuImageFamily:
+		if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+			ossku = armcontainerservice.OSSKUUbuntu
+			enabledArtifactStreaming = false
+			enableFIPs = lo.ToPtr(true)
+		} else {
+			ossku = armcontainerservice.OSSKUUbuntu2204
+			enabledArtifactStreaming = isAmd64
+		}
+	case v1beta1.Ubuntu2204ImageFamily:
+		ossku = armcontainerservice.OSSKUUbuntu2204
+		enabledArtifactStreaming = isAmd64
+	case v1beta1.AzureLinuxImageFamily:
+		ossku = armcontainerservice.OSSKUAzureLinux
+		if imagefamily.UseAzureLinux3(orchestratorVersion) {
+			enabledArtifactStreaming = false
+		} else if orchestratorVersion == "" {
+			// Not enable artifact streaming to be safe, as we cannot really control AzureLinux version, and we don't know what the API will default us to
+			// Although, in practice, this is not really possible as version should always be populated.
+			enabledArtifactStreaming = false
+		} else {
+			enabledArtifactStreaming = isAmd64
+		}
+	default:
+		return nil, nil, nil, fmt.Errorf("unsupported image family %q in NodeClass %q", *nodeClass.Spec.ImageFamily, nodeClass.Name)
+	}
+
+	return lo.ToPtr(ossku), lo.ToPtr(enabledArtifactStreaming), enableFIPs, nil
 }
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
