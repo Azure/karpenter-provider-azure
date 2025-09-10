@@ -70,8 +70,6 @@ var _ = Describe("Utilization", func() {
 	Context("Ubuntu", func() {
 		It("should provision one pod per node (Ubuntu, amd64)", func() {
 			ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.DefaultNodePool)
-
-			// Default Image Family Should be Ubuntu2404
 		})
 		It("should provision one pod per node (Ubuntu, arm64)", func() {
 			ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.ArmNodepool)
