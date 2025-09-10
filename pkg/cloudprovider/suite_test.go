@@ -1261,7 +1261,14 @@ var _ = Describe("CloudProvider", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-				nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet")
+				
+				// Extract cluster subnet components and create a test subnet in the same VNET
+				clusterSubnetID := options.FromContext(ctx).SubnetID
+				clusterSubnetComponents, err := utils.GetVnetSubnetIDComponents(clusterSubnetID)
+				Expect(err).ToNot(HaveOccurred())
+				testSubnetID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/test-subnet",
+					clusterSubnetComponents.SubscriptionID, clusterSubnetComponents.ResourceGroupName, clusterSubnetComponents.VNetName)
+				nodeClass.Spec.VNETSubnetID = lo.ToPtr(testSubnetID)
 				nodeClass.Spec.Tags = map[string]string{
 					"custom-tag":  "custom-value",
 					"environment": "test",
@@ -1305,7 +1312,7 @@ var _ = Describe("CloudProvider", func() {
 				// Verify subnet configuration (AKS machine should use the specified subnet)
 				Expect(aksMachine.Properties.Network).ToNot(BeNil())
 				Expect(aksMachine.Properties.Network.VnetSubnetID).ToNot(BeNil())
-				Expect(*aksMachine.Properties.Network.VnetSubnetID).To(Equal("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet"))
+				Expect(*aksMachine.Properties.Network.VnetSubnetID).To(Equal(testSubnetID))
 
 				// Verify custom tags from NodeClass
 				Expect(aksMachine.Properties.Tags).To(HaveKey("custom-tag"))
