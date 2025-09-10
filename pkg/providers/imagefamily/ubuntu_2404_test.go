@@ -97,4 +97,3 @@ func TestUbuntu2404_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.True(t, ok, "Expected ProvisionClientBootstrap type")
 	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
 }
-

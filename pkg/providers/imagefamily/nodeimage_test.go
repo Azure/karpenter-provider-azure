@@ -303,7 +303,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				
+
 				// Should use Ubuntu2204 for K8s < 1.34
 				expectedImages := []imagefamily.NodeImage{}
 				ubuntu2204Images := imagefamily.Ubuntu2204{}.DefaultImages(true, nil)
@@ -323,7 +323,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				
+
 				// Should use Ubuntu2404 for K8s >= 1.34
 				expectedImages := []imagefamily.NodeImage{}
 				ubuntu2404Images := imagefamily.Ubuntu2404{}.DefaultImages(true, nil)
@@ -344,7 +344,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				
+
 				// Should default to Ubuntu2204 for K8s < 1.34
 				expectedImages := []imagefamily.NodeImage{}
 				ubuntu2204Images := imagefamily.Ubuntu2204{}.DefaultImages(true, nil)
@@ -364,7 +364,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				
+
 				// Should default to Ubuntu2404 for K8s >= 1.34
 				expectedImages := []imagefamily.NodeImage{}
 				ubuntu2404Images := imagefamily.Ubuntu2404{}.DefaultImages(true, nil)
