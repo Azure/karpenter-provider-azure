@@ -40,3 +40,11 @@ func ManagedTags(nodepoolName string) map[string]*string {
 		"karpenter.sh_nodepool":       lo.ToPtr(nodepoolName),
 	}
 }
+
+func ManagedTagsAKSMachine(nodepoolName string) map[string]*string {
+	return map[string]*string{
+		"karpenter.azure.com_cluster":    lo.ToPtr("test-cluster"),
+		"karpenter.sh_nodepool":          lo.ToPtr(nodepoolName),
+		"karpenter.azure.com_aksmachine": lo.ToPtr("true"),
+	}
+}

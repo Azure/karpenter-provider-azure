@@ -577,4 +577,54 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		Expect(len(nicsAfterVMReconciliation)).To(Equal(0))
 
 	})
+
+	It("should not delete an untagged NIC if there is no associated VM", func() {
+		nic := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+			Tags:         map[string]*string{}, // untagged
+		})
+		nic2 := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+		})
+		nic3 := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+		})
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic2.ID), *nic2)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic3.ID), *nic3)
+		nicsBeforeGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(nicsBeforeGC)).To(Equal(2))
+		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+		nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(nicsAfterGC)).To(Equal(0))
+		Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(2))
+	})
+
+	// Note: this won't really test ARG query, which is the most important part of the flow. More like testing the fake of it.
+	// Suggestion: find a way to effectively test ARG query that is not manual?
+	It("should not delete an AKS Machine NIC if there is no associated VM", func() {
+		nic := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+			Tags:         test.ManagedTagsAKSMachine(nodePool.Name),
+		})
+		nic2 := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+		})
+		nic3 := test.Interface(test.InterfaceOptions{
+			NodepoolName: nodePool.Name,
+		})
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic2.ID), *nic2)
+		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic3.ID), *nic3)
+		nicsBeforeGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(nicsBeforeGC)).To(Equal(2))
+		ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+		nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(nicsAfterGC)).To(Equal(0))
+		Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(2))
+	})
 })
