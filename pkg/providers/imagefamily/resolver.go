@@ -238,13 +238,7 @@ func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernet
 func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.UbuntuImageFamily:
-		if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
-			return &Ubuntu2004{Options: parameters}
-		}
-		if UseUbuntu2404(kubernetesVersion) {
-			return &Ubuntu2404{Options: parameters}
-		}
-		return &Ubuntu2204{Options: parameters}
+		return defaultUbuntu(fipsMode, kubernetesVersion, parameters)
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.Ubuntu2404ImageFamily:
@@ -255,14 +249,19 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 		}
 		return &AzureLinux{Options: parameters}
 	default:
-		if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
-			return &Ubuntu2004{Options: parameters}
-		}
-		if UseUbuntu2404(kubernetesVersion) {
-			return &Ubuntu2404{Options: parameters}
-		}
-		return &Ubuntu2204{Options: parameters}
+		return defaultUbuntu(fipsMode, kubernetesVersion, parameters)
 	}
+}
+
+func defaultUbuntu(fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+		return &Ubuntu2004{Options: parameters}
+	}
+	if UseUbuntu2404(kubernetesVersion) {
+		return &Ubuntu2404{Options: parameters}
+	}
+	return &Ubuntu2204{Options: parameters}
+
 }
 
 // resolveNodeImage returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
