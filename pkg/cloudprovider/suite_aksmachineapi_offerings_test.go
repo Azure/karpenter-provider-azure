@@ -280,7 +280,7 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorTotalRegionalCoresQuota(fake.Region)
 
 				// Create nodeClaim directly and call cloudProvider.Create like VM tests
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim1 := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -295,8 +295,8 @@ var _ = Describe("CloudProvider", func() {
 					},
 				})
 
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-				claim, err := cloudProvider.Create(ctx, nodeClaim)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass, testNodeClaim1)
+				claim, err := cloudProvider.Create(ctx, testNodeClaim1)
 				Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 				Expect(claim).To(BeNil())
 			})
@@ -382,7 +382,7 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should return error when NodeClass readiness is Unknown"
 			It("should return error when NodeClass readiness is Unknown", func() {
 				nodeClass.StatusConditions().SetUnknown(corestatus.ConditionReady)
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim2 := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -397,8 +397,8 @@ var _ = Describe("CloudProvider", func() {
 					},
 				})
 
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-				claim, err := cloudProvider.Create(ctx, nodeClaim)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass, testNodeClaim2)
+				claim, err := cloudProvider.Create(ctx, testNodeClaim2)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
@@ -408,18 +408,18 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should return error when instance type resolution fails"
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+				localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				// Reconcile the NodeClass to ensure status is updated
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, localStatusController, nodeClass)
 
 				azureEnv.SKUsAPI.Error = fmt.Errorf("failed to list SKUs")
 
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim3 := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -434,7 +434,7 @@ var _ = Describe("CloudProvider", func() {
 					},
 				})
 
-				claim, err := cloudProvider.Create(ctx, nodeClaim)
+				claim, err := cloudProvider.Create(ctx, testNodeClaim3)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())
@@ -449,7 +449,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				// Create a NodeClaim with valid requirements
-				nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+				testNodeClaim4 := coretest.NodeClaim(karpv1.NodeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Labels: map[string]string{
 							karpv1.NodePoolLabelKey: nodePool.Name,
@@ -467,7 +467,7 @@ var _ = Describe("CloudProvider", func() {
 				// Set up the AKS machine provider to fail (different from VM API)
 				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorAny()
 
-				claim, err := cloudProvider.Create(ctx, nodeClaim)
+				claim, err := cloudProvider.Create(ctx, testNodeClaim4)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&corecloudprovider.CreateError{}))
 				Expect(claim).To(BeNil())

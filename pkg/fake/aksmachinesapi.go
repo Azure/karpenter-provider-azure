@@ -46,16 +46,6 @@ func NewSharedAKSDataStores() *SharedAKSDataStores {
 	}
 }
 
-// extractVMNameFromResourceID extracts the VM name from a VM resource ID
-// e.g., "/subscriptions/.../virtualMachines/vmName" -> "vmName"
-func extractVMNameFromResourceID(resourceID string) string {
-	parts := strings.Split(resourceID, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return ""
-}
-
 // This is not really the real one being used, which is the header.
 // But the header cannot be extracted due to azure-sdk-for-go being restrictive. This is good enough.
 func GetVMImageIDFromContext(ctx context.Context) string {
@@ -289,7 +279,7 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupN
 
 		// Check ETag for optimistic concurrency control
 		if input.Options != nil && input.Options.IfMatch != nil {
-			if existing.Properties == nil || existing.Properties.ETag == nil || 
+			if existing.Properties == nil || existing.Properties.ETag == nil ||
 				*existing.Properties.ETag != *input.Options.IfMatch {
 				return nil, &azcore.ResponseError{
 					StatusCode: http.StatusPreconditionFailed,

@@ -131,19 +131,19 @@ var _ = Describe("CloudProvider", func() {
 			// Get should return the created nodeClaim
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
 			azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
-			nodeClaim, err := cloudProvider.Get(ctx, createdNodeClaim.Status.ProviderID)
+			retrievedNodeClaim, err := cloudProvider.Get(ctx, createdNodeClaim.Status.ProviderID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 
 			//// The returned nodeClaim should be correct
-			Expect(nodeClaim.Name).To(ContainSubstring(createInput.AKSMachineName))
-			validateAKSMachineNodeClaim(nodeClaim, nodePool)
+			Expect(retrievedNodeClaim.Name).To(ContainSubstring(createInput.AKSMachineName))
+			validateAKSMachineNodeClaim(retrievedNodeClaim, nodePool)
 
 			// Delete
 			azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Reset()
 			azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Reset()
-			Expect(cloudProvider.Delete(ctx, nodeClaim)).To(Succeed())
+			Expect(cloudProvider.Delete(ctx, retrievedNodeClaim)).To(Succeed())
 			Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineDeleteBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 
@@ -234,9 +234,9 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(fake.AKSMachineAPIErrorAny)
 
 				// Attempt to get the nodeclaim - should fail
-				nodeClaim, err := cloudProvider.Get(ctx, nodeClaims[0].Status.ProviderID)
+				retrievedNodeClaim, err := cloudProvider.Get(ctx, nodeClaims[0].Status.ProviderID)
 				Expect(err).To(HaveOccurred())
-				Expect(nodeClaim).To(BeNil())
+				Expect(retrievedNodeClaim).To(BeNil())
 				// Verify the get API was called
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
 
@@ -344,11 +344,11 @@ var _ = Describe("CloudProvider", func() {
 
 				// Get should return NodeClaimNotFound error
 				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
-				nodeClaim, err := cloudProvider.Get(ctx, nodeClaims[0].Status.ProviderID)
+				retrievedNodeClaim2, err := cloudProvider.Get(ctx, nodeClaims[0].Status.ProviderID)
 				Expect(err).To(HaveOccurred())
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
 				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-				Expect(nodeClaim).To(BeNil())
+				Expect(retrievedNodeClaim2).To(BeNil())
 
 				// Delete should also return NodeClaimNotFound error
 				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
@@ -583,9 +583,9 @@ var _ = Describe("CloudProvider", func() {
 
 				// Should succeed now that the conflicted node is gone from the cleanup
 				azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
-				nodeClaim, err := cloudProvider.Create(ctx, conflictedNodeClaim)
+				createdConflictedNodeClaim, err := cloudProvider.Create(ctx, conflictedNodeClaim)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(nodeClaim).ToNot(BeNil())
+				Expect(createdConflictedNodeClaim).ToNot(BeNil())
 
 				// Verify the AKS machine was created successfully
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -601,9 +601,9 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Zones[0]).To(Equal("2"))
 
 				// Validate the returned nodeClaim has correct configuration
-				validateAKSMachineNodeClaim(nodeClaim, nodePool)
-				Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(utils.GetAKSZoneFromARMZone(fake.Region, "2")))
-				Expect(nodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v5"))
+				validateAKSMachineNodeClaim(createdConflictedNodeClaim, nodePool)
+				Expect(createdConflictedNodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(utils.GetAKSZoneFromARMZone(fake.Region, "2")))
+				Expect(createdConflictedNodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v5"))
 			})
 		})
 	})
@@ -700,17 +700,17 @@ var _ = Describe("CloudProvider", func() {
 			// Get should return AKS machine nodeclaim
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
 			azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Reset()
-			nodeClaim, err := cloudProvider.Get(ctx, aksMachineNodeClaim.Status.ProviderID)
+			retrievedAKSNodeClaim, err := cloudProvider.Get(ctx, aksMachineNodeClaim.Status.ProviderID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 
 			//// The returned nodeClaim should be correct
-			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Status.Capacity).ToNot(BeEmpty())
-			Expect(nodeClaim.Name).To(Equal(createInput.AKSMachineName))
-			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
-			Expect(nodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
+			Expect(retrievedAKSNodeClaim).ToNot(BeNil())
+			Expect(retrievedAKSNodeClaim.Status.Capacity).ToNot(BeEmpty())
+			Expect(retrievedAKSNodeClaim.Name).To(Equal(createInput.AKSMachineName))
+			Expect(retrievedAKSNodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+			Expect(retrievedAKSNodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
 
 			// Get should return VM nodeclaim
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
@@ -843,10 +843,10 @@ var _ = Describe("CloudProvider", func() {
 				// (then, mostly relying on fake API to reflect the correct behavior)
 
 				// cloudprovider.Get should return NodeClaimNotFoundError, but not panic
-				nodeClaim, err := cloudProvider.Get(ctx, aksMachineNodeClaim.Status.ProviderID)
+				retrievedNodeClaim3, err := cloudProvider.Get(ctx, aksMachineNodeClaim.Status.ProviderID)
 				Expect(err).To(HaveOccurred())
 				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-				Expect(nodeClaim).To(BeNil())
+				Expect(retrievedNodeClaim3).To(BeNil())
 
 				// cloudprovider.List should return vms only
 				nodeClaims, err = cloudProvider.List(ctx)
@@ -860,7 +860,7 @@ var _ = Describe("CloudProvider", func() {
 
 				// cloudprovider.Create should panic
 				Expect(func() {
-					_, _ = cloudProvider.Create(ctx, nodeClaim)
+					_, _ = cloudProvider.Create(ctx, retrievedNodeClaim3)
 				}).To(Panic())
 			})
 		})

@@ -27,7 +27,6 @@ import (
 	"github.com/Azure/skewer"
 	"github.com/stretchr/testify/assert"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
@@ -52,7 +51,7 @@ func (b *cloudErrorTestCaseBuilder) withInstanceType(offerings ...offering) *clo
 }
 
 func (b *cloudErrorTestCaseBuilder) withEmptyInstanceType() *cloudErrorTestCaseBuilder {
-	b.tc.instanceType = &cloudprovider.InstanceType{}
+	b.tc.instanceType = &corecloudprovider.InstanceType{}
 	return b
 }
 
@@ -88,7 +87,7 @@ func (b *cloudErrorTestCaseBuilder) build() cloudErrorTestCase {
 
 type cloudErrorTestCase struct {
 	testName                                string
-	instanceType                            *cloudprovider.InstanceType
+	instanceType                            *corecloudprovider.InstanceType
 	originalRequestSKU                      *skewer.SKU
 	zone                                    string
 	capacityType                            string

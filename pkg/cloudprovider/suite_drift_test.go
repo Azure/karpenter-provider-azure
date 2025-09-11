@@ -67,7 +67,7 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		Context("Drift", func() {
-			var nodeClaim *karpv1.NodeClaim
+			var driftNodeClaim *karpv1.NodeClaim
 			var pod *v1.Pod
 			var node *v1.Node
 
@@ -104,7 +104,7 @@ var _ = Describe("CloudProvider", func() {
 				rg := input.ResourceGroupName
 				vmName := input.VMName
 				// Corresponding NodeClaim
-				nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+				driftNodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
 					Status: karpv1.NodeClaimStatus{
 						NodeName: node.Name,
 						// TODO (charliedmcb): switch back to use MkVMID, and update the test subscription usage to all use the same sub const 12345678-1234-1234-1234-123456789012
@@ -132,34 +132,34 @@ var _ = Describe("CloudProvider", func() {
 
 			It("should not fail if nodeClass does not exist", func() {
 				ExpectDeleted(ctx, env.Client, nodeClass)
-				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(drifted).To(BeEmpty())
 			})
 
 			It("should not fail if nodePool does not exist", func() {
 				ExpectDeleted(ctx, env.Client, nodePool)
-				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(drifted).To(BeEmpty())
 			})
 
 			It("should not return drifted if the NodeClaim is valid", func() {
-				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(drifted).To(BeEmpty())
 			})
 
 			It("should error drift if NodeClaim doesn't have provider id", func() {
-				nodeClaim.Status = karpv1.NodeClaimStatus{}
-				drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+				driftNodeClaim.Status = karpv1.NodeClaimStatus{}
+				drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 				Expect(err).To(HaveOccurred())
 				Expect(drifted).To(BeEmpty())
 			})
 
 			Context("Node Image Drift", func() {
 				It("should succeed with no drift when nothing changes", func() {
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
@@ -168,7 +168,7 @@ var _ = Describe("CloudProvider", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 					nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "ImagesNoLongerReady", "test when images aren't ready")
 					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
@@ -178,7 +178,7 @@ var _ = Describe("CloudProvider", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 					nodeClass.Status.Images = []v1beta1.NodeImage{}
 					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).To(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
@@ -186,7 +186,7 @@ var _ = Describe("CloudProvider", func() {
 				It("should trigger drift when the image gallery changes to SIG", func() {
 					test.ApplySIGImages(nodeClass)
 					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(ImageDrift))
 				})
@@ -194,7 +194,7 @@ var _ = Describe("CloudProvider", func() {
 				It("should trigger drift when the image version changes", func() {
 					test.ApplyCIGImagesWithVersion(nodeClass, "202503.02.0")
 					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(ImageDrift))
 				})
@@ -202,7 +202,7 @@ var _ = Describe("CloudProvider", func() {
 
 			Context("Kubernetes Version", func() {
 				It("should succeed with no drift when nothing changes", func() {
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
@@ -211,7 +211,7 @@ var _ = Describe("CloudProvider", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 					nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeKubernetesVersionReady, "K8sVersionNoLongerReady", "test when k8s isn't ready")
 					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
@@ -221,36 +221,36 @@ var _ = Describe("CloudProvider", func() {
 					nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 					nodeClass.Status.KubernetesVersion = ""
 					ExpectApplied(ctx, env.Client, nodeClass)
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
 
 				It("shouldn't error or be drifted when NodeName is missing", func() {
-					nodeClaim.Status.NodeName = ""
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					driftNodeClaim.Status.NodeName = ""
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
 
 				It("shouldn't error or be drifted when node is not found", func() {
-					nodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					driftNodeClaim.Status.NodeName = "NodeWhoDoesNotExist"
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 				})
 
 				It("shouldn't error or be drifted when node is deleting", func() {
-					node = ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+					node = ExpectNodeExists(ctx, env.Client, driftNodeClaim.Status.NodeName)
 					node.Finalizers = append(node.Finalizers, test.TestingFinalizer)
 					ExpectApplied(ctx, env.Client, node)
 					Expect(env.Client.Delete(ctx, node)).ToNot(HaveOccurred())
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(NoDrift))
 
 					// cleanup
-					node = ExpectNodeExists(ctx, env.Client, nodeClaim.Status.NodeName)
+					node = ExpectNodeExists(ctx, env.Client, driftNodeClaim.Status.NodeName)
 					deepCopy := node.DeepCopy()
 					node.Finalizers = lo.Reject(node.Finalizers, func(finalizer string, _ int) bool {
 						return finalizer == test.TestingFinalizer
@@ -268,7 +268,7 @@ var _ = Describe("CloudProvider", func() {
 
 					ExpectApplied(ctx, env.Client, nodeClass)
 
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(K8sVersionDrift))
 				})
@@ -278,7 +278,7 @@ var _ = Describe("CloudProvider", func() {
 				It("should NOT trigger drift if node doesn't have kubelet client ID label", func() {
 					node.Labels[v1beta1.AKSLabelKubeletIdentityClientID] = "" // Not set
 
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(BeEmpty())
 				})
@@ -288,7 +288,7 @@ var _ = Describe("CloudProvider", func() {
 						KubeletIdentityClientID: lo.ToPtr("3824ff7a-93b6-40af-b861-2eb621ba437a"), // a different random UUID
 					}))
 
-					drifted, err := cloudProvider.IsDrifted(ctx, nodeClaim)
+					drifted, err := cloudProvider.IsDrifted(ctx, driftNodeClaim)
 					Expect(err).ToNot(HaveOccurred())
 					Expect(drifted).To(Equal(KubeletIdentityDrift))
 				})

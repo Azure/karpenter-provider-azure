@@ -203,7 +203,7 @@ func patchAKSMachineTags(
 
 	if patchingAKSMachine.Properties == nil {
 		// Should not be possible, but handle it gracefully
-		if expectedTags == nil || len(expectedTags) == 0 {
+		if len(expectedTags) == 0 {
 			return false // No update to perform
 		}
 		patchingAKSMachine.Properties = &armcontainerservice.MachineProperties{

@@ -91,9 +91,9 @@ func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider coreclou
 		var nodeClaimName string
 		nodeClaimName, err = provisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
 		Expect(err).ToNot(HaveOccurred())
-		nodeClaim := &karpv1.NodeClaim{}
-		Expect(c.Get(ctx, types.NamespacedName{Name: nodeClaimName}, nodeClaim)).To(Succeed())
-		_, err = ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, nodeClaim)
+		createdNodeClaim := &karpv1.NodeClaim{}
+		Expect(c.Get(ctx, types.NamespacedName{Name: nodeClaimName}, createdNodeClaim)).To(Succeed())
+		_, err = ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, createdNodeClaim)
 		Expect(err).ToNot(HaveOccurred())
 	}
 }
