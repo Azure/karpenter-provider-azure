@@ -816,7 +816,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(Equal(reconcile.Result{}))
-				Expect(err.Error()).To(ContainSubstring("getting VM from instance provider"))
+				Expect(err.Error()).To(ContainSubstring("nodeclaim not found"))
 			})
 
 			It("should add a hash annotation to NodeClaim if there are no identities or tags", func() {
