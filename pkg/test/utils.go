@@ -36,7 +36,7 @@ func RandomName(prefix string) string {
 
 func ManagedTags(nodepoolName string) map[string]*string {
 	return map[string]*string{
-		"karpenter.sh_cluster":  lo.ToPtr("test-cluster"),
-		"karpenter.sh_nodepool": lo.ToPtr(nodepoolName),
+		"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+		"karpenter.sh_nodepool":       lo.ToPtr(nodepoolName),
 	}
 }
