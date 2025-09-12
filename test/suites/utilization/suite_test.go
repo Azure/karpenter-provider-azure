@@ -56,69 +56,39 @@ var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Utilization", func() {
-	Context("AzureLinux", func() {
-		It("should provision one pod per node (AzureLinux, amd64)", func() {
-			ExpectProvisionPodPerNode(env.AZLinuxNodeClass, env.DefaultNodePool)
-		})
-		It("should provision one pod per node (AzureLinux, arm64)", func() {
-			if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.InClusterController {
-				Skip("AzureLinux3 ARM64 VHD is not available in CIG")
-			}
-			ExpectProvisionPodPerNode(env.AZLinuxNodeClass, env.ArmNodepool)
-		})
-	})
-	Context("Ubuntu", func() {
-		It("should provision one pod per node (Ubuntu, amd64)", func() {
-			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-				nodeClass := env.DefaultAKSNodeClass()
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
-				return nodeClass
-			}, env.DefaultNodePool)
-		})
-		It("should provision one pod per node (Ubuntu, arm64)", func() {
-			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-				nodeClass := env.DefaultAKSNodeClass()
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
-				return nodeClass
-			}, env.ArmNodepool)
-		})
-		It("should provision one pod per node (Ubuntu2404, amd64)", Label(v1beta1.Ubuntu2404ImageFamily), func() {
-			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-				nodeClass := env.DefaultAKSNodeClass()
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
-				return nodeClass
-			}, env.DefaultNodePool)
-		})
-		It("should provision one pod per node (Ubuntu2404, arm64)", Label(v1beta1.Ubuntu2404ImageFamily), func() {
-			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-				nodeClass := env.DefaultAKSNodeClass()
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
-				return nodeClass
-			}, env.ArmNodepool)
-		})
-		It("should provision one pod per node (Ubuntu2204, amd64)", Label(v1beta1.Ubuntu2204ImageFamily), func() {
-			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-				nodeClass := env.DefaultAKSNodeClass()
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-				return nodeClass
-			}, env.DefaultNodePool)
-		})
-		It("should provision one pod per node (Ubuntu2204, arm64)", Label(v1beta1.Ubuntu2204ImageFamily), func() {
-			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
-				nodeClass := env.DefaultAKSNodeClass()
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-				return nodeClass
-			}, env.ArmNodepool)
-		})
+	DescribeTable("should provision one pod per node",
+		func(imageFamily *string, arch string) {
+			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass.Spec.ImageFamily = imageFamily
+			nodePool := lo.Ternary(arch == karpv1.ArchitectureAmd64, env.DefaultNodePool(nodeClass), env.ArmNodepool(nodeClass))
+			ExpectProvisionPodPerNode(nodeClass, nodePool)
+		},
 
-	})
+		// AzureLinux
+		Entry("AzureLinux, amd64", v1beta1.AzureLinuxImageFamily, karpv1.ArchitectureAmd64),
+		// Covered below due to conditional logic, arm64 is not available in CIG
+		// Entry("AzureLinux, arm64", env.AZLinuxNodeClass().Spec.ImageFamily, karpv1.ArchitectureArm64,
 
+		// Ubuntu
+		Entry("Ubuntu, amd64", lo.ToPtr(v1beta1.UbuntuImageFamily), karpv1.ArchitectureAmd64, false),
+		Entry("Ubuntu, arm64", lo.ToPtr(v1beta1.UbuntuImageFamily), karpv1.ArchitectureArm64, false),
+		Entry("Ubuntu2204, amd64", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), karpv1.ArchitectureAmd64, false),
+		Entry("Ubuntu2204, arm64", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), karpv1.ArchitectureArm64, false),
+		Entry("Ubuntu2404, amd64", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), karpv1.ArchitectureAmd64, false),
+		Entry("Ubuntu2404, arm64", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), karpv1.ArchitectureArm64, false),
+	)
+
+	It("should provision one pod per node (AzureLinux, arm64)", func() {
+		if imagefamily.UseAzureLinux3(env.K8sVersion()) && env.InClusterController {
+			Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+		}
+		nc := env.AZLinuxNodeClass()
+		ExpectProvisionPodPerNode(nc, env.ArmNodepool(nc))
+	})
 })
 
-func ExpectProvisionPodPerNode(getNodeClass func() *v1beta1.AKSNodeClass, getNodePool func(*v1beta1.AKSNodeClass) *karpv1.NodePool) {
+func ExpectProvisionPodPerNode(nodeClass *v1beta1.AKSNodeClass, nodePool *karpv1.NodePool) {
 	GinkgoHelper()
-	nodeClass := getNodeClass()
-	nodePool := getNodePool(nodeClass)
 	test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 		NodeSelectorRequirement: v1.NodeSelectorRequirement{
 			Key:      v1beta1.LabelSKUCPU,
