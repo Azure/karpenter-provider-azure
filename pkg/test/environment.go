@@ -195,6 +195,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.NodeResourceGroup,
 		subscription,
 		testOptions.ProvisionMode,
+		testOptions.DiskEncryptionSetID,
 	)
 
 	return &Environment{

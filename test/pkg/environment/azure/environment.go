@@ -21,6 +21,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -29,6 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
@@ -62,11 +64,15 @@ type Environment struct {
 	// These should be unexported and access should be through the Environment methods
 	// Any create calls should make sure they also register the created resources with the Environment's tracker
 	// to ensure they are cleaned up after the test.
-	vmClient             *armcompute.VirtualMachinesClient
-	vnetClient           *armnetwork.VirtualNetworksClient
-	subnetClient         *armnetwork.SubnetsClient
-	interfacesClient     *armnetwork.InterfacesClient
-	managedClusterClient *containerservice.ManagedClustersClient
+	vmClient                *armcompute.VirtualMachinesClient
+	vnetClient              *armnetwork.VirtualNetworksClient
+	subnetClient            *armnetwork.SubnetsClient
+	interfacesClient        *armnetwork.InterfacesClient
+	managedClusterClient    *containerservice.ManagedClustersClient
+	keyVaultClient          *armkeyvault.VaultsClient
+	diskEncryptionSetClient *armcompute.DiskEncryptionSetsClient
+
+	RBACManager *RBACManager
 }
 
 func readEnv(name string) string {
@@ -101,6 +107,10 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.keyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.diskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, nil))
+
+	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID))
 	return azureEnv
 }
 
