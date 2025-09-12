@@ -21,6 +21,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -70,6 +71,8 @@ type Environment struct {
 	managedClusterClient    *containerservice.ManagedClustersClient
 	keyVaultClient          *armkeyvault.VaultsClient
 	diskEncryptionSetClient *armcompute.DiskEncryptionSetsClient
+
+	RBACManager *RBACManager
 }
 
 func readEnv(name string) string {
@@ -106,6 +109,8 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.keyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.diskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, nil))
+
+	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID))
 	return azureEnv
 }
 
@@ -118,4 +123,8 @@ func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass := env.DefaultAKSNodeClass()
 	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 	return nodeClass
+}
+
+func (env *Environment) generateGUID() string {
+	return uuid.New().String()
 }

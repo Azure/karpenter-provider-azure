@@ -2,7 +2,6 @@ package byok_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -72,7 +71,6 @@ var _ = Describe("BYOK", func() {
 		nodeClass := env.DefaultAKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
-		// Request instance types that support ephemeral OS disk
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
