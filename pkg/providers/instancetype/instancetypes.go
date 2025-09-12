@@ -257,10 +257,10 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	if !(utils.IsNvidiaEnabledSKU(skuName) || utils.IsMarinerEnabledGPUSKU(skuName)) {
 		return true
 	}
-	switch imageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
+	switch {
+	case v1beta1.UbuntuFamilies.Has(imageFamily):
 		return utils.IsNvidiaEnabledSKU(skuName)
-	case v1beta1.AzureLinuxImageFamily:
+	case imageFamily == v1beta1.AzureLinuxImageFamily:
 		return utils.IsMarinerEnabledGPUSKU(skuName)
 	default:
 		return false
