@@ -42,6 +42,7 @@ type AKSNodeClassSpec struct {
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
 	// +kubebuilder:default=128
 	// +kubebuilder:validation:Minimum=30
+	// +kubebuilder:validation:Maximum=2048
 	// osDiskSizeGB is the size of the OS disk in GB.
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 	// ImageID is the ID of the image that instances use.
