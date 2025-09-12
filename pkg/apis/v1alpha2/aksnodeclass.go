@@ -81,6 +81,8 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 	// EncryptionAtHost enables encryption at host for the provisioned nodes
+	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
 	// +optional
 	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }
