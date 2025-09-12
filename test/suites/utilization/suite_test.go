@@ -57,9 +57,9 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("Utilization", func() {
 	DescribeTable("should provision one pod per node",
-		func(imageFamily *string, arch string) {
+		func(imageFamily string, arch string) {
 			nodeClass := env.DefaultAKSNodeClass()
-			nodeClass.Spec.ImageFamily = imageFamily
+			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			nodePool := lo.Ternary(arch == karpv1.ArchitectureAmd64, env.DefaultNodePool(nodeClass), env.ArmNodepool(nodeClass))
 			ExpectProvisionPodPerNode(nodeClass, nodePool)
 		},
@@ -70,12 +70,12 @@ var _ = Describe("Utilization", func() {
 		// Entry("AzureLinux, arm64", env.AZLinuxNodeClass().Spec.ImageFamily, karpv1.ArchitectureArm64,
 
 		// Ubuntu
-		Entry("Ubuntu, amd64", lo.ToPtr(v1beta1.UbuntuImageFamily), karpv1.ArchitectureAmd64),
-		Entry("Ubuntu, arm64", lo.ToPtr(v1beta1.UbuntuImageFamily), karpv1.ArchitectureArm64),
-		Entry("Ubuntu2204, amd64", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), karpv1.ArchitectureAmd64),
-		Entry("Ubuntu2204, arm64", lo.ToPtr(v1beta1.Ubuntu2204ImageFamily), karpv1.ArchitectureArm64),
-		Entry("Ubuntu2404, amd64", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), karpv1.ArchitectureAmd64),
-		Entry("Ubuntu2404, arm64", lo.ToPtr(v1beta1.Ubuntu2404ImageFamily), karpv1.ArchitectureArm64),
+		Entry("Ubuntu, amd64", v1beta1.UbuntuImageFamily, karpv1.ArchitectureAmd64),
+		Entry("Ubuntu, arm64", v1beta1.UbuntuImageFamily, karpv1.ArchitectureArm64),
+		Entry("Ubuntu2204, amd64", v1beta1.Ubuntu2204ImageFamily, karpv1.ArchitectureAmd64),
+		Entry("Ubuntu2204, arm64", v1beta1.Ubuntu2204ImageFamily, karpv1.ArchitectureArm64),
+		Entry("Ubuntu2404, amd64", v1beta1.Ubuntu2404ImageFamily, karpv1.ArchitectureAmd64),
+		Entry("Ubuntu2404, arm64", v1beta1.Ubuntu2404ImageFamily, karpv1.ArchitectureArm64),
 	)
 
 	It("should provision one pod per node (AzureLinux, arm64)", func() {
