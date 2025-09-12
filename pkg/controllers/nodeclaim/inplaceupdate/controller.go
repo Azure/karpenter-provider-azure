@@ -98,25 +98,15 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		// AKS machine-based nodeClaim
-		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+		err := c.processAKSMachineInstance(ctx, options, nodeClaim, nodeClass, aksMachineName)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("getting AKS machine %s from instance provider: %w", aksMachineName, err)
-		}
-
-		err = c.applyAKSMachinePatch(ctx, options, nodeClaim, nodeClass, aksMachineName, aksMachine)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("applying patch to AKS machine for nodeClaim %s: %w", nodeClaim.Name, err)
+			return reconcile.Result{}, fmt.Errorf("processing AKS machine instance for nodeClaim %s: %w", nodeClaim.Name, err)
 		}
 	} else {
 		// VM-based nodeClaim
-		vm, err := nodeclaimutils.GetVM(ctx, c.vmInstanceProvider, nodeClaim)
+		err := c.processVMInstance(ctx, options, nodeClaim, nodeClass)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
-		}
-
-		err = c.applyVMPatch(ctx, options, nodeClaim, nodeClass, vm)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
+			return reconcile.Result{}, fmt.Errorf("processing VM instance for nodeClaim %s: %w", nodeClaim.Name, err)
 		}
 	}
 
@@ -151,6 +141,45 @@ func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeCl
 	}
 
 	return true, reconcile.Result{}
+}
+
+func (c *Controller) processVMInstance(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+) error {
+	vm, err := nodeclaimutils.GetVM(ctx, c.vmInstanceProvider, nodeClaim)
+	if err != nil {
+		return fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	err = c.applyVMPatch(ctx, options, nodeClaim, nodeClass, vm)
+	if err != nil {
+		return fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	return nil
+}
+
+func (c *Controller) processAKSMachineInstance(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+	aksMachineName string,
+) error {
+	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+	if err != nil {
+		return fmt.Errorf("getting AKS machine %s from instance provider: %w", aksMachineName, err)
+	}
+
+	err = c.applyAKSMachinePatch(ctx, options, nodeClaim, nodeClass, aksMachineName, aksMachine)
+	if err != nil {
+		return fmt.Errorf("applying patch to AKS machine for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	return nil
 }
 
 func (c *Controller) applyVMPatch(

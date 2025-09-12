@@ -43,6 +43,10 @@ var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
+type VMImageIDContextKey string
+
+const VMImageIDKey VMImageIDContextKey = "vmimageid"
+
 // Notes on terminology:
 // An "instance" is a remote object, created by the API based on the template.
 // A "template" is a local struct, populated from Karpenter-provided parameters with the logic further below.
@@ -455,12 +459,12 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 	header := http.Header{}
 	header.Set("AKSHTTPCustomFeatures", "Microsoft.ContainerService/UseCustomizedOSImage")
-	header.Set("OSImageName", osImageName)                          // E.g. "2204gen2containerd"
-	header.Set("OSImageResourceGroup", osImageResourceGroup)        // E.g. "AKS-Ubuntu"
-	header.Set("OSImageSubscriptionID", osImageSubscriptionID)      // E.g., "10945678-1234-1234-1234-123456789012"
-	header.Set("OSImageGallery", osImageGallery)                    // E.g., "AKSUbuntu"
-	header.Set("OSImageVersion", osImageVersion)                    // E.g., "2022.10.03"
-	ctxWithHeader := context.WithValue(ctx, "vmimageid", vmImageID) // This line is really just for testing (see fake/aksmachinesapi.go). Azure-sdk-for-go is restrictive in extracting the header out.
+	header.Set("OSImageName", osImageName)                           // E.g. "2204gen2containerd"
+	header.Set("OSImageResourceGroup", osImageResourceGroup)         // E.g. "AKS-Ubuntu"
+	header.Set("OSImageSubscriptionID", osImageSubscriptionID)       // E.g., "10945678-1234-1234-1234-123456789012"
+	header.Set("OSImageGallery", osImageGallery)                     // E.g., "AKSUbuntu"
+	header.Set("OSImageVersion", osImageVersion)                     // E.g., "2022.10.03"
+	ctxWithHeader := context.WithValue(ctx, VMImageIDKey, vmImageID) // This line is really just for testing (see fake/aksmachinesapi.go). Azure-sdk-for-go is restrictive in extracting the header out.
 	ctxWithHeader = policy.WithHTTPHeader(ctxWithHeader, header)
 
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctxWithHeader, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)

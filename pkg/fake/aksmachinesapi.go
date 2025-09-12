@@ -49,8 +49,8 @@ func NewSharedAKSDataStores() *SharedAKSDataStores {
 // This is not really the real one being used, which is the header.
 // But the header cannot be extracted due to azure-sdk-for-go being restrictive. This is good enough.
 func GetVMImageIDFromContext(ctx context.Context) string {
-	if ctx.Value("vmimageid") != nil {
-		return ctx.Value("vmimageid").(string)
+	if ctx.Value(instance.VMImageIDKey) != nil {
+		return ctx.Value(instance.VMImageIDKey).(string)
 	}
 	return ""
 }
@@ -261,80 +261,85 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupN
 	}
 	aksMachine := input.AKSMachine
 	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
-	// Basic defaults
 	aksMachine.ID = &id
 	aksMachine.Name = &input.AKSMachineName
 
+	// Validate parent AgentPool
 	if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
 		return nil, AKSMachineAPIErrorFromAKSMachinesPoolNotFound
 	}
 
-	// Extract vmImageID from context
-	vmImageID := GetVMImageIDFromContext(ctx)
-
-	// Check if AKS machine already exists
+	// Check if AKS machine already exists, if so, consider this an update than a create
 	existingMachine, ok := c.sharedStores.AKSMachines.Load(id)
 	if ok {
-		existing := existingMachine.(armcontainerservice.Machine)
-
-		// Check ETag for optimistic concurrency control
-		if input.Options != nil && input.Options.IfMatch != nil {
-			if existing.Properties == nil || existing.Properties.ETag == nil ||
-				*existing.Properties.ETag != *input.Options.IfMatch {
-				return nil, &azcore.ResponseError{
-					StatusCode: http.StatusPreconditionFailed,
-					ErrorCode:  "ConditionNotMet",
-				}
-			}
-		}
-
-		// Validate immutable properties not violated
-		if c.doImmutablePropertiesChanged(&existing, &aksMachine) {
-			return nil, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
-		}
-
-		// Patch with new values
-		if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
-			if existing.Properties == nil {
-				existing.Properties = &armcontainerservice.MachineProperties{}
-			}
-			existing.Properties.Tags = aksMachine.Properties.Tags
-		}
-
-		// Update ETag after successful update
-		if existing.Properties != nil {
-			existing.Properties.ETag = lo.ToPtr(fmt.Sprintf(`"etag-%d"`, time.Now().UnixNano()))
-		}
-
-		// Write the updated machine
-		c.sharedStores.AKSMachines.Store(id, existing)
-		return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
-			return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: existing}, nil
-		})
+		return c.updateExistingAKSMachine(input, existingMachine.(armcontainerservice.Machine), aksMachine)
 	}
 
-	// More defaults
+	// Default values + update status, for sync phase
+	vmImageID := GetVMImageIDFromContext(ctx)
 	c.setDefaultMachineValues(&aksMachine, vmImageID, input.AgentPoolName)
-
 	aksMachine.Properties.ProvisioningState = lo.ToPtr("Creating")
-
 	c.sharedStores.AKSMachines.Store(id, aksMachine)
-	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
-		var pollingError error
-		if c.AfterPollProvisioningErrorOverride != nil {
-			aksMachine.Properties.ProvisioningState = lo.ToPtr("Failed")
-			if aksMachine.Properties.Status == nil {
-				aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
-			}
-			aksMachine.Properties.Status.ProvisioningError = c.AfterPollProvisioningErrorOverride
-			pollingError = AKSMachineAPIErrorAny
-		} else {
-			aksMachine.Properties.ProvisioningState = lo.ToPtr("Succeeded")
-		}
 
-		c.sharedStores.AKSMachines.Store(id, aksMachine)
-		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: aksMachine}, pollingError
+	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
+		// Update status, for async phase
+		updatedAKSMachine, pollingError := c.simulateCreateStatusAtAsync(aksMachine)
+		c.sharedStores.AKSMachines.Store(id, updatedAKSMachine)
+		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: updatedAKSMachine}, pollingError
 	})
+}
+
+func (c *AKSMachinesAPI) updateExistingAKSMachine(input *AKSMachineCreateOrUpdateInput, existing armcontainerservice.Machine, aksMachine armcontainerservice.Machine) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
+	// Check ETag for optimistic concurrency control
+	if input.Options != nil && input.Options.IfMatch != nil {
+		if existing.Properties == nil || existing.Properties.ETag == nil ||
+			*existing.Properties.ETag != *input.Options.IfMatch {
+			return nil, &azcore.ResponseError{
+				StatusCode: http.StatusPreconditionFailed,
+				ErrorCode:  "ConditionNotMet",
+			}
+		}
+	}
+
+	// Validate immutable properties not violated
+	if c.doImmutablePropertiesChanged(&existing, &aksMachine) {
+		return nil, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
+	}
+
+	// Patch with new values
+	if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
+		if existing.Properties == nil {
+			existing.Properties = &armcontainerservice.MachineProperties{}
+		}
+		existing.Properties.Tags = aksMachine.Properties.Tags
+	}
+
+	// Update ETag after successful update
+	if existing.Properties != nil {
+		existing.Properties.ETag = lo.ToPtr(fmt.Sprintf(`"etag-%d"`, time.Now().UnixNano()))
+	}
+
+	// Write the updated machine
+	c.sharedStores.AKSMachines.Store(*existing.ID, existing)
+	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
+		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: existing}, nil
+	})
+}
+
+func (c *AKSMachinesAPI) simulateCreateStatusAtAsync(aksMachine armcontainerservice.Machine) (armcontainerservice.Machine, error) {
+	var pollingError error
+	if c.AfterPollProvisioningErrorOverride != nil {
+		aksMachine.Properties.ProvisioningState = lo.ToPtr("Failed")
+		if aksMachine.Properties.Status == nil {
+			aksMachine.Properties.Status = &armcontainerservice.MachineStatus{}
+		}
+		aksMachine.Properties.Status.ProvisioningError = c.AfterPollProvisioningErrorOverride
+		pollingError = AKSMachineAPIErrorAny
+	} else {
+		aksMachine.Properties.ProvisioningState = lo.ToPtr("Succeeded")
+	}
+
+	return aksMachine, pollingError
 }
 
 func (c *AKSMachinesAPI) Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error) {
@@ -415,6 +420,7 @@ func (c *AKSMachinesAPI) doesAgentPoolExists(resourceGroupName, resourceName, ag
 }
 
 // validateMachinePropertyChanges checks if the immutable properties of an AKS machine are being changed
+// nolint: gocyclo
 func (c *AKSMachinesAPI) doImmutablePropertiesChanged(existing, incoming *armcontainerservice.Machine) bool {
 	if existing.Properties == nil || incoming.Properties == nil {
 		return false // Skip validation if properties are missing
@@ -476,6 +482,7 @@ func getAKSMachineNodeImageVersionFromSIGImageID(imageID string) (string, error)
 
 // setDefaultMachineValues sets comprehensive default values for AKS machine creation
 // Note: this may not be accurate. But likely sufficient for testing.
+// nolint: gocyclo
 func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, vmImageID string, agentPoolName string) {
 	if machine.Properties == nil {
 		machine.Properties = &armcontainerservice.MachineProperties{}
