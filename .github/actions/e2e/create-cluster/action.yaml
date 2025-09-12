@@ -57,9 +57,7 @@ runs:
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }} 
         AZURE_LOCATION: ${{ inputs.location }}
-      run: |
-        echo "Creating default Cilium cluster for suite: ${{ inputs.suite }}"
-        make az-mkaks-cilium
+      run: make az-mkaks-cilium
     - name: az login 2
       uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
       with:
