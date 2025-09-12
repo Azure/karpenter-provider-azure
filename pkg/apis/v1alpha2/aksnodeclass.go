@@ -81,6 +81,11 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum:=250
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
+	// EncryptionAtHost enables encryption at host for the provisioned nodes
+	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+	// +optional
+	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
