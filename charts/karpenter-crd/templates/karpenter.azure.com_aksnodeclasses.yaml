@@ -197,6 +197,7 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
+                maximum: 2048
                 minimum: 30
                 type: integer
               tags:
@@ -521,6 +522,7 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
+                maximum: 2048
                 minimum: 30
                 type: integer
               tags:
