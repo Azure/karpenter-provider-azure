@@ -29,9 +29,6 @@ inputs:
   location:
     description: "The azure location to run the e2e test in"
     default: "eastus"
-  suite:
-    description: "Name of the test suite (used to determine cluster configuration)"
-    required: true
 runs:
   using: "composite"
   steps:
