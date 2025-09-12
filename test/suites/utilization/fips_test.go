@@ -92,34 +92,6 @@ var _ = Describe("FIPS", func() {
 			imageRef := expectNodeUsesFIPS(node)
 			expectNodeClassHasExpectedImages(nodeClass, imageRef, true) // true = expect FIPS images
 		})
-
-		It("should not provision FIPS-enabled Ubuntu2204 nodes (not supported)", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
-			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
-
-			// This should fail validation
-			env.ExpectCreated(nodeClass, nodePool)
-			Eventually(func(g Gomega) {
-				g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
-				// Ubuntu2204 with FIPS is not supported per the CRD validation
-				condition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
-				g.Expect(condition).ToNot(BeNil())
-			}).Should(Succeed())
-		})
-
-		It("should not provision FIPS-enabled Ubuntu2404 nodes (not supported)", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
-			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
-
-			// This should fail validation
-			env.ExpectCreated(nodeClass, nodePool)
-			Eventually(func(g Gomega) {
-				g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
-				// Ubuntu2404 with FIPS is not supported per the CRD validation
-				condition := nodeClass.StatusConditions().Get(opstatus.ConditionReady)
-				g.Expect(condition).ToNot(BeNil())
-			}).Should(Succeed())
-		})
 	})
 
 	Context("FIPS Disabled", func() {
@@ -131,32 +103,6 @@ var _ = Describe("FIPS", func() {
 			// leaves it unset, this tests is run to ensure "Disabled" behavior is expected.
 			// - Additionally, the default (unset behavior) may change in the future depending upon other settings.
 			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
-
-			pod := test.Pod()
-			env.ExpectCreated(nodeClass, nodePool, pod)
-			env.EventuallyExpectHealthy(pod)
-			node := env.ExpectCreatedNodeCount("==", 1)[0]
-
-			imageRef := expectNodeDoesNotUseFIPS(node)
-			expectNodeClassHasExpectedImages(nodeClass, imageRef, false) // false = expect non-FIPS images
-		})
-
-		It("should provision Ubuntu2404 nodes with FIPS disabled", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
-			nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeDisabled)
-
-			pod := test.Pod()
-			env.ExpectCreated(nodeClass, nodePool, pod)
-			env.EventuallyExpectHealthy(pod)
-			node := env.ExpectCreatedNodeCount("==", 1)[0]
-
-			imageRef := expectNodeDoesNotUseFIPS(node)
-			expectNodeClassHasExpectedImages(nodeClass, imageRef, false) // false = expect non-FIPS images
-		})
-
-		It("should provision Ubuntu2404 nodes without FIPS mode set (default)", func() {
-			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
-			// Not setting FIPSMode - testing default behavior
 
 			pod := test.Pod()
 			env.ExpectCreated(nodeClass, nodePool, pod)

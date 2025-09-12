@@ -69,10 +69,18 @@ var _ = Describe("Utilization", func() {
 	})
 	Context("Ubuntu", func() {
 		It("should provision one pod per node (Ubuntu, amd64)", func() {
-			ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.DefaultNodePool)
+			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
+				nodeClass := env.DefaultAKSNodeClass()
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				return nodeClass
+			}, env.DefaultNodePool)
 		})
 		It("should provision one pod per node (Ubuntu, arm64)", func() {
-			ExpectProvisionPodPerNode(env.DefaultAKSNodeClass, env.ArmNodepool)
+			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
+				nodeClass := env.DefaultAKSNodeClass()
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+				return nodeClass
+			}, env.ArmNodepool)
 		})
 		It("should provision one pod per node (Ubuntu2404, amd64)", Label(v1beta1.Ubuntu2404ImageFamily), func() {
 			ExpectProvisionPodPerNode(func() *v1beta1.AKSNodeClass {
