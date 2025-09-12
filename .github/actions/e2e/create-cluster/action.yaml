@@ -53,14 +53,6 @@ runs:
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_LOCATION: ${{ inputs.location }}
       run: make az-create-workload-msi
-    - name: setup BYOK infrastructure (byok suite only)
-      if: inputs.suite == 'byok'
-      shell: bash
-      env:
-        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-        AZURE_LOCATION: ${{ inputs.location }}
-        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
-      run: make az-cmk-all
     - name: create cluster
       shell: bash
       env:
@@ -69,13 +61,8 @@ runs:
         AZURE_ACR_NAME: ${{ inputs.acr_name }} 
         AZURE_LOCATION: ${{ inputs.location }}
       run: |
-        if [ "${{ inputs.suite }}" == "byok" ]; then
-          echo "Creating BYOK-enabled cluster for suite: byok"
-          make az-mkaks-cmk
-        else
-          echo "Creating default Cilium cluster for suite: ${{ inputs.suite }}"
-          make az-mkaks-cilium
-        fi
+        echo "Creating default Cilium cluster for suite: ${{ inputs.suite }}"
+        make az-mkaks-cilium
     - name: az login 2
       uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
       with:
@@ -98,12 +85,3 @@ runs:
       run: |
         make az-perm
         make az-perm-acr
-    - name: setup BYOK permissions (byok suite only)
-      if: inputs.suite == 'byok'
-      shell: bash
-      env:
-        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
-        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-      run: |
-        make az-grant-msi-des-reader
-        make az-grant-msi-key-permissions
