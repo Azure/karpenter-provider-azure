@@ -60,6 +60,10 @@ spec:
               AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              encryptionAtHost:
+                description: EncryptionAtHost enables encryption at host for the provisioned
+                  nodes
+                type: boolean
               fipsMode:
                 description: FIPSMode controls FIPS compliance for the provisioned
                   nodes
@@ -384,6 +388,10 @@ spec:
               AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              encryptionAtHost:
+                description: EncryptionAtHost enables encryption at host for the provisioned
+                  nodes
+                type: boolean
               fipsMode:
                 description: FIPSMode controls FIPS compliance for the provisioned
                   nodes
