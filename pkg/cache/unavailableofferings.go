@@ -27,6 +27,8 @@ import (
 	"github.com/patrickmn/go-cache"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 )
 
 const (
@@ -155,7 +157,7 @@ func (u *UnavailableOfferings) MarkUnavailableWithTTL(ctx context.Context, unava
 	// even if the key is already in the cache, we still need to call Set to extend the cached entry's TTL
 	log.FromContext(ctx).V(1).Info("removing offering from offerings",
 		"unavailable", unavailableReason,
-		"instance-type", instanceType,
+		logging.InstanceType, instanceType,
 		"zone", zone,
 		"capacity-type", capacityType,
 		"ttl", ttl)

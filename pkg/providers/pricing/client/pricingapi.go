@@ -24,25 +24,35 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 )
 
 const (
 	apiVersion = "2023-01-01-preview"
-	pricingURL = "https://prices.azure.com/api/retail/prices?api-version=" + apiVersion
+	pricingURL = "https://prices.azure.com/api/retail/prices?api-version=" + apiVersion // TODO: This API is not available in national clouds.
 )
 
 type PricingAPI interface {
 	GetProductsPricePages(context.Context, []*Filter, func(output *ProductsPricePage)) error
 }
 
-type pricingAPI struct{}
+type pricingAPI struct {
+	cloud cloud.Configuration
+}
 
-func New() PricingAPI {
-	return &pricingAPI{}
+func New(cloud cloud.Configuration) PricingAPI {
+	return &pricingAPI{cloud: cloud}
 }
 
 func (papi *pricingAPI) GetProductsPricePages(_ context.Context, filters []*Filter, pageHandler func(output *ProductsPricePage)) error {
 	nextURL := pricingURL
+
+	if !auth.IsPublic(papi.cloud) {
+		// If the cloud is not Azure Public, the pricing API isn't supported and we return an error
+		return fmt.Errorf("pricing API is not supported in non-public clouds")
+	}
 
 	if len(filters) > 0 {
 		filterParams := []string{}

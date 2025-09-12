@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -32,8 +33,8 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
-	azureLinux3 := imagefamily.AzureLinux3{
+func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
+	ubuntu := imagefamily.Ubuntu2004{
 		Options: &parameters.StaticParameters{
 			ClusterName:                    "test-cluster",
 			SubnetID:                       "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
@@ -57,15 +58,15 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 			v1.ResourceMemory: resource.MustParse("8Gi"),
 		},
 	}
-	imageDistro := "aks-azurelinux-v3-gen2"
+	imageDistro := "aks-ubuntu-fips-containerd-20.04-gen2"
 	storageProfile := "ManagedDisks"
 	nodeBootstrappingClient := &fake.NodeBootstrappingAPI{}
 
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
-	var fipsMode *v1beta1.FIPSMode // to test with nil
+	fipsMode := lo.ToPtr(v1beta1.FIPSModeFIPS)
 
-	bootstrapper := azureLinux3.CustomScriptsNodeBootstrapping(
+	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
 		taints,
 		startupTaints,
@@ -98,11 +99,11 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.Equal(t, instanceType, provisionBootstrapper.InstanceType)
 	assert.Equal(t, storageProfile, provisionBootstrapper.StorageProfile)
 	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
-	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
-	assert.Nil(t, provisionBootstrapper.FIPSMode, "FIPSMode should be nil when not specified")
+	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
+	assert.Equal(t, fipsMode, provisionBootstrapper.FIPSMode, "FIPSMode field must match the input parameter")
 }
 
-func TestAzureLinux3_Name(t *testing.T) {
-	azureLinux3 := imagefamily.AzureLinux3{}
-	assert.Equal(t, v1beta1.AzureLinuxImageFamily, azureLinux3.Name())
+func TestUbuntu2004_Name(t *testing.T) {
+	ubuntu := imagefamily.Ubuntu2004{}
+	assert.Equal(t, v1beta1.UbuntuImageFamily, ubuntu.Name())
 }
