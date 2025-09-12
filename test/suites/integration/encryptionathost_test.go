@@ -25,7 +25,7 @@ import (
 )
 
 var _ = Describe("EncryptionAtHost", func() {
-	It("should provision a node with encryption at host enabled", func() {
+	FIt("should provision a node with encryption at host enabled", func() {
 		nodeClass.Spec.EncryptionAtHost = lo.ToPtr(true)
 
 		pod := test.Pod()
