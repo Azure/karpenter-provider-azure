@@ -226,6 +226,32 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and instance/vminstance.go
 
 	nodeLabels := lo.Assign(nodeClaim.Labels, offerings.GetAllSingleValuedRequirementLabels(instanceType), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
+
+	// XPMT: TEMPORARY
+	// XPMT: TODO(charliedmcb): verify/rework this, also do the same for taints (which don't have sanitization logic like this yet)
+	labelsToRemove := []string{
+		"beta.kubernetes.io/instance-type",
+		"failure-domain.beta.kubernetes.io/region",
+		"beta.kubernetes.io/os",
+		"beta.kubernetes.io/arch",
+		"failure-domain.beta.kubernetes.io/zone",
+		"topology.kubernetes.io/zone",
+		"topology.kubernetes.io/region",
+		"node.kubernetes.io/instance-type",
+		"kubernetes.io/arch",
+		"kubernetes.io/os",
+		"node.kubernetes.io/windows-build",
+	}
+	for _, label := range labelsToRemove {
+		delete(nodeLabels, label)
+	}
+	// Remove all labels with kubernetes.azure.com prefix
+	for label := range nodeLabels {
+		if strings.HasPrefix(label, "kubernetes.azure.com/") {
+			delete(nodeLabels, label)
+		}
+	}
+
 	nodeLabelPtrs := make(map[string]*string, len(nodeLabels))
 	for k, v := range nodeLabels {
 		nodeLabelPtrs[k] = lo.ToPtr(v)
@@ -249,7 +275,7 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	tags := launchtemplate.Tags(opts, nodeClass, nodeClaim)
 
 	// Add AKS machine distinguishing tag
-	tags[launchtemplate.KarpenterAKSMachineTagKey] = lo.ToPtr("true")
+	tags[launchtemplate.KarpenterAKSMachineTagKey] = lo.ToPtr(nodeClaim.Name)
 
 	return tags
 }

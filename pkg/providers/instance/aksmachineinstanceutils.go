@@ -75,7 +75,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	instanceType *corecloudprovider.InstanceType, // optional; won't be populated for standalone nodeclaims
 	capacityType string,
 	zone *string, // <region>-<zone-id>, optional
-	aksMachineCreationTimestamp time.Time,
+	creationTimestamp *time.Time, // optional, required for the first time only
 	aksMachineResourceID string,
 	vmResourceID string,
 	isDeleting bool,
@@ -98,10 +98,16 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	if tag, ok := aksMachineTemplate.Properties.Tags[NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
-	nodeClaim.Name = GetNodeClaimNameFromAKSMachineName(aksMachineName)
+	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineTagKey]; ok {
+		nodeClaim.Name = *tag
+	} else {
+		return nil, fmt.Errorf("AKS machine template is missing required tag %s", launchtemplate.KarpenterAKSMachineTagKey)
+	}
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
-	nodeClaim.CreationTimestamp = metav1.Time{Time: aksMachineCreationTimestamp}
+	if creationTimestamp != nil {
+		nodeClaim.CreationTimestamp = metav1.Time{Time: *creationTimestamp}
+	}
 
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
 	if isDeleting {
@@ -116,31 +122,16 @@ func BuildNodeClaimFromAKSMachineTemplate(
 
 // Expect AKS machine struct to be fully populated as if it comes from GET.
 // Not assuming that NodeClaim exists.
-func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine, possibleInstanceTypes []*corecloudprovider.InstanceType, aksMachineLocation string) (*karpv1.NodeClaim, error) {
+func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine, possibleInstanceTypes []*corecloudprovider.InstanceType, aksMachineLocation string, creationTimestamp *time.Time) (*karpv1.NodeClaim, error) {
 	// ASSUMPTION: unless said otherwise, the fields below must exist on the AKS machine instance. Either set by Karpenter (see Create()) or visibly defaulted by the API.
-	if aksMachine.Name == nil {
-		return nil, fmt.Errorf("AKS machine instance is missing name")
-	}
-	if aksMachine.Properties == nil {
-		return nil, fmt.Errorf("AKS machine instance is missing Properties")
-	}
-	if aksMachine.Properties.Hardware == nil || aksMachine.Properties.Hardware.VMSize == nil {
-		return nil, fmt.Errorf("AKS machine instance is missing VMSize")
-	}
-	if aksMachine.Properties.Priority == nil {
-		return nil, fmt.Errorf("AKS machine instance is missing Priority")
+	if err := validateRetrievedAKSMachineBasicProperties(aksMachine); err != nil {
+		return nil, fmt.Errorf("failed to validate AKS machine instance %q: %w", lo.FromPtr(aksMachine.Name), err)
 	}
 	var zonePtr *string // This one is optional.
 	if len(aksMachine.Zones) < 1 || aksMachine.Zones[0] == nil {
 		log.FromContext(ctx).Info("AKS machine instance is missing zone", "aksMachineName", lo.FromPtr(aksMachine.Name))
 	} else {
 		zonePtr = lo.ToPtr(utils.GetAKSZoneFromARMZone(aksMachineLocation, lo.FromPtr(aksMachine.Zones[0])))
-	}
-	if aksMachine.ID == nil {
-		return nil, fmt.Errorf("AKS machine instance is missing ID")
-	}
-	if aksMachine.Properties.ResourceID == nil {
-		return nil, fmt.Errorf("AKS machine instance is missing ResourceID")
 	}
 
 	return BuildNodeClaimFromAKSMachineTemplate(
@@ -150,7 +141,7 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 		offerings.GetInstanceTypeFromVMSize(lo.FromPtr(aksMachine.Properties.Hardware.VMSize), possibleInstanceTypes),
 		GetCapacityTypeFromAKSScaleSetPriority(lo.FromPtr(aksMachine.Properties.Priority)),
 		zonePtr,
-		lo.FromPtr(aksMachine.Properties.Status.CreationTimestamp),
+		creationTimestamp,
 		lo.FromPtr(aksMachine.ID),
 		lo.FromPtr(aksMachine.Properties.ResourceID),
 		IsAKSMachineDeleting(aksMachine),
@@ -173,17 +164,17 @@ func FindNodePoolFromAKSMachine(ctx context.Context, aksMachine *armcontainerser
 	return nil, errors.NewNotFound(schema.GroupResource{Group: coreapis.Group, Resource: "nodepools"}, "")
 }
 
-// E.g., default-2jf98.
+// XPMT: TODO(Bryce-Soghigian): rework this thing below?
 // Real node name would be aks-<machinesPoolName>-<aksMachineName>-########-vm#. E.g., aks-aksmanagedap-default-2jf98-11274290-vm2.
 func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) string {
 	// ASSUMPTION: all AKS machines are named after the NodeClaim name.
 	// Does not guarantee that the NodeClaim is already associated with an AKS machine.
 	// This assumption is weaker than the one in GetAKSMachineNameFromNodeClaim(), but still, not breaking anytime soon.
-	return nodeClaimName
-}
+	// return nodeClaimName
 
-func GetNodeClaimNameFromAKSMachineName(aksMachineName string) string {
-	return aksMachineName
+	// XPMT: TEMPORARY
+	splitted := strings.Split(nodeClaimName, "-")
+	return "x" + splitted[len(splitted)-1]
 }
 
 // GetAKSMachineNameFromNodeClaim extracts the AKS machine name from the NodeClaim annotations
@@ -277,12 +268,11 @@ func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.
 	if aksMachine.Properties.Hardware == nil || aksMachine.Properties.Hardware.VMSize == nil {
 		return fmt.Errorf("irretrievable VM size")
 	}
-	if aksMachine.Properties.Priority == nil {
-		return fmt.Errorf("irretrievable priority")
-	}
-	if aksMachine.Properties.Status == nil || aksMachine.Properties.Status.CreationTimestamp == nil {
-		return fmt.Errorf("irretrievable creation timestamp")
-	}
+	// This not being guaranteed is per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
+	// Suggestion: rework/research more on this pattern RP-side?
+	// if aksMachine.Properties.Priority == nil {
+	// return fmt.Errorf("irretrievable priority")
+	// }
 	if aksMachine.Properties.ResourceID == nil {
 		return fmt.Errorf("irretrievable VM resource ID")
 	}

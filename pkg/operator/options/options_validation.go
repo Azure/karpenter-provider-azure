@@ -139,14 +139,17 @@ func (o *Options) validateRequiredFields() error {
 
 func (o *Options) validateUseSIG() error {
 	if o.UseSIG {
-		if o.SIGAccessTokenServerURL == "" {
-			return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
+		if o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+			if o.SIGAccessTokenServerURL == "" {
+				return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
+			}
+			if !isValidURL(o.SIGAccessTokenServerURL) {
+				return fmt.Errorf("sig-access-token-server-url is not a valid URL")
+			}
 		}
+
 		if o.SIGSubscriptionID == "" {
 			return fmt.Errorf("sig-subscription-id is required when use-sig is true")
-		}
-		if !isValidURL(o.SIGAccessTokenServerURL) {
-			return fmt.Errorf("sig-access-token-server-url is not a valid URL")
 		}
 	}
 	return nil

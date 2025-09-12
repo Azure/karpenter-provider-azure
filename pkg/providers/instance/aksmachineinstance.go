@@ -60,11 +60,11 @@ type AKSMachinePromise struct {
 	InstanceType       *corecloudprovider.InstanceType // Despite the reference nature, this is guaranteed to exist
 	CapacityType       string
 	Zone               string
+	CreationTimestamp  time.Time
 
-	AKSMachineCreationTimestamp time.Time
-	AKSMachineID                string
-	AKSMachineNodeImageVersion  string
-	VMResourceID                string
+	AKSMachineID               string
+	AKSMachineNodeImageVersion string
+	VMResourceID               string
 }
 
 func NewAKSMachinePromise(
@@ -75,23 +75,23 @@ func NewAKSMachinePromise(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 	zone string,
-	aksMachineCreationTimestamp time.Time,
+	creationTimestamp time.Time,
 	aksMachineID string,
 	aksMachineNodeImageVersion string,
 	vmResourceID string,
 ) *AKSMachinePromise {
 	return &AKSMachinePromise{
-		providerRef:                 providerRef,
-		AKSMachineTemplate:          aksMachineTemplate,
-		waitFunc:                    waitFunc,
-		AKSMachineName:              aksMachineName,
-		InstanceType:                instanceType,
-		CapacityType:                capacityType,
-		Zone:                        zone,
-		AKSMachineCreationTimestamp: aksMachineCreationTimestamp,
-		AKSMachineID:                aksMachineID,
-		AKSMachineNodeImageVersion:  aksMachineNodeImageVersion,
-		VMResourceID:                vmResourceID,
+		providerRef:                providerRef,
+		AKSMachineTemplate:         aksMachineTemplate,
+		waitFunc:                   waitFunc,
+		AKSMachineName:             aksMachineName,
+		InstanceType:               instanceType,
+		CapacityType:               capacityType,
+		Zone:                       zone,
+		CreationTimestamp:          creationTimestamp,
+		AKSMachineID:               aksMachineID,
+		AKSMachineNodeImageVersion: aksMachineNodeImageVersion,
+		VMResourceID:               vmResourceID,
 	}
 }
 
@@ -250,16 +250,16 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 	}
 
 	// ASSUMPTION: AKS machines API accepts only AKS machine name.
-	resp, err := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
+	aksMachine, err := p.getMachine(ctx, aksMachineName)
 	if err != nil {
 		if IsARMNotFound(err) {
 			// XPMT: TODO: check API: see what happens when Machines pool is not found when calling Machines get.
-			return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to get AKS machine instance, %w", err))
+			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
-		return nil, fmt.Errorf("failed to get AKS machine instance, %w", err)
+		return nil, err
 	}
 
-	return &resp.Machine, nil
+	return aksMachine, nil
 }
 
 func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
@@ -334,6 +334,22 @@ func (p *DefaultAKSMachineProvider) GetMachinesPoolLocation() string {
 	return p.aksMachinesPoolLocation
 }
 
+func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	resp, err := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AKS machine instance %q: %w", aksMachineName, err)
+	}
+	aksMachine := lo.ToPtr(resp.Machine)
+
+	// This needs to be rehydrated per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
+	// Suggestion: rework/research more on this pattern RP-side?
+	if aksMachine.Properties != nil && aksMachine.Properties.Priority == nil {
+		aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
+	}
+
+	return aksMachine, nil
+}
+
 func (p *DefaultAKSMachineProvider) deleteMachine(ctx context.Context, aksMachineName string) error {
 	log.FromContext(ctx).V(1).Info("deleting AKS machine", "aksMachineName", aksMachineName)
 
@@ -370,62 +386,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Reuse the existing AKS machine if it exists, and skip the creation.
 	// Note: currently, we do not support different offerings requirements for the NodeClaim with the same name that attempted creation recently. The same applies with VM-based provisioning.
 	// This supported case is often a result of Karpenter restarting while the node is being created, in which the NodeClaim to create stays the same after restart.
-	resp, err := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
+	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
+		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, instanceTypes, existingAKSMachine)
 
-		// Reconstruct properties from existing AKS machine instance.
-		gotAKSMachine := &resp.Machine
-		if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
-			return nil, fmt.Errorf("found existing AKS machine instance %s, but %w", aksMachineName, err)
-		}
-		var gotAKSMachineZone string
-		if len(gotAKSMachine.Zones) == 0 || gotAKSMachine.Zones[0] == nil {
-			gotAKSMachineZone = "" // No zone
-		} else {
-			gotAKSMachineZone = lo.FromPtr(gotAKSMachine.Zones[0])
-		}
-		gotAKSMachineVMSize := lo.FromPtr(gotAKSMachine.Properties.Hardware.VMSize)
-		gotAKSMachinePriority := lo.FromPtr(gotAKSMachine.Properties.Priority)
-		gotAKSMachineCreationTimestamp := lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp)
-		gotAKSMachineVMResourceID := lo.FromPtr(gotAKSMachine.Properties.ResourceID)
-		gotAKSMachineID := lo.FromPtr(gotAKSMachine.ID)
-		gotAKSMachineNodeImageVersion := lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion)
-
-		instanceType := offerings.GetInstanceTypeFromVMSize(gotAKSMachineVMSize, instanceTypes)
-		capacityType := GetCapacityTypeFromAKSScaleSetPriority(gotAKSMachinePriority)
-		zone := utils.GetAKSZoneFromARMZone(p.aksMachinesPoolLocation, gotAKSMachineZone)
-
-		if gotAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == "Failed" {
-			// Unfortunately, that was more like a remain than a usable aksMachine.
-			// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
-			return nil, p.handleMachineProvisioningError(ctx, "reusing existing AKS machine instance", aksMachineName, nodeClass, instanceType, zone, capacityType, gotAKSMachine.Properties.Status.ProvisioningError)
-		}
-
-		log.FromContext(ctx).V(1).Info("reused existing AKS machine instance",
-			"aksMachineName", aksMachineName,
-			"instance-type", instanceType.Name,
-			"zone", zone,
-			"capacity-type", capacityType,
-		)
-
-		return NewAKSMachinePromise(
-			p,
-			gotAKSMachine,
-			func() error {
-				// We hope the AKS machine completed provisioning at this point. Otherwise, if fails, it would not be handled until registration TTL.
-				// Suggestion: create a new poller just to handle it the same way as new machines. That will improve performance for such cases.
-				return nil
-			},
-			aksMachineName,
-			instanceType,
-			capacityType,
-			zone,
-			gotAKSMachineCreationTimestamp,
-			gotAKSMachineID,
-			gotAKSMachineNodeImageVersion,
-			gotAKSMachineVMResourceID,
-		), nil
 	} else if !IsARMNotFound(err) {
 		// Not fatal. Will fall back to normal creation.
 		log.FromContext(ctx).Error(err, "failed to check for existing machine", "aksMachineName", aksMachineName)
@@ -443,9 +408,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}
 	log.FromContext(ctx).V(1).Info("XPMT: AKS machine template built", "machineObj", *aksMachineTemplate)
-
-	// Call the AKS machine API with the template to create the AKS machine instance
-	log.FromContext(ctx).V(1).Info("creating AKS machine instance", "aksMachineName", aksMachineName, "instance-type", instanceType.Name)
 
 	// Resolve VM image ID
 	// E.g., "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
@@ -467,6 +429,8 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	ctxWithHeader := context.WithValue(ctx, VMImageIDKey, vmImageID) // This line is really just for testing (see fake/aksmachinesapi.go). Azure-sdk-for-go is restrictive in extracting the header out.
 	ctxWithHeader = policy.WithHTTPHeader(ctxWithHeader, header)
 
+	// Call the AKS machine API with the template to create the AKS machine instance
+	log.FromContext(ctx).V(1).Info("creating AKS machine instance", "aksMachineName", aksMachineName, "instance-type", instanceType.Name)
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctxWithHeader, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
 		return nil, fmt.Errorf("aksMachine.BeginCreateOrUpdate for AKS machine %q failed: %w", aksMachineName, err)
@@ -475,11 +439,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	// Get once after begin create to retrieve VMResourceID.
 	// In fact, the AKS machine object we want here is already returned with the PUT request above. However, the SDK have prevented us from accessing it easily.
 	// TODO: find a way to access that instead of making another GET call like this.
-	getResp, err := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
+	gotAKSMachine, err := p.getMachine(ctx, aksMachineName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: %w", aksMachineName, err)
 	}
-	gotAKSMachine := lo.ToPtr(getResp.Machine)
 	// Process what we got.
 	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine instance %q once after begin creation: %w", aksMachineName, err)
@@ -489,6 +452,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
 		return nil, p.handleMachineProvisioningError(ctx, "get once after begin creation", aksMachineName, nodeClass, instanceType, zone, capacityType, gotAKSMachine.Properties.Status.ProvisioningError)
 	}
+	creationTimestamp := time.Now() // Prefer time from Karpenter's perspective (if not AKS machine's perspective, but not VM) to not break abstraction; This is for registration TTL calculation.
 
 	// Return LRO
 	return NewAKSMachinePromise(
@@ -504,8 +468,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
 				// XPMT: TODO: verify again when the API is ready
-				getRespAfterFailed, _ := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
-				failedAKSMachine := lo.ToPtr(getRespAfterFailed.Machine)
+				failedAKSMachine, _ := p.getMachine(ctx, aksMachineName)
 				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 					return p.handleMachineProvisioningError(ctx, "async", aksMachineName, nodeClass, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
 				}
@@ -522,7 +485,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		instanceType,
 		capacityType,
 		zone,
-		lo.FromPtr(gotAKSMachine.Properties.Status.CreationTimestamp),
+		creationTimestamp,
 		lo.FromPtr(gotAKSMachine.ID),
 		lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 		lo.FromPtr(gotAKSMachine.Properties.ResourceID),
@@ -556,4 +519,65 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 	// XPMT: TODO: loop over instead of fixing on [0]
 
 	return fmt.Errorf("AKS machine creation failed for %q during %s, unhandled provisioning error: code=%s, message=%s", aksMachineName, phase, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
+}
+
+func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {
+	// Reconstruct properties from existing AKS machine instance.
+	if err := validateRetrievedAKSMachineBasicProperties(existingAKSMachine); err != nil {
+		return nil, fmt.Errorf("found existing AKS machine instance %s, but %w", aksMachineName, err)
+	}
+	var existingAKSMachineZone string
+	if len(existingAKSMachine.Zones) == 0 || existingAKSMachine.Zones[0] == nil {
+		existingAKSMachineZone = "" // No zone
+	} else {
+		existingAKSMachineZone = lo.FromPtr(existingAKSMachine.Zones[0])
+	}
+	existingAKSMachineVMSize := lo.FromPtr(existingAKSMachine.Properties.Hardware.VMSize)
+	existingAKSMachinePriority := lo.FromPtr(existingAKSMachine.Properties.Priority)
+	existingAKSMachineVMResourceID := lo.FromPtr(existingAKSMachine.Properties.ResourceID)
+	existingAKSMachineID := lo.FromPtr(existingAKSMachine.ID)
+	existingAKSMachineNodeImageVersion := lo.FromPtr(existingAKSMachine.Properties.NodeImageVersion)
+
+	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
+	capacityType := GetCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
+	zone := utils.GetAKSZoneFromARMZone(p.aksMachinesPoolLocation, existingAKSMachineZone)
+	var creationTimestamp time.Time
+	if existingAKSMachine.Properties.Status != nil && existingAKSMachine.Properties.Status.CreationTimestamp != nil {
+		creationTimestamp = lo.FromPtr(existingAKSMachine.Properties.Status.CreationTimestamp) // This will be VM creation time, not AKS machine creation time, which is inconsistent with the usual create path.
+		// Although, the difference should not be significant. The use is for registration TTL calculation.
+		// Suggestion: record AKS machine creation time in the AKS machine (API change, if not additional tag)?
+	} else {
+		creationTimestamp = time.Now() // Fallback to now if not available, which is possible/acceptable if VM creation did not start yet
+	}
+
+	if existingAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(existingAKSMachine.Properties.ProvisioningState) == "Failed" {
+		// Unfortunately, that was more like a remain than a usable aksMachine.
+		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
+		return nil, p.handleMachineProvisioningError(ctx, "reusing existing AKS machine instance", aksMachineName, nodeClass, instanceType, zone, capacityType, existingAKSMachine.Properties.Status.ProvisioningError)
+	}
+
+	log.FromContext(ctx).V(1).Info("reused existing AKS machine instance",
+		"aksMachineName", aksMachineName,
+		"instance-type", instanceType.Name,
+		"zone", zone,
+		"capacity-type", capacityType,
+	)
+
+	return NewAKSMachinePromise(
+		p,
+		existingAKSMachine,
+		func() error {
+			// We hope the AKS machine completed provisioning at this point. Otherwise, if fails, it would not be handled until registration TTL.
+			// Suggestion: create a new poller just to handle it the same way as new machines. That will improve performance for such cases.
+			return nil
+		},
+		aksMachineName,
+		instanceType,
+		capacityType,
+		zone,
+		creationTimestamp,
+		existingAKSMachineID,
+		existingAKSMachineNodeImageVersion,
+		existingAKSMachineVMResourceID,
+	), nil
 }
