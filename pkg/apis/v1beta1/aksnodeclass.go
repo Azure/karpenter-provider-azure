@@ -80,6 +80,9 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum:=250
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
+	// EncryptionAtHost enables encryption at host for the provisioned nodes
+	// +optional
+	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
