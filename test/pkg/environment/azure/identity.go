@@ -11,8 +11,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+
+	. "github.com/onsi/gomega"
 )
 
 func (env *Environment) GetTenantID(ctx context.Context) string {
