@@ -261,7 +261,6 @@ func defaultUbuntu(fipsMode *v1beta1.FIPSMode, kubernetesVersion string, paramet
 		return &Ubuntu2404{Options: parameters}
 	}
 	return &Ubuntu2204{Options: parameters}
-
 }
 
 // resolveNodeImage returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
