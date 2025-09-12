@@ -2,6 +2,7 @@ package byok_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,13 +37,12 @@ var _ = AfterEach(func() { env.AfterEach() })
 var _ = Describe("BYOK", func() {
 	BeforeEach(func() {
 		if !env.InClusterController {
-			Skip("Creating Key Vault + RBAC only supported for in cluster controller")
+			Skip("replacing the env vars is only supported for in cluster controller")
 		}
 	})
 	It("should provision a VM with customer-managed key disk encryption", func() {
 		ctx := context.Background()
 		diskEncryptionSetID := env.CreateKeyVaultAndDiskEncryptionSet(ctx)
-
 		env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 
 		nodeClass := env.DefaultAKSNodeClass()

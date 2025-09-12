@@ -18,13 +18,9 @@ package azure
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -35,12 +31,32 @@ import (
 )
 
 const (
-	readerRole            = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
-	keyVaultAdminRole     = "00482a5a-887f-4fb3-b363-3b7fe8e74483"
-	keyVaultCryptoOfficer = "14b46e9e-c2b7-41b4-b07b-48a6ebf60603"
+	cryptoServiceEncryptionUserRole = "e147488a-f6f5-4113-8e2d-b22465e65bf6"
+	readerRole                      = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
+	keyVaultAdminRole               = "00482a5a-887f-4fb3-b363-3b7fe8e74483"
+	keyVaultCryptoOfficer           = "14b46e9e-c2b7-41b4-b07b-48a6ebf60603"
 )
 
 // CreateKeyVaultAndDiskEncryptionSet creates a key vault and disk encryption set for BYOK testing
+//
+// This function performs the following operations in sequence:
+//
+// 1. API Calls:
+//   - Creates an Azure Key Vault with RBAC authorization enabled
+//   - Creates a key in the Key Vault for encryption
+//   - Creates a Disk Encryption Set (DES) referencing the Key Vault key
+//
+// 2. RBAC Assignments:
+//   - Assigns Key Vault Crypto Officer and Administrator roles to the Karpenter workload identity
+//   - Assigns Key Vault Crypto Officer and Administrator roles to the test user (for key creation)
+//   - Assigns Reader role to the Karpenter workload identity for DES access (so it can create VMs)
+//   - Assigns Key Vault Crypto Service Encryption User role to the DES managed identity (so DES can access keys)
+//
+// 3. Wait/Retry Logic:
+//   - Waits for RBAC propagation after Key Vault role assignments
+//   - Uses polling retry mechanism for DES managed identity availability before Key Vault access assignment
+//
+// Returns the DES resource ID for use in VM disk encryption configuration.
 func (env *Environment) CreateKeyVaultAndDiskEncryptionSet(ctx context.Context) string {
 	keyVaultName := fmt.Sprintf("karpentertest%d", time.Now().Unix())
 	keyName := "test-key"
@@ -49,17 +65,17 @@ func (env *Environment) CreateKeyVaultAndDiskEncryptionSet(ctx context.Context) 
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	Expect(err).ToNot(HaveOccurred())
 
-	clusterIdentity := env.GetClusterIdentityPrincipalID(ctx)
 	clusterTenant := env.GetTenantID(ctx)
-	karpenterIdentity := env.getKarpenterWorkloadIdentity(ctx)
-
-	fmt.Println(clusterIdentity, clusterTenant)
+	karpenterIdentity := env.GetKarpenterWorkloadIdentity(ctx)
 
 	keyVault, err := env.createKeyVault(ctx, keyVaultName, clusterTenant)
 	Expect(err).ToNot(HaveOccurred())
 
-	// Get the current test user's principal ID from the credential
-	testUserPrincipalID := env.getCurrentUserPrincipalID(ctx, cred)
+	// Get the current test user's principal ID from the defaultCredential Token
+	testUserPrincipalID := env.GetCurrentUserPrincipalID(ctx, cred)
+	if testUserPrincipalID == "" {
+		panic("testUserPrincipalID is empty: test user authentication failed")
+	}
 
 	err = env.assignKeyVaultRBAC(ctx, lo.FromPtr(keyVault.ID), karpenterIdentity, testUserPrincipalID)
 	Expect(err).ToNot(HaveOccurred())
@@ -74,14 +90,10 @@ func (env *Environment) CreateKeyVaultAndDiskEncryptionSet(ctx context.Context) 
 	Expect(desIdentity).ToNot(BeNil())
 	Expect(desIdentity.PrincipalID).ToNot(BeNil())
 
-	// Wait for DES managed identity to be available in Azure AD before assigning roles
-	fmt.Printf("Waiting for DES managed identity %s to be available in Azure AD...\n", lo.FromPtr(desIdentity.PrincipalID))
-	time.Sleep(30 * time.Second)
-
-	err = env.assignDiskEncryptionSetRBAC(ctx, lo.FromPtr(des.ID), karpenterIdentity, cred)
+	err = env.assignDiskEncryptionSetRBAC(ctx, lo.FromPtr(des.ID), karpenterIdentity)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = env.updateKeyVaultAccessForDES(ctx, keyVaultName, desIdentity, clusterTenant)
+	err = env.updateKeyVaultAccessForDES(ctx, keyVaultName, desIdentity)
 	Expect(err).ToNot(HaveOccurred())
 
 	return lo.FromPtr(des.ID)
@@ -130,23 +142,19 @@ func (env *Environment) assignKeyVaultRBAC(ctx context.Context, keyVaultID, karp
 	env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, karpenterIdentity)
 	env.RBACManager.EnsureRole(ctx, keyVaultID, keyVaultAdminRoleDefinitionID, karpenterIdentity)
 
-	// Also assign roles to test user (for test setup operations like creating keys)
-	if testUserPrincipalID != "" {
-		fmt.Printf("Assigning Key Vault roles to test user: %s\n", testUserPrincipalID)
-		err := env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, testUserPrincipalID)
-		if err != nil {
-			fmt.Printf("Failed to assign Crypto Officer role to test user: %v\n", err)
-		}
-		err = env.RBACManager.EnsureRole(ctx, keyVaultID, keyVaultAdminRoleDefinitionID, testUserPrincipalID)
-		if err != nil {
-			fmt.Printf("Failed to assign Administrator role to test user: %v\n", err)
-		}
-	} else {
-		fmt.Printf("WARNING: testUserPrincipalID is empty, skipping test user RBAC assignments\n")
+	// User from az.DefaultCred needs rbac to create keys and manage the vault (wrap, unwrap etc)
+	err := env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, testUserPrincipalID)
+	if err != nil {
+		return fmt.Errorf("failed to assign Crypto Officer role to test user: %w", err)
+	}
+	err = env.RBACManager.EnsureRole(ctx, keyVaultID, keyVaultAdminRoleDefinitionID, testUserPrincipalID)
+	if err != nil {
+		return fmt.Errorf("failed to assign Administrator role to test user: %w", err)
 	}
 
-	// Wait a bit for RBAC propagation
-	time.Sleep(10 * time.Second)
+	// Before Moving on, ensure the rbac for the keyVault has been propagated to the principalIDs
+	env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultID, karpenterIdentity, 60*time.Second)
+	env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultID, testUserPrincipalID, 60*time.Second)
 
 	return nil
 }
@@ -200,89 +208,35 @@ func (env *Environment) createDiskEncryptionSet(ctx context.Context, desName str
 }
 
 // assignDiskEncryptionSetRBAC assigns reader role to cluster identity for DES
-func (env *Environment) assignDiskEncryptionSetRBAC(ctx context.Context, desID, clusterIdentity string, cred *azidentity.DefaultAzureCredential) error {
+func (env *Environment) assignDiskEncryptionSetRBAC(ctx context.Context, desID, karpenterIdentity string) error {
 	readerRoleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, readerRole)
 
-	fmt.Printf("Assigning Reader role to cluster identity %s for DES %s\n", clusterIdentity, desID)
-	// Use the RBACManager for consistency with other RBAC operations
-	err := env.RBACManager.EnsureRole(ctx, desID, readerRoleDefinitionID, clusterIdentity)
+	err := env.RBACManager.EnsureRole(ctx, desID, readerRoleDefinitionID, karpenterIdentity)
 	if err != nil {
 		return fmt.Errorf("failed to assign RBAC role: %w", err)
 	}
-
-	// Wait for RBAC propagation
-	time.Sleep(10 * time.Second)
-
+	env.RBACManager.WaitForRoleAssignmentPropagation(ctx, desID, karpenterIdentity, 30*time.Second)
 	return nil
 }
 
 // updateKeyVaultAccessForDES assigns RBAC roles to DES identity for Key Vault access
-func (env *Environment) updateKeyVaultAccessForDES(ctx context.Context, keyVaultName string, desIdentity *armcompute.EncryptionSetIdentity, clusterTenant string) error {
+func (env *Environment) updateKeyVaultAccessForDES(ctx context.Context, keyVaultName string, desIdentity *armcompute.EncryptionSetIdentity) error {
 	kvGet, err := env.keyVaultClient.Get(ctx, env.NodeResourceGroup, keyVaultName, nil)
 	if err != nil {
 		return err
 	}
 
-	// Since the Key Vault uses RBAC authorization, assign the Key Vault Crypto Service Encryption User role
-	// This role provides get, wrapKey, and unwrapKey permissions needed for DES
-	cryptoServiceEncryptionUserRole := "e147488a-f6f5-4113-8e2d-b22465e65bf6"
 	cryptoServiceRoleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, cryptoServiceEncryptionUserRole)
 
 	desIdentityPrincipalID := lo.FromPtr(desIdentity.PrincipalID)
 	keyVaultScope := lo.FromPtr(kvGet.ID)
 
-	fmt.Printf("Assigning Key Vault Crypto Service Encryption User role to DES identity %s for Key Vault %s\n", desIdentityPrincipalID, keyVaultScope)
-
-	err = env.RBACManager.EnsureRole(ctx, keyVaultScope, cryptoServiceRoleDefinitionID, desIdentityPrincipalID)
+	err = env.RBACManager.EnsureRoleWithRetry(ctx, keyVaultScope, cryptoServiceRoleDefinitionID, desIdentityPrincipalID, 60*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to assign Key Vault RBAC role: %w", err)
 	}
-
-	// Wait for RBAC propagation
-	time.Sleep(10 * time.Second)
+	// Wait for RBAC propagation by polling for the DES identity's role assignment
+	env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultScope, desIdentityPrincipalID, 30*time.Second)
 
 	return nil
-}
-
-// getCurrentUserPrincipalID gets the principal ID of the current authenticated user
-func (env *Environment) getCurrentUserPrincipalID(ctx context.Context, cred *azidentity.DefaultAzureCredential) string {
-	// Get a token to extract the principal ID from
-	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
-	})
-	if err != nil {
-		fmt.Printf("Warning: Could not get token to determine current user: %v\n", err)
-		return ""
-	}
-
-	// Parse the JWT token to extract the oid (object ID) claim
-	// JWT tokens have three parts separated by dots: header.payload.signature
-	parts := strings.Split(token.Token, ".")
-	if len(parts) != 3 {
-		fmt.Printf("Warning: Invalid token format\n")
-		return ""
-	}
-
-	// Decode the payload (second part)
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		fmt.Printf("Warning: Could not decode token payload: %v\n", err)
-		return ""
-	}
-
-	// Parse the JSON payload
-	var claims map[string]interface{}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		fmt.Printf("Warning: Could not parse token claims: %v\n", err)
-		return ""
-	}
-
-	// Extract the oid (object ID) claim which is the principal ID
-	if oid, ok := claims["oid"].(string); ok {
-		fmt.Printf("Current test user principal ID: %s\n", oid)
-		return oid
-	}
-
-	fmt.Printf("Warning: Could not find oid claim in token\n")
-	return ""
 }

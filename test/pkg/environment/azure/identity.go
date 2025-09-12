@@ -3,66 +3,17 @@ package azure
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"encoding/base64"
+	"encoding/json"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 )
-
-type RBACManager struct {
-	subscriptionID string
-	client         *armauthorization.RoleAssignmentsClient
-}
-
-// NewRBACManager builds a client with DefaultAzureCredential.
-func NewRBACManager(subscriptionID string) (*RBACManager, error) {
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, err
-	}
-	c, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
-	if err != nil {
-		return nil, err
-	}
-	return &RBACManager{subscriptionID: subscriptionID, client: c}, nil
-}
-
-// EnsureRole assigns roleDefinitionID to principalID at scope if not already present.
-// It lists for the scope and returns nil if a matching assignment exists.
-func (r *RBACManager) EnsureRole(ctx context.Context, scope, roleDefinitionID, principalID string) error {
-	// Quick scan to avoid duplicates
-	pager := r.client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-		Filter: to.Ptr(fmt.Sprintf("assignedTo('%s')", principalID)),
-	})
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return err
-		}
-		for _, ra := range page.Value {
-			if ra.Properties != nil &&
-				ra.Properties.PrincipalID != nil &&
-				ra.Properties.RoleDefinitionID != nil &&
-				*ra.Properties.PrincipalID == principalID &&
-				*ra.Properties.RoleDefinitionID == roleDefinitionID {
-				// Already assigned
-				return nil
-			}
-		}
-	}
-	name := uuid.New().String()
-	_, err := r.client.Create(ctx, scope, name, armauthorization.RoleAssignmentCreateParameters{
-		Properties: &armauthorization.RoleAssignmentProperties{
-			PrincipalID:      to.Ptr(principalID),
-			RoleDefinitionID: to.Ptr(roleDefinitionID),
-		},
-	}, nil)
-	return err
-}
 
 func (env *Environment) GetTenantID(ctx context.Context) string {
 	cluster, err := env.managedClusterClient.Get(ctx, env.ClusterResourceGroup, env.ClusterName, nil)
@@ -80,9 +31,7 @@ func (env *Environment) GetClusterIdentityPrincipalID(ctx context.Context) strin
 	return lo.FromPtr(cluster.Identity.PrincipalID)
 }
 
-func (env *Environment) getKarpenterWorkloadIdentity(ctx context.Context) string {
-	// Get the Karpenter User Assigned Identity principal ID
-	// This matches the logic in Makefile-az.mk line 165
+func (env *Environment) GetKarpenterWorkloadIdentity(ctx context.Context) string {
 	karpenterMSIName := "karpentermsi" // matches AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME
 
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -94,7 +43,44 @@ func (env *Environment) getKarpenterWorkloadIdentity(ctx context.Context) string
 	identity, err := msiClient.Get(ctx, env.ClusterResourceGroup, karpenterMSIName, nil)
 	Expect(err).ToNot(HaveOccurred())
 
-	principalID := lo.FromPtr(identity.Properties.PrincipalID)
-	fmt.Printf("Karpenter workload identity principal ID: %s\n", principalID)
-	return principalID
+	return lo.FromPtr(identity.Properties.PrincipalID)
+}
+
+// getCurrentUserPrincipalID gets the principal ID of the current authenticated user
+func (env *Environment) GetCurrentUserPrincipalID(ctx context.Context, cred *azidentity.DefaultAzureCredential) string {
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://management.azure.com/.default"},
+	})
+	if err != nil {
+		fmt.Printf("Warning: Could not get token to determine current user: %v\n", err)
+		return ""
+	}
+
+	// Parse the JWT token to extract the oid (object ID) claim
+	// JWT tokens have three parts separated by dots: header.payload.signature
+	parts := strings.Split(token.Token, ".")
+	if len(parts) != 3 {
+		fmt.Printf("Warning: Invalid token format\n")
+		return ""
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		fmt.Printf("Warning: Could not decode token payload: %v\n", err)
+		return ""
+	}
+
+	var claims map[string]interface{}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		fmt.Printf("Warning: Could not parse token claims: %v\n", err)
+		return ""
+	}
+
+	// Extract the oid (object ID) claim which is the principal ID
+	if oid, ok := claims["oid"].(string); ok {
+		return oid
+	}
+
+	fmt.Printf("Warning: Could not find oid claim in token\n")
+	return ""
 }
