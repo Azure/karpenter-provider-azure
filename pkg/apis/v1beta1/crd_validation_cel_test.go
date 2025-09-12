@@ -23,6 +23,7 @@ import (
 	"github.com/Pallinder/go-randomdata"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -119,6 +120,31 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 		})
+	})
+
+	Context("OSDiskSizeGB", func() {
+		DescribeTable("Should validate OSDiskSizeGB constraints", func(osDiskSizeGB *int32, expected bool) {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskSizeGB: osDiskSizeGB,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid minimum size (30 GB)", lo.ToPtr(int32(30)), true),
+			Entry("valid default size (128 GB)", lo.ToPtr(int32(128)), true),
+			Entry("valid large size (1024 GB)", lo.ToPtr(int32(1024)), true),
+			Entry("valid maximum size (2048 GB)", lo.ToPtr(int32(2048)), true),
+			Entry("nil value (uses default)", nil, true),
+			Entry("below minimum (29 GB)", lo.ToPtr(int32(29)), false),
+			Entry("above maximum (2049 GB)", lo.ToPtr(int32(2049)), false),
+			Entry("well above maximum (4096 GB)", lo.ToPtr(int32(4096)), false),
+		)
 	})
 
 	Context("ImageFamily and FIPSMode", func() {
