@@ -124,7 +124,3 @@ func (env *Environment) AZLinuxNodeClass() *v1beta1.AKSNodeClass {
 	nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 	return nodeClass
 }
-
-func (env *Environment) generateGUID() string {
-	return uuid.New().String()
-}

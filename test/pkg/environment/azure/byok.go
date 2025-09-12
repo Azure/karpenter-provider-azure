@@ -139,11 +139,17 @@ func (env *Environment) assignKeyVaultRBAC(ctx context.Context, keyVaultID, karp
 	keyVaultAdminRoleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, keyVaultAdminRole)
 
 	// Assign roles to karpenter workload identity so that karpenter can access keys for disk encryption
-	env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, karpenterIdentity)
-	env.RBACManager.EnsureRole(ctx, keyVaultID, keyVaultAdminRoleDefinitionID, karpenterIdentity)
+	err := env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, karpenterIdentity)
+	if err != nil {
+		return fmt.Errorf("failed to assign Crypto Officer role to karpenter identity: %w", err)
+	}
+	err = env.RBACManager.EnsureRole(ctx, keyVaultID, keyVaultAdminRoleDefinitionID, karpenterIdentity)
+	if err != nil {
+		return fmt.Errorf("failed to assign Administrator role to karpenter identity: %w", err)
+	}
 
 	// User from az.DefaultCred needs rbac to create keys and manage the vault (wrap, unwrap etc)
-	err := env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, testUserPrincipalID)
+	err = env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, testUserPrincipalID)
 	if err != nil {
 		return fmt.Errorf("failed to assign Crypto Officer role to test user: %w", err)
 	}
@@ -153,8 +159,14 @@ func (env *Environment) assignKeyVaultRBAC(ctx context.Context, keyVaultID, karp
 	}
 
 	// Before Moving on, ensure the rbac for the keyVault has been propagated to the principalIDs
-	env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultID, karpenterIdentity, 60*time.Second)
-	env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultID, testUserPrincipalID, 60*time.Second)
+	err = env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultID, karpenterIdentity, 60*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to wait for role assignment propagation for karpenter identity: %w", err)
+	}
+	err = env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultID, testUserPrincipalID, 60*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to wait for role assignment propagation for test user: %w", err)
+	}
 
 	return nil
 }
@@ -215,7 +227,10 @@ func (env *Environment) assignDiskEncryptionSetRBAC(ctx context.Context, desID, 
 	if err != nil {
 		return fmt.Errorf("failed to assign RBAC role: %w", err)
 	}
-	env.RBACManager.WaitForRoleAssignmentPropagation(ctx, desID, karpenterIdentity, 30*time.Second)
+	err = env.RBACManager.WaitForRoleAssignmentPropagation(ctx, desID, karpenterIdentity, 30*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to wait for role assignment propagation for DES: %w", err)
+	}
 	return nil
 }
 
