@@ -1,4 +1,4 @@
-AZURE_LOCATION ?= westus2 
+AZURE_LOCATION ?= westus2
 COMMON_NAME ?= karpenter
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
