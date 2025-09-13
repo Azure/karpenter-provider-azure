@@ -169,18 +169,6 @@ func NewAKSMachineProvider(
 	return provider
 }
 
-// doesAKSMachinesPoolExists checks if the AKS machines pool exists
-func (p *DefaultAKSMachineProvider) doesAKSMachinesPoolExists(ctx context.Context) (bool, *armcontainerservice.AgentPool, error) {
-	resp, err := p.azClient.agentPoolsClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
-	if err != nil {
-		if IsARMNotFound(err) {
-			return false, nil, nil
-		}
-		return false, nil, fmt.Errorf("failed to check if AKS machines pool exists: %w", err)
-	}
-	return true, lo.ToPtr(resp.AgentPool), nil
-}
-
 // BeginCreate creates an instance given the constraints.
 // Note that the returned instance may not be finished provisioning yet.
 // Errors that occur on the "sync side" of the VM create, such as BadRequest due
@@ -273,22 +261,13 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 
 	pager := p.azClient.aksMachinesClient.NewListPager(p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, nil)
 	if pager == nil {
-		exists, _, err := p.doesAKSMachinesPoolExists(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create pager for listing AKS machines and failed to check if AKS machines pool exists: %w", err)
-		}
-		if !exists {
-			// AKS machines pool not found. Handle gracefully.
-			return machines, nil
-		}
-		return nil, fmt.Errorf("failed to create pager for listing AKS machines")
+		return nil, fmt.Errorf("failed to create pager for listing AKS machines, pager is nil")
 	}
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if IsARMNotFound(err) {
-				// XPMT: TODO: check API: see what happens when Machines pool is not found when calling Machines list. It is probably just one of this and the above.
-				// AKS machines pool not found (deleted mid-air?). Handle gracefully.
+				// AKS machines pool not found. Handle gracefully.
 				break
 			}
 

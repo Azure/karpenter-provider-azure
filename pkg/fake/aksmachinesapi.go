@@ -377,18 +377,18 @@ func (c *AKSMachinesAPI) NewListPager(resourceGroupName string, resourceName str
 		Options:           options,
 	}
 	pager, _ := c.AKSMachineNewListPagerBehavior.Invoke(input, func(input *AKSMachineListInput) (*runtime.Pager[armcontainerservice.MachinesClientListResponse], error) {
-		// Validate that the agent pool exists before attempting to list machines
-		if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
-			// XPMT: TODO: check API: see if this is the expected behavior
-			return nil, AKSMachineAPIErrorFromAKSMachinesPoolNotFound
-		}
-
 		// For this fake implementation, return a simple pager that lists all AKS machines
 		pager := runtime.NewPager(runtime.PagingHandler[armcontainerservice.MachinesClientListResponse]{
 			More: func(page armcontainerservice.MachinesClientListResponse) bool {
 				return false // Single page for fake implementation
 			},
 			Fetcher: func(ctx context.Context, page *armcontainerservice.MachinesClientListResponse) (armcontainerservice.MachinesClientListResponse, error) {
+				// Check if the agent pool exists when fetching the page
+				if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
+					// AKS machines pool not found. Return ARM not found error to match real API behavior.
+					return armcontainerservice.MachinesClientListResponse{}, AKSMachineAPIErrorFromAKSMachinesPoolNotFound
+				}
+
 				var aksMachines []*armcontainerservice.Machine
 				c.sharedStores.AKSMachines.Range(func(key, value any) bool {
 					aksMachine := value.(armcontainerservice.Machine)
