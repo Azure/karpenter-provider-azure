@@ -46,21 +46,53 @@ const (
 	sigImageVersion = "202505.27.0"
 )
 
-func getExpectedTestCIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string, kubernetesVersion string) []imagefamily.NodeImage {
-	var images []imagefamilytypes.DefaultImageOutput
-	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages(false, fipsMode)
-	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
-		if imagefamily.UseAzureLinux3(kubernetesVersion) {
-			images = imagefamily.AzureLinux3{}.DefaultImages(false, fipsMode)
-		} else {
-			images = imagefamily.AzureLinux{}.DefaultImages(false, fipsMode)
-		}
+type ImageExpectationsConfig struct {
+	ImageFamily       string
+	FIPSMode          *v1beta1.FIPSMode
+	Version           string
+	KubernetesVersion string
+	UseSIG            bool
+}
+
+func NewImageExpectationsConfig(nodeClass *v1beta1.AKSNodeClass, version, kubernetesVersion string, useSIG bool) ImageExpectationsConfig {
+	return ImageExpectationsConfig{
+		ImageFamily:       lo.FromPtr(nodeClass.Spec.ImageFamily),
+		FIPSMode:          nodeClass.Spec.FIPSMode,
+		Version:           version,
+		KubernetesVersion: kubernetesVersion,
+		UseSIG:            useSIG,
 	}
-	nodeImages := []imagefamily.NodeImage{}
+}
+
+func (i *ImageExpectationsConfig) SIGSubscriptionID() string {
+	return "10945678-1234-1234-1234-123456789012"
+}
+
+func (i *ImageExpectationsConfig) GetExpectedImages() []imagefamily.NodeImage {
+	expectedFamily := imagefamily.GetImageFamily(lo.ToPtr(i.ImageFamily), i.FIPSMode, i.KubernetesVersion, nil)
+	images := expectedFamily.DefaultImages(i.UseSIG, i.FIPSMode)
+	return i.generateNodeImages(images)
+}
+
+func (i *ImageExpectationsConfig) generateNodeImages(images []imagefamilytypes.DefaultImageOutput) []imagefamily.NodeImage {
+	nodeImages := make([]imagefamily.NodeImage, 0, len(images))
 	for _, image := range images {
+		id := lo.Ternary(i.UseSIG,
+			imagefamily.BuildImageIDSIG(
+				i.SIGSubscriptionID(),
+				image.GalleryResourceGroup,
+				image.GalleryName,
+				image.ImageDefinition,
+				i.Version,
+			),
+			imagefamily.BuildImageIDCIG(
+				image.PublicGalleryURL,
+				image.ImageDefinition,
+				i.Version,
+			),
+		)
 		nodeImages = append(nodeImages, imagefamily.NodeImage{
-			ID:           fmt.Sprintf("/CommunityGalleries/%s/images/%s/versions/%s", image.PublicGalleryURL, image.ImageDefinition, version),
+			ID:           id,
 			Requirements: image.Requirements,
 		})
 	}
@@ -119,8 +151,17 @@ var _ = Describe("NodeImageProvider tests", func() {
 		It("should match expected images for Ubuntu2204", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, cigImageVersion, kubernetesVersion)
-			Expect(foundImages).To(Equal(expectedImages))
+			config := NewImageExpectationsConfig(nodeClass, cigImageVersion, kubernetesVersion, false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
+		})
+
+		It("should match expected images for Ubuntu2404", func() {
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+
+			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			config := NewImageExpectationsConfig(nodeClass, cigImageVersion, kubernetesVersion, false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
 		})
 
 		// This test changes depending on the Kubernetes version, in effect making the following version-specific tests unnecessary.
@@ -130,8 +171,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			azLinuxImages := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, cigImageVersion, kubernetesVersion)
-			Expect(foundImages).To(Equal(azLinuxImages))
+			config := NewImageExpectationsConfig(nodeClass, cigImageVersion, kubernetesVersion, false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
 		})
 
 		It("should match expected images for AzureLinux with version < 1.32", func() {
@@ -140,8 +181,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			azLinuxV2Images := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, cigImageVersion, "1.31.0")
-			Expect(foundImages).To(Equal(azLinuxV2Images))
+			config := NewImageExpectationsConfig(nodeClass, cigImageVersion, "1.31.0", false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
 		})
 
 		It("should match expected images for AzureLinux with version >= 1.32", func() {
@@ -151,8 +192,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
-			azLinuxV3Images := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, cigImageVersion, "1.32.0")
-			Expect(foundImages).To(Equal(azLinuxV3Images))
+			config := NewImageExpectationsConfig(nodeClass, cigImageVersion, "1.32.0", false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
 
 			// Explicitly verify ARM64 image is NOT included in CIG (Community Image Gallery)
 			Expect(foundImages).ToNot(ContainElement(HaveField("ID", ContainSubstring("V3gen2arm64"))))
@@ -223,6 +264,15 @@ var _ = Describe("NodeImageProvider tests", func() {
 				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
+
+			It("should match expected images for Ubuntu2404", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
 			// This test changes depending on the Kubernetes version, in effect making version-specific tests unnecessary.
 			// They are still kept for clarity and to ensure that the behavior is explicitly tested.
 			It("should match expected images for default AzureLinux, depending on the Kubernetes version", func() {
@@ -251,6 +301,14 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			It("should match expected images for Ubuntu2204", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
+			It("should match expected images for Ubuntu2404", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 				expectedImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, kubernetesVersion)
@@ -383,8 +441,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 		It("should ensure List images uses cached data", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, cigImageVersion, kubernetesVersion)
-			Expect(foundImages).To(Equal(expectedImages))
+			config := NewImageExpectationsConfig(nodeClass, cigImageVersion, kubernetesVersion, false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
 
 			communityImageVersionsAPI.Reset()
 			laterCIGImageVersionTest := laterCIGImageVersion
@@ -392,15 +450,15 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages = getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, cigImageVersion, kubernetesVersion)
-			Expect(foundImages).To(Equal(expectedImages))
+			config = NewImageExpectationsConfig(nodeClass, cigImageVersion, kubernetesVersion, false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
 		})
 
 		It("should ensure List gets new image data if imageFamily changes", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, cigImageVersion, kubernetesVersion)
-			Expect(foundImages).To(Equal(expectedImages))
+			config := NewImageExpectationsConfig(nodeClass, cigImageVersion, kubernetesVersion, false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
 
 			communityImageVersionsAPI.Reset()
 			laterCIGImageVersionTest := laterCIGImageVersion
@@ -410,8 +468,8 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages = getExpectedTestCIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, laterCIGImageVersionTest, kubernetesVersion)
-			Expect(foundImages).To(Equal(expectedImages))
+			config = NewImageExpectationsConfig(nodeClass, laterCIGImageVersionTest, kubernetesVersion, false)
+			Expect(foundImages).To(Equal(config.GetExpectedImages()))
 		})
 	})
 })
