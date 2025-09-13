@@ -41,10 +41,10 @@ func ManagedTags(nodepoolName string) map[string]*string {
 	}
 }
 
-func ManagedTagsAKSMachine(nodepoolName string) map[string]*string {
+func ManagedTagsAKSMachine(nodepoolName string, nodeClaimName string) map[string]*string {
 	return map[string]*string{
-		"karpenter.azure.com_cluster":    lo.ToPtr("test-cluster"),
-		"karpenter.sh_nodepool":          lo.ToPtr(nodepoolName),
-		"karpenter.azure.com_aksmachine": lo.ToPtr("true"),
+		"karpenter.azure.com_cluster":              lo.ToPtr("test-cluster"),
+		"karpenter.sh_nodepool":                    lo.ToPtr(nodepoolName),
+		"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaimName),
 	}
 }

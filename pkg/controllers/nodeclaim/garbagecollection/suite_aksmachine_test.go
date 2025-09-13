@@ -251,7 +251,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		It("should not delete an AKS Machine NIC if there is no associated VM", func() {
 			nic := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,
-				Tags:         test.ManagedTagsAKSMachine(nodePool.Name),
+				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "some-nodeclaim"),
 			})
 			nic2 := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,

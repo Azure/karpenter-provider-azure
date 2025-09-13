@@ -85,7 +85,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		options.Properties = &armcontainerservice.MachineProperties{}
 	}
 	if options.Tags == nil {
-		options.Tags = ManagedTags(options.MachinesPoolName)
+		options.Tags = ManagedTagsAKSMachine(options.MachinesPoolName, "some-nodeclaim")
 	}
 
 	// Set default properties if not provided - matching setDefaultMachineValues pattern

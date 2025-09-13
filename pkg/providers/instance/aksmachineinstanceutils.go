@@ -98,10 +98,10 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	if tag, ok := aksMachineTemplate.Properties.Tags[NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
-	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineTagKey]; ok {
+	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]; ok {
 		nodeClaim.Name = *tag
 	} else {
-		return nil, fmt.Errorf("AKS machine template is missing required tag %s", launchtemplate.KarpenterAKSMachineTagKey)
+		return nil, fmt.Errorf("AKS machine template is missing required tag %s", launchtemplate.KarpenterAKSMachineNodeClaimTagKey)
 	}
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
@@ -164,7 +164,7 @@ func FindNodePoolFromAKSMachine(ctx context.Context, aksMachine *armcontainerser
 	return nil, errors.NewNotFound(schema.GroupResource{Group: coreapis.Group, Resource: "nodepools"}, "")
 }
 
-// XPMT: TODO(Bryce-Soghigian): rework this thing below?
+// XPMT: TODO(Bryce-Soghigian): rework this thing below? Also consider add acceptance tests on this in cloudprovider module, if applicable.
 // Real node name would be aks-<machinesPoolName>-<aksMachineName>-########-vm#. E.g., aks-aksmanagedap-default-2jf98-11274290-vm2.
 func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) string {
 	// ASSUMPTION: all AKS machines are named after the NodeClaim name.

@@ -86,7 +86,7 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	case c.vmListQuery:
 		vmList := lo.Filter(c.loadVMObjects(), func(vm armcompute.VirtualMachine, _ int) bool {
 			return vm.Tags != nil && vm.Tags[launchtemplate.NodePoolTagKey] != nil &&
-				vm.Tags[launchtemplate.KarpenterAKSMachineTagKey] == nil
+				vm.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil
 		})
 		resourceList := lo.Map(vmList, func(vm armcompute.VirtualMachine, _ int) interface{} {
 			b, _ := json.Marshal(vm)
@@ -96,7 +96,7 @@ func (c *AzureResourceGraphAPI) getResourceList(query string) []interface{} {
 	case c.nicListQuery:
 		nicList := lo.Filter(c.loadNicObjects(), func(nic armnetwork.Interface, _ int) bool {
 			return nic.Tags != nil && nic.Tags[launchtemplate.NodePoolTagKey] != nil &&
-				nic.Tags[launchtemplate.KarpenterAKSMachineTagKey] == nil
+				nic.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil
 		})
 		resourceList := lo.Map(nicList, func(nic armnetwork.Interface, _ int) interface{} {
 			b, _ := json.Marshal(nic)

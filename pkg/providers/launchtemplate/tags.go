@@ -27,8 +27,8 @@ import (
 )
 
 const (
-	KarpenterManagedTagKey    = "karpenter.azure.com_cluster"
-	KarpenterAKSMachineTagKey = "karpenter.azure.com_aksmachine"
+	KarpenterManagedTagKey             = "karpenter.azure.com_cluster"
+	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
 )
 
 var (

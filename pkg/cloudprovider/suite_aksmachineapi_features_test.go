@@ -343,8 +343,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal("test-cluster"))
 				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.sh_nodepool"))
 				Expect(*aksMachine.Properties.Tags["karpenter.sh_nodepool"]).To(Equal(nodePool.Name))
-				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine"))
-				Expect(*aksMachine.Properties.Tags["karpenter.azure.com_aksmachine"]).To(Equal("true"))
+				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 
 				// Clean up
 				aksCluster.Reset()
@@ -559,8 +558,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(aksMachine.Properties.Tags["karpenter.sh_nodepool"]).To(Equal(&nodePool.Name))
 				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 				Expect(aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(&testOptions.ClusterName))
-				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine"))
-				Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine"]).To(Equal(lo.ToPtr("true")))
+				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 
 				// Verify OS disk size configuration
 				Expect(aksMachine.Properties.OperatingSystem).ToNot(BeNil())

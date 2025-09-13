@@ -86,7 +86,8 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 
 		It("should build NodeClaim successfully from AKS machine", func() {
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+			creationTime = time.Now()
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaim).ToNot(BeNil())
@@ -99,12 +100,14 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
 		})
 
 		It("should handle missing zone gracefully", func() {
+			creationTime = time.Now()
 			aksMachine.Zones = []*string{}
 
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaim).ToNot(BeNil())
@@ -116,12 +119,31 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.Labels).ToNot(HaveKey(v1.LabelTopologyZone))
 			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
 			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.NewTime(creationTime)))
+		})
+
+		It("should handle missing creation time gracefully", func() {
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, nil)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(nodeClaim).ToNot(BeNil())
+			Expect(nodeClaim.Name).To(Equal("test-machine"))
+			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
+			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
+			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
+			Expect(nodeClaim.Labels[karpv1.NodePoolLabelKey]).To(Equal("test-nodepool"))
+			Expect(nodeClaim.Labels).To(HaveKey(v1.LabelTopologyZone))
+			Expect(nodeClaim.Labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
+			Expect(nodeClaim.Status.Capacity).To(HaveKey(v1.ResourceCPU))
+			Expect(nodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
+			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.Time{}))
 		})
 
 		It("should return error when machine name is missing", func() {
 			aksMachine.Name = nil
+			creationTime = time.Now()
 
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing name"))
@@ -129,8 +151,9 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error when properties is missing", func() {
 			aksMachine.Properties = nil
+			creationTime = time.Now()
 
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing Properties"))
@@ -138,8 +161,9 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error when VM size is missing", func() {
 			aksMachine.Properties.Hardware = nil
+			creationTime = time.Now()
 
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing VMSize"))
@@ -147,8 +171,9 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error when priority is missing", func() {
 			aksMachine.Properties.Priority = nil
+			creationTime = time.Now()
 
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing Priority"))
@@ -232,22 +257,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			machineName := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
 
 			Expect(machineName).To(Equal(""))
-		})
-	})
-
-	Context("GetNodeClaimNameFromAKSMachineName", func() {
-		It("should return the same name", func() {
-			aksMachineName := "test-machine-456"
-			nodeClaimName := GetNodeClaimNameFromAKSMachineName(aksMachineName)
-
-			Expect(nodeClaimName).To(Equal(aksMachineName))
-		})
-
-		It("should handle empty string", func() {
-			aksMachineName := ""
-			nodeClaimName := GetNodeClaimNameFromAKSMachineName(aksMachineName)
-
-			Expect(nodeClaimName).To(Equal(""))
 		})
 	})
 

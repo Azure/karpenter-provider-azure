@@ -50,8 +50,7 @@ var _ = Describe("In Place Update Controller", func() {
 				ClusterName:      opts.ClusterName,
 				MachinesPoolName: opts.AKSMachinesPoolName,
 				Tags: map[string]*string{
-					"karpenter.azure.com_cluster":    lo.ToPtr(opts.ClusterName),
-					"karpenter.azure.com_aksmachine": lo.ToPtr("true"),
+					"karpenter.azure.com_cluster": lo.ToPtr(opts.ClusterName),
 				},
 			})
 
@@ -69,6 +68,7 @@ var _ = Describe("In Place Update Controller", func() {
 					ProviderID: utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID)),
 				},
 			})
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"] = lo.ToPtr(nodeClaim.Name)
 			// Add AKS machine annotation to identify this as an AKS machine instance
 			nodeClaim.Annotations = map[string]string{
 				v1beta1.AnnotationAKSMachineResourceID: fake.MkMachineID(azureEnv.AzureResourceGraphAPI.ResourceGroup, opts.ClusterName, opts.AKSMachinesPoolName, *aksMachine.Name),
@@ -186,10 +186,10 @@ var _ = Describe("In Place Update Controller", func() {
 
 			Expect(updatedAKSMachine.Properties.Tags).ToNot(Equal(originalTags))
 			Expect(updatedAKSMachine.Properties.Tags).To(Equal(map[string]*string{
-				"karpenter.azure.com_cluster":    lo.ToPtr(opts.ClusterName),
-				"karpenter.azure.com_aksmachine": lo.ToPtr("true"),
-				"nodeclass-tag":                  lo.ToPtr("nodeclass-value"),
-				"test-tag":                       lo.ToPtr("my-tag"),
+				"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
+				"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaim.Name),
+				"nodeclass-tag":                            lo.ToPtr("nodeclass-value"),
+				"test-tag":                                 lo.ToPtr("my-tag"),
 			}))
 
 			nodeClaim = ExpectExists(ctx, env.Client, nodeClaim)
@@ -226,10 +226,10 @@ var _ = Describe("In Place Update Controller", func() {
 
 		It("should clear existing tags on AKS machine", func() {
 			aksMachine.Properties.Tags = map[string]*string{
-				"karpenter.azure.com_cluster":    lo.ToPtr(opts.ClusterName),
-				"karpenter.azure.com_aksmachine": lo.ToPtr("true"),
-				"test-tag":                       lo.ToPtr("my-tag"),
-				"nodeclass-tag":                  lo.ToPtr("nodeclass-value"),
+				"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
+				"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaim.Name),
+				"test-tag":      lo.ToPtr("my-tag"),
+				"nodeclass-tag": lo.ToPtr("nodeclass-value"),
 			}
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
@@ -244,9 +244,9 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updatedAKSMachine.Properties.Tags).To(Equal(map[string]*string{
-				"karpenter.azure.com_cluster":    lo.ToPtr(opts.ClusterName),
-				"karpenter.azure.com_aksmachine": lo.ToPtr("true"),
-				"nodeclass-tag":                  lo.ToPtr("nodeclass-value"),
+				"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
+				"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaim.Name),
+				"nodeclass-tag":                            lo.ToPtr("nodeclass-value"),
 				// "test-tag" should be removed
 			}))
 
@@ -284,9 +284,9 @@ var _ = Describe("In Place Update Controller", func() {
 			updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updatedAKSMachine.Properties.Tags).To(Equal(map[string]*string{
-				"karpenter.azure.com_cluster":    lo.ToPtr(opts.ClusterName),
-				"karpenter.azure.com_aksmachine": lo.ToPtr("true"),
-				"nodeclass-tag":                  lo.ToPtr("nodeclass-value"),
+				"karpenter.azure.com_cluster":              lo.ToPtr(opts.ClusterName),
+				"karpenter.azure.com_aksmachine_nodeclaim": lo.ToPtr(nodeClaim.Name),
+				"nodeclass-tag":                            lo.ToPtr("nodeclass-value"),
 			}))
 		})
 

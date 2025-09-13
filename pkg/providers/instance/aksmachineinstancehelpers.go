@@ -275,7 +275,7 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 	tags := launchtemplate.Tags(opts, nodeClass, nodeClaim)
 
 	// Add AKS machine distinguishing tag
-	tags[launchtemplate.KarpenterAKSMachineTagKey] = lo.ToPtr(nodeClaim.Name)
+	tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] = lo.ToPtr(nodeClaim.Name)
 
 	return tags
 }

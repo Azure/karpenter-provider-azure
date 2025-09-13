@@ -186,7 +186,6 @@ func validateNodeClaimCommon(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodeP
 	Expect(nodeClaim.Status.Allocatable).To(HaveKey(v1.ResourceMemory))
 
 	// Lifecycle validation
-	Expect(nodeClaim.CreationTimestamp).ToNot(BeZero())
 	Expect(nodeClaim.DeletionTimestamp).To(BeNil())
 }
 

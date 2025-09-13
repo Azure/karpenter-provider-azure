@@ -125,7 +125,6 @@ var _ = Describe("CloudProvider", func() {
 			//// The returned nodeClaim should be correct
 			Expect(nodeClaims).To(HaveLen(1))
 			createdNodeClaim := nodeClaims[0]
-			Expect(createdNodeClaim.Name).To(ContainSubstring(createInput.AKSMachineName))
 			validateAKSMachineNodeClaim(createdNodeClaim, nodePool)
 
 			// Get should return the created nodeClaim
@@ -137,7 +136,6 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 
 			//// The returned nodeClaim should be correct
-			Expect(retrievedNodeClaim.Name).To(ContainSubstring(createInput.AKSMachineName))
 			validateAKSMachineNodeClaim(retrievedNodeClaim, nodePool)
 
 			// Delete
@@ -401,6 +399,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(createdFirstNodeClaim).ToNot(BeNil())
 				validateAKSMachineNodeClaim(createdFirstNodeClaim, nodePool)
+				Expect(createdFirstNodeClaim.CreationTimestamp).ToNot(BeZero())
 
 				// Create a conflicted nodeclaim with same configuration
 				conflictedNodeClaim := firstNodeClaim.DeepCopy()
@@ -477,6 +476,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(createdFirstNodeClaim).ToNot(BeNil())
 				validateAKSMachineNodeClaim(createdFirstNodeClaim, nodePool)
+				Expect(createdFirstNodeClaim.CreationTimestamp).ToNot(BeZero())
 
 				// Create a conflicted nodeclaim with same configuration
 				conflictedNodeClaim := firstNodeClaim.DeepCopy()
@@ -546,6 +546,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(createdFirstNodeClaim).ToNot(BeNil())
 				validateAKSMachineNodeClaim(createdFirstNodeClaim, nodePool)
+				Expect(createdFirstNodeClaim.CreationTimestamp).ToNot(BeZero())
 
 				// Create a conflicted nodeclaim with different immutable configuration (zone/SKU)
 				conflictedNodeClaim := firstNodeClaim.DeepCopy()
@@ -604,6 +605,7 @@ var _ = Describe("CloudProvider", func() {
 				validateAKSMachineNodeClaim(createdConflictedNodeClaim, nodePool)
 				Expect(createdConflictedNodeClaim.Labels[v1.LabelTopologyZone]).To(Equal(utils.GetAKSZoneFromARMZone(fake.Region, "2")))
 				Expect(createdConflictedNodeClaim.Labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v5"))
+				Expect(createdConflictedNodeClaim.CreationTimestamp).ToNot(BeZero())
 			})
 		})
 	})
@@ -691,7 +693,6 @@ var _ = Describe("CloudProvider", func() {
 				vmNodeClaim = nodeClaims[0]
 				aksMachineNodeClaim = nodeClaims[1]
 			}
-			Expect(aksMachineNodeClaim.Name).To(ContainSubstring(createInput.AKSMachineName))
 			validateAKSMachineNodeClaim(aksMachineNodeClaim, nodePool)
 
 			// validateVMNodeClaim(vmNodeClaim, nodePool) // Not covered as this fake VM does not have enough data in the first place
@@ -708,7 +709,6 @@ var _ = Describe("CloudProvider", func() {
 			//// The returned nodeClaim should be correct
 			Expect(retrievedAKSNodeClaim).ToNot(BeNil())
 			Expect(retrievedAKSNodeClaim.Status.Capacity).ToNot(BeEmpty())
-			Expect(retrievedAKSNodeClaim.Name).To(Equal(createInput.AKSMachineName))
 			Expect(retrievedAKSNodeClaim.Annotations).To(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 			Expect(retrievedAKSNodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]).ToNot(BeEmpty())
 
@@ -749,7 +749,6 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Name).To(ContainSubstring(createInput.AKSMachineName))
 			validateAKSMachineNodeClaim(nodeClaim, nodePool)
 
 			//// Get VM nodeClaim should return NodeClaimNotFound error
