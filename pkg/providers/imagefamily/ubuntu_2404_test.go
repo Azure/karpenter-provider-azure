@@ -42,15 +42,12 @@ func TestUbuntu2404_DefaultImages(t *testing.T) {
 		images := ubuntu.DefaultImages(false, nil)
 		assert.Len(t, images, 3)
 
-		// Check Gen2 AMD64 image
 		assert.Equal(t, imagefamily.Ubuntu2404Gen2ImageDefinition, images[0].ImageDefinition)
 		assert.Equal(t, "aks-ubuntu-containerd-24.04-gen2", images[0].Distro)
 
-		// Check Gen1 AMD64 image
 		assert.Equal(t, imagefamily.Ubuntu2404Gen1ImageDefinition, images[1].ImageDefinition)
 		assert.Equal(t, "aks-ubuntu-containerd-24.04", images[1].Distro)
 
-		// Check Gen2 ARM64 image
 		assert.Equal(t, imagefamily.Ubuntu2404Gen2ArmImageDefinition, images[2].ImageDefinition)
 		assert.Equal(t, "aks-ubuntu-arm64-containerd-24.04-gen2", images[2].Distro)
 	})
