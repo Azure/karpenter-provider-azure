@@ -18,6 +18,7 @@ package imagefamily_test
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -344,11 +345,15 @@ var _ = Describe("NodeImageProvider tests", func() {
 			// This test changes depending on the Kubernetes version, in effect making version-specific tests unnecessary.
 			// They are still kept for clarity and to ensure that the behavior is explicitly tested.
 			It("should match expected images for default Ubuntu, depending on the Kubernetes version", func() {
-				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 
-				minorVersion := semver.MustParse(kubernetesVersion).Minor
+				// Parse version, stripping any 'v' prefix if present
+				version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+				Expect(err).ToNot(HaveOccurred())
+				minorVersion := version.Minor
+
 				var fam imagefamily.ImageFamily
 				if imagefamily.UseUbuntu2404(kubernetesVersion) {
 					Expect(minorVersion).To(BeNumerically(">=", 34))
