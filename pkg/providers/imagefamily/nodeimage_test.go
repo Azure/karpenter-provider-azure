@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/blang/semver/v4"
 	"github.com/patrickmn/go-cache"
 	"github.com/samber/lo"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -340,6 +341,26 @@ var _ = Describe("NodeImageProvider tests", func() {
 		)
 
 		Context("Ubuntu default image selection based on Kubernetes version", func() {
+			// This test changes depending on the Kubernetes version, in effect making version-specific tests unnecessary.
+			// They are still kept for clarity and to ensure that the behavior is explicitly tested.
+			It("should match expected images for default Ubuntu, depending on the Kubernetes version", func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
+				Expect(err).ToNot(HaveOccurred())
+
+				minorVersion := semver.MustParse(kubernetesVersion).Minor
+				var fam imagefamily.ImageFamily
+				if imagefamily.UseUbuntu2404(kubernetesVersion) {
+					Expect(minorVersion).To(BeNumerically(">=", 34))
+					fam = &imagefamily.Ubuntu2404{}
+				} else {
+					Expect(minorVersion).To(BeNumerically("<", 34))
+					fam = &imagefamily.Ubuntu2204{}
+				}
+				expectedImages := renderExpectedNodeImages(fam, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				Expect(foundImages).To(Equal(expectedImages))
+			})
+
 			It("should select Ubuntu2204 for generic Ubuntu when K8s < 1.34", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 				nodeClass.Spec.FIPSMode = nil
