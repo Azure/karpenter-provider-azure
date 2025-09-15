@@ -269,8 +269,16 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				// Generic Ubuntu defaults to Ubuntu2204 when FIPSMode is disabled
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+
+				// Parse version to determine which Ubuntu version to expect
+				version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+				Expect(err).ToNot(HaveOccurred())
+
+				// Generic Ubuntu defaults to Ubuntu2404 for K8s >= 1.34, Ubuntu2204 otherwise
+				fam := lo.Ternary(version.Minor >= 34,
+					imagefamily.ImageFamily(&imagefamily.Ubuntu2404{}),
+					imagefamily.ImageFamily(&imagefamily.Ubuntu2204{}))
+				expectedImages := renderExpectedNodeImages(fam, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 
 			})
