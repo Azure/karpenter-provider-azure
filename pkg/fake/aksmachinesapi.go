@@ -196,14 +196,14 @@ func AKSMachineAPIProvisioningErrorTotalRegionalCoresQuota(location string) *arm
 	}
 }
 
-func AKSMachineAPIProvisioningErrorZoneAllocationFailed(zone string) *armcontainerservice.CloudErrorBody {
+func AKSMachineAPIProvisioningErrorZoneAllocationFailed(sku string, zone string) *armcontainerservice.CloudErrorBody {
 	return &armcontainerservice.CloudErrorBody{
-		Code:    lo.ToPtr("ZoneAllocationFailed"),
-		Message: lo.ToPtr(fmt.Sprintf("The requested VM size for resource group 'MC_test_test_westus2' cannot be provisioned in availability zone '%s' due to capacity constraints. Please try a different size or retry later.", zone)),
+		Code:    lo.ToPtr("ZonalAllocationFailed"),
+		Message: lo.ToPtr(fmt.Sprintf("Code=\"ZonalAllocationFailed\" Message=\"Allocation failed. We do not have sufficient capacity for the requested VM size %s in zone %s. Read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance\"", sku, zone)),
 		Details: []*armcontainerservice.CloudErrorBody{
 			{
-				Code:    lo.ToPtr("ZoneAllocationFailed"),
-				Message: lo.ToPtr(fmt.Sprintf("Allocation failed: Zone allocation failed in zone '%s'", zone)),
+				Code:    lo.ToPtr("ZonalAllocationFailed"),
+				Message: lo.ToPtr(fmt.Sprintf("Allocation failed. We do not have sufficient capacity for the requested VM size %s in zone %s. Read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance", sku, zone)),
 			},
 		},
 	}

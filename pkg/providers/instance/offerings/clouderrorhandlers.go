@@ -125,7 +125,7 @@ func isSKUNotAvailable(cloudError armcontainerservice.CloudErrorBody) bool {
 }
 
 func isZonalAllocationFailure(cloudError armcontainerservice.CloudErrorBody) bool {
-	return cloudError.Code != nil && *cloudError.Code == "ZoneAllocationFailed"
+	return cloudError.Code != nil && *cloudError.Code == "ZonalAllocationFailed"
 }
 
 func isAllocationFailure(cloudError armcontainerservice.CloudErrorBody) bool {

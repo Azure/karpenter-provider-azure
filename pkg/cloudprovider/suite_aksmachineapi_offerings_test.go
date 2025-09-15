@@ -552,7 +552,7 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should handle ZonalAllocationFailed on creating the VM"
 			It("should handle ZonalAllocationFailed on creating the AKS machine", func() {
 				// Set up async error via BOTH Error and Output (LRO returns both)
-				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorZoneAllocationFailed("1")
+				azureEnv.AKSMachinesAPI.AfterPollProvisioningErrorOverride = fake.AKSMachineAPIProvisioningErrorZoneAllocationFailed("Standard_D2_v2", "1")
 
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{

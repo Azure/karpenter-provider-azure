@@ -119,6 +119,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "2345678-1234-1234-1234-123456789012")
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
+			os.Setenv("AKS_MACHINES_POOL_NAME", "testmpool")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -147,6 +148,7 @@ var _ = Describe("Options", func() {
 				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
 				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
+				AKSMachinesPoolName:            lo.ToPtr("testmpool"),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
 		})
@@ -547,9 +549,11 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
 				"--provision-mode", "aksmachineapi",
+				"--aks-machines-pool-name", "testmpool",
+				"--use-sig",
+				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(opts.AKSMachinesPoolName).To(Equal("aksmanagedap")) // Should use default value
 		})
 
 		It("should succeed with provision-mode other than aksmachineapi", func() {
@@ -562,7 +566,7 @@ var _ = Describe("Options", func() {
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
 				"--provision-mode", "aksscriptless",
-				"--aks-machines-pool-location", "eastus",
+				"--aks-machines-pool-name", "unusedpool",
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -578,7 +582,6 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--location", "westus2",
 				"--additional-tags", "env=prod,team=platform,version=1.0",
 			)
 			Expect(err).ToNot(HaveOccurred())
@@ -594,7 +597,6 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--location", "westus2",
 				"--additional-tags", fmt.Sprintf("%s=value", longKey),
 			)
 			Expect(err).To(MatchError(ContainSubstring("exceeds maximum length of 512 characters")))
@@ -610,7 +612,6 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--location", "westus2",
 				"--additional-tags", fmt.Sprintf("key=%s", longValue),
 			)
 			Expect(err).To(MatchError(ContainSubstring("exceeds maximum length of 256 characters")))
@@ -625,7 +626,6 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--location", "westus2",
 				"--additional-tags", "Env=prod,ENV=staging",
 			)
 			Expect(err).To(MatchError(ContainSubstring("is not unique (case-insensitive). Duplicate key found")))
@@ -642,7 +642,6 @@ var _ = Describe("Options", func() {
 					"--ssh-public-key", "flag-ssh-public-key",
 					"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 					"--node-resource-group", "my-node-rg",
-					"--location", "westus2",
 					"--additional-tags", fmt.Sprintf("key%sname=value", char),
 				)
 				Expect(err).To(MatchError(ContainSubstring("contains invalid characters")))
@@ -660,7 +659,6 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--location", "westus2",
 				"--additional-tags", fmt.Sprintf("%s=%s", maxKey, maxValue),
 			)
 			Expect(err).ToNot(HaveOccurred())

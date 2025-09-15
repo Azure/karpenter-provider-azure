@@ -23,6 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// nolint: gocyclo
 func TestCreationTimestampUtilities(t *testing.T) {
 	t.Run("ZeroAKSMachineTimestamp", func(t *testing.T) {
 		result := ZeroAKSMachineTimestamp()

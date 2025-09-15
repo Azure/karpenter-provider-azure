@@ -156,7 +156,6 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 		})
 
 		var _ = Context("Complex tags manipulation scenarios with in-place updates", func() {
-			var aksMachine *armcontainerservice.Machine
 			var nodeClaim *karpv1.NodeClaim
 			var nodeClass *v1beta1.AKSNodeClass
 			var providerID string
@@ -241,7 +240,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
 				// Verify no additional update calls and no instance
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
-				unchangedAKSMachine, err = azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+				_, err = azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
 				Expect(err).To(HaveOccurred()) // Still gone
 				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
 

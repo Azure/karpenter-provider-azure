@@ -121,6 +121,8 @@ func (c *AKSAgentPoolsAPI) Get(ctx context.Context, resourceGroupName string, re
 	})
 }
 
+// Already procedural, and is a fake
+// nolint: gocyclo
 func (c *AKSAgentPoolsAPI) BeginDeleteMachines(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachines armcontainerservice.AgentPoolDeleteMachinesParameter, options *armcontainerservice.AgentPoolsClientBeginDeleteMachinesOptions) (*runtime.Poller[armcontainerservice.AgentPoolsClientDeleteMachinesResponse], error) {
 	input := &AgentPoolDeleteMachinesInput{
 		ResourceGroupName: resourceGroupName,
