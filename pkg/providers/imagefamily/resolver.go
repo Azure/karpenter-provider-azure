@@ -237,8 +237,6 @@ func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernet
 
 func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
-	case v1beta1.UbuntuImageFamily:
-		fallthrough
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
 	case v1beta1.Ubuntu2404ImageFamily:
@@ -248,6 +246,8 @@ func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVe
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
+	case v1beta1.UbuntuImageFamily:
+		fallthrough
 	default:
 		return defaultUbuntu(fipsMode, kubernetesVersion, parameters)
 	}

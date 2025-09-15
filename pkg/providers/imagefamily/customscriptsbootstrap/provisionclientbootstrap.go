@@ -148,15 +148,10 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	// Map OS SKU to AKS provision client's expectation
 	// Note that the direction forward is to be more specific with OS versions. Be careful when supporting new ones.
 	switch p.OSSKU {
-	case ImageFamilyOSSKUUbuntu2004:
+	// https://go.dev/wiki/Switch#multiple-cases
+	case ImageFamilyOSSKUUbuntu2004, ImageFamilyOSSKUUbuntu2204, ImageFamilyOSSKUUbuntu2404:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case ImageFamilyOSSKUUbuntu2204:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case ImageFamilyOSSKUUbuntu2404:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case ImageFamilyOSSKUAzureLinux2:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
-	case ImageFamilyOSSKUAzureLinux3:
+	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	default:
 		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
