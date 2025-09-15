@@ -19,6 +19,9 @@ package instance
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -39,6 +42,18 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+// createAzureResponseError creates a proper Azure SDK error with the given error code and message
+func createAzureResponseError(errorCode, errorMessage string, statusCode int) error {
+	errorBody := fmt.Sprintf(`{"error": {"code": "%s", "message": "%s"}}`, errorCode, errorMessage)
+	return &azcore.ResponseError{
+		ErrorCode:  errorCode,
+		StatusCode: statusCode,
+		RawResponse: &http.Response{
+			Body: io.NopCloser(strings.NewReader(errorBody)),
+		},
+	}
+}
 
 var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
@@ -544,61 +559,63 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 	})
 
-	Context("IsARMNotFound", func() {
-		// XPMT: TODO: check this one the API is available
+	Context("IsAKSMachineNotFound", func() {
 		It("should return false for nil error", func() {
-			result := IsARMNotFound(nil)
+			result := IsAKSMachineNotFound(nil)
 			Expect(result).To(BeFalse())
 		})
 
-		It("should return true for Azure SDK ResourceGroupNotFound error", func() {
+		It("should return true for HTTP 404 status code", func() {
 			azureError := &azcore.ResponseError{
-				ErrorCode:   "ResourceGroupNotFound",
+				ErrorCode:   "lol",
 				StatusCode:  404,
 				RawResponse: nil,
 			}
 
-			result := IsARMNotFound(azureError)
+			result := IsAKSMachineNotFound(azureError)
 			Expect(result).To(BeTrue())
 		})
 
-		It("should return true for Azure SDK ResourceNotFound error", func() {
-			azureError := &azcore.ResponseError{
-				ErrorCode:   "ResourceNotFound", // ManagedCluster not found have this
-				StatusCode:  404,
-				RawResponse: nil,
-			}
+		It("should return true for InvalidParameter error with 'Cannot find any valid machines' message", func() {
+			// Create the exact error message from your example
+			errorMessage := "Cannot find any valid machines to delete. Please check your input machine names. The valid machines to delete in agent pool 'testmpool' are: testmachine."
+			azureError := createAzureResponseError("InvalidParameter", errorMessage, 400)
 
-			result := IsARMNotFound(azureError)
+			result := IsAKSMachineNotFound(azureError)
 			Expect(result).To(BeTrue())
 		})
 
-		It("should return true for Azure SDK NotFound error code", func() {
-			azureError := &azcore.ResponseError{
-				ErrorCode:   "NotFound", // AgentPool not found have this
-				StatusCode:  404,
-				RawResponse: nil,
-			}
+		It("should return false for HTTP 400 with InvalidParameter but different message", func() {
+			// Create an InvalidParameter error with a different message that shouldn't match
+			differentMessage := "InvalidParameter: Some other validation error"
+			azureError := createAzureResponseError("InvalidParameter", differentMessage, 400)
 
-			result := IsARMNotFound(azureError)
-			Expect(result).To(BeTrue())
+			result := IsAKSMachineNotFound(azureError)
+			Expect(result).To(BeFalse())
 		})
 
-		It("should return false for other Azure SDK errors", func() {
-			// Test with a different Azure error that should not be treated as "not found"
+		It("should return false for other HTTP status codes", func() {
 			azureError := &azcore.ResponseError{
 				ErrorCode:   "Unauthorized",
 				StatusCode:  401,
 				RawResponse: nil,
 			}
 
-			result := IsARMNotFound(azureError)
+			result := IsAKSMachineNotFound(azureError)
+			Expect(result).To(BeFalse())
+
+			azureError = &azcore.ResponseError{
+				ErrorCode:   "InternalOperationError",
+				StatusCode:  500,
+				RawResponse: nil,
+			}
+
+			result = IsAKSMachineNotFound(azureError)
 			Expect(result).To(BeFalse())
 		})
 
 		It("should return false for non-Azure SDK errors", func() {
-			// Test with a generic Go error
-			result := IsARMNotFound(fmt.Errorf("some generic error"))
+			result := IsAKSMachineNotFound(fmt.Errorf("some generic error"))
 			Expect(result).To(BeFalse())
 		})
 	})

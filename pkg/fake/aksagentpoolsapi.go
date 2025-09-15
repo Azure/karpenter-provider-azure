@@ -19,7 +19,9 @@ package fake
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -55,17 +57,24 @@ type AgentPoolsBehavior struct {
 	AgentPoolGetBehavior            MockedFunction[AgentPoolGetInput, armcontainerservice.AgentPoolsClientGetResponse]
 }
 
-// XPMT: TODO: check API: all these
-var AKSAgentPoolsAPIErrorFromAKSMachineNotFound = &azcore.ResponseError{
-	ErrorCode:  "NotFound",
-	StatusCode: http.StatusNotFound,
-}
 var AKSAgentPoolsAPIErrorFromAKSAgentPoolNotFound = &azcore.ResponseError{
 	ErrorCode:  "NotFound",
 	StatusCode: http.StatusNotFound,
 }
-var AKSAgentPoolsAPIErrorFromServer = &azcore.ResponseError{
-	ErrorCode: "SomeRandomError",
+
+// AKSAgentPoolsAPIErrorFromAKSMachineNotFound creates the specific error for when machines cannot be found during delete
+func AKSAgentPoolsAPIErrorFromAKSMachineNotFound(agentPoolName string, validMachines []string) error {
+	message := fmt.Sprintf("Cannot find any valid machines to delete. Please check your input machine names. The valid machines to delete in agent pool '%s' are: %s.",
+		agentPoolName, strings.Join(validMachines, ", "))
+
+	errorBody := fmt.Sprintf(`{"error": {"code": "InvalidParameter", "message": "%s"}}`, message)
+	return &azcore.ResponseError{
+		ErrorCode:  "InvalidParameter",
+		StatusCode: http.StatusBadRequest,
+		RawResponse: &http.Response{
+			Body: io.NopCloser(strings.NewReader(errorBody)),
+		},
+	}
 }
 
 // assert that the fake implements the interface
@@ -128,13 +137,50 @@ func (c *AKSAgentPoolsAPI) BeginDeleteMachines(ctx context.Context, resourceGrou
 	}
 
 	return c.AgentPoolDeleteMachinesBehavior.Invoke(input, func(input *AgentPoolDeleteMachinesInput) (*armcontainerservice.AgentPoolsClientDeleteMachinesResponse, error) {
-		// Delete machines from shared storage
+		// First, validate that all machines exist and collect valid/invalid machines
+		var validMachines []string
+		var invalidMachines []string
+		var allValidMachinesInPool []string
+
+		// Collect all existing machines in the agent pool for error message
+		if c.sharedStores != nil && c.sharedStores.AKSMachines != nil {
+			c.sharedStores.AKSMachines.Range(func(key, value interface{}) bool {
+				machineID := key.(string)
+				// Check if this machine belongs to the same agent pool
+				expectedPrefix := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.ContainerService/managedClusters/%s/agentPools/%s/machines/",
+					input.ResourceGroupName, input.ResourceName, input.AgentPoolName)
+				if strings.HasPrefix(machineID, expectedPrefix) {
+					machineName := strings.TrimPrefix(machineID, expectedPrefix)
+					allValidMachinesInPool = append(allValidMachinesInPool, machineName)
+				}
+				return true
+			})
+		}
+
+		// Check if requested machines exist
 		for _, aksMachineName := range input.AKSMachines.MachineNames {
 			if aksMachineName != nil {
 				id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, *aksMachineName)
 				if c.sharedStores != nil && c.sharedStores.AKSMachines != nil {
-					c.sharedStores.AKSMachines.Delete(id)
+					if _, exists := c.sharedStores.AKSMachines.Load(id); exists {
+						validMachines = append(validMachines, *aksMachineName)
+					} else {
+						invalidMachines = append(invalidMachines, *aksMachineName)
+					}
 				}
+			}
+		}
+
+		// If any machines are invalid, return the InvalidParameter error
+		if len(invalidMachines) > 0 {
+			return nil, AKSAgentPoolsAPIErrorFromAKSMachineNotFound(input.AgentPoolName, allValidMachinesInPool)
+		}
+
+		// Delete only the valid machines
+		for _, validMachine := range validMachines {
+			id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, validMachine)
+			if c.sharedStores != nil && c.sharedStores.AKSMachines != nil {
+				c.sharedStores.AKSMachines.Delete(id)
 			}
 		}
 

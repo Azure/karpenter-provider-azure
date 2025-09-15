@@ -86,7 +86,6 @@ type AKSMachinesBehavior struct {
 	AfterPollProvisioningErrorOverride *armcontainerservice.CloudErrorBody
 }
 
-// XPMT: TODO: check API: all these
 var AKSMachineAPIErrorFromAKSMachineNotFound = &azcore.ResponseError{
 	ErrorCode:  "NotFound",
 	StatusCode: http.StatusNotFound,

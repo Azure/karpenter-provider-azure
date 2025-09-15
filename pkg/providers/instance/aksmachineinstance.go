@@ -212,8 +212,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
-		if IsARMNotFound(err) {
-			// XPMT: TODO: check API: see what happens when Machines pool is not found when calling Machines get.
+		if IsAKSMachineNotFound(err) {
 			return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("aksMachine.BeginCreateOrUpdate for AKS machine %q failed: %w", aksMachineName, err))
 		}
 		return fmt.Errorf("aksMachine.BeginCreateOrUpdate for AKS machine %q failed: %w", aksMachineName, err)
@@ -237,8 +236,7 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 	// ASSUMPTION: AKS machines API accepts only AKS machine name.
 	aksMachine, err := p.getMachine(ctx, aksMachineName)
 	if err != nil {
-		if IsARMNotFound(err) {
-			// XPMT: TODO: check API: see what happens when Machines pool is not found when calling Machines get.
+		if IsAKSMachineNotFound(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return nil, err
@@ -263,7 +261,7 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			if IsARMNotFound(err) {
+			if IsAKSMachineNotFound(err) {
 				// AKS machines pool not found. Handle gracefully.
 				break
 			}
@@ -298,7 +296,7 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 
 	err = p.deleteMachine(ctx, aksMachineName)
 	if err != nil {
-		if IsARMNotFound(err) {
+		if IsAKSMachineNotFound(err) {
 			return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to delete AKS machine instance, %w", err))
 		}
 		return fmt.Errorf("failed to delete AKS machine instance, %w", err)
@@ -367,7 +365,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, instanceTypes, existingAKSMachine)
 
-	} else if !IsARMNotFound(err) {
+	} else if !IsAKSMachineNotFound(err) {
 		// Not fatal. Will fall back to normal creation.
 		log.FromContext(ctx).Error(err, "failed to check for existing machine", "aksMachineName", aksMachineName)
 	}

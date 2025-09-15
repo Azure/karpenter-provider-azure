@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -266,13 +267,13 @@ func GetAKSZoneFromAKSMachine(aksMachine *armcontainerservice.Machine, location 
 	return "", nil
 }
 
-func IsARMNotFound(err error) bool {
+func IsAKSMachineNotFound(err error) bool {
 	if err == nil {
 		return false
 	}
 	azErr := sdkerrors.IsResponseError(err)
-	if azErr != nil && (azErr.ErrorCode == "NotFound" || azErr.ErrorCode == "ResourceNotFound" || azErr.ErrorCode == "ResourceGroupNotFound") {
-		// Annoyingly, AKS AgentPool (machine pool)/AKS Machine, ManagedCluster, ARM ResourceGroup have different error code when not found.
+	if azErr != nil && (azErr.StatusCode == http.StatusNotFound || // Covers AKS machines pool not found on PUT machine, GET machine, GET (list) machines, POST agent pool (DELETE machines), and AKS machine not found on GET machine
+		(azErr.StatusCode == http.StatusBadRequest && azErr.ErrorCode == "InvalidParameter" && strings.Contains(azErr.Error(), "Cannot find any valid machines"))) { // Covers AKS machine not found on POST agent pool (DELETE machines)
 		return true
 	}
 	return false
