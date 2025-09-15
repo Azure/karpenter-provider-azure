@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
@@ -29,7 +28,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -72,7 +70,6 @@ var (
 // Not assuming that NodeClaim exists.
 func BuildNodeClaimFromAKSMachineTemplate(
 	ctx context.Context, aksMachineTemplate *armcontainerservice.Machine,
-	aksMachineName string,
 	instanceType *corecloudprovider.InstanceType, // optional; won't be populated for standalone nodeclaims
 	capacityType string,
 	zone *string, // <region>-<zone-id>, optional
@@ -110,11 +107,11 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	nodeClaim.Annotations = annotations
 
 	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey]; ok {
-		if parsedTime, err := utils.GetCreationTimestampFromString(*tag); err == nil {
+		if parsedTime, err := AKSMachineTimestampFromTag(*tag); err == nil {
 			// Note: this assignment to NodeClaim is not effective to the actual object in the cluster, which still represents NodeClaim's (not instance's) creation time.
 			// By the time of writing, this "borrowed struct field" is being used by provider for instance garbage collection. AWS does the same.
 			// Suggestion: this "borrowing" pattern and its inconsistency is not intuitive..., should reconsider this implementation?
-			nodeClaim.CreationTimestamp = metav1.Time{Time: parsedTime}
+			nodeClaim.CreationTimestamp = AKSMachineTimestampToMeta(parsedTime)
 			// Note: AWS and (legacy) VM instance provider relies on server-side creation timestamp. Instead, this tag value is client-side creation timestamp, generated before the request.
 			// For garbage collection:
 			// - The 5m grace period will have to cover (server-side create - client-side create) period, in addition to existing (Create() returns to core - server-side create) period.
@@ -132,7 +129,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
 	if isDeleting {
-		nodeClaim.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+		nodeClaim.DeletionTimestamp = lo.ToPtr(AKSMachineTimestampToMeta(NewAKSMachineTimestamp()))
 	}
 	nodeClaim.Status.ProviderID = utils.VMResourceIDToProviderID(ctx, vmResourceID)
 	nodeClaim.Status.ImageID = aksMachineNodeImageVersion // ASSUMPTION: this doesn't need to be full image ID (should be fine on core, as the definition of ID is provider agnostic)
@@ -154,11 +151,13 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 	} else {
 		zonePtr = lo.ToPtr(utils.GetAKSZoneFromARMZone(aksMachineLocation, lo.FromPtr(aksMachine.Zones[0])))
 	}
+	if aksMachine.Properties.Priority == nil {
+		return nil, fmt.Errorf("AKS machine instance %q is missing priority", lo.FromPtr(aksMachine.Name))
+	}
 
 	return BuildNodeClaimFromAKSMachineTemplate(
 		ctx,
 		aksMachine,
-		lo.FromPtr(aksMachine.Name),
 		offerings.GetInstanceTypeFromVMSize(lo.FromPtr(aksMachine.Properties.Hardware.VMSize), possibleInstanceTypes),
 		GetCapacityTypeFromAKSScaleSetPriority(lo.FromPtr(aksMachine.Properties.Priority)),
 		zonePtr,
@@ -288,11 +287,12 @@ func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.
 	if aksMachine.Properties.Hardware == nil || aksMachine.Properties.Hardware.VMSize == nil {
 		return fmt.Errorf("irretrievable VM size")
 	}
-	// This not being guaranteed is per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
-	// Suggestion: rework/research more on this pattern RP-side?
-	// if aksMachine.Properties.Priority == nil {
-	// return fmt.Errorf("irretrievable priority")
-	// }
+	if aksMachine.Properties.Priority == nil {
+		// This not being guaranteed is per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
+		// Although, it is expected that it gets rehydrated client-side before this validation function is called.
+		// Suggestion: rework/research more on this pattern RP-side?
+		return fmt.Errorf("irretrievable priority")
+	}
 	if aksMachine.Properties.ResourceID == nil {
 		return fmt.Errorf("irretrievable VM resource ID")
 	}

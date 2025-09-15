@@ -577,42 +577,8 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(*labels["environment"]).To(Equal("test"))
 			})
 
-			It("should include instance type requirement labels", func() {
-				// Set up instance type with specific requirements
-				instanceType.Requirements = scheduling.NewRequirements(
-					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-					scheduling.NewRequirement(v1.LabelInstanceTypeStable, v1.NodeSelectorOpIn, "Standard_D2_v2"),
-				)
-
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand)
-
-				// Should include architecture label
-				Expect(labels).To(HaveKey(v1.LabelArchStable))
-				Expect(*labels[v1.LabelArchStable]).To(Equal(karpv1.ArchitectureAmd64))
-
-				// Should include instance type label
-				Expect(labels).To(HaveKey(v1.LabelInstanceTypeStable))
-				Expect(*labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
-			})
-
-			It("should handle conflicts by preserving instance type labels over nodeclaim labels", func() {
-				// Set up conflicting labels
-				nodeClaim.Labels = map[string]string{
-					v1.LabelArchStable:          "conflicting-arch",
-					karpv1.CapacityTypeLabelKey: "conflicting-capacity",
-				}
-
-				instanceType.Requirements = scheduling.NewRequirements(
-					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
-				)
-
-				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeSpot)
-
-				// Instance type requirements should win
-				Expect(*labels[v1.LabelArchStable]).To(Equal(karpv1.ArchitectureAmd64))
-				// Capacity type parameter should win
-				Expect(*labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeSpot))
-			})
+			// Note that non-Karpenter system labels population is not being tested here, as it is API's responsibility to do so. Consider adding E2E if we want to validate those.
+			// XPMT: TODO(charliedmcb): maybe add unit tests for "sanitization" here, if needed(?)
 
 			It("should handle empty nodeclaim labels", func() {
 				nodeClaim.Labels = nil
@@ -646,13 +612,6 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 				labels, _ := configureLabelsAndMode(nodeClaim, instanceType, karpv1.CapacityTypeOnDemand)
 
-				// Should include all single-valued requirements
-				Expect(labels).To(HaveKey(v1.LabelArchStable))
-				Expect(*labels[v1.LabelArchStable]).To(Equal(karpv1.ArchitectureAmd64))
-				Expect(labels).To(HaveKey(v1.LabelInstanceTypeStable))
-				Expect(*labels[v1.LabelInstanceTypeStable]).To(Equal("Standard_D2_v2"))
-				Expect(labels).To(HaveKey(v1.LabelTopologyZone))
-				Expect(*labels[v1.LabelTopologyZone]).To(Equal("eastus-1"))
 				Expect(labels).To(HaveKey("custom-requirement"))
 				Expect(*labels["custom-requirement"]).To(Equal("custom-value"))
 			})

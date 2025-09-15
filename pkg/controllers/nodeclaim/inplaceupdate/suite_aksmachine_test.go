@@ -36,6 +36,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -55,7 +56,7 @@ var _ = Describe("In Place Update Controller", func() {
 					Tags: map[string]*string{
 						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
 						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaimName),
-						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now())),
+						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
 					},
 				},
 			})
@@ -258,8 +259,7 @@ var _ = Describe("In Place Update Controller", func() {
 			// Verify the timestamp was set to minimum time (1970-01-01T00:00:00.000Z)
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			timestampTag := updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]
-			// time.Unix(0, 0).UTC() formats to "1970-01-01T00:00:00.000Z"
-			Expect(*timestampTag).To(Equal("1970-01-01T00:00:00.000Z"))
+			Expect(*timestampTag).To(Equal("1970-01-01T00:00:00.00Z"))
 		})
 
 		It("should set creation timestamp to minimum time when existing timestamp tag is corrupt", func() {
@@ -284,15 +284,14 @@ var _ = Describe("In Place Update Controller", func() {
 			// Verify the timestamp was set to minimum time (1970-01-01T00:00:00.000Z)
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			timestampTag := updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]
-			// time.Unix(0, 0).UTC() formats to "1970-01-01T00:00:00.000Z"
-			Expect(*timestampTag).To(Equal("1970-01-01T00:00:00.000Z"))
+			Expect(*timestampTag).To(Equal("1970-01-01T00:00:00.00Z"))
 		})
 
 		It("should clear existing tags on AKS machine", func() {
 			aksMachine.Properties.Tags = map[string]*string{
 				"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
 				"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
-				"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now())),
+				"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
 				"test-tag":      lo.ToPtr("my-tag"),
 				"nodeclass-tag": lo.ToPtr("nodeclass-value"),
 			}

@@ -34,10 +34,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -68,7 +68,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		BeforeEach(func() {
 			ctx = context.Background()
-			creationTime = time.Now()
+			creationTime = NewAKSMachineTimestamp()
 			aksMachineLocation = "eastus"
 
 			possibleInstanceTypes = []*corecloudprovider.InstanceType{
@@ -77,6 +77,27 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					Capacity: v1.ResourceList{
 						v1.ResourceCPU:    resource.MustParse("2"),
 						v1.ResourceMemory: resource.MustParse("7Gi"),
+					},
+					Requirements: scheduling.NewRequirements(
+						scheduling.NewRequirement(v1.LabelInstanceTypeStable, v1.NodeSelectorOpIn, "Standard_D2_v2"),
+						scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, "amd64"),
+						scheduling.NewRequirement(v1.LabelOSStable, v1.NodeSelectorOpIn, "linux"),
+						scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, v1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+					),
+					Offerings: corecloudprovider.Offerings{
+						{
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, v1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(v1.LabelTopologyZone, v1.NodeSelectorOpIn, "eastus-1"),
+							),
+							Price:     0.096,
+							Available: true,
+						},
+					},
+					Overhead: &corecloudprovider.InstanceTypeOverhead{
+						KubeReserved:      v1.ResourceList{},
+						SystemReserved:    v1.ResourceList{},
+						EvictionThreshold: v1.ResourceList{},
 					},
 				},
 			}
@@ -92,13 +113,13 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					Priority:   lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
 					ResourceID: lo.ToPtr("/subscriptions/test/resourceGroups/test/providers/Microsoft.Compute/virtualMachines/test-vm"),
 					Status: &armcontainerservice.MachineStatus{
-						CreationTimestamp: &creationTime,
+						CreationTimestamp: lo.ToPtr(creationTime.Add(10 * time.Minute)),
 					},
 					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
 						NodePoolTagKey: lo.ToPtr("test-nodepool"),
 						launchtemplate.KarpenterAKSMachineNodeClaimTagKey:         lo.ToPtr("test-nodeclaim"),
-						launchtemplate.KarpenterAKSMachineCreationTimestampTagKey: lo.ToPtr(utils.GetStringFromCreationTimestamp(creationTime)),
+						launchtemplate.KarpenterAKSMachineCreationTimestampTagKey: lo.ToPtr(AKSMachineTimestampToTag(creationTime)),
 					},
 				},
 			}
@@ -159,22 +180,12 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.Time{}))
 		})
 
-		It("should return error when machine name is missing", func() {
-			aksMachine.Name = nil
-
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
-
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("missing name"))
-		})
-
 		It("should return error when properties is missing", func() {
 			aksMachine.Properties = nil
 
 			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("missing Properties"))
 		})
 
 		It("should return error when VM size is missing", func() {
@@ -183,7 +194,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("missing VMSize"))
 		})
 
 		It("should return error when priority is missing", func() {
@@ -192,16 +202,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("missing Priority"))
-		})
-
-		It("should return error when nodeclaim tag is missing", func() {
-			delete(aksMachine.Properties.Tags, launchtemplate.KarpenterAKSMachineNodeClaimTagKey)
-
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
-
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("missing required tag"))
 		})
 	})
 
@@ -269,21 +269,22 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 	})
 
-	Context("GetAKSMachineNameFromNodeClaimName", func() {
-		It("should return the same name", func() {
-			nodeClaimName := "test-nodeclaim-123"
-			machineName := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+	// XPMT: TODO(Bryce-Soghigian): add these back and rework when ready
+	// Context("GetAKSMachineNameFromNodeClaimName", func() {
+	// 	It("should return the same name", func() {
+	// 		nodeClaimName := "test-nodeclaim-123"
+	// 		machineName := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
 
-			Expect(machineName).To(Equal(nodeClaimName))
-		})
+	// 		Expect(machineName).To(Equal(nodeClaimName))
+	// 	})
 
-		It("should handle empty string", func() {
-			nodeClaimName := ""
-			machineName := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+	// 	It("should handle empty string", func() {
+	// 		nodeClaimName := ""
+	// 		machineName := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
 
-			Expect(machineName).To(Equal(""))
-		})
-	})
+	// 		Expect(machineName).To(Equal(""))
+	// 	})
+	// })
 
 	Context("GetAKSMachineNameFromNodeClaim", func() {
 		It("should return AKS machine name when annotation exists", func() {

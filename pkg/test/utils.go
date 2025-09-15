@@ -19,7 +19,7 @@ package test
 import (
 	"time"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/samber/lo"
 	k8srand "k8s.io/apimachinery/pkg/util/rand"
 )
@@ -49,6 +49,6 @@ func ManagedTagsAKSMachine(nodepoolName string, nodeClaimName string, creationTi
 		"karpenter.azure.com_cluster":                      lo.ToPtr("test-cluster"),
 		"karpenter.sh_nodepool":                            lo.ToPtr(nodepoolName),
 		"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaimName),
-		"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(utils.GetStringFromCreationTimestamp(creationTimestamp)),
+		"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(creationTimestamp)),
 	}
 }

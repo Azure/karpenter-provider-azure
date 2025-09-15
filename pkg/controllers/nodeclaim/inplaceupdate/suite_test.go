@@ -41,6 +41,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -254,7 +255,7 @@ var _ = Describe("Unit tests", func() {
 		})
 
 		It("should not update AKS machine when tags already match", func() {
-			createTimeString := utils.GetStringFromCreationTimestamp(time.Now())
+			createTimeString := instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())
 			aksMachine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
 					Tags: map[string]*string{
@@ -321,7 +322,7 @@ var _ = Describe("Unit tests", func() {
 					Tags: map[string]*string{
 						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
 						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
-						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now())),
+						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
 						"old-tag": lo.ToPtr("old-value"),
 					},
 				},

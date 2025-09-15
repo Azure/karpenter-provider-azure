@@ -200,7 +200,6 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 	// Convert the AKS machine to a NodeClaim
 	newNodeClaim, err := instance.BuildNodeClaimFromAKSMachineTemplate(
 		ctx, aksMachinePromise.AKSMachineTemplate,
-		aksMachinePromise.AKSMachineName,
 		aksMachinePromise.InstanceType,
 		aksMachinePromise.CapacityType,
 		lo.ToPtr(aksMachinePromise.Zone),

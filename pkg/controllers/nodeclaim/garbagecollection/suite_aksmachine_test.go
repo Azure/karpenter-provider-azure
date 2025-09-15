@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -62,7 +63,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 		It("should delete an AKS machine if there is no NodeClaim owner", func() {
 			// Launch happened 10m ago
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
@@ -95,7 +96,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 		It("should not delete an AKS machine if there is no NodeClaim owner, but was not launched by a NodeClaim", func() {
 			// Remove the managed-by tag (this isn't launched by a NodeClaim)
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
 			aksMachine.Properties.Tags = lo.OmitBy(aksMachine.Properties.Tags, func(key string, value *string) bool {
 				return key == launchtemplate.NodePoolTagKey
 			})
@@ -108,7 +109,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 		It("should not delete an AKS machine if there is no NodeClaim owner, but within the nodeClaim resolution window (5m)", func() {
 			// Launch time just happened
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now()))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp()))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
@@ -118,7 +119,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 		It("should not delete the AKS machine or node if it already has a nodeClaim that matches it", func() {
 			// Launch time was 10m ago
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
@@ -139,7 +140,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 		It("should delete an AKS machine along with the node if there is no NodeClaim owner (to quicken scheduling)", func() {
 			// Launch happened 10m ago
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			node := coretest.Node(coretest.NodeOptions{
 				ProviderID: providerID,
@@ -272,7 +273,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
-				Expect(*updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(utils.GetStringFromCreationTimestamp(time.Unix(0, 0).UTC())))
+				Expect(*updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(instance.AKSMachineTimestampToTag(instance.ZeroAKSMachineTimestamp())))
 				Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 				Expect(*updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
 
@@ -289,7 +290,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				unchangedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(unchangedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
-				Expect(*unchangedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(utils.GetStringFromCreationTimestamp(time.Unix(0, 0).UTC())))
+				Expect(*unchangedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(instance.AKSMachineTimestampToTag(instance.ZeroAKSMachineTimestamp())))
 				Expect(unchangedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 				Expect(*unchangedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
 
@@ -411,7 +412,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Name:         "vm-mixed",
 				NodepoolName: "default",
 				Properties: &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+					TimeCreated: lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)),
 				},
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
@@ -423,7 +424,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Name:             "aks-machine-mixed",
 				MachinesPoolName: opts.AKSMachinesPoolName,
 			})
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			aksMachineProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 
@@ -445,7 +446,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Name:         "vm-with-claim",
 				NodepoolName: "default",
 				Properties: &armcompute.VirtualMachineProperties{
-					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+					TimeCreated: lo.ToPtr(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)),
 				},
 			})
 			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
@@ -463,7 +464,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Name:             "aks-machine-orphaned",
 				MachinesPoolName: opts.AKSMachinesPoolName,
 			})
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			aksMachineProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 
@@ -513,7 +514,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		It("should not delete an AKS Machine NIC if there is no associated VM", func() {
 			nic := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,
-				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "some-nodeclaim", time.Unix(0, 0).UTC()),
+				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "some-nodeclaim", instance.ZeroAKSMachineTimestamp()),
 			})
 			nic2 := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,

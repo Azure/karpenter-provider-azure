@@ -227,6 +227,12 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and instance/vminstance.go
 
 	nodeLabels := lo.Assign(nodeClaim.Labels, offerings.GetAllSingleValuedRequirementLabels(instanceType), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
+	var modePtr *armcontainerservice.AgentPoolMode
+	if modeFromLabel, ok := nodeLabels["kubernetes.azure.com/mode"]; ok && modeFromLabel == "system" {
+		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeSystem)
+	} else {
+		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeUser)
+	}
 
 	// XPMT: TEMPORARY
 	// XPMT: TODO(charliedmcb): verify/rework this, also do the same for taints (which don't have sanitization logic like this yet)
@@ -258,12 +264,6 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 		nodeLabelPtrs[k] = lo.ToPtr(v)
 	}
 
-	var modePtr *armcontainerservice.AgentPoolMode
-	if modeFromLabel, ok := nodeLabels["kubernetes.azure.com/mode"]; ok && modeFromLabel == "system" {
-		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeSystem)
-	} else {
-		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeUser)
-	}
 	return nodeLabelPtrs, modePtr
 }
 
@@ -277,7 +277,7 @@ func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeCl
 
 	// Add AKS machine distinguishing tags
 	tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] = lo.ToPtr(nodeClaim.Name)
-	tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey] = lo.ToPtr(utils.GetStringFromCreationTimestamp(creationTimestamp))
+	tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey] = lo.ToPtr(AKSMachineTimestampToTag(creationTimestamp))
 
 	return tags
 }

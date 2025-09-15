@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
@@ -364,7 +363,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, instanceTypes, existingAKSMachine)
-
 	} else if !IsAKSMachineNotFound(err) {
 		// Not fatal. Will fall back to normal creation.
 		log.FromContext(ctx).Error(err, "failed to check for existing machine", "aksMachineName", aksMachineName)
@@ -377,7 +375,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 
 	// Determine creation timestamp for Karpenter's perspective
-	creationTimestamp := time.Now() // Prefer time from Karpenter's perspective (if not AKS machine's perspective, but not VM) to not break abstraction; This is for registration TTL calculation.
+	creationTimestamp := NewAKSMachineTimestamp()
 
 	// Build the AKS machine template
 	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim, creationTimestamp)

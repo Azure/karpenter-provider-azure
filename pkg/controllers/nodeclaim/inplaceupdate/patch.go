@@ -32,7 +32,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
@@ -201,20 +200,20 @@ func patchAKSMachineTags(
 	var creationTimestamp time.Time
 	if patchingAKSMachine.Properties != nil && patchingAKSMachine.Properties.Tags != nil {
 		if timestampTag, ok := patchingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey]; ok && timestampTag != nil {
-			if parsed, err := utils.GetCreationTimestampFromString(*timestampTag); err == nil {
+			if parsed, err := instance.AKSMachineTimestampFromTag(*timestampTag); err == nil {
 				// Preserve existing valid timestamp
 				creationTimestamp = parsed
 			} else {
 				// Invalid timestamp, fallback to minimum time
-				creationTimestamp = time.Unix(0, 0).UTC()
+				creationTimestamp = instance.ZeroAKSMachineTimestamp()
 			}
 		} else {
 			// No existing timestamp tag, use minimum time
-			creationTimestamp = time.Unix(0, 0).UTC()
+			creationTimestamp = instance.ZeroAKSMachineTimestamp()
 		}
 	} else {
 		// No machine properties or tags, use minimum time
-		creationTimestamp = time.Unix(0, 0).UTC()
+		creationTimestamp = instance.ZeroAKSMachineTimestamp()
 	}
 
 	// For NodeClaim name tag, given this controller is based on actual NodeClaim like during Create(), the patch will repair the tag if needed.
