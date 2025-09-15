@@ -242,6 +242,37 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.Error.Set(nil)
 			})
 
+			It("should handle malformed timestamp tags gracefully during List operation", func() {
+				// Create AKS machine with malformed timestamp tag directly in store
+				opts := options.FromContext(ctx)
+				aksMachine := test.AKSMachine(test.AKSMachineOptions{
+					Name:             "malformed-timestamp-machine",
+					MachinesPoolName: opts.AKSMachinesPoolName,
+					ClusterName:      opts.ClusterName,
+				})
+				// Set malformed timestamp tag
+				aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr("invalid-timestamp-format")
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				// List should not fail despite malformed timestamp
+				nodeClaims, err := cloudProvider.List(ctx)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(len(nodeClaims)).To(BeNumerically(">=", 1))
+
+				// Find our machine in the results
+				var ourNodeClaim *karpv1.NodeClaim
+				for _, nc := range nodeClaims {
+					if nc.Annotations[v1beta1.AnnotationAKSMachineResourceID] == lo.FromPtr(aksMachine.ID) {
+						ourNodeClaim = nc
+						break
+					}
+				}
+				Expect(ourNodeClaim).ToNot(BeNil())
+
+				// CreationTimestamp should be zero due to parsing failure
+				Expect(ourNodeClaim.CreationTimestamp.IsZero()).To(BeTrue())
+			})
+
 			It("should handle AKS machine delete failures - unrecognized error during sync/initial", func() {
 				// First create a successful AKS machine
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)

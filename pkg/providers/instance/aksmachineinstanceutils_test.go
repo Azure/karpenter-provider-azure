@@ -33,6 +33,8 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -80,18 +82,19 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-202501.28.0"),
 					Tags: map[string]*string{
 						NodePoolTagKey: lo.ToPtr("test-nodepool"),
+						launchtemplate.KarpenterAKSMachineNodeClaimTagKey:         lo.ToPtr("test-nodeclaim"),
+						launchtemplate.KarpenterAKSMachineCreationTimestampTagKey: lo.ToPtr(utils.GetStringFromCreationTimestamp(creationTime)),
 					},
 				},
 			}
 		})
 
 		It("should build NodeClaim successfully from AKS machine", func() {
-			creationTime = time.Now()
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Name).To(Equal("test-machine"))
+			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
@@ -104,14 +107,13 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 
 		It("should handle missing zone gracefully", func() {
-			creationTime = time.Now()
 			aksMachine.Zones = []*string{}
 
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Name).To(Equal("test-machine"))
+			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
@@ -123,11 +125,14 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 
 		It("should handle missing creation time gracefully", func() {
-			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, nil)
+			// Remove the creation timestamp tag to test missing timestamp handling
+			delete(aksMachine.Properties.Tags, launchtemplate.KarpenterAKSMachineCreationTimestampTagKey)
+
+			nodeClaim, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaim).ToNot(BeNil())
-			Expect(nodeClaim.Name).To(Equal("test-machine"))
+			Expect(nodeClaim.Name).To(Equal("test-nodeclaim"))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.CapacityTypeLabelKey))
 			Expect(nodeClaim.Labels[karpv1.CapacityTypeLabelKey]).To(Equal(karpv1.CapacityTypeOnDemand))
 			Expect(nodeClaim.Labels).To(HaveKey(karpv1.NodePoolLabelKey))
@@ -141,9 +146,8 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error when machine name is missing", func() {
 			aksMachine.Name = nil
-			creationTime = time.Now()
 
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing name"))
@@ -151,9 +155,8 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error when properties is missing", func() {
 			aksMachine.Properties = nil
-			creationTime = time.Now()
 
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing Properties"))
@@ -161,9 +164,8 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error when VM size is missing", func() {
 			aksMachine.Properties.Hardware = nil
-			creationTime = time.Now()
 
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing VMSize"))
@@ -171,12 +173,20 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error when priority is missing", func() {
 			aksMachine.Properties.Priority = nil
-			creationTime = time.Now()
 
-			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation, lo.ToPtr(creationTime))
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing Priority"))
+		})
+
+		It("should return error when nodeclaim tag is missing", func() {
+			delete(aksMachine.Properties.Tags, launchtemplate.KarpenterAKSMachineNodeClaimTagKey)
+
+			_, err := BuildNodeClaimFromAKSMachine(ctx, aksMachine, possibleInstanceTypes, aksMachineLocation)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("missing required tag"))
 		})
 	})
 

@@ -60,7 +60,6 @@ type AKSMachinePromise struct {
 	InstanceType       *corecloudprovider.InstanceType // Despite the reference nature, this is guaranteed to exist
 	CapacityType       string
 	Zone               string
-	CreationTimestamp  time.Time
 
 	AKSMachineID               string
 	AKSMachineNodeImageVersion string
@@ -75,7 +74,6 @@ func NewAKSMachinePromise(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 	zone string,
-	creationTimestamp time.Time,
 	aksMachineID string,
 	aksMachineNodeImageVersion string,
 	vmResourceID string,
@@ -88,7 +86,6 @@ func NewAKSMachinePromise(
 		InstanceType:               instanceType,
 		CapacityType:               capacityType,
 		Zone:                       zone,
-		CreationTimestamp:          creationTimestamp,
 		AKSMachineID:               aksMachineID,
 		AKSMachineNodeImageVersion: aksMachineNodeImageVersion,
 		VMResourceID:               vmResourceID,
@@ -381,8 +378,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		return nil, corecloudprovider.NewInsufficientCapacityError(fmt.Errorf("no instance types available"))
 	}
 
+	// Determine creation timestamp for Karpenter's perspective
+	creationTimestamp := time.Now() // Prefer time from Karpenter's perspective (if not AKS machine's perspective, but not VM) to not break abstraction; This is for registration TTL calculation.
+
 	// Build the AKS machine template
-	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim)
+	aksMachineTemplate, err := p.buildAKSMachineTemplate(ctx, instanceType, capacityType, zone, nodeClass, nodeClaim, creationTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}
@@ -431,7 +431,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
 		return nil, p.handleMachineProvisioningError(ctx, "get once after begin creation", aksMachineName, nodeClass, instanceType, zone, capacityType, gotAKSMachine.Properties.Status.ProvisioningError)
 	}
-	creationTimestamp := time.Now() // Prefer time from Karpenter's perspective (if not AKS machine's perspective, but not VM) to not break abstraction; This is for registration TTL calculation.
 
 	// Return LRO
 	return NewAKSMachinePromise(
@@ -464,7 +463,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		instanceType,
 		capacityType,
 		zone,
-		creationTimestamp,
 		lo.FromPtr(gotAKSMachine.ID),
 		lo.FromPtr(gotAKSMachine.Properties.NodeImageVersion),
 		lo.FromPtr(gotAKSMachine.Properties.ResourceID),
@@ -520,14 +518,6 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
 	capacityType := GetCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
 	zone := utils.GetAKSZoneFromARMZone(p.aksMachinesPoolLocation, existingAKSMachineZone)
-	var creationTimestamp time.Time
-	if existingAKSMachine.Properties.Status != nil && existingAKSMachine.Properties.Status.CreationTimestamp != nil {
-		creationTimestamp = lo.FromPtr(existingAKSMachine.Properties.Status.CreationTimestamp) // This will be VM creation time, not AKS machine creation time, which is inconsistent with the usual create path.
-		// Although, the difference should not be significant. The use is for registration TTL calculation.
-		// Suggestion: record AKS machine creation time in the AKS machine (API change, if not additional tag)?
-	} else {
-		creationTimestamp = time.Now() // Fallback to now if not available, which is possible/acceptable if VM creation did not start yet
-	}
 
 	if existingAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(existingAKSMachine.Properties.ProvisioningState) == "Failed" {
 		// Unfortunately, that was more like a remain than a usable aksMachine.
@@ -554,7 +544,6 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		instanceType,
 		capacityType,
 		zone,
-		creationTimestamp,
 		existingAKSMachineID,
 		existingAKSMachineNodeImageVersion,
 		existingAKSMachineVMResourceID,

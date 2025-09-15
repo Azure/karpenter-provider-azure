@@ -38,7 +38,6 @@ type AKSMachineOptions struct {
 	Priority   *armcontainerservice.ScaleSetPriority
 	Zones      []*string
 	Properties *armcontainerservice.MachineProperties
-	Tags       map[string]*string
 }
 
 // AKSMachine creates a test AKS Machine with defaults that can be overridden by AKSMachineOptions.
@@ -83,9 +82,6 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	}
 	if options.Properties == nil {
 		options.Properties = &armcontainerservice.MachineProperties{}
-	}
-	if options.Tags == nil {
-		options.Tags = ManagedTagsAKSMachine(options.MachinesPoolName, "some-nodeclaim")
 	}
 
 	// Set default properties if not provided - matching setDefaultMachineValues pattern
@@ -140,7 +136,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	}
 
 	if options.Properties.Tags == nil {
-		options.Properties.Tags = options.Tags
+		options.Properties.Tags = ManagedTagsAKSMachine(options.MachinesPoolName, "some-nodeclaim", (*options.Properties.Status.CreationTimestamp).Add(-1*time.Minute))
 	}
 
 	// Construct the AKS Machine

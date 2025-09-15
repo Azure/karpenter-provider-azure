@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/samber/lo"
@@ -41,7 +42,7 @@ import (
 
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
 // May return error whenever required fields are not set (check carefully).
-func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) (*armcontainerservice.Machine, error) { // XPMT: ✅
+func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, creationTimestamp time.Time) (*armcontainerservice.Machine, error) { // XPMT: ✅
 	if instanceType == nil {
 		return nil, fmt.Errorf("InstanceType is not set")
 	}
@@ -104,7 +105,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 
 	// Tags (to be put on AKS machine and all affiliated resources)
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
-	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim)
+	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim, creationTimestamp)
 
 	// Karpenter defaults VNETSubnetID to the options
 	vnetSubnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
@@ -268,14 +269,15 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 
 // ConfigureAKSMachineTags returns the tags to be applied to AKS machine instances and their affiliated resources.
 // This includes all standard tags plus the AKS machine distinguishing tag.
-func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim) map[string]*string {
+func ConfigureAKSMachineTags(opts *options.Options, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, creationTimestamp time.Time) map[string]*string {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
 	// Right now we are willing to call this just to avoid unnecessary code duplication.
 	tags := launchtemplate.Tags(opts, nodeClass, nodeClaim)
 
-	// Add AKS machine distinguishing tag
+	// Add AKS machine distinguishing tags
 	tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] = lo.ToPtr(nodeClaim.Name)
+	tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey] = lo.ToPtr(utils.GetStringFromCreationTimestamp(creationTimestamp))
 
 	return tags
 }

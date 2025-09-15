@@ -75,7 +75,6 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	instanceType *corecloudprovider.InstanceType, // optional; won't be populated for standalone nodeclaims
 	capacityType string,
 	zone *string, // <region>-<zone-id>, optional
-	creationTimestamp *time.Time, // optional, required for the first time only
 	aksMachineResourceID string,
 	vmResourceID string,
 	isDeleting bool,
@@ -99,14 +98,35 @@ func BuildNodeClaimFromAKSMachineTemplate(
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
 	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey]; ok {
+		// Missing tag (by design, only possible if user intervenes) will eventually be repaired by in-place update controller.
+		// By the time of writing, this is being used for logging purposes within provider only.
+		// That is unlikely to change for core. But be mindful of provider is to rely on this in that situation. Still, rare.
+		// This was less of a concern for VM instance as NodeClaim name is always inferrable from instance name.
+		// XPMT: TODO(Bryce-Soghigian): see if you have better ideas. Otherwise just delete this TODO and live with this.
 		nodeClaim.Name = *tag
-	} else {
-		return nil, fmt.Errorf("AKS machine template is missing required tag %s", launchtemplate.KarpenterAKSMachineNodeClaimTagKey)
 	}
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
-	if creationTimestamp != nil {
-		nodeClaim.CreationTimestamp = metav1.Time{Time: *creationTimestamp}
+
+	if tag, ok := aksMachineTemplate.Properties.Tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey]; ok {
+		if parsedTime, err := utils.GetCreationTimestampFromString(*tag); err == nil {
+			// Note: this assignment to NodeClaim is not effective to the actual object in the cluster, which still represents NodeClaim's (not instance's) creation time.
+			// By the time of writing, this "borrowed struct field" is being used by provider for instance garbage collection. AWS does the same.
+			// Suggestion: this "borrowing" pattern and its inconsistency is not intuitive..., should reconsider this implementation?
+			nodeClaim.CreationTimestamp = metav1.Time{Time: parsedTime}
+			// Note: AWS and (legacy) VM instance provider relies on server-side creation timestamp. Instead, this tag value is client-side creation timestamp, generated before the request.
+			// For garbage collection:
+			// - The 5m grace period will have to cover (server-side create - client-side create) period, in addition to existing (Create() returns to core - server-side create) period.
+			//   - Which means it will be more aggressive, although, not significant statistically.
+			// - Suggestion: suggest API change to introduce server-side creation timestamp, if we really want to exclude that period.
+			// - Note that it is incorrect to use actual NodeClaim's creation time, as retries can occur on the same NodeClaim, hurting grace period with each.
+		}
+		// If tag value is irretrievable, then it is epoch.
+		// - By design, that is only possible if user intervenes and messes with the tag.
+		// - See inplaceupdate module for how this is being handled.
+		// For garbage collection:
+		// - Grace period will be effectively disabled, but no issue if that happens after it (5m) ended.
+		// - More details/updates in that module.
 	}
 
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
@@ -122,7 +142,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 
 // Expect AKS machine struct to be fully populated as if it comes from GET.
 // Not assuming that NodeClaim exists.
-func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine, possibleInstanceTypes []*corecloudprovider.InstanceType, aksMachineLocation string, creationTimestamp *time.Time) (*karpv1.NodeClaim, error) {
+func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine, possibleInstanceTypes []*corecloudprovider.InstanceType, aksMachineLocation string) (*karpv1.NodeClaim, error) {
 	// ASSUMPTION: unless said otherwise, the fields below must exist on the AKS machine instance. Either set by Karpenter (see Create()) or visibly defaulted by the API.
 	if err := validateRetrievedAKSMachineBasicProperties(aksMachine); err != nil {
 		return nil, fmt.Errorf("failed to validate AKS machine instance %q: %w", lo.FromPtr(aksMachine.Name), err)
@@ -141,7 +161,6 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 		offerings.GetInstanceTypeFromVMSize(lo.FromPtr(aksMachine.Properties.Hardware.VMSize), possibleInstanceTypes),
 		GetCapacityTypeFromAKSScaleSetPriority(lo.FromPtr(aksMachine.Properties.Priority)),
 		zonePtr,
-		creationTimestamp,
 		lo.FromPtr(aksMachine.ID),
 		lo.FromPtr(aksMachine.Properties.ResourceID),
 		IsAKSMachineDeleting(aksMachine),

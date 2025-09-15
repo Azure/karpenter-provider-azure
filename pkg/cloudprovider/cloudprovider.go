@@ -204,7 +204,6 @@ func (c *CloudProvider) createAKSMachineInstance(ctx context.Context, nodeClass 
 		aksMachinePromise.InstanceType,
 		aksMachinePromise.CapacityType,
 		lo.ToPtr(aksMachinePromise.Zone),
-		lo.ToPtr(aksMachinePromise.CreationTimestamp),
 		aksMachinePromise.AKSMachineID,
 		aksMachinePromise.VMResourceID,
 		false,
@@ -324,7 +323,7 @@ func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
 	}
 
 	for _, aksMachineInstance := range aksMachineInstances {
-		nodeClaim, err := c.resolveNodeClaimFromAKSMachine(ctx, aksMachineInstance, nil)
+		nodeClaim, err := c.resolveNodeClaimFromAKSMachine(ctx, aksMachineInstance)
 		if err != nil {
 			return nil, fmt.Errorf("converting AKS machine instance to node claim, %w", err)
 		}
@@ -368,7 +367,7 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 
 		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
 		if err == nil {
-			nodeClaim, err := c.resolveNodeClaimFromAKSMachine(ctx, aksMachine, nil)
+			nodeClaim, err := c.resolveNodeClaimFromAKSMachine(ctx, aksMachine)
 			if err != nil {
 				return nil, fmt.Errorf("converting AKS machine instance to node claim, %w", err)
 			}
@@ -624,7 +623,7 @@ func setAdditionalAnnotationsForNewNodeClaim(ctx context.Context, nodeClaim *kar
 	return nil
 }
 
-func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine, creationTimestamp *time.Time) (*karpv1.NodeClaim, error) {
+func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainerservice.Machine) (*karpv1.NodeClaim, error) {
 	var instanceTypes []*cloudprovider.InstanceType
 	nodePool, err := instance.FindNodePoolFromAKSMachine(ctx, aksMachine, c.kubeClient)
 	if err == nil {
@@ -643,7 +642,7 @@ func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksM
 	// If FindNodePoolFromAKSMachine returns not found, we tolerate. But, possible instance types will be empty.
 
 	// ASSUMPTION: all machines are in the same location, and in the current pool.
-	nodeClaim, err := instance.BuildNodeClaimFromAKSMachine(ctx, aksMachine, instanceTypes, c.aksMachineInstanceProvider.GetMachinesPoolLocation(), creationTimestamp)
+	nodeClaim, err := instance.BuildNodeClaimFromAKSMachine(ctx, aksMachine, instanceTypes, c.aksMachineInstanceProvider.GetMachinesPoolLocation())
 	if err != nil {
 		return nil, fmt.Errorf("converting AKS machine instance to node claim, %w", err)
 	}

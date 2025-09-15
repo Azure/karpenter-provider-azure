@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"time"
 
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -31,6 +32,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
@@ -185,10 +187,43 @@ func patchAKSMachineTags(
 	params *patchParameters,
 	patchingAKSMachine *armcontainerservice.Machine,
 ) bool {
+	// For CreationTimestamp tag:
+	// - If existing machine tag exists/valid, leave it unchanged (preserve existing)
+	//   - Still prone to user modification:
+	//     - If it is valid but incorrect, then there is no current way to detect it
+	//     - If it is corrupted, then the logic below will repair it
+	//     - Although, this is significant only for instance garbage collection in the first 5 minutes of the instance, so, not critical now
+	// - Otherwise, fallback/default to epoch
+	//   - Still, logic elsewhere should not assume that this is the case, as reconciliation may naturally come later
+	//   - But still good to repair it
+	// Also, we don't update it to actual NodeClaim.CreationTimestamp because that is NodeClaim creation time, not instance creation time.
+	// See notes in aksmachineinstanceutils.go for context and suggestions.
+	var creationTimestamp time.Time
+	if patchingAKSMachine.Properties != nil && patchingAKSMachine.Properties.Tags != nil {
+		if timestampTag, ok := patchingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey]; ok && timestampTag != nil {
+			if parsed, err := utils.GetCreationTimestampFromString(*timestampTag); err == nil {
+				// Preserve existing valid timestamp
+				creationTimestamp = parsed
+			} else {
+				// Invalid timestamp, fallback to minimum time
+				creationTimestamp = time.Unix(0, 0).UTC()
+			}
+		} else {
+			// No existing timestamp tag, use minimum time
+			creationTimestamp = time.Unix(0, 0).UTC()
+		}
+	} else {
+		// No machine properties or tags, use minimum time
+		creationTimestamp = time.Unix(0, 0).UTC()
+	}
+
+	// For NodeClaim name tag, given this controller is based on actual NodeClaim like during Create(), the patch will repair the tag if needed.
+
 	expectedTags := instance.ConfigureAKSMachineTags(
 		params.opts,
 		params.nodeClass,
 		params.nodeClaim,
+		creationTimestamp,
 	)
 
 	eq := func(v1, v2 *string) bool {

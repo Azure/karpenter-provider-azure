@@ -21,19 +21,21 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
+	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
-
-	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 var _ = Describe("CloudProviderInstances Garbage Collection", func() {
@@ -60,7 +62,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 		It("should delete an AKS machine if there is no NodeClaim owner", func() {
 			// Launch happened 10m ago
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(time.Now().Add(-time.Minute * 10))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
@@ -69,9 +71,31 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
 		})
 
-		It("should not delete an AKS machine if it was not launched by a NodeClaim", func() {
+		It("should delete an AKS machine if there is no NodeClaim owner, and with malformed timestamp tag", func() {
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr("malformed-timestamp")
+			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+
+			_, err = cloudProvider.Get(ctx, providerID)
+			Expect(err).To(HaveOccurred())
+			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+		})
+
+		It("should delete an AKS machine if there is no NodeClaim owner, and without timestamp tag", func() {
+			delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
+			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+
+			_, err = cloudProvider.Get(ctx, providerID)
+			Expect(err).To(HaveOccurred())
+			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+		})
+
+		It("should not delete an AKS machine if there is no NodeClaim owner, but was not launched by a NodeClaim", func() {
 			// Remove the managed-by tag (this isn't launched by a NodeClaim)
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(time.Now().Add(-time.Minute * 10))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
 			aksMachine.Properties.Tags = lo.OmitBy(aksMachine.Properties.Tags, func(key string, value *string) bool {
 				return key == launchtemplate.NodePoolTagKey
 			})
@@ -82,9 +106,9 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should not delete an AKS machine if it is within the nodeClaim resolution window (5m)", func() {
+		It("should not delete an AKS machine if there is no NodeClaim owner, but within the nodeClaim resolution window (5m)", func() {
 			// Launch time just happened
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(time.Now())
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now()))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
@@ -94,7 +118,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 		It("should not delete the AKS machine or node if it already has a nodeClaim that matches it", func() {
 			// Launch time was 10m ago
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(time.Now().Add(-time.Minute * 10))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
@@ -115,7 +139,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 		It("should delete an AKS machine along with the node if there is no NodeClaim owner (to quicken scheduling)", func() {
 			// Launch happened 10m ago
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(time.Now().Add(-time.Minute * 10))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			node := coretest.Node(coretest.NodeOptions{
 				ProviderID: providerID,
@@ -128,6 +152,244 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
 
 			ExpectNotFound(ctx, env.Client, node)
+		})
+
+		var _ = Context("Complex tags manipulation scenarios with in-place updates", func() {
+			var aksMachine *armcontainerservice.Machine
+			var nodeClaim *karpv1.NodeClaim
+			var nodeClass *v1beta1.AKSNodeClass
+			var providerID string
+
+			BeforeEach(func() {
+				// Set up agent pool for AKS machines
+				opts := options.FromContext(ctx)
+				agentPool := test.AKSAgentPool(test.AKSAgentPoolOptions{
+					Name:          opts.AKSMachinesPoolName,
+					ResourceGroup: opts.NodeResourceGroup,
+					ClusterName:   opts.ClusterName,
+				})
+				azureEnv.SharedStores.AgentPools.Store(lo.FromPtr(agentPool.ID), *agentPool)
+
+				// Create AKS machine
+				aksMachine = test.AKSMachine(test.AKSMachineOptions{Name: "corner-case-machine", MachinesPoolName: opts.AKSMachinesPoolName})
+				providerID = utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
+
+				// Create corresponding NodeClaim, not launched yet
+				nodeClass = test.AKSNodeClass()
+				nodeClaim = coretest.NodeClaim(karpv1.NodeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "corner-case-nodeclaim",
+						Annotations: map[string]string{
+							v1beta1.AnnotationAKSMachineResourceID: lo.FromPtr(aksMachine.ID),
+						},
+					},
+					Spec: karpv1.NodeClaimSpec{
+						NodeClassRef: &karpv1.NodeClassReference{
+							Group: object.GVK(nodeClass).Group,
+							Kind:  object.GVK(nodeClass).Kind,
+							Name:  nodeClass.Name,
+						},
+					},
+				})
+			})
+
+			AfterEach(func() {
+				ExpectCleanedUp(ctx, env.Client)
+			})
+
+			It("Instance created -> Tag deleted -> In-place update -> Garbage collection false positive -> Create() completed -> Registered -> In-place update", func() {
+				// Blank NodeClaim is there from the core.
+				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+
+				// AKS machine created, but the user somehow deleted the timestamp tag
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				// Provider still waiting for Create() to complete. No change to NodeClaim.
+
+				// In-place update reconciles - should not do anything as no ProviderID yet
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+				// Verify no update calls and the timestamp tag stays broken.
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				unchangedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(unchangedAKSMachine.Properties.Tags).ToNot(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+				Expect(unchangedAKSMachine.Properties.Tags).ToNot(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+
+				// Garbage collection reconciles - should garbage collect due to no NodeClaim owner + timestamp defaulting to epoch
+				// This is expected, but not what we really wanted... See suggestions in respective modules.
+				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).To(HaveOccurred())
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+
+				// Provider Create() completes, setting the ProviderID on the NodeClaim
+				// Assume this comes at unfortunate time and just went in effect...
+				nodeClaim.Status.ProviderID = providerID
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// NodeClaim gets registered
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// In-place update reconciles again - should error NodeClaim not found, as instance is gone
+				_, err = inPlaceUpdateController.Reconcile(ctx, nodeClaim)
+				Expect(err).To(HaveOccurred())
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+				// Verify no additional update calls and no instance
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				unchangedAKSMachine, err = azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+				Expect(err).To(HaveOccurred()) // Still gone
+				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+
+				// Core will eventually clean up the orphaned NodeClaim
+			})
+
+			It("Instance created -> Tag deleted -> Create() completed -> Registered -> In-place update -> Garbage collection negative -> In-place update -> Garbage collection negative -> Tag deleted -> Garbage collection negative", func() {
+				// Blank NodeClaim is there from the core.
+				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+
+				// AKS machine created, but the user somehow deleted the timestamp tag
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				// Provider Create() completes, setting the ProviderID on the NodeClaim
+				nodeClaim.Status.ProviderID = providerID
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// NodeClaim gets registered
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// In-place update reconciles - should repair timestamp tag to epoch
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+				// Verify update call and the timestamp tag is repaired to epoch.
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+				Expect(*updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(utils.GetStringFromCreationTimestamp(time.Unix(0, 0).UTC())))
+				Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+				Expect(*updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
+
+				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
+				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+
+				// In-place update reconciles again - should preserve existing timestamp tag
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+				// Verify no additional update calls and the timestamp tag stays unchanged.
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				unchangedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(unchangedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+				Expect(*unchangedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(utils.GetStringFromCreationTimestamp(time.Unix(0, 0).UTC())))
+				Expect(unchangedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+				Expect(*unchangedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
+
+				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
+				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+
+				// The user somehow deleted the timestamp tag again
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
+				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
+
+			It("Instance created -> Tag deleted -> In-place update -> Create() completed -> Registered -> Garbage collection negative", func() {
+				// Blank NodeClaim is there from the core.
+				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+
+				// AKS machine created, but the user somehow deleted the timestamp tag
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				// In-place update reconciles - should not do anything as no ProviderID yet
+				ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+				// Verify no update calls and the timestamp tag stays broken.
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+				unchangedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(unchangedAKSMachine.Properties.Tags).ToNot(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+				Expect(unchangedAKSMachine.Properties.Tags).ToNot(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+
+				// Provider Create() completes, setting the ProviderID on the NodeClaim
+				nodeClaim.Status.ProviderID = providerID
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// NodeClaim gets registered
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
+				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
+
+			It("Instance created -> Tag deleted -> Create() completed -> Garbage collection negative", func() {
+				// Blank NodeClaim is there from the core.
+				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+
+				// AKS machine created, but the user somehow deleted the timestamp tag
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				// Provider Create() completes, setting the ProviderID on the NodeClaim
+				nodeClaim.Status.ProviderID = providerID
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
+				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
+
+			It("Instance created -> Tag deleted -> Create() completed -> Registered -> Garbage collection negative", func() {
+				// Blank NodeClaim is there from the core.
+				ExpectApplied(ctx, env.Client, nodeClaim, nodeClass)
+
+				// AKS machine created, but the user somehow deleted the timestamp tag
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
+				delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_nodeclaim")
+				azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+
+				// Provider Create() completes, setting the ProviderID on the NodeClaim
+				nodeClaim.Status.ProviderID = providerID
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// NodeClaim gets registered
+				nodeClaim.StatusConditions().SetTrue(karpv1.ConditionTypeRegistered)
+				ExpectApplied(ctx, env.Client, nodeClaim)
+
+				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
+				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				_, err = cloudProvider.Get(ctx, providerID)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
 		})
 	})
 
@@ -161,7 +423,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Name:             "aks-machine-mixed",
 				MachinesPoolName: opts.AKSMachinesPoolName,
 			})
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(time.Now().Add(-time.Minute * 10))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			aksMachineProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 
@@ -201,7 +463,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Name:             "aks-machine-orphaned",
 				MachinesPoolName: opts.AKSMachinesPoolName,
 			})
-			aksMachine.Properties.Status.CreationTimestamp = lo.ToPtr(time.Now().Add(-time.Minute * 10))
+			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(utils.GetStringFromCreationTimestamp(time.Now().Add(-time.Minute * 10)))
 			azureEnv.SharedStores.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			aksMachineProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 
@@ -251,7 +513,7 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 		It("should not delete an AKS Machine NIC if there is no associated VM", func() {
 			nic := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,
-				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "some-nodeclaim"),
+				Tags:         test.ManagedTagsAKSMachine(nodePool.Name, "some-nodeclaim", time.Unix(0, 0).UTC()),
 			})
 			nic2 := test.Interface(test.InterfaceOptions{
 				NodepoolName: nodePool.Name,

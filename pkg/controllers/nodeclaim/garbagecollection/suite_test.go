@@ -31,6 +31,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/garbagecollection"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
@@ -65,6 +66,7 @@ var nodeClass *v1beta1.AKSNodeClass
 var cluster *state.Cluster
 var cloudProvider *cloudprovider.CloudProvider
 var cloudProviderInstancesGCController *garbagecollection.CloudProviderInstances
+var inPlaceUpdateController *inplaceupdate.Controller
 var networkInterfaceGCController *garbagecollection.NetworkInterface
 var prov *provisioning.Provisioner
 
@@ -83,6 +85,7 @@ var _ = BeforeSuite(func() {
 	azureEnv = test.NewEnvironment(ctx, env)
 	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 	cloudProviderInstancesGCController = garbagecollection.NewCloudProviderInstances(env.Client, cloudProvider)
+	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider)
 	networkInterfaceGCController = garbagecollection.NewNetworkInterface(env.Client, azureEnv.VMInstanceProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
