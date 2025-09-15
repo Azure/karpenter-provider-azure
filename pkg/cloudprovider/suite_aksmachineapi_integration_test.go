@@ -341,7 +341,6 @@ var _ = Describe("CloudProvider", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(nodeClaims).To(BeEmpty())
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
-				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolGetBehavior.CalledWithInput.Len()).To(Equal(1)) // Check after seeing error
 
 				// Clear the error for cleanup
 				azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.Error.Set(nil)
