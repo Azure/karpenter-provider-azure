@@ -64,7 +64,7 @@ func renderExpectedCIGNodeImages(
 func renderExpectedSIGNodeImages(
 	fam imagefamily.ImageFamily,
 	fips *v1beta1.FIPSMode,
-	version, sigSub string,
+	version, sigSub string, //nolint:unparam
 ) []imagefamily.NodeImage {
 	defaultImages := fam.DefaultImages(true, fips)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
