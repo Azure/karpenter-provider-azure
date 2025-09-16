@@ -45,7 +45,7 @@ runs:
     run: az account set --subscription ${{ inputs.subscription-id }}
   - name: configure Helm chart values
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-configure-values
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} AKS_MACHINES_POOL_NAME=testmpool make az-configure-values-aksmachine
   - name: deploy karpenter to cluster
     shell: bash
     run: AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run

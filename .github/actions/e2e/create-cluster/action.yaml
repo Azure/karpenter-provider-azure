@@ -28,7 +28,7 @@ inputs:
     required: false
   location:
     description: "The azure location to run the e2e test in"
-    default: "eastus"
+    default: "westus2"
 runs:
   using: "composite"
   steps:
@@ -80,3 +80,13 @@ runs:
       run: |
         make az-perm
         make az-perm-acr
+        make az-perm-aksmachine
+    - name: add aks machines pool
+      shell: bash
+      env:
+        AZURE_SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
+        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
+        AKS_MACHINES_POOL_NAME: testmpool
+      run: |
+        make az-add-aksmachinespool
