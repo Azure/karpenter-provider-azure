@@ -47,19 +47,29 @@ const (
 	sigImageVersion = "202505.27.0"
 )
 
-func renderExpectedNodeImages(
+func renderExpectedCIGNodeImages(
 	fam imagefamily.ImageFamily,
-	useSIG bool,
+	fips *v1beta1.FIPSMode,
+	version string,
+) []imagefamily.NodeImage {
+	defaultImages := fam.DefaultImages(false, fips)
+	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
+	for _, img := range defaultImages {
+		id := imagefamily.BuildImageIDCIG(img.PublicGalleryURL, img.ImageDefinition, version)
+		out = append(out, imagefamily.NodeImage{ID: id, Requirements: img.Requirements})
+	}
+	return out
+}
+
+func renderExpectedSIGNodeImages(
+	fam imagefamily.ImageFamily,
 	fips *v1beta1.FIPSMode,
 	version, sigSub string,
 ) []imagefamily.NodeImage {
-	defaultImages := fam.DefaultImages(useSIG, fips)
+	defaultImages := fam.DefaultImages(true, fips)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
-		id := lo.Ternary(useSIG,
-			imagefamily.BuildImageIDSIG(sigSub, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, version),
-			imagefamily.BuildImageIDCIG(img.PublicGalleryURL, img.ImageDefinition, version),
-		)
+		id := imagefamily.BuildImageIDSIG(sigSub, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, version)
 		out = append(out, imagefamily.NodeImage{ID: id, Requirements: img.Requirements})
 	}
 	return out
@@ -102,7 +112,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		It("should match expected images for Ubuntu2204", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, false, nodeClass.Spec.FIPSMode, cigImageVersion, "")
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
@@ -111,7 +121,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2404{}, false, nodeClass.Spec.FIPSMode, cigImageVersion, "")
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
@@ -122,13 +132,18 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
+
+			// Parse K8s version to determine AzureLinux version
+			version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+			Expect(err).ToNot(HaveOccurred())
+
 			var fam imagefamily.ImageFamily
-			if imagefamily.UseAzureLinux3(kubernetesVersion) {
+			if version.GE(semver.Version{Major: 1, Minor: 32}) {
 				fam = &imagefamily.AzureLinux3{}
 			} else {
 				fam = &imagefamily.AzureLinux{}
 			}
-			expectedImages := renderExpectedNodeImages(fam, false, nodeClass.Spec.FIPSMode, cigImageVersion, "")
+			expectedImages := renderExpectedCIGNodeImages(fam, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
@@ -138,7 +153,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedNodeImages(&imagefamily.AzureLinux{}, false, nodeClass.Spec.FIPSMode, cigImageVersion, "")
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.AzureLinux{}, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
@@ -149,7 +164,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 
-			expectedImages := renderExpectedNodeImages(&imagefamily.AzureLinux3{}, false, nodeClass.Spec.FIPSMode, cigImageVersion, "")
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.AzureLinux3{}, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
 
 			// Explicitly verify ARM64 image is NOT included in CIG (Community Image Gallery)
@@ -175,7 +190,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2004{}, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2004{}, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -194,13 +209,18 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
+
+				// Parse K8s version to determine AzureLinux version
+				version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+				Expect(err).ToNot(HaveOccurred())
+
 				var fam imagefamily.ImageFamily
-				if imagefamily.UseAzureLinux3(kubernetesVersion) {
+				if version.GE(semver.Version{Major: 1, Minor: 32}) {
 					fam = &imagefamily.AzureLinux3{}
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedNodeImages(fam, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -216,13 +236,19 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
+
+				// Parse version to determine which Ubuntu version to expect
+				version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+				Expect(err).ToNot(HaveOccurred())
+
+				// Generic Ubuntu defaults to Ubuntu2404 for K8s >= 1.34, Ubuntu2204 otherwise
 				var fam imagefamily.ImageFamily
-				if imagefamily.UseUbuntu2404(kubernetesVersion) {
+				if version.GE(semver.Version{Major: 1, Minor: 34}) {
 					fam = &imagefamily.Ubuntu2404{}
 				} else {
 					fam = &imagefamily.Ubuntu2204{}
 				}
-				expectedImages := renderExpectedNodeImages(fam, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -230,7 +256,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -238,7 +264,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2404{}, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -248,13 +274,18 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
+
+				// Parse K8s version to determine AzureLinux version
+				version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+				Expect(err).ToNot(HaveOccurred())
+
 				var fam imagefamily.ImageFamily
-				if imagefamily.UseAzureLinux3(kubernetesVersion) {
+				if version.GE(semver.Version{Major: 1, Minor: 32}) {
 					fam = &imagefamily.AzureLinux3{}
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedNodeImages(fam, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -270,15 +301,17 @@ var _ = Describe("NodeImageProvider tests", func() {
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Parse version to determine which Ubuntu version to expect
 				version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
 				Expect(err).ToNot(HaveOccurred())
 
 				// Generic Ubuntu defaults to Ubuntu2404 for K8s >= 1.34, Ubuntu2204 otherwise
-				fam := lo.Ternary(version.Minor >= 34,
-					imagefamily.ImageFamily(&imagefamily.Ubuntu2404{}),
-					imagefamily.ImageFamily(&imagefamily.Ubuntu2204{}))
-				expectedImages := renderExpectedNodeImages(fam, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				var fam imagefamily.ImageFamily
+				if version.GE(semver.Version{Major: 1, Minor: 34}) {
+					fam = &imagefamily.Ubuntu2404{}
+				} else {
+					fam = &imagefamily.Ubuntu2204{}
+				}
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 
 			})
@@ -287,7 +320,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -295,7 +328,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2404{}, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -305,13 +338,18 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
+
+				// Parse K8s version to determine AzureLinux version
+				version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+				Expect(err).ToNot(HaveOccurred())
+
 				var fam imagefamily.ImageFamily
-				if imagefamily.UseAzureLinux3(kubernetesVersion) {
+				if version.GE(semver.Version{Major: 1, Minor: 32}) {
 					fam = &imagefamily.AzureLinux3{}
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedNodeImages(fam, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 		})
@@ -324,16 +362,21 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
+
+				// Parse K8s version to determine AzureLinux version
+				k8sVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+				Expect(err).ToNot(HaveOccurred())
+
 				var fam imagefamily.ImageFamily
-				if imagefamily.UseAzureLinux3(kubernetesVersion) {
+				if k8sVersion.GE(semver.Version{Major: 1, Minor: 32}) {
 					fam = &imagefamily.AzureLinux3{}
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedNodeImages(fam, true, fipsMode, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, fipsMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 
-				if imagefamily.UseAzureLinux3(kubernetesVersion) && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
+				if k8sVersion.GE(semver.Version{Major: 1, Minor: 32}) && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
 					// Explicitly verify ARM64 image IS included in SIG (Shared Image Gallery)
 					Expect(foundImages).To(ContainElement(And(
 						HaveField("ID", ContainSubstring("V3gen2arm64")),
@@ -360,17 +403,23 @@ var _ = Describe("NodeImageProvider tests", func() {
 				// Parse version, stripping any 'v' prefix if present
 				version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
 				Expect(err).ToNot(HaveOccurred())
-				minorVersion := version.Minor
 
+				// Generic Ubuntu defaults to Ubuntu2404 for K8s >= 1.34, Ubuntu2204 otherwise
 				var fam imagefamily.ImageFamily
-				if imagefamily.UseUbuntu2404(kubernetesVersion) {
-					Expect(minorVersion).To(BeNumerically(">=", 34))
+				if version.GE(semver.Version{Major: 1, Minor: 34}) {
 					fam = &imagefamily.Ubuntu2404{}
 				} else {
-					Expect(minorVersion).To(BeNumerically("<", 34))
 					fam = &imagefamily.Ubuntu2204{}
 				}
-				expectedImages := renderExpectedNodeImages(fam, true, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
+
+				// Verify the version boundaries
+				if version.Minor >= 34 {
+					Expect(version.Minor).To(BeNumerically(">=", 34))
+				} else {
+					Expect(version.Minor).To(BeNumerically("<", 34))
+				}
+
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -383,7 +432,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should use Ubuntu2204 for K8s < 1.34
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, true, nil, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -396,7 +445,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should use Ubuntu2404 for K8s >= 1.34
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2404{}, true, nil, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -410,7 +459,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should default to Ubuntu2204 for K8s < 1.34
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, true, nil, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -423,7 +472,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should default to Ubuntu2404 for K8s >= 1.34
-				expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2404{}, true, nil, sigImageVersion, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil, sigImageVersion, sigSubscription)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 		})
@@ -433,7 +482,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 		It("should ensure List images uses cached data", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, false, nodeClass.Spec.FIPSMode, cigImageVersion, "")
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
 
 			communityImageVersionsAPI.Reset()
@@ -443,14 +492,14 @@ var _ = Describe("NodeImageProvider tests", func() {
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			// Should still use the old version from cache
-			expectedImages = renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, false, nodeClass.Spec.FIPSMode, cigImageVersion, "")
+			expectedImages = renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 
 		It("should ensure List gets new image data if imageFamily changes", func() {
 			foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			expectedImages := renderExpectedNodeImages(&imagefamily.Ubuntu2204{}, false, nodeClass.Spec.FIPSMode, cigImageVersion, "")
+			expectedImages := renderExpectedCIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, cigImageVersion)
 			Expect(foundImages).To(Equal(expectedImages))
 
 			communityImageVersionsAPI.Reset()
@@ -461,14 +510,19 @@ var _ = Describe("NodeImageProvider tests", func() {
 
 			foundImages, err = nodeImageProvider.List(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
+
+			// Parse K8s version to determine AzureLinux version
+			version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+			Expect(err).ToNot(HaveOccurred())
+
 			var azFam imagefamily.ImageFamily
-			if imagefamily.UseAzureLinux3(kubernetesVersion) {
+			if version.GE(semver.Version{Major: 1, Minor: 32}) {
 				azFam = &imagefamily.AzureLinux3{}
 			} else {
 				azFam = &imagefamily.AzureLinux{}
 			}
 			// Should use the new version since image family changed
-			expectedImages = renderExpectedNodeImages(azFam, false, nodeClass.Spec.FIPSMode, laterCIGImageVersionTest, "")
+			expectedImages = renderExpectedCIGNodeImages(azFam, nodeClass.Spec.FIPSMode, laterCIGImageVersionTest)
 			Expect(foundImages).To(Equal(expectedImages))
 		})
 	})
