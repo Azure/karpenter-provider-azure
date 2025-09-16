@@ -108,13 +108,14 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim, creationTimestamp)
 
 	// Karpenter defaults VNETSubnetID to the options
-	vnetSubnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
+	//vnetSubnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
+	// XPMT: TODO: fix this
 
 	return &armcontainerservice.Machine{ // XPMT: ✅
 		Zones: utils.GetARMZonesFromAKSZone(zone), // XPMT: ✅ (from CRP VM)
 		Properties: &armcontainerservice.MachineProperties{ // XPMT: ✅
 			Network: &armcontainerservice.MachineNetworkProperties{ // XPMT: ✅
-				VnetSubnetID: lo.ToPtr(vnetSubnetID), // XPMT: ✅ (from launch template > static parameters > CSE)
+				VnetSubnetID: nil, // lo.ToPtr(vnetSubnetID), // XPMT: ✅ (from launch template > static parameters > CSE)
 				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
 				// PodSubnetID:          "",                                  // XPMT: 🆕🚫
 				// EnableNodePublicIP:   nil,                                 // XPMT: 🆕🚫
