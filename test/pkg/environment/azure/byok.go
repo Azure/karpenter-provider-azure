@@ -181,7 +181,7 @@ func (env *Environment) createKeyVaultKey(ctx context.Context, keyVaultName, key
 			},
 		},
 	}
-	
+
 	keyClient, err := azkeys.NewClient(fmt.Sprintf("https://%s.vault.azure.net/", keyVaultName), cred, keyClientOptions)
 	if err != nil {
 		return nil, err
