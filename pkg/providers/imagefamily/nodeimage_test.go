@@ -64,12 +64,11 @@ func renderExpectedCIGNodeImages(
 func renderExpectedSIGNodeImages(
 	fam imagefamily.ImageFamily,
 	fips *v1beta1.FIPSMode,
-	sigSub string,
 ) []imagefamily.NodeImage {
 	defaultImages := fam.DefaultImages(true, fips)
 	out := make([]imagefamily.NodeImage, 0, len(defaultImages))
 	for _, img := range defaultImages {
-		id := imagefamily.BuildImageIDSIG(sigSub, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, sigImageVersion)
+		id := imagefamily.BuildImageIDSIG(sigSubscription, img.GalleryResourceGroup, img.GalleryName, img.ImageDefinition, sigImageVersion)
 		out = append(out, imagefamily.NodeImage{ID: id, Requirements: img.Requirements})
 	}
 	return out
@@ -190,7 +189,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2004{}, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2004{}, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -220,7 +219,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -248,7 +247,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.Ubuntu2204{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -256,7 +255,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -264,7 +263,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -285,7 +284,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -311,7 +310,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.Ubuntu2204{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 
 			})
@@ -320,7 +319,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -328,7 +327,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
 				foundImages, err := nodeImageProvider.List(ctx, nodeClass)
 				Expect(err).ToNot(HaveOccurred())
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -349,7 +348,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 		})
@@ -373,7 +372,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				} else {
 					fam = &imagefamily.AzureLinux{}
 				}
-				expectedImages := renderExpectedSIGNodeImages(fam, fipsMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, fipsMode)
 				Expect(foundImages).To(Equal(expectedImages))
 
 				if k8sVersion.GE(semver.Version{Major: 1, Minor: 32}) && lo.FromPtr(nodeClass.Spec.FIPSMode) != v1beta1.FIPSModeFIPS {
@@ -419,7 +418,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 					Expect(version.Minor).To(BeNumerically("<", 34))
 				}
 
-				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(fam, nodeClass.Spec.FIPSMode)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -432,7 +431,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should use Ubuntu2204 for K8s < 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -445,7 +444,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should use Ubuntu2404 for K8s >= 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -459,7 +458,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should default to Ubuntu2204 for K8s < 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2204{}, nil)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 
@@ -472,7 +471,7 @@ var _ = Describe("NodeImageProvider tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// Should default to Ubuntu2404 for K8s >= 1.34
-				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil, sigSubscription)
+				expectedImages := renderExpectedSIGNodeImages(&imagefamily.Ubuntu2404{}, nil)
 				Expect(foundImages).To(Equal(expectedImages))
 			})
 		})
