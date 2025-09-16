@@ -112,6 +112,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
+	log.FromContext(ctx).V(1).Info("successfully saved new in-place update hash", "goalHash", goalHash)
 
 	return reconcile.Result{}, nil
 }
