@@ -23,6 +23,7 @@ import (
 	"github.com/Pallinder/go-randomdata"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -121,13 +122,38 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("OSDiskSizeGB", func() {
+		DescribeTable("Should validate OSDiskSizeGB constraints", func(osDiskSizeGB *int32, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					OSDiskSizeGB: osDiskSizeGB,
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid minimum size (30 GB)", lo.ToPtr(int32(30)), true),
+			Entry("valid default size (128 GB)", lo.ToPtr(int32(128)), true),
+			Entry("valid large size (1024 GB)", lo.ToPtr(int32(1024)), true),
+			Entry("valid maximum size (2048 GB)", lo.ToPtr(int32(2048)), true),
+			Entry("nil value (uses default)", nil, true),
+			Entry("below minimum (29 GB)", lo.ToPtr(int32(29)), false),
+			Entry("above maximum (2049 GB)", lo.ToPtr(int32(2049)), false),
+			Entry("well above maximum (4096 GB)", lo.ToPtr(int32(4096)), false),
+		)
+	})
+
 	Context("ImageFamily and FIPSMode", func() {
 		DescribeTable("should only accept valid ImageFamily and FIPSMode combinations", func(imageFamily string, fipsMode *v1alpha2.FIPSMode, expected bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec:       v1alpha2.AKSNodeClassSpec{},
 			}
-			// allows for leaving imageFamily unset, which currently defaults to Ubuntu2204
+			// allows for leaving imageFamily unset, which defaults to Ubuntu
 			if imageFamily != "" {
 				nodeClass.Spec.ImageFamily = &imageFamily
 			}
@@ -145,12 +171,16 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("Ubuntu2204 when FIPSMode is not explicitly set should succeed", v1alpha2.Ubuntu2204ImageFamily, nil, true),
 			//TODO: Modify when Ubuntu 22.04 with FIPS becomes available
 			Entry("Ubuntu2204 when FIPSMode is explicitly FIPS should fail", v1alpha2.Ubuntu2204ImageFamily, &v1alpha2.FIPSModeFIPS, false),
+			Entry("Ubuntu2404 when FIPSMode is explicitly Disabled should succeed", v1alpha2.Ubuntu2404ImageFamily, &v1alpha2.FIPSModeDisabled, true),
+			Entry("Ubuntu2404 when FIPSMode is not explicitly set should succeed", v1alpha2.Ubuntu2404ImageFamily, nil, true),
+			//TODO: Modify when Ubuntu 24.04 with FIPS becomes available
+			Entry("Ubuntu2404 when FIPSMode is explicitly FIPS should fail", v1alpha2.Ubuntu2404ImageFamily, &v1alpha2.FIPSModeFIPS, false),
 			Entry("generic AzureLinux when FIPSMode is explicitly Disabled should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeDisabled, true),
 			Entry("generic AzureLinux when FIPSMode is not explicitly set should succeed", v1alpha2.AzureLinuxImageFamily, nil, true),
 			Entry("generic AzureLinux when FIPSMode is explicitly FIPS should succeed", v1alpha2.AzureLinuxImageFamily, &v1alpha2.FIPSModeFIPS, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is not explicitly set should succeed", "", nil, true),
-			Entry("unspecified ImageFamily (defaults to Ubuntu2204) when FIPSMode is explicitly FIPS should fail", "", &v1alpha2.FIPSModeFIPS, false),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly Disabled should succeed", "", &v1alpha2.FIPSModeDisabled, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is not explicitly set should succeed", "", nil, true),
+			Entry("unspecified ImageFamily (defaults to Ubuntu) when FIPSMode is explicitly FIPS should succeed", "", &v1alpha2.FIPSModeFIPS, true),
 		)
 	})
 

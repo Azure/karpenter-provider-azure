@@ -68,11 +68,12 @@ spec:
                 - Disabled
                 type: string
               imageFamily:
-                default: Ubuntu2204
+                default: Ubuntu
                 description: ImageFamily is the image family that instances use.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
@@ -197,6 +198,7 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
+                maximum: 2048
                 minimum: 30
                 type: integer
               tags:
@@ -221,9 +223,10 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204
-              rule: 'has(self.imageFamily) && has(self.fipsMode) ? !(self.imageFamily
-                == ''Ubuntu2204'' && self.fipsMode == ''FIPS'') : true'
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:
@@ -392,11 +395,12 @@ spec:
                 - Disabled
                 type: string
               imageFamily:
-                default: Ubuntu2204
+                default: Ubuntu
                 description: ImageFamily is the image family that instances use.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
@@ -521,6 +525,7 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
+                maximum: 2048
                 minimum: 30
                 type: integer
               tags:
@@ -545,9 +550,10 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204
-              rule: 'has(self.imageFamily) && has(self.fipsMode) ? !(self.imageFamily
-                == ''Ubuntu2204'' && self.fipsMode == ''FIPS'') : true'
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:
