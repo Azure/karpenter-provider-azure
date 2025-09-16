@@ -37,8 +37,8 @@ const (
 	ImageExpirationInterval    = time.Hour * 24 * 3
 	ImageCacheCleaningInterval = time.Hour * 1
 
-	SharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
-	CommunityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
+	sharedImageGalleryImageIDFormat = "/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/%s/images/%s/versions/%s"
+	communityImageIDFormat          = "/CommunityGalleries/%s/images/%s/versions/%s"
 )
 
 type NodeImage struct {
@@ -205,10 +205,10 @@ func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 
 // BuildImageIDCIG builds a Community Image Gallery image ID
 func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
-	return fmt.Sprintf(CommunityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
+	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
 }
 
 // BuildImageIDSIG builds a Shared Image Gallery image ID
 func BuildImageIDSIG(subscriptionID, resourceGroup, galleryName, imageDefinition, imageVersion string) string {
-	return fmt.Sprintf(SharedImageGalleryImageIDFormat, subscriptionID, resourceGroup, galleryName, imageDefinition, imageVersion)
+	return fmt.Sprintf(sharedImageGalleryImageIDFormat, subscriptionID, resourceGroup, galleryName, imageDefinition, imageVersion)
 }
