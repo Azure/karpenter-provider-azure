@@ -273,6 +273,7 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 			// Check if the AKS machine has the Karpenter nodepool tag
 			if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
 				if _, hasKarpenterTag := aksMachine.Properties.Tags[NodePoolTagKey]; hasKarpenterTag {
+					p.rehydrateMachine(aksMachine)
 					machines = append(machines, aksMachine)
 				}
 			}
@@ -307,18 +308,23 @@ func (p *DefaultAKSMachineProvider) GetMachinesPoolLocation() string {
 	return p.aksMachinesPoolLocation
 }
 
+func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerservice.Machine) error {
+	// This needs to be rehydrated per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
+	// Suggestion: rework/research more on this pattern RP-side?
+	if aksMachine.Properties != nil && aksMachine.Properties.Priority == nil {
+		aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
+	}
+
+	return nil
+}
+
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
 	resp, err := p.azClient.aksMachinesClient.Get(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine instance %q: %w", aksMachineName, err)
 	}
 	aksMachine := lo.ToPtr(resp.Machine)
-
-	// This needs to be rehydrated per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
-	// Suggestion: rework/research more on this pattern RP-side?
-	if aksMachine.Properties != nil && aksMachine.Properties.Priority == nil {
-		aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
-	}
+	p.rehydrateMachine(aksMachine)
 
 	return aksMachine, nil
 }
