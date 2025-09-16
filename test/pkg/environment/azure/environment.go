@@ -105,7 +105,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
-	
+
 	// Retry options for BYOK-related clients that may encounter RBAC propagation delays
 	// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
 	// With 15 retries at 5 second intervals = 75 seconds total retry time
@@ -115,13 +115,12 @@ func NewEnvironment(t *testing.T) *Environment {
 				MaxRetries: 15,
 				RetryDelay: time.Second * 5,
 				StatusCodes: []int{
-					http.StatusBadRequest,  // PrincipalNotFound errors when DES identity hasn't replicated
-					http.StatusForbidden,   // RBAC assignments haven't propagated yet
+					http.StatusForbidden, // RBAC assignments haven't propagated yet
 				},
 			},
 		},
 	}
-	
+
 	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))

@@ -31,8 +31,6 @@ func NewRBACManager(subscriptionID string) (*RBACManager, error) {
 				MaxRetries: 15,
 				RetryDelay: time.Second * 5,
 				StatusCodes: []int{
-					// PrincipalNotFound error when managed identity hasn't replicated to Azure AD yet
-					http.StatusBadRequest,
 					// RBAC assignments can take time to propagate, resulting in 403 errors
 					// This is especially important for BYOK scenarios where DES needs access to Key Vault
 					http.StatusForbidden,
