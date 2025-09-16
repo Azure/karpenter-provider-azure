@@ -394,6 +394,12 @@ spec:
                 - FIPS
                 - Disabled
                 type: string
+              imageVersion:
+                default: '202506.16.0'
+                description: ImageVersion to use
+                enum:
+                - '202506.16.0'
+                type: string
               imageFamily:
                 default: Ubuntu
                 description: ImageFamily is the image family that instances use.
