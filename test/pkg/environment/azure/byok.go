@@ -19,8 +19,10 @@ package azure
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -52,9 +54,9 @@ const (
 //   - Assigns Reader role to the Karpenter workload identity for DES access (so it can create VMs)
 //   - Assigns Key Vault Crypto Service Encryption User role to the DES managed identity (so DES can access keys)
 //
-// 3. Wait/Retry Logic:
-//   - Waits for RBAC propagation after Key Vault role assignments
-//   - Uses polling retry mechanism for DES managed identity availability before Key Vault access assignment
+// 3. Retry Logic:
+//   - Azure clients are configured with retry logic for 403 (Forbidden) errors caused by RBAC propagation delays
+//   - Azure clients also retry on 400 (Bad Request) errors for PrincipalNotFound when identities haven't replicated
 //
 // Returns the DES resource ID for use in VM disk encryption configuration.
 func (env *Environment) CreateKeyVaultAndDiskEncryptionSet(ctx context.Context) string {
@@ -158,22 +160,29 @@ func (env *Environment) assignKeyVaultRBAC(ctx context.Context, keyVaultID, karp
 		return fmt.Errorf("failed to assign Administrator role to test user: %w", err)
 	}
 
-	// Before Moving on, ensure the rbac for the keyVault has been propagated to the principalIDs
-	err = env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultID, karpenterIdentity, 60*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to wait for role assignment propagation for karpenter identity: %w", err)
-	}
-	err = env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultID, testUserPrincipalID, 60*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to wait for role assignment propagation for test user: %w", err)
-	}
+	// RBAC propagation is handled by retry logic in the clients (403 errors are retried)
 
 	return nil
 }
 
 // createKeyVaultKey creates a key in the Key Vault
 func (env *Environment) createKeyVaultKey(ctx context.Context, keyVaultName, keyName string, cred *azidentity.DefaultAzureCredential) (*azkeys.KeyBundle, error) {
-	keyClient, err := azkeys.NewClient(fmt.Sprintf("https://%s.vault.azure.net/", keyVaultName), cred, nil)
+	// Add retry options for Key Vault operations that may encounter RBAC propagation delays
+	// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
+	// With 15 retries at 5 second intervals = 75 seconds total retry time
+	keyClientOptions := &azkeys.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Retry: policy.RetryOptions{
+				MaxRetries: 15,
+				RetryDelay: time.Second * 5,
+				StatusCodes: []int{
+					http.StatusForbidden, // RBAC assignments haven't propagated to Key Vault yet
+				},
+			},
+		},
+	}
+	
+	keyClient, err := azkeys.NewClient(fmt.Sprintf("https://%s.vault.azure.net/", keyVaultName), cred, keyClientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -227,10 +236,7 @@ func (env *Environment) assignDiskEncryptionSetRBAC(ctx context.Context, desID, 
 	if err != nil {
 		return fmt.Errorf("failed to assign RBAC role: %w", err)
 	}
-	err = env.RBACManager.WaitForRoleAssignmentPropagation(ctx, desID, karpenterIdentity, 30*time.Second)
-	if err != nil {
-		return fmt.Errorf("failed to wait for role assignment propagation for DES: %w", err)
-	}
+	// RBAC propagation is handled by retry logic in the clients
 	return nil
 }
 
@@ -246,12 +252,13 @@ func (env *Environment) updateKeyVaultAccessForDES(ctx context.Context, keyVault
 	desIdentityPrincipalID := lo.FromPtr(desIdentity.PrincipalID)
 	keyVaultScope := lo.FromPtr(kvGet.ID)
 
-	err = env.RBACManager.EnsureRoleWithRetry(ctx, keyVaultScope, cryptoServiceRoleDefinitionID, desIdentityPrincipalID, 60*time.Second)
+	// Assign the Key Vault Crypto Service Encryption User role to the DES managed identity
+	// The retry logic in the RBAC client will handle principal replication delays
+	err = env.RBACManager.EnsureRole(ctx, keyVaultScope, cryptoServiceRoleDefinitionID, desIdentityPrincipalID)
 	if err != nil {
-		return fmt.Errorf("failed to assign Key Vault RBAC role: %w", err)
+		return fmt.Errorf("failed to assign Key Vault RBAC role to DES identity: %w", err)
 	}
-	// Wait for RBAC propagation by polling for the DES identity's role assignment
-	env.RBACManager.WaitForRoleAssignmentPropagation(ctx, keyVaultScope, desIdentityPrincipalID, 30*time.Second)
+	// RBAC propagation is handled by retry logic in the clients
 
 	return nil
 }

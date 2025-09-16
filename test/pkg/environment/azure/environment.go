@@ -18,15 +18,18 @@ package azure
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
@@ -102,13 +105,30 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	
+	// Retry options for BYOK-related clients that may encounter RBAC propagation delays
+	// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
+	// With 15 retries at 5 second intervals = 75 seconds total retry time
+	byokRetryOptions := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Retry: policy.RetryOptions{
+				MaxRetries: 15,
+				RetryDelay: time.Second * 5,
+				StatusCodes: []int{
+					http.StatusBadRequest,  // PrincipalNotFound errors when DES identity hasn't replicated
+					http.StatusForbidden,   // RBAC assignments haven't propagated yet
+				},
+			},
+		},
+	}
+	
 	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.keyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.diskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.keyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
+	azureEnv.diskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID))
 	return azureEnv
