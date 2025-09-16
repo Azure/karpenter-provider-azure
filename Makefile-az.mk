@@ -22,10 +22,6 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
 
-# BYOK (Bring Your Own Key) variables for disk encryption
-AZURE_KEYVAULT_NAME ?= $(AZURE_CLUSTER_NAME)kv$(NAME_SUFFIX)
-AZURE_KEYVAULT_KEY_NAME ?= $(AZURE_CLUSTER_NAME)-key
-AZURE_DES_NAME ?= $(AZURE_CLUSTER_NAME)-des
 
 .DEFAULT_GOAL := help	# make without arguments will show help
 
@@ -125,14 +121,6 @@ az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster 
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
-az-mkaks-cmk: az-cmk-all ## Create test AKS cluster with BYOK disk encryption enabled
-	$(eval DES_ID := $(shell az disk-encryption-set show --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query id -o tsv))
-	az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity \
-		--node-osdisk-diskencryptionset-id $(DES_ID)
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
 
 az-create-workload-msi: az-mkrg
 	# create the workload MSI that is the backing for the karpenter pod auth
@@ -447,63 +435,3 @@ az-codegen-nodeimageversions: ## List node image versions (to be used in fake/no
 		--url "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/providers/Microsoft.ContainerService/locations/$(AZURE_LOCATION)/nodeImageVersions?api-version=2024-04-02-preview" \
 		| jq -r '.values[] | "{\n\tFullName: \"\(.fullName)\",\n\tOS:       \"\(.os)\",\n\tSKU:      \"\(.sku)\",\n\tVersion:  \"\(.version)\",\n},"'
 
-## BYOK (Bring Your Own Key) Infrastructure Setup
-
-az-create-keyvault: az-mkrg ## Create a Key Vault for CMK
-	@if az keyvault show --name $(AZURE_KEYVAULT_NAME) --resource-group $(AZURE_RESOURCE_GROUP) > /dev/null 2>&1; then \
-		echo "Key Vault $(AZURE_KEYVAULT_NAME) already exists."; \
-	else \
-		echo "Attempting to create Key Vault $(AZURE_KEYVAULT_NAME)..."; \
-		if az keyvault create --name $(AZURE_KEYVAULT_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) > /dev/null 2>&1; then \
-			echo "Key Vault $(AZURE_KEYVAULT_NAME) created successfully."; \
-		else \
-			if az keyvault show-deleted --name $(AZURE_KEYVAULT_NAME) > /dev/null 2>&1; then \
-				echo "ERROR: Key Vault name $(AZURE_KEYVAULT_NAME) is unavailable due to soft-delete or purge protection retention."; \
-				echo "If purge protection is enabled, you must wait for the retention period to expire before reusing this name."; \
-				echo "To use a different Key Vault name, set the AZURE_KEYVAULT_NAME environment variable when running make:"; \
-				echo "  make <target> AZURE_KEYVAULT_NAME=yournewkvname"; \
-			else \
-				echo "ERROR: Failed to create Key Vault $(AZURE_KEYVAULT_NAME). Please check your Azure permissions and configuration."; \
-			fi; \
-			exit 1; \
-		fi \
-	fi
-
-az-enable-keyvault-purge-protection: az-create-keyvault ## Enable purge protection on the Key Vault (required for CMK)
-	az keyvault update --name $(AZURE_KEYVAULT_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --enable-purge-protection true
-
-az-grant-kv-admin: az-create-keyvault ## Assign Key Vault Administrator role to the signed-in user
-	$(eval USER_OBJECT_ID := $(shell az ad signed-in-user show --query objectId -o tsv))
-	$(eval USER_UPN := $(shell az ad signed-in-user show --query userPrincipalName -o tsv))
-	$(eval KV_ID := $(shell az keyvault show --name $(AZURE_KEYVAULT_NAME) --query id -o tsv))
-	@if [ -n "$(USER_OBJECT_ID)" ]; then \
-		ASSIGNEE="$(USER_OBJECT_ID)"; \
-	elif [ -n "$(USER_UPN)" ]; then \
-		ASSIGNEE="$(USER_UPN)"; \
-	else \
-		echo "ERROR: Could not determine user objectId or UPN. Please check your Azure login context."; \
-		exit 1; \
-	fi; \
-	if ! az role assignment list --assignee "$$ASSIGNEE" --scope $(KV_ID) --role "Key Vault Administrator" | grep -q '"roleDefinitionName": "Key Vault Administrator"'; then \
-		az role assignment create --role "Key Vault Administrator" --assignee "$$ASSIGNEE" --scope $(KV_ID); \
-	else \
-		echo "Key Vault Administrator role already assigned to user."; \
-	fi
-
-az-create-keyvault-key: az-grant-kv-admin ## Create a key in the Key Vault for CMK
-	if ! az keyvault key show --vault-name $(AZURE_KEYVAULT_NAME) --name $(AZURE_KEYVAULT_KEY_NAME) > /dev/null 2>&1; then \
-		az keyvault key create --vault-name $(AZURE_KEYVAULT_NAME) --name $(AZURE_KEYVAULT_KEY_NAME) --protection software; \
-	else \
-		echo "Key $(AZURE_KEYVAULT_KEY_NAME) already exists in Key Vault $(AZURE_KEYVAULT_NAME)."; \
-	fi
-
-az-create-disk-encryption-set: az-create-keyvault-key ## Create a Disk Encryption Set referencing the Key Vault key
-	if ! az disk-encryption-set show --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) > /dev/null 2>&1; then \
-		az disk-encryption-set create --name $(AZURE_DES_NAME) --resource-group $(AZURE_RESOURCE_GROUP) \
-			--location $(AZURE_LOCATION) \
-			--source-vault $(shell az keyvault show --name $(AZURE_KEYVAULT_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --query id -o tsv) \
-			--key-url $(shell az keyvault key show --vault-name $(AZURE_KEYVAULT_NAME) --name $(AZURE_KEYVAULT_KEY_NAME) --query key.kid -o tsv) \
-			--mi-system-assigned; \
-	else \
-		echo "Disk Encryption Set $(AZURE_DES_NAME) already exists."; \
-	fi
