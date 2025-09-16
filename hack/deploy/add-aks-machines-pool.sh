@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -ne 3 ]; then
+if [ "$#" -ne 4 ]; then
     echo "Usage: $0 <subscription-id> <resource-group> <cluster-name> <nodepool-name>"
     echo "This script adds a nodepool with 'machines' mode to an existing AKS cluster using Azure REST API."
     echo "Example:"

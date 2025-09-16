@@ -3,7 +3,7 @@ set -euo pipefail
 # This script interrogates the AKS cluster and Azure resources to generate
 # the karpenter-values.yaml file using the karpenter-values-template.yaml file as a template.
 
-if [ "$#" -lt 4 ] || [ "$#" -gt 5 ]; then
+if [ "$#" -lt 4 ] || [ "$#" -gt 6 ]; then
     echo "Usage: $0 <cluster-name> <resource-group> <karpenter-service-account-name> <karpenter-user-assigned-identity-name> [provision-mode] [aks-machines-pool-name]"
     exit 1
 fi
