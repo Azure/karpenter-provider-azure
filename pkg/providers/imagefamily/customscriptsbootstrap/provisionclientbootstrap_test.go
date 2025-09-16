@@ -704,6 +704,15 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			description:                      "Artifact streaming should be enabled for AMD64 with Ubuntu2204",
 		},
 		{
+			name:                             "AMD64 Ubuntu2404 - Artifact streaming disabled",
+			arch:                             karpv1.ArchitectureAmd64,
+			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404,
+			kubernetesVersion:                "1.34.0",
+			imageDistro:                      "aks-ubuntu-containerd-24.04-gen2",
+			expectedArtifactStreamingEnabled: false,
+			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2404",
+		},
+		{
 			name:                             "AMD64 AzureLinux2 - Artifact streaming enabled",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
