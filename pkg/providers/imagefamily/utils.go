@@ -31,3 +31,14 @@ func UseAzureLinux3(kubernetesVersion string) bool {
 	}
 	return version.GE(semver.Version{Major: 1, Minor: 32})
 }
+
+// UseUbuntu2404 is when AKS starts defaulting support for Ubuntu2404
+func UseUbuntu2404(kubernetesVersion string) bool {
+	// Parse version, stripping any 'v' prefix if present
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		// If we can't parse the version, default to Ubuntu2204 (false)
+		return false
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 34})
+}
