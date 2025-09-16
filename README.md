@@ -267,9 +267,9 @@ kind: AKSNodeClass
 metadata:
   name: default
   annotations:
-    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu2204 nodes"
+    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu nodes"
 spec:
-  imageFamily: Ubuntu2204
+  imageFamily: Ubuntu
 EOF
 ```
 Karpenter is now active and ready to begin provisioning nodes.

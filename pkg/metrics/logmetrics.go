@@ -32,6 +32,9 @@ var (
 	VMCreateAsyncFailureMetric = &metric{
 		name: "VMCreateAsyncFailure",
 	}
+	VMCreateResponseError = &metric{
+		name: "ResponseError",
+	}
 )
 
 type metric struct {
