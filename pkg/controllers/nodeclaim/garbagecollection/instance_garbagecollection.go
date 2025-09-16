@@ -40,29 +40,29 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-type VirtualMachine struct {
+type CloudProviderInstances struct {
 	kubeClient      client.Client
 	cloudProvider   corecloudprovider.CloudProvider
 	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
 }
 
-func NewVirtualMachine(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *VirtualMachine {
-	return &VirtualMachine{
+func NewCloudProviderInstances(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *CloudProviderInstances {
+	return &CloudProviderInstances{
 		kubeClient:      kubeClient,
 		cloudProvider:   cloudProvider,
 		successfulCount: 0,
 	}
 }
 
-func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *CloudProviderInstances) Reconcile(ctx context.Context) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, "instance.garbagecollection")
 
-	// We LIST VMs on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
+	// We LIST instances on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
 	// LISTing instances takes a long time, our information is more updated by the time we get to nodeclaim and Node LIST
 	// This works since our CloudProvider instances are deleted based on whether the NodeClaim exists or not, not vice-versa
 	retrieved, err := c.cloudProvider.List(ctx)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("listing cloudprovider VMs, %w", err)
+		return reconcile.Result{}, fmt.Errorf("listing cloudprovider instances, %w", err)
 	}
 
 	managedRetrieved := lo.Filter(retrieved, func(nc *karpv1.NodeClaim, _ int) bool {
@@ -81,9 +81,18 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 	})...)
 	errs := make([]error, len(retrieved))
 	workqueue.ParallelizeUntil(ctx, 100, len(managedRetrieved), func(i int) {
+		// managedRetrieved, although represented as NodeClaim, is actually actually populated by provider.List() rather than sourcing from the cluster.
+		// In the implementation, CreationTimestamp in this context is also different: representing instance's (not NodeClaim's) creation time.
+		// Suggestion: this "borrowing" pattern and its inconsistency is not intuitive..., should reconsider this implementation?
 		if !resolvedProviderIDs.Has(managedRetrieved[i].Status.ProviderID) &&
+			// Garbage collect if the instance has been around for more than 5 minutes, yet still no matching (per ProviderID) NodeClaim.
+			// Note that the "match" occurs after cloudprovider.Create() returns and ProviderID is populated as a result.
+			// Although, the intention of garbage collection is to clear instances with missing/deleted NodeClaim.
+			// This 5m is more of a grace period for newly-created instances that have yet to populate NodeClaim after.
 			time.Since(managedRetrieved[i].CreationTimestamp.Time) > time.Minute*5 {
 			errs[i] = c.garbageCollect(ctx, managedRetrieved[i], nodeList)
+			// In the case that CreationTimestamp is irretrievable (epoch), grace period will effectively be disabled.
+			// Which could be dangerous if the instance is legitimately awaiting NodeClaim population.
 		}
 	})
 	if err = multierr.Combine(errs...); err != nil {
@@ -93,7 +102,7 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 	return reconcile.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, nil
 }
 
-func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
+func (c *CloudProviderInstances) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("providerID", nodeClaim.Status.ProviderID))
 	if err := c.cloudProvider.Delete(ctx, nodeClaim); err != nil {
 		return corecloudprovider.IgnoreNodeClaimNotFoundError(err)
@@ -112,7 +121,7 @@ func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.N
 	return nil
 }
 
-func (c *VirtualMachine) Register(_ context.Context, m manager.Manager) error {
+func (c *CloudProviderInstances) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("instance.garbagecollection").
 		WatchesRawSource(singleton.Source()).

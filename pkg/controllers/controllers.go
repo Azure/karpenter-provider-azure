@@ -47,7 +47,8 @@ func NewControllers(
 	kubeClient client.Client,
 	recorder events.Recorder,
 	cloudProvider cloudprovider.CloudProvider,
-	instanceProvider instance.Provider,
+	vmInstanceProvider instance.VMProvider,
+	aksMachineInstanceProvider instance.AKSMachineProvider,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
@@ -58,11 +59,11 @@ func NewControllers(
 		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
-		nodeclaimgarbagecollection.NewVirtualMachine(kubeClient, cloudProvider),
-		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, instanceProvider),
+		nodeclaimgarbagecollection.NewCloudProviderInstances(kubeClient, cloudProvider),
+		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
 
 		// TODO: nodeclaim tagging
-		inplaceupdate.NewController(kubeClient, instanceProvider),
+		inplaceupdate.NewController(kubeClient, vmInstanceProvider, aksMachineInstanceProvider),
 		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
 	}
 	return controllers

@@ -79,8 +79,8 @@ func TestAzure(t *testing.T) {
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
@@ -92,7 +92,9 @@ var _ = AfterSuite(func() {
 	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
 })
 
-var _ = Describe("InstanceProvider", func() {
+// ATTENTION: tests like below for AKSMachineInstanceProvider are added to cloudprovider module to reflect its end-to-end nature.
+// Suggestion: move these tests there too(?)
+var _ = Describe("VMInstanceProvider", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	var nodePool *karpv1.NodePool
 	var nodeClaim *karpv1.NodeClaim
@@ -159,7 +161,7 @@ var _ = Describe("InstanceProvider", func() {
 			instanceTypes = lo.Filter(instanceTypes, func(i *corecloudprovider.InstanceType, _ int) bool { return i.Name == "Standard_D2_v2" })
 
 			// Since all the offerings are unavailable, this should return back an ICE error
-			instance, err := azEnv.InstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			instance, err := azEnv.VMInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(instance).To(BeNil())
 		},
@@ -182,7 +184,8 @@ var _ = Describe("InstanceProvider", func() {
 				newOptions)
 			azureEnv = test.NewEnvironment(ctx, env)
 			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider,
-				azureEnv.InstanceProvider,
+				azureEnv.VMInstanceProvider,
+				azureEnv.AKSMachineProvider,
 				events.NewRecorder(&record.FakeRecorder{}),
 				env.Client,
 				azureEnv.ImageProvider,
@@ -340,7 +343,7 @@ var _ = Describe("InstanceProvider", func() {
 
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 		vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
-		vm, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+		vm, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 		Expect(err).To(BeNil())
 		tags := vm.Tags
 		Expect(lo.FromPtr(tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
@@ -371,7 +374,7 @@ var _ = Describe("InstanceProvider", func() {
 
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 		vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
-		vm, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+		vm, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 		Expect(err).To(BeNil())
 		tags := vm.Tags
 		Expect(lo.FromPtr(tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
@@ -390,7 +393,7 @@ var _ = Describe("InstanceProvider", func() {
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
 		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 		ExpectScheduled(ctx, env.Client, pod)
-		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
+		interfaces, err := azureEnv.VMInstanceProvider.ListNics(ctx)
 		Expect(err).To(BeNil())
 		Expect(len(interfaces)).To(Equal(1))
 	})
@@ -400,7 +403,7 @@ var _ = Describe("InstanceProvider", func() {
 
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(unmanagedNic.ID), *unmanagedNic)
-		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
+		interfaces, err := azureEnv.VMInstanceProvider.ListNics(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(len(interfaces)).To(Equal(1))
 		Expect(interfaces[0].Name).To(Equal(managedNic.Name))
@@ -497,7 +500,7 @@ var _ = Describe("InstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
 			// Update the VM identities
-			err := azureEnv.InstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Identity: &armcompute.VirtualMachineIdentity{
 					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
 						"/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.ManagedIdentity/userAssignedIdentities/aks-agentpool-00000000-identity": {},
@@ -557,7 +560,7 @@ var _ = Describe("InstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
 			// Update the VM tags
-			err := azureEnv.InstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
 					"test-tag":                    lo.ToPtr("test-value"),
