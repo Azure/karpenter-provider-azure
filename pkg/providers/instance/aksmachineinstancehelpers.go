@@ -137,7 +137,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			},
 
 			Kubernetes: &armcontainerservice.MachineKubernetesProfile{ // XPMT: ✅
-				NodeLabels:          nodeLabelPtrs,                 // XPMT: ✅ (CSE, various, mostly from launchtemplate) // XPMT: TODO: need to test that networking labels are there
+				NodeLabels:          nodeLabelPtrs,                 // XPMT: ✅ (CSE, various, mostly from launchtemplate)
 				OrchestratorVersion: lo.ToPtr(orchestratorVersion), // XPMT: ✅ (CSE)
 				// KubeletDiskType:          "",                                                 // XPMT: 🚫
 				KubeletConfig:            configureKubeletConfig(nodeClass), // XPMT: ✅
