@@ -279,6 +279,130 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("Taints", func() {
+		It("should allow taints with non-kubernetes.azure.com domains", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "example.com/custom-taint",
+					Value:  "true",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "company.io/another-taint",
+					Value:  "value",
+					Effect: corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should allow taints with allowed kubernetes.azure.com keys", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/scalesetpriority",
+					Value:  "spot",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "kubernetes.azure.com/mode",
+					Value:  "gateway",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+
+		It("should reject taints with disallowed kubernetes.azure.com keys", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/custom-key",
+					Value:  "value",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+
+		It("should reject taints with other kubernetes.azure.com keys", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/forbidden",
+					Value:  "value",
+					Effect: corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+	})
+
+	Context("StartupTaints", func() {
+		It("should allow startup taints with non-kubernetes.azure.com domains", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "example.com/startup-taint",
+					Value:  "true",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "company.io/initialization",
+					Value:  "pending",
+					Effect: corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+
+		It("should reject startup taints with kubernetes.azure.com domain", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/scalesetpriority",
+					Value:  "spot",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+
+		It("should reject startup taints with any kubernetes.azure.com key", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/mode",
+					Value:  "system",
+					Effect: corev1.TaintEffectNoExecute,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+
+		It("should reject startup taints with custom kubernetes.azure.com keys", func() {
+			oldNodePool := nodePool.DeepCopy()
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/custom-startup",
+					Value:  "value",
+					Effect: corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+			nodePool = oldNodePool.DeepCopy()
+		})
+	})
+
 	Context("Tags", func() {
 		It("should allow tags with valid keys and values", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
