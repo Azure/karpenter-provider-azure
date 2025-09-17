@@ -52,14 +52,16 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("BYOK", func() {
 	BeforeEach(func() {
-		if !env.InClusterController {
-			Skip("replacing the env vars is only supported for in cluster controller")
-		}
+
 	})
 	It("should provision a VM with customer-managed key disk encryption", func() {
 		ctx := context.Background()
-		diskEncryptionSetID := env.CreateKeyVaultAndDiskEncryptionSet(ctx)
-		env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
+		var diskEncryptionSetID *string
+		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
+		if env.InClusterController {
+			diskEncryptionSetID := env.CreateKeyVaultAndDiskEncryptionSet(ctx)
+			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
+		}
 
 		nodeClass := env.DefaultAKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
@@ -76,14 +78,20 @@ var _ = Describe("BYOK", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
-		Expect(*vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).To(Equal(diskEncryptionSetID))
+		if env.InClusterController {
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
+		}
 	})
 
 	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", func() {
 		ctx := context.Background()
+		var diskEncryptionSetID *string
+		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
+		if env.InClusterController {
+			diskEncryptionSetID := env.CreateKeyVaultAndDiskEncryptionSet(ctx)
+			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
+		}
 
-		diskEncryptionSetID := env.CreateKeyVaultAndDiskEncryptionSet(ctx)
-		env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		nodeClass := env.DefaultAKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
@@ -113,6 +121,8 @@ var _ = Describe("BYOK", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
-		Expect(*vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).To(Equal(diskEncryptionSetID))
+		if env.InClusterController {
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
+		}
 	})
 })
