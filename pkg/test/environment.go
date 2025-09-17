@@ -85,7 +85,7 @@ type Environment struct {
 
 	// Providers
 	InstanceTypesProvider        instancetype.Provider
-	InstanceProvider             instance.Provider
+	VMInstanceProvider           instance.VMProvider
 	PricingProvider              *pricing.Provider
 	KubernetesVersionProvider    kubernetesversion.KubernetesVersionProvider
 	ImageProvider                imagefamily.NodeImageProvider
@@ -198,7 +198,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 	)
-	instanceProvider := instance.NewDefaultProvider(
+	vmInstanceProvider := instance.NewDefaultProvider(
 		azClient,
 		instanceTypesProvider,
 		launchTemplateProvider,
@@ -238,7 +238,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancerCache:         loadBalancerCache,
 
 		InstanceTypesProvider:        instanceTypesProvider,
-		InstanceProvider:             instanceProvider,
+		VMInstanceProvider:           vmInstanceProvider,
 		PricingProvider:              pricingProvider,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageFamilyProvider,

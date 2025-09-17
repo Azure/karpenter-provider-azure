@@ -85,7 +85,7 @@ type Operator struct {
 	LaunchTemplateProvider    *launchtemplate.Provider
 	PricingProvider           *pricing.Provider
 	InstanceTypesProvider     instancetype.Provider
-	InstanceProvider          *instance.DefaultProvider
+	VMInstanceProvider        *instance.DefaultVMProvider
 	LoadBalancerProvider      *loadbalancer.Provider
 	AZClient                  *instance.AZClient
 }
@@ -178,7 +178,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.NetworkSecurityGroupsClient,
 		options.FromContext(ctx).NodeResourceGroup,
 	)
-	instanceProvider := instance.NewDefaultProvider(
+	vmInstanceProvider := instance.NewDefaultProvider(
 		azClient,
 		instanceTypeProvider,
 		launchTemplateProvider,
@@ -202,7 +202,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		LaunchTemplateProvider:       launchTemplateProvider,
 		PricingProvider:              pricingProvider,
 		InstanceTypesProvider:        instanceTypeProvider,
-		InstanceProvider:             instanceProvider,
+		VMInstanceProvider:           vmInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		AZClient:                     azClient,
 	}
