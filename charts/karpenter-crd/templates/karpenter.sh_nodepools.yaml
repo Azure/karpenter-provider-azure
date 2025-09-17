@@ -353,9 +353,6 @@ spec:
                                 type: string
                                 minLength: 1
                                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
-                                x-kubernetes-validations:
-                                  - message: taint domain "kubernetes.azure.com" is restricted
-                                    rule: '!self.startsWith("kubernetes.azure.com")'
                               timeAdded:
                                 description: |-
                                   TimeAdded represents the time at which the taint was added.
@@ -393,9 +390,6 @@ spec:
                                 type: string
                                 minLength: 1
                                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
-                                x-kubernetes-validations:
-                                  - message: taint domain "kubernetes.azure.com" is restricted
-                                    rule: '!(self.startsWith("kubernetes.azure.com") && self != "kubernetes.azure.com/scalesetpriority" && self != "kubernetes.azure.com/mode")'
                               timeAdded:
                                 description: |-
                                   TimeAdded represents the time at which the taint was added.
@@ -411,7 +405,6 @@ spec:
                               - key
                             type: object
                           type: array
-                          maxItems: 100
                         terminationGracePeriod:
                           description: |-
                             TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
