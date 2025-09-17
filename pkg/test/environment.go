@@ -184,7 +184,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 	)
-	vmInstanceProvider := instance.NewDefaultProvider(
+	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypesProvider,
 		launchTemplateProvider,

@@ -81,7 +81,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 			expectedPriority:     karpv1.CapacityTypeOnDemand,
 		},
 	}
-	provider := NewDefaultProvider(nil, nil, nil, nil, nil, cache.NewUnavailableOfferings(),
+	provider := NewDefaultVMProvider(nil, nil, nil, nil, nil, cache.NewUnavailableOfferings(),
 		"westus-2",
 		"MC_xxxxx_yyyy-region",
 		"0000000-0000-0000-0000-0000000000",
