@@ -120,7 +120,7 @@ func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv 
 	GinkgoHelper()
 
 	// The VM should be updated
-	updatedVM, err := azureEnv.InstanceProvider.Get(ctx, name)
+	updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, name)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect(updatedVM.Tags).To(Equal(tags), "Expected VM tags to match")
