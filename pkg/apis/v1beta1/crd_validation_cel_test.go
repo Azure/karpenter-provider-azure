@@ -317,7 +317,7 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 		})
 
-		It("should allow taints with allowed kubernetes.azure.com keys", func() {
+		It("should allow taints with exact allowed kubernetes.azure.com specifications", func() {
 			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
 				{
 					Key:    "kubernetes.azure.com/scalesetpriority",
@@ -334,16 +334,22 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 		})
 
-		It("should reject taints with disallowed kubernetes.azure.com keys", func() {
+		DescribeTable("should reject taints with kubernetes.azure.com domain violations", func(key, value string, effect corev1.TaintEffect) {
 			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
 				{
-					Key:    "kubernetes.azure.com/custom-key",
-					Value:  "value",
-					Effect: corev1.TaintEffectNoSchedule,
+					Key:    key,
+					Value:  value,
+					Effect: effect,
 				},
 			}
 			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
-		})
+		},
+			Entry("disallowed custom key", "kubernetes.azure.com/custom-key", "value", corev1.TaintEffectNoSchedule),
+			Entry("scalesetpriority with wrong value", "kubernetes.azure.com/scalesetpriority", "regular", corev1.TaintEffectNoSchedule),
+			Entry("scalesetpriority with wrong effect", "kubernetes.azure.com/scalesetpriority", "spot", corev1.TaintEffectPreferNoSchedule),
+			Entry("mode with wrong value", "kubernetes.azure.com/mode", "system", corev1.TaintEffectNoSchedule),
+			Entry("mode with wrong effect", "kubernetes.azure.com/mode", "gateway", corev1.TaintEffectNoExecute),
+		)
 	})
 
 	Context("StartupTaints", func() {

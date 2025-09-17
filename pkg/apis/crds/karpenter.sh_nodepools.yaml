@@ -393,9 +393,6 @@ spec:
                                 type: string
                                 minLength: 1
                                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
-                                x-kubernetes-validations:
-                                  - message: taint domain "kubernetes.azure.com" is restricted
-                                    rule: '!(self.startsWith("kubernetes.azure.com") && self != "kubernetes.azure.com/scalesetpriority" && self != "kubernetes.azure.com/mode")'
                               timeAdded:
                                 description: |-
                                   TimeAdded represents the time at which the taint was added.
@@ -410,6 +407,13 @@ spec:
                               - effect
                               - key
                             type: object
+                            x-kubernetes-validations:
+                              - message: taint "kubernetes.azure.com/scalesetpriority" must have value "spot" and effect "NoSchedule"
+                                rule: '!(self.key == "kubernetes.azure.com/scalesetpriority" && !(self.value == "spot" && self.effect == "NoSchedule"))'
+                              - message: taint "kubernetes.azure.com/mode" must have value "gateway" and effect "NoSchedule"
+                                rule: '!(self.key == "kubernetes.azure.com/mode" && !(self.value == "gateway" && self.effect == "NoSchedule"))'
+                              - message: taint domain "kubernetes.azure.com" is restricted
+                                rule: '!(self.key.startsWith("kubernetes.azure.com") && self.key != "kubernetes.azure.com/scalesetpriority" && self.key != "kubernetes.azure.com/mode")'
                           type: array
                           maxItems: 100
                         terminationGracePeriod:
