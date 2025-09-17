@@ -290,15 +290,11 @@ var _ = Describe("CEL/Validation", func() {
 			}
 		})
 		It("should not allow internal labels", func() {
-			oldNodePool := nodePool.DeepCopy()
 			for label := range v1beta1.RestrictedLabels {
 				nodePool.Spec.Template.Labels = map[string]string{
 					label: "test",
 				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
-				nodePool = oldNodePool.DeepCopy()
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 			}
 		})
 	})
