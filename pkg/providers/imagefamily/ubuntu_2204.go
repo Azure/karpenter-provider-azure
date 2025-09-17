@@ -123,6 +123,7 @@ func (u Ubuntu2204) ScriptlessCustomData(
 		ClusterID:                      u.Options.ClusterID,
 		APIServerName:                  u.Options.APIServerName,
 		KubeletClientTLSBootstrapToken: u.Options.KubeletClientTLSBootstrapToken,
+		EnableSecureTLSBootstrapping:   u.Options.EnableSecureTLSBootstrapping,
 		NetworkPlugin:                  u.Options.NetworkPlugin,
 		NetworkPolicy:                  u.Options.NetworkPolicy,
 		KubernetesVersion:              u.Options.KubernetesVersion,
