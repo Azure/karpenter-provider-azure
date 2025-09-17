@@ -322,9 +322,7 @@ var _ = Describe("CEL/Validation", func() {
 					Effect: corev1.TaintEffectNoSchedule,
 				},
 			}
-			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 		})
 	})
 
@@ -354,9 +352,7 @@ var _ = Describe("CEL/Validation", func() {
 					Effect: effect,
 				},
 			}
-			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-			Expect(nodePool.RuntimeValidate(ctx)).To(Succeed())
-			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 		},
 			Entry("allowed key kubernetes.azure.com/scalesetpriority in regular taints", "kubernetes.azure.com/scalesetpriority", "spot", corev1.TaintEffectNoSchedule),
 			Entry("allowed key kubernetes.azure.com/mode in regular taints", "kubernetes.azure.com/mode", "gateway", corev1.TaintEffectNoSchedule),
