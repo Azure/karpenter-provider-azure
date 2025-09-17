@@ -31,12 +31,12 @@ import (
 
 // According to https://pkg.go.dev/encoding/json#Marshal, it's safe to use map-types (and encoding/json in general) to produce
 // strings deterministically.
-type inPlaceUpdateFields struct {
+type vmInPlaceUpdateFields struct {
 	Identities sets.Set[string]  `json:"identities,omitempty"`
 	Tags       map[string]string `json:"tags,omitempty"`
 }
 
-func (i *inPlaceUpdateFields) CalculateHash() (string, error) {
+func (i *vmInPlaceUpdateFields) CalculateHash() (string, error) {
 	encoded, err := json.Marshal(i)
 	if err != nil {
 		return "", err
@@ -57,7 +57,7 @@ func HashFromNodeClaim(options *options.Options, _ *karpv1.NodeClaim, nodeClass 
 		tags = lo.Assign(options.AdditionalTags, nodeClass.Spec.Tags)
 	}
 
-	hashStruct := &inPlaceUpdateFields{
+	hashStruct := &vmInPlaceUpdateFields{
 		Identities: sets.New(options.NodeIdentities...),
 		Tags:       tags,
 	}
