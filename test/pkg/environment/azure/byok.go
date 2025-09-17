@@ -75,9 +75,7 @@ func (env *Environment) CreateKeyVaultAndDiskEncryptionSet(ctx context.Context) 
 
 	// Get the current test user's principal ID from the defaultCredential Token
 	testUserPrincipalID := env.GetCurrentUserPrincipalID(ctx, cred)
-	if testUserPrincipalID == "" {
-		panic("testUserPrincipalID is empty: test user authentication failed")
-	}
+	Expect(testUserPrincipalID).ToNot(BeEmpty(), "test user authentication failed")
 
 	err = env.assignKeyVaultRBAC(ctx, lo.FromPtr(keyVault.ID), karpenterIdentity, testUserPrincipalID)
 	Expect(err).ToNot(HaveOccurred())
