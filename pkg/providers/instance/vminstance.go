@@ -131,7 +131,7 @@ type DefaultVMProvider struct {
 	vmListQuery, nicListQuery string
 }
 
-func NewDefaultProvider(
+func NewDefaultVMProvider(
 	azClient *AZClient,
 	instanceTypeProvider instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
