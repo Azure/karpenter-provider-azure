@@ -31,11 +31,11 @@ import (
 type responseErrorHandler struct {
 	name                string
 	matchError          func(error) bool
-	handleResponseError func(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error
+	handleResponseError func(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error
 }
 
 // markOfferingsUnavailableForCapacityType marks all offerings of the specified capacity type as unavailable
-func markOfferingsUnavailableForCapacityType(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, capacityType string, reason string, ttl time.Duration) {
+func markOfferingsUnavailableForCapacityType(ctx context.Context, provider *DefaultVMProvider, instanceType *corecloudprovider.InstanceType, capacityType string, reason string, ttl time.Duration) {
 	for _, offering := range instanceType.Offerings {
 		if getOfferingCapacityType(offering) != capacityType {
 			continue
@@ -45,7 +45,7 @@ func markOfferingsUnavailableForCapacityType(ctx context.Context, provider *Defa
 }
 
 // markAllZonesUnavailableForBothCapacityTypes marks all unique zones as unavailable for both on-demand and spot
-func markAllZonesUnavailableForBothCapacityTypes(ctx context.Context, provider *DefaultProvider, instanceType *corecloudprovider.InstanceType, reason string, ttl time.Duration) {
+func markAllZonesUnavailableForBothCapacityTypes(ctx context.Context, provider *DefaultVMProvider, instanceType *corecloudprovider.InstanceType, reason string, ttl time.Duration) {
 	// instanceType.Offerings contains multiple entries for one zone, but we only care that zone appears at least once
 	zonesToBlock := make(map[string]struct{})
 	for _, offering := range instanceType.Offerings {
@@ -103,13 +103,13 @@ func defaultResponseErrorHandlers() []responseErrorHandler {
 	}
 }
 
-func handleLowPriorityQuotaError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+func handleLowPriorityQuotaError(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	// Mark in cache that spot quota has been reached for this subscription
 	provider.unavailableOfferings.MarkSpotUnavailableWithTTL(ctx, SubscriptionQuotaReachedTTL)
 	return fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota")
 }
 
-func handleSKUFamilyQuotaError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+func handleSKUFamilyQuotaError(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	// Subscription quota has been reached for this VM SKU, mark the instance type as unavailable in all zones available to the offering
 	// This will also update the TTL for an existing offering in the cache that is already unavailable
 
@@ -128,7 +128,7 @@ func handleSKUFamilyQuotaError(ctx context.Context, provider *DefaultProvider, s
 	return fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
 }
 
-func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+func handleSKUNotAvailableError(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	// https://aka.ms/azureskunotavailable: either not available for a location or zone, or out of capacity for Spot.
 	// We only expect to observe the Spot case, not location or zone restrictions, because:
 	// - SKUs with location restriction are already filtered out via sku.HasLocationRestriction
@@ -148,7 +148,7 @@ func handleSKUNotAvailableError(ctx context.Context, provider *DefaultProvider, 
 }
 
 // For zonal allocation failure, we will mark all instance types from this SKU family that have >= CPU count as the one that hit the error in this zone
-func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	vCPU, vCPUErr := sku.VCPU() // versionedSKUFamily e.g. "N4" for "NV8as_v4"
 	if vCPUErr != nil {
 		// default to 0 if we can't determine VCPU count, this shouldn't happen as long as data in skewer.SKU is correct
@@ -161,14 +161,14 @@ func handleZonalAllocationFailureError(ctx context.Context, provider *DefaultPro
 }
 
 // AllocationFailure means that VM allocation to the dedicated host has failed. But it can also mean "Allocation failed. We do not have sufficient capacity for the requested VM size in this region."
-func handleAllocationFailureError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+func handleAllocationFailureError(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	markAllZonesUnavailableForBothCapacityTypes(ctx, provider, instanceType, AllocationFailureReason, AllocationFailureTTL)
 
 	return fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", instanceType.Name)
 }
 
 // OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
-func handleOverconstrainedZonalAllocationFailureError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+func handleOverconstrainedZonalAllocationFailureError(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	// OverconstrainedZonalAllocationFailure means that specific zone cannot accommodate the selected size and capacity combination.
 	provider.unavailableOfferings.MarkUnavailableWithTTL(ctx, OverconstrainedZonalAllocationFailureReason, instanceType.Name, zone, capacityType, AllocationFailureTTL)
 
@@ -176,13 +176,13 @@ func handleOverconstrainedZonalAllocationFailureError(ctx context.Context, provi
 }
 
 // OverconstrainedAllocationFailure means that all zones cannot accommodate the selected size and capacity combination.
-func handleOverconstrainedAllocationFailureError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+func handleOverconstrainedAllocationFailureError(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	markOfferingsUnavailableForCapacityType(ctx, provider, instanceType, capacityType, OverconstrainedAllocationFailureReason, AllocationFailureTTL)
 
 	return fmt.Errorf("unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)", capacityType, instanceType.Name)
 }
 
-func handleRegionalQuotaError(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
+func handleRegionalQuotaError(ctx context.Context, provider *DefaultVMProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, err error) error {
 	// InsufficientCapacityError is appropriate here because trying any other instance type will not help
 	return corecloudprovider.NewInsufficientCapacityError(
 		fmt.Errorf(

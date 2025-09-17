@@ -60,7 +60,7 @@ var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	// ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
-	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.InstanceProvider)
+	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider)
 
 })
 
@@ -92,7 +92,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			},
 			Status: karpv1.NodeClaimStatus{
-				ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
+				ProviderID: utils.VMResourceIDToProviderID(ctx, *vm.ID),
 			},
 		})
 
@@ -388,7 +388,7 @@ var _ = Describe("In Place Update Controller", func() {
 				},
 			},
 			Status: karpv1.NodeClaimStatus{
-				ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
+				ProviderID: utils.VMResourceIDToProviderID(ctx, *vm.ID),
 			},
 		})
 		// Claims are launched and registered by default
@@ -432,7 +432,7 @@ var _ = Describe("In Place Update Controller", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
-			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+			updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updatedVM).To(Equal(vm)) // No change expected
@@ -460,7 +460,7 @@ var _ = Describe("In Place Update Controller", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
-			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+			updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updatedVM).ToNot(Equal(vm))
@@ -523,7 +523,7 @@ var _ = Describe("In Place Update Controller", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
-			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+			updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updatedVM.Identity).ToNot(BeNil())

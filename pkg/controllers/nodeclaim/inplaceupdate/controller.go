@@ -43,17 +43,17 @@ import (
 )
 
 type Controller struct {
-	kubeClient       client.Client
-	instanceProvider instance.Provider
+	kubeClient         client.Client
+	vmInstanceProvider instance.VMProvider
 }
 
 func NewController(
 	kubeClient client.Client,
-	instanceProvider instance.Provider,
+	vmInstanceProvider instance.VMProvider,
 ) *Controller {
 	return &Controller{
-		kubeClient:       kubeClient,
-		instanceProvider: instanceProvider,
+		kubeClient:         kubeClient,
+		vmInstanceProvider: vmInstanceProvider,
 	}
 }
 
@@ -92,7 +92,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	stored := nodeClaim.DeepCopy()
 
-	vm, err := nodeclaimutils.GetVM(ctx, c.instanceProvider, nodeClaim)
+	vm, err := nodeclaimutils.GetVM(ctx, c.vmInstanceProvider, nodeClaim)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
 	}
@@ -150,7 +150,7 @@ func (c *Controller) applyPatch(
 
 	// Apply the update, if one is needed
 	if update != nil {
-		err := c.instanceProvider.Update(ctx, lo.FromPtr(vm.Name), *update)
+		err := c.vmInstanceProvider.Update(ctx, lo.FromPtr(vm.Name), *update)
 		if err != nil {
 			return fmt.Errorf("failed to apply update to VM, %w", err)
 		}

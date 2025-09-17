@@ -51,9 +51,9 @@ type patchParameters struct {
 	nodeClass *v1beta1.AKSNodeClass
 }
 
-var patchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *armcompute.VirtualMachine) bool{
-	patchIdentities,
-	patchTags,
+var vmPatchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *armcompute.VirtualMachine) bool{
+	patchVMIdentities,
+	patchVMTags,
 }
 
 func CalculateVMPatch(
@@ -70,7 +70,7 @@ func CalculateVMPatch(
 		nodeClaim: nodeClaim,
 	}
 
-	for _, patcher := range patchers {
+	for _, patcher := range vmPatchers {
 		patched := patcher(update, params, currentVM)
 		hasPatches = hasPatches || patched
 	}
@@ -82,7 +82,7 @@ func CalculateVMPatch(
 	return update
 }
 
-func patchIdentities(
+func patchVMIdentities(
 	update *armcompute.VirtualMachineUpdate,
 	params *patchParameters,
 	currentVM *armcompute.VirtualMachine,
@@ -105,7 +105,7 @@ func patchIdentities(
 	return true
 }
 
-func patchTags(
+func patchVMTags(
 	update *armcompute.VirtualMachineUpdate,
 	params *patchParameters,
 	currentVM *armcompute.VirtualMachine,

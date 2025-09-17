@@ -74,7 +74,7 @@ var _ cloudprovider.CloudProvider = (*CloudProvider)(nil)
 
 type CloudProvider struct {
 	instanceTypeProvider instancetype.Provider
-	instanceProvider     instance.Provider
+	vmInstanceProvider   instance.VMProvider
 	kubeClient           client.Client
 	imageProvider        imagefamily.NodeImageProvider
 	recorder             events.Recorder
@@ -82,14 +82,14 @@ type CloudProvider struct {
 
 func New(
 	instanceTypeProvider instancetype.Provider,
-	instanceProvider instance.Provider,
+	vmInstanceProvider instance.VMProvider,
 	recorder events.Recorder,
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
 ) *CloudProvider {
 	return &CloudProvider{
 		instanceTypeProvider: instanceTypeProvider,
-		instanceProvider:     instanceProvider,
+		vmInstanceProvider:   vmInstanceProvider,
 		kubeClient:           kubeClient,
 		imageProvider:        imageProvider,
 		recorder:             recorder,
@@ -97,16 +97,16 @@ func New(
 }
 
 // Create a node given the constraints.
-func (c *CloudProvider) handleInstanceCreation(ctx context.Context, instancePromise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) error {
+func (c *CloudProvider) handleVMInstanceCreation(ctx context.Context, vmPromise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) error {
 	if c.isStandaloneNodeClaim(nodeClaim) {
 		// processStandaloneNodeClaimDeletion:
 		//   Standalone NodeClaims aren’t re-queued for reconciliation in the provision_trigger controller,
 		//   so we delete them synchronously. After marking Launched=true,
 		//   their status can’t be reverted to false once the delete completes due to how core caches nodeclaims in
 		// 	 the lanch controller. This ensures we retry continuously until we hit the registration TTL
-		err := instancePromise.Wait()
+		err := vmPromise.Wait()
 		if err != nil {
-			return c.handleNodeClaimCreationError(ctx, err, instancePromise, nodeClaim, false)
+			return c.handleNodeClaimCreationError(ctx, err, vmPromise, nodeClaim, false)
 		}
 	} else {
 		// For NodePool-managed nodeclaims, launch a single goroutine to poll the returned promise.
@@ -115,7 +115,7 @@ func (c *CloudProvider) handleInstanceCreation(ctx context.Context, instanceProm
 		// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
 		// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
 		// only held in memory.
-		go c.waitOnPromise(ctx, instancePromise, nodeClaim)
+		go c.waitOnPromise(ctx, vmPromise, nodeClaim)
 	}
 	return nil
 }
@@ -169,21 +169,22 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
 	}
-	instancePromise, err := c.instanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+	vmPromise, err := c.vmInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
 		return nil, cloudprovider.NewCreateError(fmt.Errorf("creating instance failed, %w", err), CreateInstanceFailedReason, truncateMessage(err.Error()))
 	}
 
-	if err = c.handleInstanceCreation(ctx, instancePromise, nodeClaim); err != nil {
+	if err = c.handleVMInstanceCreation(ctx, vmPromise, nodeClaim); err != nil {
 		return nil, err
 	}
 
-	instance := instancePromise.VM
+	vm := vmPromise.VM // This is best-effort populated by Karpenter to be used to create the VM server-side. Not all fields are guaranteed to be populated, especially status fields.
+	// Double-check the code before making assumptions on their presence.
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
-		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
+		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
 	})
 
-	nc, err := c.instanceToNodeClaim(ctx, instance, instanceType)
+	nc, err := c.vmInstanceToNodeClaim(ctx, vm, instanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +200,7 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	return nc, nil
 }
 
-func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {
+func (c *CloudProvider) waitOnPromise(ctx context.Context, vmPromise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim) {
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("%v", r)
@@ -207,7 +208,7 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 		}
 	}()
 
-	err := promise.Wait()
+	err := vmPromise.Wait()
 
 	// Wait until the claim is Launched, to avoid racing with creation.
 	// This isn't strictly required, but without this, failure test scenarios are harder
@@ -217,7 +218,7 @@ func (c *CloudProvider) waitOnPromise(ctx context.Context, promise *instance.Vir
 	c.waitUntilLaunched(ctx, nodeClaim)
 
 	if err != nil {
-		_ = c.handleNodeClaimCreationError(ctx, err, promise, nodeClaim, true)
+		_ = c.handleNodeClaimCreationError(ctx, err, vmPromise, nodeClaim, true)
 		return
 	}
 }
@@ -246,14 +247,14 @@ func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1
 }
 
 // handleNodeClaimCreationError handles common error processing for both standalone and async node claim creation failures
-func (c *CloudProvider) handleNodeClaimCreationError(ctx context.Context, err error, promise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim, removeNodeClaim bool) error {
+func (c *CloudProvider) handleNodeClaimCreationError(ctx context.Context, err error, vmPromise *instance.VirtualMachinePromise, nodeClaim *karpv1.NodeClaim, removeNodeClaim bool) error {
 	c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, err))
 	log.FromContext(ctx).Error(err, "failed launching nodeclaim")
 
 	// Clean up the VM
 	// TODO: This won't clean up leaked NICs if the VM doesn't exist... intentional?
-	vmName := lo.FromPtr(promise.VM.Name)
-	deleteErr := c.instanceProvider.Delete(ctx, vmName)
+	vmName := lo.FromPtr(vmPromise.VM.Name)
+	deleteErr := c.vmInstanceProvider.Delete(ctx, vmName)
 	if cloudprovider.IgnoreNodeClaimNotFoundError(deleteErr) != nil {
 		log.FromContext(ctx).Error(deleteErr, "failed to delete VM", "vmName", vmName)
 	}
@@ -281,20 +282,20 @@ func (c *CloudProvider) handleNodeClaimCreationError(ctx context.Context, err er
 }
 
 func (c *CloudProvider) List(ctx context.Context) ([]*karpv1.NodeClaim, error) {
-	instances, err := c.instanceProvider.List(ctx)
+	vmInstances, err := c.vmInstanceProvider.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing instances, %w", err)
+		return nil, fmt.Errorf("listing VM instances, %w", err)
 	}
 
 	var nodeClaims []*karpv1.NodeClaim
-	for _, instance := range instances {
-		instanceType, err := c.resolveInstanceTypeFromInstance(ctx, instance)
+	for _, instance := range vmInstances {
+		instanceType, err := c.resolveInstanceTypeFromVMInstance(ctx, instance)
 		if err != nil {
-			return nil, fmt.Errorf("resolving instance type, %w", err)
+			return nil, fmt.Errorf("resolving instance type for VM instance, %w", err)
 		}
-		nodeClaim, err := c.instanceToNodeClaim(ctx, instance, instanceType)
+		nodeClaim, err := c.vmInstanceToNodeClaim(ctx, instance, instanceType)
 		if err != nil {
-			return nil, fmt.Errorf("converting instance to node claim, %w", err)
+			return nil, fmt.Errorf("converting VM instance to node claim, %w", err)
 		}
 
 		nodeClaims = append(nodeClaims, nodeClaim)
@@ -308,15 +309,15 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 		return nil, fmt.Errorf("getting vm name, %w", err)
 	}
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("vmName", vmName))
-	instance, err := c.instanceProvider.Get(ctx, vmName)
+	vm, err := c.vmInstanceProvider.Get(ctx, vmName)
 	if err != nil {
-		return nil, fmt.Errorf("getting instance, %w", err)
+		return nil, fmt.Errorf("getting VM instance, %w", err)
 	}
-	instanceType, err := c.resolveInstanceTypeFromInstance(ctx, instance)
+	instanceType, err := c.resolveInstanceTypeFromVMInstance(ctx, vm)
 	if err != nil {
 		return nil, fmt.Errorf("resolving instance type, %w", err)
 	}
-	return c.instanceToNodeClaim(ctx, instance, instanceType)
+	return c.vmInstanceToNodeClaim(ctx, vm, instanceType)
 }
 
 func (c *CloudProvider) LivenessProbe(req *http.Request) error {
@@ -324,6 +325,7 @@ func (c *CloudProvider) LivenessProbe(req *http.Request) error {
 }
 
 // GetInstanceTypes returns all available InstanceTypes
+// May return apimachinery.NotFoundError if NodeClass is not found.
 func (c *CloudProvider) GetInstanceTypes(ctx context.Context, nodePool *karpv1.NodePool) ([]*cloudprovider.InstanceType, error) {
 	nodeClass, err := c.resolveNodeClassFromNodePool(ctx, nodePool)
 	if err != nil {
@@ -348,7 +350,7 @@ func (c *CloudProvider) Delete(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err != nil {
 		return fmt.Errorf("getting VM name, %w", err)
 	}
-	return c.instanceProvider.Delete(ctx, vmName)
+	return c.vmInstanceProvider.Delete(ctx, vmName)
 }
 
 func (c *CloudProvider) IsDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim) (cloudprovider.DriftReason, error) {
@@ -404,6 +406,7 @@ func (c *CloudProvider) RepairPolicies() []cloudprovider.RepairPolicy {
 	}
 }
 
+// May return apimachinery.NotFoundError if NodePool is not found.
 func (c *CloudProvider) resolveNodeClassFromNodePool(ctx context.Context, nodePool *karpv1.NodePool) (*v1beta1.AKSNodeClass, error) {
 	nodeClass := &v1beta1.AKSNodeClass{}
 	if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: nodePool.Spec.Template.Spec.NodeClassRef.Name}, nodeClass); err != nil {
@@ -437,8 +440,8 @@ func (c *CloudProvider) resolveInstanceTypes(ctx context.Context, nodeClaim *kar
 	// }), nil
 }
 
-func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) (*cloudprovider.InstanceType, error) {
-	nodePool, err := c.resolveNodePoolFromInstance(ctx, instance)
+func (c *CloudProvider) resolveInstanceTypeFromVMInstance(ctx context.Context, vm *armcompute.VirtualMachine) (*cloudprovider.InstanceType, error) {
+	nodePool, err := c.resolveNodePoolFromVMInstance(ctx, vm)
 	if err != nil {
 		// If we can't resolve the provisioner, we fallback to not getting instance type info
 		return nil, client.IgnoreNotFound(fmt.Errorf("resolving node pool, %w", err))
@@ -449,13 +452,13 @@ func (c *CloudProvider) resolveInstanceTypeFromInstance(ctx context.Context, ins
 		return nil, client.IgnoreNotFound(fmt.Errorf("resolving node template, %w", err))
 	}
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
-		return i.Name == string(lo.FromPtr(instance.Properties.HardwareProfile.VMSize))
+		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
 	})
 	return instanceType, nil
 }
 
-func (c *CloudProvider) resolveNodePoolFromInstance(ctx context.Context, instance *armcompute.VirtualMachine) (*karpv1.NodePool, error) {
-	nodePoolName, ok := instance.Tags[launchtemplate.NodePoolTagKey]
+func (c *CloudProvider) resolveNodePoolFromVMInstance(ctx context.Context, vm *armcompute.VirtualMachine) (*karpv1.NodePool, error) {
+	nodePoolName, ok := vm.Tags[launchtemplate.NodePoolTagKey]
 	if ok && *nodePoolName != "" {
 		nodePool := &karpv1.NodePool{}
 		if err := c.kubeClient.Get(ctx, types.NamespacedName{Name: *nodePoolName}, nodePool); err != nil {
@@ -467,7 +470,7 @@ func (c *CloudProvider) resolveNodePoolFromInstance(ctx context.Context, instanc
 	return nil, errors.NewNotFound(schema.GroupResource{Group: coreapis.Group, Resource: "nodepools"}, "")
 }
 
-func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
+func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcompute.VirtualMachine, instanceType *cloudprovider.InstanceType) (*karpv1.NodeClaim, error) {
 	nodeClaim := &karpv1.NodeClaim{}
 	labels := map[string]string{}
 	annotations := map[string]string{}
@@ -484,13 +487,13 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 		labels[corev1.LabelTopologyZone] = zone
 	}
 
-	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityType(vm)
+	labels[karpv1.CapacityTypeLabelKey] = instance.GetCapacityTypeFromVM(vm)
 
 	if tag, ok := vm.Tags[launchtemplate.NodePoolTagKey]; ok {
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
 
-	nodeClaim.Name = GenerateNodeClaimName(*vm.Name)
+	nodeClaim.Name = GetNodeClaimNameFromVMName(*vm.Name)
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
 	nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
@@ -498,14 +501,14 @@ func (c *CloudProvider) instanceToNodeClaim(ctx context.Context, vm *armcompute.
 	if utils.IsVMDeleting(*vm) {
 		nodeClaim.DeletionTimestamp = &metav1.Time{Time: time.Now()}
 	}
-	nodeClaim.Status.ProviderID = utils.ResourceIDToProviderID(ctx, *vm.ID)
+	nodeClaim.Status.ProviderID = utils.VMResourceIDToProviderID(ctx, *vm.ID)
 	if vm.Properties != nil && vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.ImageReference != nil {
 		nodeClaim.Status.ImageID = utils.ImageReferenceToString(vm.Properties.StorageProfile.ImageReference)
 	}
 	return nodeClaim, nil
 }
 
-func GenerateNodeClaimName(vmName string) string {
+func GetNodeClaimNameFromVMName(vmName string) string {
 	return strings.TrimLeft("aks-", vmName)
 }
 

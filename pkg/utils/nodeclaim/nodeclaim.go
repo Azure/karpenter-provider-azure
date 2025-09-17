@@ -52,15 +52,15 @@ func GetAKSNodeClass(ctx context.Context, kubeClient client.Client, nodeClaim *k
 	return nodeClass, nil
 }
 
-// TODO: Could go onto instanceProvider?
+// TODO: Could go onto vmInstanceProvider?
 // GetVM gets the Azure VM associated with the NodeClaim
-func GetVM(ctx context.Context, instanceProvider instance.Provider, nodeClaim *karpv1.NodeClaim) (*armcompute.VirtualMachine, error) {
+func GetVM(ctx context.Context, vmInstanceProvider instance.VMProvider, nodeClaim *karpv1.NodeClaim) (*armcompute.VirtualMachine, error) {
 	vmName, err := GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		return nil, err
 	}
 
-	vm, err := instanceProvider.Get(ctx, vmName)
+	vm, err := vmInstanceProvider.Get(ctx, vmName)
 	if err != nil {
 		return nil, fmt.Errorf("getting azure VM %s: %w", vmName, err)
 	}

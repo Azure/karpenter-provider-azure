@@ -145,7 +145,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		return "", err
 	}
 
-	vm, err := c.instanceProvider.Get(ctx, id)
+	vm, err := c.vmInstanceProvider.Get(ctx, id)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
 		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
@@ -203,7 +203,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.N
 	nicName := instance.GenerateResourceName(nodeClaim.Name)
 
 	// TODO: Refactor all of AzConfig to be part of options
-	nic, err := c.instanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
+	nic, err := c.vmInstanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return "", nil

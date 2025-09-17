@@ -82,7 +82,7 @@ var _ = BeforeSuite(func() {
 	azureEnv = test.NewEnvironment(ctx, env)
 	fakeClock = clock.NewFakeClock(time.Now())
 	recorder = events.NewRecorder(&record.FakeRecorder{})
-	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
+	cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	prov = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
 })
@@ -208,7 +208,7 @@ var _ = Describe("CloudProvider", func() {
 					//     https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/pkg/providers/instance/instance.go#L604
 					//     which has the sub const 12345678-1234-1234-1234-123456789012 passed in here:
 					//     https://github.com/Azure/karpenter-provider-azure/blob/84e449787ec72268efb0c7af81ec87a6b3ee95fa/pkg/test/environment.go#L152
-					ProviderID: utils.ResourceIDToProviderID(ctx, fmt.Sprintf("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", rg, vmName)),
+					ProviderID: utils.VMResourceIDToProviderID(ctx, fmt.Sprintf("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", rg, vmName)),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
