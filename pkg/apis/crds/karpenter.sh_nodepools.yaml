@@ -410,8 +410,8 @@ spec:
                               - effect
                               - key
                             type: object
-                          maxItems: 100
                           type: array
+                          maxItems: 100
                         terminationGracePeriod:
                           description: |-
                             TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
