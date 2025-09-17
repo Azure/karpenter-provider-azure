@@ -45,20 +45,20 @@ const (
 )
 
 type NetworkInterface struct {
-	kubeClient       client.Client
-	instanceProvider instance.Provider
+	kubeClient         client.Client
+	vmInstanceProvider instance.VMProvider
 }
 
-func NewNetworkInterface(kubeClient client.Client, instanceProvider instance.Provider) *NetworkInterface {
+func NewNetworkInterface(kubeClient client.Client, vmInstanceProvider instance.VMProvider) *NetworkInterface {
 	return &NetworkInterface{
-		kubeClient:       kubeClient,
-		instanceProvider: instanceProvider,
+		kubeClient:         kubeClient,
+		vmInstanceProvider: vmInstanceProvider,
 	}
 }
 
 func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (sets.Set[string], error) {
 	unremovableInterfaces := sets.New[string]()
-	vms, err := c.instanceProvider.List(ctx)
+	vms, err := c.vmInstanceProvider.List(ctx)
 	if err != nil {
 		return unremovableInterfaces, fmt.Errorf("listing VMs: %w", err)
 	}
@@ -78,7 +78,7 @@ func (c *NetworkInterface) populateUnremovableInterfaces(ctx context.Context) (s
 
 func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, "networkinterface.garbagecollection")
-	nics, err := c.instanceProvider.ListNics(ctx)
+	nics, err := c.vmInstanceProvider.ListNics(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing NICs: %w", err)
 	}
@@ -90,7 +90,7 @@ func (c *NetworkInterface) Reconcile(ctx context.Context) (reconcile.Result, err
 	workqueue.ParallelizeUntil(ctx, 100, len(nics), func(i int) {
 		nicName := lo.FromPtr(nics[i].Name)
 		if !unremovableInterfaces.Has(nicName) {
-			err := c.instanceProvider.DeleteNic(ctx, nicName)
+			err := c.vmInstanceProvider.DeleteNic(ctx, nicName)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "")
 				return
