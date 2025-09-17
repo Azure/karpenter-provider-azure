@@ -56,10 +56,10 @@ var _ = Describe("BYOK", func() {
 	})
 	It("should provision a VM with customer-managed key disk encryption", func() {
 		ctx := context.Background()
-		var diskEncryptionSetID *string
+		var diskEncryptionSetID string
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
-			diskEncryptionSetID := env.CreateKeyVaultAndDiskEncryptionSet(ctx)
+			diskEncryptionSetID = env.CreateKeyVaultAndDiskEncryptionSet(ctx)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		}
 
@@ -85,10 +85,10 @@ var _ = Describe("BYOK", func() {
 
 	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", func() {
 		ctx := context.Background()
-		var diskEncryptionSetID *string
+		var diskEncryptionSetID string
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
-			diskEncryptionSetID := env.CreateKeyVaultAndDiskEncryptionSet(ctx)
+			diskEncryptionSetID = env.CreateKeyVaultAndDiskEncryptionSet(ctx)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		}
 

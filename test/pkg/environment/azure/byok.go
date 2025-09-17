@@ -251,8 +251,8 @@ func (env *Environment) updateKeyVaultAccessForDES(ctx context.Context, keyVault
 	keyVaultScope := lo.FromPtr(kvGet.ID)
 
 	// Assign the Key Vault Crypto Service Encryption User role to the DES managed identity
-	// The retry logic in the RBAC client will handle principal replication delays
-	err = env.RBACManager.EnsureRole(ctx, keyVaultScope, cryptoServiceRoleDefinitionID, desIdentityPrincipalID)
+	// Using EnsureRoleWithPrincipalType to handle replication delays when creating DES identity
+	err = env.RBACManager.EnsureRoleWithPrincipalType(ctx, keyVaultScope, cryptoServiceRoleDefinitionID, desIdentityPrincipalID, "ServicePrincipal")
 	if err != nil {
 		return fmt.Errorf("failed to assign Key Vault RBAC role to DES identity: %w", err)
 	}

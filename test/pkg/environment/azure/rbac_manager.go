@@ -62,6 +62,13 @@ func NewRBACManager(subscriptionID string) (*RBACManager, error) {
 // EnsureRole assigns roleDefinitionID to principalID at scope if not already present.
 // It lists for the scope and returns nil if a matching assignment exists.
 func (r *RBACManager) EnsureRole(ctx context.Context, scope, roleDefinitionID, principalID string) error {
+	return r.EnsureRoleWithPrincipalType(ctx, scope, roleDefinitionID, principalID, "")
+}
+
+// EnsureRoleWithPrincipalType assigns roleDefinitionID to principalID at scope with optional principalType.
+// Setting principalType helps handle replication delays when creating principals and immediately assigning roles.
+// See https://aka.ms/docs-principaltype for more information.
+func (r *RBACManager) EnsureRoleWithPrincipalType(ctx context.Context, scope, roleDefinitionID, principalID, principalType string) error {
 	// Quick scan to avoid duplicates
 	pager := r.client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
 		Filter: to.Ptr(fmt.Sprintf("assignedTo('%s')", principalID)),
@@ -83,11 +90,17 @@ func (r *RBACManager) EnsureRole(ctx context.Context, scope, roleDefinitionID, p
 		}
 	}
 	name := uuid.New().String()
+	properties := &armauthorization.RoleAssignmentProperties{
+		PrincipalID:      to.Ptr(principalID),
+		RoleDefinitionID: to.Ptr(roleDefinitionID),
+	}
+
+	if principalType != "" {
+		properties.PrincipalType = to.Ptr(armauthorization.PrincipalType(principalType))
+	}
+
 	_, err := r.client.Create(ctx, scope, name, armauthorization.RoleAssignmentCreateParameters{
-		Properties: &armauthorization.RoleAssignmentProperties{
-			PrincipalID:      to.Ptr(principalID),
-			RoleDefinitionID: to.Ptr(roleDefinitionID),
-		},
+		Properties: properties,
 	}, nil)
 	return err
 }

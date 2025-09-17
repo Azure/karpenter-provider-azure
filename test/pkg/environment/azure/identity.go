@@ -19,14 +19,11 @@ package azure
 import (
 	"context"
 	"fmt"
-	"strings"
-
-	"encoding/base64"
-	"encoding/json"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/samber/lo"
 
 	. "github.com/onsi/gomega"
@@ -74,22 +71,16 @@ func (env *Environment) GetCurrentUserPrincipalID(ctx context.Context, cred *azi
 	}
 
 	// Parse the JWT token to extract the oid (object ID) claim
-	// JWT tokens have three parts separated by dots: header.payload.signature
-	parts := strings.Split(token.Token, ".")
-	if len(parts) != 3 {
-		fmt.Printf("Warning: Invalid token format\n")
-		return ""
-	}
-
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	parsedToken, _, err := parser.ParseUnverified(token.Token, jwt.MapClaims{})
 	if err != nil {
-		fmt.Printf("Warning: Could not decode token payload: %v\n", err)
+		fmt.Printf("Warning: Could not parse JWT token: %v\n", err)
 		return ""
 	}
 
-	var claims map[string]interface{}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		fmt.Printf("Warning: Could not parse token claims: %v\n", err)
+	claims, ok := parsedToken.Claims.(jwt.MapClaims)
+	if !ok {
+		fmt.Printf("Warning: Could not extract claims from token\n")
 		return ""
 	}
 
