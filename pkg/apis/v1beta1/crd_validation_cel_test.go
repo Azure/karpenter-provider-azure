@@ -257,9 +257,7 @@ var _ = Describe("CEL/Validation", func() {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 					{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: label, Operator: corev1.NodeSelectorOpIn, Values: []string{"test"}}},
 				}
-				Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
-				Expect(nodePool.RuntimeValidate(ctx)).ToNot(Succeed())
-				Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 				nodePool = oldNodePool.DeepCopy()
 			}
 		})
@@ -290,11 +288,13 @@ var _ = Describe("CEL/Validation", func() {
 			}
 		})
 		It("should not allow internal labels", func() {
+			oldNodePool := nodePool.DeepCopy()
 			for label := range v1beta1.RestrictedLabels {
 				nodePool.Spec.Template.Labels = map[string]string{
 					label: "test",
 				}
 				Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+				nodePool = oldNodePool.DeepCopy()
 			}
 		})
 	})
