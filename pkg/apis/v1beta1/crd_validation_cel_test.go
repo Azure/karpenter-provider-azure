@@ -299,6 +299,87 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("Taints", func() {
+		It("should allow taints with non-kubernetes.azure.com domains", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "example.com/custom-taint",
+					Value:  "true",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "company.io/another-taint",
+					Value:  "value",
+					Effect: corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should allow taints with allowed kubernetes.azure.com keys", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/scalesetpriority",
+					Value:  "spot",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "kubernetes.azure.com/mode",
+					Value:  "gateway",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
+		It("should reject taints with disallowed kubernetes.azure.com keys", func() {
+			nodePool.Spec.Template.Spec.Taints = []corev1.Taint{
+				{
+					Key:    "kubernetes.azure.com/custom-key",
+					Value:  "value",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		})
+	})
+
+	Context("StartupTaints", func() {
+		It("should allow startup taints with non-kubernetes.azure.com domains", func() {
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "example.com/startup-taint",
+					Value:  "true",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:    "company.io/initialization",
+					Value:  "pending",
+					Effect: corev1.TaintEffectPreferNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
+		DescribeTable("should reject startup taints with kubernetes.azure.com domain", func(key, value string, effect corev1.TaintEffect) {
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    key,
+					Value:  value,
+					Effect: effect,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
+		},
+			Entry("allowed key kubernetes.azure.com/scalesetpriority in regular taints", "kubernetes.azure.com/scalesetpriority", "spot", corev1.TaintEffectNoSchedule),
+			Entry("allowed key kubernetes.azure.com/mode in regular taints", "kubernetes.azure.com/mode", "gateway", corev1.TaintEffectNoSchedule),
+			Entry("custom kubernetes.azure.com key", "kubernetes.azure.com/custom-startup", "value", corev1.TaintEffectPreferNoSchedule),
+		)
+	})
+
 	Context("Tags", func() {
 		It("should allow tags with valid keys and values", func() {
 			nodeClass := &v1beta1.AKSNodeClass{
