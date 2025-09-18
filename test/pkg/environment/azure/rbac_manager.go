@@ -19,11 +19,8 @@ package azure
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
@@ -36,23 +33,12 @@ type RBACManager struct {
 }
 
 // NewRBACManager builds a client with DefaultAzureCredential.
-func NewRBACManager(subscriptionID string) (*RBACManager, error) {
+func NewRBACManager(subscriptionID string, cred azcore.TokenCredential) (*RBACManager, error) {
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, err
 	}
-	c, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, &arm.ClientOptions{
-		ClientOptions: policy.ClientOptions{
-			Retry: policy.RetryOptions{
-				MaxRetries: 15,
-				RetryDelay: time.Second * 5,
-				StatusCodes: []int{
-					// RBAC assignments can take time to propagate, resulting in 403 errors
-					// This is especially important for BYOK scenarios where DES needs access to Key Vault
-					http.StatusForbidden,
-				},
-			},
-		}})
+	c, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
 	if err != nil {
 		return nil, err
 	}
