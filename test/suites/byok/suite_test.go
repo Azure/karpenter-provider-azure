@@ -187,7 +187,7 @@ func CreateKeyVaultAndDiskEncryptionSet(ctx context.Context, env *azure.Environm
 	err = assignKeyVaultRBAC(ctx, env, lo.FromPtr(keyVault.ID), karpenterIdentity, testUserPrincipalID)
 	Expect(err).ToNot(HaveOccurred())
 
-	key, err := createKeyVaultKey(ctx, env, keyVaultName, keyName, cred)
+	key, err := createKeyVaultKey(ctx, keyVaultName, keyName, cred)
 	Expect(err).ToNot(HaveOccurred())
 
 	des, err := createDiskEncryptionSet(ctx, env, desName, keyVault, key)
@@ -271,7 +271,7 @@ func assignKeyVaultRBAC(ctx context.Context, env *azure.Environment, keyVaultID,
 }
 
 // createKeyVaultKey creates a key in the Key Vault
-func createKeyVaultKey(ctx context.Context, env *azure.Environment, keyVaultName, keyName string, cred azcore.TokenCredential) (*azkeys.KeyBundle, error) {
+func createKeyVaultKey(ctx context.Context, keyVaultName, keyName string, cred azcore.TokenCredential) (*azkeys.KeyBundle, error) {
 	// Add retry options for Key Vault operations that may encounter RBAC propagation delays
 	// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
 	// With 15 retries at 5 second intervals = 75 seconds total retry time
