@@ -3,4 +3,4 @@ kind: AKSNodeClass
 metadata:
   name: default
 spec:
-  imageFamily: Ubuntu
+  imageFamily: Ubuntu2204
