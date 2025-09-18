@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
@@ -69,7 +69,7 @@ var _ = Describe("BYOK", func() {
 		var diskEncryptionSetID string
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
-			diskEncryptionSetID = env.CreateKeyVaultAndDiskEncryptionSet(ctx)
+			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		}
 
@@ -98,7 +98,7 @@ var _ = Describe("BYOK", func() {
 		var diskEncryptionSetID string
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
-			diskEncryptionSetID = env.CreateKeyVaultAndDiskEncryptionSet(ctx)
+			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		}
 
@@ -169,8 +169,7 @@ func CreateKeyVaultAndDiskEncryptionSet(ctx context.Context, env *azure.Environm
 	keyName := "test-key"
 	desName := fmt.Sprintf("karpenter-test-des-%d", time.Now().Unix())
 
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	Expect(err).ToNot(HaveOccurred())
+	cred := env.GetDefaultCredential()
 
 	clusterIdentity := env.GetClusterIdentity(ctx)
 	clusterTenant := lo.FromPtr(clusterIdentity.TenantID)
@@ -272,7 +271,7 @@ func assignKeyVaultRBAC(ctx context.Context, env *azure.Environment, keyVaultID,
 }
 
 // createKeyVaultKey creates a key in the Key Vault
-func createKeyVaultKey(ctx context.Context, env *azure.Environment, keyVaultName, keyName string, cred *azidentity.DefaultAzureCredential) (*azkeys.KeyBundle, error) {
+func createKeyVaultKey(ctx context.Context, env *azure.Environment, keyVaultName, keyName string, cred azcore.TokenCredential) (*azkeys.KeyBundle, error) {
 	// Add retry options for Key Vault operations that may encounter RBAC propagation delays
 	// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
 	// With 15 retries at 5 second intervals = 75 seconds total retry time

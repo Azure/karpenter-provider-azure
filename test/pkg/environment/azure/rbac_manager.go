@@ -22,7 +22,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/google/uuid"
 )
@@ -32,12 +31,8 @@ type RBACManager struct {
 	client         *armauthorization.RoleAssignmentsClient
 }
 
-// NewRBACManager builds a client with DefaultAzureCredential.
+// NewRBACManager builds a client with the provided TokenCredential.
 func NewRBACManager(subscriptionID string, cred azcore.TokenCredential) (*RBACManager, error) {
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, err
-	}
 	c, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, cred, nil)
 	if err != nil {
 		return nil, err

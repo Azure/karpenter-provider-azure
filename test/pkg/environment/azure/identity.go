@@ -18,10 +18,9 @@ package azure
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/golang-jwt/jwt/v5"
@@ -47,7 +46,7 @@ func (env *Environment) GetKarpenterWorkloadIdentity(ctx context.Context) string
 }
 
 // getCurrentUserPrincipalID gets the principal ID of the current authenticated identity
-func (env *Environment) GetCurrentUserPrincipalID(ctx context.Context, cred *azidentity.DefaultAzureCredential) string {
+func (env *Environment) GetCurrentUserPrincipalID(ctx context.Context, cred azcore.TokenCredential) string {
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{"https://management.azure.com/.default"},
 	})
