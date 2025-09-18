@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"sort"
 	"time"
 
@@ -239,6 +240,15 @@ func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armc
 				nil,
 			)
 			if err != nil {
+				// TODO: This is a bit of a hack based on how this Update function is currently used.
+				// Currently this function will not be called by any callers until a claim has been Registered, which means that the CSE had to have succeeded.
+				// The aksIdentifyingExtensionName is not currently guaranteed to be on the VM though, as Karpenter could have failed over during the initial VM create
+				// after CSE but before aksIdentifyingExtensionName. So, for now, we just ignore NotFound errors for the aksIdentifyingExtensionName.
+				azErr := sdkerrors.IsResponseError(err)
+				if extName == aksIdentifyingExtensionName && azErr != nil && azErr.StatusCode == http.StatusNotFound {
+					log.FromContext(ctx).V(0).Info("extension not found when updating tags", "extensionName", extName, "vmName", vmName)
+					continue
+				}
 				return fmt.Errorf("updating VM extension %q for VM %q: %w", extName, vmName, err)
 			}
 			pollers[extName] = poller
@@ -771,6 +781,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
 	for _, handler := range p.responseErrorHandlers {
 		if handler.matchError(responseError) {
+			metrics.VMCreateResponseError.Inc(ctx, "Handling response error", metrics.ResponseError(handler.name))
 			return handler.handleResponseError(ctx, p, sku, instanceType, zone, capacityType, responseError)
 		}
 	}
