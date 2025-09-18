@@ -316,6 +316,27 @@ func upgradeAnyExpiredImages(futureImages []v1beta1.NodeImage, foundImages []v1b
 	return finalImages
 }
 
+// parseLinuxImage parses a Linux image version in YYYYMM.DD.PATCH format.
+// Returns year, month, day, patch, and error if parsing fails.
+func parseLinuxImage(version string) (string, string, string, string, error) {
+	versionParts := strings.Split(version, ".")
+	if len(versionParts) < 3 {
+		return "", "", "", "", fmt.Errorf("invalid version format: expected YYYYMM.DD.PATCH, got %s", version)
+	}
+
+	// Extract YYYYMM.DD.PATCH parts
+	if len(versionParts[0]) != 6 || len(versionParts[1]) != 2 {
+		return "", "", "", "", fmt.Errorf("invalid version format: expected YYYYMM.DD.PATCH, got %s", version)
+	}
+
+	year := versionParts[0][:4]
+	month := versionParts[0][4:6]
+	day := versionParts[1]
+	patch := versionParts[2]
+
+	return year, month, day, patch, nil
+}
+
 // isLinuxImageExpired checks if a Linux image version is more than 90 days old.
 // Linux image versions follow the format YYYYMM.DD.PATCH (e.g., 202410.03.1).
 func isLinuxImageExpired(imageID string, now time.Time) bool {
@@ -324,20 +345,10 @@ func isLinuxImageExpired(imageID string, now time.Time) bool {
 		return false
 	}
 
-	// Parse Linux format: YYYYMM.DD.PATCH
-	versionParts := strings.Split(version, ".")
-	if len(versionParts) < 2 {
+	year, month, day, _, err := parseLinuxImage(version)
+	if err != nil {
 		return false
 	}
-
-	// Extract YYYYMM.DD part
-	if len(versionParts[0]) != 6 || len(versionParts[1]) != 2 {
-		return false
-	}
-
-	year := versionParts[0][:4]
-	month := versionParts[0][4:6]
-	day := versionParts[1]
 
 	// Parse the date
 	dateStr := fmt.Sprintf("%s-%s-%s", year, month, day)
