@@ -51,29 +51,18 @@ func (env *Environment) GetCurrentUserPrincipalID(ctx context.Context, cred *azi
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{"https://management.azure.com/.default"},
 	})
-	if err != nil {
-		Expect(err).ToNot(HaveOccurred())
-		return ""
-	}
+	Expect(err).ToNot(HaveOccurred(), "failed to get token from Azure credential")
 
 	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
 	parsedToken, _, err := parser.ParseUnverified(token.Token, jwt.MapClaims{})
-	if err != nil {
-		Expect(err).ToNot(HaveOccurred())
-		return ""
-	}
+	Expect(err).ToNot(HaveOccurred(), "failed to parse JWT token")
 
 	claims, ok := parsedToken.Claims.(jwt.MapClaims)
-	if !ok {
-		fmt.Printf("Warning: Could not extract claims from token\n")
-		Expect(err).ToNot(HaveOccurred())
-		return ""
-	}
+	Expect(ok).To(BeTrue(), "failed to extract claims from JWT token")
 
-	if oid, ok := claims["oid"].(string); ok {
-		return oid
-	}
+	oid, ok := claims["oid"].(string)
+	Expect(ok).To(BeTrue(), "oid claim not found or not a string in JWT token")
+	Expect(oid).ToNot(BeEmpty(), "oid claim is empty")
 
-	fmt.Printf("Warning: Could not find oid claim in token\n")
-	return ""
+	return oid
 }
