@@ -28,6 +28,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -67,13 +68,17 @@ type Environment struct {
 	// These should be unexported and access should be through the Environment methods
 	// Any create calls should make sure they also register the created resources with the Environment's tracker
 	// to ensure they are cleaned up after the test.
-	vmClient                *armcompute.VirtualMachinesClient
-	vnetClient              *armnetwork.VirtualNetworksClient
-	subnetClient            *armnetwork.SubnetsClient
-	interfacesClient        *armnetwork.InterfacesClient
-	managedClusterClient    *containerservice.ManagedClustersClient
-	keyVaultClient          *armkeyvault.VaultsClient
-	diskEncryptionSetClient *armcompute.DiskEncryptionSetsClient
+	vmClient             *armcompute.VirtualMachinesClient
+	vnetClient           *armnetwork.VirtualNetworksClient
+	subnetClient         *armnetwork.SubnetsClient
+	interfacesClient     *armnetwork.InterfacesClient
+	managedClusterClient *containerservice.ManagedClustersClient
+
+	// Public Clients
+	KeyVaultClient          *armkeyvault.VaultsClient
+	DiskEncryptionSetClient *armcompute.DiskEncryptionSetsClient
+
+	defaultCredential azcore.TokenCredential
 
 	RBACManager *RBACManager
 }
@@ -105,11 +110,28 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	azureEnv.defaultCredential = cred
+	byokRetryOptions := azureEnv.ClientOptionsForRBACPropagation()
+	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
+	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
+	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID))
+	return azureEnv
+}
 
-	// Retry options for BYOK-related clients that may encounter RBAC propagation delays
-	// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
-	// With 15 retries at 5 second intervals = 75 seconds total retry time
-	byokRetryOptions := &arm.ClientOptions{
+func (env *Environment) GetDefaultCredential() azcore.TokenCredential {
+	return env.defaultCredential
+}
+
+// Retry options for BYOK-related clients that may encounter RBAC propagation delays
+// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
+// With 15 retries at 5 second intervals = 75 seconds total retry time
+func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
+	return &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Retry: policy.RetryOptions{
 				MaxRetries: 15,
@@ -121,16 +143,6 @@ func NewEnvironment(t *testing.T) *Environment {
 		},
 	}
 
-	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.keyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
-	azureEnv.diskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
-
-	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID))
-	return azureEnv
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {
