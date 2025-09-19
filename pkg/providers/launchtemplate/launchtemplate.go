@@ -232,14 +232,15 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 		StorageProfileSizeGB:      params.StorageProfileSizeGB,
 	}
 
-	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+	switch p.provisionMode {
+	case consts.ProvisionModeBootstrappingClient:
 		customData, cse, err := params.CustomScriptsNodeBootstrapping.GetCustomDataAndCSE(ctx)
 		if err != nil {
 			return nil, err
 		}
 		template.CustomScriptsCustomData = customData
 		template.CustomScriptsCSE = cse
-	} else {
+	case consts.ProvisionModeAKSScriptless:
 		// render user data
 		userData, err := params.ScriptlessCustomData.Script()
 		if err != nil {
