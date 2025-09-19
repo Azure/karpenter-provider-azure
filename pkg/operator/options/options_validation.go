@@ -201,16 +201,19 @@ func (o *Options) validateDiskEncryptionSetID() error {
 		return nil
 	}
 
-	// Check if it starts with /subscriptions/ first, as this is more specific
-	if !strings.HasPrefix(strings.ToLower(o.DiskEncryptionSetID), "/subscriptions/") {
+	if !strings.HasPrefix(o.DiskEncryptionSetID, "/") {
 		return fmt.Errorf("disk-encryption-set-id is invalid: must start with /subscriptions/, got %s", o.DiskEncryptionSetID)
 	}
 
 	parts := strings.Split(o.DiskEncryptionSetID, "/")
+
 	if len(parts) != 9 {
 		return fmt.Errorf("disk-encryption-set-id is invalid: expected format /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{diskEncryptionSetName}, got %s", o.DiskEncryptionSetID)
 	}
 
+	if !strings.EqualFold(parts[1], "subscriptions") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: must start with /subscriptions/, got %s", o.DiskEncryptionSetID)
+	}
 	if !strings.EqualFold(parts[3], "resourceGroups") {
 		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'resourceGroups' at position 4, got %s", parts[3])
 	}
