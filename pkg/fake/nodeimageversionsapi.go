@@ -431,7 +431,7 @@ func (n *NodeImageVersionsAPI) Reset() {
 }
 
 func (n *NodeImageVersionsAPI) List(_ context.Context, _, _ string) (types.NodeImageVersionsResponse, error) {
-	// Return error if set for testing
+	// Error takes precedence over other fake data
 	if n.Error != nil {
 		return types.NodeImageVersionsResponse{}, n.Error
 	}
