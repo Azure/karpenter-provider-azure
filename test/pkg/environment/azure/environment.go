@@ -142,7 +142,6 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 			},
 		},
 	}
-
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {
