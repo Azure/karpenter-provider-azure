@@ -26,6 +26,7 @@ import (
 	"math/rand"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -182,11 +183,25 @@ func FromContext(ctx context.Context) *Options {
 	return retval.(*Options)
 }
 
+var clusterIDRegex = regexp.MustCompile(`^([^.-]+(?:-[^.-]+)*?)(?:-[^.-]+)?\.`)
+
 // getAKSClusterID returns cluster ID based on the DNS prefix of the cluster.
-// The logic comes from AgentBaker and other places, originally from aks-engine
-// with the additional assumption of DNS prefix being the first 33 chars of FQDN
 func getAKSClusterID(apiServerFQDN string) string {
-	dnsPrefix := apiServerFQDN[:33]
+	// TODO: This doesn't work for clusters with BYO private dns zone with fqdnSubdomain. For those clusters
+	//       we need to hash the emptyString to get the cluster ID (that's what AKS RP does), but
+	//       you can't actually tell by examining a fqdn record if it's using dnsPrefix or fqdnSubdomain.
+	//       You ALMOST could, by looking for <dnsprefix>-<8 character random string>.privatelink.<region>.azmk8s.io, but
+	//       There's nothing stopping users from making their dns subdomain with an 8 character random string in the same
+	//       location that AKS put it.
+	//       I think it would be cleaner to just read this value directly from the nsg in the MC RG, rather than
+	//       trying to recompute it.
+	match := clusterIDRegex.FindStringSubmatch(apiServerFQDN)
+
+	var dnsPrefix string
+	if len(match) > 1 {
+		dnsPrefix = match[1]
+	}
+
 	h := fnv.New64a()
 	h.Write([]byte(dnsPrefix))
 	r := rand.New(rand.NewSource(int64(h.Sum64()))) //nolint:gosec

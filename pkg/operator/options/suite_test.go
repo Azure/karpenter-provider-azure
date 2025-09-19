@@ -99,7 +99,7 @@ var _ = Describe("Options", func() {
 	Context("Env Vars", func() {
 		It("should correctly fallback to env vars when CLI flags aren't set", func() {
 			os.Setenv("CLUSTER_NAME", "env-cluster")
-			os.Setenv("CLUSTER_ENDPOINT", "https://environment-cluster-id-value-for-testing")
+			os.Setenv("CLUSTER_ENDPOINT", "https://environment-cluster-id-value-for-testing-00000000.hcp.westus2.staging.azmk8s.io")
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
@@ -126,9 +126,9 @@ var _ = Describe("Options", func() {
 			Expect(err).ToNot(HaveOccurred())
 			expectedOpts := test.Options(test.OptionsFields{
 				ClusterName:                    lo.ToPtr("env-cluster"),
-				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing"),
+				ClusterEndpoint:                lo.ToPtr("https://environment-cluster-id-value-for-testing-00000000.hcp.westus2.staging.azmk8s.io"),
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
-				ClusterID:                      lo.ToPtr("46593302"),
+				ClusterID:                      lo.ToPtr("87594193"), // computed manually via: https://go.dev/play/p/VapArZu12cy
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
 				LinuxAdminUsername:             lo.ToPtr("customadminusername"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
@@ -533,5 +533,34 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 		})
+	})
+
+	Context("Cluster ID processing", func() {
+		DescribeTable(
+			"should generate a cluster ID from the cluster endpoint",
+			func(endpoint string, expectedHash string) {
+				err := opts.Parse(
+					fs,
+					"--cluster-name", "my-name",
+					"--cluster-endpoint", endpoint,
+					"--kubelet-bootstrap-token", "flag-bootstrap-token",
+					"--ssh-public-key", "flag-ssh-public-key",
+					"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+					"--network-plugin", "azure",
+					"--network-plugin-mode", "overlay",
+					"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
+					"--node-resource-group", "my-node-rg",
+				)
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(opts.ClusterID).To(Equal(expectedHash))
+			},
+			// Note: The expected hashes here have been computed manually (I used this Go playground: https://go.dev/play/p/iyS4Eim8jZV)
+			Entry("Simple dnsPrefix", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io", "36684763"),
+			Entry("Custom dnsPrefix", "https://tooshort-nx4kgdbw.hcp.westcentralus.azmk8s.io", "18484614"),
+			Entry("Default dnsPrefix", "https://matthchr-t-matthchr-temp2-82acd5-3lxfm0a4.hcp.westcentralus.azmk8s.io", "42705019"),
+			Entry("Basic private cluster", "https://foo-bar-000000000000.e429a643-530a-4380-b704-90b3ae449e07.privatelink.eastus.azmk8s.io", "23262821"),
+			Entry("Private cluster in subzone", "https://foo-bar-000000000000.e429a643-530a-4380-b704-90b3ae449e07.mysubzone.privatelink.eastus.azmk8s.io", "23262821"),
+		)
 	})
 })
