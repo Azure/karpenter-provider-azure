@@ -23,11 +23,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 )
 
-// TODO: no ability to simulate errors in the List call.
 type NodeImageVersionsAPI struct {
 	// OverrideNodeImageVersions allows tests to override the default static data
 	// When nil, the default NodeImageVersions slice is used
 	OverrideNodeImageVersions []types.NodeImageVersion
+	// Error allows tests to simulate API errors.
+	// If Error is set to non-nil, it will take precedence over other fake data
+	Error error
 }
 
 var _ types.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
@@ -425,9 +427,15 @@ var (
 
 func (n *NodeImageVersionsAPI) Reset() {
 	n.OverrideNodeImageVersions = nil
+	n.Error = nil
 }
 
 func (n *NodeImageVersionsAPI) List(_ context.Context, _, _ string) (types.NodeImageVersionsResponse, error) {
+	// Return error if set for testing
+	if n.Error != nil {
+		return types.NodeImageVersionsResponse{}, n.Error
+	}
+
 	// Use override data if provided, otherwise use default static data
 	dataToUse := nodeImageVersions
 	if n.OverrideNodeImageVersions != nil {
