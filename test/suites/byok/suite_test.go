@@ -206,7 +206,7 @@ func CreateKeyVaultAndDiskEncryptionSet(ctx context.Context, env *azure.Environm
 	return lo.FromPtr(des.ID)
 }
 
-// createKeyVault creates an Azure Key Vault with proper access policies
+// createKeyVault creates an Azure Key Vault
 func createKeyVault(ctx context.Context, env *azure.Environment, keyVaultName, clusterTenant string) (*armkeyvault.Vault, error) {
 	keyVault := armkeyvault.Vault{
 		Location: to.Ptr(env.Region),
