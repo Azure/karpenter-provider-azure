@@ -43,6 +43,7 @@ func (o *Options) Validate() error {
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
 		o.validateAdditionalTags(),
+		o.validateDiskEncryptionSetID(),
 		validate.Struct(o),
 	)
 }
@@ -193,4 +194,38 @@ func isValidURL(u string) bool {
 	// url.Parse() will accept a lot of input without error; make
 	// sure it's a real URL
 	return err == nil && endpoint.IsAbs() && endpoint.Hostname() != ""
+}
+
+func (o *Options) validateDiskEncryptionSetID() error {
+	if o.DiskEncryptionSetID == "" {
+		return nil
+	}
+
+	// Check if it starts with /subscriptions/ first, as this is more specific
+	if !strings.HasPrefix(strings.ToLower(o.DiskEncryptionSetID), "/subscriptions/") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: must start with /subscriptions/, got %s", o.DiskEncryptionSetID)
+	}
+
+	parts := strings.Split(o.DiskEncryptionSetID, "/")
+	if len(parts) != 9 {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected format /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{diskEncryptionSetName}, got %s", o.DiskEncryptionSetID)
+	}
+
+	if !strings.EqualFold(parts[3], "resourceGroups") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'resourceGroups' at position 4, got %s", parts[3])
+	}
+
+	if !strings.EqualFold(parts[5], "providers") || !strings.EqualFold(parts[6], "Microsoft.Compute") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'providers/Microsoft.Compute' at positions 6-7, got %s/%s", parts[5], parts[6])
+	}
+
+	if !strings.EqualFold(parts[7], "diskEncryptionSets") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'diskEncryptionSets' at position 8, got %s", parts[7])
+	}
+
+	if parts[2] == "" || parts[4] == "" || parts[8] == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: subscription ID, resource group name, and disk encryption set name must not be empty")
+	}
+
+	return nil
 }
