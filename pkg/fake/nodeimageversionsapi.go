@@ -25,6 +25,9 @@ import (
 
 // TODO: no ability to simulate errors in the List call.
 type NodeImageVersionsAPI struct {
+	// OverrideNodeImageVersions allows tests to override the default static data
+	// When nil, the default NodeImageVersions slice is used
+	OverrideNodeImageVersions []types.NodeImageVersion
 }
 
 var _ types.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
@@ -32,7 +35,7 @@ var _ types.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
 // Note: use "make az-codegen-nodeimageversions" to generate data for this file
 // (will require update of some tests that use this data)
 var (
-	NodeImageVersions = []types.NodeImageVersion{
+	nodeImageVersions = []types.NodeImageVersion{
 		{
 			FullName: "AKSAzureLinux-V2fips-202505.27.0",
 			OS:       "AKSAzureLinux",
@@ -420,8 +423,18 @@ var (
 	}
 )
 
-func (n NodeImageVersionsAPI) List(_ context.Context, _, _ string) (types.NodeImageVersionsResponse, error) {
+func (n *NodeImageVersionsAPI) Reset() {
+	n.OverrideNodeImageVersions = nil
+}
+
+func (n *NodeImageVersionsAPI) List(_ context.Context, _, _ string) (types.NodeImageVersionsResponse, error) {
+	// Use override data if provided, otherwise use default static data
+	dataToUse := nodeImageVersions
+	if n.OverrideNodeImageVersions != nil {
+		dataToUse = n.OverrideNodeImageVersions
+	}
+
 	return types.NodeImageVersionsResponse{
-		Values: imagefamily.FilteredNodeImages(NodeImageVersions),
+		Values: imagefamily.FilteredNodeImages(dataToUse),
 	}, nil
 }
