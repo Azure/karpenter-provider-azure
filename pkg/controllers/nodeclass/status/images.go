@@ -305,7 +305,7 @@ func upgradeAnyExpiredImages(ctx context.Context, futureImages []v1beta1.NodeIma
 		}
 
 		// Check if current image is expired (Linux only for now)
-		expired, err := isLinuxImageExpired(futureImage.ID, now)
+		expired, err := isImageExpired(futureImage.ID, now)
 		if err != nil {
 			// Log malformed image and replace it
 			log.FromContext(ctx).Info("malformed image version, replacing", logging.ImageID, futureImage.ID, "error", err)
@@ -346,9 +346,11 @@ func parseLinuxImage(version string) (string, string, string, string, error) {
 	return year, month, day, patch, nil
 }
 
-// isLinuxImageExpired checks if a Linux image version is more than 90 days old.
-// Linux image versions follow the format YYYYMM.DD.PATCH (e.g., 202410.03.1).
-func isLinuxImageExpired(imageID string, now time.Time) (bool, error) {
+// isImageExpired checks if a image version is more than 90 days old.
+// > NOTE: this only supports Linux image versions follow the format YYYYMM.DD.PATCH (e.g., 202410.03.1).
+// > An error will be returned if the image isn't using the Linux version format.
+// TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed
+func isImageExpired(imageID string, now time.Time) (bool, error) {
 	version := extractVersionFromImageID(imageID)
 	if version == "" {
 		return false, fmt.Errorf("could not extract version from image ID: %s", imageID)
@@ -356,6 +358,7 @@ func isLinuxImageExpired(imageID string, now time.Time) (bool, error) {
 
 	year, month, day, _, err := parseLinuxImage(version)
 	if err != nil {
+		// TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed
 		return false, fmt.Errorf("parsing Linux image version: %w", err)
 	}
 
