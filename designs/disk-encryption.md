@@ -7,7 +7,7 @@ Azure Disk Encryption Sets enable customers to bring their own keys (BYOK) for e
 
 ## Goals
 - **BYOK Support**: Enable customers to use their own encryption keys for AKS OS and data disks
-- **Mutability Coverage**: AKS is considering making these fields mutable karpenter needs to account for that
+- **Mutability Coverage**: AKS is considering making these fields mutable Karpenter needs to account for that
 - **Comprehensive Testing**: Validate BYOK functionality with:
   - Data disks and Persistent Volume Claims (PVCs)
   - OS disks (both ephemeral and managed)
