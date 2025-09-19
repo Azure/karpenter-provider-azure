@@ -345,6 +345,7 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 		},
 			Entry("disallowed custom key", "kubernetes.azure.com/custom-key", "value", corev1.TaintEffectNoSchedule),
+			Entry("subdomain key", "custom.kubernetes.azure.com/key", "value", corev1.TaintEffectNoSchedule),
 			Entry("scalesetpriority with wrong value", "kubernetes.azure.com/scalesetpriority", "regular", corev1.TaintEffectNoSchedule),
 			Entry("scalesetpriority with wrong effect", "kubernetes.azure.com/scalesetpriority", "spot", corev1.TaintEffectPreferNoSchedule),
 			Entry("mode with wrong value", "kubernetes.azure.com/mode", "system", corev1.TaintEffectNoSchedule),
@@ -370,6 +371,18 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
 		})
 
+		It("should allow the specific egressgateway startup taint", func() {
+			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
+				{
+					Key:    "egressgateway.kubernetes.azure.com/cni-not-ready",
+					Value:  "true",
+					Effect: corev1.TaintEffectNoSchedule,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodePool)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodePool)).To(Succeed())
+		})
+
 		DescribeTable("should reject startup taints with kubernetes.azure.com domain", func(key, value string, effect corev1.TaintEffect) {
 			nodePool.Spec.Template.Spec.StartupTaints = []corev1.Taint{
 				{
@@ -380,9 +393,10 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			Expect(env.Client.Create(ctx, nodePool)).ToNot(Succeed())
 		},
-			Entry("allowed key kubernetes.azure.com/scalesetpriority in regular taints", "kubernetes.azure.com/scalesetpriority", "spot", corev1.TaintEffectNoSchedule),
-			Entry("allowed key kubernetes.azure.com/mode in regular taints", "kubernetes.azure.com/mode", "gateway", corev1.TaintEffectNoSchedule),
+			Entry("disallowed key kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/scalesetpriority", "spot", corev1.TaintEffectNoSchedule),
+			Entry("disallowed key kubernetes.azure.com/mode", "kubernetes.azure.com/mode", "gateway", corev1.TaintEffectNoSchedule),
 			Entry("custom kubernetes.azure.com key", "kubernetes.azure.com/custom-startup", "value", corev1.TaintEffectPreferNoSchedule),
+			Entry("custom subdomain key", "custom.kubernetes.azure.com/startup", "value", corev1.TaintEffectNoSchedule),
 		)
 	})
 
