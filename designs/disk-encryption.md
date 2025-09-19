@@ -315,7 +315,7 @@ Currently, NAP mode validation blocks DiskEncryptionSetID.
 
 
 ## RBAC: Azure RBAC Requirements 
-1. DES Access: The DES is the azure resource that links the AKS disks to the Key Vault Key. To allow AKS to use CMKs, the user must grant the Cluster Identity permission to use the Disk Encryption Set. 
+1. DES Access: The DES is the Azure resource that links the AKS disks to the Key Vault Key. To allow AKS to use CMKs, the user must grant the Cluster Identity permission to use the Disk Encryption Set. 
 2. Key Vault Access: The managed identity associated with AKS must be able to access the keys within the key vault, this allows AKS to wrap and unwrap the data encryption keys used for disk encryption with the master key
 
 | Principal | Role Assignment | Scope | 
