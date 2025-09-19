@@ -162,9 +162,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 			CPUCfsQuota:           p.KubeletConfig.CPUCFSQuota,
 			ImageGcHighThreshold:  p.KubeletConfig.ImageGCHighThresholdPercent,
 			ImageGcLowThreshold:   p.KubeletConfig.ImageGCLowThresholdPercent,
-			ContainerLogMaxSizeMB: convertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
+			ContainerLogMaxSizeMB: ConvertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
 			ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
-			PodMaxPids:            convertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			PodMaxPids:            ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
 		}
 
 		// NodeClaim defaults don't work somehow and keep giving invalid values. Can be improved later.
