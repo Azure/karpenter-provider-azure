@@ -397,6 +397,8 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("disallowed key kubernetes.azure.com/mode", "kubernetes.azure.com/mode", "gateway", corev1.TaintEffectNoSchedule),
 			Entry("custom kubernetes.azure.com key", "kubernetes.azure.com/custom-startup", "value", corev1.TaintEffectPreferNoSchedule),
 			Entry("custom subdomain key", "custom.kubernetes.azure.com/startup", "value", corev1.TaintEffectNoSchedule),
+			Entry("allowed key with wrong value", "egressgateway.kubernetes.azure.com/cni-not-ready", "false", corev1.TaintEffectNoSchedule),
+			Entry("allowed key with wrong effect", "egressgateway.kubernetes.azure.com/cni-not-ready", "true", corev1.TaintEffectPreferNoSchedule),
 		)
 	})
 
