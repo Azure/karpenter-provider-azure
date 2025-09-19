@@ -366,8 +366,9 @@ func isLinuxImageExpired(imageID string, now time.Time) (bool, error) {
 		return false, fmt.Errorf("parsing image date %s: %w", dateStr, err)
 	}
 
-	// Check if more than 90 days old
-	return now.Sub(imageDate) > 90*24*time.Hour, nil
+	// Check if more than 90 days old (expire 30 minutes early to provide buffer)
+	// This ensures we don't accidentally try to provision with an expired image
+	return now.Sub(imageDate) > (90*24*time.Hour - 30*time.Minute), nil
 }
 
 // extractVersionFromImageID extracts the version part from an image ID.
