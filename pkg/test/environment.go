@@ -62,6 +62,7 @@ type Environment struct {
 	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
 	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
+	NodeImageVersionsAPI        *fake.NodeImageVersionsAPI
 	SKUsAPI                     *fake.ResourceSKUsAPI
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
@@ -205,6 +206,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:        networkInterfacesAPI,
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
+		NodeImageVersionsAPI:        nodeImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
 		SubnetsAPI:                  subnetsAPI,
@@ -245,6 +247,7 @@ func (env *Environment) Reset() {
 	env.NetworkSecurityGroupAPI.Reset()
 	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
+	env.NodeImageVersionsAPI.Reset()
 	env.SKUsAPI.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
