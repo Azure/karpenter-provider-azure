@@ -352,8 +352,8 @@ spec:
                                 description: Required. The taint key to be applied to a node.
                                 type: string
                                 minLength: 1
-                                maxLength: 63
                                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                                maxLength: 63
                               timeAdded:
                                 description: |-
                                   TimeAdded represents the time at which the taint was added.
@@ -369,12 +369,12 @@ spec:
                               - key
                             type: object
                           type: array
-                          maxItems: 100
                           x-kubernetes-validations:
-                            - message: taint "egressgateway.kubernetes.azure.com/cni-not-ready" must have value "true" and effect "NoSchedule"
-                              rule: 'self.all(x, !(x.key == "egressgateway.kubernetes.azure.com/cni-not-ready" && !(x.value == "true" && x.effect == "NoSchedule")))'
                             - message: taint domain "kubernetes.azure.com" is restricted
-                              rule: 'self.all(x, x.key in ["egressgateway.kubernetes.azure.com/cni-not-ready"] || !x.key.split("/")[0].endsWith("kubernetes.azure.com"))'
+                              rule: self.all(x, x.key in ["egressgateway.kubernetes.azure.com/cni-not-ready"] || !x.key.split("/")[0].endsWith("kubernetes.azure.com"))
+                            - message: taint "egressgateway.kubernetes.azure.com/cni-not-ready" must have value "true" and effect "NoSchedule"
+                              rule: self.all(x, !(x.key == "egressgateway.kubernetes.azure.com/cni-not-ready" && !(x.value == "true" && x.effect == "NoSchedule")))
+                          maxItems: 100
                         taints:
                           description: Taints will be applied to the NodeClaim's node.
                           items:
@@ -396,8 +396,8 @@ spec:
                                 description: Required. The taint key to be applied to a node.
                                 type: string
                                 minLength: 1
-                                maxLength: 63
                                 pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*(\/))?([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$
+                                maxLength: 63
                               timeAdded:
                                 description: |-
                                   TimeAdded represents the time at which the taint was added.
@@ -413,14 +413,14 @@ spec:
                               - key
                             type: object
                           type: array
-                          maxItems: 100
                           x-kubernetes-validations:
-                            - message: taint "kubernetes.azure.com/scalesetpriority" must have value "spot" and effect "NoSchedule"
-                              rule: 'self.all(x, !(x.key == "kubernetes.azure.com/scalesetpriority" && !(x.value == "spot" && x.effect == "NoSchedule")))'
-                            - message: taint "kubernetes.azure.com/mode" must have value "gateway" and effect "NoSchedule"
-                              rule: 'self.all(x, !(x.key == "kubernetes.azure.com/mode" && !(x.value == "gateway" && x.effect == "NoSchedule")))'
                             - message: taint domain "kubernetes.azure.com" is restricted
-                              rule: 'self.all(x, x.key in ["kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/mode"] || !x.key.split("/")[0].endsWith("kubernetes.azure.com"))'
+                              rule: self.all(x, x.key in ["kubernetes.azure.com/scalesetpriority", "kubernetes.azure.com/mode"] || !x.key.split("/")[0].endsWith("kubernetes.azure.com"))
+                            - message: taint "kubernetes.azure.com/scalesetpriority" must have value "spot" and effect "NoSchedule"
+                              rule: self.all(x, !(x.key == "kubernetes.azure.com/scalesetpriority" && !(x.value == "spot" && x.effect == "NoSchedule")))
+                            - message: taint "kubernetes.azure.com/mode" must have value "gateway" and effect "NoSchedule"
+                              rule: self.all(x, !(x.key == "kubernetes.azure.com/mode" && !(x.value == "gateway" && x.effect == "NoSchedule")))
+                          maxItems: 100
                         terminationGracePeriod:
                           description: |-
                             TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
