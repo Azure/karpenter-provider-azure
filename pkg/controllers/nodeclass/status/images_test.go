@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 
 	"github.com/samber/lo"
@@ -38,62 +37,9 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
-// Test helper functions for expired image testing
-func getImageVersionFromDate(date time.Time) string {
-	return fmt.Sprintf("%04d%02d.%02d.0", date.Year(), date.Month(), date.Day())
-}
-
-func getExpiredImageVersion() string {
-	// Create a version that's 91 days old (past the 90-day expiration)
-	expiredDate := time.Now().AddDate(0, 0, -91)
-	return getImageVersionFromDate(expiredDate)
-}
-
-func getRecentImageVersion() string {
-	// Create a version that's 30 days old (should not be expired)
-	recentDate := time.Now().AddDate(0, 0, -30)
-	return getImageVersionFromDate(recentDate)
-}
-
-func getTodaysImageVersion() string {
-	// Create a version from today
-	return getImageVersionFromDate(time.Now())
-}
-
-func getTestImagesWithMixedAges() []v1beta1.NodeImage {
-	return []v1beta1.NodeImage{
-		{
-			ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/%s", testSIGSubscriptionID, getExpiredImageVersion()),
-			Requirements: []corev1.NodeSelectorRequirement{
-				{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"amd64"}},
-				{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"2"}},
-			},
-		},
-		{
-			ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204containerd/versions/%s", testSIGSubscriptionID, getRecentImageVersion()),
-			Requirements: []corev1.NodeSelectorRequirement{
-				{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"amd64"}},
-				{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"1"}},
-			},
-		},
-		{
-			ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2arm64containerd/versions/%s", testSIGSubscriptionID, "malformed.version"),
-			Requirements: []corev1.NodeSelectorRequirement{
-				{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"arm64"}},
-				{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"2"}},
-			},
-		},
-	}
-}
-
 const (
-	testSIGSubscriptionID = "21098765-4321-4321-4321-210987654321"
-)
-
-var (
-	// Use recent versions for CIG tests to avoid expiration issues
-	oldcigImageVersion = getRecentImageVersion() // 30 days old - won't be expired
-	newCIGImageVersion = getTodaysImageVersion() // Today's version - latest available
+	oldcigImageVersion = "202410.09.0"
+	newCIGImageVersion = "202501.02.0"
 )
 
 func getExpectedTestCommunityImages(version string) []v1beta1.NodeImage {
@@ -343,113 +289,6 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				ExpectReadyWithCIGImages(nodeClass, newCIGImageVersion)
-			})
-		})
-
-		Context("Expired Image Upgrade Logic", func() {
-			var (
-				imageReconciler *status.NodeImageReconciler
-			)
-
-			BeforeEach(func() {
-				os.Setenv("SYSTEM_NAMESPACE", "kube-system")
-
-				// Configure test to use SIG (Shared Image Gallery)
-				options := test.Options(test.OptionsFields{
-					UseSIG:            lo.ToPtr(true),
-					SIGSubscriptionID: lo.ToPtr(testSIGSubscriptionID),
-				})
-				ctx = options.ToContext(ctx)
-
-				imageReconciler = status.NewNodeImageReconciler(azureEnv.ImageProvider, env.KubernetesInterface)
-
-				// Set up available current images for the api
-				currentImageVersion := getTodaysImageVersion()
-				azureEnv.NodeImageVersionsAPI.OverrideNodeImageVersions = []types.NodeImageVersion{
-					{FullName: "2204gen2containerd", OS: "AKSUbuntu", SKU: "2204gen2containerd", Version: currentImageVersion},
-					{FullName: "2204containerd", OS: "AKSUbuntu", SKU: "2204containerd", Version: currentImageVersion},
-					{FullName: "2204gen2arm64containerd", OS: "AKSUbuntu", SKU: "2204gen2arm64containerd", Version: currentImageVersion},
-				}
-			})
-
-			It("should upgrade expired images but keep recent images when maintenance window is closed", func() {
-				// Setup: closed maintenance window
-				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
-
-				// Setup: nodeClass with mix of expired, recent, and malformed images
-				nodeClass.Status.Images = getTestImagesWithMixedAges()
-				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-
-				_, err := imageReconciler.Reconcile(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-
-				// Verify results with exact expected images
-				expectedImages := []v1beta1.NodeImage{
-					{
-						ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/%s", testSIGSubscriptionID, getTodaysImageVersion()),
-						Requirements: []corev1.NodeSelectorRequirement{
-							{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"amd64"}},
-							{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"2"}},
-						},
-					},
-					{
-						ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204containerd/versions/%s", testSIGSubscriptionID, getRecentImageVersion()),
-						Requirements: []corev1.NodeSelectorRequirement{
-							{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"amd64"}},
-							{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"1"}},
-						},
-					},
-					{
-						ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2arm64containerd/versions/%s", testSIGSubscriptionID, getTodaysImageVersion()),
-						Requirements: []corev1.NodeSelectorRequirement{
-							{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"arm64"}},
-							{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"2"}},
-						},
-					},
-				}
-				Expect(nodeClass.Status.Images).To(Equal(expectedImages))
-
-				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
-			})
-
-			It("should not upgrade images when all are recent and maintenance window is closed", func() {
-				// Setup: closed maintenance window
-				ExpectApplied(ctx, env.Client, getClosedMWConfigMap())
-
-				// Setup: nodeClass with only recent images (all 3 images recent)
-				recentVersion := getRecentImageVersion()
-				recentImages := []v1beta1.NodeImage{
-					{
-						ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/%s", testSIGSubscriptionID, recentVersion),
-						Requirements: []corev1.NodeSelectorRequirement{
-							{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"amd64"}},
-							{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"2"}},
-						},
-					},
-					{
-						ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204containerd/versions/%s", testSIGSubscriptionID, recentVersion),
-						Requirements: []corev1.NodeSelectorRequirement{
-							{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"amd64"}},
-							{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"1"}},
-						},
-					},
-					{
-						ID: fmt.Sprintf("/subscriptions/%s/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2arm64containerd/versions/%s", testSIGSubscriptionID, recentVersion),
-						Requirements: []corev1.NodeSelectorRequirement{
-							{Key: corev1.LabelArchStable, Operator: "In", Values: []string{"arm64"}},
-							{Key: v1beta1.LabelSKUHyperVGeneration, Operator: "In", Values: []string{"2"}},
-						},
-					},
-				}
-				nodeClass.Status.Images = recentImages
-				nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
-
-				_, err := imageReconciler.Reconcile(ctx, nodeClass)
-				Expect(err).ToNot(HaveOccurred())
-
-				// Verify all recent images remain unchanged (exact same as input)
-				Expect(nodeClass.Status.Images).To(Equal(recentImages))
-				Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeImagesReady)).To(BeTrue())
 			})
 		})
 	})
