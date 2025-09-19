@@ -88,6 +88,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 		"MC_xxxxx_yyyy-region",
 		"0000000-0000-0000-0000-0000000000",
 		"",
+		"", // DiskEncryptionSetID - empty for tests
 	)
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
