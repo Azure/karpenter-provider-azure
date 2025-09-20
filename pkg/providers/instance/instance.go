@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"sort"
 	"time"
 
@@ -125,6 +126,7 @@ type DefaultProvider struct {
 	unavailableOfferings         *cache.UnavailableOfferings
 	provisionMode                string
 	responseErrorHandlers        []responseErrorHandler
+	diskEncryptionSetID          string
 
 	vmListQuery, nicListQuery string
 }
@@ -140,6 +142,7 @@ func NewDefaultProvider(
 	resourceGroup string,
 	subscriptionID string,
 	provisionMode string,
+	diskEncryptionSetID string,
 ) *DefaultProvider {
 	return &DefaultProvider{
 		azClient:                     azClient,
@@ -153,6 +156,7 @@ func NewDefaultProvider(
 		unavailableOfferings:         offeringsCache,
 		provisionMode:                provisionMode,
 		responseErrorHandlers:        defaultResponseErrorHandlers(),
+		diskEncryptionSetID:          diskEncryptionSetID,
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
@@ -236,6 +240,15 @@ func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armc
 				nil,
 			)
 			if err != nil {
+				// TODO: This is a bit of a hack based on how this Update function is currently used.
+				// Currently this function will not be called by any callers until a claim has been Registered, which means that the CSE had to have succeeded.
+				// The aksIdentifyingExtensionName is not currently guaranteed to be on the VM though, as Karpenter could have failed over during the initial VM create
+				// after CSE but before aksIdentifyingExtensionName. So, for now, we just ignore NotFound errors for the aksIdentifyingExtensionName.
+				azErr := sdkerrors.IsResponseError(err)
+				if extName == aksIdentifyingExtensionName && azErr != nil && azErr.StatusCode == http.StatusNotFound {
+					log.FromContext(ctx).V(0).Info("extension not found when updating tags", "extensionName", extName, "vmName", vmName)
+					continue
+				}
 				return fmt.Errorf("updating VM extension %q for VM %q: %w", extName, vmName, err)
 			}
 			pollers[extName] = poller
@@ -458,19 +471,20 @@ func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *crea
 
 // createVMOptions contains all the parameters needed to create a VM
 type createVMOptions struct {
-	VMName             string
-	NicReference       string
-	Zone               string
-	CapacityType       string
-	Location           string
-	SSHPublicKey       string
-	LinuxAdminUsername string
-	NodeIdentities     []string
-	NodeClass          *v1beta1.AKSNodeClass
-	LaunchTemplate     *launchtemplate.Template
-	InstanceType       *corecloudprovider.InstanceType
-	ProvisionMode      string
-	UseSIG             bool
+	VMName              string
+	NicReference        string
+	Zone                string
+	CapacityType        string
+	Location            string
+	SSHPublicKey        string
+	LinuxAdminUsername  string
+	NodeIdentities      []string
+	NodeClass           *v1beta1.AKSNodeClass
+	LaunchTemplate      *launchtemplate.Template
+	InstanceType        *corecloudprovider.InstanceType
+	ProvisionMode       string
+	UseSIG              bool
+	DiskEncryptionSetID string
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -532,6 +546,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Tags:  opts.LaunchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
+	setVMPropertiesOSDiskEncryption(vm.Properties, opts.DiskEncryptionSetID)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 
@@ -552,6 +567,17 @@ func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties
 			Placement: lo.ToPtr(placement),
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
+	}
+}
+
+func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProperties, diskEncryptionSetID string) {
+	if diskEncryptionSetID != "" {
+		if vmProperties.StorageProfile.OSDisk.ManagedDisk == nil {
+			vmProperties.StorageProfile.OSDisk.ManagedDisk = &armcompute.ManagedDiskParameters{}
+		}
+		vmProperties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet = &armcompute.DiskEncryptionSetParameters{
+			ID: lo.ToPtr(diskEncryptionSetID),
+		}
 	}
 }
 
@@ -681,19 +707,20 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}
 
 	result, err := p.createVirtualMachine(ctx, &createVMOptions{
-		VMName:             resourceName,
-		NicReference:       nicReference,
-		Zone:               zone,
-		CapacityType:       capacityType,
-		Location:           p.location,
-		SSHPublicKey:       options.FromContext(ctx).SSHPublicKey,
-		LinuxAdminUsername: options.FromContext(ctx).LinuxAdminUsername,
-		NodeIdentities:     options.FromContext(ctx).NodeIdentities,
-		NodeClass:          nodeClass,
-		LaunchTemplate:     launchTemplate,
-		InstanceType:       instanceType,
-		ProvisionMode:      p.provisionMode,
-		UseSIG:             options.FromContext(ctx).UseSIG,
+		VMName:              resourceName,
+		NicReference:        nicReference,
+		Zone:                zone,
+		CapacityType:        capacityType,
+		Location:            p.location,
+		SSHPublicKey:        options.FromContext(ctx).SSHPublicKey,
+		LinuxAdminUsername:  options.FromContext(ctx).LinuxAdminUsername,
+		NodeIdentities:      options.FromContext(ctx).NodeIdentities,
+		NodeClass:           nodeClass,
+		LaunchTemplate:      launchTemplate,
+		InstanceType:        instanceType,
+		ProvisionMode:       p.provisionMode,
+		UseSIG:              options.FromContext(ctx).UseSIG,
+		DiskEncryptionSetID: p.diskEncryptionSetID,
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
@@ -754,6 +781,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
 	for _, handler := range p.responseErrorHandlers {
 		if handler.matchError(responseError) {
+			metrics.VMCreateResponseError.Inc(ctx, "Handling response error", metrics.ResponseError(handler.name))
 			return handler.handleResponseError(ctx, p, sku, instanceType, zone, capacityType, responseError)
 		}
 	}

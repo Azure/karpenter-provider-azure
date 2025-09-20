@@ -19,6 +19,7 @@ package instance_test
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
@@ -553,6 +555,56 @@ var _ = Describe("InstanceProvider", func() {
 			}
 			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(*billingExt.ID, billingExt)
 			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(*cseExt.ID, cseExt)
+
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+
+			// Update the VM tags
+			err := azureEnv.InstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+					"test-tag":                    lo.ToPtr("test-value"),
+				},
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			ExpectInstanceResourcesHaveTags(ctx, vmName, azureEnv, map[string]*string{
+				"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+				"test-tag":                    lo.ToPtr("test-value"),
+			})
+		})
+
+		It("should ignore NotFound errors for computeAksLinuxBilling extension update", func() {
+			// Ensure that the VM already exists in the fake environment
+			vmName := nodeClaim.Name
+			vm := armcompute.VirtualMachine{
+				ID:   lo.ToPtr(fake.MkVMID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+				Name: lo.ToPtr(vmName),
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+				},
+			}
+			// Ensure that the NIC already exists in the fake environment
+			azureEnv.VirtualMachinesAPI.Instances.Store(*vm.ID, vm)
+			nic := armnetwork.Interface{
+				ID:   lo.ToPtr(fake.MakeNetworkInterfaceID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName)),
+				Name: lo.ToPtr(vmName),
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+				},
+			}
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(*nic.ID, nic)
+
+			// Ensure that only one extension exists in the env
+			cseExt := armcompute.VirtualMachineExtension{
+				ID:   lo.ToPtr(fake.MakeVMExtensionID(azureEnv.AzureResourceGraphAPI.ResourceGroup, vmName, "cse-agent-karpenter")),
+				Name: lo.ToPtr("cse-agent-karpenter"),
+				Tags: map[string]*string{
+					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
+				},
+			}
+			azureEnv.VirtualMachineExtensionsAPI.Extensions.Store(*cseExt.ID, cseExt)
+			// TODO: This only works because this extension happens to be first in the list of extensions. If it were second it wouldn't work
+			azureEnv.VirtualMachineExtensionsAPI.VirtualMachineExtensionsUpdateBehavior.BeginError.Set(&azcore.ResponseError{StatusCode: http.StatusNotFound}, fake.MaxCalls(1))
 
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
