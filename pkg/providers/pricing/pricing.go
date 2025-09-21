@@ -28,6 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/karpenter/pkg/utils/pretty"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing/client"
 )
 
@@ -61,11 +63,17 @@ type Err struct {
 }
 
 // NewPricingAPI returns a pricing API
-func NewAPI() client.PricingAPI {
-	return client.New()
+func NewAPI(cloud cloud.Configuration) client.PricingAPI {
+	return client.New(cloud)
 }
 
-func NewProvider(ctx context.Context, pricing client.PricingAPI, region string, startAsync <-chan struct{}) *Provider {
+func NewProvider(
+	ctx context.Context,
+	env *auth.Environment,
+	pricing client.PricingAPI,
+	region string,
+	startAsync <-chan struct{},
+) *Provider {
 	// see if we've got region specific pricing data
 	staticPricing, ok := initialOnDemandPrices[region]
 	if !ok {
@@ -85,32 +93,36 @@ func NewProvider(ctx context.Context, pricing client.PricingAPI, region string, 
 	}
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("pricing").WithValues("region", region))
 
-	go func() {
-		// perform an initial price update at startup
-		p.updatePricing(ctx)
-
-		startup := time.Now()
-		// wait for leader election or to be signaled to exit
-		select {
-		case <-startAsync:
-		case <-ctx.Done():
-			return
-		}
-		// if it took many hours to be elected leader, we want to re-fetch pricing before we start our periodic
-		// polling
-		if time.Since(startup) > pricingUpdatePeriod {
+	// Only poll in public cloud. Other clouds aren't supported currently
+	if auth.IsPublic(env.Cloud) {
+		go func() {
+			log.FromContext(ctx).V(0).Info("starting pricing update loop")
+			// perform an initial price update at startup
 			p.updatePricing(ctx)
-		}
 
-		for {
+			startup := time.Now()
+			// wait for leader election or to be signaled to exit
 			select {
+			case <-startAsync:
 			case <-ctx.Done():
 				return
-			case <-time.After(pricingUpdatePeriod):
+			}
+			// if it took many hours to be elected leader, we want to re-fetch pricing before we start our periodic
+			// polling
+			if time.Since(startup) > pricingUpdatePeriod {
 				p.updatePricing(ctx)
 			}
-		}
-	}()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(pricingUpdatePeriod):
+					p.updatePricing(ctx)
+				}
+			}
+		}()
+	}
 	return p
 }
 

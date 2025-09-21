@@ -18,6 +18,17 @@ pricing() {
   checkForUpdates "${GIT_DIFF}" "${NO_UPDATE}" "${SUBJECT} beside timestamps since last update" "${GENERATED_FILE}"
 }
 
+locationsgen() {
+  GENERATED_FILE="pkg/fake/locations.json"
+  NO_UPDATE=$' pkg/fake/locations.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)'
+  SUBJECT="Locations"
+
+  go run hack/code/locations_gen/main.go -- "${GENERATED_FILE}"
+
+  GIT_DIFF=$(git diff --stat "${GENERATED_FILE}")
+  checkForUpdates "${GIT_DIFF}" "${NO_UPDATE}" "${SUBJECT} beside timestamps since last update" "${GENERATED_FILE}"
+}
+
 skugen() {
   location=${1:-eastus}
 
@@ -41,9 +52,9 @@ skugen() {
 
 
 skugen-all() {
-  SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
-  export SUBSCRIPTION_ID
-  if [ -z "${SUBSCRIPTION_ID}" ]; then
+  AZURE_SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
+  export AZURE_SUBSCRIPTION_ID
+  if [ -z "${AZURE_SUBSCRIPTION_ID}" ]; then
     echo "No subscription is set. Please login and set a subscription."
     exit 1
   fi
@@ -95,4 +106,5 @@ fi
 
 # Run all the codegen scripts
 pricing
+locationsgen
 skugen-all

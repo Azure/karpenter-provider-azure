@@ -246,6 +246,32 @@ var _ = Describe("InstanceType Provider", func() {
 				ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
 			))
 		})
+		It("should include stateless CNI label for kubernetes 1.34+ set to true", func() {
+			// Set kubernetes version to 1.34.0
+			nodeClass.Status.KubernetesVersion = "1.34.0"
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			decodedString := ExpectDecodedCustomData(azureEnv)
+			Expect(decodedString).To(SatisfyAll(
+				ContainSubstring("kubernetes.azure.com/network-stateless-cni=true"),
+			))
+		})
+		It("should include stateless CNI label for kubernetes < 1.34 set to false", func() {
+			// Set kubernetes version to 1.33.0
+			nodeClass.Status.KubernetesVersion = "1.33.0"
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+			decodedString := ExpectDecodedCustomData(azureEnv)
+			Expect(decodedString).To(SatisfyAll(
+				ContainSubstring("kubernetes.azure.com/network-stateless-cni=false"),
+			))
+
+		})
 		It("should use the subnet specified in the nodeclass", func() {
 			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet")
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -1522,7 +1548,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1571,7 +1597,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1605,7 +1631,10 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+				if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
+					Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -2006,7 +2035,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		It("should return error when instance type resolution fails", func() {
 			// Create and set up the status controller
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			// Set NodeClass to Ready
 			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
@@ -2015,7 +2044,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Reconcile the NodeClass to ensure status is updated
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
-			azureEnv.MockSkuClientSingleton.SKUClient.Error = fmt.Errorf("failed to list SKUs")
+			azureEnv.SKUsAPI.Error = fmt.Errorf("failed to list SKUs")
 
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{

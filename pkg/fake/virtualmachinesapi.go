@@ -21,11 +21,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -189,13 +189,16 @@ func (c *VirtualMachinesAPI) BeginUpdate(_ context.Context, resourceGroupName st
 
 		instance, ok := c.Instances.Load(id)
 		if !ok {
-			return nil, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+			return nil, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 		}
 		vm := instance.(armcompute.VirtualMachine)
 
 		// If other fields need to be updated in the future, you can similarly
 		// update the VM object by merging with updates.<New Field>.
-		vm.Tags = updates.Tags
+		if updates.Tags != nil {
+			// VM tags are full-replace if they're specified
+			vm.Tags = maps.Clone(updates.Tags)
+		}
 		if updates.Identity != nil {
 			if vm.Identity == nil {
 				vm.Identity = &armcompute.VirtualMachineIdentity{}
@@ -233,7 +236,7 @@ func (c *VirtualMachinesAPI) Get(_ context.Context, resourceGroupName string, vm
 		}
 		instance, ok := c.Instances.Load(MkVMID(input.ResourceGroupName, input.VMName))
 		if !ok {
-			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{ErrorCode: errors.ResourceNotFound}
+			return armcompute.VirtualMachinesClientGetResponse{}, &azcore.ResponseError{StatusCode: http.StatusNotFound}
 		}
 		return armcompute.VirtualMachinesClientGetResponse{
 			VirtualMachine: instance.(armcompute.VirtualMachine),

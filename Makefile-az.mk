@@ -1,4 +1,5 @@
 AZURE_LOCATION ?= westus2
+AZURE_VM_SIZE ?= ""
 COMMON_NAME ?= karpenter
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
@@ -9,6 +10,7 @@ else
   AZURE_ACR_NAME ?= $(COMMON_NAME)$(NAME_SUFFIX)
 endif
 
+AZURE_ACR_SUFFIX ?= azurecr.io
 AZURE_SIG_SUBSCRIPTION_ID ?= $(AZURE_SUBSCRIPTION_ID)
 AZURE_CLUSTER_NAME ?= $(COMMON_NAME)
 AZURE_RESOURCE_GROUP_MC = MC_$(AZURE_RESOURCE_GROUP)_$(AZURE_CLUSTER_NAME)_$(AZURE_LOCATION)
@@ -70,39 +72,39 @@ az-cleanenv: az-rmnodeclaims-fin az-rmnodeclasses-fin ## Deletes a few common ka
 
 az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySet for compatibility with standalone VMs)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
-		--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none
+		--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),)
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure \
-		--enable-oidc-issuer --enable-workload-identity
+		--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),)
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 
 az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane cilium, --network-plugin azure, and --network-plugin-mode overlay)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity
+		--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),)
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mode overlay)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity
+		--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),)
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkaks-perftest: az-mkacr ## Create test AKS cluster (with Azure Overlay, larger system pool VMs and larger pod-cidr)
 	az aks create          --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 2 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
 		--enable-oidc-issuer --enable-workload-identity \
-		--node-vm-size Standard_D16s_v6 --pod-cidr "10.128.0.0/11"
+		--node-vm-size $(if $(AZURE_VM_SIZE),$(AZURE_VM_SIZE),Standard_D16s_v6) --pod-cidr "10.128.0.0/11"
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkvnet: ## Create a VNet with address range of 10.1.0.0/16
 	az network vnet create --name $(CUSTOM_VNET_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --location $(AZURE_LOCATION) --address-prefixes "10.1.0.0/16"
@@ -113,10 +115,10 @@ az-mksubnet:  ## Create a subnet with address range of 10.1.0.0/24
 az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster with custom VNet
 	az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 		--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-		--enable-oidc-issuer --enable-workload-identity \
+		--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
 		--vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)/providers/Microsoft.Network/virtualNetworks/$(CUSTOM_VNET_NAME)/subnets/$(CUSTOM_SUBNET_NAME)"
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-create-workload-msi: az-mkrg
 	# create the workload MSI that is the backing for the karpenter pod auth
@@ -131,7 +133,7 @@ az-create-federated-cred:
 az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR)
 	az deployment group create --resource-group $(AZURE_RESOURCE_GROUP) --template-file hack/azure/aks-savm.bicep --parameters aksname=$(AZURE_CLUSTER_NAME) acrname=$(AZURE_ACR_NAME)
 	az aks get-credentials --resource-group $(AZURE_RESOURCE_GROUP) --name $(AZURE_CLUSTER_NAME) --overwrite-existing
-	skaffold config set default-repo $(AZURE_ACR_NAME).azurecr.io/karpenter
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use with care!)
 	az group delete --name $(AZURE_RESOURCE_GROUP)
@@ -253,10 +255,10 @@ az-mon-cleanup: ## Delete monitoring stack
 	helm delete --namespace monitoring prometheus
 
 az-mkgohelper: ## Build and configure custom go-helper-image for skaffold
-	cd hack/go-helper-image; docker build . --tag $(AZURE_ACR_NAME).azurecr.io/skaffold-debug-support/go # --platform=linux/arm64
+	cd hack/go-helper-image; docker build . --tag $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/skaffold-debug-support/go # --platform=linux/arm64
 	az acr login -n $(AZURE_ACR_NAME)
-	docker push $(AZURE_ACR_NAME).azurecr.io/skaffold-debug-support/go
-	skaffold config set --global debug-helpers-registry $(AZURE_ACR_NAME).azurecr.io/skaffold-debug-support
+	docker push $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/skaffold-debug-support/go
+	skaffold config set --global debug-helpers-registry $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/skaffold-debug-support
 
 az-rmnodes-fin: ## Remove Karpenter finalizer from all nodes (use with care!)
 	for node in $$(kubectl get nodes -l karpenter.sh/nodepool --output=jsonpath={.items..metadata.name}); do \

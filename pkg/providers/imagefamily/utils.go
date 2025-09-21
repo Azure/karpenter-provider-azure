@@ -24,10 +24,21 @@ import (
 // which is when Azure Linux 3 support starts
 func UseAzureLinux3(kubernetesVersion string) bool {
 	// Parse version, stripping any 'v' prefix if present
-	version, err := semver.Parse(strings.TrimPrefix(kubernetesVersion, "v"))
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
 	if err != nil {
 		// If we can't parse the version, default to AzureLinux (false)
 		return false
 	}
 	return version.GE(semver.Version{Major: 1, Minor: 32})
+}
+
+// UseUbuntu2404 is when AKS starts defaulting support for Ubuntu2404
+func UseUbuntu2404(kubernetesVersion string) bool {
+	// Parse version, stripping any 'v' prefix if present
+	version, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+	if err != nil {
+		// If we can't parse the version, default to Ubuntu2204 (false)
+		return false
+	}
+	return version.GE(semver.Version{Major: 1, Minor: 34})
 }

@@ -42,7 +42,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 
 	"github.com/Azure/skewer"
@@ -72,7 +71,7 @@ var _ Provider = (*DefaultProvider)(nil)
 
 type DefaultProvider struct {
 	region               string
-	skuClient            skuclient.SkuClient
+	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
 
@@ -88,7 +87,13 @@ type DefaultProvider struct {
 	instanceTypesSeqNum uint64
 }
 
-func NewDefaultProvider(region string, cache *cache.Cache, skuClient skuclient.SkuClient, pricingProvider *pricing.Provider, offeringsCache *kcache.UnavailableOfferings) *DefaultProvider {
+func NewDefaultProvider(
+	region string,
+	cache *cache.Cache,
+	skuClient skewer.ResourceClient,
+	pricingProvider *pricing.Provider,
+	offeringsCache *kcache.UnavailableOfferings,
+) *DefaultProvider {
 	return &DefaultProvider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
 		region:               region,
@@ -142,7 +147,7 @@ func (p *DefaultProvider) List(
 			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
 			continue
 		}
-		instanceTypeZones := instanceTypeZones(sku, p.region)
+		instanceTypeZones := p.instanceTypeZones(sku)
 		// !!! Important !!!
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
@@ -179,15 +184,15 @@ func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeCla
 
 // instanceTypeZones generates the set of all supported zones for a given SKU
 // The strings have to match Zone labels that will be placed on Node
-func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
+func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
 	// If an offering is non-zonal, the availability zones will be empty.
-	skuZones := lo.Keys(sku.AvailabilityZones(region))
-	if hasZonalSupport(region) && len(skuZones) > 0 {
+	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
+	if len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
-			return utils.MakeZone(region, zone)
+			return utils.MakeZone(p.region, zone)
 		})...)
 	}
 	return sets.New("") // empty string means non-zonal offering
@@ -252,10 +257,10 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	if !(utils.IsNvidiaEnabledSKU(skuName) || utils.IsMarinerEnabledGPUSKU(skuName)) {
 		return true
 	}
-	switch imageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
+	switch {
+	case v1beta1.UbuntuFamilies.Has(imageFamily):
 		return utils.IsNvidiaEnabledSKU(skuName)
-	case v1beta1.AzureLinuxImageFamily:
+	case imageFamily == v1beta1.AzureLinuxImageFamily:
 		return utils.IsMarinerEnabledGPUSKU(skuName)
 	default:
 		return false
@@ -277,7 +282,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 	instanceTypes := map[string]*skewer.SKU{}
 
-	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient.GetInstance()))
+	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
 	if err != nil {
 		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
@@ -382,61 +387,6 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	}
 
 	return 0, nil
-}
-
-var (
-	// https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1
-	// (could also be obtained programmatically)
-	zonalRegions = sets.New(
-		// Special
-		"centraluseuap",
-		"eastus2euap",
-		// Americas
-		"brazilsouth",
-		"canadacentral",
-		"centralus",
-		"eastus",
-		"eastus2",
-		"southcentralus",
-		"usgovvirginia",
-		"westus2",
-		"westus3",
-		"chilecentral",
-		"mexicocentral",
-		// Europe
-		"francecentral",
-		"italynorth",
-		"germanywestcentral",
-		"norwayeast",
-		"northeurope",
-		"uksouth",
-		"westeurope",
-		"swedencentral",
-		"switzerlandnorth",
-		"polandcentral",
-		"spaincentral",
-		// Middle East
-		"qatarcentral",
-		"uaenorth",
-		"israelcentral",
-		// Africa
-		"southafricanorth",
-		// Asia Pacific
-		"australiaeast",
-		"centralindia",
-		"japaneast",
-		"koreacentral",
-		"southeastasia",
-		"eastasia",
-		"chinanorth3",
-		"indonesiacentral",
-		"japanwest",
-		"newzealandnorth",
-	)
-)
-
-func hasZonalSupport(region string) bool {
-	return zonalRegions.Has(region)
 }
 
 func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {

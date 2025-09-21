@@ -36,7 +36,7 @@ controller:
     - name: LOCATION
       value: ${AZURE_LOCATION}
     - name: KUBELET_IDENTITY_CLIENT_ID
-      value: ""
+      value: ${KUBELET_IDENTITY_CLIENT_ID}
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}
 
