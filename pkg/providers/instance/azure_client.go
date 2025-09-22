@@ -218,13 +218,27 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			return nil, err
 		}
 	}
-	aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
-	if err != nil {
-		return nil, err
-	}
-	agentPoolsClient, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
-	if err != nil {
-		return nil, err
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.AKSMachinesReachable {
+		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			return nil, err
+		}
+		agentPoolsClient, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Try create true clients
+		_, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			log.FromContext(ctx).Info("failed to create true AKS machines client, but tolerated due to currently on dry client", "error", err)
+		}
+		_, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			log.FromContext(ctx).Info("failed to create true AKS agent pools client, but tolerated due to currently on dry client", "error", err)
+		}
+		aksMachinesClient = NewNoAKSMachinesClient()
+		agentPoolsClient = NewNoAKSAgentPoolsClient()
 	}
 
 	return NewAZClientFromAPI(

@@ -89,7 +89,8 @@ type Options struct {
 	SIGSubscriptionID          string            `json:"sigSubscriptionId,omitempty"`
 	NodeResourceGroup          string            `json:"nodeResourceGroup,omitempty"`
 	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
-	AKSMachinesPoolName        string            `json:"aksMachinesPoolName,omitempty"` // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision mode.
+	AKSMachinesReachable       bool              `json:"aksMachinesReachable,omitempty"` // If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.
+	AKSMachinesPoolName        string            `json:"aksMachinesPoolName,omitempty"`  // The name of the agent pool for the AKS machine API, assuming that all machines belong to the same agent pool. Only used on AKS machine API provision mode.
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -113,6 +114,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.BoolVar(&o.UseSIG, "use-sig", env.WithDefaultBool("USE_SIG", false), "If set to true karpenter will use the AKS managed shared image galleries and the node image versions api. If set to false karpenter will use community image galleries. Only a subset of image features will be available in the community image galleries and this flag is only for the managed node provisioning addon.")
 	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
+	fs.BoolVar(&o.AKSMachinesReachable, "aks-machines-reachable", env.WithDefaultBool("AKS_MACHINES_REACHABLE", false), "If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.")
 	fs.StringVar(&o.AKSMachinesPoolName, "aks-machines-pool-name", env.WithDefaultString("AKS_MACHINES_POOL_NAME", ""), "The name of the agent pool that the AKS machines are/will be in with PROVISION_MODE=aksmachineapi. Existing AKS machines outside of this pool will be ignored. Required when PROVISION_MODE=aksmachineapi.")
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
