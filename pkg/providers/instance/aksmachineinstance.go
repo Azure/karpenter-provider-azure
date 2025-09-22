@@ -285,14 +285,12 @@ func (p *DefaultAKSMachineProvider) GetMachinesPoolLocation() string {
 	return p.aksMachinesPoolLocation
 }
 
-func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerservice.Machine) error {
+func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerservice.Machine) {
 	// This needs to be rehydrated per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
 	// Suggestion: rework/research more on this pattern RP-side?
 	if aksMachine.Properties != nil && aksMachine.Properties.Priority == nil {
 		aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
 	}
-
-	return nil
 }
 
 func (p *DefaultAKSMachineProvider) getMachine(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
