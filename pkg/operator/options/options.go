@@ -90,6 +90,7 @@ type Options struct {
 	NodeResourceGroup          string            `json:"nodeResourceGroup,omitempty"`
 	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
 	DiskEncryptionSetID        string            `json:"diskEncryptionSetId,omitempty"`
+	AKSMachinesReachable       bool              `json:"aksMachinesReachable,omitempty"` // If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -114,6 +115,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 	fs.StringVar(&o.DiskEncryptionSetID, "node-osdisk-diskencryptionset-id", env.WithDefaultString("NODE_OSDISK_DISKENCRYPTIONSET_ID", ""), "The ARM resource ID of the disk encryption set to use for customer-managed key (BYOK) encryption.")
+	fs.BoolVar(&o.AKSMachinesReachable, "aks-machines-reachable", env.WithDefaultBool("AKS_MACHINES_REACHABLE", false), "If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.")
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
 	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {
