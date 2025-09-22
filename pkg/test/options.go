@@ -46,6 +46,7 @@ type OptionsFields struct {
 	KubeletIdentityClientID        *string
 	AdditionalTags                 map[string]string
 	DiskEncryptionSetID            *string
+	AKSMachinesReachable           *bool
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -84,5 +85,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, "https://test-sig-access-token-server.com"),
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
+		AKSMachinesReachable:           lo.FromPtrOr(options.AKSMachinesReachable, true),
 	}
 }
