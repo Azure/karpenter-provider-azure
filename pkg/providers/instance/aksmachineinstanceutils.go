@@ -266,7 +266,7 @@ func GetAKSZoneFromAKSMachine(aksMachine *armcontainerservice.Machine, location 
 	return "", nil
 }
 
-func IsAKSMachineNotFound(err error) bool {
+func IsAKSMachineOrMachinesPoolNotFound(err error) bool {
 	if err == nil {
 		return false
 	}

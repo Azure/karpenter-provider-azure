@@ -560,9 +560,9 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 	})
 
-	Context("IsAKSMachineNotFound", func() {
+	Context("IsAKSMachineOrMachinesPoolNotFound", func() {
 		It("should return false for nil error", func() {
-			result := IsAKSMachineNotFound(nil)
+			result := IsAKSMachineOrMachinesPoolNotFound(nil)
 			Expect(result).To(BeFalse())
 		})
 
@@ -573,7 +573,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				RawResponse: nil,
 			}
 
-			result := IsAKSMachineNotFound(azureError)
+			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
 			Expect(result).To(BeTrue())
 		})
 
@@ -582,7 +582,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			errorMessage := "Cannot find any valid machines to delete. Please check your input machine names. The valid machines to delete in agent pool 'testmpool' are: testmachine."
 			azureError := createAzureResponseError("InvalidParameter", errorMessage, 400)
 
-			result := IsAKSMachineNotFound(azureError)
+			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
 			Expect(result).To(BeTrue())
 		})
 
@@ -591,7 +591,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			differentMessage := "InvalidParameter: Some other validation error"
 			azureError := createAzureResponseError("InvalidParameter", differentMessage, 400)
 
-			result := IsAKSMachineNotFound(azureError)
+			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
 			Expect(result).To(BeFalse())
 		})
 
@@ -602,7 +602,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				RawResponse: nil,
 			}
 
-			result := IsAKSMachineNotFound(azureError)
+			result := IsAKSMachineOrMachinesPoolNotFound(azureError)
 			Expect(result).To(BeFalse())
 
 			azureError = &azcore.ResponseError{
@@ -611,12 +611,12 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				RawResponse: nil,
 			}
 
-			result = IsAKSMachineNotFound(azureError)
+			result = IsAKSMachineOrMachinesPoolNotFound(azureError)
 			Expect(result).To(BeFalse())
 		})
 
 		It("should return false for non-Azure SDK errors", func() {
-			result := IsAKSMachineNotFound(fmt.Errorf("some generic error"))
+			result := IsAKSMachineOrMachinesPoolNotFound(fmt.Errorf("some generic error"))
 			Expect(result).To(BeFalse())
 		})
 	})

@@ -136,7 +136,6 @@ type DefaultAKSMachineProvider struct {
 
 func NewAKSMachineProvider(
 	ctx context.Context,
-	provisionMode string,
 	azClient *AZClient,
 	instanceTypeProvider instancetype.Provider,
 	imageResolver imagefamily.Resolver,
@@ -211,7 +210,9 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
-		if IsAKSMachineNotFound(err) {
+		if IsAKSMachineOrMachinesPoolNotFound(err) {
+			// Can only be AKS machines pool not found.
+			// Suggestion: separate the util function to not cover more than needed?
 			return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to begin update AKS machine %q: %w", aksMachineName, err))
 		}
 		return fmt.Errorf("failed to begin update AKS machine %q: %w", aksMachineName, err)
@@ -235,7 +236,7 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 	// ASSUMPTION: AKS machines API accepts only AKS machine name.
 	aksMachine, err := p.getMachine(ctx, aksMachineName)
 	if err != nil {
-		if IsAKSMachineNotFound(err) {
+		if IsAKSMachineOrMachinesPoolNotFound(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return nil, err
@@ -272,7 +273,7 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 
 	err = p.deleteMachine(ctx, aksMachineName)
 	if err != nil {
-		if IsAKSMachineNotFound(err) {
+		if IsAKSMachineOrMachinesPoolNotFound(err) {
 			return corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return err
@@ -314,8 +315,10 @@ func (p *DefaultAKSMachineProvider) listMachines(ctx context.Context) ([]*armcon
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			if IsAKSMachineNotFound(err) {
+			if IsAKSMachineOrMachinesPoolNotFound(err) {
 				// AKS machines pool not found. Handle gracefully.
+				// Suggestion: separate the util function to not cover more than needed?
+				log.FromContext(ctx).V(1).Info("failed to list AKS machines: AKS machines pool not found, treating as no AKS machines found")
 				break
 			}
 
@@ -377,7 +380,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if err == nil {
 		// Existing AKS machine found, reuse it.
 		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, instanceTypes, existingAKSMachine)
-	} else if !IsAKSMachineNotFound(err) {
+	} else if !IsAKSMachineOrMachinesPoolNotFound(err) {
 		// Not fatal. Will fall back to normal creation.
 		log.FromContext(ctx).Error(err, "failed to check for existing AKS machine", "aksMachineName", aksMachineName)
 	}

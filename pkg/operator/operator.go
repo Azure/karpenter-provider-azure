@@ -193,7 +193,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	)
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		ctx,
-		options.FromContext(ctx).ProvisionMode,
 		azClient,
 		instanceTypeProvider,
 		imageResolver,
