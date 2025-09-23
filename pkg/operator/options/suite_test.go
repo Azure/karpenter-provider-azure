@@ -68,7 +68,7 @@ var _ = Describe("Options", func() {
 		"LINUX_ADMIN_USERNAME",
 		"ADDITIONAL_TAGS",
 		"AKS_MACHINES_POOL_NAME",
-		"AKS_MACHINES_REACHABLE",
+		"MANAGE_EXISTING_AKS_MACHINES",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -122,7 +122,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
 			os.Setenv("AKS_MACHINES_POOL_NAME", "testmpool")
-			os.Setenv("AKS_MACHINES_REACHABLE", "true")
+			os.Setenv("MANAGE_EXISTING_AKS_MACHINES", "true")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -151,7 +151,7 @@ var _ = Describe("Options", func() {
 				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
 				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
-				AKSMachinesReachable:           lo.ToPtr(true),
+				ManageExistingAKSMachines:      lo.ToPtr(true),
 				AKSMachinesPoolName:            lo.ToPtr("testmpool"),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
@@ -575,7 +575,7 @@ var _ = Describe("Options", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("should default aks-machines-reachable to false", func() {
+		It("should default manage-existing-aks-machines to false", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -586,10 +586,10 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(opts.AKSMachinesReachable).To(BeFalse())
+			Expect(opts.ManageExistingAKSMachines).To(BeFalse())
 		})
 
-		It("should succeed with aks-machines-reachable set", func() {
+		It("should succeed with manage-existing-aks-machines set", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -598,13 +598,13 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--aks-machines-reachable",
+				"--manage-existing-aks-machines",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(opts.AKSMachinesReachable).To(BeTrue())
+			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
 		})
 
-		It("should allow aks-machines-reachable with provision mode aksmachineapi", func() {
+		It("should allow manage-existing-aks-machines with provision mode aksmachineapi", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -613,14 +613,14 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
 				"--node-resource-group", "my-node-rg",
-				"--aks-machines-reachable",
+				"--manage-existing-aks-machines",
 				"--provision-mode", "aksmachineapi",
 				"--aks-machines-pool-name", "testmpool",
 				"--use-sig",
 				"--sig-subscription-id", "92345678-1234-1234-1234-123456789012",
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(opts.AKSMachinesReachable).To(BeTrue())
+			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
 		})
 	})
 

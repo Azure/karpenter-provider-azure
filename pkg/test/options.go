@@ -45,7 +45,7 @@ type OptionsFields struct {
 	VnetGUID                       *string
 	KubeletIdentityClientID        *string
 	AdditionalTags                 map[string]string
-	AKSMachinesReachable           *bool
+	ManageExistingAKSMachines      *bool
 	AKSMachinesPoolName            *string
 
 	// SIG Flags not required by the self hosted offering
@@ -84,7 +84,7 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, "12345678-1234-1234-1234-123456789012"),
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, "https://test-sig-access-token-server.com"),
 		AdditionalTags:                 options.AdditionalTags,
-		AKSMachinesReachable:           lo.FromPtrOr(options.AKSMachinesReachable, true),
+		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, true),
 		AKSMachinesPoolName:            lo.FromPtrOr(options.AKSMachinesPoolName, "aksmanagedap"),
 	}
 }
