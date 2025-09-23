@@ -329,31 +329,23 @@ func upgradeAnyExpiredImages(ctx context.Context, futureImages []v1beta1.NodeIma
 }
 
 // isLinuxImageVersion checks if a version string follows the Linux image format YYYYMM.DD.PATCH.
-func isLinuxImageVersion(version string) bool {
-	// Regex for YYYYMM.DD.PATCH format, where PATCH is 1 or more digits.
-	linuxVersionRegex := regexp.MustCompile(`^\d{6}\.\d{2}\.\d+$`)
-	return linuxVersionRegex.MatchString(version)
-}
+// If it matches, returns true and the parsed year, month, day components.
+// If it doesn't match, returns false and empty strings.
+func isLinuxImageVersion(version string) (bool, string, string, string) {
+	// Regex for YYYYMM.DD.PATCH format with capture groups
+	linuxVersionRegex := regexp.MustCompile(`^(\d{4})(\d{2})\.(\d{2})\.\d+$`)
+	matches := linuxVersionRegex.FindStringSubmatch(version)
 
-// parseLinuxImage parses a Linux image version in YYYYMM.DD.PATCH format.
-// Returns year, month, day, patch, and error if parsing fails.
-func parseLinuxImage(version string) (string, string, string, string, error) {
-	versionParts := strings.Split(version, ".")
-	if len(versionParts) < 3 {
-		return "", "", "", "", fmt.Errorf("invalid version format: expected YYYYMM.DD.PATCH, got %s", version)
+	if matches == nil {
+		return false, "", "", ""
 	}
 
-	// Extract YYYYMM.DD.PATCH parts
-	if len(versionParts[0]) != 6 || len(versionParts[1]) != 2 {
-		return "", "", "", "", fmt.Errorf("invalid version format: expected YYYYMM.DD.PATCH, got %s", version)
-	}
+	// matches[0] is the full match, matches[1-3] are the capture groups
+	year := matches[1]
+	month := matches[2]
+	day := matches[3]
 
-	year := versionParts[0][:4]
-	month := versionParts[0][4:6]
-	day := versionParts[1]
-	patch := versionParts[2]
-
-	return year, month, day, patch, nil
+	return true, year, month, day
 }
 
 // isImageExpired checks if a image version is more than 90 days old.
@@ -366,15 +358,8 @@ func isImageExpired(imageID string, now time.Time) (bool, error) {
 		return false, fmt.Errorf("could not extract version from image ID: %s", imageID)
 	}
 
-	var year, month, day string
-	var err error
-
-	if isLinuxImageVersion(version) {
-		year, month, day, _, err = parseLinuxImage(version)
-		if err != nil {
-			return false, fmt.Errorf("parsing Linux image version: %w", err)
-		}
-	} else {
+	isLinux, year, month, day := isLinuxImageVersion(version)
+	if !isLinux {
 		// TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed
 		return false, fmt.Errorf("invalid version format: unsupported image version format %s", version)
 	}
