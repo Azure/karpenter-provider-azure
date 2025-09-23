@@ -297,8 +297,10 @@ func upgradeAnyExpiredImages(ctx context.Context, futureImages []v1beta1.NodeIma
 
 	for _, futureImage := range futureImages {
 		baseID := trimVersionSuffix(futureImage.ID)
-		goalImage, exists := goalBaseIDMapping[baseID]
+		foundImage, exists := goalBaseIDMapping[baseID]
 		if !exists {
+			// > Note: this shouldn't be able to happen since overrideAnyGoalStateVersionsWithExisting
+			// > ensures all found base image ids end up in goal/future images.
 			// No corresponding goal image, keep current
 			finalImages = append(finalImages, futureImage)
 			continue
@@ -309,13 +311,13 @@ func upgradeAnyExpiredImages(ctx context.Context, futureImages []v1beta1.NodeIma
 		if err != nil {
 			// Log malformed image and replace it
 			log.FromContext(ctx).Info("malformed image version, replacing", logging.ImageID, futureImage.ID, "error", err)
-			finalImages = append(finalImages, *goalImage)
+			finalImages = append(finalImages, *foundImage)
 			continue
 		}
 
 		if expired {
 			// Use the newer goal image version
-			finalImages = append(finalImages, *goalImage)
+			finalImages = append(finalImages, *foundImage)
 		} else {
 			// Keep the current image
 			finalImages = append(finalImages, futureImage)
