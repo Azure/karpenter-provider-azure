@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -327,6 +328,13 @@ func upgradeAnyExpiredImages(ctx context.Context, futureImages []v1beta1.NodeIma
 	return finalImages
 }
 
+// isLinuxImageVersion checks if a version string follows the Linux image format YYYYMM.DD.PATCH.
+func isLinuxImageVersion(version string) bool {
+	// Regex for YYYYMM.DD.PATCH format
+	linuxVersionRegex := regexp.MustCompile(`^\d{6}\.\d{2}\.\d+$`)
+	return linuxVersionRegex.MatchString(version)
+}
+
 // parseLinuxImage parses a Linux image version in YYYYMM.DD.PATCH format.
 // Returns year, month, day, patch, and error if parsing fails.
 func parseLinuxImage(version string) (string, string, string, string, error) {
@@ -356,6 +364,12 @@ func isImageExpired(imageID string, now time.Time) (bool, error) {
 	version := extractVersionFromImageID(imageID)
 	if version == "" {
 		return false, fmt.Errorf("could not extract version from image ID: %s", imageID)
+	}
+
+	// Check if this is a Linux image version
+	if !isLinuxImageVersion(version) {
+		// Not a Linux image, return false (not expired) without error
+		return false, nil
 	}
 
 	year, month, day, _, err := parseLinuxImage(version)
