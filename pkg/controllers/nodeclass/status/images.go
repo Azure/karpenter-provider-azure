@@ -317,10 +317,8 @@ func upgradeAnyExpiredImages(ctx context.Context, futureImages []v1beta1.NodeIma
 		}
 
 		if expired {
-			// Use the newer goal image version
 			finalImages = append(finalImages, *foundImage)
 		} else {
-			// Keep the current image
 			finalImages = append(finalImages, futureImage)
 		}
 	}
