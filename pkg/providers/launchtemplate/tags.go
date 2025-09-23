@@ -31,7 +31,8 @@ const (
 )
 
 var (
-	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
+	NodePoolTagKey                     = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
+	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
 )
 
 // TODO: Would like to refactor this out of launchtemplate at some point
