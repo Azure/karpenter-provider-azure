@@ -358,7 +358,7 @@ func parseLinuxImage(version string) (string, string, string, string, error) {
 
 // isImageExpired checks if a image version is more than 90 days old.
 // > NOTE: this only supports Linux image versions follow the format YYYYMM.DD.PATCH (e.g., 202410.03.1).
-// > false will be returned if it does not match the linux image format.
+// > An error will be returned if the image isn't using the Linux version format.
 // TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed
 func isImageExpired(imageID string, now time.Time) (bool, error) {
 	version := extractVersionFromImageID(imageID)
@@ -366,15 +366,17 @@ func isImageExpired(imageID string, now time.Time) (bool, error) {
 		return false, fmt.Errorf("could not extract version from image ID: %s", imageID)
 	}
 
-	if !isLinuxImageVersion(version) {
-		// TODO: we need to handle Windows version format (OS.PATCH.YYMMDD), and should additionally signal to cleanup malformed images.
-		return false, nil
-	}
+	var year, month, day string
+	var err error
 
-	year, month, day, _, err := parseLinuxImage(version)
-	if err != nil {
+	if isLinuxImageVersion(version) {
+		year, month, day, _, err = parseLinuxImage(version)
+		if err != nil {
+			return false, fmt.Errorf("parsing Linux image version: %w", err)
+		}
+	} else {
 		// TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed
-		return false, fmt.Errorf("parsing Linux image version: %w", err)
+		return false, fmt.Errorf("invalid version format: unsupported image version format %s", version)
 	}
 
 	// Parse the date
