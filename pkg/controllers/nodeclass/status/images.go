@@ -330,7 +330,7 @@ func upgradeAnyExpiredImages(ctx context.Context, futureImages []v1beta1.NodeIma
 
 // isLinuxImageVersion checks if a version string follows the Linux image format YYYYMM.DD.PATCH.
 func isLinuxImageVersion(version string) bool {
-	// Regex for YYYYMM.DD.PATCH format
+	// Regex for YYYYMM.DD.PATCH format, where PATCH is 1 or more digits.
 	linuxVersionRegex := regexp.MustCompile(`^\d{6}\.\d{2}\.\d+$`)
 	return linuxVersionRegex.MatchString(version)
 }
@@ -358,7 +358,7 @@ func parseLinuxImage(version string) (string, string, string, string, error) {
 
 // isImageExpired checks if a image version is more than 90 days old.
 // > NOTE: this only supports Linux image versions follow the format YYYYMM.DD.PATCH (e.g., 202410.03.1).
-// > An error will be returned if the image isn't using the Linux version format.
+// > false will be returned if it does not match the linux image format.
 // TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed
 func isImageExpired(imageID string, now time.Time) (bool, error) {
 	version := extractVersionFromImageID(imageID)
@@ -366,9 +366,8 @@ func isImageExpired(imageID string, now time.Time) (bool, error) {
 		return false, fmt.Errorf("could not extract version from image ID: %s", imageID)
 	}
 
-	// Check if this is a Linux image version
 	if !isLinuxImageVersion(version) {
-		// Not a Linux image, return false (not expired) without error
+		// TODO: we need to handle Windows version format (OS.PATCH.YYMMDD), and should additionally signal to cleanup malformed images.
 		return false, nil
 	}
 
