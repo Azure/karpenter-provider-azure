@@ -218,7 +218,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			return nil, err
 		}
 	}
-	if o.AKSMachinesReachable {
+	if o.ManageExistingAKSMachines {
 		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
 			return nil, err
