@@ -36,8 +36,9 @@ type vmInPlaceUpdateFields struct {
 	Tags       map[string]string `json:"tags,omitempty"`
 }
 
-func (i *vmInPlaceUpdateFields) CalculateHash() (string, error) {
-	encoded, err := json.Marshal(i)
+// CalculateHash computes a hash for any JSON-marshalable struct
+func CalculateHash(data interface{}) (string, error) {
+	encoded, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
@@ -51,7 +52,7 @@ func (i *vmInPlaceUpdateFields) CalculateHash() (string, error) {
 }
 
 // HashFromNodeClaim calculates an inplace update hash from the specified options, nodeClaim, and nodeClass
-func HashFromNodeClaim(options *options.Options, _ *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (string, error) {
+func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (string, error) {
 	tags := options.AdditionalTags
 	if nodeClass != nil {
 		tags = lo.Assign(options.AdditionalTags, nodeClass.Spec.Tags)
@@ -62,5 +63,5 @@ func HashFromNodeClaim(options *options.Options, _ *karpv1.NodeClaim, nodeClass 
 		Tags:       tags,
 	}
 
-	return hashStruct.CalculateHash()
+	return CalculateHash(hashStruct)
 }

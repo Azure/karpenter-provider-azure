@@ -92,14 +92,10 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	stored := nodeClaim.DeepCopy()
 
-	vm, err := nodeclaimutils.GetVM(ctx, c.vmInstanceProvider, nodeClaim)
+	// VM-based nodeClaim
+	err = c.processVMInstance(ctx, options, nodeClaim, nodeClass)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
-	}
-
-	err = c.applyPatch(ctx, options, nodeClaim, nodeClass, vm)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
+		return reconcile.Result{}, fmt.Errorf("processing VM instance for nodeClaim %s: %w", nodeClaim.Name, err)
 	}
 
 	if nodeClaim.Annotations == nil {
@@ -112,7 +108,6 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
-	log.FromContext(ctx).V(1).Info("successfully saved new in-place update hash", "goalHash", goalHash)
 
 	return reconcile.Result{}, nil
 }
@@ -136,7 +131,26 @@ func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeCl
 	return true, reconcile.Result{}
 }
 
-func (c *Controller) applyPatch(
+func (c *Controller) processVMInstance(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+) error {
+	vm, err := nodeclaimutils.GetVM(ctx, c.vmInstanceProvider, nodeClaim)
+	if err != nil {
+		return fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	err = c.applyVMPatch(ctx, options, nodeClaim, nodeClass, vm)
+	if err != nil {
+		return fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	return nil
+}
+
+func (c *Controller) applyVMPatch(
 	ctx context.Context,
 	options *options.Options,
 	nodeClaim *karpv1.NodeClaim,
