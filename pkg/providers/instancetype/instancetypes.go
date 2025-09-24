@@ -119,13 +119,14 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
 		lo.FromPtr(nodeClass.Spec.ImageFamily),
 		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
+		nodeClass.GetEncryptionAtHost(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -158,6 +159,9 @@ func (p *DefaultProvider) List(
 		}
 
 		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+			continue
+		}
+		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
 			continue
 		}
 		result = append(result, instanceType)
@@ -265,6 +269,24 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	default:
 		return false
 	}
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// If EncryptionAtHost is not enabled in the nodeclass, all instance types are supported
+	if !nodeClass.GetEncryptionAtHost() {
+		return true
+	}
+	// If EncryptionAtHost is enabled, only include instance types that support it
+	return p.supportsEncryptionAtHost(sku)
+}
+
+// supportsEncryptionAtHost checks if the SKU supports encryption at host
+func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
+	value, err := sku.GetCapabilityString("EncryptionAtHostSupported")
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(value, "True")
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
