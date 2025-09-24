@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetZone(t *testing.T) {
+func TestGetAKSLabelZoneFromVM(t *testing.T) {
 	tc := []struct {
 		testName      string
 		input         *armcompute.VirtualMachine
@@ -74,7 +74,7 @@ func TestGetZone(t *testing.T) {
 	}
 
 	for _, c := range tc {
-		zone, err := utils.GetZone(c.input)
+		zone, err := utils.GetAKSLabelZoneFromVM(c.input)
 		assert.Equal(t, c.expectedZone, zone, c.testName)
 		if err == nil && c.expectedError != "" {
 			assert.Fail(t, "expected error but got nil", c.testName)
