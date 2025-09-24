@@ -286,7 +286,7 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 	if err != nil {
 		return false
 	}
-	return value == "True"
+	return strings.EqualFold(value, "True")
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters

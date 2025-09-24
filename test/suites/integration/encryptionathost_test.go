@@ -17,6 +17,7 @@ limitations under the License.
 package integration_test
 
 import (
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
 	"sigs.k8s.io/karpenter/pkg/test"
 
@@ -26,7 +27,10 @@ import (
 
 var _ = Describe("EncryptionAtHost", func() {
 	It("should provision a node with encryption at host enabled", func() {
-		nodeClass.Spec.EncryptionAtHost = lo.ToPtr(true)
+		if nodeClass.Spec.Security == nil {
+			nodeClass.Spec.Security = &v1beta1.Security{}
+		}
+		nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
 
 		pod := test.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
