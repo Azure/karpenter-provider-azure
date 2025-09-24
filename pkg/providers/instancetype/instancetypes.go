@@ -126,7 +126,7 @@ func (p *DefaultProvider) List(
 		lo.FromPtr(nodeClass.Spec.ImageFamily),
 		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
-		lo.FromPtr(nodeClass.Spec.EncryptionAtHost),
+		nodeClass.GetEncryptionAtHost(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -273,7 +273,7 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 
 func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
 	// If EncryptionAtHost is not enabled in the nodeclass, all instance types are supported
-	if !lo.FromPtr(nodeClass.Spec.EncryptionAtHost) {
+	if !nodeClass.GetEncryptionAtHost() {
 		return true
 	}
 	// If EncryptionAtHost is enabled, only include instance types that support it

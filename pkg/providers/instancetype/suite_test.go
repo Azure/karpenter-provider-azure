@@ -657,7 +657,10 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("when encryption at host is enabled", func() {
 			BeforeEach(func() {
 				nodeClassWithEncryption := test.AKSNodeClass()
-				nodeClassWithEncryption.Spec.EncryptionAtHost = lo.ToPtr(true)
+				if nodeClassWithEncryption.Spec.Security == nil {
+					nodeClassWithEncryption.Spec.Security = &v1beta1.Security{}
+				}
+				nodeClassWithEncryption.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
 				ExpectApplied(ctx, env.Client, nodeClassWithEncryption)
 				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithEncryption)
 				Expect(err).ToNot(HaveOccurred())
@@ -676,7 +679,7 @@ var _ = Describe("InstanceType Provider", func() {
 		Context("when encryption at host is disabled or not set", func() {
 			It("should include SKUs regardless of encryption at host support", func() {
 				nodeClassWithoutEncryption := test.AKSNodeClass()
-				nodeClassWithoutEncryption.Spec.EncryptionAtHost = nil // default is disabled
+				// default is disabled when Security is nil or EncryptionAtHost is nil
 				ExpectApplied(ctx, env.Client, nodeClassWithoutEncryption)
 				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithoutEncryption)
 				Expect(err).ToNot(HaveOccurred())

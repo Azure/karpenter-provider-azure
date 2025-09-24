@@ -590,11 +590,11 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 }
 
 func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
-	if nodeClass.Spec.EncryptionAtHost != nil {
+	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
 		if vmProperties.SecurityProfile == nil {
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
-		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.EncryptionAtHost
+		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
 }
 

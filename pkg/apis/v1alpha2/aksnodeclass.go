@@ -81,7 +81,14 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum:=250
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
-	// EncryptionAtHost enables encryption at host for the provisioned nodes
+	// Collection of security related karpenter fields
+	Security *Security `json:"security,omitempty"`
+}
+
+// TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
+type Security struct {
+	// EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+	// For more information, see:
 	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
 	// +optional
@@ -210,4 +217,13 @@ type AKSNodeClassList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AKSNodeClass `json:"items"`
+}
+
+// GetEncryptionAtHost returns whether encryption at host is enabled for the node class.
+// Returns false if Security or EncryptionAtHost is nil.
+func (in *AKSNodeClass) GetEncryptionAtHost() bool {
+	if in.Spec.Security != nil && in.Spec.Security.EncryptionAtHost != nil {
+		return *in.Spec.Security.EncryptionAtHost
+	}
+	return false
 }

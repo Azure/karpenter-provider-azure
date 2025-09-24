@@ -626,7 +626,10 @@ var _ = Describe("InstanceProvider", func() {
 
 	Context("EncryptionAtHost", func() {
 		It("should create VM with EncryptionAtHost enabled when specified in AKSNodeClass", func() {
-			nodeClass.Spec.EncryptionAtHost = lo.ToPtr(true)
+			if nodeClass.Spec.Security == nil {
+			nodeClass.Spec.Security = &v1beta1.Security{}
+		}
+		nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -642,7 +645,10 @@ var _ = Describe("InstanceProvider", func() {
 		})
 
 		It("should create VM with EncryptionAtHost disabled when specified in AKSNodeClass", func() {
-			nodeClass.Spec.EncryptionAtHost = lo.ToPtr(false)
+			if nodeClass.Spec.Security == nil {
+			nodeClass.Spec.Security = &v1beta1.Security{}
+		}
+		nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(false)
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
