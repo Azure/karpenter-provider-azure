@@ -79,8 +79,8 @@ var (
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
 	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
 	// AKS domain.
-	AKSLabelCPU    = AKSLabelDomain + "/cpu"    // Same value as sku-cpu.
-	AKSLabelMemory = AKSLabelDomain + "/memory" // Same value as sku-memory.
+	AKSLabelCPU    = AKSLabelDomain + "/sku-cpu"    // Same value as sku-cpu.
+	AKSLabelMemory = AKSLabelDomain + "/sku-memory" // Same value as sku-memory.
 
 	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
