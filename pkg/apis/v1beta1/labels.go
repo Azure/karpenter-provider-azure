@@ -33,6 +33,8 @@ func init() {
 
 		LabelSKUCPU,
 		LabelSKUMemory,
+		AKSLabelCPU,
+		AKSLabelMemory,
 
 		LabelSKUAcceleratedNetworking,
 
@@ -76,6 +78,9 @@ var (
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
 	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
+	// AKS domain.
+	AKSLabelCPU    = AKSLabelDomain + "/cpu"    // Same value as sku-cpu.
+	AKSLabelMemory = AKSLabelDomain + "/memory" // Same value as sku-memory.
 
 	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
