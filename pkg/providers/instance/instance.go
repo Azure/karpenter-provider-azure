@@ -549,6 +549,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setVMPropertiesOSDiskEncryption(vm.Properties, opts.DiskEncryptionSetID)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
+	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -601,6 +602,15 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
 			MaxPrice: lo.ToPtr(float64(-1)),
 		}
+	}
+}
+
+func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
+	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+		if vmProperties.SecurityProfile == nil {
+			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
+		}
+		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
 }
 
