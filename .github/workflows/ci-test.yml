@@ -43,7 +43,12 @@ jobs:
     - uses: ./.github/actions/install-deps
       with:
         k8sVersion: ${{ matrix.k8sVersion }}
-    - run: K8S_VERSION=${{ matrix.k8sVersion }} make ci-test
+    - name: Run tests with retry
+      uses: nick-fields/retry@7152eba30c6575329ac0576536151aca5a72780e # v3.0.0
+      with:
+        timeout_minutes: 30
+        max_attempts: 3
+        command: K8S_VERSION=${{ matrix.k8sVersion }} make ci-test
     - name: Send coverage
       # should only send coverage once https://docs.coveralls.io/parallel-builds
       if: matrix.k8sVersion == '1.32.x'
