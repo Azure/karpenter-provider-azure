@@ -142,6 +142,7 @@ type DefaultVMProvider struct {
 	unavailableOfferings         *cache.UnavailableOfferings
 	provisionMode                string
 	responseErrorHandlers        []responseErrorHandler
+	diskEncryptionSetID          string
 
 	vmListQuery, nicListQuery string
 }
@@ -157,6 +158,7 @@ func NewDefaultVMProvider(
 	resourceGroup string,
 	subscriptionID string,
 	provisionMode string,
+	diskEncryptionSetID string,
 ) *DefaultVMProvider {
 	return &DefaultVMProvider{
 		azClient:                     azClient,
@@ -170,6 +172,7 @@ func NewDefaultVMProvider(
 		unavailableOfferings:         offeringsCache,
 		provisionMode:                provisionMode,
 		responseErrorHandlers:        defaultResponseErrorHandlers(),
+		diskEncryptionSetID:          diskEncryptionSetID,
 
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
@@ -485,19 +488,20 @@ func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *cr
 
 // createVMOptions contains all the parameters needed to create a VM
 type createVMOptions struct {
-	VMName             string
-	NicReference       string
-	Zone               string
-	CapacityType       string
-	Location           string
-	SSHPublicKey       string
-	LinuxAdminUsername string
-	NodeIdentities     []string
-	NodeClass          *v1beta1.AKSNodeClass
-	LaunchTemplate     *launchtemplate.Template
-	InstanceType       *corecloudprovider.InstanceType
-	ProvisionMode      string
-	UseSIG             bool
+	VMName              string
+	NicReference        string
+	Zone                string
+	CapacityType        string
+	Location            string
+	SSHPublicKey        string
+	LinuxAdminUsername  string
+	NodeIdentities      []string
+	NodeClass           *v1beta1.AKSNodeClass
+	LaunchTemplate      *launchtemplate.Template
+	InstanceType        *corecloudprovider.InstanceType
+	ProvisionMode       string
+	UseSIG              bool
+	DiskEncryptionSetID string
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -559,8 +563,10 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Tags:  opts.LaunchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
+	setVMPropertiesOSDiskEncryption(vm.Properties, opts.DiskEncryptionSetID)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
+	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -579,6 +585,17 @@ func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties
 			Placement: lo.ToPtr(placement),
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
+	}
+}
+
+func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProperties, diskEncryptionSetID string) {
+	if diskEncryptionSetID != "" {
+		if vmProperties.StorageProfile.OSDisk.ManagedDisk == nil {
+			vmProperties.StorageProfile.OSDisk.ManagedDisk = &armcompute.ManagedDiskParameters{}
+		}
+		vmProperties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet = &armcompute.DiskEncryptionSetParameters{
+			ID: lo.ToPtr(diskEncryptionSetID),
+		}
 	}
 }
 
@@ -602,6 +619,15 @@ func setVMPropertiesBillingProfile(vmProperties *armcompute.VirtualMachineProper
 		vmProperties.BillingProfile = &armcompute.BillingProfile{
 			MaxPrice: lo.ToPtr(float64(-1)),
 		}
+	}
+}
+
+func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
+	if nodeClass.Spec.Security != nil && nodeClass.Spec.Security.EncryptionAtHost != nil {
+		if vmProperties.SecurityProfile == nil {
+			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
+		}
+		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
 }
 
@@ -708,19 +734,20 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}
 
 	result, err := p.createVirtualMachine(ctx, &createVMOptions{
-		VMName:             resourceName,
-		NicReference:       nicReference,
-		Zone:               zone,
-		CapacityType:       capacityType,
-		Location:           p.location,
-		SSHPublicKey:       options.FromContext(ctx).SSHPublicKey,
-		LinuxAdminUsername: options.FromContext(ctx).LinuxAdminUsername,
-		NodeIdentities:     options.FromContext(ctx).NodeIdentities,
-		NodeClass:          nodeClass,
-		LaunchTemplate:     launchTemplate,
-		InstanceType:       instanceType,
-		ProvisionMode:      p.provisionMode,
-		UseSIG:             options.FromContext(ctx).UseSIG,
+		VMName:              resourceName,
+		NicReference:        nicReference,
+		Zone:                zone,
+		CapacityType:        capacityType,
+		Location:            p.location,
+		SSHPublicKey:        options.FromContext(ctx).SSHPublicKey,
+		LinuxAdminUsername:  options.FromContext(ctx).LinuxAdminUsername,
+		NodeIdentities:      options.FromContext(ctx).NodeIdentities,
+		NodeClass:           nodeClass,
+		LaunchTemplate:      launchTemplate,
+		InstanceType:        instanceType,
+		ProvisionMode:       p.provisionMode,
+		UseSIG:              options.FromContext(ctx).UseSIG,
+		DiskEncryptionSetID: p.diskEncryptionSetID,
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)

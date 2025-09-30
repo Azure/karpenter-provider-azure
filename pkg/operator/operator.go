@@ -189,6 +189,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
+		options.FromContext(ctx).DiskEncryptionSetID,
 	)
 
 	return ctx, &Operator{

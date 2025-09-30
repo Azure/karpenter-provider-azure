@@ -45,6 +45,7 @@ type OptionsFields struct {
 	VnetGUID                       *string
 	KubeletIdentityClientID        *string
 	AdditionalTags                 map[string]string
+	DiskEncryptionSetID            *string
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -82,5 +83,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, "12345678-1234-1234-1234-123456789012"),
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, "https://test-sig-access-token-server.com"),
 		AdditionalTags:                 options.AdditionalTags,
+		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
 	}
 }
