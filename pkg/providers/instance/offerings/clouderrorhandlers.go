@@ -18,8 +18,8 @@ package offerings
 
 import (
 	"context"
-	"strings"
 
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
@@ -61,89 +61,36 @@ func (h *CloudErrorHandling) HandleCloudError(ctx context.Context, sku *skewer.S
 func DefaultCloudErrorHandlers() []cloudErrorHandler {
 	return []cloudErrorHandler{
 		{
-			match:  isLowPriorityQuotaReached,
+			match:  sdkerrors.LowPriorityQuotaHasBeenReachedInCloudError,
 			handle: handleLowPriorityQuotaError,
 		},
 		{
-			match:  isSKUFamilyQuotaReached,
+			match:  sdkerrors.SKUFamilyQuotaHasBeenReachedInCloudError,
 			handle: handleSKUFamilyQuotaError,
 		},
 		{
-			match:  isSKUNotAvailable,
+			match:  sdkerrors.IsSKUNotAvailableInCloudError,
 			handle: handleSKUNotAvailableError,
 		},
 		{
-			match:  isZonalAllocationFailure,
+			match:  sdkerrors.ZonalAllocationFailureOccurredInCloudError,
 			handle: handleZonalAllocationFailureError,
 		},
 		{
-			match:  isAllocationFailure,
+			match:  sdkerrors.AllocationFailureOccurredInCloudError,
 			handle: handleAllocationFailureError,
 		},
 		{
-			match:  isOverconstrainedZonalAllocationFailure,
+			match:  sdkerrors.OverconstrainedZonalAllocationFailureOccurredInCloudError,
 			handle: handleOverconstrainedZonalAllocationFailureError,
 		},
 		{
-			match:  isOverconstrainedAllocationFailure,
+			match:  sdkerrors.OverconstrainedAllocationFailureOccurredInCloudError,
 			handle: handleOverconstrainedAllocationFailureError,
 		},
 		{
-			match:  isRegionalQuotaReached,
+			match:  sdkerrors.RegionalQuotaHasBeenReachedInCloudError,
 			handle: handleRegionalQuotaError,
 		},
 	}
-}
-
-// XPMT: TODO: move the placeholder below to that repo
-
-// CloudError-specific matcher functions
-func isLowPriorityQuotaReached(cloudError armcontainerservice.CloudErrorBody) bool {
-	var code, message string
-	if cloudError.Code != nil {
-		code = *cloudError.Code
-	}
-	if cloudError.Message != nil {
-		message = *cloudError.Message
-	}
-	return code == "OperationNotAllowed" && strings.Contains(message, "LowPriorityCores quota")
-}
-
-func isSKUFamilyQuotaReached(cloudError armcontainerservice.CloudErrorBody) bool {
-	var code, message string
-	if cloudError.Code != nil {
-		code = *cloudError.Code
-	}
-	if cloudError.Message != nil {
-		message = *cloudError.Message
-	}
-	return code == "OperationNotAllowed" && strings.Contains(message, "Family Cores quota")
-}
-
-func isSKUNotAvailable(cloudError armcontainerservice.CloudErrorBody) bool {
-	return cloudError.Code != nil && *cloudError.Code == "SkuNotAvailable"
-}
-
-func isZonalAllocationFailure(cloudError armcontainerservice.CloudErrorBody) bool {
-	return cloudError.Code != nil && *cloudError.Code == "ZonalAllocationFailed"
-}
-
-func isAllocationFailure(cloudError armcontainerservice.CloudErrorBody) bool {
-	return cloudError.Code != nil && *cloudError.Code == "AllocationFailed"
-}
-
-func isOverconstrainedZonalAllocationFailure(cloudError armcontainerservice.CloudErrorBody) bool {
-	return cloudError.Code != nil && *cloudError.Code == "OverconstrainedZonalAllocationRequest"
-}
-
-func isOverconstrainedAllocationFailure(cloudError armcontainerservice.CloudErrorBody) bool {
-	return cloudError.Code != nil && *cloudError.Code == "OverconstrainedAllocationRequest"
-}
-
-func isRegionalQuotaReached(cloudError armcontainerservice.CloudErrorBody) bool {
-	message := ""
-	if cloudError.Message != nil {
-		message = *cloudError.Message
-	}
-	return message != "" && strings.Contains(message, "Total Regional Cores quota")
 }
