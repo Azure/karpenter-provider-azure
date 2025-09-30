@@ -1446,6 +1446,9 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.LabelSKUGPUCount:                  "1",
 				v1beta1.LabelSKUCPU:                       "24",
 				v1beta1.LabelSKUMemory:                    "8192",
+				// AKS domain.
+				v1beta1.AKSLabelCPU:    "24",
+				v1beta1.AKSLabelMemory: "8192",
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
 				v1.LabelFailureDomainBetaZone:      fakeZone1,
