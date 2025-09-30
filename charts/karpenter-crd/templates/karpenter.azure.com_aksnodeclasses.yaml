@@ -60,12 +60,6 @@ spec:
               AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
-              encryptionAtHost:
-                description: |-
-                  EncryptionAtHost enables encryption at host for the provisioned nodes
-                  https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
-                  https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
-                type: boolean
               fipsMode:
                 description: FIPSMode controls FIPS compliance for the provisioned
                   nodes
@@ -200,6 +194,17 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              security:
+                description: Collection of security related karpenter fields
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
               osDiskSizeGB:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
@@ -393,12 +398,6 @@ spec:
               AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
-              encryptionAtHost:
-                description: |-
-                  EncryptionAtHost enables encryption at host for the provisioned nodes
-                  https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
-                  https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
-                type: boolean
               fipsMode:
                 description: FIPSMode controls FIPS compliance for the provisioned
                   nodes
@@ -533,6 +532,17 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              security:
+                description: Collection of security related karpenter fields
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
               osDiskSizeGB:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
