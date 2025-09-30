@@ -194,6 +194,13 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              osDiskSizeGB:
+                default: 128
+                description: osDiskSizeGB is the size of the OS disk in GB.
+                format: int32
+                maximum: 2048
+                minimum: 30
+                type: integer
               security:
                 description: Collection of security related karpenter fields
                 properties:
@@ -205,13 +212,6 @@ spec:
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
                 type: object
-              osDiskSizeGB:
-                default: 128
-                description: osDiskSizeGB is the size of the OS disk in GB.
-                format: int32
-                maximum: 2048
-                minimum: 30
-                type: integer
               tags:
                 additionalProperties:
                   type: string
@@ -532,6 +532,13 @@ spec:
                 maximum: 250
                 minimum: 10
                 type: integer
+              osDiskSizeGB:
+                default: 128
+                description: osDiskSizeGB is the size of the OS disk in GB.
+                format: int32
+                maximum: 2048
+                minimum: 30
+                type: integer
               security:
                 description: Collection of security related karpenter fields
                 properties:
@@ -543,13 +550,6 @@ spec:
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
                 type: object
-              osDiskSizeGB:
-                default: 128
-                description: osDiskSizeGB is the size of the OS disk in GB.
-                format: int32
-                maximum: 2048
-                minimum: 30
-                type: integer
               tags:
                 additionalProperties:
                   type: string
