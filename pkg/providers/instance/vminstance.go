@@ -49,26 +49,14 @@ import (
 )
 
 var (
-	CapacityTypeToVMPriority = map[string]string{
-		karpv1.CapacityTypeSpot:     string(armcompute.VirtualMachinePriorityTypesSpot),
-		karpv1.CapacityTypeOnDemand: string(armcompute.VirtualMachinePriorityTypesRegular),
+	KarpCapacityTypeToVMPriority = map[string]armcompute.VirtualMachinePriorityTypes{
+		karpv1.CapacityTypeSpot:     armcompute.VirtualMachinePriorityTypesSpot,
+		karpv1.CapacityTypeOnDemand: armcompute.VirtualMachinePriorityTypesRegular,
 	}
-	VMPriorityToCapacityType = map[string]string{
-		string(armcompute.VirtualMachinePriorityTypesSpot):    karpv1.CapacityTypeSpot,
-		string(armcompute.VirtualMachinePriorityTypesRegular): karpv1.CapacityTypeOnDemand,
+	VMPriorityToKarpCapacityType = map[armcompute.VirtualMachinePriorityTypes]string{
+		armcompute.VirtualMachinePriorityTypesSpot:    karpv1.CapacityTypeSpot,
+		armcompute.VirtualMachinePriorityTypesRegular: karpv1.CapacityTypeOnDemand,
 	}
-
-	SubscriptionQuotaReachedReason              = "SubscriptionQuotaReached"
-	AllocationFailureReason                     = "AllocationFailure"
-	ZonalAllocationFailureReason                = "ZonalAllocationFailure"
-	OverconstrainedZonalAllocationFailureReason = "OverconstrainedZonalAllocationFailure"
-	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
-	SKUNotAvailableReason                       = "SKUNotAvailable"
-
-	SubscriptionQuotaReachedTTL = 1 * time.Hour
-	AllocationFailureTTL        = 1 * time.Hour
-	SKUNotAvailableSpotTTL      = 1 * time.Hour
-	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
 )
 
 const (
@@ -554,9 +542,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 					},
 				},
 			},
-			Priority: lo.ToPtr(armcompute.VirtualMachinePriorityTypes(
-				CapacityTypeToVMPriority[opts.CapacityType]),
-			),
+			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
 		},
 		Zones: utils.GetARMZonesFromAKSLabelZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
@@ -942,7 +928,7 @@ func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.Virtua
 
 func GetCapacityTypeFromVM(vm *armcompute.VirtualMachine) string {
 	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
-		return VMPriorityToCapacityType[string(*vm.Properties.Priority)]
+		return VMPriorityToKarpCapacityType[*vm.Properties.Priority]
 	}
 	return ""
 }
