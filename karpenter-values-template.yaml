@@ -43,13 +43,19 @@ controller:
 
     # managed karpenter settings
     - name: USE_SIG
-      value: "false"
+      value: "${USE_SIG}"
     - name: SIG_ACCESS_TOKEN_SERVER_URL
       value: ""
     - name: SIG_ACCESS_TOKEN_SCOPE
       value: ""
     - name: SIG_SUBSCRIPTION_ID
-      value: ""
+      value: "${AZURE_SIG_SUBSCRIPTION_ID}"
+    - name: PROVISION_MODE
+      value: ${PROVISION_MODE}
+    - name: AKS_MACHINES_POOL_NAME
+      value: "${AKS_MACHINES_POOL_NAME}"
+    - name: ARM_RESOURCE_GROUP
+      value: ${AZURE_RESOURCE_GROUP}
 serviceAccount:
   name: ${KARPENTER_SERVICE_ACCOUNT_NAME}
   annotations:
