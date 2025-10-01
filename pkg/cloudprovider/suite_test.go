@@ -28,13 +28,16 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
+	"sigs.k8s.io/karpenter/pkg/metrics"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -44,9 +47,13 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	"github.com/Azure/skewer"
 )
 
 var ctx context.Context
@@ -54,15 +61,42 @@ var testOptions *options.Options
 var stop context.CancelFunc
 var env *coretest.Environment
 var azureEnv *test.Environment
+var azureEnvNonZonal *test.Environment
 var coreProvisioner *provisioning.Provisioner
+var coreProvisionerNonZonal *provisioning.Provisioner
 var cloudProvider *CloudProvider
+var cloudProviderNonZonal *CloudProvider
 var cluster *state.Cluster
+var clusterNonZonal *state.Cluster
 var fakeClock *clock.FakeClock
 var recorder events.Recorder
+var statusController *status.Controller
 
 var nodePool *karpv1.NodePool
 var nodeClass *v1beta1.AKSNodeClass
 var nodeClaim *karpv1.NodeClaim
+
+var fakeZone1 = utils.GetAKSLabelZoneFromARMZone(fake.Region, "1")
+var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
+
+func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider corecloudprovider.CloudProvider, provisioner *provisioning.Provisioner, pods ...*v1.Pod) {
+	GinkgoHelper()
+	// Persist objects
+	for _, pod := range pods {
+		ExpectApplied(ctx, c, pod)
+	}
+	results, err := provisioner.Schedule(ctx)
+	Expect(err).ToNot(HaveOccurred())
+	for _, m := range results.NewNodeClaims {
+		var nodeClaimName string
+		nodeClaimName, err = provisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
+		Expect(err).ToNot(HaveOccurred())
+		createdNodeClaim := &karpv1.NodeClaim{}
+		Expect(c.Get(ctx, types.NamespacedName{Name: nodeClaimName}, createdNodeClaim)).To(Succeed())
+		_, err = ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, createdNodeClaim)
+		Expect(err).ToNot(HaveOccurred())
+	}
+}
 
 func TestCloudProvider(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -158,6 +192,9 @@ func validateNodeClaimCommon(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodeP
 func validateVMNodeClaim(nodeClaim *karpv1.NodeClaim, nodePool *karpv1.NodePool) {
 	// Common validations
 	validateNodeClaimCommon(nodeClaim, nodePool)
+
+	// VM-specific validation (should NOT have AKS machine annotation)
+	Expect(nodeClaim.Annotations).ToNot(HaveKey(v1beta1.AnnotationAKSMachineResourceID))
 }
 
 var _ = Describe("CloudProvider", func() {
@@ -174,7 +211,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, recorder, env.Client, azureEnv.ImageProvider)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, recorder, cloudProvider, cluster, fakeClock)
@@ -193,6 +230,7 @@ var _ = Describe("CloudProvider", func() {
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 
 			nodeClaims, _ := cloudProvider.List(ctx)
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.CalledWithInput.Len()).To(Equal(1)) // Expect to be called in case of existing AKS machines
 			Expect(azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Len()).To(Equal(1))
 			queryRequest := azureEnv.AzureResourceGraphAPI.AzureResourceGraphResourcesBehavior.CalledWithInput.Pop().Query
 			Expect(*queryRequest.Query).To(Equal(instance.GetVMListQueryBuilder(azureEnv.AzureResourceGraphAPI.ResourceGroup).String()))
@@ -217,6 +255,37 @@ var _ = Describe("CloudProvider", func() {
 			cloudProviderMachine, err := cloudProvider.Create(ctx, nodeClaim)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(cloudProviderMachine).To(BeNil())
+		})
+
+		Context("AKS Machine API integration", func() {
+			It("should not call writes to AKS Machine API", func() {
+				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(0))
+			})
+
+			Context("AKS Machines Pool Management", func() {
+				It("should handle AKS machines pool not found on each CloudProvider operation", func() {
+					// First create a successful VM
+					ExpectApplied(ctx, env.Client, nodeClass, nodePool)
+					pod := coretest.UnschedulablePod()
+					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+
+					// cloudprovider.List should return vm nodeclaim
+					nodeClaims, err := cloudProvider.List(ctx)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(nodeClaims).To(HaveLen(1))
+					validateVMNodeClaim(nodeClaims[0], nodePool)
+
+					// cloudprovider.Delete should be fine also
+					err = cloudProvider.Delete(ctx, nodeClaims[0])
+					Expect(err).ToNot(HaveOccurred())
+				})
+			})
 		})
 	})
 })

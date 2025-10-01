@@ -36,6 +36,7 @@ import (
 	corenodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -43,17 +44,20 @@ import (
 )
 
 type Controller struct {
-	kubeClient         client.Client
-	vmInstanceProvider instance.VMProvider
+	kubeClient                 client.Client
+	vmInstanceProvider         instance.VMProvider
+	aksMachineInstanceProvider instance.AKSMachineProvider
 }
 
 func NewController(
 	kubeClient client.Client,
 	vmInstanceProvider instance.VMProvider,
+	aksMachineInstanceProvider instance.AKSMachineProvider,
 ) *Controller {
 	return &Controller{
-		kubeClient:         kubeClient,
-		vmInstanceProvider: vmInstanceProvider,
+		kubeClient:                 kubeClient,
+		vmInstanceProvider:         vmInstanceProvider,
+		aksMachineInstanceProvider: aksMachineInstanceProvider,
 	}
 }
 
@@ -92,10 +96,18 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	stored := nodeClaim.DeepCopy()
 
-	// VM-based nodeClaim
-	err = c.processVMInstance(ctx, options, nodeClaim, nodeClass)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("processing VM instance for nodeClaim %s: %w", nodeClaim.Name, err)
+	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+		// AKS machine-based nodeClaim
+		err := c.processAKSMachineInstance(ctx, options, nodeClaim, nodeClass, aksMachineName)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("processing AKS machine instance for nodeClaim %s: %w", nodeClaim.Name, err)
+		}
+	} else {
+		// VM-based nodeClaim
+		err := c.processVMInstance(ctx, options, nodeClaim, nodeClass)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("processing VM instance for nodeClaim %s: %w", nodeClaim.Name, err)
+		}
 	}
 
 	if nodeClaim.Annotations == nil {
@@ -150,6 +162,26 @@ func (c *Controller) processVMInstance(
 	return nil
 }
 
+func (c *Controller) processAKSMachineInstance(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+	aksMachineName string,
+) error {
+	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+	if err != nil {
+		return fmt.Errorf("getting AKS machine %s from instance provider: %w", aksMachineName, err)
+	}
+
+	err = c.applyAKSMachinePatch(ctx, options, nodeClaim, nodeClass, aksMachineName, aksMachine)
+	if err != nil {
+		return fmt.Errorf("applying patch to AKS machine for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	return nil
+}
+
 func (c *Controller) applyVMPatch(
 	ctx context.Context,
 	options *options.Options,
@@ -167,6 +199,38 @@ func (c *Controller) applyVMPatch(
 		err := c.vmInstanceProvider.Update(ctx, lo.FromPtr(vm.Name), *update)
 		if err != nil {
 			return fmt.Errorf("failed to apply update to VM, %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Controller) applyAKSMachinePatch(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+	aksMachineName string,
+	aksMachine *armcontainerservice.Machine,
+) error {
+	update := CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+	// This is safe only as long as we're not updating fields which we consider secret.
+	// If we do/are, we need to redact them.
+	logAKSMachinePatch(ctx, update)
+
+	// Apply the update, if one is needed
+	if update != nil {
+		// Extract ETag for optimistic concurrency control
+		var etag *string
+		if aksMachine.Properties != nil && aksMachine.Properties.ETag != nil {
+			etag = aksMachine.Properties.ETag
+		}
+
+		// Given AKS machine support PUT, but not PATCH, the AKS machine object will be patched directly.
+		err := c.aksMachineInstanceProvider.Update(ctx, aksMachineName, *aksMachine, etag)
+		if err != nil {
+			// ASSUMPTION: if it is etag mismatch, the next try would work (if without another mismatch)
+			return fmt.Errorf("failed to apply update to AKS machine %s, %w", aksMachineName, err)
 		}
 	}
 
