@@ -29,6 +29,7 @@ import (
 )
 
 type responseErrorHandler struct {
+	name                string
 	matchError          func(error) bool
 	handleResponseError func(ctx context.Context, provider *DefaultProvider, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error
 }
@@ -60,34 +61,42 @@ func markAllZonesUnavailableForBothCapacityTypes(ctx context.Context, provider *
 func defaultResponseErrorHandlers() []responseErrorHandler {
 	return []responseErrorHandler{
 		{
+			name:                "LowPriorityQuotaHasBeenReached",
 			matchError:          sdkerrors.LowPriorityQuotaHasBeenReached,
 			handleResponseError: handleLowPriorityQuotaError,
 		},
 		{
+			name:                "SKUFamilyQuotaHasBeenReached",
 			matchError:          sdkerrors.SKUFamilyQuotaHasBeenReached,
 			handleResponseError: handleSKUFamilyQuotaError,
 		},
 		{
+			name:                "IsSKUNotAvailable",
 			matchError:          sdkerrors.IsSKUNotAvailable,
 			handleResponseError: handleSKUNotAvailableError,
 		},
 		{
+			name:                "ZonalAllocationFailureOccurred",
 			matchError:          sdkerrors.ZonalAllocationFailureOccurred,
 			handleResponseError: handleZonalAllocationFailureError,
 		},
 		{
+			name:                "AllocationFailureOccurred",
 			matchError:          sdkerrors.AllocationFailureOccurred,
 			handleResponseError: handleAllocationFailureError,
 		},
 		{
+			name:                "OverconstrainedZonalAllocationFailureOccurred",
 			matchError:          sdkerrors.OverconstrainedZonalAllocationFailureOccurred,
 			handleResponseError: handleOverconstrainedZonalAllocationFailureError,
 		},
 		{
+			name:                "OverconstrainedAllocationFailureOccurred",
 			matchError:          sdkerrors.OverconstrainedAllocationFailureOccurred,
 			handleResponseError: handleOverconstrainedAllocationFailureError,
 		},
 		{
+			name:                "RegionalQuotaHasBeenReached",
 			matchError:          sdkerrors.RegionalQuotaHasBeenReached,
 			handleResponseError: handleRegionalQuotaError,
 		},
