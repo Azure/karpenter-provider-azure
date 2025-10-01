@@ -176,7 +176,7 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
-) (*AKSMachinePromise, error) { // XPMT: ☑️
+) (*AKSMachinePromise, error) {
 	aksMachineName := GetAKSMachineNameFromNodeClaimName(nodeClaim.Name)
 	instanceTypes = offerings.OrderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 
@@ -225,7 +225,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 }
 
 // ASSUMPTION: the AKS machine will be in the current p.aksMachinesPoolName. Otherwise need rework to pass the pool name in.
-func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) { // XPMT: ✅
+func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
 	if p.aksMachinesPoolName == "" {
 		// Possible when this option field is not populated, which is not required when PROVISION_MODE is not aksmachineapi.
 		// But an AKS machine instance exists, whether added manually or from before switching PROVISION_MODE.
@@ -260,7 +260,7 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 	return aksMachines, nil
 }
 
-func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName string) error { // XPMT: ✅
+func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName string) error {
 	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
 	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted
 	aksMachine, err := p.Get(ctx, aksMachineName)
@@ -397,8 +397,6 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}
-	log.FromContext(ctx).V(1).Info("XPMT: AKS machine template built", "machineObj", *aksMachineTemplate)
-
 	// Resolve VM image ID
 	// E.g., "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
 	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
@@ -448,15 +446,11 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 		p,
 		aksMachineTemplate,
 		func() error {
-			log.FromContext(ctx).V(1).Info("XPMT: waiting for AKS machine creation to complete", "aksMachineName", aksMachineName)
-
 			_, err := poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				// XPMT: (topic) Quota errors return on async phase
 				// Could be quota error; will be handled with custom logic below
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
-				// XPMT: TODO: verify again when the API is ready
 				failedAKSMachine, _ := p.getMachine(ctx, aksMachineName)
 				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
 					return p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, nodeClass, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
@@ -504,7 +498,7 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 		return fmt.Errorf("failed to create AKS machine %q during %s, handled provisioning error: %w", aksMachineName, phase, handledError)
 	}
 
-	// XPMT: TODO: loop over instead of fixing on [0]
+	// XPMT: TODO(comtalyst): revalidate this + see if it makes more sense to loop over
 
 	return fmt.Errorf("failed to create AKS machine %q during %s, unhandled provisioning error: code=%s, message=%s", aksMachineName, phase, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
 }
