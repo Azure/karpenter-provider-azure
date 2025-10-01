@@ -60,7 +60,7 @@ func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
 // duplicate entries for os + sku matchings.
 // This test validates we simply ignore the legacy distros and take in the latest Version.
 func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
-	filteredNodeImages := imagefamily.FilteredNodeImages(NodeImageVersions)
+	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions)
 
 	expectedVersion := "202505.27.0"
 	found := false
