@@ -165,7 +165,7 @@ var _ = Describe("CloudProvider", func() {
 			Expect(nodeClaim).To(BeNil())
 		})
 
-		// XPMT: TODO: check API: simulate all of these and see if behavior matches (logs could be sufficient)
+		// XPMT: TODO(comtalyst): deep inspection test on simulating all of these?
 		Context("Unexpected API Failures", func() {
 			It("should handle AKS machine create failures - unrecognized error during sync/initial", func() {
 				// Set up error to occur immediately during BeginCreateOrUpdate call
@@ -325,7 +325,6 @@ var _ = Describe("CloudProvider", func() {
 				azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.Error.Set(nil)
 			})
 
-			// XPMT: TODO: check API: list don't generally return errors
 			It("should handle AKS machine list failures - unrecognized error", func() {
 				// Set up error to occur during the NextPage call
 				azureEnv.AKSMachinesAPI.AKSMachineNewListPagerBehavior.Error.Set(fake.AKSMachineAPIErrorAny)

@@ -42,7 +42,7 @@ import (
 
 // buildAKSMachineTemplate creates an in-memory AKS machine template from the provided specs.
 // May return error whenever required fields are not set (check carefully).
-func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, creationTimestamp time.Time) (*armcontainerservice.Machine, error) { // XPMT: ✅
+func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context, instanceType *corecloudprovider.InstanceType, capacityType string, zone string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, creationTimestamp time.Time) (*armcontainerservice.Machine, error) {
 	if instanceType == nil {
 		return nil, fmt.Errorf("InstanceType is not set")
 	}
@@ -58,8 +58,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// If none is specified, then that's not GPU instance, so nil is fine. Current version of AKS machine API supports this.
 	if utils.IsNvidiaEnabledSKU(instanceType.Name) {
 		gpuProfilePtr = &armcontainerservice.GPUProfile{
-			Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall), // XPMT: ✅ (from CSE)
-			// DriverType: nil,                                            // XPMT: REFORMATTED, 🚫 (Windows)
+			Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall),
+			// DriverType: nil,
 		}
 	}
 
@@ -107,55 +107,55 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
 	tags := ConfigureAKSMachineTags(options.FromContext(ctx), nodeClass, nodeClaim, creationTimestamp)
 
-	return &armcontainerservice.Machine{ // XPMT: ✅
-		Zones: utils.MakeARMZonesFromAKSLabelZone(zone), // XPMT: ✅ (from CRP VM)
-		Properties: &armcontainerservice.MachineProperties{ // XPMT: ✅
-			Network: &armcontainerservice.MachineNetworkProperties{ // XPMT: ✅
-				VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil    // XPMT: ✅ (from launch template > static parameters > CSE)
+	return &armcontainerservice.Machine{
+		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
+		Properties: &armcontainerservice.MachineProperties{
+			Network: &armcontainerservice.MachineNetworkProperties{
+				VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
 				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
-				// PodSubnetID:          "",                                  // XPMT: 🆕🚫
-				// EnableNodePublicIP:   nil,                                 // XPMT: 🆕🚫
-				// NodePublicIPPrefixID: "",                                  // XPMT: 🆕🚫
-				// IPTags:               nil,                                 // XPMT: 🆕🚫
+				// PodSubnetID:          "",
+				// EnableNodePublicIP:   nil,
+				// NodePublicIPPrefixID: "",
+				// IPTags:               nil,
 			},
-			Hardware: &armcontainerservice.MachineHardwareProfile{ // XPMT: ✅
-				VMSize: lo.ToPtr(instanceType.Name), // XPMT: ✅ (from CRP VM; although our type was armcompute enum, while is is string, but exactly the same)
-				// GPUInstanceProfile: nil,                           // XPMT: 🚫
-				GpuProfile: gpuProfilePtr, // XPMT: ✅ (from CSE)
+			Hardware: &armcontainerservice.MachineHardwareProfile{
+				VMSize: lo.ToPtr(instanceType.Name),
+				// GPUInstanceProfile: nil,
+				GpuProfile: gpuProfilePtr,
 			},
-			OperatingSystem: &armcontainerservice.MachineOSProfile{ // XPMT: ✅
-				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux), // XPMT: ✅ (obvious)
-				OSSKU:        osskuPtr,                                  // XPMT: ✅ (CSE)
-				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB,               // AKS machine API defaults it if nil   // XPMT ✅ (VM)
-				OSDiskType:   osDiskTypePtr,                             // XPMT: ✅ (VM and CSE)
-				EnableFIPS:   enableFIPsPtr,                             // XPMT: ✅ (CSE)
-				// LinuxProfile:   nil,                  // XPMT: 🚫
-				// WindowsProfile: nil,                  // XPMT: 🚫
+			OperatingSystem: &armcontainerservice.MachineOSProfile{
+				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
+				OSSKU:        osskuPtr,
+				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB, // AKS machine API defaults it if nil
+				OSDiskType:   osDiskTypePtr,
+				EnableFIPS:   enableFIPsPtr,
+				// LinuxProfile:   nil,
+				// WindowsProfile: nil,
 			},
 
-			Kubernetes: &armcontainerservice.MachineKubernetesProfile{ // XPMT: ✅
-				NodeLabels:          nodeLabelPtrs,                 // XPMT: ✅ (CSE, various, mostly from launchtemplate)
-				OrchestratorVersion: lo.ToPtr(orchestratorVersion), // XPMT: ✅ (CSE)
-				// KubeletDiskType:          "",                                                 // XPMT: 🚫
-				KubeletConfig:            configureKubeletConfig(nodeClass), // XPMT: ✅
-				NodeInitializationTaints: nodeInitializationTaintPtrs,       // XPMT: ✅ (from CSE > defaultResolver)
-				NodeTaints:               nodeTaintPtrs,                     // XPMT: ✅ (from CSE > defaultResolver)
-				MaxPods:                  nodeClass.Spec.MaxPods,            // AKS machine API defaults it per network plugins if nil.                             // XPMT: ✅ (from CSE > defaultResolver)
-				// WorkloadRuntime:          nil,                                                // XPMT: 🚫
+			Kubernetes: &armcontainerservice.MachineKubernetesProfile{
+				NodeLabels:          nodeLabelPtrs,
+				OrchestratorVersion: lo.ToPtr(orchestratorVersion),
+				// KubeletDiskType:          "",
+				KubeletConfig:            configureKubeletConfig(nodeClass),
+				NodeInitializationTaints: nodeInitializationTaintPtrs,
+				NodeTaints:               nodeTaintPtrs,
+				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
+				// WorkloadRuntime:          nil,
 				ArtifactStreamingProfile: &armcontainerservice.AgentPoolArtifactStreamingProfile{
-					Enabled: enabledArtifactStreamingPtr, // XPMT: ✅ (from CSE)
+					Enabled: enabledArtifactStreamingPtr,
 				},
 			},
 
-			Mode: modePtr, // XPMT: ✅ (from CSE)
-			Security: &armcontainerservice.AgentPoolSecurityProfile{ // XPMT: ✅
-				SSHAccess: lo.ToPtr(armcontainerservice.AgentPoolSSHAccessLocalUser), // XPMT: ✅ (from CSE)
-				// EnableVTPM:       nil,                // XPMT: 🚫
-				// EnableSecureBoot: nil,                // XPMT: 🚫
+			Mode: modePtr,
+			Security: &armcontainerservice.AgentPoolSecurityProfile{
+				SSHAccess: lo.ToPtr(armcontainerservice.AgentPoolSSHAccessLocalUser),
+				// EnableVTPM:       nil,
+				// EnableSecureBoot: nil,
 			},
-			Priority: priorityPtr, // XPMT: ✅ (obvious)
+			Priority: priorityPtr,
 
-			Tags: tags, // XPMT: ✅ (from VM) ⚠️ tag is not copied to NIC yet
+			Tags: tags,
 		},
 	}, nil
 }
@@ -237,7 +237,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeUser)
 	}
 
-	// XPMT: TEMPORARY
+	// TEMPORARY
 	// XPMT: TODO(charliedmcb): verify/rework this, also do the same for taints (which don't have sanitization logic like this yet)
 	labelsToRemove := []string{
 		"beta.kubernetes.io/instance-type",
