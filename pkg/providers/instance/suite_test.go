@@ -623,4 +623,57 @@ var _ = Describe("InstanceProvider", func() {
 			})
 		})
 	})
+
+	Context("EncryptionAtHost", func() {
+		It("should create VM with EncryptionAtHost enabled when specified in AKSNodeClass", func() {
+			if nodeClass.Spec.Security == nil {
+				nodeClass.Spec.Security = &v1beta1.Security{}
+			}
+			nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+
+			Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+			Expect(vm.Properties.SecurityProfile.EncryptionAtHost).ToNot(BeNil())
+			Expect(lo.FromPtr(vm.Properties.SecurityProfile.EncryptionAtHost)).To(BeTrue())
+		})
+
+		It("should create VM with EncryptionAtHost disabled when specified in AKSNodeClass", func() {
+			if nodeClass.Spec.Security == nil {
+				nodeClass.Spec.Security = &v1beta1.Security{}
+			}
+			nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(false)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+
+			Expect(vm.Properties.SecurityProfile).ToNot(BeNil())
+			Expect(vm.Properties.SecurityProfile.EncryptionAtHost).ToNot(BeNil())
+			Expect(lo.FromPtr(vm.Properties.SecurityProfile.EncryptionAtHost)).To(BeFalse())
+		})
+
+		It("should create VM without SecurityProfile when EncryptionAtHost is not specified in AKSNodeClass", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+
+			Expect(vm.Properties.SecurityProfile).To(BeNil())
+		})
+	})
 })
