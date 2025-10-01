@@ -20,12 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"time"
 
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -45,6 +47,19 @@ func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
 	}
 }
 
+func logAKSMachinePatch(ctx context.Context, update *armcontainerservice.Machine) {
+	if log.FromContext(ctx).V(1).Enabled() {
+		rawStr := "<nil>"
+		if update != nil {
+			raw, _ := json.Marshal(update)
+			rawStr = string(raw)
+		}
+		log.FromContext(ctx).V(1).Info("patching AKS machine", "aksMachinePatch", rawStr)
+	} else {
+		log.FromContext(ctx).V(0).Info("patching AKS machine")
+	}
+}
+
 type patchParameters struct {
 	opts      *options.Options
 	nodeClaim *karpv1.NodeClaim
@@ -54,6 +69,11 @@ type patchParameters struct {
 var vmPatchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *armcompute.VirtualMachine) bool{
 	patchVMIdentities,
 	patchVMTags,
+}
+
+var aksMachinePatchers = []func(*armcontainerservice.Machine, *patchParameters, *armcontainerservice.Machine) bool{
+	// VM identities are handled server-side for AKS machines. No need here.
+	patchAKSMachineTags,
 }
 
 func CalculateVMPatch(
@@ -72,6 +92,33 @@ func CalculateVMPatch(
 
 	for _, patcher := range vmPatchers {
 		patched := patcher(update, params, currentVM)
+		hasPatches = hasPatches || patched
+	}
+
+	if !hasPatches {
+		return nil // No update to perform
+	}
+
+	return update
+}
+
+// Given AKS machine support PUT, but not PATCH, the AKS machine object will be patched directly, while the returning Machine object is just a tracker for logging purposes.
+func CalculateAKSMachinePatch(
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+	patchingAKSMachine *armcontainerservice.Machine,
+) *armcontainerservice.Machine {
+	update := &armcontainerservice.Machine{}
+	hasPatches := false
+	params := &patchParameters{
+		opts:      options,
+		nodeClass: nodeClass,
+		nodeClaim: nodeClaim,
+	}
+
+	for _, patcher := range aksMachinePatchers {
+		patched := patcher(update, params, patchingAKSMachine)
 		hasPatches = hasPatches || patched
 	}
 
@@ -132,4 +179,88 @@ func patchVMTags(
 
 	update.Tags = expectedTags
 	return true
+}
+
+func patchAKSMachineTags(
+	update *armcontainerservice.Machine,
+	params *patchParameters,
+	patchingAKSMachine *armcontainerservice.Machine,
+) bool {
+	creationTimestamp := getCorrectedAKSMachineCreationTimestamp(patchingAKSMachine)
+	// For NodeClaim name tag, given this controller is based on actual NodeClaim like during Create(), the patch will repair the tag if needed.
+
+	expectedTags := instance.ConfigureAKSMachineTags(
+		params.opts,
+		params.nodeClass,
+		params.nodeClaim,
+		creationTimestamp,
+	)
+
+	eq := func(v1, v2 *string) bool {
+		if v1 == nil && v2 == nil {
+			return true
+		}
+		if v1 == nil || v2 == nil {
+			return false
+		}
+		return *v1 == *v2
+	}
+
+	if patchingAKSMachine.Properties == nil {
+		// Should not be possible, but handle it gracefully
+		if len(expectedTags) == 0 {
+			return false // No update to perform
+		}
+		patchingAKSMachine.Properties = &armcontainerservice.MachineProperties{
+			Tags: expectedTags,
+		}
+		update.Properties = &armcontainerservice.MachineProperties{
+			Tags: expectedTags,
+		}
+		return true
+	}
+
+	if maps.EqualFunc(expectedTags, patchingAKSMachine.Properties.Tags, eq) {
+		return false // No update to perform
+	}
+
+	patchingAKSMachine.Properties.Tags = expectedTags
+	if update.Properties == nil {
+		update.Properties = &armcontainerservice.MachineProperties{}
+	}
+	update.Properties.Tags = expectedTags
+	return true
+}
+
+func getCorrectedAKSMachineCreationTimestamp(aksMachine *armcontainerservice.Machine) time.Time {
+	// For CreationTimestamp tag:
+	// - If existing machine tag exists/valid, leave it unchanged (preserve existing)
+	//   - Still prone to user modification:
+	//     - If it is valid but incorrect, then there is no current way to detect it
+	//     - If it is corrupted, then the logic below will repair it
+	//     - Although, this is significant only for instance garbage collection in the first 5 minutes of the instance, so, not critical now
+	// - Otherwise, fallback/default to epoch
+	//   - Still, logic elsewhere should not assume that this is the case, as reconciliation may naturally come later
+	//   - But still good to repair it
+	// Also, we don't update it to actual NodeClaim.CreationTimestamp because that is NodeClaim creation time, not instance creation time.
+	// See notes in aksmachineinstanceutils.go for context and suggestions.
+	var creationTimestamp time.Time
+	if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
+		if timestampTag, ok := aksMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey]; ok && timestampTag != nil {
+			if parsed, err := instance.AKSMachineTimestampFromTag(*timestampTag); err == nil {
+				// Preserve existing valid timestamp
+				creationTimestamp = parsed
+			} else {
+				// Invalid timestamp, fallback to minimum time
+				creationTimestamp = instance.ZeroAKSMachineTimestamp()
+			}
+		} else {
+			// No existing timestamp tag, use minimum time
+			creationTimestamp = instance.ZeroAKSMachineTimestamp()
+		}
+	} else {
+		// No machine properties or tags, use minimum time
+		creationTimestamp = instance.ZeroAKSMachineTimestamp()
+	}
+	return creationTimestamp
 }
