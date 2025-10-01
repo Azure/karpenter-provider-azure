@@ -89,6 +89,7 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	cp $(KARPENTER_CORE_DIR)/pkg/apis/crds/* pkg/apis/crds
 	hack/validation/kubelet.sh
 	hack/validation/labels.sh
+	hack/validation/taints.sh
 	hack/validation/requirements.sh
 	hack/mutation/kubectl_get_ux.sh
 	cp pkg/apis/crds/* charts/karpenter-crd/templates
