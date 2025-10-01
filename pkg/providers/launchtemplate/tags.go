@@ -27,12 +27,12 @@ import (
 )
 
 const (
-	KarpenterManagedTagKey = "karpenter.azure.com_cluster"
+	KarpenterManagedTagKey             = "karpenter.azure.com_cluster"
+	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
 )
 
 var (
-	NodePoolTagKey                     = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
-	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
+	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
 
 // TODO: Would like to refactor this out of launchtemplate at some point
