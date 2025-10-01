@@ -417,7 +417,6 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 	})
 
 	Context("IsAKSMachineDeleting", func() {
-		// XPMT: TODO: check this one the API is available
 		It("should return true when provisioning state is Deleting", func() {
 			machine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
