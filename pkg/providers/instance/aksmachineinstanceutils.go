@@ -82,7 +82,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	labels := map[string]string{}
 	annotations := map[string]string{}
 
-	annotations[v1beta1.AnnotationAKSMachineResourceID] = aksMachineResourceID // XPMT: (topic) New annotation(s) on NodeClaim
+	annotations[v1beta1.AnnotationAKSMachineResourceID] = aksMachineResourceID
 	if instanceType != nil {
 		labels = offerings.GetAllSingleValuedRequirementLabels(instanceType)
 		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
@@ -133,7 +133,6 @@ func BuildNodeClaimFromAKSMachineTemplate(
 	}
 	nodeClaim.Status.ProviderID = utils.VMResourceIDToProviderID(ctx, vmResourceID)
 	nodeClaim.Status.ImageID = aksMachineNodeImageVersion // ASSUMPTION: this doesn't need to be full image ID (should be fine on core, as the definition of ID is provider agnostic)
-	// XPMT: (topic) Machine-NodeClaim conversion: retrieving VM image ID
 
 	return nodeClaim, nil
 }
@@ -191,7 +190,7 @@ func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) string {
 	// This assumption is weaker than the one in GetAKSMachineNameFromNodeClaim(), but still, not breaking anytime soon.
 	// return nodeClaimName
 
-	// XPMT: TEMPORARY
+	// TEMPORARY
 	splitted := strings.Split(nodeClaimName, "-")
 	return "x" + splitted[len(splitted)-1]
 }
