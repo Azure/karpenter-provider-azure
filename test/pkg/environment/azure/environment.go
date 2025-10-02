@@ -62,6 +62,8 @@ type Environment struct {
 	ACRName              string
 	ClusterName          string
 	ClusterResourceGroup string
+	ProvisionMode        string
+	AKSMachinesPoolName  string
 
 	tracker *azure.Tracker
 
@@ -110,6 +112,8 @@ func NewEnvironment(t *testing.T) *Environment {
 		ACRName:              readEnv("AZURE_ACR_NAME", true),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		tracker:              azure.NewTracker(),
+		ProvisionMode:        readEnv("PROVISION_MODE", false),
+		AKSMachinesPoolName:  readEnv("AKS_MACHINES_POOL_NAME", false),
 	}
 
 	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
