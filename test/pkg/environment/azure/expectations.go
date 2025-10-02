@@ -28,6 +28,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
@@ -137,6 +138,17 @@ func (env *Environment) EventuallyExpectTags(expectedTags map[string]string) {
 	By(fmt.Sprintf("waiting for Azure resources to have tags %s", expectedTags))
 
 	env.EventuallyExpectAzureResources(
+		func(aksMachine *armcontainerservice.Machine) error {
+			if !isMapSubset(aksMachine.Properties.Tags, expectedTagsPtr, eqPtr) {
+				return fmt.Errorf(
+					"AKS machine tags do not match expected tags. AKS machine %s, expectedTags: %s, actualTags: %s",
+					lo.FromPtr(aksMachine.ID),
+					expectedTags,
+					lo.MapValues(aksMachine.Properties.Tags, func(v *string, _ string) string { return lo.FromPtr(v) }),
+				)
+			}
+			return nil
+		},
 		func(nic *armnetwork.Interface) error {
 			if !isMapSubset(nic.Tags, expectedTagsPtr, eqPtr) {
 				return fmt.Errorf(
@@ -183,6 +195,17 @@ func (env *Environment) EventuallyExpectMissingTags(expectedMissingTags map[stri
 	By(fmt.Sprintf("waiting for Azure resources to lose tags %s", expectedMissingTags))
 
 	env.EventuallyExpectAzureResources(
+		func(aksMachine *armcontainerservice.Machine) error {
+			if isMapSubset(aksMachine.Properties.Tags, expectedMissingTagsPtr, eqPtr) {
+				return fmt.Errorf(
+					"AKS machine tags are not missing expected tags. AKS machine %s, expectedMissingTags: %s, actualTags: %s",
+					lo.FromPtr(aksMachine.ID),
+					expectedMissingTags,
+					lo.MapValues(aksMachine.Properties.Tags, func(v *string, _ string) string { return lo.FromPtr(v) }),
+				)
+			}
+			return nil
+		},
 		func(nic *armnetwork.Interface) error {
 			if isMapSubset(nic.Tags, expectedMissingTagsPtr, eqPtr) {
 				return fmt.Errorf(
@@ -221,6 +244,7 @@ func (env *Environment) EventuallyExpectMissingTags(expectedMissingTags map[stri
 }
 
 func (env *Environment) EventuallyExpectAzureResources(
+	verifyAKSMachine func(aksMachine *armcontainerservice.Machine) error,
 	verifyNIC func(nic *armnetwork.Interface) error,
 	verifyVM func(vm *armcompute.VirtualMachine) error,
 	verifyExt func(ext *armcompute.VirtualMachineExtension) error,
@@ -228,19 +252,44 @@ func (env *Environment) EventuallyExpectAzureResources(
 	GinkgoHelper()
 
 	Eventually(func(g Gomega) error {
-		// NICs
-		pager := env.interfacesClient.NewListPager(env.NodeResourceGroup, nil)
-		for pager.More() {
-			resp, err := pager.NextPage(env)
-			g.Expect(err).ToNot(HaveOccurred(), "failed to get next page of NICs")
+		isAKSMachine := false
+		if env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+			isAKSMachine = true
+		}
 
-			for _, nic := range resp.Value {
-				if _, exists := nic.Tags[strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")]; !exists {
-					continue // Ignore nodes that don't have the expected Karpenter tag
+		if isAKSMachine {
+			// AKS machines
+			aksMachinesPager := env.machinesClient.NewListPager(env.ClusterResourceGroup, env.ClusterName, env.AKSMachinesPoolName, nil)
+			for aksMachinesPager.More() {
+				resp, err := aksMachinesPager.NextPage(env)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to get next page of AKS machines")
+
+				for _, aksMachine := range resp.Value {
+					if _, exists := aksMachine.Properties.Tags[strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")]; !exists {
+						continue // Ignore nodes that don't have the expected Karpenter tag
+					}
+
+					err := verifyAKSMachine(aksMachine)
+					g.Expect(err).ToNot(HaveOccurred())
 				}
+			}
+			// Skip NICs for AKS machine, as tag propagation is still pending (and we are already aware of it).
+			// Regardless, this validation is less significant as AKS machines manage NICs, not Karpenter. But still beneficial if we want a more end-to-end validation, as the cost of breaking abstraction/unexpected safe changes.
+		} else {
+			// NICs
+			pager := env.interfacesClient.NewListPager(env.NodeResourceGroup, nil)
+			for pager.More() {
+				resp, err := pager.NextPage(env)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to get next page of NICs")
 
-				err := verifyNIC(nic)
-				g.Expect(err).ToNot(HaveOccurred())
+				for _, nic := range resp.Value {
+					if _, exists := nic.Tags[strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")]; !exists {
+						continue // Ignore nodes that don't have the expected Karpenter tag
+					}
+
+					err := verifyNIC(nic)
+					g.Expect(err).ToNot(HaveOccurred())
+				}
 			}
 		}
 

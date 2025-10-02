@@ -62,6 +62,8 @@ type Environment struct {
 	ACRName              string
 	ClusterName          string
 	ClusterResourceGroup string
+	ProvisionMode        string
+	AKSMachinesPoolName  string
 
 	tracker *azure.Tracker
 
@@ -85,13 +87,18 @@ type Environment struct {
 	RBACManager *RBACManager
 }
 
-func readEnv(name string) string {
+func readEnv(name string, required bool) string {
 	value, exists := os.LookupEnv(name)
 	if !exists {
-		panic(fmt.Sprintf("Environment variable %s is not set", name))
+		if required {
+			panic(fmt.Sprintf("Environment variable %s is not set", name))
+		}
+		return ""
 	}
 	if value == "" {
-		panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+		if required {
+			panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+		}
 	}
 	return value
 }
@@ -99,12 +106,14 @@ func readEnv(name string) string {
 func NewEnvironment(t *testing.T) *Environment {
 	azureEnv := &Environment{
 		Environment:          common.NewEnvironment(t),
-		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID"),
-		ClusterName:          readEnv("AZURE_CLUSTER_NAME"),
-		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP"),
-		ACRName:              readEnv("AZURE_ACR_NAME"),
+		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID", true),
+		ClusterName:          readEnv("AZURE_CLUSTER_NAME", true),
+		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP", true),
+		ACRName:              readEnv("AZURE_ACR_NAME", true),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		tracker:              azure.NewTracker(),
+		ProvisionMode:        readEnv("PROVISION_MODE", false),
+		AKSMachinesPoolName:  readEnv("AKS_MACHINES_POOL_NAME", false),
 	}
 
 	defaultNodeRG := fmt.Sprintf("MC_%s_%s_%s", azureEnv.ClusterResourceGroup, azureEnv.ClusterName, azureEnv.Region)
