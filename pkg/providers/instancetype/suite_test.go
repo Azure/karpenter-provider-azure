@@ -649,6 +649,51 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("Filtering by Encryption at Host", func() {
+		var instanceTypes corecloudprovider.InstanceTypes
+		var err error
+		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+		Context("when encryption at host is enabled", func() {
+			BeforeEach(func() {
+				nodeClassWithEncryption := test.AKSNodeClass()
+				if nodeClassWithEncryption.Spec.Security == nil {
+					nodeClassWithEncryption.Spec.Security = &v1beta1.Security{}
+				}
+				nodeClassWithEncryption.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+				ExpectApplied(ctx, env.Client, nodeClassWithEncryption)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithEncryption)
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should only include SKUs that support encryption at host", func() {
+				// Standard_D2_v2 does not support encryption at host, so it should be filtered out
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+				// Standard_D2s_v3 supports encryption at host, so it should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				// Standard_D2_v5 supports encryption at host, so it should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+			})
+		})
+
+		Context("when encryption at host is disabled or not set", func() {
+			It("should include SKUs regardless of encryption at host support", func() {
+				nodeClassWithoutEncryption := test.AKSNodeClass()
+				// default is disabled when Security is nil or EncryptionAtHost is nil
+				ExpectApplied(ctx, env.Client, nodeClassWithoutEncryption)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithoutEncryption)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Standard_D2_v2 does not support encryption at host, but should still be included when encryption is not required
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+				// Standard_D2s_v3 supports encryption at host and should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				// Standard_D2_v5 supports encryption at host and should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+			})
+		})
+	})
+
 	Context("Ephemeral Disk", func() {
 		var originalOptions *options.Options
 		BeforeEach(func() {
