@@ -957,6 +957,30 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("Custom DNS", func() {
+		It("should support provisioning with custom DNS server from options", func() {
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					ClusterDNSServiceIP: lo.ToPtr("10.244.0.1"),
+				}),
+			)
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			customData := ExpectDecodedCustomData(azureEnv)
+
+			expectedFlags := map[string]string{
+				"cluster-dns": "10.244.0.1",
+			}
+
+			ExpectKubeletFlags(azureEnv, customData, expectedFlags)
+		})
+	})
+
 	Context("Nodepool with KubeletConfig", func() {
 		It("should support provisioning with kubeletConfig, computeResources and maxPods not specified", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
