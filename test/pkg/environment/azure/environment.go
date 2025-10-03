@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -61,7 +62,9 @@ type Environment struct {
 	VNETResourceGroup    string
 	ACRName              string
 	ClusterName          string
+	MachineAgentPoolName string
 	ClusterResourceGroup string
+	ProvisionMode        string
 
 	tracker *azure.Tracker
 
@@ -85,13 +88,18 @@ type Environment struct {
 	RBACManager *RBACManager
 }
 
-func readEnv(name string) string {
+func readEnv(name string, required bool) string {
 	value, exists := os.LookupEnv(name)
 	if !exists {
-		panic(fmt.Sprintf("Environment variable %s is not set", name))
+		if required {
+			panic(fmt.Sprintf("Environment variable %s is not set", name))
+		}
+		return ""
 	}
 	if value == "" {
-		panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+		if required {
+			panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+		}
 	}
 	return value
 }
@@ -99,10 +107,11 @@ func readEnv(name string) string {
 func NewEnvironment(t *testing.T) *Environment {
 	azureEnv := &Environment{
 		Environment:          common.NewEnvironment(t),
-		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID"),
-		ClusterName:          readEnv("AZURE_CLUSTER_NAME"),
-		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP"),
-		ACRName:              readEnv("AZURE_ACR_NAME"),
+		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID", true),
+		ClusterName:          readEnv("AZURE_CLUSTER_NAME", true),
+		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP", true),
+		ACRName:              readEnv("AZURE_ACR_NAME", true),
+		ProvisionMode:        readEnv("PROVISION_MODE", false),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		tracker:              azure.NewTracker(),
 	}
@@ -124,6 +133,17 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
+	// Default to reserved managed machine agentpool name for NAP
+	azureEnv.MachineAgentPoolName = "aksmanagedap"
+	if !azureEnv.Environment.InClusterController {
+		azureEnv.MachineAgentPoolName = "karp-e2e-byo-machine-ap"
+	}
+	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
+	// > Note: this only has to occur once per test, since its just a container for the machines
+	// > meaning that there is no risk of the tests modifying the Machine Pool itself.
+	if azureEnv.InClusterController && azureEnv.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		azureEnv.ExpectRunInClusterControllerWithMachineMode()
+	}
 	return azureEnv
 }
 
