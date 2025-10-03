@@ -35,7 +35,6 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -57,12 +56,6 @@ func TestConsolidation(t *testing.T) {
 	})
 	RunSpecs(t, "Consolidation")
 }
-
-var _ = BeforeSuite(func() {
-	if env.InClusterController && env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
-		env.ExpectRunInClusterControllerWithMachineMode()
-	}
-})
 
 var _ = BeforeEach(func() {
 	nodeClass = env.DefaultAKSNodeClass()

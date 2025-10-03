@@ -37,6 +37,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -136,6 +137,12 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.MachineAgentPoolName = "aksmanagedap"
 	if !azureEnv.Environment.InClusterController {
 		azureEnv.MachineAgentPoolName = "karp-e2e-byo-machine-ap"
+	}
+	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
+	// > Note: this only has to occur once per test, since its just a container for the machines
+	// > meaning that there is no risk of the tests modifying the Machine Pool itself.
+	if azureEnv.InClusterController && azureEnv.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		azureEnv.ExpectRunInClusterControllerWithMachineMode()
 	}
 	return azureEnv
 }
