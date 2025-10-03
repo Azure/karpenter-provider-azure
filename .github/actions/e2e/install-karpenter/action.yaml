@@ -28,7 +28,7 @@ inputs:
   location:
     description: "the azure location to run the e2e test in"
     default: "eastus"
-  provisionmode:
+  provision_mode:
     description: "the Karpenter provisioning mode to run the e2e test in"
     default: "aksscriptless"
 runs:
@@ -54,13 +54,9 @@ runs:
       AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
       AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
       AZURE_LOCATION: ${{ inputs.location }}
-      PROVISION_MODE: ${{ inputs.provisionmode }}
+      PROVISION_MODE: ${{ inputs.provision_mode }}
     run: |
-      if [ "$PROVISION_MODE" = "aksmachineapi" ]; then
-        make az-configure-values-aksmachine
-      else
-        make az-configure-values
-      fi
+      make az-configure-values
   - name: deploy karpenter to cluster
     shell: bash
     env:
@@ -69,4 +65,4 @@ runs:
   - name: taint nodes as karpenter-system
     shell: bash
     run: |
-      kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all
+      make az-taintnodes
