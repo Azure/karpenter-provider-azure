@@ -208,14 +208,14 @@ func createResponseError(errorCode, errorMessage string) error {
 }
 
 // newTestProvider creates a test provider with default configuration
-func newTestProvider() *DefaultProvider {
-	return &DefaultProvider{
+func newTestProvider() *DefaultVMProvider {
+	return &DefaultVMProvider{
 		unavailableOfferings:  cache.NewUnavailableOfferings(),
 		responseErrorHandlers: defaultResponseErrorHandlers(),
 	}
 }
 
-func assertOfferingsState(t *testing.T, provider *DefaultProvider, unavailable, available []offeringToCheck) {
+func assertOfferingsState(t *testing.T, provider *DefaultVMProvider, unavailable, available []offeringToCheck) {
 	t.Helper()
 
 	for _, info := range unavailable {
