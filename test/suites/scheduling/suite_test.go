@@ -133,6 +133,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.LabelSKUVersion:                   "3",
 				v1beta1.LabelSKUCPU:                       "2",
 				v1beta1.LabelSKUMemory:                    "8192",
+				v1beta1.AKSLabelCPU:                       "2",
+				v1beta1.AKSLabelMemory:                    "8192",
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
