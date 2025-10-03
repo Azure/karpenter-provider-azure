@@ -30,7 +30,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
@@ -46,12 +45,6 @@ func TestUtilization(t *testing.T) {
 	})
 	RunSpecs(t, "Utilization")
 }
-
-var _ = BeforeSuite(func() {
-	if env.InClusterController && env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
-		env.ExpectRunInClusterControllerWithMachineMode()
-	}
-})
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()
