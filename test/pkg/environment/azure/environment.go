@@ -39,6 +39,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -63,8 +64,10 @@ type Environment struct {
 	VNETResourceGroup    string
 	ACRName              string
 	ClusterName          string
+	MachineAgentPoolName string
 	ClusterResourceGroup string
 	CloudConfig          cloud.Configuration
+	ProvisionMode        string
 
 	tracker *azure.Tracker
 
@@ -76,7 +79,7 @@ type Environment struct {
 	subnetClient         *armnetwork.SubnetsClient
 	interfacesClient     *armnetwork.InterfacesClient
 	managedClusterClient *containerservice.ManagedClustersClient
-	agentpoolsClient     *containerservice.AgentPoolsClient
+	agentPoolClient      *containerservice.AgentPoolsClient
 	machinesClient       *containerservice.MachinesClient
 
 	// Public Clients
@@ -88,13 +91,18 @@ type Environment struct {
 	RBACManager *RBACManager
 }
 
-func readEnv(name string) string {
+func readEnv(name string, required bool) string {
 	value, exists := os.LookupEnv(name)
 	if !exists {
-		panic(fmt.Sprintf("Environment variable %s is not set", name))
+		if required {
+			panic(fmt.Sprintf("Environment variable %s is not set", name))
+		}
+		return ""
 	}
 	if value == "" {
-		panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+		if required {
+			panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+		}
 	}
 	return value
 }
@@ -117,10 +125,11 @@ func NewEnvironment(t *testing.T) *Environment {
 
 	azureEnv := &Environment{
 		Environment:          common.NewEnvironment(t),
-		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID"),
-		ClusterName:          readEnv("AZURE_CLUSTER_NAME"),
-		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP"),
-		ACRName:              readEnv("AZURE_ACR_NAME"),
+		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID", true),
+		ClusterName:          readEnv("AZURE_CLUSTER_NAME", true),
+		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP", true),
+		ACRName:              readEnv("AZURE_ACR_NAME", true),
+		ProvisionMode:        readEnv("PROVISION_MODE", false),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		CloudConfig:          cloudEnv.Cloud,
 		tracker:              azure.NewTracker(),
@@ -149,11 +158,26 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, clientOptions))
-	azureEnv.agentpoolsClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.agentPoolClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
+	// If ProvisionMode wasn't set, default to scriptless
+	if azureEnv.ProvisionMode == "" {
+		azureEnv.ProvisionMode = consts.ProvisionModeAKSScriptless
+	}
+	// Default to reserved managed machine agentpool name for NAP
+	azureEnv.MachineAgentPoolName = "aksmanagedap"
+	if azureEnv.Environment.InClusterController {
+		azureEnv.MachineAgentPoolName = "testmpool"
+	}
+	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
+	// > Note: this only has to occur once per test, since its just a container for the machines
+	// > meaning that there is no risk of the tests modifying the Machine Pool itself.
+	if azureEnv.InClusterController && azureEnv.IsMachineMode() {
+		azureEnv.ExpectRunInClusterControllerWithMachineMode()
+	}
 	return azureEnv
 }
 
@@ -177,6 +201,10 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 			},
 		},
 	}
+}
+
+func (env *Environment) IsMachineMode() bool {
+	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {

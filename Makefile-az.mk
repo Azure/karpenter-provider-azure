@@ -36,16 +36,21 @@ AKS_MACHINES_POOL_NAME ?= testmpool
 
 export KO_GO_PATH ?= hack/go-crossbuild.sh
 
-az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+AZ_ALL_PERMS := az-perm az-perm-acr
+ifeq ($(PROVISION_MODE),aksmachineapi)
+  $(info PROVISION_MODE is aksmachineapi)
+  AZ_ALL_PERMS += az-perm-aksmachine az-add-aksmachinespool
+endif
 
-az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all:              az-login az-create-workload-msi az-mkaks-cilium              az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay     az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all-userassigned: az-login az-create-workload-msi az-mkaks-cilium-userassigned az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-aksmachine: PROVISION_MODE = aksmachineapi
-az-all-aksmachine:   az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-perm-aksmachine             az-add-aksmachinespool az-configure-values             az-build az-run          az-run-sample
+az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1               az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest    az-create-federated-cred az-perm               az-perm-acr az-configure-values
+az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay             az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+
+az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest            az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values
 	$(MAKE) az-mon-deploy
 	$(MAKE) az-pprof-enable
 	yq -i '.manifests.helm.releases[0].overrides.controller.resources.requests = {"cpu":4,"memory":"3Gi"}' skaffold.yaml
@@ -101,7 +106,7 @@ az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySe
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
 	fi
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	$(MAKE) az-creds
 	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure)
@@ -110,14 +115,14 @@ az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure \
-			--enable-oidc-issuer --enable-workload-identity \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-cniv1"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
 	fi
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	$(MAKE) az-creds
 	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane cilium, --network-plugin azure, and --network-plugin-mode overlay)
@@ -127,14 +132,31 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
 			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-cilium"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
 	fi
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	$(MAKE) az-creds
+	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
+
+az-mkaks-cilium-userassigned: az-mkacr az-create-workload-msi ## Create test AKS cluster with user-assigned identity (supports custom kubelet identity)
+	@hack/deploy/check-cluster-exists.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) az-mkaks-cilium-userassigned; \
+	EXIT_CODE=$$?; \
+	if [ $$EXIT_CODE -eq 1 ]; then \
+		KARPENTER_USER_ASSIGNED_IDENTITY_ID=$$(az identity show --resource-group $(AZURE_RESOURCE_GROUP) --name $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) --query 'id' -otsv); \
+		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
+			--assign-identity $$KARPENTER_USER_ASSIGNED_IDENTITY_ID --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
+			--tags "make-command=az-mkaks-cilium-userassigned"; \
+	elif [ $$EXIT_CODE -eq 2 ]; then \
+		exit 1; \
+	fi
+	$(MAKE) az-creds
 	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mode overlay)
@@ -144,14 +166,14 @@ az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mod
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
 			--network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-overlay"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
 	fi
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	$(MAKE) az-creds
 	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkaks-perftest: az-mkacr ## Create test AKS cluster (with Azure Overlay, larger system pool VMs and larger pod-cidr)
@@ -161,14 +183,14 @@ az-mkaks-perftest: az-mkacr ## Create test AKS cluster (with Azure Overlay, larg
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 2 --generate-ssh-keys -o none \
 			--network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			--node-vm-size $(if $(AZURE_VM_SIZE),$(AZURE_VM_SIZE),Standard_D16s_v6) --pod-cidr "10.128.0.0/11" \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-perftest"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
 	fi
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	$(MAKE) az-creds
 	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-mkvnet: ## Create a VNet with address range of 10.224.0.0/12 (matches managed VNet default)
@@ -184,7 +206,7 @@ az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster 
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
 			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity \
+			--enable-oidc-issuer --enable-workload-identity --nodepool-taints "CriticalAddonsOnly=true:NoSchedule" \
 			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
 			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)/providers/Microsoft.Network/virtualNetworks/$(CUSTOM_VNET_NAME)/subnets/$(CUSTOM_SUBNET_NAME)" \
@@ -192,7 +214,7 @@ az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster 
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
 	fi
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
+	$(MAKE) az-creds
 	skaffold config set default-repo $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/karpenter
 
 az-create-workload-msi: az-mkrg
@@ -371,24 +393,26 @@ az-untaintsystemnodes: ## Untaint all system nodepool nodes
 
 az-taintnodes:
 	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
+az-untaintnodes:
+	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --all --overwrite
 
 az-e2etests: az-cleanenv ## Run e2etests
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
+	$(MAKE) az-taintnodes
 	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
 	AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
 	AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
 	AZURE_ACR_NAME=$(AZURE_ACR_NAME) \
-	make e2etests
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --all
+	$(MAKE) e2etests
+	$(MAKE) az-untaintnodes
 
 az-upstream-e2etests: az-cleanenv ## Run upstream e2etests
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule --all --overwrite
+	$(MAKE) az-taintnodes
 	AZURE_SUBSCRIPTION_ID=$(AZURE_SUBSCRIPTION_ID) \
 	AZURE_CLUSTER_NAME=$(AZURE_CLUSTER_NAME) \
 	AZURE_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) \
 	AZURE_ACR_NAME=$(AZURE_ACR_NAME) \
-	make upstream-e2etests
-	kubectl taint nodes CriticalAddonsOnly=true:NoSchedule- --all
+	$(MAKE) upstream-e2etests
+	$(MAKE) az-untaintnodes
 
 az-perftest1: ## Test scaling out/in (1 VM)
 	hack/azure/perftest.sh 1
@@ -508,7 +532,7 @@ az-swagger-generate-clients-raw:
 
 az-swagger-generate-clients: az-swagger-generate-clients-raw
 	hack/boilerplate.sh
-	make tidy
+	$(MAKE) tidy
 
 az-codegen-nodeimageversions: ## List node image versions (to be used in fake/nodeimageversionsapi.go)
 	az rest --method get \
