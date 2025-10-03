@@ -28,6 +28,9 @@ inputs:
   location:
     description: "The azure location to run the e2e test in"
     default: "eastus"
+  provision_mode:
+    description: "The karpenter provisioning mode to run the e2e test in"
+    default: "aksscriptless"
 runs:
   using: "composite"
   steps:
@@ -81,5 +84,9 @@ runs:
         AZURE_LOCATION: ${{ inputs.location }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
       run: |
-        make az-perm
+        if [ "${{ inputs.provision_mode }}" = "aksmachineapi" ]; then
+          make az-perm-aksmachine
+        else
+          make az-perm
+        fi
         make az-perm-acr
