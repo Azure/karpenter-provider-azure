@@ -41,6 +41,7 @@ import (
 	nodeutils "sigs.k8s.io/karpenter/pkg/utils/node"
 
 	v1beta1 "github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
@@ -59,6 +60,12 @@ func TestChaos(t *testing.T) {
 	})
 	RunSpecs(t, "Chaos")
 }
+
+var _ = BeforeSuite(func() {
+	if env.InClusterController && env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		env.ExpectRunInClusterControllerWithMachineMode()
+	}
+})
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()

@@ -26,6 +26,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
@@ -46,6 +47,12 @@ func TestAcr(t *testing.T) {
 	})
 	RunSpecs(t, "Acr")
 }
+
+var _ = BeforeSuite(func() {
+	if env.InClusterController && env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		env.ExpectRunInClusterControllerWithMachineMode()
+	}
+})
 
 var _ = BeforeEach(func() {
 	env.BeforeEach()

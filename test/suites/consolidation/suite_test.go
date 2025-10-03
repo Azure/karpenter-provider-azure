@@ -35,6 +35,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/debug"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -44,6 +45,7 @@ import (
 )
 
 var env *azure.Environment
+var nodeClass *v1beta1.AKSNodeClass
 
 func TestConsolidation(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -56,7 +58,11 @@ func TestConsolidation(t *testing.T) {
 	RunSpecs(t, "Consolidation")
 }
 
-var nodeClass *v1beta1.AKSNodeClass
+var _ = BeforeSuite(func() {
+	if env.InClusterController && env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		env.ExpectRunInClusterControllerWithMachineMode()
+	}
+})
 
 var _ = BeforeEach(func() {
 	nodeClass = env.DefaultAKSNodeClass()

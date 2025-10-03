@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -55,6 +56,12 @@ func TestBYOK(t *testing.T) {
 
 	RunSpecs(t, "BYOK Suite")
 }
+
+var _ = BeforeSuite(func() {
+	if env.InClusterController && env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		env.ExpectRunInClusterControllerWithMachineMode()
+	}
+})
 
 var _ = BeforeEach(func() { env.BeforeEach() })
 var _ = AfterEach(func() { env.Cleanup() })
