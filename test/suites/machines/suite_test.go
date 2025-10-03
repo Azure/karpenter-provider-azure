@@ -43,6 +43,8 @@ func TestMachines(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	// > Note: we want to run this test case in Machine Mode regardless of what the config is,
+	// > so only check for the condition of InClusterController for machine pool creation, and usage
 	if env.InClusterController {
 		env.ExpectRunInClusterControllerWithMachineMode()
 	}
