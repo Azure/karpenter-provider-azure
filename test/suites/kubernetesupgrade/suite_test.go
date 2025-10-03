@@ -31,7 +31,6 @@ import (
 
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -50,12 +49,6 @@ func TestDrift(t *testing.T) {
 	})
 	RunSpecs(t, "KubernetesUpgrade")
 }
-
-var _ = BeforeSuite(func() {
-	if env.InClusterController && env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
-		env.ExpectRunInClusterControllerWithMachineMode()
-	}
-})
 
 const testAzureLinux = true // TODO: find a better way to parameterize this test for image family, without duplicating logic
 
