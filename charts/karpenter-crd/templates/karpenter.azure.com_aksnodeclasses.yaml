@@ -68,11 +68,12 @@ spec:
                 - Disabled
                 type: string
               imageFamily:
-                default: Ubuntu2204
+                default: Ubuntu
                 description: ImageFamily is the image family that instances use.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
@@ -200,6 +201,17 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              security:
+                description: Collection of security related karpenter fields
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
               tags:
                 additionalProperties:
                   type: string
@@ -222,9 +234,10 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204
-              rule: 'has(self.imageFamily) && has(self.fipsMode) ? !(self.imageFamily
-                == ''Ubuntu2204'' && self.fipsMode == ''FIPS'') : true'
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:
@@ -393,11 +406,12 @@ spec:
                 - Disabled
                 type: string
               imageFamily:
-                default: Ubuntu2204
+                default: Ubuntu
                 description: ImageFamily is the image family that instances use.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
@@ -525,6 +539,17 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              security:
+                description: Collection of security related karpenter fields
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
               tags:
                 additionalProperties:
                   type: string
@@ -547,9 +572,10 @@ spec:
                 type: string
             type: object
             x-kubernetes-validations:
-            - message: FIPS is not yet supported for Ubuntu2204
-              rule: 'has(self.imageFamily) && has(self.fipsMode) ? !(self.imageFamily
-                == ''Ubuntu2204'' && self.fipsMode == ''FIPS'') : true'
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:

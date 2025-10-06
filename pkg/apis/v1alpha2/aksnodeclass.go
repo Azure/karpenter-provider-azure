@@ -33,7 +33,7 @@ var (
 
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
-// +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204",rule="has(self.imageFamily) && has(self.fipsMode) ? !(self.imageFamily == 'Ubuntu2204' && self.fipsMode == 'FIPS') : true"
+// +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
 type AKSNodeClassSpec struct {
 	// VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -49,8 +49,8 @@ type AKSNodeClassSpec struct {
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
 	// ImageFamily is the image family that instances use.
-	// +kubebuilder:default=Ubuntu2204
-	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,AzureLinux}
+	// +kubebuilder:default=Ubuntu
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// FIPSMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
@@ -81,6 +81,18 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum:=250
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
+	// Collection of security related karpenter fields
+	Security *Security `json:"security,omitempty"`
+}
+
+// TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
+type Security struct {
+	// EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+	// For more information, see:
+	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+	// +optional
+	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
@@ -205,4 +217,13 @@ type AKSNodeClassList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AKSNodeClass `json:"items"`
+}
+
+// GetEncryptionAtHost returns whether encryption at host is enabled for the node class.
+// Returns false if Security or EncryptionAtHost is nil.
+func (in *AKSNodeClass) GetEncryptionAtHost() bool {
+	if in.Spec.Security != nil && in.Spec.Security.EncryptionAtHost != nil {
+		return *in.Spec.Security.EncryptionAtHost
+	}
+	return false
 }

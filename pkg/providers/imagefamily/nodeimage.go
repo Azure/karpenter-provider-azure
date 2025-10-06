@@ -139,7 +139,7 @@ func (p *provider) listSIG(ctx context.Context, supportedImages []types.DefaultI
 			// Unable to find given image version
 			continue
 		}
-		imageID := fmt.Sprintf(sharedImageGalleryImageIDFormat, options.FromContext(ctx).SIGSubscriptionID, supportedImage.GalleryResourceGroup, supportedImage.GalleryName, supportedImage.ImageDefinition, nextImage.Version)
+		imageID := BuildImageIDSIG(options.FromContext(ctx).SIGSubscriptionID, supportedImage.GalleryResourceGroup, supportedImage.GalleryName, supportedImage.ImageDefinition, nextImage.Version)
 
 		nodeImages = append(nodeImages, NodeImage{
 			ID:           imageID,
@@ -183,7 +183,7 @@ func (p *provider) getCIGImageID(publicGalleryURL, communityImageName string) (s
 	if err != nil {
 		return "", err
 	}
-	return buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
+	return BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion), nil
 }
 
 func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityImageName string) (string, error) {
@@ -203,6 +203,12 @@ func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 	return lo.FromPtr(topImageVersionCandidate.Name), nil
 }
 
-func buildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
+// BuildImageIDCIG builds a Community Image Gallery image ID
+func BuildImageIDCIG(publicGalleryURL, communityImageName, imageVersion string) string {
 	return fmt.Sprintf(communityImageIDFormat, publicGalleryURL, communityImageName, imageVersion)
+}
+
+// BuildImageIDSIG builds a Shared Image Gallery image ID
+func BuildImageIDSIG(subscriptionID, resourceGroup, galleryName, imageDefinition, imageVersion string) string {
+	return fmt.Sprintf(sharedImageGalleryImageIDFormat, subscriptionID, resourceGroup, galleryName, imageDefinition, imageVersion)
 }

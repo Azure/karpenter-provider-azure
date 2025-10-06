@@ -40,6 +40,7 @@ import (
 const (
 	ImageFamilyOSSKUUbuntu2004  = "Ubuntu2004"
 	ImageFamilyOSSKUUbuntu2204  = "Ubuntu2204"
+	ImageFamilyOSSKUUbuntu2404  = "Ubuntu2404"
 	ImageFamilyOSSKUAzureLinux2 = "AzureLinux2"
 	ImageFamilyOSSKUAzureLinux3 = "AzureLinux3"
 )
@@ -105,7 +106,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	// changed recently. This is OK because drift will correct it.
 	labels.AddAgentBakerGeneratedLabels(p.ResourceGroup, options.FromContext(ctx).KubeletIdentityClientID, nodeLabels)
 
-	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, and for Azure Linux v3
+	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
 	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
 		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
 
@@ -147,13 +148,10 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	// Map OS SKU to AKS provision client's expectation
 	// Note that the direction forward is to be more specific with OS versions. Be careful when supporting new ones.
 	switch p.OSSKU {
-	case ImageFamilyOSSKUUbuntu2004:
+	// https://go.dev/wiki/Switch#multiple-cases
+	case ImageFamilyOSSKUUbuntu2004, ImageFamilyOSSKUUbuntu2204, ImageFamilyOSSKUUbuntu2404:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case ImageFamilyOSSKUUbuntu2204:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case ImageFamilyOSSKUAzureLinux2:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
-	case ImageFamilyOSSKUAzureLinux3:
+	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	default:
 		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)

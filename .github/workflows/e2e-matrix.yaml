@@ -29,7 +29,7 @@ jobs:
       E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           disable-telemetry: true
           disable-sudo: true
@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [Scheduling, Utilization, GPU, Drift, InPlaceUpdate, Integration, NodeClaim, Consolidation, Chaos, ACR, KubernetesUpgrade, Spot, Subnet]
+        suite: [ACR, BYOK, Chaos, Consolidation, Drift, GPU, InPlaceUpdate, Integration, KubernetesUpgrade, NodeClaim, Scheduling, Spot, Subnet, Utilization]
     permissions:
       contents: read
       id-token: write

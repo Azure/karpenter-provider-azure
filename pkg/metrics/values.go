@@ -40,6 +40,10 @@ func ImageID(value string) Value {
 	return Value{key: logging.ImageID, value: value}
 }
 
+func ResponseError(value string) Value {
+	return Value{key: "responseError", value: value}
+}
+
 // Helper function to convert a slice of Values to their key-value pairs
 func ValuesToKeyValuePairs(values ...Value) []any {
 	var pairs []any
