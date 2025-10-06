@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -33,6 +34,23 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
+
+// ExpectRunInClusterControllerWithMachineMode should only need to be called once, and only for InClusterController mode
+//
+// This is because:
+// - in running in NAP mode, the Machines AP will be created for us
+// - machine agentpool is just a container, so no risk/concern of tests modifying the AP.
+func (env *Environment) ExpectRunInClusterControllerWithMachineMode() containerservice.AgentPool {
+	Expect(env.InClusterController).To(BeTrue(), "Should only create a byo Machine Pool when running as an InClusterController")
+	Skip("Setup BYO Machine AgentPool for self-hosted testing")
+	byoMachineAP := env.ExpectCreatedMachineAgentPool()
+	env.ExpectSettingsOverridden([]v1.EnvVar{
+		{Name: "PROVISION_MODE", Value: "aksmachineapi"},
+		{Name: "MANAGE_EXISTING_AKS_MACHINES", Value: "true"},
+		{Name: "AKS_MACHINES_POOL_NAME", Value: *byoMachineAP.Name},
+	}...)
+	return byoMachineAP
+}
 
 func (env *Environment) EventuallyExpectKarpenterNicsToBeDeleted() {
 	GinkgoHelper()
