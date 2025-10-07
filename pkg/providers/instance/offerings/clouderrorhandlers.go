@@ -26,17 +26,57 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-type cloudErrorHandler struct {
+type cloudErrorHandlerEntry struct {
 	match  func(cloudError armcontainerservice.CloudErrorBody) bool
-	handle commonErrorHandle
+	handle errorHandle
 }
 
-type CloudErrorHandling struct {
+type CloudErrorHandler struct {
 	UnavailableOfferings *cache.UnavailableOfferings
-	CloudErrorHandlers   []cloudErrorHandler
+	HandlerEntries       []cloudErrorHandlerEntry
 }
 
-func (h *CloudErrorHandling) extractErrorCodeAndMessage(cloudError armcontainerservice.CloudErrorBody) (string, string) {
+func NewCloudErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *CloudErrorHandler {
+	return &CloudErrorHandler{
+		UnavailableOfferings: unavailableOfferings,
+		HandlerEntries: []cloudErrorHandlerEntry{
+			{
+				match:  sdkerrors.LowPriorityQuotaHasBeenReachedInCloudError,
+				handle: handleLowPriorityQuotaError,
+			},
+			{
+				match:  sdkerrors.SKUFamilyQuotaHasBeenReachedInCloudError,
+				handle: handleSKUFamilyQuotaError,
+			},
+			{
+				match:  sdkerrors.IsSKUNotAvailableInCloudError,
+				handle: handleSKUNotAvailableError,
+			},
+			{
+				match:  sdkerrors.ZonalAllocationFailureOccurredInCloudError,
+				handle: handleZonalAllocationFailureError,
+			},
+			{
+				match:  sdkerrors.AllocationFailureOccurredInCloudError,
+				handle: handleAllocationFailureError,
+			},
+			{
+				match:  sdkerrors.OverconstrainedZonalAllocationFailureOccurredInCloudError,
+				handle: handleOverconstrainedZonalAllocationFailureError,
+			},
+			{
+				match:  sdkerrors.OverconstrainedAllocationFailureOccurredInCloudError,
+				handle: handleOverconstrainedAllocationFailureError,
+			},
+			{
+				match:  sdkerrors.RegionalQuotaHasBeenReachedInCloudError,
+				handle: handleRegionalQuotaError,
+			},
+		},
+	}
+}
+
+func (h *CloudErrorHandler) extractErrorCodeAndMessage(cloudError armcontainerservice.CloudErrorBody) (string, string) {
 	var code, message string
 	if cloudError.Code != nil {
 		code = *cloudError.Code
@@ -47,8 +87,8 @@ func (h *CloudErrorHandling) extractErrorCodeAndMessage(cloudError armcontainers
 	return code, message
 }
 
-func (h *CloudErrorHandling) HandleCloudError(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, cloudError armcontainerservice.CloudErrorBody) error {
-	for _, handler := range h.CloudErrorHandlers {
+func (h *CloudErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, cloudError armcontainerservice.CloudErrorBody) error {
+	for _, handler := range h.HandlerEntries {
 		if handler.match(cloudError) {
 			errorCode, errorMessage := h.extractErrorCodeAndMessage(cloudError)
 			return handler.handle(ctx, h.UnavailableOfferings, sku, instanceType, zone, capacityType, errorCode, errorMessage)
@@ -56,41 +96,4 @@ func (h *CloudErrorHandling) HandleCloudError(ctx context.Context, sku *skewer.S
 	}
 
 	return nil
-}
-
-func DefaultCloudErrorHandlers() []cloudErrorHandler {
-	return []cloudErrorHandler{
-		{
-			match:  sdkerrors.LowPriorityQuotaHasBeenReachedInCloudError,
-			handle: handleLowPriorityQuotaError,
-		},
-		{
-			match:  sdkerrors.SKUFamilyQuotaHasBeenReachedInCloudError,
-			handle: handleSKUFamilyQuotaError,
-		},
-		{
-			match:  sdkerrors.IsSKUNotAvailableInCloudError,
-			handle: handleSKUNotAvailableError,
-		},
-		{
-			match:  sdkerrors.ZonalAllocationFailureOccurredInCloudError,
-			handle: handleZonalAllocationFailureError,
-		},
-		{
-			match:  sdkerrors.AllocationFailureOccurredInCloudError,
-			handle: handleAllocationFailureError,
-		},
-		{
-			match:  sdkerrors.OverconstrainedZonalAllocationFailureOccurredInCloudError,
-			handle: handleOverconstrainedZonalAllocationFailureError,
-		},
-		{
-			match:  sdkerrors.OverconstrainedAllocationFailureOccurredInCloudError,
-			handle: handleOverconstrainedAllocationFailureError,
-		},
-		{
-			match:  sdkerrors.RegionalQuotaHasBeenReachedInCloudError,
-			handle: handleRegionalQuotaError,
-		},
-	}
 }
