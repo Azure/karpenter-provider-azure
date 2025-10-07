@@ -27,17 +27,57 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-type responseErrorHandler struct {
+type responseErrorHandlerEntry struct {
 	match  func(error) bool
-	handle commonErrorHandle
+	handle errorHandle
 }
 
-type ResponseErrorHandling struct {
-	UnavailableOfferings  *cache.UnavailableOfferings
-	ResponseErrorHandlers []responseErrorHandler
+type ResponseErrorHandler struct {
+	UnavailableOfferings *cache.UnavailableOfferings
+	HandlerEntries       []responseErrorHandlerEntry
 }
 
-func (h *ResponseErrorHandling) extractErrorCodeAndMessage(err error) (string, string) {
+func NewResponseErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *ResponseErrorHandler {
+	return &ResponseErrorHandler{
+		UnavailableOfferings: unavailableOfferings,
+		HandlerEntries: []responseErrorHandlerEntry{
+			{
+				match:  sdkerrors.LowPriorityQuotaHasBeenReached,
+				handle: handleLowPriorityQuotaError,
+			},
+			{
+				match:  sdkerrors.SKUFamilyQuotaHasBeenReached,
+				handle: handleSKUFamilyQuotaError,
+			},
+			{
+				match:  sdkerrors.IsSKUNotAvailable,
+				handle: handleSKUNotAvailableError,
+			},
+			{
+				match:  sdkerrors.ZonalAllocationFailureOccurred,
+				handle: handleZonalAllocationFailureError,
+			},
+			{
+				match:  sdkerrors.AllocationFailureOccurred,
+				handle: handleAllocationFailureError,
+			},
+			{
+				match:  sdkerrors.OverconstrainedZonalAllocationFailureOccurred,
+				handle: handleOverconstrainedZonalAllocationFailureError,
+			},
+			{
+				match:  sdkerrors.OverconstrainedAllocationFailureOccurred,
+				handle: handleOverconstrainedAllocationFailureError,
+			},
+			{
+				match:  sdkerrors.RegionalQuotaHasBeenReached,
+				handle: handleRegionalQuotaError,
+			},
+		},
+	}
+}
+
+func (h *ResponseErrorHandler) extractErrorCodeAndMessage(err error) (string, string) {
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {
 		return respErr.ErrorCode, respErr.Error()
@@ -45,8 +85,8 @@ func (h *ResponseErrorHandling) extractErrorCodeAndMessage(err error) (string, s
 	return "", err.Error()
 }
 
-func (h *ResponseErrorHandling) HandleResponseError(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
-	for _, handler := range h.ResponseErrorHandlers {
+func (h *ResponseErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
+	for _, handler := range h.HandlerEntries {
 		if handler.match(responseError) {
 			errorCode, errorMessage := h.extractErrorCodeAndMessage(responseError)
 			return handler.handle(ctx, h.UnavailableOfferings, sku, instanceType, zone, capacityType, errorCode, errorMessage)
@@ -54,41 +94,4 @@ func (h *ResponseErrorHandling) HandleResponseError(ctx context.Context, sku *sk
 	}
 
 	return nil
-}
-
-func DefaultResponseErrorHandlers() []responseErrorHandler {
-	return []responseErrorHandler{
-		{
-			match:  sdkerrors.LowPriorityQuotaHasBeenReached,
-			handle: handleLowPriorityQuotaError,
-		},
-		{
-			match:  sdkerrors.SKUFamilyQuotaHasBeenReached,
-			handle: handleSKUFamilyQuotaError,
-		},
-		{
-			match:  sdkerrors.IsSKUNotAvailable,
-			handle: handleSKUNotAvailableError,
-		},
-		{
-			match:  sdkerrors.ZonalAllocationFailureOccurred,
-			handle: handleZonalAllocationFailureError,
-		},
-		{
-			match:  sdkerrors.AllocationFailureOccurred,
-			handle: handleAllocationFailureError,
-		},
-		{
-			match:  sdkerrors.OverconstrainedZonalAllocationFailureOccurred,
-			handle: handleOverconstrainedZonalAllocationFailureError,
-		},
-		{
-			match:  sdkerrors.OverconstrainedAllocationFailureOccurred,
-			handle: handleOverconstrainedAllocationFailureError,
-		},
-		{
-			match:  sdkerrors.RegionalQuotaHasBeenReached,
-			handle: handleRegionalQuotaError,
-		},
-	}
 }
