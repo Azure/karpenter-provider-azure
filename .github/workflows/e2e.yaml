@@ -28,6 +28,8 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+      E2E_LOGIN_SUBSCRIPTION_ID:
+        required: true
 
 permissions:
   contents: read
@@ -99,7 +101,7 @@ jobs:
         with:
           client-id: ${{ secrets.E2E_CLIENT_ID }}
           tenant-id: ${{ secrets.E2E_TENANT_ID }}
-          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          subscription-id: ${{ secrets.E2E_LOGIN_SUBSCRIPTION_ID }}
       - name: az set sub
         shell: bash
         run: az account set --subscription ${{ secrets.E2E_SUBSCRIPTION_ID }}

@@ -6,13 +6,13 @@ inputs:
   #   required: false
   #   default: "1.27"
   client-id:
-    description: 
+    description:
     required: true
   tenant-id:
-    description: 
+    description:
     required: true
   subscription-id:
-    description: 
+    description:
     required: true
   resource_group:
     description: "Name of the resource group to create the cluster within"
@@ -35,12 +35,12 @@ runs:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         ref: ${{ inputs.git_ref }}
-    - name: az login
-      uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-      with:
-        client-id: ${{ inputs.client-id }}
-        tenant-id: ${{ inputs.tenant-id }}
-        subscription-id: ${{ inputs.subscription-id }}
+    # - name: az login
+    #   uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+    #   with:
+    #     client-id: ${{ inputs.client-id }}
+    #     tenant-id: ${{ inputs.tenant-id }}
+    #     subscription-id: ${{ inputs.subscription-id }}
     - name: az set sub
       shell: bash
       run: az account set --subscription ${{ inputs.subscription-id }}
@@ -55,15 +55,15 @@ runs:
       env:
         AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-        AZURE_ACR_NAME: ${{ inputs.acr_name }} 
+        AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
       run: make az-mkaks-cilium
-    - name: az login 2
-      uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-      with:
-        client-id: ${{ inputs.client-id }}
-        tenant-id: ${{ inputs.tenant-id }}
-        subscription-id: ${{ inputs.subscription-id }}
+    # - name: az login 2
+    #   uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+    #   with:
+    #     client-id: ${{ inputs.client-id }}
+    #     tenant-id: ${{ inputs.tenant-id }}
+    #     subscription-id: ${{ inputs.subscription-id }}
     - name: create federated cred
       shell: bash
       env:
@@ -81,12 +81,3 @@ runs:
         make az-perm
         make az-perm-acr
         make az-perm-aksmachine
-    - name: add aks machines pool
-      shell: bash
-      env:
-        AZURE_SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
-        AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
-        AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-        AKS_MACHINES_POOL_NAME: testmpool
-      run: |
-        make az-add-aksmachinespool

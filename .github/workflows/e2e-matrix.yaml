@@ -22,6 +22,8 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+      E2E_LOGIN_SUBSCRIPTION_ID:
+        required: true
 
 permissions:
   contents: read
@@ -68,3 +70,4 @@ jobs:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
       E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      E2E_LOGIN_SUBSCRIPTION_ID: ${{ secrets.E2E_LOGIN_SUBSCRIPTION_ID }}
