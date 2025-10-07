@@ -32,6 +32,7 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 )
 
@@ -61,6 +62,12 @@ var _ = AfterEach(func() { env.AfterEach() })
 var _ = Describe("Inplace Update", func() {
 	var dep *appsv1.Deployment
 	var selector labels.Selector
+
+	BeforeEach(func() {
+		if env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+			Skip("Skipping in Machine mode until expectatin functions are updated")
+		}
+	})
 
 	Context("Tags", func() {
 		It("should add tags in-place on all resources without drifting the nodeClaim", func() {
