@@ -60,6 +60,7 @@ jobs:
             *.azmk8s.io:443
             *.azurecr.io:443
             *.data.mcr.microsoft.com:443
+            *.vault.azure.net:443
             aka.ms:443
             api.github.com:443
             app.aladdin.microsoft.com:443
