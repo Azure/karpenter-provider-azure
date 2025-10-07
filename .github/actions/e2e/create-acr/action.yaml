@@ -28,19 +28,19 @@ runs:
   - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
     with:
       ref: ${{ inputs.git_ref }}
-  - name: az login
-    uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
-    with:
-      client-id: ${{ inputs.client-id }}
-      tenant-id: ${{ inputs.tenant-id }}
-      subscription-id: ${{ inputs.subscription-id }}
+  # - name: az login
+  #   uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+  #   with:
+  #     client-id: ${{ inputs.client-id }}
+  #     tenant-id: ${{ inputs.tenant-id }}
+  #     subscription-id: ${{ inputs.subscription-id }}
   - name: az set sub
     shell: bash
     run: az account set --subscription ${{ inputs.subscription-id }}
   - name: create ACR
     shell: bash
     run: AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_ACR_NAME=${{ inputs.acr_name }} AZURE_LOCATION=${{ inputs.location }} make az-mkacr
-  - name: import needed images 
-    shell: bash 
-    run: | 
+  - name: import needed images
+    shell: bash
+    run: |
       AZURE_ACR_NAME=${{ inputs.acr_name }} make az-acrimport
