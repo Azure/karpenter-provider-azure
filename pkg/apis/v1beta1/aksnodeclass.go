@@ -81,6 +81,13 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum:=250
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
+	// ArtifactStreamingEnabled controls whether artifact streaming is enabled for container images.
+	// Artifact streaming allows AKS to stream container images from ACR by only pulling the
+	// necessary layers for initial pod startup, reducing image pull times and improving pod start-up performance.
+	// Note: Only supported on Ubuntu2204 and AzureLinux image families. Not supported on ARM64 architecture.
+	// See: https://learn.microsoft.com/en-us/azure/aks/artifact-streaming
+	// +optional
+	ArtifactStreamingEnabled *bool `json:"artifactStreamingEnabled,omitempty"`
 
 	// Collection of security related karpenter fields
 	Security *Security `json:"security,omitempty"`

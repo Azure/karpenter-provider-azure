@@ -69,6 +69,7 @@ type ImageFamily interface {
 		labels map[string]string,
 		caBundle *string,
 		instanceType *cloudprovider.InstanceType,
+		artifactStreamingEnabled *bool,
 	) bootstrap.Bootstrapper
 	CustomScriptsNodeBootstrapping(
 		kubeletConfig *bootstrap.KubeletConfiguration,
@@ -80,6 +81,7 @@ type ImageFamily interface {
 		storageProfile string,
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
 		fipsMode *v1beta1.FIPSMode,
+		artifactStreamingEnabled *bool,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
@@ -162,6 +164,7 @@ func (r *defaultResolver) Resolve(
 			staticParameters.Labels,
 			staticParameters.CABundle,
 			instanceType,
+			nodeClass.Spec.ArtifactStreamingEnabled,
 		),
 		CustomScriptsNodeBootstrapping: imageFamily.CustomScriptsNodeBootstrapping(
 			prepareKubeletConfiguration(ctx, instanceType, nodeClass),
@@ -173,6 +176,7 @@ func (r *defaultResolver) Resolve(
 			diskType,
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
+			nodeClass.Spec.ArtifactStreamingEnabled,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
