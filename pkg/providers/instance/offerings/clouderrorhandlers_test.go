@@ -105,11 +105,8 @@ func createCloudError(code, message string) armcontainerservice.CloudErrorBody {
 }
 
 // newTestCloudErrorHandling creates a test provider with default configuration
-func newTestCloudErrorHandling() *CloudErrorHandling {
-	return &CloudErrorHandling{
-		UnavailableOfferings: cache.NewUnavailableOfferings(),
-		CloudErrorHandlers:   DefaultCloudErrorHandlers(),
-	}
+func newTestCloudErrorHandling() *CloudErrorHandler {
+	return NewCloudErrorHandler(cache.NewUnavailableOfferings())
 }
 
 func setupCloudErrorTestCases() []cloudErrorTestCase {
@@ -259,7 +256,7 @@ func TestHandleCloudErrors(t *testing.T) {
 		t.Run(tc.testName, func(t *testing.T) {
 			provider := newTestCloudErrorHandling()
 
-			err := provider.HandleCloudError(
+			err := provider.Handle(
 				context.Background(),
 				tc.originalRequestSKU,
 				tc.instanceType,
