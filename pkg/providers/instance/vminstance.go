@@ -126,7 +126,7 @@ type DefaultVMProvider struct {
 	subscriptionID               string
 	provisionMode                string
 	diskEncryptionSetID          string
-	errorHandling                *offerings.ResponseErrorHandling
+	errorHandling                *offerings.ResponseErrorHandler
 
 	vmListQuery, nicListQuery string
 }
@@ -159,10 +159,7 @@ func NewDefaultVMProvider(
 		vmListQuery:  GetVMListQueryBuilder(resourceGroup).String(),
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
 
-		errorHandling: &offerings.ResponseErrorHandling{
-			UnavailableOfferings:  offeringsCache,
-			ResponseErrorHandlers: offerings.DefaultResponseErrorHandlers(),
-		},
+		errorHandling: offerings.NewResponseErrorHandler(offeringsCache),
 	}
 }
 
@@ -739,7 +736,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		if skuErr != nil {
 			return nil, fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 		}
-		handledError := p.errorHandling.HandleResponseError(ctx, sku, instanceType, zone, capacityType, err)
+		handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
 		if handledError != nil {
 			// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 			// Thus the error needs to be returned.
@@ -774,7 +771,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
 				}
-				handledError := p.errorHandling.HandleResponseError(ctx, sku, instanceType, zone, capacityType, err)
+				handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, err)
 				if handledError != nil {
 					// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
 					// Thus the error needs to be returned.
