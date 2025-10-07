@@ -29,7 +29,7 @@ import (
 
 type responseErrorHandlerEntry struct {
 	match  func(error) bool
-	handle commonErrorHandle
+	handle errorHandle
 }
 
 type ResponseErrorHandler struct {

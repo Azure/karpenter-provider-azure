@@ -42,7 +42,7 @@ var (
 	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
 )
 
-type commonErrorHandle func(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
+type errorHandle func(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
 
 // markOfferingsUnavailableForCapacityType marks all offerings of the specified capacity type as unavailable
 func markOfferingsUnavailableForCapacityType(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, instanceType *corecloudprovider.InstanceType, capacityType string, reason string, ttl time.Duration) {
