@@ -14,6 +14,10 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "southcentralus"
+      provisionmode:
+        type: string
+        description: "the karpenter provisioning mode to run the e2e test in"
+        default: "aksscriptless"
     #   k8s_version:
     #     type: string
     #     default: "1.27"
@@ -45,7 +49,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
         with:
           disable-telemetry: true
           egress-policy: block
@@ -56,7 +60,6 @@ jobs:
             *.azmk8s.io:443
             *.azurecr.io:443
             *.data.mcr.microsoft.com:443
-            *.vault.azure.net:443
             aka.ms:443
             api.github.com:443
             app.aladdin.microsoft.com:443
@@ -82,7 +85,7 @@ jobs:
             aquasecurity.github.io:443
             mirror.gcr.io:443
 
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ inputs.git_ref }}
       - if: always() && github.event_name == 'workflow_run'
@@ -158,6 +161,7 @@ jobs:
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
+          provisionmode: ${{ inputs.provisionmode }}
       - name: run the ${{ inputs.suite }} test suite
         env:
           AZURE_CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
@@ -167,6 +171,7 @@ jobs:
           AZURE_ACR_NAME: ${{ env.ACR_NAME }}
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
+          PROVISION_MODE: ${{ inputs.provisionmode }}
         run: |
           make az-creds
           make e2etests
