@@ -115,11 +115,8 @@ func createResponseError(errorCode, errorMessage string) error {
 }
 
 // newTestResponseErrorHandling creates a test provider with default configuration
-func newTestResponseErrorHandling() *ResponseErrorHandling {
-	return &ResponseErrorHandling{
-		UnavailableOfferings:  cache.NewUnavailableOfferings(),
-		ResponseErrorHandlers: DefaultResponseErrorHandlers(),
-	}
+func newTestResponseErrorHandling() *ResponseErrorHandler {
+	return NewResponseErrorHandler(cache.NewUnavailableOfferings())
 }
 
 func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, unavailable, available []offeringToCheck) {
@@ -288,7 +285,7 @@ func TestHandleResponseErrors(t *testing.T) {
 		t.Run(tc.testName, func(t *testing.T) {
 			provider := newTestResponseErrorHandling()
 
-			err := provider.HandleResponseError(
+			err := provider.Handle(
 				context.Background(),
 				tc.originalRequestSKU,
 				tc.instanceType,
