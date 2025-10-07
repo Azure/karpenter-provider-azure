@@ -184,7 +184,9 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	if err != nil {
 		// Clean up if creation fails.
 		if err := p.deleteMachine(ctx, aksMachineName); err != nil {
-			log.FromContext(ctx).Error(err, "failed to delete AKS machine after failed creation", "aksMachineName", aksMachineName)
+			if !IsAKSMachineOrMachinesPoolNotFound(err) {
+				log.FromContext(ctx).Error(err, "failed to delete AKS machine after failed creation", "aksMachineName", aksMachineName)
+			}
 			// We don't return the cleanup error here, as we want to return the original error from beginCreateMachine
 		}
 		return nil, err
