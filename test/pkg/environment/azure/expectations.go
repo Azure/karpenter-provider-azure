@@ -42,7 +42,7 @@ import (
 // - machine agentpool is just a container, so no risk/concern of tests modifying the AP.
 func (env *Environment) ExpectRunInClusterControllerWithMachineMode() containerservice.AgentPool {
 	Expect(env.InClusterController).To(BeTrue(), "Should only create a byo Machine Pool when running as an InClusterController")
-	Skip("Setup BYO Machine AgentPool for self-hosted testing")
+	By("Setup BYO Machine AgentPool for self-hosted testing")
 	byoMachineAP := env.ExpectCreatedMachineAgentPool()
 	env.ExpectSettingsOverridden([]v1.EnvVar{
 		{Name: "PROVISION_MODE", Value: "aksmachineapi"},
