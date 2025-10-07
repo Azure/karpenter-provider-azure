@@ -741,7 +741,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		}
 		handledError := p.errorHandling.HandleResponseError(ctx, sku, instanceType, zone, capacityType, err)
 		if handledError != nil {
-			// Handled in caches, but might also contain core-expected errors (e.g., InsufficientCapacityError)
+			// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
+			// Thus the error needs to be returned.
+			// Assuming that `HandleResponseError` already format/convert the error for such (e.g., `InsufficientCapacityError`).
 			return nil, handledError
 		}
 		return nil, err
@@ -774,7 +776,9 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				}
 				handledError := p.errorHandling.HandleResponseError(ctx, sku, instanceType, zone, capacityType, err)
 				if handledError != nil {
-					// Handled in caches, but might also contain core-expected errors (e.g., InsufficientCapacityError)
+					// At this point, the error is handled in provider layer (e.g., unavailable offerings cache), but not yet Karpenter core.
+					// Thus the error needs to be returned.
+					// Assuming that `HandleResponseError` already format/convert the error for such (e.g., `InsufficientCapacityError`).
 					return handledError
 				}
 				return err
