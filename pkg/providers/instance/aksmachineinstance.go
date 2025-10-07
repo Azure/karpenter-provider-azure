@@ -131,7 +131,7 @@ type DefaultAKSMachineProvider struct {
 	clusterName             string
 	aksMachinesPoolName     string // Only support one AKS machine pool at a time, for now.
 	aksMachinesPoolLocation string
-	errorHandling           *offerings.CloudErrorHandling
+	errorHandling           *offerings.CloudErrorHandler
 }
 
 func NewAKSMachineProvider(
@@ -155,10 +155,7 @@ func NewAKSMachineProvider(
 		clusterName:             clusterName,
 		aksMachinesPoolName:     aksMachinesPoolName,
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
-		errorHandling: &offerings.CloudErrorHandling{
-			UnavailableOfferings: offeringsCache,
-			CloudErrorHandlers:   offerings.DefaultCloudErrorHandlers(),
-		},
+		errorHandling:           offerings.NewCloudErrorHandler(offeringsCache),
 	}
 
 	return provider
@@ -494,7 +491,7 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 		return fmt.Errorf("failed to get instance type %q: %w, provisioning error left unhandled: code=%s, message=%s", instanceType.Name, skuErr, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
 	}
 
-	handledError := p.errorHandling.HandleCloudError(ctx, sku, instanceType, zone, capacityType, innerError)
+	handledError := p.errorHandling.Handle(ctx, sku, instanceType, zone, capacityType, innerError)
 	if handledError != nil {
 		// If error is handled, return it (wrapped)
 		return fmt.Errorf("failed to create AKS machine %q during %s, handled provisioning error: %w", aksMachineName, phase, handledError)
