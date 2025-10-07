@@ -47,10 +47,6 @@ func TestMachines(t *testing.T) {
 	RunSpecs(t, "Machines")
 }
 
-var _ = BeforeSuite(func() {
-
-})
-
 var _ = BeforeEach(func() {
 	env.BeforeEach()
 	nodeClass = env.DefaultAKSNodeClass()

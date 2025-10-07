@@ -18,6 +18,7 @@ package azure
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -41,8 +42,9 @@ import (
 // - in running in NAP mode, the Machines AP will be created for us
 // - machine agentpool is just a container, so no risk/concern of tests modifying the AP.
 func (env *Environment) ExpectRunInClusterControllerWithMachineMode() containerservice.AgentPool {
+	GinkgoHelper()
 	Expect(env.InClusterController).To(BeTrue(), "Should only create a byo Machine Pool when running as an InClusterController")
-	Skip("Setup BYO Machine AgentPool for self-hosted testing")
+	By("Setup BYO Machine AgentPool for self-hosted testing")
 	byoMachineAP := env.ExpectCreatedMachineAgentPool()
 	env.ExpectSettingsOverridden([]v1.EnvVar{
 		{Name: "PROVISION_MODE", Value: "aksmachineapi"},
@@ -93,6 +95,40 @@ func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Inter
 	})
 }
 
+func (env *Environment) ExpectGetManagedCluster() containerservice.ManagedCluster {
+	GinkgoHelper()
+	managedClusterResponse, err := env.managedClusterClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
+	Expect(err).ToNot(HaveOccurred())
+	return managedClusterResponse.ManagedCluster
+}
+
+// WarnIfClusterNotInExpectedProvisioningState checks if the clusters provisioning state is equal to the
+// given expected provisioning state.
+func (env *Environment) WarnIfClusterNotInExpectedProvisioningState(expectedProvisioningState string) containerservice.ManagedCluster {
+	GinkgoHelper()
+	managedCluster := env.ExpectGetManagedCluster()
+	Expect(managedCluster.Properties.ProvisioningState).ToNot(BeNil())
+	provisioningState := *managedCluster.Properties.ProvisioningState
+	if !strings.EqualFold(provisioningState, expectedProvisioningState) {
+		warningMsg := fmt.Sprintf("Cluster provisioning state mismatch: expected '%s', got '%s'",
+			expectedProvisioningState, provisioningState)
+
+		// Emit warning for CI/CD systems
+		if os.Getenv("GITHUB_ACTIONS") == "true" {
+			fmt.Printf("::warning::%s\n", warningMsg)
+		} else if os.Getenv("TF_BUILD") == "True" {
+			fmt.Printf("##vso[task.logissue type=warning]%s\n", warningMsg)
+		}
+
+		// Always emit to Ginkgo output for local development and test reports
+		GinkgoWriter.Printf("⚠️  WARNING: %s\n", warningMsg)
+
+		// Add structured report entry for test reports
+		AddReportEntry("Provisioning State Warning", warningMsg, ReportEntryVisibilityAlways)
+	}
+	return managedCluster
+}
+
 func (env *Environment) ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesForManagedCluster() []*containerservice.ManagedClusterPoolUpgradeProfileUpgradesItem {
 	GinkgoHelper()
 	upgradeProfile, err := env.managedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
@@ -102,9 +138,7 @@ func (env *Environment) ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesF
 
 func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion string) containerservice.ManagedCluster {
 	GinkgoHelper()
-	managedClusterResponse, err := env.managedClusterClient.Get(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
-	Expect(err).ToNot(HaveOccurred())
-	managedCluster := managedClusterResponse.ManagedCluster
+	managedCluster := env.ExpectGetManagedCluster()
 
 	// See documentation for KubernetesVersion (client specified) and CurrentKubernetesVersion (version under use):
 	// https://learn.microsoft.com/en-us/rest/api/aks/managed-clusters/get?view=rest-aks-2025-01-01&tabs=HTTP

@@ -8,6 +8,10 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "westus3"
+      provisionmode:
+        type: string
+        description: "the karpenter provisioning mode to run the e2e test in"
+        default: "aksscriptless"
   push:
     branches: [main]
 
@@ -28,6 +32,7 @@ jobs:
     with:
       git_ref: ${{ needs.resolve.outputs.GIT_REF }}
       location: ${{ inputs.location || 'westus3' }}
+      provisionmode: ${{ inputs.provisionmode || 'aksscriptless' }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
