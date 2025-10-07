@@ -46,6 +46,9 @@ func (env *Environment) BeforeEach() {
 func (env *Environment) Cleanup() {
 	env.Environment.Cleanup()
 	env.Environment.CleanupObjects(CleanableObjects...)
+	// > Note: under current usage no machines should exist here,
+	// > as scaledown should ensure the machines are deleted
+	env.ExpectNoMachines()
 
 	err := env.tracker.Cleanup()
 	Expect(err).ToNot(HaveOccurred(), "Failed to clean up Azure resources")
