@@ -135,7 +135,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
 	// Default to reserved managed machine agentpool name for NAP
 	azureEnv.MachineAgentPoolName = "aksmanagedap"
-	if !azureEnv.Environment.InClusterController {
+	if azureEnv.Environment.InClusterController {
 		azureEnv.MachineAgentPoolName = "karp-e2e-byo-machine-ap"
 	}
 	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
