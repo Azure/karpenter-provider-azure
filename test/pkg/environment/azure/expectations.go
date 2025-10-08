@@ -50,6 +50,8 @@ func (env *Environment) ExpectRunInClusterControllerWithMachineMode() containers
 		{Name: "PROVISION_MODE", Value: "aksmachineapi"},
 		{Name: "MANAGE_EXISTING_AKS_MACHINES", Value: "true"},
 		{Name: "AKS_MACHINES_POOL_NAME", Value: *byoMachineAP.Name},
+		{Name: "USE_SIG", Value: "true"},
+		{Name: "AZURE_SIG_SUBSCRIPTION_ID", Value: "109a5e88-712a-48ae-9078-9ca8b3c81345"},
 	}...)
 	return byoMachineAP
 }
