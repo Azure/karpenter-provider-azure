@@ -55,7 +55,7 @@ func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
 	return version
 }
 
-func ResourceIDToProviderID(ctx context.Context, id string) string {
+func VMResourceIDToProviderID(ctx context.Context, id string) string {
 	providerID := fmt.Sprintf("azure://%s", id)
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
