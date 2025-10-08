@@ -3,7 +3,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "eastus-az2"
+        "physicalZone": "eastus-az1"
       },
       {
         "logicalZone": "2",
@@ -11,7 +11,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "eastus-az1"
+        "physicalZone": "eastus-az2"
       }
     ],
     "displayName": "East US",
@@ -39,7 +39,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "westus2-az2"
+        "physicalZone": "westus2-az1"
       },
       {
         "logicalZone": "2",
@@ -47,7 +47,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "westus2-az1"
+        "physicalZone": "westus2-az2"
       }
     ],
     "displayName": "West US 2",
@@ -75,7 +75,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "australiaeast-az2"
+        "physicalZone": "australiaeast-az1"
       },
       {
         "logicalZone": "2",
@@ -83,7 +83,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "australiaeast-az1"
+        "physicalZone": "australiaeast-az2"
       }
     ],
     "displayName": "Australia East",
@@ -111,7 +111,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "southeastasia-az2"
+        "physicalZone": "southeastasia-az1"
       },
       {
         "logicalZone": "2",
@@ -119,7 +119,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "southeastasia-az1"
+        "physicalZone": "southeastasia-az2"
       }
     ],
     "displayName": "Southeast Asia",
@@ -147,7 +147,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "northeurope-az2"
+        "physicalZone": "northeurope-az1"
       },
       {
         "logicalZone": "2",
@@ -155,7 +155,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "northeurope-az1"
+        "physicalZone": "northeurope-az2"
       }
     ],
     "displayName": "North Europe",
@@ -183,7 +183,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "swedencentral-az2"
+        "physicalZone": "swedencentral-az1"
       },
       {
         "logicalZone": "2",
@@ -191,7 +191,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "swedencentral-az1"
+        "physicalZone": "swedencentral-az2"
       }
     ],
     "displayName": "Sweden Central",
@@ -219,7 +219,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "uksouth-az2"
+        "physicalZone": "uksouth-az1"
       },
       {
         "logicalZone": "2",
@@ -227,7 +227,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "uksouth-az1"
+        "physicalZone": "uksouth-az2"
       }
     ],
     "displayName": "UK South",
@@ -255,7 +255,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "westeurope-az2"
+        "physicalZone": "westeurope-az1"
       },
       {
         "logicalZone": "2",
@@ -263,7 +263,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "westeurope-az1"
+        "physicalZone": "westeurope-az2"
       }
     ],
     "displayName": "West Europe",
@@ -291,7 +291,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "centralus-az2"
+        "physicalZone": "centralus-az1"
       },
       {
         "logicalZone": "2",
@@ -299,7 +299,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "centralus-az1"
+        "physicalZone": "centralus-az2"
       }
     ],
     "displayName": "Central US",
@@ -327,7 +327,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "southafricanorth-az2"
+        "physicalZone": "southafricanorth-az1"
       },
       {
         "logicalZone": "2",
@@ -335,7 +335,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "southafricanorth-az1"
+        "physicalZone": "southafricanorth-az2"
       }
     ],
     "displayName": "South Africa North",
@@ -363,7 +363,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "centralindia-az2"
+        "physicalZone": "centralindia-az1"
       },
       {
         "logicalZone": "2",
@@ -371,7 +371,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "centralindia-az1"
+        "physicalZone": "centralindia-az2"
       }
     ],
     "displayName": "Central India",
@@ -399,7 +399,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "eastasia-az2"
+        "physicalZone": "eastasia-az1"
       },
       {
         "logicalZone": "2",
@@ -407,7 +407,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "eastasia-az1"
+        "physicalZone": "eastasia-az2"
       }
     ],
     "displayName": "East Asia",
@@ -435,7 +435,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "indonesiacentral-az2"
+        "physicalZone": "indonesiacentral-az1"
       },
       {
         "logicalZone": "2",
@@ -443,7 +443,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "indonesiacentral-az1"
+        "physicalZone": "indonesiacentral-az2"
       }
     ],
     "displayName": "Indonesia Central",
@@ -466,7 +466,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "japaneast-az2"
+        "physicalZone": "japaneast-az1"
       },
       {
         "logicalZone": "2",
@@ -474,7 +474,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "japaneast-az1"
+        "physicalZone": "japaneast-az2"
       }
     ],
     "displayName": "Japan East",
@@ -502,7 +502,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "japanwest-az2"
+        "physicalZone": "japanwest-az1"
       },
       {
         "logicalZone": "2",
@@ -510,7 +510,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "japanwest-az1"
+        "physicalZone": "japanwest-az2"
       }
     ],
     "displayName": "Japan West",
@@ -538,7 +538,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "koreacentral-az2"
+        "physicalZone": "koreacentral-az1"
       },
       {
         "logicalZone": "2",
@@ -546,7 +546,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "koreacentral-az1"
+        "physicalZone": "koreacentral-az2"
       }
     ],
     "displayName": "Korea Central",
@@ -574,7 +574,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "malaysiawest-az2"
+        "physicalZone": "malaysiawest-az1"
       },
       {
         "logicalZone": "2",
@@ -582,7 +582,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "malaysiawest-az1"
+        "physicalZone": "malaysiawest-az2"
       }
     ],
     "displayName": "Malaysia West",
@@ -605,7 +605,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "newzealandnorth-az2"
+        "physicalZone": "newzealandnorth-az1"
       },
       {
         "logicalZone": "2",
@@ -613,7 +613,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "newzealandnorth-az1"
+        "physicalZone": "newzealandnorth-az2"
       }
     ],
     "displayName": "New Zealand North",
@@ -636,7 +636,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "canadacentral-az2"
+        "physicalZone": "canadacentral-az1"
       },
       {
         "logicalZone": "2",
@@ -644,7 +644,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "canadacentral-az1"
+        "physicalZone": "canadacentral-az2"
       }
     ],
     "displayName": "Canada Central",
@@ -672,7 +672,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "austriaeast-az2"
+        "physicalZone": "austriaeast-az1"
       },
       {
         "logicalZone": "2",
@@ -680,7 +680,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "austriaeast-az1"
+        "physicalZone": "austriaeast-az2"
       }
     ],
     "displayName": "Austria East",
@@ -703,7 +703,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "francecentral-az2"
+        "physicalZone": "francecentral-az1"
       },
       {
         "logicalZone": "2",
@@ -711,7 +711,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "francecentral-az1"
+        "physicalZone": "francecentral-az2"
       }
     ],
     "displayName": "France Central",
@@ -739,7 +739,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "germanywestcentral-az2"
+        "physicalZone": "germanywestcentral-az1"
       },
       {
         "logicalZone": "2",
@@ -747,7 +747,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "germanywestcentral-az1"
+        "physicalZone": "germanywestcentral-az2"
       }
     ],
     "displayName": "Germany West Central",
@@ -775,7 +775,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "italynorth-az2"
+        "physicalZone": "italynorth-az1"
       },
       {
         "logicalZone": "2",
@@ -783,7 +783,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "italynorth-az1"
+        "physicalZone": "italynorth-az2"
       }
     ],
     "displayName": "Italy North",
@@ -806,7 +806,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "norwayeast-az2"
+        "physicalZone": "norwayeast-az1"
       },
       {
         "logicalZone": "2",
@@ -814,7 +814,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "norwayeast-az1"
+        "physicalZone": "norwayeast-az2"
       }
     ],
     "displayName": "Norway East",
@@ -842,7 +842,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "polandcentral-az2"
+        "physicalZone": "polandcentral-az1"
       },
       {
         "logicalZone": "2",
@@ -850,7 +850,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "polandcentral-az1"
+        "physicalZone": "polandcentral-az2"
       }
     ],
     "displayName": "Poland Central",
@@ -873,7 +873,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "spaincentral-az2"
+        "physicalZone": "spaincentral-az1"
       },
       {
         "logicalZone": "2",
@@ -881,7 +881,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "spaincentral-az1"
+        "physicalZone": "spaincentral-az2"
       }
     ],
     "displayName": "Spain Central",
@@ -904,7 +904,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "switzerlandnorth-az2"
+        "physicalZone": "switzerlandnorth-az1"
       },
       {
         "logicalZone": "2",
@@ -912,7 +912,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "switzerlandnorth-az1"
+        "physicalZone": "switzerlandnorth-az2"
       }
     ],
     "displayName": "Switzerland North",
@@ -940,7 +940,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "mexicocentral-az2"
+        "physicalZone": "mexicocentral-az1"
       },
       {
         "logicalZone": "2",
@@ -948,7 +948,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "mexicocentral-az1"
+        "physicalZone": "mexicocentral-az2"
       }
     ],
     "displayName": "Mexico Central",
@@ -971,7 +971,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "uaenorth-az2"
+        "physicalZone": "uaenorth-az1"
       },
       {
         "logicalZone": "2",
@@ -979,7 +979,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "uaenorth-az1"
+        "physicalZone": "uaenorth-az2"
       }
     ],
     "displayName": "UAE North",
@@ -1007,7 +1007,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "brazilsouth-az2"
+        "physicalZone": "brazilsouth-az1"
       },
       {
         "logicalZone": "2",
@@ -1015,7 +1015,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "brazilsouth-az1"
+        "physicalZone": "brazilsouth-az2"
       }
     ],
     "displayName": "Brazil South",
@@ -1043,7 +1043,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "chilecentral-az2"
+        "physicalZone": "chilecentral-az1"
       },
       {
         "logicalZone": "2",
@@ -1051,7 +1051,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "chilecentral-az1"
+        "physicalZone": "chilecentral-az2"
       }
     ],
     "displayName": "Chile Central",
@@ -1074,7 +1074,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "eastus2euap-az2"
+        "physicalZone": "eastus2euap-az1"
       },
       {
         "logicalZone": "2",
@@ -1082,7 +1082,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "eastus2euap-az1"
+        "physicalZone": "eastus2euap-az2"
       },
       {
         "logicalZone": "4",
@@ -1114,7 +1114,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "israelcentral-az2"
+        "physicalZone": "israelcentral-az1"
       },
       {
         "logicalZone": "2",
@@ -1122,7 +1122,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "israelcentral-az1"
+        "physicalZone": "israelcentral-az2"
       }
     ],
     "displayName": "Israel Central",
@@ -1145,7 +1145,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "qatarcentral-az2"
+        "physicalZone": "qatarcentral-az1"
       },
       {
         "logicalZone": "2",
@@ -1153,7 +1153,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "qatarcentral-az1"
+        "physicalZone": "qatarcentral-az2"
       }
     ],
     "displayName": "Qatar Central",
@@ -1631,32 +1631,10 @@
     "type": "Region"
   },
   {
-    "displayName": "Brazil US",
-    "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/brazilus",
-    "metadata": {
-      "geography": "Brazil",
-      "geographyGroup": "South America",
-      "latitude": "0",
-      "longitude": "0",
-      "pairedRegion": [
-        {
-          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/brazilsoutheast",
-          "name": "brazilsoutheast"
-        }
-      ],
-      "physicalLocation": "",
-      "regionCategory": "Other",
-      "regionType": "Physical"
-    },
-    "name": "brazilus",
-    "regionalDisplayName": "(South America) Brazil US",
-    "type": "Region"
-  },
-  {
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "eastus2-az2"
+        "physicalZone": "eastus2-az1"
       },
       {
         "logicalZone": "2",
@@ -1664,7 +1642,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "eastus2-az1"
+        "physicalZone": "eastus2-az2"
       }
     ],
     "displayName": "East US 2",
@@ -1692,7 +1670,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "southcentralus-az2"
+        "physicalZone": "southcentralus-az1"
       },
       {
         "logicalZone": "2",
@@ -1700,7 +1678,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "southcentralus-az1"
+        "physicalZone": "southcentralus-az2"
       }
     ],
     "displayName": "South Central US",
@@ -1728,7 +1706,7 @@
     "availabilityZoneMappings": [
       {
         "logicalZone": "1",
-        "physicalZone": "westus3-az2"
+        "physicalZone": "westus3-az1"
       },
       {
         "logicalZone": "2",
@@ -1736,7 +1714,7 @@
       },
       {
         "logicalZone": "3",
-        "physicalZone": "westus3-az1"
+        "physicalZone": "westus3-az2"
       }
     ],
     "displayName": "West US 3",
@@ -1827,6 +1805,16 @@
     "type": "Region"
   },
   {
+    "availabilityZoneMappings": [
+      {
+        "logicalZone": "1",
+        "physicalZone": "centraluseuap-az2"
+      },
+      {
+        "logicalZone": "2",
+        "physicalZone": "centraluseuap-az1"
+      }
+    ],
     "displayName": "Central US EUAP",
     "id": "/subscriptions/00000000-0000-0000-0000-000000000000/locations/centraluseuap",
     "metadata": {
