@@ -313,6 +313,7 @@ func TestConstructProvisionValues(t *testing.T) {
 				OSSKU:                     customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 				Labels:                    map[string]string{"kubernetes.azure.com/mode": "system"}, // Test system mode
 				NodeBootstrappingProvider: &fake.NodeBootstrappingAPI{},
+				ArtifactStreamingEnabled:  lo.ToPtr(true), // Explicitly enable to test artifact streaming works when enabled
 				InstanceType: &cloudprovider.InstanceType{
 					Name: "Standard_D2s_v3",
 					Capacity: v1.ResourceList{
@@ -695,13 +696,13 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2004 FIPS",
 		},
 		{
-			name:                             "AMD64 Ubuntu2204 - Artifact streaming enabled",
+			name:                             "AMD64 Ubuntu2204 - Artifact streaming disabled by default",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
-			expectedArtifactStreamingEnabled: true,
-			description:                      "Artifact streaming should be enabled for AMD64 with Ubuntu2204",
+			expectedArtifactStreamingEnabled: false,
+			description:                      "Artifact streaming should be disabled by default for AMD64 with Ubuntu2204",
 		},
 		{
 			name:                             "AMD64 Ubuntu2404 - Artifact streaming disabled",
@@ -713,13 +714,13 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2404",
 		},
 		{
-			name:                             "AMD64 AzureLinux2 - Artifact streaming enabled",
+			name:                             "AMD64 AzureLinux2 - Artifact streaming disabled by default",
 			arch:                             karpv1.ArchitectureAmd64,
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-azurelinux-v2-gen2",
-			expectedArtifactStreamingEnabled: true,
-			description:                      "Artifact streaming should be enabled for AMD64 with AzureLinux2",
+			expectedArtifactStreamingEnabled: false,
+			description:                      "Artifact streaming should be disabled by default for AMD64 with AzureLinux2",
 		},
 		{
 			name:                             "AMD64 AzureLinux3 - Artifact streaming disabled",

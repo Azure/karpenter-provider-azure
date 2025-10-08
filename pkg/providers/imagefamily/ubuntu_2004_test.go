@@ -76,6 +76,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		nil, // artifactStreamingEnabled
 	)
 
 	// Verify the returned bootstrapper is of the correct type

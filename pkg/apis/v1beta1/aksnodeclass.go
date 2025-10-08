@@ -85,7 +85,9 @@ type AKSNodeClassSpec struct {
 	// Artifact streaming allows AKS to stream container images from ACR by only pulling the
 	// necessary layers for initial pod startup, reducing image pull times and improving pod start-up performance.
 	// Note: Only supported on Ubuntu2204 and AzureLinux image families. Not supported on ARM64 architecture.
+	// To use artifact streaming, container images must be converted to streaming-compatible artifacts in ACR.
 	// See: https://learn.microsoft.com/en-us/azure/aks/artifact-streaming
+	// +kubebuilder:default=false
 	// +optional
 	ArtifactStreamingEnabled *bool `json:"artifactStreamingEnabled,omitempty"`
 
