@@ -34,6 +34,11 @@ var (
 )
 
 func init() {
+	// Register all metrics here.
+	// Pattern for adding new subsystem metrics:
+	//   1. Create metric variables above (or in subsystem-specific files)
+	//   2. Register them using crmetrics.Registry.MustRegister() or the helper below
+	//   3. Use consistent naming: <subsystem>_<metric_name>_<unit>
 	crmetrics.Registry.MustRegister(
 		ImageSelectionErrorCount,
 	)
