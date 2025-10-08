@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
@@ -36,7 +37,7 @@ import (
 var _ = Describe("FIPS", func() {
 	Context("FIPS Validation", func() {
 		It("should reject FIPS without SIG access", func() {
-			if !env.InClusterController {
+			if !env.InClusterController || env.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
 				Skip("Testing FIPS usage cleanly fails without SIG access only makes sense in self-hosted mode - NAP has SIG access")
 			}
 
@@ -62,7 +63,7 @@ var _ = Describe("FIPS", func() {
 
 	Context("FIPS Provisioning", func() {
 		BeforeEach(func() {
-			if env.InClusterController {
+			if env.InClusterController && env.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
 				Skip("FIPS tests require SIG access - skipping in self-hosted mode")
 			}
 		})
