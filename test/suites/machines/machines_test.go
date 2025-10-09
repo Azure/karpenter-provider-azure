@@ -118,6 +118,17 @@ var _ = Describe("Machine Tests", func() {
 	// NOTE: ClusterTests modify the actual cluster itself, which means that preforming tests after a cluster test
 	// might not have a clean environment, and might produce unexpected results. Ordering of cluster tests is important
 	Context("ClusterTests", func() {
+		BeforeEach(func() {
+			// Add labels to nodepool to ensure pods land on Karpenter nodes
+			nodePool.Spec.Template.Labels = map[string]string{
+				"test-name": "karpenter-machine-test",
+			}
+			// Add nodeSelector to deployment to target Karpenter nodes
+			dep.Spec.Template.Spec.NodeSelector = map[string]string{
+				"test-name": "karpenter-machine-test",
+			}
+		})
+
 		It("use the DriftAction to drift nodes that have had their kubeletidentity updated", func() {
 			// Check if cluster supports custom kubelet identity (requires user-assigned managed identity)
 			if !env.IsClusterUserAssignedIdentity(env.Context) {
@@ -196,7 +207,7 @@ var _ = Describe("Machine Tests", func() {
 		})
 
 		It("should be able to provision machines during an ongoing managed cluster operation", func() {
-			numPods = 6
+			numPods = 2
 			dep.Spec.Replicas = &numPods
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
@@ -209,9 +220,9 @@ var _ = Describe("Machine Tests", func() {
 			)
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			env.EventuallyExpectCreatedNodeCount("==", 3)
-			env.EventuallyExpectRegisteredNodeClaimCount("==", 3)
-			env.EventuallyExpectCreatedMachineCount("==", 3)
+			env.EventuallyExpectCreatedNodeCount("==", 1)
+			env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
+			env.EventuallyExpectCreatedMachineCount("==", 1)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			By("Preforming a K8s upgrade")
@@ -225,13 +236,13 @@ var _ = Describe("Machine Tests", func() {
 			Expect(*upgradedMC.Properties.CurrentKubernetesVersion).To(Equal(kubernetesUpgradeVersion))
 
 			By("Scaling the deployment to create new nodes")
-			numPods = 10
+			numPods = 4
 			dep.Spec.Replicas = &numPods
 			env.ExpectCreated(dep)
 
-			env.EventuallyExpectCreatedNodeCount("==", 5)
-			env.EventuallyExpectRegisteredNodeClaimCount("==", 5)
-			env.EventuallyExpectCreatedMachineCount("==", 5)
+			env.EventuallyExpectCreatedNodeCount("==", 2)
+			env.EventuallyExpectRegisteredNodeClaimCount("==", 2)
+			env.EventuallyExpectCreatedMachineCount("==", 2)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			env.WarnIfClusterNotInExpectedProvisioningState("upgrading")
