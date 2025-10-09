@@ -149,6 +149,7 @@ jobs:
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
           provisionmode: ${{ inputs.provisionmode }}
+          identity_type: ${{ inputs.suite == 'Machines' && 'UserAssigned' || 'SystemAssigned' }}
       - name: build and publish karpenter
         shell: bash
         run: AZURE_ACR_NAME=${{ env.ACR_NAME }} make az-build

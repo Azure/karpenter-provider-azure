@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [ACR, BYOK, Chaos, Consolidation, Drift, GPU, InPlaceUpdate, Integration, KubernetesUpgrade, NodeClaim, Scheduling, Spot, Subnet, Utilization]
+        suite: [ACR, BYOK, Chaos, Consolidation, Drift, GPU, InPlaceUpdate, Integration, KubernetesUpgrade, NodeClaim, Scheduling, Spot, Subnet, Utilization, Machines]
     permissions:
       contents: read
       id-token: write
