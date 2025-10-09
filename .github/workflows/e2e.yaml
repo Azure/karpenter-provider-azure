@@ -150,6 +150,7 @@ jobs:
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
+          identity_type: ${{ inputs.suite == 'Machines' && 'UserAssigned' || 'SystemAssigned' }}
       - name: build and publish karpenter
         shell: bash
         run: AZURE_ACR_NAME=${{ env.ACR_NAME }} make az-build

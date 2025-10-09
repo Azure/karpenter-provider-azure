@@ -17,6 +17,9 @@ limitations under the License.
 package machines_test
 
 import (
+	"fmt"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -25,12 +28,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
 )
@@ -113,6 +118,83 @@ var _ = Describe("Machine Tests", func() {
 	// NOTE: ClusterTests modify the actual cluster itself, which means that preforming tests after a cluster test
 	// might not have a clean environment, and might produce unexpected results. Ordering of cluster tests is important
 	Context("ClusterTests", func() {
+		It("use the DriftAction to drift nodes that have had their kubeletidentity updated", func() {
+			// Check if cluster supports custom kubelet identity (requires user-assigned managed identity)
+			if !env.IsClusterUserAssignedIdentity(env.Context) {
+				Skip(fmt.Sprintf("Cluster uses %s identity type, but custom kubelet identity requires UserAssigned identity type",
+					env.CheckClusterIdentityType(env.Context)))
+			}
+
+			numPods = 2
+			dep.Spec.Replicas = &numPods
+			nodePool = coretest.ReplaceRequirements(nodePool,
+				karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+						Key:      v1beta1.LabelSKUCPU,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{"8"},
+					},
+				},
+			)
+			env.ExpectCreated(nodeClass, nodePool, dep)
+
+			nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
+			machines := env.EventuallyExpectCreatedMachineCount("==", 1)
+			pods := env.EventuallyExpectHealthyPodCount(selector, int(numPods))
+
+			for _, machine := range machines {
+				if machine.Properties.Status.DriftAction != nil {
+					Expect(*machine.Properties.Status.DriftAction).ToNot(Equal(containerservice.DriftActionRecreate))
+				}
+			}
+
+			By("getting the original kubelet identity")
+			// originalKubeletIdentityResourceID := env.GetKubeletIdentityResourceID(env.Context)
+
+			By("creating a new managed identity for testing")
+			newIdentityName := test.RandomName("karpenter-test-identity")
+			newIdentity := env.ExpectCreatedManagedIdentity(env.Context, newIdentityName)
+
+			By("updating the kubelet identity on the managed cluster")
+			env.ExpectUpdatedManagedClusterKubeletIdentityAsync(env.Context, newIdentity)
+
+			By("granting ACR access to the new kubelet identity")
+			env.ExpectGrantedACRAccess(env.Context, newIdentity)
+
+			By("verifying the kubelet identity was updated")
+			// updatedKubeletIdentityResourceID := env.GetKubeletIdentityResourceID(env.Context)
+
+			// TODO: check if we want to have this possibly logged
+			// Expect(updatedKubeletIdentityResourceID).To(Equal(lo.FromPtr(newIdentity.ID)), "Expected updatedKubeletIdentityResourceID to match new kubelet resource id")
+			// Expect(updatedKubeletIdentityResourceID).ToNot(Equal(originalKubeletIdentityResourceID), "Expected updatedKubeletIdentityResourceID to not match old kubelet resource id")
+
+			By("expect machines to have a DriftAction")
+			Eventually(func(g Gomega) {
+				machines := env.EventuallyExpectCreatedMachineCount("==", 1)
+				for _, machine := range machines {
+					g.Expect(machine.Properties.Status.DriftAction).ToNot(BeNil())
+					g.Expect(*machine.Properties.Status.DriftAction).To(Equal(containerservice.DriftActionRecreate))
+				}
+			}).WithTimeout(3 * time.Minute).Should(Succeed())
+
+			By("expecting nodes to drift")
+			env.EventuallyExpectDriftedWithTimeout(15*time.Minute, nodeClaims...)
+
+			for _, pod := range pods {
+				delete(pod.Annotations, karpv1.DoNotDisruptAnnotationKey)
+				env.ExpectUpdated(pod)
+			}
+
+			env.EventuallyExpectNotFound(lo.Map(pods, func(p *corev1.Pod, _ int) client.Object { return p })...)
+			env.EventuallyExpectNotFound(lo.Map(nodes, func(n *corev1.Node, _ int) client.Object { return n })...)
+			env.EventuallyExpectNotFound(lo.Map(nodeClaims, func(n *karpv1.NodeClaim, _ int) client.Object { return n })...)
+			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
+			env.EventuallyExpectCreatedNodeCount("==", 1)
+			env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
+			env.EventuallyExpectCreatedMachineCount("==", 1)
+		})
+
 		It("should be able to provision machines during an ongoing managed cluster operation", func() {
 			numPods = 6
 			dep.Spec.Replicas = &numPods
