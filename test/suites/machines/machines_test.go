@@ -136,6 +136,8 @@ var _ = Describe("Machine Tests", func() {
 					env.CheckClusterIdentityType(env.Context)))
 			}
 
+			numPods = 6
+			dep.Spec.Replicas = &numPods
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
@@ -147,9 +149,9 @@ var _ = Describe("Machine Tests", func() {
 			)
 			env.ExpectCreated(nodeClass, nodePool, dep)
 
-			nodes := env.EventuallyExpectCreatedNodeCount("==", 1)
-			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
-			machines := env.EventuallyExpectCreatedMachineCount("==", 1)
+			nodes := env.EventuallyExpectCreatedNodeCount("==", 3)
+			nodeClaims := env.EventuallyExpectRegisteredNodeClaimCount("==", 3)
+			machines := env.EventuallyExpectCreatedMachineCount("==", 3)
 			pods := env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
 			for _, machine := range machines {
@@ -180,7 +182,7 @@ var _ = Describe("Machine Tests", func() {
 
 			By("expect machines to have a DriftAction")
 			Eventually(func(g Gomega) {
-				machines := env.EventuallyExpectCreatedMachineCount("==", 1)
+				machines := env.EventuallyExpectCreatedMachineCount("==", 3)
 				for _, machine := range machines {
 					g.Expect(machine.Properties.Status.DriftAction).ToNot(BeNil())
 					g.Expect(*machine.Properties.Status.DriftAction).To(Equal(containerservice.DriftActionRecreate))
@@ -199,9 +201,9 @@ var _ = Describe("Machine Tests", func() {
 			env.EventuallyExpectNotFound(lo.Map(nodes, func(n *corev1.Node, _ int) client.Object { return n })...)
 			env.EventuallyExpectNotFound(lo.Map(nodeClaims, func(n *karpv1.NodeClaim, _ int) client.Object { return n })...)
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
-			env.EventuallyExpectCreatedNodeCount("==", 1)
-			env.EventuallyExpectRegisteredNodeClaimCount("==", 1)
-			env.EventuallyExpectCreatedMachineCount("==", 1)
+			env.EventuallyExpectCreatedNodeCount("==", 3)
+			env.EventuallyExpectRegisteredNodeClaimCount("==", 3)
+			env.EventuallyExpectCreatedMachineCount("==", 3)
 		})
 
 		It("should be able to provision machines during an ongoing managed cluster operation", func() {
