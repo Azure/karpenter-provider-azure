@@ -169,11 +169,11 @@ func configureOSSKUArtifactStreamingAndFIPs(nodeClass *v1beta1.AKSNodeClass, ins
 
 	var ossku armcontainerservice.OSSKU
 	var enabledArtifactStreaming bool
-	var enableFIPs *bool
 	var isAmd64 = true
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
 		isAmd64 = false
 	}
+	enableFIPs := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
 
 	switch *nodeClass.Spec.ImageFamily {
 	case v1beta1.Ubuntu2204ImageFamily:
@@ -196,10 +196,9 @@ func configureOSSKUArtifactStreamingAndFIPs(nodeClass *v1beta1.AKSNodeClass, ins
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
-		if lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS {
+		if enableFIPs {
 			ossku = armcontainerservice.OSSKUUbuntu
 			enabledArtifactStreaming = false
-			enableFIPs = lo.ToPtr(true)
 		} else if imagefamily.UseUbuntu2404(orchestratorVersion) {
 			ossku = armcontainerservice.OSSKUUbuntu2404
 			enabledArtifactStreaming = false
@@ -209,7 +208,7 @@ func configureOSSKUArtifactStreamingAndFIPs(nodeClass *v1beta1.AKSNodeClass, ins
 		}
 	}
 
-	return lo.ToPtr(ossku), lo.ToPtr(enabledArtifactStreaming), enableFIPs, nil
+	return lo.ToPtr(ossku), lo.ToPtr(enabledArtifactStreaming), lo.ToPtr(enableFIPs), nil
 }
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
