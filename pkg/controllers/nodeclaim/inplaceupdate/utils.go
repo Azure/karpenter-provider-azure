@@ -37,7 +37,7 @@ type vmInPlaceUpdateFields struct {
 }
 
 // CalculateHash computes a hash for any JSON-marshalable struct
-func CalculateHash(data interface{}) (string, error) {
+func CalculateHash(data any) (string, error) {
 	encoded, err := json.Marshal(data)
 	if err != nil {
 		return "", err
