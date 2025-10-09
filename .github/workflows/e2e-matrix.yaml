@@ -8,6 +8,10 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "eastus"
+      provisionmode:
+        type: string
+        description: "the karpenter provisioning mode to run the e2e test in"
+        default: "aksscriptless"
   #     k8s_version:
   #       type: string
   #       default: "1.27"
@@ -17,6 +21,8 @@ on:
       E2E_TENANT_ID:
         required: true
       E2E_SUBSCRIPTION_ID:
+        required: true
+      E2E_LOGIN_SUBSCRIPTION_ID:
         required: true
 
 permissions:
@@ -47,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [Scheduling, Utilization, GPU, Drift, InPlaceUpdate, Integration, NodeClaim, Consolidation, Chaos, ACR, KubernetesUpgrade, Spot, Subnet]
+        suite: [Scheduling, Utilization, GPU, Drift, InPlaceUpdate, Integration, NodeClaim, Consolidation, Chaos, ACR, KubernetesUpgrade, Spot, Subnet, Machines]
     permissions:
       contents: read
       id-token: write
@@ -58,8 +64,10 @@ jobs:
       suite: ${{ matrix.suite }}
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
       location: ${{ inputs.location }}
+      provisionmode: ${{ inputs.provisionmode || 'aksscriptless' }}
   #     k8s_version: ${{ inputs.k8s_version }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
       E2E_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+      E2E_LOGIN_SUBSCRIPTION_ID: ${{ secrets.E2E_LOGIN_SUBSCRIPTION_ID }}

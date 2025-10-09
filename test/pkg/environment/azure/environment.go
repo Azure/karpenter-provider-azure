@@ -18,19 +18,26 @@ package azure
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/common"
@@ -55,7 +62,9 @@ type Environment struct {
 	VNETResourceGroup    string
 	ACRName              string
 	ClusterName          string
+	MachineAgentPoolName string
 	ClusterResourceGroup string
+	ProvisionMode        string
 
 	tracker *azure.Tracker
 
@@ -67,15 +76,30 @@ type Environment struct {
 	subnetClient         *armnetwork.SubnetsClient
 	interfacesClient     *armnetwork.InterfacesClient
 	managedClusterClient *containerservice.ManagedClustersClient
+	agentpoolsClient     *containerservice.AgentPoolsClient
+	machinesClient       *containerservice.MachinesClient
+
+	// Public Clients
+	KeyVaultClient          *armkeyvault.VaultsClient
+	DiskEncryptionSetClient *armcompute.DiskEncryptionSetsClient
+
+	defaultCredential azcore.TokenCredential
+
+	RBACManager *RBACManager
 }
 
-func readEnv(name string) string {
+func readEnv(name string, required bool) string {
 	value, exists := os.LookupEnv(name)
 	if !exists {
-		panic(fmt.Sprintf("Environment variable %s is not set", name))
+		if required {
+			panic(fmt.Sprintf("Environment variable %s is not set", name))
+		}
+		return ""
 	}
 	if value == "" {
-		panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+		if required {
+			panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+		}
 	}
 	return value
 }
@@ -83,10 +107,11 @@ func readEnv(name string) string {
 func NewEnvironment(t *testing.T) *Environment {
 	azureEnv := &Environment{
 		Environment:          common.NewEnvironment(t),
-		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID"),
-		ClusterName:          readEnv("AZURE_CLUSTER_NAME"),
-		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP"),
-		ACRName:              readEnv("AZURE_ACR_NAME"),
+		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID", true),
+		ClusterName:          readEnv("AZURE_CLUSTER_NAME", true),
+		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP", true),
+		ACRName:              readEnv("AZURE_ACR_NAME", true),
+		ProvisionMode:        readEnv("PROVISION_MODE", false),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		tracker:              azure.NewTracker(),
 	}
@@ -96,12 +121,51 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
 	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	azureEnv.defaultCredential = cred
+	byokRetryOptions := azureEnv.ClientOptionsForRBACPropagation()
 	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.agentpoolsClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
+	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
+	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
+	// Default to reserved managed machine agentpool name for NAP
+	azureEnv.MachineAgentPoolName = "aksmanagedap"
+	if azureEnv.Environment.InClusterController {
+		azureEnv.MachineAgentPoolName = "testmpool"
+	}
+	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
+	// > Note: this only has to occur once per test, since its just a container for the machines
+	// > meaning that there is no risk of the tests modifying the Machine Pool itself.
+	if azureEnv.InClusterController && azureEnv.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+		azureEnv.ExpectRunInClusterControllerWithMachineMode()
+	}
 	return azureEnv
+}
+
+func (env *Environment) GetDefaultCredential() azcore.TokenCredential {
+	return env.defaultCredential
+}
+
+// Retry options for BYOK-related clients that may encounter RBAC propagation delays
+// RBAC assignments can take time to propagate, resulting in 403 Forbidden errors
+// With 15 retries at 5 second intervals = 75 seconds total retry time
+func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
+	return &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Retry: policy.RetryOptions{
+				MaxRetries: 15,
+				RetryDelay: time.Second * 5,
+				StatusCodes: []int{
+					http.StatusForbidden, // RBAC assignments haven't propagated yet
+				},
+			},
+		},
+	}
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {
