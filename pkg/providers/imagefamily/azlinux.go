@@ -124,6 +124,7 @@ func (u AzureLinux) ScriptlessCustomData(
 	labels map[string]string,
 	caBundle *string,
 	_ *cloudprovider.InstanceType,
+	artifactStreamingEnabled *bool,
 ) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
@@ -151,6 +152,7 @@ func (u AzureLinux) ScriptlessCustomData(
 		NetworkPlugin:                  u.Options.NetworkPlugin,
 		NetworkPolicy:                  u.Options.NetworkPolicy,
 		KubernetesVersion:              u.Options.KubernetesVersion,
+		ArtifactStreamingEnabled:       artifactStreamingEnabled,
 	}
 }
 
@@ -165,6 +167,7 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 	storageProfile string,
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
+	artifactStreamingEnabled *bool,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -185,5 +188,6 @@ func (u AzureLinux) CustomScriptsNodeBootstrapping(
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 		FIPSMode:                       fipsMode,
+		ArtifactStreamingEnabled:       artifactStreamingEnabled,
 	}
 }

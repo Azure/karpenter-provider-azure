@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -361,6 +362,49 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+	})
+
+	Context("ArtifactStreamingEnabled", func() {
+		It("should default to false when not specified", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			// Fetch the created nodeClass to check the defaulted value
+			createdNodeClass := &v1beta1.AKSNodeClass{}
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), createdNodeClass)).To(Succeed())
+			Expect(createdNodeClass.Spec.ArtifactStreamingEnabled).ToNot(BeNil())
+			Expect(lo.FromPtr(createdNodeClass.Spec.ArtifactStreamingEnabled)).To(BeFalse())
+		})
+
+		It("should allow explicitly setting to false", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreamingEnabled: lo.ToPtr(false),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			createdNodeClass := &v1beta1.AKSNodeClass{}
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), createdNodeClass)).To(Succeed())
+			Expect(createdNodeClass.Spec.ArtifactStreamingEnabled).ToNot(BeNil())
+			Expect(lo.FromPtr(createdNodeClass.Spec.ArtifactStreamingEnabled)).To(BeFalse())
+		})
+
+		It("should allow explicitly setting to true", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ArtifactStreamingEnabled: lo.ToPtr(true),
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			createdNodeClass := &v1beta1.AKSNodeClass{}
+			Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), createdNodeClass)).To(Succeed())
+			Expect(createdNodeClass.Spec.ArtifactStreamingEnabled).ToNot(BeNil())
+			Expect(lo.FromPtr(createdNodeClass.Spec.ArtifactStreamingEnabled)).To(BeTrue())
 		})
 	})
 })

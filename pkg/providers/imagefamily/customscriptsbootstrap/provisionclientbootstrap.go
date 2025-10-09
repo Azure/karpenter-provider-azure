@@ -65,6 +65,7 @@ type ProvisionClientBootstrap struct {
 	OSSKU                          string
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
+	ArtifactStreamingEnabled       *bool
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -107,8 +108,13 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	labels.AddAgentBakerGeneratedLabels(p.ResourceGroup, options.FromContext(ctx).KubeletIdentityClientID, nodeLabels)
 
 	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
-	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
+	// Only enable if explicitly requested in the nodeclass AND the configuration is supported
+	enableArtifactStreaming := false
+	if lo.FromPtr(p.ArtifactStreamingEnabled) {
+		// User wants it enabled, verify the arch and OS SKU are supported
+		enableArtifactStreaming = p.Arch == karpv1.ArchitectureAmd64 &&
+			(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
+	}
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS

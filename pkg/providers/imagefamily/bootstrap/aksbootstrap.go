@@ -47,6 +47,7 @@ type AKS struct {
 	NetworkPlugin                  string
 	NetworkPolicy                  string
 	KubernetesVersion              string
+	ArtifactStreamingEnabled       *bool
 }
 
 var _ Bootstrapper = (*AKS)(nil) // assert AKS implements Bootstrapper
@@ -220,6 +221,7 @@ type NodeBootstrapVariables struct {
 	KubeCACrt                               string   // x   unique per cluster
 	ContainerdConfigContent                 string   // k   determined by GPU VM size, WASM support, Kata support
 	IsKata                                  bool     // n   user-specified
+	EnableArtifactStreaming                 bool     // t   user-specified via AKSNodeClass
 }
 
 func (a AKS) aksBootstrapScript() (string, error) {
@@ -354,6 +356,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	nbv.KubeletFlags = strings.Join(lo.MapToSlice(kubeletFlags, func(k, v string) string {
 		return fmt.Sprintf("%s=%s", k, v)
 	}), " ")
+
+	// Set artifact streaming enabled flag
+	nbv.EnableArtifactStreaming = lo.FromPtr(a.ArtifactStreamingEnabled)
 }
 
 func containerdConfigFromNodeBootstrapVars(nbv *NodeBootstrapVariables) (string, error) {
