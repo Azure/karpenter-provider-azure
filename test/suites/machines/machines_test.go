@@ -136,8 +136,6 @@ var _ = Describe("Machine Tests", func() {
 					env.CheckClusterIdentityType(env.Context)))
 			}
 
-			numPods = 2
-			dep.Spec.Replicas = &numPods
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
