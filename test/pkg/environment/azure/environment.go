@@ -136,12 +136,12 @@ func NewEnvironment(t *testing.T) *Environment {
 	// Default to reserved managed machine agentpool name for NAP
 	azureEnv.MachineAgentPoolName = "aksmanagedap"
 	if azureEnv.Environment.InClusterController {
-		azureEnv.MachineAgentPoolName = "karp-e2e-byo-machine-ap"
+		azureEnv.MachineAgentPoolName = "testmpool"
 	}
 	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
 	// > Note: this only has to occur once per test, since its just a container for the machines
 	// > meaning that there is no risk of the tests modifying the Machine Pool itself.
-	if azureEnv.InClusterController && azureEnv.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+	if azureEnv.InClusterController && azureEnv.IsMachineMode() {
 		azureEnv.ExpectRunInClusterControllerWithMachineMode()
 	}
 	return azureEnv
@@ -166,6 +166,10 @@ func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 			},
 		},
 	}
+}
+
+func (env *Environment) IsMachineMode() bool {
+	return env.ProvisionMode == consts.ProvisionModeAKSMachineAPI
 }
 
 func (env *Environment) DefaultAKSNodeClass() *v1beta1.AKSNodeClass {
