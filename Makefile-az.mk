@@ -313,6 +313,13 @@ az-perm: ## Create role assignments to let Karpenter manage VMs and Network
 az-perm-aksmachine: ## Create role assignments for AKS machine API operations
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP) --role "Azure Kubernetes Service Contributor Role"
+# 	az role assignment create --assignee-object-id $(KARPENTER_USER_ASSIGNED_CLIENT_ID) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
+# 	## TODO Do we need to do similar handling for user assigned on other perms commands
+# 	$(eval CLUSTER_IDENTITY_TYPE=$(shell az aks show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_CLUSTER_NAME}" --query 'identity.type' -otsv))
+# 	$(eval CLUSTER_IDENTITY=$(shell if [ "$(CLUSTER_IDENTITY_TYPE)" = "UserAssigned" ]; then echo "$(KARPENTER_USER_ASSIGNED_CLIENT_ID)"; else az aks show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_CLUSTER_NAME}" --query 'identity.principalId' -otsv; fi))
+# 	az role assignment create --assignee-object-id $(CLUSTER_IDENTITY) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Virtual Machine Contributor"
+# 	az role assignment create --assignee-object-id $(CLUSTER_IDENTITY) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Network Contributor"
+# 	az role assignment create --assignee-object-id $(CLUSTER_IDENTITY) --assignee-principal-type "ServicePrincipal" --scope /subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP_MC) --role "Managed Identity Operator"
 
 az-perm-sig: ## Create role assignments when testing with SIG images
 	$(eval KARPENTER_USER_ASSIGNED_CLIENT_ID=$(shell az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'principalId' -otsv))
