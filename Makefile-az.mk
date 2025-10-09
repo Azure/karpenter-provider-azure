@@ -1,6 +1,7 @@
 AZURE_LOCATION ?= westus2
 AZURE_VM_SIZE ?= ""
 COMMON_NAME ?= karpenter
+ENABLE_AZURE_SDK_LOGGING ?= false
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
@@ -141,6 +142,10 @@ az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use
 az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart
 	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME)
 
+az-update-logging-flag: ## Update ENABLE_AZURE_SDK_LOGGING flag in karpenter-values.yaml based on environment variable
+	@echo "Setting ENABLE_AZURE_SDK_LOGGING to $(ENABLE_AZURE_SDK_LOGGING)"
+	yq -i '.controller.env[] |= select(.name == "ENABLE_AZURE_SDK_LOGGING").value = "$(ENABLE_AZURE_SDK_LOGGING)"' karpenter-values.yaml
+
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
 	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \
 		--instance-count 0 --orchestration-mode Flexible --platform-fault-domain-count 1 --zones 1 2 3
@@ -191,7 +196,7 @@ az-build: ## Build the Karpenter controller and webhook images using skaffold bu
 az-creds: ## Get cluster credentials
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP)
 
-az-run: ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
+az-run: az-update-logging-flag ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
 	az acr login -n $(AZURE_ACR_NAME)
 	skaffold run
 
@@ -405,7 +410,7 @@ az-pprof: ## Profile
 az-mkaks-user: az-mkrg ## Create compatible AKS cluster, the way we tell users to
 	hack/deploy/create-cluster.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) "${KARPENTER_NAMESPACE}"
 
-az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot release
+az-helm-install-snapshot: az-configure-values az-update-logging-flag ## Install Karpenter snapshot release
 	$(eval SNAPSHOT_VERSION ?= $(shell git rev-parse HEAD)) # guess which, specify explicitly with SNAPSHOT_VERSION=...
 	helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
 		--version 0-$(SNAPSHOT_VERSION) \
