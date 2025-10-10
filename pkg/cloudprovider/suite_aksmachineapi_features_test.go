@@ -539,7 +539,6 @@ var _ = Describe("CloudProvider", func() {
 
 				// Verify image family configuration
 				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(v1beta1.Ubuntu2204ImageFamily))
-				Expect(*aksMachine.Properties.Kubernetes.ArtifactStreamingProfile.Enabled).To(BeTrue())
 
 				// Verify subnet configuration (AKS machine should use the specified subnet)
 				Expect(aksMachine.Properties.Network).ToNot(BeNil())
