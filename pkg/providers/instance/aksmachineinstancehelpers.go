@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
-	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -69,8 +68,8 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, fmt.Errorf("failed to get Kubernetes version from NodeClass %q: %w", nodeClass.Name, err)
 	}
 
-	// OSSKU, ArtifactStreamingProfile
-	osskuPtr, enabledArtifactStreamingPtr, enableFIPsPtr, err := configureOSSKUArtifactStreamingAndFIPs(nodeClass, instanceType, orchestratorVersion)
+	// OSSKU, EnableFIPS
+	osskuPtr, enableFIPsPtr, err := configureOSSKUAndFIPs(nodeClass, orchestratorVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -142,9 +141,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				NodeTaints:               nodeTaintPtrs,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
 				// WorkloadRuntime:          nil,
-				ArtifactStreamingProfile: &armcontainerservice.AgentPoolArtifactStreamingProfile{
-					Enabled: enabledArtifactStreamingPtr,
-				},
+				// ArtifactStreamingProfile: nil,
 			},
 
 			Mode: modePtr,
@@ -160,55 +157,36 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}, nil
 }
 
-func configureOSSKUArtifactStreamingAndFIPs(nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, *bool, error) {
+func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, error) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go
 
 	if nodeClass.Spec.ImageFamily == nil {
-		return nil, nil, nil, fmt.Errorf("ImageFamily is not set in NodeClass %q", nodeClass.Name)
+		return nil, nil, fmt.Errorf("ImageFamily is not set in NodeClass %q", nodeClass.Name)
 	}
 
 	var ossku armcontainerservice.OSSKU
-	var enabledArtifactStreaming bool
-	var isAmd64 = true
-	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
-		isAmd64 = false
-	}
 	enableFIPs := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
 
 	switch *nodeClass.Spec.ImageFamily {
 	case v1beta1.Ubuntu2204ImageFamily:
 		ossku = armcontainerservice.OSSKUUbuntu2204
-		enabledArtifactStreaming = isAmd64
 	case v1beta1.Ubuntu2404ImageFamily:
 		ossku = armcontainerservice.OSSKUUbuntu2404
-		enabledArtifactStreaming = false
 	case v1beta1.AzureLinuxImageFamily:
 		ossku = armcontainerservice.OSSKUAzureLinux
-		if imagefamily.UseAzureLinux3(orchestratorVersion) {
-			enabledArtifactStreaming = false
-		} else if orchestratorVersion == "" {
-			// Not enable artifact streaming to be safe, as we cannot really control AzureLinux version, and we don't know what the API will default us to
-			// Although, in practice, this is not really possible as version should always be populated.
-			enabledArtifactStreaming = false
-		} else {
-			enabledArtifactStreaming = isAmd64
-		}
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
 		if enableFIPs {
 			ossku = armcontainerservice.OSSKUUbuntu
-			enabledArtifactStreaming = false
 		} else if imagefamily.UseUbuntu2404(orchestratorVersion) {
 			ossku = armcontainerservice.OSSKUUbuntu2404
-			enabledArtifactStreaming = false
 		} else {
 			ossku = armcontainerservice.OSSKUUbuntu2204
-			enabledArtifactStreaming = isAmd64
 		}
 	}
 
-	return lo.ToPtr(ossku), lo.ToPtr(enabledArtifactStreaming), lo.ToPtr(enableFIPs), nil
+	return lo.ToPtr(ossku), lo.ToPtr(enableFIPs), nil
 }
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
