@@ -71,9 +71,9 @@ KUBELET_IDENTITY_CLIENT_ID=$(jq -r ".identityProfile.kubeletidentity.clientId //
 
 # For Machine API mode
 USE_SIG="false"
+AZURE_SIG_SUBSCRIPTION_ID=109a5e88-712a-48ae-9078-9ca8b3c81345
 if [[ "${PROVISION_MODE:-}" == "aksmachineapi" ]]; then
     USE_SIG="true"
-    AZURE_SIG_SUBSCRIPTION_ID=109a5e88-712a-48ae-9078-9ca8b3c81345
 fi
 
 export CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME \
