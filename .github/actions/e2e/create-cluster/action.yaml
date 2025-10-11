@@ -32,6 +32,10 @@ inputs:
   provisionmode:
     description: "The karpenter provisioning mode to run the e2e test in"
     default: "aksscriptless"
+  identity_type:
+    description: "The type of managed identity for the cluster (SystemAssigned or UserAssigned)"
+    required: false
+    default: "SystemAssigned"
 runs:
   using: "composite"
   steps:
@@ -60,7 +64,14 @@ runs:
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
-      run: make az-mkaks-cilium
+      run: |
+        if [ "${{ inputs.identity_type }}" = "UserAssigned" ]; then
+          echo "Creating cluster with user-assigned managed identity"
+          make az-mkaks-cilium-userassigned
+        else
+          echo "Creating cluster with system-assigned managed identity"
+          make az-mkaks-cilium
+        fi
     - name: az login 2
       uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
       with:

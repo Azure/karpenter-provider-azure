@@ -17,8 +17,11 @@ limitations under the License.
 package azure
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/samber/lo"
 
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 )
@@ -40,4 +43,22 @@ func (env *Environment) ExpectListMachines() []*containerservice.Machine {
 func (env *Environment) ExpectNoMachines() {
 	GinkgoHelper()
 	Expect(len(env.ExpectListMachines())).To(Equal(0))
+}
+
+func (env *Environment) EventuallyExpectCreatedMachineCount(comparator string, count int) []*containerservice.Machine {
+	GinkgoHelper()
+	By(fmt.Sprintf("waiting for created machines to be %s to %d", comparator, count))
+	var createdMachines []*containerservice.Machine
+	Eventually(func(g Gomega) {
+		createdMachines = env.ExpectListMachines()
+		g.Expect(len(createdMachines)).To(BeNumerically(comparator, count),
+			fmt.Sprintf("expected %d created nodes, had %d (%v)", count, len(createdMachines), MachineNames(createdMachines)))
+	}).Should(Succeed())
+	return createdMachines
+}
+
+func MachineNames(machines []*containerservice.Machine) []string {
+	return lo.Map(machines, func(m *containerservice.Machine, index int) string {
+		return *m.Name
+	})
 }
