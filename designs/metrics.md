@@ -52,7 +52,7 @@ ComponentMetric.WithLabelValues(value).Inc()
 To distinguish Azure provider metrics from core Karpenter metrics, we use a **different namespace**:
 
 - **Core Karpenter metrics**: `karpenter_*` (from upstream Karpenter)
-- **Azure provider metrics**: `karpenter_aks_*` (Azure-specific implementations)
+- **Azure provider metrics**: `karpenter_azure_*` (Azure-specific implementations)
 
 This is configured in `pkg/metrics/constants.go`:
 
