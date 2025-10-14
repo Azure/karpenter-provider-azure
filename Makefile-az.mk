@@ -139,11 +139,8 @@ az-mkaks-savm: az-mkrg ## Create experimental cluster with standalone VMs (+ ACR
 az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use with care!)
 	az group delete --name $(AZURE_RESOURCE_GROUP)
 
-az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart
+az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart and set middleware logging flag
 	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME)
-
-az-update-logging-flag: ## Update ENABLE_AZURE_SDK_LOGGING flag in karpenter-values.yaml based on environment variable
-	@echo "Setting ENABLE_AZURE_SDK_LOGGING to $(ENABLE_AZURE_SDK_LOGGING)"
 	yq -i '.controller.env[] |= select(.name == "ENABLE_AZURE_SDK_LOGGING").value = "$(ENABLE_AZURE_SDK_LOGGING)"' karpenter-values.yaml
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
@@ -196,7 +193,7 @@ az-build: ## Build the Karpenter controller and webhook images using skaffold bu
 az-creds: ## Get cluster credentials
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP)
 
-az-run: az-update-logging-flag ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
+az-run: ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
 	az acr login -n $(AZURE_ACR_NAME)
 	skaffold run
 
