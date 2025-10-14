@@ -1,4 +1,4 @@
-defaultBaseImage: mcr.microsoft.com/azurelinux/distroless/minimal:3.0@sha256:55f0a7c5b19fa727de1d4845c83b34f82fad159df4692768510a8eb6f0fd9e06
+defaultBaseImage: mcr.microsoft.com/azurelinux/distroless/base:3.0@sha256:1e77d97e1e39f22ed9c52f49b3508b4c1044cec23743df9098ac44e025f654f2
 defaultPlatforms:
   - linux/arm64
   - linux/amd64
