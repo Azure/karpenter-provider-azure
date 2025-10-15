@@ -1,7 +1,7 @@
 AZURE_LOCATION ?= westus2
 AZURE_VM_SIZE ?= ""
 COMMON_NAME ?= karpenter
-ENABLE_AZURE_SDK_LOGGING ?= false
+ENABLE_AZURE_SDK_LOGGING ?= true
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
@@ -140,8 +140,7 @@ az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use
 	az group delete --name $(AZURE_RESOURCE_GROUP)
 
 az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart and set middleware logging flag
-	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME)
-	yq -i '.controller.env[] |= select(.name == "ENABLE_AZURE_SDK_LOGGING").value = "$(ENABLE_AZURE_SDK_LOGGING)"' karpenter-values.yaml
+	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING)
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
 	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \

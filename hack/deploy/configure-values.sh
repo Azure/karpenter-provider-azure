@@ -3,8 +3,8 @@ set -euo pipefail
 # This script interrogates the AKS cluster and Azure resources to generate
 # the karpenter-values.yaml file using the karpenter-values-template.yaml file as a template.
 
-if [ "$#" -ne 4 ]; then
-    echo "Usage: $0 <cluster-name> <resource-group> <karpenter-service-account-name> <karpenter-user-assigned-identity-name>"
+if [ "$#" -ne 5 ]; then
+    echo "Usage: $0 <cluster-name> <resource-group> <karpenter-service-account-name> <karpenter-user-assigned-identity-name> <enable-azure-sdk-logging>"
     exit 1
 fi
 
@@ -14,6 +14,7 @@ CLUSTER_NAME=$1
 AZURE_RESOURCE_GROUP=$2
 KARPENTER_SERVICE_ACCOUNT_NAME=$3
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=$4
+ENABLE_AZURE_SDK_LOGGING=$5
 
 # Optional values through env vars:
 LOG_LEVEL=${LOG_LEVEL:-"info"}
