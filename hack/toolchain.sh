@@ -16,7 +16,6 @@ tools() {
     go install github.com/google/ko@v0.17.1
     go install github.com/mikefarah/yq/v4@v4.45.1
     go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
-    go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
     go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
     go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
@@ -38,6 +37,10 @@ kubebuilder() {
     sudo mkdir -p "${KUBEBUILDER_ASSETS}"
     sudo chown "${USER}" "${KUBEBUILDER_ASSETS}"
     arch=$(go env GOARCH)
+    os=$(go env GOOS)
+    sudo curl -sL "https://github.com/kubernetes-sigs/controller-runtime/releases/download/v0.22.3/setup-envtest-${os}-${arch}" --output /usr/local/bin/setup-envtest
+    sudo chmod +x /usr/local/bin/setup-envtest
+
     ln -sf "$(setup-envtest use -p path "${K8S_VERSION}" --arch="${arch}" --bin-dir="${KUBEBUILDER_ASSETS}")"/* "${KUBEBUILDER_ASSETS}"
     find "$KUBEBUILDER_ASSETS"
 
