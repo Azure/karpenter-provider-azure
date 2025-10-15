@@ -18,8 +18,10 @@ package instance
 
 import (
 	"context"
+	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
@@ -69,7 +71,9 @@ func createVirtualMachineExtension(ctx context.Context, client VirtualMachineExt
 	if err != nil {
 		return nil, err
 	}
-	res, err := poller.PollUntilDone(ctx, nil)
+	res, err := poller.PollUntilDone(ctx, &runtime.PollUntilDoneOptions{
+		Frequency: 3 * time.Second,
+	})
 	if err != nil {
 		return nil, err
 	}
