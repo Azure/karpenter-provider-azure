@@ -333,8 +333,8 @@ func TestConstructProvisionValues(t *testing.T) {
 				// Check system mode
 				assert.Equal(t, models.AgentPoolModeSystem, *profile.Mode)
 
-				// Check artifact streaming is enabled
-				assert.True(t, *profile.ArtifactStreamingProfile.Enabled)
+				// Check artifact streaming is disabled
+				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
 
 				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
 				assert.False(t, *profile.EnableFIPS)
@@ -700,8 +700,8 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-ubuntu-containerd-22.04-gen2",
-			expectedArtifactStreamingEnabled: true,
-			description:                      "Artifact streaming should be enabled for AMD64 with Ubuntu2204",
+			expectedArtifactStreamingEnabled: false,
+			description:                      "Artifact streaming should be disabled for AMD64 with Ubuntu2204",
 		},
 		{
 			name:                             "AMD64 Ubuntu2404 - Artifact streaming disabled",
@@ -718,8 +718,8 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 			ossku:                            customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
 			kubernetesVersion:                "1.31.0",
 			imageDistro:                      "aks-azurelinux-v2-gen2",
-			expectedArtifactStreamingEnabled: true,
-			description:                      "Artifact streaming should be enabled for AMD64 with AzureLinux2",
+			expectedArtifactStreamingEnabled: false,
+			description:                      "Artifact streaming should be disabled for AMD64 with AzureLinux2",
 		},
 		{
 			name:                             "AMD64 AzureLinux3 - Artifact streaming disabled",
