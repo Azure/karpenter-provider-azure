@@ -1,9 +1,14 @@
 {
   "env": {
+    "ANTHROPIC_AUTH_TOKEN": "sk-",
     "ANTHROPIC_BASE_URL": "http://localhost:4141",
-    "ANTHROPIC_AUTH_TOKEN": "dummy",
-    "ANTHROPIC_MODEL": "claude-sonnet-4",
-    "ANTHROPIC_SMALL_FAST_MODEL": "claude-3.7-sonnet",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-41",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4.5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4.5",
+    "ANTHROPIC_MODEL": "claude-sonnet-4.5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "claude-haiku-4.5",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "claude-sonnet-4.5",
+    "CLAUDE_CODE_MAX_RETRIES": "3",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   }
