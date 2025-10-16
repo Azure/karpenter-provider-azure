@@ -1,7 +1,7 @@
 AZURE_LOCATION ?= westus2
 AZURE_VM_SIZE ?= ""
 COMMON_NAME ?= karpenter
-ENABLE_AZURE_SDK_LOGGING ?= true
+ENABLE_AZURE_SDK_LOGGING ?= false # false to make it easier to debug
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
@@ -406,7 +406,7 @@ az-pprof: ## Profile
 az-mkaks-user: az-mkrg ## Create compatible AKS cluster, the way we tell users to
 	hack/deploy/create-cluster.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) "${KARPENTER_NAMESPACE}"
 
-az-helm-install-snapshot: az-configure-values az-update-logging-flag ## Install Karpenter snapshot release
+az-helm-install-snapshot: az-configure-values ## Install Karpenter snapshot release
 	$(eval SNAPSHOT_VERSION ?= $(shell git rev-parse HEAD)) # guess which, specify explicitly with SNAPSHOT_VERSION=...
 	helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpenter \
 		--version 0-$(SNAPSHOT_VERSION) \
