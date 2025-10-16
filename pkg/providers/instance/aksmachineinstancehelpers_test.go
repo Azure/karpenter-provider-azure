@@ -67,7 +67,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 			})
 
-			It("should configure Ubuntu2204 with AMD64 architecture", func() {
+			It("should configure Ubuntu2204", func() {
 				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
@@ -77,30 +77,8 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(*enableFIPs).To(BeFalse())
 			})
 
-			It("should configure Ubuntu2204 with ARM64 architecture", func() {
-				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ossku).ToNot(BeNil())
-				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
-				Expect(enableFIPs).ToNot(BeNil())
-				Expect(*enableFIPs).To(BeFalse())
-			})
-
-			It("should handle multiple architecture requirements and pick ARM64", func() {
+			It("should configure Ubuntu2204 with different Kubernetes version", func() {
 				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.29.0")
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ossku).ToNot(BeNil())
-				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
-				Expect(enableFIPs).ToNot(BeNil())
-				Expect(*enableFIPs).To(BeFalse())
-			})
-
-			It("should default to AMD64 when no architecture requirement is specified", func() {
-				instanceType.Requirements = scheduling.NewRequirements()
-
-				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
@@ -115,7 +93,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
 			})
 
-			It("should configure AzureLinux with AMD64 for older Kubernetes version", func() {
+			It("should configure AzureLinux for older Kubernetes version", func() {
 				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
@@ -125,17 +103,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(*enableFIPs).To(BeFalse())
 			})
 
-			It("should configure AzureLinux with ARM64 for older Kubernetes version", func() {
-				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ossku).ToNot(BeNil())
-				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
-				Expect(enableFIPs).ToNot(BeNil())
-				Expect(*enableFIPs).To(BeFalse())
-			})
-
-			It("should configure AzureLinux3 with AMD64 for newer Kubernetes version", func() {
+			It("should configure AzureLinux for newer Kubernetes version", func() {
 				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.32.0")
 
 				Expect(err).ToNot(HaveOccurred())
@@ -144,15 +112,22 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(enableFIPs).ToNot(BeNil())
 				Expect(*enableFIPs).To(BeFalse())
 			})
+		})
 
-			It("should configure AzureLinux3 with ARM64 for newer Kubernetes version", func() {
-				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.30.0")
+		Context("AzureLinux Image Family with FIPS Mode", func() {
+			BeforeEach(func() {
+				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.AzureLinuxImageFamily)
+				nodeClass.Spec.FIPSMode = lo.ToPtr(v1beta1.FIPSModeFIPS)
+			})
+
+			It("should configure AzureLinux with FIPS mode enabled", func() {
+				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(ossku).ToNot(BeNil())
 				Expect(*ossku).To(Equal(armcontainerservice.OSSKUAzureLinux))
 				Expect(enableFIPs).ToNot(BeNil())
-				Expect(*enableFIPs).To(BeFalse())
+				Expect(*enableFIPs).To(BeTrue())
 			})
 		})
 
@@ -171,16 +146,6 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(enableFIPs).ToNot(BeNil())
 				Expect(*enableFIPs).To(BeTrue())
 			})
-
-			It("should configure Ubuntu with FIPS mode enabled for ARM64", func() {
-				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ossku).ToNot(BeNil())
-				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu))
-				Expect(enableFIPs).ToNot(BeNil())
-				Expect(*enableFIPs).To(BeTrue())
-			})
 		})
 
 		Context("Generic Ubuntu Image Family without FIPS Mode", func() {
@@ -188,7 +153,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
 			})
 
-			It("should configure Ubuntu without FIPS mode for AMD64", func() {
+			It("should configure Ubuntu without FIPS mode", func() {
 				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
 
 				Expect(err).ToNot(HaveOccurred())
@@ -198,17 +163,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(*enableFIPs).To(BeFalse())
 			})
 
-			It("should configure Ubuntu without FIPS mode for ARM64", func() {
-				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.28.0")
-
-				Expect(err).ToNot(HaveOccurred())
-				Expect(ossku).ToNot(BeNil())
-				Expect(*ossku).To(Equal(armcontainerservice.OSSKUUbuntu2204))
-				Expect(enableFIPs).ToNot(BeNil())
-				Expect(*enableFIPs).To(BeFalse())
-			})
-
-			It("should configure Ubuntu2404 with AMD64 for newer Kubernetes version", func() {
+			It("should configure Ubuntu2404 for newer Kubernetes version", func() {
 				ossku, enableFIPs, err := configureOSSKUAndFIPs(nodeClass, "1.34.0")
 
 				Expect(err).ToNot(HaveOccurred())
