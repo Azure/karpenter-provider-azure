@@ -20,15 +20,15 @@ package fake
 
 import (
 	"github.com/samber/lo"
-	// nolint SA1019 - deprecated package
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 )
 
 // generated at 2024-12-13T00:09:53Z
 
 func init() {
 	// ResourceSkus is a list of selected VM SKUs for a given region
-	ResourceSkus["westcentralus"] = []compute.ResourceSku{
+	ResourceSkus["westcentralus"] = []*armcompute.ResourceSKU{
 		{
 			Name:         lo.ToPtr("Standard_A0"),
 			Tier:         lo.ToPtr("Standard"),
@@ -36,22 +36,10 @@ func init() {
 			Size:         lo.ToPtr("A0"),
 			Family:       lo.ToPtr("standardA0_A7Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{
-				{
-					Type:   compute.ResourceSkuRestrictionsType("Location"),
-					Values: &[]string{"westcentralus"},
-					RestrictionInfo: &compute.ResourceSkuRestrictionInfo{
-						Locations: &[]string{
-							"westcentralus",
-						},
-						Zones: &[]string{},
-					},
-					ReasonCode: "NotAvailableForSubscription",
-				},
-			},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("20480")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("1")},
@@ -78,8 +66,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_B1s"),
@@ -88,10 +76,10 @@ func init() {
 			Size:         lo.ToPtr("B1s"),
 			Family:       lo.ToPtr("standardBSFamily"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("4096")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("1")},
@@ -119,8 +107,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D16plds_v5"),
@@ -129,10 +117,10 @@ func init() {
 			Size:         lo.ToPtr("D16plds_v5"),
 			Family:       lo.ToPtr("standardDPLDSv5Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("614400")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("16")},
@@ -161,8 +149,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2as_v6"),
@@ -171,10 +159,10 @@ func init() {
 			Size:         lo.ToPtr("D2as_v6"),
 			Family:       lo.ToPtr("standardDav6Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("0")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
@@ -202,8 +190,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2s_v3"),
@@ -212,10 +200,10 @@ func init() {
 			Size:         lo.ToPtr("D2s_v3"),
 			Family:       lo.ToPtr("standardDSv3Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("16384")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
@@ -244,8 +232,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2_v2"),
@@ -254,10 +242,10 @@ func init() {
 			Size:         lo.ToPtr("D2_v2"),
 			Family:       lo.ToPtr("standardDv2Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("102400")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
@@ -284,8 +272,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2_v3"),
@@ -294,10 +282,10 @@ func init() {
 			Size:         lo.ToPtr("D2_v3"),
 			Family:       lo.ToPtr("standardDv3Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("51200")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
@@ -324,8 +312,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D2_v5"),
@@ -334,10 +322,10 @@ func init() {
 			Size:         lo.ToPtr("D2_v5"),
 			Family:       lo.ToPtr("standardDv5Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("0")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
@@ -363,8 +351,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D4s_v3"),
@@ -373,10 +361,10 @@ func init() {
 			Size:         lo.ToPtr("D4s_v3"),
 			Family:       lo.ToPtr("standardDSv3Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("32768")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("4")},
@@ -405,8 +393,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_D64s_v3"),
@@ -415,10 +403,10 @@ func init() {
 			Size:         lo.ToPtr("D64s_v3"),
 			Family:       lo.ToPtr("standardDSv3Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("524288")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("64")},
@@ -447,8 +435,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("8")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_DS2_v2"),
@@ -457,10 +445,10 @@ func init() {
 			Size:         lo.ToPtr("DS2_v2"),
 			Family:       lo.ToPtr("standardDSv2Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("14336")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("2")},
@@ -489,8 +477,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("2")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 		{
 			Name:         lo.ToPtr("Standard_F16s_v2"),
@@ -499,10 +487,10 @@ func init() {
 			Size:         lo.ToPtr("F16s_v2"),
 			Family:       lo.ToPtr("standardFSv2Family"),
 			ResourceType: lo.ToPtr("virtualMachines"),
-			APIVersions:  &[]string{},
-			Costs:        &[]compute.ResourceSkuCosts{},
-			Restrictions: &[]compute.ResourceSkuRestrictions{},
-			Capabilities: &[]compute.ResourceSkuCapabilities{
+			APIVersions:  []*string{},
+			Costs:        []*armcompute.ResourceSKUCosts{},
+			Restrictions: []*armcompute.ResourceSKURestrictions{},
+			Capabilities: []*armcompute.ResourceSKUCapabilities{
 				{Name: lo.ToPtr("MaxResourceVolumeMB"), Value: lo.ToPtr("131072")},
 				{Name: lo.ToPtr("OSVhdSizeMB"), Value: lo.ToPtr("1047552")},
 				{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr("16")},
@@ -531,8 +519,8 @@ func init() {
 				{Name: lo.ToPtr("RdmaEnabled"), Value: lo.ToPtr("False")},
 				{Name: lo.ToPtr("MaxNetworkInterfaces"), Value: lo.ToPtr("4")},
 			},
-			Locations:    &[]string{"westcentralus"},
-			LocationInfo: &[]compute.ResourceSkuLocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: &[]string{}}},
+			Locations:    []*string{lo.ToPtr("westcentralus")},
+			LocationInfo: []*armcompute.ResourceSKULocationInfo{{Location: lo.ToPtr("westcentralus"), Zones: []*string{}}},
 		},
 	}
 }

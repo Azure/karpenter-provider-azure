@@ -17,7 +17,7 @@ limitations under the License.
 package instancetype
 
 import (
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 )

@@ -55,9 +55,8 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -1152,7 +1151,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Name:   lo.ToPtr("Standard_D2_v2"),
 					Size:   lo.ToPtr("D2_v2"),
 					Family: lo.ToPtr("StandardDv2Family"),
-					Capabilities: &[]compute.ResourceSkuCapabilities{
+					Capabilities: []*armcompute.ResourceSKUCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),
 							Value: lo.ToPtr("2"),
@@ -1163,7 +1162,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Name:   lo.ToPtr("Standard_D16_v2"),
 					Size:   lo.ToPtr("D16_v2"),
 					Family: lo.ToPtr("StandardDv2Family"),
-					Capabilities: &[]compute.ResourceSkuCapabilities{
+					Capabilities: []*armcompute.ResourceSKUCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),
 							Value: lo.ToPtr("16"),
@@ -1174,7 +1173,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Name:   lo.ToPtr("Standard_D32_v2"),
 					Size:   lo.ToPtr("D32_v2"),
 					Family: lo.ToPtr("StandardDv2Family"),
-					Capabilities: &[]compute.ResourceSkuCapabilities{
+					Capabilities: []*armcompute.ResourceSKUCapabilities{
 						{
 							Name:  lo.ToPtr("vCPUs"),
 							Value: lo.ToPtr("32"),
@@ -1226,7 +1225,7 @@ var _ = Describe("InstanceType Provider", func() {
 					seeUnavailable = true
 					Expect(len(instanceType.Offerings.Available())).To(Equal(0))
 				} else {
-					Expect(len(instanceType.Offerings.Available())).To(Not(Equal(0)))
+					Expect(len(instanceType.Offerings.Available())).To(Not(Equal(0)), fmt.Sprintf("expected %s to have available offerings", instanceType.Name))
 				}
 			}
 			// we should see the unavailable offering in the list

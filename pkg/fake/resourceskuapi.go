@@ -19,15 +19,15 @@ package fake
 import (
 	"context"
 
-	//nolint SA1019 - deprecated package
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
-	"github.com/Azure/skewer"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/skewer/v2"
 )
 
 // TODO: consider using fakes from skewer itself
 
 // ResourceSkus is a map of location to resource skus
-var ResourceSkus = make(map[string][]compute.ResourceSku)
+var ResourceSkus = make(map[string][]*armcompute.ResourceSKU)
 
 // assert that the fake implements the interface
 var _ skewer.ResourceClient = &ResourceSKUsAPI{}
@@ -44,24 +44,28 @@ func (s *ResourceSKUsAPI) Reset() {
 	s.Error = nil
 }
 
-func (s *ResourceSKUsAPI) ListComplete(_ context.Context, _, _ string) (compute.ResourceSkusResultIterator, error) {
-	if s.Error != nil {
-		return compute.ResourceSkusResultIterator{}, s.Error
-	}
-	resourceSkus := ResourceSkus[s.Location]
-	return compute.NewResourceSkusResultIterator(
-		compute.NewResourceSkusResultPage(
-			// cur
-			compute.ResourceSkusResult{
-				Value: &resourceSkus,
-			},
-			// fn
-			func(ctx context.Context, result compute.ResourceSkusResult) (compute.ResourceSkusResult, error) {
-				return compute.ResourceSkusResult{
-					Value:    nil, // end of iterator
-					NextLink: nil,
+func (s *ResourceSKUsAPI) NewListPager(options *armcompute.ResourceSKUsClientListOptions) *runtime.Pager[armcompute.ResourceSKUsClientListResponse] {
+	return runtime.NewPager(runtime.PagingHandler[armcompute.ResourceSKUsClientListResponse]{
+		More: func(page armcompute.ResourceSKUsClientListResponse) bool {
+			return page.NextLink != nil && len(*page.NextLink) > 0
+		},
+		Fetcher: func(ctx context.Context, page *armcompute.ResourceSKUsClientListResponse) (armcompute.ResourceSKUsClientListResponse, error) {
+			if s.Error != nil {
+				return armcompute.ResourceSKUsClientListResponse{}, s.Error
+			}
+
+			// First page
+			if page == nil {
+				resourceSkus := ResourceSkus[s.Location]
+				return armcompute.ResourceSKUsClientListResponse{
+					ResourceSKUsResult: armcompute.ResourceSKUsResult{
+						Value: resourceSkus,
+					},
 				}, nil
-			},
-		),
-	), nil
+			}
+
+			// No more pages
+			return armcompute.ResourceSKUsClientListResponse{}, nil
+		},
+	})
 }

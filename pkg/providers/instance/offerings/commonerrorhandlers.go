@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
