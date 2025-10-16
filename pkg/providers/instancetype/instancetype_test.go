@@ -21,9 +21,8 @@ import (
 	"fmt"
 	"testing"
 
-	//nolint:staticcheck // deprecated package used by skewer
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2022-08-01/compute"
-	"github.com/Azure/skewer"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v9"
+	"github.com/Azure/skewer/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
@@ -95,10 +94,10 @@ func TestInstanceTypeMemoryReservations(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewWithT(t)
-			sku := skewer.SKU(compute.ResourceSku{
+			sku := skewer.SKU(armcompute.ResourceSKU{
 				Name: lo.ToPtr(fmt.Sprintf("Standard_D%das_v6", test.vcpus)),
 				Size: lo.ToPtr(fmt.Sprintf("D%das_v6", test.vcpus)),
-				Capabilities: &[]compute.ResourceSkuCapabilities{
+				Capabilities: []*armcompute.ResourceSKUCapabilities{
 					{Name: lo.ToPtr("vCPUs"), Value: lo.ToPtr(fmt.Sprint(test.vcpus))},
 					{Name: lo.ToPtr("MemoryGB"), Value: lo.ToPtr(fmt.Sprint(test.memoryGiB))},
 				},

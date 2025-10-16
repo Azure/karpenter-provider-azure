@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
-	"github.com/Azure/skewer"
+	"github.com/Azure/skewer/v2"
 	"github.com/mitchellh/hashstructure/v2"
 	. "github.com/onsi/gomega"
 )
