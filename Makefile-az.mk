@@ -1,7 +1,7 @@
 AZURE_LOCATION ?= westus2
 AZURE_VM_SIZE ?= ""
 COMMON_NAME ?= karpenter
-ENABLE_AZURE_SDK_LOGGING ?= false # false to make it easier to debug
+ENABLE_AZURE_SDK_LOGGING ?= true
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
