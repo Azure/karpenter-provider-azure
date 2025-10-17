@@ -118,10 +118,10 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	}
 
 	// Set ResourceID (required field) - simulates VM resource ID following AKS naming convention
-	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
+	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm
 	if options.Properties.ResourceID == nil {
 		// Generate a VM name following AKS convention: aks-{agentPoolName}-{machineName}-{randomId}-vm{id}
-		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm0", options.MachinesPoolName, options.Name)
+		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm", options.MachinesPoolName, options.Name)
 		vmResourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", "test-subscription", options.ClusterResourceGroup, vmName)
 		options.Properties.ResourceID = lo.ToPtr(vmResourceID)
 	}

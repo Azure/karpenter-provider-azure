@@ -269,22 +269,118 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 	})
 
-	// XPMT: TODO(Bryce-Soghigian): add these back and rework when ready
-	// Context("GetAKSMachineNameFromNodeClaimName", func() {
-	// 	It("should return the same name", func() {
-	// 		nodeClaimName := "test-nodeclaim-123"
-	// 		machineName := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+	Context("GetAKSMachineNameFromNodeClaimName", func() {
+		It("should return the same name when under length limit", func() {
+			nodeClaimName := "default-a1b2c"
+			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
 
-	// 		Expect(machineName).To(Equal(nodeClaimName))
-	// 	})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(machineName).To(Equal(nodeClaimName))
+		})
 
-	// 	It("should handle empty string", func() {
-	// 		nodeClaimName := ""
-	// 		machineName := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+		It("should handle short names correctly", func() {
+			nodeClaimName := "d-a1b2c"
+			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
 
-	// 		Expect(machineName).To(Equal(""))
-	// 	})
-	// })
+			Expect(err).ToNot(HaveOccurred())
+			Expect(machineName).To(Equal(nodeClaimName))
+		})
+
+		It("should return the same name when at the length limit", func() {
+			nodeClaimName := "123456789-123456789-123456789-a1b2c"
+			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(machineName).To(Equal(nodeClaimName))
+		})
+
+		It("should truncate and hash when at the length limit +1", func() {
+			nodeClaimName := "123456789-123456789-1234567890-a1b2c"
+			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(machineName).To(HaveLen(35))
+			Expect(machineName).To(HaveSuffix("-a1b2c"))
+			Expect(machineName).To(HavePrefix("123456789-123456789-123"))
+		})
+
+		It("should truncate and hash differently when at the length limit +1", func() {
+			nodeClaimName1 := "123456789-123456789-1234567890-a1b2c"
+			nodeClaimName2 := "123456789-123456789-1234567891-a1b2c"
+			machineName1, err1 := GetAKSMachineNameFromNodeClaimName(nodeClaimName1)
+			machineName2, err2 := GetAKSMachineNameFromNodeClaimName(nodeClaimName2)
+
+			Expect(err1).ToNot(HaveOccurred())
+			Expect(err2).ToNot(HaveOccurred())
+			Expect(machineName1).ToNot(Equal(machineName2))
+		})
+
+		It("should truncate and hash when above the length limit", func() {
+			nodeClaimName := "123456789-123456789-123456789-123456789-a1b2c"
+			machineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(machineName).To(HaveLen(35))
+			Expect(machineName).To(HaveSuffix("-a1b2c"))
+			Expect(machineName).To(HavePrefix("123456789-123456789-123"))
+		})
+
+		It("should produce deterministic results for same input", func() {
+			nodeClaimName := "consistent-very-long-nodepool-name-test-xyz12"
+			machineName1, err1 := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+			machineName2, err2 := GetAKSMachineNameFromNodeClaimName(nodeClaimName)
+
+			Expect(err1).ToNot(HaveOccurred())
+			Expect(err2).ToNot(HaveOccurred())
+			Expect(machineName1).To(Equal(machineName2))
+		})
+
+		It("should preserve the suffix from NodeClaim name", func() {
+			longNodeClaimName := "extremely-long-nodepool-name-that-definitely-exceeds-limits-xyz7890"
+			machineName, err := GetAKSMachineNameFromNodeClaimName(longNodeClaimName)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(machineName).To(HaveSuffix("-xyz7890"))
+		})
+
+		It("should handle complex cases correctly", func() {
+			nodeClaimName1 := "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a1b2c"
+			nodeClaimName2 := "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a--a1b2c"
+			nodeClaimName3 := "-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a1b2c"
+			nodeClaimName4 := "-a-a-a-a-a-a-a-a-a-a-a-a-a-a--a1b2c"
+			nodeClaimName5 := "------------------------------a1b2c"
+			nodeClaimName6 := "-------------------------------a1b2c"
+			machineName1, err1 := GetAKSMachineNameFromNodeClaimName(nodeClaimName1)
+			machineName2, err2 := GetAKSMachineNameFromNodeClaimName(nodeClaimName2)
+			machineName3, err3 := GetAKSMachineNameFromNodeClaimName(nodeClaimName3)
+			machineName4, err4 := GetAKSMachineNameFromNodeClaimName(nodeClaimName4)
+			machineName5, err5 := GetAKSMachineNameFromNodeClaimName(nodeClaimName5)
+			machineName6, err6 := GetAKSMachineNameFromNodeClaimName(nodeClaimName6)
+
+			Expect(err1).ToNot(HaveOccurred())
+			Expect(err2).ToNot(HaveOccurred())
+			Expect(err3).ToNot(HaveOccurred())
+			Expect(err4).ToNot(HaveOccurred())
+			Expect(err5).ToNot(HaveOccurred())
+			Expect(err6).ToNot(HaveOccurred())
+
+			Expect(machineName1).To(Equal(nodeClaimName1))
+			Expect(machineName4).To(Equal(nodeClaimName4))
+			Expect(machineName5).To(Equal(nodeClaimName5))
+
+			Expect(machineName2).To(HaveLen(35))
+			Expect(machineName2).To(HaveSuffix("-a1b2c"))
+			Expect(machineName2).To(HavePrefix("a-a-a-a-a-a-a-a-a-a-a-a"))
+
+			Expect(machineName3).To(HaveLen(35))
+			Expect(machineName3).To(HaveSuffix("-a1b2c"))
+			Expect(machineName3).To(HavePrefix("-a-a-a-a-a-a-a-a-a-a-a-"))
+
+			Expect(machineName6).To(HaveLen(35))
+			Expect(machineName6).To(HaveSuffix("-a1b2c"))
+			Expect(machineName6).To(HavePrefix("-----------------------"))
+		})
+	})
 
 	Context("GetAKSMachineNameFromNodeClaim", func() {
 		It("should return AKS machine name when annotation exists", func() {
@@ -357,7 +453,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 	Context("GetAKSMachineNameFromVMName", func() {
 		It("should extract AKS machine name from valid VM name", func() {
 			poolName := "aksmanagedap"
-			vmName := "aks-aksmanagedap-some-nodepool-a1b2c-12345678-vm0"
+			vmName := "aks-aksmanagedap-some-nodepool-a1b2c-12345678-vm"
 
 			machineName, err := GetAKSMachineNameFromVMName(poolName, vmName)
 
@@ -367,7 +463,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should handle complex machine names with multiple dashes", func() {
 			poolName := "aksmanagedap-aks-nodepool-abcde-12345678"
-			vmName := "aks-aksmanagedap-aks-nodepool-abcde-12345678-my-complex-machine-name-87654321-vm1"
+			vmName := "aks-aksmanagedap-aks-nodepool-abcde-12345678-my-complex-machine-name-87654321-vm"
 
 			machineName, err := GetAKSMachineNameFromVMName(poolName, vmName)
 
@@ -377,7 +473,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error for invalid prefix", func() {
 			poolName := "machines"
-			vmName := "invalid-prefix-test-machine-123-12345678-vm0"
+			vmName := "invalid-prefix-test-machine-123-12345678-vm"
 
 			_, err := GetAKSMachineNameFromVMName(poolName, vmName)
 
@@ -405,14 +501,14 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(err.Error()).To(ContainSubstring("does not end with expected suffix"))
 		})
 
-		It("should handle different VMS suffixes", func() {
+		It("should return error for unimplemented VMS suffixes", func() {
 			poolName := "pool1"
 			vmName := "aks-pool1-machine-name-87654321-vm99"
 
-			machineName, err := GetAKSMachineNameFromVMName(poolName, vmName)
+			_, err := GetAKSMachineNameFromVMName(poolName, vmName)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(machineName).To(Equal("machine-name"))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("does not end with expected suffix"))
 		})
 	})
 

@@ -100,7 +100,6 @@ func BuildNodeClaimFromAKSMachineTemplate(
 		// By the time of writing, this is being used for logging purposes within provider only.
 		// That is unlikely to change for core. But be mindful of provider is to rely on this in that situation. Still, rare.
 		// This was less of a concern for VM instance as NodeClaim name is always inferrable from instance name.
-		// XPMT: TODO(Bryce-Soghigian): see if you have better ideas. Otherwise just delete this TODO and live with this.
 		nodeClaim.Name = *tag
 	}
 	nodeClaim.Labels = labels
@@ -182,17 +181,36 @@ func FindNodePoolFromAKSMachine(ctx context.Context, aksMachine *armcontainerser
 	return nil, errors.NewNotFound(schema.GroupResource{Group: coreapis.Group, Resource: "nodepools"}, "")
 }
 
-// XPMT: TODO(Bryce-Soghigian): rework this thing below? Also consider add acceptance tests on this in cloudprovider module, if applicable.
-// Real node name would be aks-<machinesPoolName>-<aksMachineName>-########-vm#. E.g., aks-aksmanagedap-default-2jf98-11274290-vm2.
-func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) string {
-	// ASSUMPTION: all AKS machines are named after the NodeClaim name.
-	// Does not guarantee that the NodeClaim is already associated with an AKS machine.
-	// This assumption is weaker than the one in GetAKSMachineNameFromNodeClaim(), but still, not breaking anytime soon.
-	// return nodeClaimName
+// ASSUMPTION: NodeClaim name is in the format of <NodePool name>-<hash suffix>
+// If total length exceeds AKS machine name limit, the exceeded part will be replaced with another deterministic hash.
+// E.g., "thisisalongnodepoolname-a1b2c" --> "thisisalongnoz9y8x7-a1b2c"
+func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) (string, error) {
+	const maxAKSMachineNameLength = 35 // Defined by AKS machine API.
+	const prefixHashLength = 6         // The length of the hashed part replacing the exceeded part of the prefix.
+	// If 6, given alphanumeric hash, there will be a total of 36^6 = 2,176,782,336 combinations.
 
-	// TEMPORARY
+	if len(nodeClaimName) <= maxAKSMachineNameLength {
+		// Safe to use the whole name
+		return nodeClaimName, nil
+	}
 	splitted := strings.Split(nodeClaimName, "-")
-	return "x" + splitted[len(splitted)-1]
+	// Combine the parts except the last one (NodeClaim hash suffix)
+	prefix := strings.Join(splitted[:len(splitted)-1], "-")
+	suffix := "-" + splitted[len(splitted)-1]
+
+	// Keep the legit part of the prefix intact, but hash the rest
+	// ASSUMPTION: prefix length is at least 6 characters at this point (which means suffix length is not too large)
+	// At the time of writing, suffix length is 6 (e.g., "-a1b2c"). This is unlikely to change.
+	keepPrefixLength := maxAKSMachineNameLength - len(suffix) - prefixHashLength
+	prefixToKeep := prefix[:keepPrefixLength]
+	prefixToHash := prefix[keepPrefixLength:]
+	hashedPrefixToHash, err := utils.GetAlphanumericHash(prefixToHash, 6)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash exceeded AKS machine name prefix %q: %w", prefixToHash, err)
+	}
+
+	hashTrimmedPrefix := prefixToKeep + hashedPrefixToHash
+	return hashTrimmedPrefix + suffix, nil
 }
 
 // GetAKSMachineNameFromNodeClaim extracts the AKS machine name from the NodeClaim annotations
@@ -212,10 +230,8 @@ func GetCapacityTypeFromAKSScaleSetPriority(scaleSetPriority armcontainerservice
 	return AKSScaleSetPriorityToKarpCapacityType[scaleSetPriority]
 }
 
-// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
-// Note: there is no accurate way to tell from the VM name that the VM is created by AKS machine API.
-// E.g., a non-AKS machine VM from Karpenter nodepool named "aksmanagedap-aks-nodepool-abcde-12345678" with suffix "vms12" would result in VM name "aks-aksmanagedap-aks-nodepool-abcde-12345678-vm12", which can be interpreted as a AKS machine with pool name "aksmanagedap" and name "aks-nodepool-abcde".
-// The validation below is, thus, best-effort.
+// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm
+// This is distinguishable from VM instance name as its suffix will always be 5 alphanumerics rather than "vm"
 func GetAKSMachineNameFromVMName(aksMachinesPoolName, vmName string) (string, error) {
 	if !strings.HasPrefix(vmName, "aks-"+aksMachinesPoolName+"-") {
 		return "", fmt.Errorf("vm name %s does not start with expected prefix aks-%s-", vmName, aksMachinesPoolName)
@@ -226,11 +242,11 @@ func GetAKSMachineNameFromVMName(aksMachinesPoolName, vmName string) (string, er
 	if len(splitted) < 3 {
 		return "", fmt.Errorf("vm name %s does not have enough parts after prefix aks-%s-", vmName, aksMachinesPoolName)
 	}
-	// Check whether the last part starts with "vm"
-	if !strings.HasPrefix(splitted[len(splitted)-1], "vm") {
-		return "", fmt.Errorf("vm name %s does not end with expected suffix vm#", vmName)
+	// Check whether the last part is "vm"
+	if splitted[len(splitted)-1] != "vm" {
+		return "", fmt.Errorf("vm name %s does not end with expected suffix vm", vmName)
 	}
-	// Remove the last two parts (########-vm#) and join the rest to get the AKS machine name
+	// Remove the last two parts (########-vm) and join the rest to get the AKS machine name
 	aksMachineName := strings.Join(splitted[:len(splitted)-2], "-")
 
 	return aksMachineName, nil
