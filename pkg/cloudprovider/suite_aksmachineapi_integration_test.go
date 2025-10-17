@@ -161,7 +161,7 @@ var _ = Describe("CloudProvider", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Len()).To(Equal(1))
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(1)) // Should be bothered as AKS machine is not found, so suspect this to be a VM
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineGetBehavior.CalledWithInput.Len()).To(Equal(0)) // Should not be bothered
 			Expect(nodeClaim).To(BeNil())
 		})
 

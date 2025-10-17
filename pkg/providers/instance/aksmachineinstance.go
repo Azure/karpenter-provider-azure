@@ -35,6 +35,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -174,7 +175,10 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*AKSMachinePromise, error) {
-	aksMachineName := GetAKSMachineNameFromNodeClaimName(nodeClaim.Name)
+	aksMachineName, err := GetAKSMachineNameFromNodeClaimName(nodeClaim.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate AKS machine name from NodeClaim name %q: %w", nodeClaim.Name, err)
+	}
 	instanceTypes = offerings.OrderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 
 	aksMachinePromise, err := p.beginCreateMachine(ctx, nodeClass, nodeClaim, instanceTypes, aksMachineName)
@@ -376,7 +380,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
-		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, instanceTypes, existingAKSMachine)
+		return p.reuseExistingMachine(ctx, aksMachineName, nodeClass, nodeClaim, instanceTypes, existingAKSMachine)
 	} else if !IsAKSMachineOrMachinesPoolNotFound(err) {
 		// Not fatal. Will fall back to normal creation.
 		log.FromContext(ctx).Error(err, "failed to check for existing AKS machine", "aksMachineName", aksMachineName)
@@ -502,11 +506,17 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 	return fmt.Errorf("failed to create AKS machine %q during %s, unhandled provisioning error: code=%s, message=%s", aksMachineName, phase, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
 }
 
-func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {
+func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, nodeClaim *karpv1.NodeClaim, instanceTypes []*corecloudprovider.InstanceType, existingAKSMachine *armcontainerservice.Machine) (*AKSMachinePromise, error) {
 	// Reconstruct properties from existing AKS machine instance.
 	if err := validateRetrievedAKSMachineBasicProperties(existingAKSMachine); err != nil {
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, err)
 	}
+	if existingAKSMachine.Properties.Tags == nil || existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey] == nil {
+		// This is not included in validateRetrievedAKSMachineBasicProperties as inplaceupdate can repair it.
+		// Although, we don't want to reuse a machine until that happens.
+		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, fmt.Errorf("irretrievable karpenter.azure.com_aksmachine_nodeclaim tag"))
+	}
+
 	var existingAKSMachineZone string
 	if len(existingAKSMachine.Zones) == 0 || existingAKSMachine.Zones[0] == nil {
 		existingAKSMachineZone = "" // No zone
@@ -518,11 +528,18 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	existingAKSMachineVMResourceID := lo.FromPtr(existingAKSMachine.Properties.ResourceID)
 	existingAKSMachineID := lo.FromPtr(existingAKSMachine.ID)
 	existingAKSMachineNodeImageVersion := lo.FromPtr(existingAKSMachine.Properties.NodeImageVersion)
+	existingAKSMachineNodeClaimName := lo.FromPtr(existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey])
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
 	capacityType := GetCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
 	zone := utils.MakeAKSLabelZoneFromARMZone(p.aksMachinesPoolLocation, existingAKSMachineZone)
 
+	if existingAKSMachineNodeClaimName != nodeClaim.Name {
+		// Might be possible from NodePool name hash collision within AKS machine name
+		// See how AKS machine name is generated for more details.
+		// ASSUMPTION: repeated failure will eventually result in NodeClaim reaching registration TTL, then gets re-created with the new hash, recovering from the collision.
+		return nil, fmt.Errorf("found existing AKS machine %s, but its karpenter.azure.com_aksmachine_nodeclaim tag %q does not match the NodeClaim to create %q", aksMachineName, existingAKSMachineNodeClaimName, nodeClaim.Name)
+	}
 	if existingAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(existingAKSMachine.Properties.ProvisioningState) == "Failed" {
 		// Unfortunately, that was more like a remain than a usable aksMachine.
 		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
