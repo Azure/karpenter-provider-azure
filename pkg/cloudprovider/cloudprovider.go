@@ -370,36 +370,26 @@ func (c *CloudProvider) Get(ctx context.Context, providerID string) (*karpv1.Nod
 	}
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("vmName", vmName))
 
-	aksMachinesPoolName := options.FromContext(ctx).AKSMachinesPoolName
-	if aksMachineName, err := instance.GetAKSMachineNameFromVMName(aksMachinesPoolName, vmName); err == nil {
-		// This could be an AKS machine-based node; try getting the AKS machine instance
+	if aksMachineName, err := instance.GetAKSMachineNameFromVMName(options.FromContext(ctx).AKSMachinesPoolName, vmName); err == nil {
+		// AKS machine-based node
 		ctx := log.IntoContext(ctx, log.FromContext(ctx).WithValues("aksMachineName", aksMachineName))
 
 		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
-		if err == nil {
-			nodeClaim, err := c.resolveNodeClaimFromAKSMachine(ctx, aksMachine)
-			if err != nil {
-				return nil, fmt.Errorf("converting AKS machine instance to node claim, %w", err)
-			}
-			return nodeClaim, nil
-		} else if cloudprovider.IgnoreNodeClaimNotFoundError(err) != nil {
+		if err != nil {
 			return nil, fmt.Errorf("getting AKS machine instance, %w", err)
 		}
-		// Fallback to legacy VM-based node if not found
-		// In the case that it is indeed AKS machine node, but somehow fail GET AKS machine and succeeded GET VM, ideally we want this call to fail.
-		// However, being misrepresented only once is not fatal. "Illegal" in-place update will be reconciled back to the before, and there is no drift for VM nodes that won't happen with AKS machine nodes + DriftAction.
-		// So, we could live with this for now.
+		return c.resolveNodeClaimFromAKSMachine(ctx, aksMachine)
+	} else {
+		vm, err := c.vmInstanceProvider.Get(ctx, vmName)
+		if err != nil {
+			return nil, fmt.Errorf("getting VM instance, %w", err)
+		}
+		instanceType, err := c.resolveInstanceTypeFromVMInstance(ctx, vm)
+		if err != nil {
+			return nil, fmt.Errorf("resolving instance type, %w", err)
+		}
+		return c.vmInstanceToNodeClaim(ctx, vm, instanceType)
 	}
-
-	vm, err := c.vmInstanceProvider.Get(ctx, vmName)
-	if err != nil {
-		return nil, fmt.Errorf("getting VM instance, %w", err)
-	}
-	instanceType, err := c.resolveInstanceTypeFromVMInstance(ctx, vm)
-	if err != nil {
-		return nil, fmt.Errorf("resolving instance type, %w", err)
-	}
-	return c.vmInstanceToNodeClaim(ctx, vm, instanceType)
 }
 
 func (c *CloudProvider) LivenessProbe(req *http.Request) error {

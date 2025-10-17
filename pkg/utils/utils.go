@@ -191,3 +191,25 @@ func HasChanged(existing, new any, options *hashstructure.HashOptions) bool {
 	newHV, _ := hashstructure.Hash(new, hashstructure.FormatV2, options)
 	return existingHV != newHV
 }
+
+func GetAlphanumericHash(input string, length int) (string, error) {
+	if length <= 0 {
+		return "", fmt.Errorf("length must be positive, got %d", length)
+	}
+
+	hash, err := hashstructure.Hash(input, hashstructure.FormatV2, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash input: %w", err)
+	}
+
+	const base36Chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+	result := make([]byte, length)
+
+	for i := range length {
+		// Reverse order to have the same sense of significance as normal text
+		result[length-1-i] = base36Chars[hash%36]
+		hash /= 36
+	}
+
+	return string(result), nil
+}
