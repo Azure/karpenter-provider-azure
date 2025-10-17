@@ -36,6 +36,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
@@ -112,6 +113,16 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
 
+	// validate FIPS + useSIG
+	fipsMode := nodeClass.Spec.FIPSMode
+	useSIG := options.FromContext(ctx).UseSIG
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS && !useSIG {
+		nodeClass.Status.Images = nil
+		nodeClass.StatusConditions().SetFalse(v1beta1.ConditionTypeImagesReady, "SIGRequiredForFIPS", "FIPS images require UseSIG to be enabled, but UseSIG is false (note: UseSIG is only supported in AKS managed NAP)")
+		logger.Info("FIPS images require SIG", "error", fmt.Errorf("FIPS images require UseSIG to be enabled, but UseSIG is false (note: UseSIG is only supported in AKS managed NAP)"))
+		return reconcile.Result{}, nil
+	}
+
 	nodeImages, err := r.nodeImageProvider.List(ctx, nodeClass)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("getting nodeimages, %w", err)
@@ -161,7 +172,7 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 
 	// We care about the ordering of the slices here, as it translates to priority during selection, so not treating them as sets
 	if utils.HasChanged(nodeClass.Status.Images, goalImages, &hashstructure.HashOptions{SlicesAsSets: false}) {
-		logger.WithValues("existingImages", nodeClass.Status.Images).WithValues("newImages", goalImages).Info("new available images updated for nodeclass")
+		logger.Info("new available images updated for nodeclass", "existingImages", nodeClass.Status.Images, "newImages", goalImages)
 	}
 	nodeClass.Status.Images = goalImages
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
@@ -203,7 +214,7 @@ func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool
 	// TODO: In the longer run, the maintenance window handling should be factored out into a sharable provider, rather than being contained
 	//     within the image controller itself.
 	if r.cm.HasChanged("nodeclass-maintenancewindowdata", mwConfigMap.Data) {
-		logger.WithValues("maintenanceWindowData", mwConfigMap.Data).Info("new maintenance window data discovered")
+		logger.Info("new maintenance window data discovered", "maintenanceWindowData", mwConfigMap.Data)
 	}
 	if len(mwConfigMap.Data) == 0 {
 		// An empty configmap means there's no maintenance windows defined, and its up to us when to preform maintenance

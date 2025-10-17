@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.19.0
   name: aksnodeclasses.karpenter.azure.com
 spec:
   group: karpenter.azure.com
@@ -20,7 +20,18 @@ spec:
     singular: aksnodeclass
   scope: Cluster
   versions:
-  - deprecated: true
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    deprecated: true
     deprecationWarning: use v1beta1.AKSNodeClass instead
     name: v1alpha2
     schema:
@@ -49,11 +60,20 @@ spec:
               AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              fipsMode:
+                description: FIPSMode controls FIPS compliance for the provisioned
+                  nodes
+                enum:
+                - FIPS
+                - Disabled
+                type: string
               imageFamily:
-                default: Ubuntu2204
+                default: Ubuntu
                 description: ImageFamily is the image family that instances use.
                 enum:
+                - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
@@ -178,13 +198,34 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
+                maximum: 2048
                 minimum: 30
                 type: integer
+              security:
+                description: Collection of security related karpenter fields
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
               tags:
                 additionalProperties:
                   type: string
                 description: Tags to be applied on Azure resources like instances.
                 type: object
+                x-kubernetes-validations:
+                - message: tags keys must be less than 512 characters
+                  rule: self.all(k, size(k) <= 512)
+                - message: tags keys must not contain '<', '>', '%', '&', or '?'
+                  rule: self.all(k, !k.matches('[<>%&?]'))
+                - message: tags keys must not contain '\'
+                  rule: self.all(k, !k.contains('\\'))
+                - message: tags values must be less than 256 characters
+                  rule: self.all(k, size(self[k]) <= 256)
               vnetSubnetID:
                 description: |-
                   VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -192,6 +233,11 @@ spec:
                 pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
                 type: string
             type: object
+            x-kubernetes-validations:
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:
@@ -314,7 +360,18 @@ spec:
     storage: false
     subresources:
       status: {}
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.imageFamily
+      name: ImageFamily
+      priority: 1
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: AKSNodeClass is the Schema for the AKSNodeClass API
@@ -341,11 +398,20 @@ spec:
               AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              fipsMode:
+                description: FIPSMode controls FIPS compliance for the provisioned
+                  nodes
+                enum:
+                - FIPS
+                - Disabled
+                type: string
               imageFamily:
-                default: Ubuntu2204
+                default: Ubuntu
                 description: ImageFamily is the image family that instances use.
                 enum:
+                - Ubuntu
                 - Ubuntu2204
+                - Ubuntu2404
                 - AzureLinux
                 type: string
               kubelet:
@@ -470,13 +536,34 @@ spec:
                 default: 128
                 description: osDiskSizeGB is the size of the OS disk in GB.
                 format: int32
+                maximum: 2048
                 minimum: 30
                 type: integer
+              security:
+                description: Collection of security related karpenter fields
+                properties:
+                  encryptionAtHost:
+                    description: |-
+                      EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+                      For more information, see:
+                      https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+                      https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+                    type: boolean
+                type: object
               tags:
                 additionalProperties:
                   type: string
                 description: Tags to be applied on Azure resources like instances.
                 type: object
+                x-kubernetes-validations:
+                - message: tags keys must be less than 512 characters
+                  rule: self.all(k, size(k) <= 512)
+                - message: tags keys must not contain '<', '>', '%', '&', or '?'
+                  rule: self.all(k, !k.matches('[<>%&?]'))
+                - message: tags keys must not contain '\'
+                  rule: self.all(k, !k.contains('\\'))
+                - message: tags values must be less than 256 characters
+                  rule: self.all(k, size(self[k]) <= 256)
               vnetSubnetID:
                 description: |-
                   VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -484,6 +571,11 @@ spec:
                 pattern: (?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$
                 type: string
             type: object
+            x-kubernetes-validations:
+            - message: FIPS is not yet supported for Ubuntu2204 or Ubuntu2404
+              rule: 'has(self.fipsMode) && self.fipsMode == ''FIPS'' ? (has(self.imageFamily)
+                && self.imageFamily != ''Ubuntu2204'' && self.imageFamily != ''Ubuntu2404'')
+                : true'
           status:
             description: AKSNodeClassStatus contains the resolved state of the AKSNodeClass
             properties:

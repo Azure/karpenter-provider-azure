@@ -12,19 +12,19 @@
         "queries": [
             {
                 "label": "Waiting For My Review",
-                "query": "is:open review-requested:${user}"
+                "query": "repo:${owner}/${repository} is:open review-requested:${user}"
             },
             {
                 "label": "Assigned To Me",
-                "query": "is:open assignee:${user}"
+                "query": "repo:${owner}/${repository} is:open assignee:${user}"
             },
             {
                 "label": "Created By Me",
-                "query": "is:open author:${user}"
+                "query": "repo:${owner}/${repository} is:open author:${user}"
             },
             {
                 "label": "All Open (-dependabot)",
-                "query": "is:open -label:dependencies"
+                "query": "repo:${owner}/${repository} is:open -label:dependencies"
             }
         ]
     }

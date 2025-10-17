@@ -84,6 +84,7 @@ func main() {
 			op.KubernetesVersionProvider,
 			op.ImageProvider,
 			op.InClusterKubernetesInterface,
+			op.AZClient.SubnetsClient(),
 		)...).
 		Start(ctx)
 }

@@ -21,8 +21,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
@@ -41,7 +42,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 		{
 			testName:      "happy case",
 			vmNames:       []string{"A", "B", "C"},
-			tags:          map[string]*string{instance.NodePoolTagKey: lo.ToPtr("default")},
+			tags:          map[string]*string{launchtemplate.NodePoolTagKey: lo.ToPtr("default")},
 			expectedError: "",
 		},
 		{

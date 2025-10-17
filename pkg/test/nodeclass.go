@@ -75,6 +75,7 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.Status.KubernetesVersion = testK8sVersion
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
 
 	conditions := []opstatus.Condition{}
 	for _, condition := range nodeClass.GetConditions() {
@@ -145,16 +146,20 @@ func ApplySIGImages(nodeClass *v1beta1.AKSNodeClass) {
 }
 
 func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion string) {
-	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, sigImageVersion)
+	imageFamilyNodeImages := getExpectedTestSIGImages(*nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, sigImageVersion, nodeClass.Status.KubernetesVersion)
 	nodeClass.Status.Images = translateToStatusNodeImages(imageFamilyNodeImages)
 }
 
-func getExpectedTestSIGImages(imageFamily string, version string) []imagefamily.NodeImage {
+func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
 	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
-		images = imagefamily.Ubuntu2204{}.DefaultImages()
+		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode)
 	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
-		images = imagefamily.AzureLinux{}.DefaultImages()
+		if imagefamily.UseAzureLinux3(kubernetesVersion) {
+			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode)
+		} else {
+			images = imagefamily.AzureLinux{}.DefaultImages(true, fipsMode)
+		}
 	}
 	nodeImages := []imagefamily.NodeImage{}
 	for _, image := range images {

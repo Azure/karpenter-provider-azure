@@ -25,8 +25,12 @@ import (
 	"testing"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/skewer"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -35,15 +39,98 @@ import (
 )
 
 const (
-	responseErrorTestInstanceName = "Standard_D2s_v3"
-	testZone1                     = "westus-1"
-	testZone2                     = "westus-2"
-	testZone3                     = "westus-3"
+	responseErrorTestInstanceName       = "Standard_D2s_v3"
+	responseErrorTestInstanceVMSize     = "D2s_v3"
+	responseErrorTestInstanceFamilyName = "standardDsv3Family"
+	testZone1                           = "westus-1"
+	testZone2                           = "westus-2"
+	testZone3                           = "westus-3"
+
+	errMsgLowPriorityQuota             = "this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota"
+	errMsgSKUFamilyQuotaFmt            = "subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)"
+	errMsgSKUNotAvailableFmt           = "the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable"
+	errMsgZonalAllocationFailureFmt    = "unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)"
+	errMsgAllocationFailureFmt         = "unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)"
+	errMsgOverconstrainedZonalFmt      = "unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)"
+	errMsgOverconstrainedAllocationFmt = "unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)"
+	errMsgRegionalQuotaExceeded        = "regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests"
 )
+
+// offering represents a zone and capacity type combination for cleaner test setup
+type offering struct {
+	zone         string
+	capacityType string
+}
+
+// Common offering configurations
+var (
+	zone1OnDemand = offering{zone: testZone1, capacityType: karpv1.CapacityTypeOnDemand}
+	zone1Spot     = offering{zone: testZone1, capacityType: karpv1.CapacityTypeSpot}
+	zone2OnDemand = offering{zone: testZone2, capacityType: karpv1.CapacityTypeOnDemand}
+	zone2Spot     = offering{zone: testZone2, capacityType: karpv1.CapacityTypeSpot}
+	zone3OnDemand = offering{zone: testZone3, capacityType: karpv1.CapacityTypeOnDemand}
+	zone3Spot     = offering{zone: testZone3, capacityType: karpv1.CapacityTypeSpot}
+)
+
+type testCaseBuilder struct {
+	tc responseErrorTestCase
+}
+
+func newTestCase(name string) *testCaseBuilder {
+	return &testCaseBuilder{
+		tc: responseErrorTestCase{
+			testName:                                name,
+			originalRequestSKU:                      createDefaultTestSKU(),
+			expectedUnavailableOfferingsInformation: []offeringToCheck{},
+			expectedAvailableOfferingsInformation:   []offeringToCheck{},
+		},
+	}
+}
+
+func (b *testCaseBuilder) withInstanceType(offerings ...offering) *testCaseBuilder {
+	b.tc.instanceType = createInstanceType(responseErrorTestInstanceName, offerings...)
+	return b
+}
+
+func (b *testCaseBuilder) withEmptyInstanceType() *testCaseBuilder {
+	b.tc.instanceType = &cloudprovider.InstanceType{}
+	return b
+}
+
+func (b *testCaseBuilder) withZoneAndCapacity(zone, capacityType string) *testCaseBuilder {
+	b.tc.zone = zone
+	b.tc.capacityType = capacityType
+	return b
+}
+
+func (b *testCaseBuilder) withResponseError(errorCode, errorMessage string) *testCaseBuilder {
+	b.tc.responseErr = createResponseError(errorCode, errorMessage)
+	return b
+}
+
+func (b *testCaseBuilder) expectError(err error) *testCaseBuilder {
+	b.tc.expectedErr = err
+	return b
+}
+
+func (b *testCaseBuilder) expectUnavailable(offerings ...offeringToCheck) *testCaseBuilder {
+	b.tc.expectedUnavailableOfferingsInformation = offerings
+	return b
+}
+
+func (b *testCaseBuilder) expectAvailable(offerings ...offeringToCheck) *testCaseBuilder {
+	b.tc.expectedAvailableOfferingsInformation = offerings
+	return b
+}
+
+func (b *testCaseBuilder) build() responseErrorTestCase {
+	return b.tc
+}
 
 type responseErrorTestCase struct {
 	testName                                string
 	instanceType                            *cloudprovider.InstanceType
+	originalRequestSKU                      *skewer.SKU
 	zone                                    string
 	capacityType                            string
 	responseErr                             error
@@ -52,17 +139,12 @@ type responseErrorTestCase struct {
 	expectedAvailableOfferingsInformation   []offeringToCheck
 }
 
-// createOfferingType creates a struct with zone and capacity type for defining instance type offerings
-func createOfferingType(zone, capacityType string) struct{ zone, capacityType string } {
-	return struct{ zone, capacityType string }{
-		zone:         zone,
-		capacityType: capacityType,
-	}
-}
-
-func createInstanceType(instanceName string, offerings ...struct{ zone, capacityType string }) *cloudprovider.InstanceType {
+func createInstanceType(instanceName string, offerings ...offering) *cloudprovider.InstanceType {
 	it := &cloudprovider.InstanceType{
-		Name:      instanceName,
+		Name: instanceName,
+		Requirements: scheduling.NewRequirements(
+			scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, "2"),
+		),
 		Offerings: []*cloudprovider.Offering{},
 	}
 
@@ -78,28 +160,41 @@ func createInstanceType(instanceName string, offerings ...struct{ zone, capacity
 	return it
 }
 
-// Helper to create a default instance type for testing, for errors where we don't block specific families of VM SKUs
-func defaultCreateInstanceType(offerings ...struct{ zone, capacityType string }) *cloudprovider.InstanceType {
-	return createInstanceType(responseErrorTestInstanceName, offerings...)
-}
-
 type offeringToCheck struct {
-	instanceTypeName string
-	zone             string
-	capacityType     string
+	skuToCheck   *skewer.SKU
+	zone         string
+	capacityType string
 }
 
-func offeringInformation(zone, capacityType, instanceTypeName string) offeringToCheck {
+func offeringInformation(zone, capacityType, instanceTypeName, instanceVMSize, familyName, cpuCount string) offeringToCheck {
 	return offeringToCheck{
-		instanceTypeName: instanceTypeName,
-		zone:             zone,
-		capacityType:     capacityType,
+		skuToCheck:   createTestSKU(instanceTypeName, instanceVMSize, familyName, cpuCount),
+		zone:         zone,
+		capacityType: capacityType,
 	}
 }
 
 // Helper to create default offering information for testing, for errors where we don't block specific families of VM SKUs
 func defaultTestOfferingInfo(zone, capacityType string) offeringToCheck {
-	return offeringInformation(zone, capacityType, responseErrorTestInstanceName)
+	return offeringInformation(zone, capacityType, responseErrorTestInstanceName, responseErrorTestInstanceVMSize, responseErrorTestInstanceFamilyName, "2")
+}
+
+func createTestSKU(name, size, family, cpuCount string) *skewer.SKU {
+	return &skewer.SKU{
+		Name:   &name,
+		Size:   &size,
+		Family: &family,
+		Capabilities: &[]compute.ResourceSkuCapabilities{
+			{
+				Name:  to.Ptr(skewer.VCPUs),
+				Value: &cpuCount,
+			},
+		},
+	}
+}
+
+func createDefaultTestSKU() *skewer.SKU {
+	return createTestSKU(responseErrorTestInstanceName, responseErrorTestInstanceVMSize, responseErrorTestInstanceFamilyName, "2")
 }
 
 func createResponseError(errorCode, errorMessage string) error {
@@ -112,203 +207,170 @@ func createResponseError(errorCode, errorMessage string) error {
 	}
 }
 
-func TestHandleResponseErrors(t *testing.T) {
-	testCases := []responseErrorTestCase{
-		{
-			testName:                                "Response error is nil",
-			instanceType:                            &cloudprovider.InstanceType{},
-			zone:                                    "",
-			capacityType:                            karpv1.CapacityTypeOnDemand,
-			responseErr:                             nil,
-			expectedErr:                             nil,
-			expectedUnavailableOfferingsInformation: []offeringToCheck{},
-		},
-		{
-			testName:     "Low priority quota has been reached",
-			instanceType: &cloudprovider.InstanceType{},
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeSpot,
-			responseErr:  createResponseError(sdkerrors.OperationNotAllowed, sdkerrors.LowPriorityQuotaExceededTerm),
-			expectedErr:  fmt.Errorf("this subscription has reached the regional vCPU quota for spot (LowPriorityQuota). To scale beyond this limit, please review the quota increase process here: https://docs.microsoft.com/en-us/azure/azure-portal/supportability/low-priority-quota"),
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
-				defaultTestOfferingInfo("", karpv1.CapacityTypeSpot),
-			},
-		},
-		{
-			testName: "SKU family quota has been reached",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone3, karpv1.CapacityTypeOnDemand),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeOnDemand,
-			responseErr:  createResponseError(sdkerrors.OperationNotAllowed, sdkerrors.SKUFamilyQuotaExceededTerm),
-			expectedErr:  fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName),
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
+// newTestProvider creates a test provider with default configuration
+func newTestProvider() *DefaultProvider {
+	return &DefaultProvider{
+		unavailableOfferings:  cache.NewUnavailableOfferings(),
+		responseErrorHandlers: defaultResponseErrorHandlers(),
+	}
+}
+
+func assertOfferingsState(t *testing.T, provider *DefaultProvider, unavailable, available []offeringToCheck) {
+	t.Helper()
+
+	for _, info := range unavailable {
+		assert.True(t,
+			provider.unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType),
+			"Expected offering %s in zone %s with capacity type %s to be unavailable",
+			info.skuToCheck.GetName(), info.zone, info.capacityType,
+		)
+	}
+
+	for _, info := range available {
+		assert.False(t,
+			provider.unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType),
+			"Expected offering %s in zone %s with capacity type %s to be available",
+			info.skuToCheck.GetName(), info.zone, info.capacityType,
+		)
+	}
+}
+
+func setupTestCases() []responseErrorTestCase {
+	return []responseErrorTestCase{
+		newTestCase("Response error is nil").
+			withEmptyInstanceType().
+			withZoneAndCapacity("", karpv1.CapacityTypeOnDemand).
+			expectError(nil).
+			build(),
+
+		newTestCase("Low priority quota has been reached").
+			withEmptyInstanceType().
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.LowPriorityQuotaExceededTerm).
+			expectError(fmt.Errorf("%s", errMsgLowPriorityQuota)).
+			expectUnavailable(defaultTestOfferingInfo("", karpv1.CapacityTypeSpot)).
+			build(),
+
+		newTestCase("SKU family quota has been reached").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.SKUFamilyQuotaExceededTerm).
+			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName)).
+			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
-			},
-		},
-		{
-			testName: "SKU family quota 0 CPUs",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone3, karpv1.CapacityTypeOnDemand),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeOnDemand,
-			responseErr:  createResponseError(sdkerrors.OperationNotAllowed, "Family Cores quota Current Limit: 0"),
-			expectedErr:  fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName),
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
+			).
+			build(),
+
+		newTestCase("SKU family quota 0 CPUs").
+			withInstanceType(zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.OperationNotAllowed, "Family Cores quota Current Limit: 0").
+			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName)).
+			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
-			},
-		},
-		{
-			testName: "SKU not available for spot",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone3, karpv1.CapacityTypeSpot),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeSpot,
-			responseErr:  createResponseError(sdkerrors.SKUNotAvailableErrorCode, ""),
-			expectedErr:  fmt.Errorf("the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable", responseErrorTestInstanceName, testZone2, karpv1.CapacityTypeSpot),
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
-			},
-			expectedAvailableOfferingsInformation: []offeringToCheck{
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
-			},
-		},
-		{
-			testName: "SKU not available for on-demand",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone3, karpv1.CapacityTypeSpot),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeOnDemand,
-			responseErr:  createResponseError(sdkerrors.SKUNotAvailableErrorCode, ""),
-			expectedErr:  fmt.Errorf("the requested SKU is unavailable for instance type %s in zone %s with capacity type %s, for more details please visit: https://aka.ms/azureskunotavailable", responseErrorTestInstanceName, testZone2, karpv1.CapacityTypeOnDemand),
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
-			},
-			expectedAvailableOfferingsInformation: []offeringToCheck{
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
-			},
-		},
-		{
-			testName: "Zonal allocation failure",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone2, karpv1.CapacityTypeSpot),
-				createOfferingType(testZone3, karpv1.CapacityTypeSpot),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeOnDemand,
-			responseErr:  createResponseError(sdkerrors.ZoneAllocationFailed, ""),
-			expectedErr:  fmt.Errorf("unable to allocate resources in the selected zone (%s). (will try a different zone to fulfill your request)", testZone2),
-			// For zonal allocation failure, we block specific instance type for both capacity types in the zone that failed to allocate
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
+			).
+			build(),
+
+		newTestCase("SKU not available for spot").
+			withInstanceType(zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeSpot).
+			withResponseError(sdkerrors.SKUNotAvailableErrorCode, "").
+			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, responseErrorTestInstanceName, testZone2, karpv1.CapacityTypeSpot)).
+			expectUnavailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			expectAvailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			build(),
+
+		newTestCase("SKU not available for on-demand").
+			withInstanceType(zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.SKUNotAvailableErrorCode, "").
+			expectError(fmt.Errorf(errMsgSKUNotAvailableFmt, responseErrorTestInstanceName, testZone2, karpv1.CapacityTypeOnDemand)).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			build(),
+
+		newTestCase("Zonal allocation failure").
+			withInstanceType(zone2OnDemand, zone2Spot, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.ZoneAllocationFailed, "").
+			expectError(fmt.Errorf(errMsgZonalAllocationFailureFmt, testZone2)).
+			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
-			},
-			expectedAvailableOfferingsInformation: []offeringToCheck{
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D16s_v3", "D16s_v3", responseErrorTestInstanceFamilyName, "16"),
+			).
+			expectAvailable(
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
-				// an example of a VM SKU from the same family but different version(!)
-				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4"),
-			},
-		},
-		{
-			testName: "Allocation failure",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone1, karpv1.CapacityTypeSpot),
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone3, karpv1.CapacityTypeSpot),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeOnDemand,
-			responseErr:  createResponseError(sdkerrors.AllocationFailed, ""),
-			expectedErr:  fmt.Errorf("unable to allocate resources with selected VM size (%s). (will try a different VM size to fulfill your request)", responseErrorTestInstanceName),
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
+				offeringInformation(testZone2, karpv1.CapacityTypeOnDemand, "Standard_D2s_v4", "D2s_v4", "standardDsv4Family", "2"),
+			).
+			build(),
+
+		newTestCase("Allocation failure").
+			withInstanceType(zone1Spot, zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.AllocationFailed, "").
+			expectError(fmt.Errorf(errMsgAllocationFailureFmt, responseErrorTestInstanceName)).
+			expectUnavailable(
 				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeSpot),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
-			},
-		},
-		{
-			testName: "Overconstrained zonal allocation failure",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone3, karpv1.CapacityTypeSpot),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeOnDemand,
-			responseErr:  createResponseError(sdkerrors.OverconstrainedZonalAllocationRequest, ""),
-			expectedErr:  fmt.Errorf("unable to allocate resources in the selected zone (%s) with %s capacity type and %s VM size. (will try a different zone, capacity type or VM size to fulfill your request)", testZone2, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName),
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
-				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
-			},
-			expectedAvailableOfferingsInformation: []offeringToCheck{
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
-			},
-		},
-		{
-			testName: "Overconstrained allocation failure",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone1, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone3, karpv1.CapacityTypeSpot),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeOnDemand,
-			responseErr:  createResponseError(sdkerrors.OverconstrainedAllocationRequest, ""),
-			expectedErr:  fmt.Errorf("unable to allocate resources in all zones with %s capacity type and %s VM size. (will try a different capacity type or VM size to fulfill your request)", karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName),
-			expectedUnavailableOfferingsInformation: []offeringToCheck{
+			).
+			build(),
+
+		newTestCase("Overconstrained zonal allocation failure").
+			withInstanceType(zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.OverconstrainedZonalAllocationRequest, "").
+			expectError(fmt.Errorf(errMsgOverconstrainedZonalFmt, testZone2, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName)).
+			expectUnavailable(defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand)).
+			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			build(),
+
+		newTestCase("Overconstrained allocation failure").
+			withInstanceType(zone1OnDemand, zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.OverconstrainedAllocationRequest, "").
+			expectError(fmt.Errorf(errMsgOverconstrainedAllocationFmt, karpv1.CapacityTypeOnDemand, responseErrorTestInstanceName)).
+			expectUnavailable(
 				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
 				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeOnDemand),
-			},
-			expectedAvailableOfferingsInformation: []offeringToCheck{
-				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
-			},
-		},
-		{
-			testName: "Regional quota exceeded",
-			instanceType: defaultCreateInstanceType(
-				createOfferingType(testZone2, karpv1.CapacityTypeOnDemand),
-				createOfferingType(testZone3, karpv1.CapacityTypeSpot),
-			),
-			zone:         testZone2,
-			capacityType: karpv1.CapacityTypeOnDemand,
-			responseErr:  createResponseError(sdkerrors.OperationNotAllowed, sdkerrors.RegionalQuotaExceededTerm),
-			expectedErr:  cloudprovider.NewInsufficientCapacityError(fmt.Errorf("regional on-demand vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests")),
-		},
+			).
+			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
+			build(),
+
+		newTestCase("Regional quota exceeded").
+			withInstanceType(zone2OnDemand, zone3Spot).
+			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.RegionalQuotaExceededTerm).
+			expectError(cloudprovider.NewInsufficientCapacityError(fmt.Errorf("%s", errMsgRegionalQuotaExceeded))).
+			build(),
 	}
+}
+
+func TestHandleResponseErrors(t *testing.T) {
+	testCases := setupTestCases()
 
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
-			testProvider := &DefaultProvider{
-				unavailableOfferings:  cache.NewUnavailableOfferings(),
-				responseErrorHandlers: defaultResponseErrorHandlers(),
-			}
+			provider := newTestProvider()
 
-			err := testProvider.handleResponseErrors(context.Background(), tc.instanceType, tc.zone, tc.capacityType, tc.responseErr)
+			err := provider.handleResponseErrors(
+				context.Background(),
+				tc.originalRequestSKU,
+				tc.instanceType,
+				tc.zone,
+				tc.capacityType,
+				tc.responseErr,
+			)
+
 			assert.Equal(t, tc.expectedErr, err)
-			for _, info := range tc.expectedUnavailableOfferingsInformation {
-				if !testProvider.unavailableOfferings.IsUnavailable(info.instanceTypeName, info.zone, info.capacityType) {
-					t.Errorf("Expected offering %s in zone %s with capacity type %s to be marked as unavailable", info.instanceTypeName, info.zone, info.capacityType)
-				}
-			}
-			for _, info := range tc.expectedAvailableOfferingsInformation {
-				if testProvider.unavailableOfferings.IsUnavailable(info.instanceTypeName, info.zone, info.capacityType) {
-					t.Errorf("Expected offering %s in zone %s with capacity type %s to not be marked as unavailable", info.instanceTypeName, info.zone, info.capacityType)
-				}
-			}
+			assertOfferingsState(t, provider, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
 }

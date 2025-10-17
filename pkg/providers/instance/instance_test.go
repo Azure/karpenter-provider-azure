@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/stretchr/testify/assert"
@@ -88,6 +88,7 @@ func TestGetPriorityCapacityAndInstanceType(t *testing.T) {
 		"MC_xxxxx_yyyy-region",
 		"0000000-0000-0000-0000-0000000000",
 		"",
+		"", // DiskEncryptionSetID - empty for tests
 	)
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

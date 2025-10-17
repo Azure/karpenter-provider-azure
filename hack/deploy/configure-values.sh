@@ -3,8 +3,8 @@ set -euo pipefail
 # This script interrogates the AKS cluster and Azure resources to generate
 # the karpenter-values.yaml file using the karpenter-values-template.yaml file as a template.
 
-if [ "$#" -ne 4 ]; then
-    echo "Usage: $0 <cluster-name> <resource-group> <karpenter-service-account-name> <karpenter-user-assigned-identity-name>"
+if [ "$#" -ne 5 ]; then
+    echo "Usage: $0 <cluster-name> <resource-group> <karpenter-service-account-name> <karpenter-user-assigned-identity-name> <enable-azure-sdk-logging>"
     exit 1
 fi
 
@@ -14,6 +14,7 @@ CLUSTER_NAME=$1
 AZURE_RESOURCE_GROUP=$2
 KARPENTER_SERVICE_ACCOUNT_NAME=$3
 AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME=$4
+ENABLE_AZURE_SDK_LOGGING=$5
 
 # Optional values through env vars:
 LOG_LEVEL=${LOG_LEVEL:-"info"}
@@ -44,7 +45,7 @@ get_vnet_json() {
         local subnet_id
         subnet_id=$(jq -r ".agentPoolProfiles[0].vnetSubnetId" <<< "$aks_json")
         local vnet_id
-        vnet_id=$(echo "$subnet_id" | sed 's|/subnets/[^/]*$||')
+        vnet_id=${subnet_id%/subnets/*}
         vnet_json=$(az network vnet show --ids "$vnet_id")
     fi
 
@@ -57,7 +58,7 @@ VNET_JSON=$(get_vnet_json "$AZURE_RESOURCE_GROUP_MC" "$AKS_JSON")
 VNET_SUBNET_ID=$(jq -r ".subnets[0].id" <<< "$VNET_JSON")
 VNET_GUID=$(jq -r ".resourceGuid // empty" <<< "$VNET_JSON")
 
-# The // empty ensures that if the files is 'null' or not prsent jq will output nothing
+# The // empty ensures that if the files is 'null' or not present jq will output nothing
 # If the value returned is none, its from jq and not the aks api in this case we return ""
 NETWORK_PLUGIN=$(jq -r ".networkProfile.networkPlugin // empty | if . == \"none\" then \"\" else . end" <<< "$AKS_JSON")
 NETWORK_PLUGIN_MODE=$(jq -r ".networkProfile.networkPluginMode // empty | if . == \"none\" then \"\" else . end" <<< "$AKS_JSON")
@@ -66,10 +67,11 @@ NETWORK_POLICY=$(jq -r ".networkProfile.networkPolicy // empty | if . == \"none\
 NODE_IDENTITIES=$(jq -r ".identityProfile.kubeletidentity.resourceId" <<< "$AKS_JSON")
 
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv)
+KUBELET_IDENTITY_CLIENT_ID=$(jq -r ".identityProfile.kubeletidentity.clientId // empty" <<< "$AKS_JSON")
 
 export CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACCOUNT_NAME \
     CLUSTER_ENDPOINT BOOTSTRAP_TOKEN SSH_PUBLIC_KEY VNET_SUBNET_ID KARPENTER_USER_ASSIGNED_CLIENT_ID NODE_IDENTITIES AZURE_SUBSCRIPTION_ID NETWORK_PLUGIN NETWORK_PLUGIN_MODE NETWORK_POLICY \
-    LOG_LEVEL VNET_GUID
+    LOG_LEVEL VNET_GUID KUBELET_IDENTITY_CLIENT_ID ENABLE_AZURE_SDK_LOGGING
 
 # get karpenter-values-template.yaml, if not already present (e.g. outside of repo context)
 if [ ! -f karpenter-values-template.yaml ]; then

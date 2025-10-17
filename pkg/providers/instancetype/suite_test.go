@@ -55,13 +55,15 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/skewer"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -88,6 +90,8 @@ var cluster, clusterNonZonal *state.Cluster
 var cloudProvider, cloudProviderNonZonal *cloudprovider.CloudProvider
 
 var fakeZone1 = utils.MakeZone(fake.Region, "1")
+
+var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
 
 func TestAzure(t *testing.T) {
 	ctx = TestContextWithLogger(t)
@@ -242,6 +246,32 @@ var _ = Describe("InstanceType Provider", func() {
 				ContainSubstring("kubernetes.azure.com/azure-cni-overlay=true"),
 			))
 		})
+		It("should include stateless CNI label for kubernetes 1.34+ set to true", func() {
+			// Set kubernetes version to 1.34.0
+			nodeClass.Status.KubernetesVersion = "1.34.0"
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			decodedString := ExpectDecodedCustomData(azureEnv)
+			Expect(decodedString).To(SatisfyAll(
+				ContainSubstring("kubernetes.azure.com/network-stateless-cni=true"),
+			))
+		})
+		It("should include stateless CNI label for kubernetes < 1.34 set to false", func() {
+			// Set kubernetes version to 1.33.0
+			nodeClass.Status.KubernetesVersion = "1.33.0"
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+			decodedString := ExpectDecodedCustomData(azureEnv)
+			Expect(decodedString).To(SatisfyAll(
+				ContainSubstring("kubernetes.azure.com/network-stateless-cni=false"),
+			))
+
+		})
 		It("should use the subnet specified in the nodeclass", func() {
 			nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpenter/subnets/nodeclassSubnet")
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -372,7 +402,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// ensure that initial zone was made unavailable
 			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
-			ExpectUnavailable(azureEnv, "Standard_D2_v3", zone, karpv1.CapacityTypeSpot)
+			ExpectUnavailable(azureEnv, defaultTestSKU, zone, karpv1.CapacityTypeSpot)
 
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -442,7 +472,7 @@ var _ = Describe("InstanceType Provider", func() {
 			initialVMSize := *vm.Properties.HardwareProfile.VMSize
 			zone, err := utils.GetZone(&vm)
 			Expect(err).ToNot(HaveOccurred())
-			ExpectUnavailable(azureEnv, string(initialVMSize), zone, karpv1.CapacityTypeSpot)
+			ExpectUnavailable(azureEnv, &skewer.SKU{Name: lo.ToPtr(string(initialVMSize))}, zone, karpv1.CapacityTypeSpot)
 
 			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(nil)
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -539,6 +569,37 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("additional-tags", func() {
+		It("should add additional tags to the node", func() {
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				AdditionalTags: map[string]string{
+					"karpenter.azure.com/test-tag": "test-value",
+				},
+			}))
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+			Expect(vm.Tags).To(Equal(map[string]*string{
+				"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
+				"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
+				"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
+			}))
+
+			nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop()
+			Expect(nic).NotTo(BeNil())
+			Expect(nic.Interface.Tags).To(Equal(map[string]*string{
+				"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
+				"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
+				"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
+			}))
+		})
+	})
+
 	Context("Filtering in InstanceType Provider List", func() {
 		var instanceTypes corecloudprovider.InstanceTypes
 		var err error
@@ -588,7 +649,191 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
+	Context("Filtering by Encryption at Host", func() {
+		var instanceTypes corecloudprovider.InstanceTypes
+		var err error
+		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+		Context("when encryption at host is enabled", func() {
+			BeforeEach(func() {
+				nodeClassWithEncryption := test.AKSNodeClass()
+				if nodeClassWithEncryption.Spec.Security == nil {
+					nodeClassWithEncryption.Spec.Security = &v1beta1.Security{}
+				}
+				nodeClassWithEncryption.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+				ExpectApplied(ctx, env.Client, nodeClassWithEncryption)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithEncryption)
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should only include SKUs that support encryption at host", func() {
+				// Standard_D2_v2 does not support encryption at host, so it should be filtered out
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+				// Standard_D2s_v3 supports encryption at host, so it should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				// Standard_D2_v5 supports encryption at host, so it should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+			})
+		})
+
+		Context("when encryption at host is disabled or not set", func() {
+			It("should include SKUs regardless of encryption at host support", func() {
+				nodeClassWithoutEncryption := test.AKSNodeClass()
+				// default is disabled when Security is nil or EncryptionAtHost is nil
+				ExpectApplied(ctx, env.Client, nodeClassWithoutEncryption)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithoutEncryption)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Standard_D2_v2 does not support encryption at host, but should still be included when encryption is not required
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+				// Standard_D2s_v3 supports encryption at host and should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				// Standard_D2_v5 supports encryption at host and should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+			})
+		})
+	})
+
 	Context("Ephemeral Disk", func() {
+		var originalOptions *options.Options
+		BeforeEach(func() {
+			originalOptions = options.FromContext(ctx)
+			ctx = options.ToContext(
+				ctx,
+				test.Options(test.OptionsFields{
+					UseSIG: lo.ToPtr(true),
+				}))
+		})
+
+		AfterEach(func() {
+			ctx = options.ToContext(ctx, originalOptions)
+		})
+
+		Context("FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) -> diskSizeGB, *placement", func() {
+			// B20ms:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 32212254720 -> 32.21225472 GB .. we should select this as the ephemeral disk size
+			// placement == CacheDisk
+			// MaxResourceVolumeMB == 163840 MiB -> 171.80 GB,
+			// Standard_D128ds_v6:
+			// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacments == NvmeDisk
+			// and this is greater than 0, so we select 7559, placement == NvmeDisk
+			// Standard_D16plds_v5:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 429496729600 -> 429.4967296, this is greater than zero, so we select this as the ephemeral disk size
+			// placement == CacheDisk and size == 429.4967296 GB
+			// MaxResourceVolumeMB == 614400 MiB
+			// Standard_D2as_v6: -> EphemeralOSDiskSupported is false, it should return 0 and nil for placement
+			// Standard_D128ds_v6:
+			// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacments == NvmeDisk
+			// and this is greater than 0, so we select 7559, placement == NvmeDisk
+			// Standard_NC24ads_A100_v4:
+			// {Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
+			// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacments == NvmeDisk so we move to cache disk
+			// CacheDiskBytes == 274877906944 -> 274.877906944 GB so we select cache disk + 274
+			// MaxResourceVolumeMB == 65536 MiB
+			// Standard_D64s_v3:
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 1717986918400 -> 1717.9869184 GB, this is greater than zero, so we select this as the ephemeral disk size
+			// placement == CacheDisk and size == 1717 GB
+			// Standard_A0
+			// NvmeDiskSizeInMiB == 0
+			// CacheDiskBytes == 0, this is zero
+			// MaxResourceVolumeMB == 20480 Mib -> 21.474836 GB. Note that this sku doesnt support ephemeral os disk
+			DescribeTable("should return the max ephemeral disk size in GB for a given instance type",
+				func(sku *skewer.SKU, expectedSize int64, expectedPlacement *armcompute.DiffDiskPlacement) {
+					sizeGB, placement := instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+					Expect(sizeGB).To(Equal(expectedSize))
+					Expect(placement).To(Equal(expectedPlacement))
+				}, Entry("Standard_B20ms", SkewerSKU("Standard_B20ms"), int64(32), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D128ds_v6", SkewerSKU("Standard_D128ds_v6"), int64(7559), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)),
+				Entry("Standard_D16plds_v5", SkewerSKU("Standard_D16plds_v5"), int64(429), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D2as_v6", SkewerSKU("Standard_D2as_v6"), int64(0), nil), // does not support ephemeral
+				Entry("Standard_NC24ads_A100_v4", SkewerSKU("Standard_NC24ads_A100_v4"), int64(274), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_D64s_v3", SkewerSKU("Standard_D64s_v3"), int64(1717), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)),
+				Entry("Standard_A0", SkewerSKU("Standard_A0"), int64(0), nil),       // does not support ephemeral
+				Entry("Standard_D2_v2", SkewerSKU("Standard_D2_v2"), int64(0), nil), // does not support ephemeral
+				// TODO: codegen
+				// Entry("Standard_D2pls_v5", SkewerSKU("Standard_D2pls_v5"), int64(0), nil), // does not support ephemeral
+				// Entry("Standard_D2lds_v5", SkewerSKU("Standard_D2lds_v5"), int64(80), armcompute.DiffDiskPlacementResourceDisk),
+				Entry("Nil SKU", nil, int64(0), nil),
+			)
+		})
+		Context("Placement", func() {
+			It("should prefer NVMe disk if supported for ephemeral", func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      "node.kubernetes.io/instance-type",
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D128ds_v6"},
+					},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm).NotTo(BeNil())
+				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
+				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementNvmeDisk))
+			})
+			It("should not select NVMe ephemeral disk placement if the sku has an nvme disk, supports ephemeral os disk, but doesnt support NVMe placement", func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      "node.kubernetes.io/instance-type",
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_NC24ads_A100_v4"},
+					},
+				})
+
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm).NotTo(BeNil())
+				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
+				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).ToNot(Equal(armcompute.DiffDiskPlacementNvmeDisk))
+			})
+			It("should prefer cache disk placement when both cache and temp disk support ephemeral and fit the default 128GB threshold", func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      "node.kubernetes.io/instance-type",
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_D64s_v3"},
+					},
+				})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm).NotTo(BeNil())
+				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
+				Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementCacheDisk))
+			})
+			It("should select managed disk if cache disk is too small but temp disk supports ephemeral and fits osDiskSizeGB to have parity with the AKS Nodepool API", func() {
+				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+					NodeSelectorRequirement: v1.NodeSelectorRequirement{
+						Key:      "node.kubernetes.io/instance-type",
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"Standard_B20ms"},
+					},
+				})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod()
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+				Expect(vm).NotTo(BeNil())
+				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+			})
+		})
 		It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
 			// Create a NodePool that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
@@ -612,7 +857,41 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
 			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
 		})
+		It("should fail to provision if ephemeral disk ask for is too large", func() {
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+					Operator: v1.NodeSelectorOpGt,
+					Values:   []string{"100000"},
+				},
+			}) // No InstanceType will match this requirement
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
 
+		})
+		It("should select an ephemeral disk if LabelSKUStorageEphemeralOSMaxSize is set and os disk size fits", func() {
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+					Operator: v1.NodeSelectorOpGt,
+					Values:   []string{"0"},
+				},
+			})
+			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+			Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
+			Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(30)))
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option)).To(Equal(armcompute.DiffDiskOptionsLocal))
+		})
 		It("should use ephemeral disk if supported, and set disk size to OSDiskSizeGB from node class", func() {
 			// Create a Nodepool that selects a sku that supports ephemeral
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 256GB
@@ -656,6 +935,25 @@ var _ = Describe("InstanceType Provider", func() {
 			Expect(vm.Properties.StorageProfile.OSDisk.DiskSizeGB).NotTo(BeNil())
 			Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(128)))
 			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
+		})
+		It("should select NvmeDisk for v6 skus with maxNvmeDiskSize > 0", func() {
+			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
+				NodeSelectorRequirement: v1.NodeSelectorRequirement{
+					Key:      "node.kubernetes.io/instance-type",
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D128ds_v6"},
+				}})
+			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](100)
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+			Expect(vm).NotTo(BeNil())
+
+			Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).NotTo(BeNil())
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Placement)).To(Equal(armcompute.DiffDiskPlacementNvmeDisk))
 		})
 	})
 
@@ -848,6 +1146,42 @@ var _ = Describe("InstanceType Provider", func() {
 			azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.Error.Set(
 				&azcore.ResponseError{ErrorCode: sdkerrors.ZoneAllocationFailed},
 			)
+			// when ZonalAllocationFailed error is encountered, we block all VM sizes that have >= vCPUs as the VM size for which we encountered the error
+			expectedUnavailableSKUs := []*skewer.SKU{
+				{
+					Name:   lo.ToPtr("Standard_D2_v2"),
+					Size:   lo.ToPtr("D2_v2"),
+					Family: lo.ToPtr("StandardDv2Family"),
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{
+							Name:  lo.ToPtr("vCPUs"),
+							Value: lo.ToPtr("2"),
+						},
+					},
+				},
+				{
+					Name:   lo.ToPtr("Standard_D16_v2"),
+					Size:   lo.ToPtr("D16_v2"),
+					Family: lo.ToPtr("StandardDv2Family"),
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{
+							Name:  lo.ToPtr("vCPUs"),
+							Value: lo.ToPtr("16"),
+						},
+					},
+				},
+				{
+					Name:   lo.ToPtr("Standard_D32_v2"),
+					Size:   lo.ToPtr("D32_v2"),
+					Family: lo.ToPtr("StandardDv2Family"),
+					Capabilities: &[]compute.ResourceSkuCapabilities{
+						{
+							Name:  lo.ToPtr("vCPUs"),
+							Value: lo.ToPtr("32"),
+						},
+					},
+				},
+			}
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
 					Key:      v1.LabelInstanceTypeStable,
@@ -865,8 +1199,10 @@ var _ = Describe("InstanceType Provider", func() {
 			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
 			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeSpot)).To(BeTrue())
-			Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable("Standard_D2_v2", zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+			for _, skuToCheck := range expectedUnavailableSKUs {
+				Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
+				Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+			}
 
 			By("successfully scheduling in a different zone on retry")
 			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -985,14 +1321,14 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 
 		Context("SkuNotAvailable", func() {
-			AssertUnavailable := func(sku string, capacityType string) {
+			AssertUnavailable := func(sku *skewer.SKU, capacityType string) {
 				// fake a SKU not available error
 				azureEnv.VirtualMachinesAPI.VirtualMachinesBehavior.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(
 					&azcore.ResponseError{ErrorCode: sdkerrors.SKUNotAvailableErrorCode},
 				)
 				coretest.ReplaceRequirements(nodePool,
 					karpv1.NodeSelectorRequirementWithMinValues{
-						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku}}},
+						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelInstanceTypeStable, Operator: v1.NodeSelectorOpIn, Values: []string{sku.GetName()}}},
 					karpv1.NodeSelectorRequirementWithMinValues{
 						NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{capacityType}}},
 				)
@@ -1006,11 +1342,11 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 
 			It("should mark SKU as unavailable in all zones for Spot", func() {
-				AssertUnavailable("Standard_D2_v2", karpv1.CapacityTypeSpot)
+				AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeSpot)
 			})
 
 			It("should mark SKU as unavailable in all zones for OnDemand", func() {
-				AssertUnavailable("Standard_D2_v2", karpv1.CapacityTypeOnDemand)
+				AssertUnavailable(defaultTestSKU, karpv1.CapacityTypeOnDemand)
 			})
 		})
 	})
@@ -1147,7 +1483,7 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.LabelSKUName:                      "Standard_NC24ads_A100_v4",
 				v1beta1.LabelSKUFamily:                    "N",
 				v1beta1.LabelSKUVersion:                   "4",
-				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53.6870912",
+				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "429",
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUGPUName:                   "A100",
@@ -1155,6 +1491,9 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.LabelSKUGPUCount:                  "1",
 				v1beta1.LabelSKUCPU:                       "24",
 				v1beta1.LabelSKUMemory:                    "8192",
+				// AKS domain.
+				v1beta1.AKSLabelCPU:    "24",
+				v1beta1.AKSLabelMemory: "8192",
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
 				v1.LabelFailureDomainBetaZone:      fakeZone1,
@@ -1233,7 +1572,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -1282,7 +1621,7 @@ var _ = Describe("InstanceType Provider", func() {
 				UseSIG: lo.ToPtr(true),
 			})
 			ctx = options.ToContext(ctx)
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -1316,7 +1655,10 @@ var _ = Describe("InstanceType Provider", func() {
 		)
 		DescribeTable("should select the right image for a given instance type",
 			func(instanceType string, imageFamily string, expectedImageDefinition string, expectedGalleryURL string) {
-				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+				statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+				if expectUseAzureLinux3 && expectedImageDefinition == azureLinuxGen2ArmImageDefinition {
+					Skip("AzureLinux3 ARM64 VHD is not available in CIG")
+				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -1643,7 +1985,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 	Context("Zone-aware provisioning", func() {
 		It("should launch in the NodePool-requested zone", func() {
-			zone, vmZone := "eastus-3", "3"
+			zone, vmZone := fmt.Sprintf("%s-3", fake.Region), "3"
 			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: karpv1.CapacityTypeLabelKey, Operator: v1.NodeSelectorOpIn, Values: []string{karpv1.CapacityTypeSpot, karpv1.CapacityTypeOnDemand}}},
 				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: v1.LabelTopologyZone, Operator: v1.NodeSelectorOpIn, Values: []string{zone}}},
@@ -1717,7 +2059,7 @@ var _ = Describe("InstanceType Provider", func() {
 
 		It("should return error when instance type resolution fails", func() {
 			// Create and set up the status controller
-			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface)
+			statusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 
 			// Set NodeClass to Ready
 			nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)
@@ -1726,7 +2068,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Reconcile the NodeClass to ensure status is updated
 			ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
-			azureEnv.MockSkuClientSingleton.SKUClient.Error = fmt.Errorf("failed to list SKUs")
+			azureEnv.SKUsAPI.Error = fmt.Errorf("failed to list SKUs")
 
 			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1873,4 +2215,22 @@ func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider coreclou
 		_, err = ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, nodeClaim)
 		Expect(err).ToNot(HaveOccurred())
 	}
+}
+
+func SkewerSKU(skuName string) *skewer.SKU {
+	data := fake.ResourceSkus["southcentralus"]
+	// Note we could do a more efficient lookup if this data
+	// was in a map by skuname, but with less than 20 skus linear search rather than O(1) is fine.
+	for _, sku := range data {
+		if lo.FromPtr(sku.Name) == skuName {
+			return &skewer.SKU{
+				Name:         sku.Name,
+				Capabilities: sku.Capabilities,
+				Locations:    sku.Locations,
+				Family:       sku.Family,
+				ResourceType: sku.ResourceType,
+			}
+		}
+	}
+	return nil
 }

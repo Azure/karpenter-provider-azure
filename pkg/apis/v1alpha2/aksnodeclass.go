@@ -24,8 +24,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type FIPSMode string
+
+var (
+	FIPSModeFIPS     = FIPSMode("FIPS")
+	FIPSModeDisabled = FIPSMode("Disabled")
+)
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
+// +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
 type AKSNodeClassSpec struct {
 	// VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
@@ -34,18 +42,27 @@ type AKSNodeClassSpec struct {
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
 	// +kubebuilder:default=128
 	// +kubebuilder:validation:Minimum=30
+	// +kubebuilder:validation:Maximum=2048
 	// osDiskSizeGB is the size of the OS disk in GB.
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
 	// ImageFamily is the image family that instances use.
-	// +kubebuilder:default=Ubuntu2204
-	// +kubebuilder:validation:Enum:={Ubuntu2204,AzureLinux}
+	// +kubebuilder:default=Ubuntu
+	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	ImageFamily *string `json:"imageFamily,omitempty"`
-	// Tags to be applied on Azure resources like instances.
+	// FIPSMode controls FIPS compliance for the provisioned nodes
+	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
-	Tags map[string]string `json:"tags,omitempty"`
+	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
+	// Tags to be applied on Azure resources like instances.
+	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
+	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
+	// +kubebuilder:validation:XValidation:message="tags keys must not contain '\\'",rule="self.all(k, !k.contains('\\\\'))"
+	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
+	// +optional
+	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
 	// Kubelet defines args to be used when configuring kubelet on provisioned nodes.
 	// They are a subset of the upstream types, recognizing not all options may be supported.
 	// Wherever possible, the types and names should reflect the upstream kubelet types.
@@ -64,6 +81,18 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum:=250
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
+	// Collection of security related karpenter fields
+	Security *Security `json:"security,omitempty"`
+}
+
+// TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
+type Security struct {
+	// EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+	// For more information, see:
+	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
+	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
+	// +optional
+	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
@@ -155,6 +184,9 @@ type KubeletConfiguration struct {
 // AKSNodeClass is the Schema for the AKSNodeClass API
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=aksnodeclasses,scope=Cluster,categories={karpenter,nap},shortName={aksnc,aksncs}
+// +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.conditions[?(@.type=='Ready')].status"
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="ImageFamily",type=string,JSONPath=".spec.imageFamily",priority=1
 // +kubebuilder:subresource:status
 // +kubebuilder:deprecatedversion:warning="use v1beta1.AKSNodeClass instead"
 type AKSNodeClass struct {
@@ -169,7 +201,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v2"
+const AKSNodeClassHashVersion = "v3"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
@@ -185,4 +217,13 @@ type AKSNodeClassList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AKSNodeClass `json:"items"`
+}
+
+// GetEncryptionAtHost returns whether encryption at host is enabled for the node class.
+// Returns false if Security or EncryptionAtHost is nil.
+func (in *AKSNodeClass) GetEncryptionAtHost() bool {
+	if in.Spec.Security != nil && in.Spec.Security.EncryptionAtHost != nil {
+		return *in.Spec.Security.EncryptionAtHost
+	}
+	return false
 }

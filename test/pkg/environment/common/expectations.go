@@ -94,7 +94,8 @@ func (env *Environment) ExpectUpdated(objects ...client.Object) {
 			current := o.DeepCopyObject().(client.Object)
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(current), current)).To(Succeed())
 			if current.GetResourceVersion() != o.GetResourceVersion() {
-				log.FromContext(env).Info(fmt.Sprintf("detected an update to an object (%s) with an outdated resource version, did you get the latest version of the object before patching?", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme()))))
+				log.FromContext(env).Info("detected an update to an object with an outdated resource version, did you get the latest version of the object before patching?",
+					"objectType", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme())).String())
 			}
 			o.SetResourceVersion(current.GetResourceVersion())
 			g.Expect(env.Client.Update(env.Context, o)).To(Succeed())
@@ -115,7 +116,8 @@ func (env *Environment) ExpectStatusUpdated(objects ...client.Object) {
 			current := o.DeepCopyObject().(client.Object)
 			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(current), current)).To(Succeed())
 			if current.GetResourceVersion() != o.GetResourceVersion() {
-				log.FromContext(env).Info(fmt.Sprintf("detected an update to an object (%s) with an outdated resource version, did you get the latest version of the object before patching?", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme()))))
+				log.FromContext(env).Info("detected an update to an object with an outdated resource version, did you get the latest version of the object before patching?",
+					"objectType", lo.Must(apiutil.GVKForObject(o, env.Client.Scheme())).String())
 			}
 			o.SetResourceVersion(current.GetResourceVersion())
 			g.Expect(env.Client.Status().Update(env.Context, o)).To(Succeed())
@@ -277,6 +279,20 @@ func (env *Environment) ExpectExists(obj client.Object) client.Object {
 		g.Expect(env.Client.Get(env, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
 	}).WithTimeout(time.Second * 5).Should(Succeed())
 	return obj
+}
+
+func (env *Environment) ExpectAllExist(objs ...client.Object) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		var errs []error
+		for _, obj := range objs {
+			err := env.Client.Get(env, client.ObjectKeyFromObject(obj), obj)
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
+		g.Expect(errs).To(BeEmpty())
+	}).WithTimeout(time.Second * 5).Should(Succeed())
 }
 
 func (env *Environment) EventuallyExpectBound(pods ...*corev1.Pod) {
@@ -700,6 +716,18 @@ func (env *Environment) EventuallyExpectNodesUntaintedWithTimeout(timeout time.D
 	}).WithTimeout(timeout).Should(Succeed())
 }
 
+func (env *Environment) EventuallyExpectRegisteredNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
+	GinkgoHelper()
+	By(fmt.Sprintf("waiting for nodes to be %s to %d", comparator, count))
+	nodeClaimList := &karpv1.NodeClaimList{}
+	Eventually(func(g Gomega) {
+		g.Expect(env.Client.List(env, nodeClaimList, client.HasLabels{test.DiscoveryLabel})).To(Succeed())
+		g.Expect(lo.CountBy(nodeClaimList.Items, func(nc karpv1.NodeClaim) bool { return nc.StatusConditions().IsTrue(karpv1.ConditionTypeRegistered) })).To(BeNumerically(comparator, count),
+			fmt.Sprintf("expected %d nodeclaims, had %d (%v)", count, len(nodeClaimList.Items), NodeClaimNames(lo.ToSlicePtr(nodeClaimList.Items))))
+	}).Should(Succeed())
+	return lo.ToSlicePtr(nodeClaimList.Items)
+}
+
 func (env *Environment) EventuallyExpectLaunchedNodeClaimCount(comparator string, count int) []*karpv1.NodeClaim {
 	GinkgoHelper()
 	By(fmt.Sprintf("waiting for nodes to be %s to %d", comparator, count))
@@ -1010,7 +1038,7 @@ func (env *Environment) ExpectCABundle() string {
 	Expect(err).ToNot(HaveOccurred())
 	_, err = transport.TLSConfigFor(transportConfig) // fills in CAData!
 	Expect(err).ToNot(HaveOccurred())
-	log.FromContext(env.Context).WithValues("length", len(transportConfig.TLS.CAData)).V(1).Info("discovered caBundle")
+	log.FromContext(env.Context).V(1).Info("discovered caBundle", "length", len(transportConfig.TLS.CAData))
 	return base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)
 }
 

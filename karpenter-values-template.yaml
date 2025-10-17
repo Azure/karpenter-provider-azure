@@ -1,4 +1,3 @@
-
 replicas: 1 # for better debugging experience
 controller:
   env:
@@ -36,9 +35,11 @@ controller:
     - name: LOCATION
       value: ${AZURE_LOCATION}
     - name: KUBELET_IDENTITY_CLIENT_ID
-      value: ""
+      value: ${KUBELET_IDENTITY_CLIENT_ID}
     - name: AZURE_NODE_RESOURCE_GROUP
       value: ${AZURE_RESOURCE_GROUP_MC}
+    - name: ENABLE_AZURE_SDK_LOGGING
+      value: ${ENABLE_AZURE_SDK_LOGGING:-false}
 
     # managed karpenter settings
     - name: USE_SIG

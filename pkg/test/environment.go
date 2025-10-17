@@ -62,11 +62,14 @@ type Environment struct {
 	VirtualMachineExtensionsAPI *fake.VirtualMachineExtensionsAPI
 	NetworkInterfacesAPI        *fake.NetworkInterfacesAPI
 	CommunityImageVersionsAPI   *fake.CommunityGalleryImageVersionsAPI
-	MockSkuClientSingleton      *fake.MockSkuClientSingleton
+	NodeImageVersionsAPI        *fake.NodeImageVersionsAPI
+	SKUsAPI                     *fake.ResourceSKUsAPI
 	PricingAPI                  *fake.PricingAPI
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
+	SubnetsAPI                  *fake.SubnetsAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
+	SubscriptionAPI             *fake.SubscriptionsAPI
 
 	// Cache
 	KubernetesVersionCache    *cache.Cache
@@ -102,24 +105,27 @@ func NewEnvironmentNonZonal(ctx context.Context, env *coretest.Environment) *Env
 func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, region string, nonZonal bool) *Environment {
 	testOptions := options.FromContext(ctx)
 
+	azureEnv := lo.Must(auth.EnvironmentFromName("AzurePublicCloud"))
+
 	// API
 	var auxTokenPolicy *auth.AuxiliaryTokenPolicy
 	var auxiliaryTokenServer *fake.AuxiliaryTokenServer
 	if testOptions.UseSIG {
 		auxiliaryTokenServer = fake.NewAuxiliaryTokenServer("test-token", time.Now().Add(1*time.Hour), time.Now().Add(5*time.Minute))
-		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, testOptions.SIGAccessTokenScope)
+		auxTokenPolicy = auth.NewAuxiliaryTokenPolicy(auxiliaryTokenServer, testOptions.SIGAccessTokenServerURL, auth.TokenScope(azureEnv.Cloud))
 	}
 	virtualMachinesAPI := &fake.VirtualMachinesAPI{AuxiliaryTokenPolicy: auxTokenPolicy}
 
 	networkInterfacesAPI := &fake.NetworkInterfacesAPI{}
 	virtualMachinesExtensionsAPI := &fake.VirtualMachineExtensionsAPI{}
 	pricingAPI := &fake.PricingAPI{}
-	skuClientSingleton := &fake.MockSkuClientSingleton{SKUClient: &fake.ResourceSKUsAPI{Location: region}}
+	skusAPI := &fake.ResourceSKUsAPI{Location: region}
 	communityImageVersionsAPI := &fake.CommunityGalleryImageVersionsAPI{}
 	loadBalancersAPI := &fake.LoadBalancersAPI{}
 	networkSecurityGroupAPI := &fake.NetworkSecurityGroupAPI{}
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
+	subscriptionAPI := &fake.SubscriptionsAPI{}
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -130,11 +136,16 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 
 	// Providers
-	pricingProvider := pricing.NewProvider(ctx, pricingAPI, region, make(chan struct{}))
+	pricingProvider := pricing.NewProvider(ctx, azureEnv, pricingAPI, region, make(chan struct{}))
 	kubernetesVersionProvider := kubernetesversion.NewKubernetesVersionProvider(env.KubernetesInterface, kubernetesVersionCache)
 	imageFamilyProvider := imagefamily.NewProvider(communityImageVersionsAPI, region, subscription, nodeImageVersionsAPI, nodeImagesCache)
-	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, nodeBootstrappingAPI)
-	instanceTypesProvider := instancetype.NewDefaultProvider(region, instanceTypeCache, skuClientSingleton, pricingProvider, unavailableOfferingsCache)
+	instanceTypesProvider := instancetype.NewDefaultProvider(
+		region,
+		instanceTypeCache,
+		skusAPI,
+		pricingProvider,
+		unavailableOfferingsCache)
+	imageFamilyResolver := imagefamily.NewDefaultResolver(env.Client, imageFamilyProvider, instanceTypesProvider, nodeBootstrappingAPI)
 	launchTemplateProvider := launchtemplate.NewProvider(
 		ctx,
 		imageFamilyResolver,
@@ -159,17 +170,20 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		networkSecurityGroupAPI,
 		testOptions.NodeResourceGroup,
 	)
+	subnetsAPI := &fake.SubnetsAPI{}
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
+		subnetsAPI,
 		loadBalancersAPI,
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
 		nodeImageVersionsAPI,
 		nodeBootstrappingAPI,
-		skuClientSingleton,
+		skusAPI,
+		subscriptionAPI,
 	)
 	instanceProvider := instance.NewDefaultProvider(
 		azClient,
@@ -182,6 +196,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.NodeResourceGroup,
 		subscription,
 		testOptions.ProvisionMode,
+		testOptions.DiskEncryptionSetID,
 	)
 
 	return &Environment{
@@ -191,10 +206,13 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		VirtualMachineExtensionsAPI: virtualMachinesExtensionsAPI,
 		NetworkInterfacesAPI:        networkInterfacesAPI,
 		CommunityImageVersionsAPI:   communityImageVersionsAPI,
+		NodeImageVersionsAPI:        nodeImageVersionsAPI,
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
-		MockSkuClientSingleton:      skuClientSingleton,
+		SubnetsAPI:                  subnetsAPI,
+		SKUsAPI:                     skusAPI,
 		PricingAPI:                  pricingAPI,
+		SubscriptionAPI:             subscriptionAPI,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
 		NodeImagesCache:           nodeImagesCache,
@@ -227,11 +245,12 @@ func (env *Environment) Reset() {
 	env.NetworkInterfacesAPI.Reset()
 	env.LoadBalancersAPI.Reset()
 	env.NetworkSecurityGroupAPI.Reset()
+	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
-	env.MockSkuClientSingleton.Reset()
+	env.NodeImageVersionsAPI.Reset()
+	env.SKUsAPI.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
-	env.MockSkuClientSingleton.SKUClient.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()

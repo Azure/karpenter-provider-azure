@@ -24,11 +24,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/mitchellh/hashstructure/v2"
-
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/skewer"
+	"github.com/mitchellh/hashstructure/v2"
 
 	"github.com/samber/lo"
 
@@ -37,21 +37,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// GetVMName parses the provider ID stored on the node to get the vmName
-// associated with a node
-func GetVMName(providerID string) (string, error) {
-	// standalone VMs have providerID in the format: azure:///subscriptions/<subscriptionID>/resourceGroups/<resourceGroup>/providers/Microsoft.Compute/virtualMachines/<instanceID>
-	r := regexp.MustCompile(`azure:///subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/virtualMachines/(?P<InstanceID>.*)`)
-	matches := r.FindStringSubmatch(providerID)
-	if matches == nil {
-		return "", fmt.Errorf("parsing vm name %s", providerID)
+// extractVersionFromVMSize extracts and normalizes the version from VMSizeType, dropping "v" prefix and backfilling "1"
+func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
+	// safety-check to avoid panics, shouldn't happen in practice
+	if vmsize == nil {
+		return ""
 	}
-	for i, name := range r.SubexpNames() {
-		if name == "InstanceID" {
-			return matches[i], nil
+
+	version := "1"
+	if vmsize.Version != "" {
+		if !(vmsize.Version[0] == 'V' || vmsize.Version[0] == 'v') {
+			// should never happen; don't capture in label (won't be available for selection by version)
+			return ""
 		}
+		version = vmsize.Version[1:]
 	}
-	return "", fmt.Errorf("parsing vm name %s", providerID)
+	return version
 }
 
 func ResourceIDToProviderID(ctx context.Context, id string) string {
@@ -59,7 +60,7 @@ func ResourceIDToProviderID(ctx context.Context, id string) string {
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
 	if err != nil {
-		log.FromContext(ctx).Info(fmt.Sprintf("WARN: Failed to convert resource group name to lower case in providerID %s: %v", providerID, err))
+		log.FromContext(ctx).Info("failed to convert resource group name to lower case in providerID, using fallback", "providerID", providerID, "error", err)
 		// fallback to original providerID
 		return providerID
 	}

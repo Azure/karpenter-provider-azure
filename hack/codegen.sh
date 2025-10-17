@@ -18,6 +18,17 @@ pricing() {
   checkForUpdates "${GIT_DIFF}" "${NO_UPDATE}" "${SUBJECT} beside timestamps since last update" "${GENERATED_FILE}"
 }
 
+locationsgen() {
+  GENERATED_FILE="pkg/fake/locations.json"
+  NO_UPDATE=$' pkg/fake/locations.json | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)'
+  SUBJECT="Locations"
+
+  go run hack/code/locations_gen/main.go -- "${GENERATED_FILE}"
+
+  GIT_DIFF=$(git diff --stat "${GENERATED_FILE}")
+  checkForUpdates "${GIT_DIFF}" "${NO_UPDATE}" "${SUBJECT} beside timestamps since last update" "${GENERATED_FILE}"
+}
+
 skugen() {
   location=${1:-eastus}
 
@@ -32,7 +43,7 @@ skugen() {
   NO_UPDATE=" pkg/fake/zz_generated.sku.$location.go | 2 +- 1 file changed, 1 insertion(+), 1 deletion(-)"
   SUBJECT="SKUGEN"
 
-  go run hack/code/instancetype_testdata_gen/main.go -- "${GENERATED_FILE}" "$location" "Standard_B1s,Standard_A0,Standard_D2_v2,Standard_D2_v3,Standard_DS2_v2,Standard_D2s_v3,Standard_D2_v5,Standard_D16plds_v5,Standard_F16s_v2,Standard_NC6s,Standard_NC6s_v3,Standard_NC16as_T4_v3,Standard_NC24ads_A100_v4,Standard_M8-2ms,Standard_D4s_v3,Standard_D64s_v3,Standard_DC8s_v3,Standard_D2as_v6"
+  go run hack/code/instancetype_testdata_gen/main.go -- "${GENERATED_FILE}" "$location" "Standard_B1s,Standard_A0,Standard_D2_v2,Standard_D2_v3,Standard_DS2_v2,Standard_D2s_v3,Standard_D2_v5,Standard_D16plds_v5,Standard_E4d_v5,Standard_B20ms,Standard_F16s_v2,Standard_NC6s,Standard_NC6s_v3,Standard_NC16as_T4_v3,Standard_NC24ads_A100_v4,Standard_M8-2ms,Standard_D4s_v3,Standard_D64s_v3,Standard_DC8s_v3,Standard_D2as_v6"
   go fmt "${GENERATED_FILE}"
 
   GIT_DIFF=$(git diff --stat "${GENERATED_FILE}")
@@ -41,15 +52,15 @@ skugen() {
 
 
 skugen-all() {
-  SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
-  export SUBSCRIPTION_ID
-  if [ -z "${SUBSCRIPTION_ID}" ]; then
+  AZURE_SUBSCRIPTION_ID=$(az account show --query 'id' --output tsv)
+  export AZURE_SUBSCRIPTION_ID
+  if [ -z "${AZURE_SUBSCRIPTION_ID}" ]; then
     echo "No subscription is set. Please login and set a subscription."
     exit 1
   fi
 
   # run skugen for selected regions
-  skugen eastus
+  skugen southcentralus # region with Standard_E4d_v5
   skugen westcentralus # non-zonal region
 }
 
@@ -95,4 +106,5 @@ fi
 
 # Run all the codegen scripts
 pricing
+locationsgen
 skugen-all

@@ -28,10 +28,13 @@ inputs:
   location:
     description: "the azure location to run the e2e test in"
     default: "eastus"
+  provisionmode:
+    description: "the karpenter provisioning mode to run the e2e test in"
+    default: "aksscriptless"
 runs:
   using: "composite"
   steps:
-  - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+  - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
     with:
       ref: ${{ inputs.git_ref }}
   - name: az login
@@ -45,7 +48,7 @@ runs:
     run: az account set --subscription ${{ inputs.subscription-id }}
   - name: configure Helm chart values
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-configure-values
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} PROVISION_MODE=${{ inputs.provisionmode }} make az-configure-values
   - name: deploy karpenter to cluster
     shell: bash
     run: AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run

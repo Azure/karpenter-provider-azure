@@ -19,7 +19,6 @@ package instancetype
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -33,6 +32,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -42,7 +42,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 
 	"github.com/Azure/skewer"
@@ -60,6 +59,9 @@ const (
 type Provider interface {
 	LivenessProbe(*http.Request) error
 	List(context.Context, *v1beta1.AKSNodeClass) ([]*cloudprovider.InstanceType, error)
+
+	// Return Azure Skewer Representation of the instance type
+	Get(context.Context, *v1beta1.AKSNodeClass, string) (*skewer.SKU, error)
 	//UpdateInstanceTypes(ctx context.Context) error
 	//UpdateInstanceTypeOfferings(ctx context.Context) error
 }
@@ -69,7 +71,7 @@ var _ Provider = (*DefaultProvider)(nil)
 
 type DefaultProvider struct {
 	region               string
-	skuClient            skuclient.SkuClient
+	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
 
@@ -85,7 +87,13 @@ type DefaultProvider struct {
 	instanceTypesSeqNum uint64
 }
 
-func NewDefaultProvider(region string, cache *cache.Cache, skuClient skuclient.SkuClient, pricingProvider *pricing.Provider, offeringsCache *kcache.UnavailableOfferings) *DefaultProvider {
+func NewDefaultProvider(
+	region string,
+	cache *cache.Cache,
+	skuClient skewer.ResourceClient,
+	pricingProvider *pricing.Provider,
+	offeringsCache *kcache.UnavailableOfferings,
+) *DefaultProvider {
 	return &DefaultProvider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
 		region:               region,
@@ -111,13 +119,14 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
 		lo.FromPtr(nodeClass.Spec.ImageFamily),
 		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
+		nodeClass.GetEncryptionAtHost(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -131,15 +140,15 @@ func (p *DefaultProvider) List(
 	for _, sku := range skus {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing VM size %s", *sku.Size))
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
 			continue
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing SKU architecture %s", *sku.Size))
+			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
 			continue
 		}
-		instanceTypeZones := instanceTypeZones(sku, p.region)
+		instanceTypeZones := p.instanceTypeZones(sku)
 		// !!! Important !!!
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
@@ -150,6 +159,9 @@ func (p *DefaultProvider) List(
 		}
 
 		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
+			continue
+		}
+		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
 			continue
 		}
 		result = append(result, instanceType)
@@ -163,17 +175,28 @@ func (p *DefaultProvider) LivenessProbe(req *http.Request) error {
 	return p.pricingProvider.LivenessProbe(req)
 }
 
+func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeClass, instanceType string) (*skewer.SKU, error) {
+	skus, err := p.getInstanceTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if sku, ok := skus[instanceType]; ok {
+		return sku, nil
+	}
+	return nil, fmt.Errorf("instance type %s not found", instanceType)
+}
+
 // instanceTypeZones generates the set of all supported zones for a given SKU
 // The strings have to match Zone labels that will be placed on Node
-func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
+func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
 	// If an offering is non-zonal, the availability zones will be empty.
-	skuZones := lo.Keys(sku.AvailabilityZones(region))
-	if hasZonalSupport(region) && len(skuZones) > 0 {
+	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
+	if len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
-			return utils.MakeZone(region, zone)
+			return utils.MakeZone(p.region, zone)
 		})...)
 	}
 	return sets.New("") // empty string means non-zonal offering
@@ -194,8 +217,8 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 	for zone := range zones {
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
-		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeOnDemand)
-		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(*sku.Name, zone, karpv1.CapacityTypeSpot)
+		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
+		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
@@ -238,14 +261,32 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	if !(utils.IsNvidiaEnabledSKU(skuName) || utils.IsMarinerEnabledGPUSKU(skuName)) {
 		return true
 	}
-	switch imageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
+	switch {
+	case v1beta1.UbuntuFamilies.Has(imageFamily):
 		return utils.IsNvidiaEnabledSKU(skuName)
-	case v1beta1.AzureLinuxImageFamily:
+	case imageFamily == v1beta1.AzureLinuxImageFamily:
 		return utils.IsMarinerEnabledGPUSKU(skuName)
 	default:
 		return false
 	}
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// If EncryptionAtHost is not enabled in the nodeclass, all instance types are supported
+	if !nodeClass.GetEncryptionAtHost() {
+		return true
+	}
+	// If EncryptionAtHost is enabled, only include instance types that support it
+	return p.supportsEncryptionAtHost(sku)
+}
+
+// supportsEncryptionAtHost checks if the SKU supports encryption at host
+func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
+	value, err := sku.GetCapabilityString("EncryptionAtHostSupported")
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(value, "True")
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
@@ -263,17 +304,17 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 	instanceTypes := map[string]*skewer.SKU{}
 
-	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient.GetInstance()))
+	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
 	if err != nil {
 		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
 
 	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("Discovered %d SKUs", len(skus)))
+	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, fmt.Sprintf("parsing VM size %s", *skus[i].Size))
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
 			continue
 		}
 		useSIG := options.FromContext(ctx).UseSIG
@@ -286,8 +327,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 		// Only update instanceTypesSeqNun with the instance types have been changed
 		// This is to not create new keys with duplicate instance types option
 		atomic.AddUint64(&p.instanceTypesSeqNum, 1)
-		log.FromContext(ctx).WithValues(
-			"count", len(instanceTypes)).V(1).Info("discovered instance types")
+		log.FromContext(ctx).V(1).Info("discovered instance types", "instanceTypeCount", len(instanceTypes))
 	}
 	p.instanceTypesCache.SetDefault(InstanceTypesCacheKey, instanceTypes)
 	return instanceTypes, nil
@@ -342,82 +382,33 @@ func (p *DefaultProvider) isConfidential(sku *skewer.SKU) bool {
 	return strings.HasPrefix(size, "DC") || strings.HasPrefix(size, "EC")
 }
 
-// MaxEphemeralOSDiskSizeGB returns the maximum ephemeral OS disk size for a given SKU.
-// Ephemeral OS disk size is determined by the larger of the two values:
-// 1. MaxResourceVolumeMB (Temp Disk Space)
-// 2. MaxCachedDiskBytes (Cached Disk Space)
-// For Ephemeral disk creation, CRP will use the larger of the two values to ensure we have enough space for the ephemeral disk.
-// Note that generally only older SKUs use the Temp Disk space for ephemeral disks, and newer SKUs use the Cached Disk in most cases.
-// The ephemeral OS disk is created with the free space of the larger of the two values in that place.
-func MaxEphemeralOSDiskSizeGB(sku *skewer.SKU) float64 {
+func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placement *armcompute.DiffDiskPlacement) {
 	if sku == nil {
-		return 0
+		return 0, nil
 	}
-	maxCachedDiskBytes, _ := sku.MaxCachedDiskBytes()
-	maxResourceVolumeMB, _ := sku.MaxResourceVolumeMB() // NOTE: this is a misnomer, MB is actually MiB, hence the conversion below
 
-	maxResourceVolumeBytes := maxResourceVolumeMB * int64(units.Mebibyte)
-	maxDiskBytes := math.Max(float64(maxCachedDiskBytes), float64(maxResourceVolumeBytes))
-	if maxDiskBytes == 0 {
-		return 0
+	if !sku.IsEphemeralOSDiskSupported() {
+		return 0, nil // ephemeral OS disk is not supported by this SKU
 	}
-	// convert bytes to GB
-	return maxDiskBytes / float64(units.Gigabyte)
-}
 
-var (
-	// https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1
-	// (could also be obtained programmatically)
-	zonalRegions = sets.New(
-		// Special
-		"centraluseuap",
-		"eastus2euap",
-		// Americas
-		"brazilsouth",
-		"canadacentral",
-		"centralus",
-		"eastus",
-		"eastus2",
-		"southcentralus",
-		"usgovvirginia",
-		"westus2",
-		"westus3",
-		"chilecentral",
-		"mexicocentral",
-		// Europe
-		"francecentral",
-		"italynorth",
-		"germanywestcentral",
-		"norwayeast",
-		"northeurope",
-		"uksouth",
-		"westeurope",
-		"swedencentral",
-		"switzerlandnorth",
-		"polandcentral",
-		"spaincentral",
-		// Middle East
-		"qatarcentral",
-		"uaenorth",
-		"israelcentral",
-		// Africa
-		"southafricanorth",
-		// Asia Pacific
-		"australiaeast",
-		"centralindia",
-		"japaneast",
-		"koreacentral",
-		"southeastasia",
-		"eastasia",
-		"chinanorth3",
-		"indonesiacentral",
-		"japanwest",
-		"newzealandnorth",
-	)
-)
+	maxNVMeMiB, _ := nvmeDiskSizeInMiB(sku)
 
-func hasZonalSupport(region string) bool {
-	return zonalRegions.Has(region)
+	// Check NVMe disk first (highest priority)
+	if maxNVMeMiB > 0 && supportsNVMeEphemeralOSDisk(sku) {
+		return maxNVMeMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementNvmeDisk)
+	}
+
+	maxCacheDiskBytes, _ := sku.MaxCachedDiskBytes()
+	if maxCacheDiskBytes > 0 {
+		return maxCacheDiskBytes / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementCacheDisk)
+	}
+
+	maxResourceDiskMiB, _ := sku.MaxResourceVolumeMB() // NOTE: MaxResourceVolumeMB is actually in MiBs
+	if maxResourceDiskMiB > 0 {
+		return maxResourceDiskMiB * int64(units.MiB) / int64(units.Gigabyte), lo.ToPtr(armcompute.DiffDiskPlacementResourceDisk)
+	}
+
+	return 0, nil
 }
 
 func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
@@ -430,4 +421,20 @@ func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {
 	}
 
 	return useSIG || hasSCSISupport(sku) // CIG images are not currently tagged for NVMe
+}
+
+func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
+	const ephemeralOSDiskPlacementCapability = "SupportedEphemeralOSDiskPlacements"
+	const nvme = "NvmeDisk"
+	return sku.HasCapabilityWithSeparator(ephemeralOSDiskPlacementCapability, nvme)
+}
+
+func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
+	return int64(*nodeClass.Spec.OSDiskSizeGB) <= sizeGB // use ephemeral disk if it is large enough
+}
+
+func nvmeDiskSizeInMiB(s *skewer.SKU) (int64, error) {
+	const selector = "NvmeDiskSizeInMiB"
+	return s.GetCapabilityIntegerQuantity(selector)
 }

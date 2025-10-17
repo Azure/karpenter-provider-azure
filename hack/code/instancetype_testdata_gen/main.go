@@ -33,7 +33,7 @@ import (
 
 func main() {
 	fmt.Println("starting generation of sku data...")
-	sub := os.Getenv("SUBSCRIPTION_ID")
+	sub := os.Getenv("AZURE_SUBSCRIPTION_ID")
 	path, region, selectedSkus := os.Args[2], os.Args[3], os.Args[4]
 	skus := strings.Split(selectedSkus, ",")
 	targetSkus := map[string]struct{}{}
@@ -41,7 +41,7 @@ func main() {
 		targetSkus[sku] = struct{}{}
 	}
 	if sub == "" {
-		fmt.Println("SUBSCRIPTION_ID env var is required")
+		fmt.Println("AZURE_SUBSCRIPTION_ID env var is required")
 		os.Exit(1)
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)

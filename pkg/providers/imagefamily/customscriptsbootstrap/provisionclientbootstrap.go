@@ -37,6 +37,14 @@ import (
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
+const (
+	ImageFamilyOSSKUUbuntu2004  = "Ubuntu2004"
+	ImageFamilyOSSKUUbuntu2204  = "Ubuntu2204"
+	ImageFamilyOSSKUUbuntu2404  = "Ubuntu2404"
+	ImageFamilyOSSKUAzureLinux2 = "AzureLinux2"
+	ImageFamilyOSSKUAzureLinux3 = "AzureLinux3"
+)
+
 type ProvisionClientBootstrap struct {
 	ClusterName                    string
 	KubeletConfig                  *bootstrap.KubeletConfiguration
@@ -54,8 +62,9 @@ type ProvisionClientBootstrap struct {
 	IsWindows                      bool
 	InstanceType                   *cloudprovider.InstanceType
 	StorageProfile                 string
-	ImageFamily                    string
+	OSSKU                          string
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
+	FIPSMode                       *v1beta1.FIPSMode
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -97,9 +106,15 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	// changed recently. This is OK because drift will correct it.
 	labels.AddAgentBakerGeneratedLabels(p.ResourceGroup, options.FromContext(ctx).KubeletIdentityClientID, nodeLabels)
 
-	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, and for Azure Linux v3
-	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-		(p.ImageFamily == v1beta1.Ubuntu2204ImageFamily || p.ImageFamily == v1beta1.AzureLinuxImageFamily)
+	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
+	// enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
+	//		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
+	// Temporarily disable artifact streaming altogether, until node provisioning performance is fixed
+	// (or until we make artifact streaming configurable)
+	enableArtifactStreaming := false
+
+	// unspecified FIPSMode is effectively no FIPS for now
+	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
 
 	provisionProfile := &models.ProvisionProfile{
 		Name:                     lo.ToPtr(""),
@@ -125,7 +140,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		// AgentPoolWindowsProfile: &models.AgentPoolWindowsProfile{},               // Unsupported as of now; TODO(Windows)
 		// KubeletDiskType:         lo.ToPtr(models.KubeletDiskTypeUnspecified),    // Unsupported as of now
 		// CustomLinuxOSConfig:     &models.CustomLinuxOSConfig{},                   // Unsupported as of now (sysctl)
-		// EnableFIPS:              lo.ToPtr(false),                                 // Unsupported as of now
+		EnableFIPS: lo.ToPtr(enableFIPS),
 		// GpuInstanceProfile:      lo.ToPtr(models.GPUInstanceProfileUnspecified), // Unsupported as of now (MIG)
 		// WorkloadRuntime:         lo.ToPtr(models.WorkloadRuntimeUnspecified),    // Unsupported as of now (Kata)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
@@ -133,13 +148,16 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		},
 	}
 
-	switch p.ImageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
+	// Map OS SKU to AKS provision client's expectation
+	// Note that the direction forward is to be more specific with OS versions. Be careful when supporting new ones.
+	switch p.OSSKU {
+	// https://go.dev/wiki/Switch#multiple-cases
+	case ImageFamilyOSSKUUbuntu2004, ImageFamilyOSSKUUbuntu2204, ImageFamilyOSSKUUbuntu2404:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
-	case v1beta1.AzureLinuxImageFamily:
+	case ImageFamilyOSSKUAzureLinux2, ImageFamilyOSSKUAzureLinux3:
 		provisionProfile.OsSku = to.Ptr(models.OSSKUAzureLinux)
 	default:
-		provisionProfile.OsSku = to.Ptr(models.OSSKUUbuntu)
+		return nil, fmt.Errorf("unsupported OSSKU %s", p.OSSKU)
 	}
 
 	if p.KubeletConfig != nil {

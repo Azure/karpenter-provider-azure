@@ -18,8 +18,8 @@ package inplaceupdate
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/awslabs/operatorpkg/reasonable"
 	"github.com/samber/lo"
@@ -32,15 +32,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
+	corenodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 )
 
 type Controller struct {
@@ -60,17 +59,13 @@ func NewController(
 
 func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, "nodeclaim.inplaceupdate")
+	// No need to add nodeClaim name to the context as it's already there
 
-	if !nodeClaim.DeletionTimestamp.IsZero() {
-		return reconcile.Result{}, nil
+	// Get the NodeClass
+	nodeClass, err := nodeclaimutils.GetAKSNodeClass(ctx, c.kubeClient, nodeClaim)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("resolving AKSNodeClass, %w", err)
 	}
-
-	// Node doesn't have provider ID yet
-	if nodeClaim.Status.ProviderID == "" {
-		return reconcile.Result{}, nil
-	}
-
-	stored := nodeClaim.DeepCopy()
 
 	// TODO: When we have sources of truth coming from NodePool we can do:
 	// nodePool, err := nodeclaimutil.Owner(ctx, c.kubeClient, nodeClaim)
@@ -78,40 +73,33 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	// Compare the expected hash with the actual hash
 	options := options.FromContext(ctx)
-	goalHash, err := HashFromNodeClaim(options, nodeClaim)
+	goalHash, err := HashFromNodeClaim(options, nodeClaim, nodeClass)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 	actualHash := nodeClaim.Annotations[v1beta1.AnnotationInPlaceUpdateHash]
 
-	log.FromContext(ctx).V(1).Info(fmt.Sprintf("goal hash is: %q, actual hash is: %q", goalHash, actualHash))
+	log.FromContext(ctx).V(1).Info("comparing in-place update hashes", "goalHash", goalHash, "actualHash", actualHash)
 
 	// If there's no difference from goal state, no need to do anything else
 	if goalHash == actualHash {
 		return reconcile.Result{}, nil
 	}
 
-	vmName, err := utils.GetVMName(nodeClaim.Status.ProviderID)
-	if err != nil {
-		return reconcile.Result{}, err
+	if shouldProcess, result := c.shouldProcess(ctx, nodeClaim); !shouldProcess {
+		return result, nil
 	}
 
-	vm, err := c.instanceProvider.Get(ctx, vmName)
+	stored := nodeClaim.DeepCopy()
+
+	vm, err := nodeclaimutils.GetVM(ctx, c.instanceProvider, nodeClaim)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting azure VM for machine, %w", err)
+		return reconcile.Result{}, fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
 	}
 
-	update := CalculateVMPatch(options, vm)
-	// This is safe only as long as we're not updating fields which we consider secret.
-	// If we do/are, we need to redact them.
-	logVMPatch(ctx, update)
-
-	// Apply the update, if one is needed
-	if update != nil {
-		err = c.instanceProvider.Update(ctx, vmName, *update)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to apply update to VM, %w", err)
-		}
+	err = c.applyPatch(ctx, options, nodeClaim, nodeClass, vm)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
 	}
 
 	if nodeClaim.Annotations == nil {
@@ -124,36 +112,51 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
+	log.FromContext(ctx).V(1).Info("successfully saved new in-place update hash", "goalHash", goalHash)
 
 	return reconcile.Result{}, nil
 }
 
-func CalculateVMPatch(
+func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeClaim) (bool, reconcile.Result) {
+	if !nodeClaim.DeletionTimestamp.IsZero() {
+		return false, reconcile.Result{}
+	}
+
+	// If the node isn't registered yet, we need to wait until it is as otherwise all the resources we need to update may not exist yet
+	if !nodeClaim.StatusConditions().Get(karpv1.ConditionTypeRegistered).IsTrue() {
+		log.FromContext(ctx).V(1).Info("can't update yet as the claim is not registered")
+		return false, reconcile.Result{RequeueAfter: 60 * time.Second}
+	}
+
+	if nodeClaim.Status.ProviderID == "" {
+		log.FromContext(ctx).V(1).Info("can't update yet as there's no provider ID")
+		return false, reconcile.Result{RequeueAfter: 60 * time.Second}
+	}
+
+	return true, reconcile.Result{}
+}
+
+func (c *Controller) applyPatch(
+	ctx context.Context,
 	options *options.Options,
-	// TODO: Can pass and consider NodeClaim and/or NodePool here if we need to in the future
-	currentVM *armcompute.VirtualMachine,
-) *armcompute.VirtualMachineUpdate {
-	// Determine the differences between the current state and the goal state
-	expectedIdentities := options.NodeIdentities
-	var currentIdentities []string
-	if currentVM.Identity != nil {
-		currentIdentities = lo.Keys(currentVM.Identity.UserAssignedIdentities)
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+	vm *armcompute.VirtualMachine,
+) error {
+	update := CalculateVMPatch(options, nodeClaim, nodeClass, vm)
+	// This is safe only as long as we're not updating fields which we consider secret.
+	// If we do/are, we need to redact them.
+	logVMPatch(ctx, update)
+
+	// Apply the update, if one is needed
+	if update != nil {
+		err := c.instanceProvider.Update(ctx, lo.FromPtr(vm.Name), *update)
+		if err != nil {
+			return fmt.Errorf("failed to apply update to VM, %w", err)
+		}
 	}
 
-	toAdd, _ := lo.Difference(expectedIdentities, currentIdentities)
-	// It's not possible to PATCH identities away, so for now we never remove them even if they've been removed from
-	// the configmap. This matches the RPs behavior and also ensures that we don't remove identities which users have
-	// manually added.
-
-	if len(toAdd) == 0 {
-		return nil // No update to perform
-	}
-
-	identity := instance.ConvertToVirtualMachineIdentity(toAdd)
-
-	return &armcompute.VirtualMachineUpdate{
-		Identity: identity,
-	}
+	return nil
 }
 
 func (c *Controller) Register(_ context.Context, m manager.Manager) error {
@@ -166,24 +169,15 @@ func (c *Controller) Register(_ context.Context, m manager.Manager) error {
 					predicate.GenerationChangedPredicate{}, // Note that this will trigger on pod restart for all Machines.
 				),
 			)).
+		Watches(&v1beta1.AKSNodeClass{}, corenodeclaimutils.NodeClassEventHandler(m.GetClient()), builder.WithPredicates(tagsChangedPredicate{})).
+		// TODO: Can add .Watches(&karpv1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
+		// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
+		// TODO: if/when we need to monitor provisioner changes and flow updates on the NodePool down to the underlying VMs.
 		WithOptions(controller.Options{
 			RateLimiter: reasonable.RateLimiter(),
 			// TODO: Document why this magic number used. If we want to consistently use it accoss reconcilers, refactor to a reused const.
 			// Comments thread discussing this: https://github.com/Azure/karpenter-provider-azure/pull/729#discussion_r2006629809
 			MaxConcurrentReconciles: 10,
 		}).
-		// TODO: Can add .Watches(&karpv1.NodePool{}, nodeclaimutil.NodePoolEventHandler(c.kubeClient))
-		// TODO: similar to https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/controllers/nodeclaim/disruption/controller.go#L214C3-L217C5
-		// TODO: if/when we need to monitor provisioner changes and flow updates on the NodePool down to the underlying VMs.
 		Complete(reconcile.AsReconciler(m.GetClient(), c))
-}
-func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
-	if log.FromContext(ctx).V(1).Enabled() {
-		rawStr := "<nil>"
-		if update != nil {
-			raw, _ := json.Marshal(update)
-			rawStr = string(raw)
-		}
-		log.FromContext(ctx).V(1).Info(fmt.Sprintf("applying patch to Azure VM: %s", rawStr))
-	}
 }

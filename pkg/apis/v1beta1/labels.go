@@ -33,6 +33,8 @@ func init() {
 
 		LabelSKUCPU,
 		LabelSKUMemory,
+		AKSLabelCPU,
+		AKSLabelMemory,
 
 		LabelSKUAcceleratedNetworking,
 
@@ -76,6 +78,9 @@ var (
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
 	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
+	// AKS domain.
+	AKSLabelCPU    = AKSLabelDomain + "/sku-cpu"    // Same value as sku-cpu.
+	AKSLabelMemory = AKSLabelDomain + "/sku-memory" // Same value as sku-memory.
 
 	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
@@ -102,6 +107,14 @@ var (
 )
 
 const (
+	UbuntuImageFamily     = "Ubuntu"
 	Ubuntu2204ImageFamily = "Ubuntu2204"
+	Ubuntu2404ImageFamily = "Ubuntu2404"
 	AzureLinuxImageFamily = "AzureLinux"
+)
+
+var UbuntuFamilies = sets.New(
+	UbuntuImageFamily,
+	Ubuntu2204ImageFamily,
+	Ubuntu2404ImageFamily,
 )

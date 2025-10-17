@@ -52,6 +52,7 @@ var _ = AfterEach(func() { env.AfterEach() })
 
 var _ = Describe("GPU", func() {
 	DescribeTable("should provision one GPU node and one GPU Pod",
+		Label("GPU"),
 		func(nodeClass *v1beta1.AKSNodeClass) {
 			// Enable NodeRepair feature gate if running in-cluster
 			if env.InClusterController {
@@ -103,7 +104,22 @@ var _ = Describe("GPU", func() {
 			env.ExpectCreatedNodeCount("==", int(*deployment.Spec.Replicas))
 		},
 		Entry("should provision one GPU Node and one GPU Pod (AzureLinux)", env.AZLinuxNodeClass()),
-		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2204)", env.DefaultAKSNodeClass()),
+		Entry("should provision one GPU Node and one GPU Pod (Ubuntu)", func() *v1beta1.AKSNodeClass { // This ensures the case statement for GPU Filtering covers the generic Ubuntu Image family
+			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.UbuntuImageFamily)
+			return nodeClass
+
+		}()),
+		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2204)", func() *v1beta1.AKSNodeClass {
+			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
+			return nodeClass
+		}()),
+		Entry("should provision one GPU Node and one GPU Pod (Ubuntu2404)", func() *v1beta1.AKSNodeClass {
+			nodeClass := env.DefaultAKSNodeClass()
+			nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2404ImageFamily)
+			return nodeClass
+		}()),
 	)
 })
 

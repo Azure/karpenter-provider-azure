@@ -37,8 +37,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/transport"
 	"k8s.io/client-go/util/flowcontrol"
-	"sigs.k8s.io/cloud-provider-azure/pkg/azclient"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/operator"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
@@ -87,22 +87,28 @@ type Operator struct {
 	InstanceTypesProvider     instancetype.Provider
 	InstanceProvider          *instance.DefaultProvider
 	LoadBalancerProvider      *loadbalancer.Provider
+	AZClient                  *instance.AZClient
 }
 
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
 	azConfig, err := GetAZConfig()
 	lo.Must0(err, "creating Azure config") // NOTE: we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as when initializing the client there are helpful error messages in initializing clients and the azure config
 
+	log.FromContext(ctx).V(0).Info("Initial AZConfig", "azConfig", azConfig.String())
+
 	cred, err := getCredential()
 	lo.Must0(err, "getting Azure credential")
 
-	// Get a token to ensure we can
-	lo.Must0(ensureToken(cred, azConfig), "ensuring Azure token can be retrieved")
+	env, err := auth.ResolveCloudEnvironment(azConfig)
+	lo.Must0(err, "resolving cloud environment")
 
-	azClient, err := instance.CreateAZClient(ctx, azConfig, cred)
+	// Get a token to ensure we can
+	lo.Must0(ensureToken(cred, env), "ensuring Azure token can be retrieved")
+
+	azClient, err := instance.NewAZClient(ctx, azConfig, env, cred)
 	lo.Must0(err, "creating Azure client")
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
-		vnetGUID, err := getVnetGUID(cred, azConfig, options.FromContext(ctx).SubnetID)
+		vnetGUID, err := getVnetGUID(ctx, cred, azConfig, options.FromContext(ctx).SubnetID)
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
@@ -116,7 +122,8 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(
 		ctx,
-		pricing.NewAPI(),
+		env,
+		pricing.NewAPI(env.Cloud),
 		azConfig.Location,
 		operator.Elected(),
 	)
@@ -134,8 +141,17 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		cache.New(imagefamily.ImageExpirationInterval,
 			imagefamily.ImageCacheCleaningInterval),
 	)
+	instanceTypeProvider := instancetype.NewDefaultProvider(
+		azConfig.Location,
+		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
+		azClient.SKUClient,
+		pricingProvider,
+		unavailableOfferingsCache,
+	)
 	imageResolver := imagefamily.NewDefaultResolver(
 		operator.GetClient(),
+		imageProvider,
+		instanceTypeProvider,
 		azClient.NodeBootstrappingClient,
 	)
 	launchTemplateProvider := launchtemplate.NewProvider(
@@ -152,13 +168,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.Location,
 		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
-	)
-	instanceTypeProvider := instancetype.NewDefaultProvider(
-		azConfig.Location,
-		cache.New(instancetype.InstanceTypesCacheTTL, azurecache.DefaultCleanupInterval),
-		azClient.SKUClient,
-		pricingProvider,
-		unavailableOfferingsCache,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
 		azClient.LoadBalancersClient,
@@ -180,6 +189,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
+		options.FromContext(ctx).DiskEncryptionSetID,
 	)
 
 	return ctx, &Operator{
@@ -194,6 +204,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		InstanceTypesProvider:        instanceTypeProvider,
 		InstanceProvider:             instanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
+		AZClient:                     azClient,
 	}
 }
 
@@ -221,8 +232,18 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	return lo.ToPtr(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
-func getVnetGUID(creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
-	opts := armopts.DefaultArmOpts()
+func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
+	// TODO: Current the VNET client isn't used anywhere but this method. As such, it is not
+	// held on azclient like the other clients.
+	// We should possibly just put the vnet client on azclient, and then pass azclient in here, rather than
+	// constructing the VNET client here separate from all the other Azure clients.
+	env, err := auth.ResolveCloudEnvironment(cfg)
+	if err != nil {
+		return "", err
+	}
+
+	o := options.FromContext(ctx)
+	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
 	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, creds, opts)
 	if err != nil {
 		return "", err
@@ -262,7 +283,7 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 		return fmt.Errorf("creating dynamic rest mapper, %w", err)
 	}
 
-	log.WithValues("timeout", timeout).Info("waiting for required CRDs to be available")
+	log.Info("waiting for required CRDs to be available", "timeout", timeout)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -270,12 +291,12 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 		err := wait.PollUntilContextCancel(ctx, 10*time.Second, true, func(ctx context.Context) (bool, error) {
 			if _, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version); err != nil {
 				if meta.IsNoMatchError(err) {
-					log.V(1).WithValues("gvk", gvk).Info("waiting for CRD to be available")
+					log.V(1).Info("waiting for CRD to be available", "gvk", gvk)
 					return false, nil
 				}
 				return false, err
 			}
-			log.V(1).WithValues("gvk", gvk).Info("CRD is available")
+			log.V(1).Info("CRD is available", "gvk", gvk)
 			return true, nil
 		})
 		if err != nil {
@@ -292,15 +313,13 @@ func WaitForCRDs(ctx context.Context, timeout time.Duration, config *rest.Config
 
 // ensureToken ensures we can get a token for the Azure environment. Note that this doesn't actually
 // use the token for anything, it just checks that we can get one.
-func ensureToken(cred azcore.TokenCredential, cfg *auth.Config) error {
-	cloudEnv := azclient.EnvironmentFromName(cfg.Cloud)
-
+func ensureToken(cred azcore.TokenCredential, env *auth.Environment) error {
 	// Short timeout to avoid hanging forever if something bad happens
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	_, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{cloudEnv.ServiceManagementEndpoint + "/.default"},
+		Scopes: []string{auth.TokenScope(env.Cloud)},
 	})
 	if err != nil {
 		return err

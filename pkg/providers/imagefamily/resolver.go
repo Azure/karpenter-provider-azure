@@ -19,14 +19,15 @@ package imagefamily
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
@@ -56,6 +57,8 @@ var _ Resolver = &defaultResolver{}
 // defaultResolver is able to fill-in dynamic launch template parameters
 type defaultResolver struct {
 	nodeBootstrappingProvider types.NodeBootstrappingAPI
+	imageProvider             *provider
+	instanceTypeProvider      instancetype.Provider
 }
 
 // ImageFamily can be implemented to override the default logic for generating dynamic launch template parameters
@@ -76,18 +79,22 @@ type ImageFamily interface {
 		imageDistro string,
 		storageProfile string,
 		nodeBootstrappingClient types.NodeBootstrappingAPI,
+		fipsMode *v1beta1.FIPSMode,
 	) customscriptsbootstrap.Bootstrapper
 	Name() string
 	// DefaultImages returns a list of default CommunityImage definitions for this ImageFamily.
 	// Our Image Selection logic relies on the ordering of the default images to be ordered from most preferred to least, then we will select the latest image version available for that CommunityImage definition.
 	// Our Release pipeline ensures all images are released together within 24 hours of each other for community image gallery, so selecting based on image feature priorities, then by date, and not vice-versa is acceptable.
-	DefaultImages() []types.DefaultImageOutput
+	// If fipsMode is FIPSModeFIPS, only FIPS-enabled images will be returned
+	DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput
 }
 
 // NewDefaultResolver constructs a new launch template Resolver
-func NewDefaultResolver(_ client.Client, nodeBootstrappingClient types.NodeBootstrappingAPI) *defaultResolver {
+func NewDefaultResolver(_ client.Client, imageProvider *provider, instanceTypeProvider instancetype.Provider, nodeBootstrappingClient types.NodeBootstrappingAPI) *defaultResolver {
 	return &defaultResolver{
+		imageProvider:             imageProvider,
 		nodeBootstrappingProvider: nodeBootstrappingClient,
+		instanceTypeProvider:      instanceTypeProvider,
 	}
 }
 
@@ -108,17 +115,21 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	imageFamily := getImageFamily(nodeClass.Spec.ImageFamily, kubernetesVersion, staticParameters)
+	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
 	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
 	}
 
-	log.FromContext(ctx).Info(fmt.Sprintf("Resolved image %s for instance type %s", imageID, instanceType.Name))
+	log.FromContext(ctx).Info("resolved image",
+		logging.ImageID, imageID,
+		logging.InstanceType, instanceType.Name,
+	)
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
-	imageDistro, err := mapToImageDistro(imageID, imageFamily)
+	useSIG := options.FromContext(ctx).UseSIG
+	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG)
 	if err != nil {
 		return nil, err
 	}
@@ -138,9 +149,9 @@ func (r *defaultResolver) Resolve(
 		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
 	}
 
-	storageProfile := consts.StorageProfileManagedDisks
-	if useEphemeralDisk(instanceType, nodeClass) {
-		storageProfile = consts.StorageProfileEphemeral
+	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
+	if err != nil {
+		return nil, err
 	}
 
 	template := &template.Parameters{
@@ -159,21 +170,42 @@ func (r *defaultResolver) Resolve(
 			staticParameters.Labels,
 			instanceType,
 			imageDistro,
-			storageProfile,
+			diskType,
 			r.nodeBootstrappingProvider,
+			nodeClass.Spec.FIPSMode,
 		),
-		ImageID:        imageID,
-		StorageProfile: storageProfile,
-		IsWindows:      false, // TODO(Windows)
+		StorageProfileDiskType:    diskType,
+		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
+		StorageProfilePlacement:   lo.FromPtr(placement),
+
+		// TODO: We could potentially use the instance type to do defaulting like
+		// traditional AKS, so putting this here along with the other settings
+		StorageProfileSizeGB: lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
+		ImageID:              imageID,
+		IsWindows:            false, // TODO(Windows)
 	}
 
 	return template, nil
 }
 
-func mapToImageDistro(imageID string, imageFamily ImageFamily) (string, error) {
+func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) (diskType string, placement *armcompute.DiffDiskPlacement, err error) {
+	sku, err := r.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	if err != nil {
+		return "", nil, err
+	}
+
+	_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
+
+	if instancetype.UseEphemeralDisk(sku, nodeClass) {
+		return consts.StorageProfileEphemeral, placement, nil
+	}
+	return consts.StorageProfileManagedDisks, placement, nil
+}
+
+func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool) (string, error) {
 	var imageInfo types.DefaultImageOutput
 	imageInfo.PopulateImageTraitsFromID(imageID)
-	for _, defaultImage := range imageFamily.DefaultImages() {
+	for _, defaultImage := range imageFamily.DefaultImages(useSIG, fipsMode) {
 		if defaultImage.ImageDefinition == imageInfo.ImageDefinition {
 			return defaultImage.Distro, nil
 		}
@@ -197,43 +229,38 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	return kubeletConfig
 }
 
-func getSupportedImages(familyName *string, kubernetesVersion string) []types.DefaultImageOutput {
+func getSupportedImages(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, useSIG bool) []types.DefaultImageOutput {
 	// TODO: Options aren't used within DefaultImages, so safe to be using nil here. Refactor so we don't actually need to pass in Options for getting DefaultImage.
-	imageFamily := getImageFamily(familyName, kubernetesVersion, nil)
-	return imageFamily.DefaultImages()
+	imageFamily := GetImageFamily(familyName, fipsMode, kubernetesVersion, nil)
+	return imageFamily.DefaultImages(useSIG, fipsMode)
 }
 
-func getImageFamily(familyName *string, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+func GetImageFamily(familyName *string, fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
 	switch lo.FromPtr(familyName) {
 	case v1beta1.Ubuntu2204ImageFamily:
 		return &Ubuntu2204{Options: parameters}
+	case v1beta1.Ubuntu2404ImageFamily:
+		return &Ubuntu2404{Options: parameters}
 	case v1beta1.AzureLinuxImageFamily:
 		if UseAzureLinux3(kubernetesVersion) {
 			return &AzureLinux3{Options: parameters}
 		}
 		return &AzureLinux{Options: parameters}
+	case v1beta1.UbuntuImageFamily:
+		fallthrough
 	default:
-		return &Ubuntu2204{Options: parameters}
+		return defaultUbuntu(fipsMode, kubernetesVersion, parameters)
 	}
 }
 
-func getEphemeralMaxSizeGB(instanceType *cloudprovider.InstanceType) int32 {
-	reqs := instanceType.Requirements.Get(v1beta1.LabelSKUStorageEphemeralOSMaxSize).Values()
-	if len(reqs) == 0 || len(reqs) > 1 {
-		return 0
+func defaultUbuntu(fipsMode *v1beta1.FIPSMode, kubernetesVersion string, parameters *template.StaticParameters) ImageFamily {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+		return &Ubuntu2004{Options: parameters}
 	}
-	maxSize, err := strconv.ParseFloat(reqs[0], 32)
-	if err != nil {
-		return 0
+	if UseUbuntu2404(kubernetesVersion) {
+		return &Ubuntu2404{Options: parameters}
 	}
-	// decimal places are truncated, so we round down
-	return int32(maxSize)
-}
-
-// setVMPropertiesStorageProfile enables ephemeral os disk for instance types that support it
-func useEphemeralDisk(instanceType *cloudprovider.InstanceType, nodeClass *v1beta1.AKSNodeClass) bool {
-	// use ephemeral disk if it is large enough
-	return *nodeClass.Spec.OSDiskSizeGB <= getEphemeralMaxSizeGB(instanceType)
+	return &Ubuntu2204{Options: parameters}
 }
 
 // resolveNodeImage returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc

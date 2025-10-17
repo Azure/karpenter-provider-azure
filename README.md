@@ -40,21 +40,36 @@ Karpenter improves the efficiency and cost of running workloads on Kubernetes cl
 ## Node Auto Provisioning (NAP) vs. Self-hosted
 
 Karpenter provider for AKS can be used in two modes:
-* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) mode** (preview): Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/en-gb/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode.
-* **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment. The rest of this page describes how to use Karpenter in self-hosted mode.
+* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) mode**: Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users as it has more test coverage, improved scale-up speed, automatic maintenance window integration, support for some additional SKUs, and various other improvements over self-hosted. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode.
+* **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment.
 
 ## Known limitations
-* Only Linux nodes are supported.
-* Kubenet and Calico are not supported
+
+The following AKS features are not supported:
+* Windows nodes.
+* Kubenet and Calico.
+* IPv6 clusters.
+* [Service Principal](https://learn.microsoft.com/azure/aks/kubernetes-service-principal) based clusters. A system-assigned or user-assigned managed identity must be used.
+* Disk Encryption sets.
+* Custom CA Certificates.
+* [HTTP proxy](https://learn.microsoft.com/azure/aks/http-proxy).
+* Clusters running Karpenter should not be [stopped](https://learn.microsoft.com/azure/aks/start-stop-cluster).
+* All cluster egress [outbound types](https://learn.microsoft.com/azure/aks/egress-outboundtype) are supported, however the type can't be changed after the cluster is created.
+
+## Installation (NAP)
+
+Follow the instructions in the Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli).
 
 ## Installation (self-hosted)
+
+**⚠️ Warning ⚠️** We strongly recommend using [Node Auto Provisioning](#installation-nap) (aka managed Karpenter) instead of self-hosted.
 
 This guide shows how to get started with Karpenter by creating an AKS cluster and installing Karpenter.
 
 ### Install utilities
 
 Install these tools before proceeding:
-* [Azure CLI](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
+* [Azure CLI](https://docs.microsoft.com/cli/azure/install-azure-cli)
 * [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
 * [Helm](https://helm.sh/docs/intro/install/)
 * [jq](https://stedolan.github.io/jq/) - used by some of the scripts below
@@ -136,10 +151,10 @@ The Karpenter Helm chart requires specific configuration values to work with an 
 
 ```bash
 # Select version to install
-export KARPENTER_VERSION=0.7.0
+export KARPENTER_VERSION=1.6.1
 
 # Download the specific's version template
-curl -sO https://raw.githubusercontent.com/Azure/karpenter/v${KARPENTER_VERSION}/karpenter-values-template.yaml
+curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/v${KARPENTER_VERSION}/karpenter-values-template.yaml
 
 # use configure-values.sh to generate karpenter-values.yaml
 # (in repo you can just do ./hack/deploy/configure-values.sh ${CLUSTER_NAME} ${RG})
@@ -198,22 +213,35 @@ helm upgrade --install karpenter oci://ksnap.azurecr.io/karpenter/snapshot/karpe
 
 A single Karpenter NodePool is capable of handling many different pod shapes. Karpenter makes scheduling and provisioning decisions based on pod attributes such as labels and affinity. In other words, Karpenter eliminates the need to manage many different node groups.
 
-Create a default NodePool using the command below. (Additional examples available in the repository under [`examples/v1beta1`](/examples/v1beta1).) The `consolidationPolicy` set to `WhenUnderutilized` in the `disruption` block configures Karpenter to reduce cluster cost by removing and replacing nodes. As a result, consolidation will terminate any empty nodes on the cluster. This behavior can be disabled by setting consolidateAfter to `Never`, telling Karpenter that it should never consolidate nodes.
+Create a default NodePool using the command below. (Additional examples available in the repository under [`examples/v1`](/examples/v1).) The `consolidationPolicy` set to `WhenUnderutilized` in the `disruption` block configures Karpenter to reduce cluster cost by removing and replacing nodes. As a result, consolidation will terminate any empty nodes on the cluster. This behavior can be disabled by setting consolidateAfter to `Never`, telling Karpenter that it should never consolidate nodes.
 
 Note: This NodePool will create capacity as long as the sum of all created capacity is less than the specified limit.
 
 ```bash
 cat <<EOF | kubectl apply -f -
 ---
-apiVersion: karpenter.sh/v1beta1
+apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
   name: general-purpose
   annotations:
-    kubernetes.io/description: "General purpose NodePool for generic workloads"
+    kubernetes.io/description: "General purpose NodePool"
 spec:
   template:
+    metadata:
+      labels:
+        # required for Karpenter to predict overhead from cilium DaemonSet
+        kubernetes.azure.com/ebpf-dataplane: cilium
     spec:
+      nodeClassRef:
+        group: karpenter.azure.com
+        kind: AKSNodeClass
+        name: default
+      startupTaints:
+        # https://karpenter.sh/docs/concepts/nodepools/#cilium-startup-taint
+        - key: node.cilium.io/agent-not-ready
+          effect: NoExecute
+          value: "true"
       requirements:
         - key: kubernetes.io/arch
           operator: In
@@ -227,22 +255,21 @@ spec:
         - key: karpenter.azure.com/sku-family
           operator: In
           values: [D]
-      nodeClassRef:
-        name: default
+      expireAfter: Never
   limits:
     cpu: 100
   disruption:
-    consolidationPolicy: WhenUnderutilized
-    expireAfter: Never
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 0s
 ---
 apiVersion: karpenter.azure.com/v1beta1
 kind: AKSNodeClass
 metadata:
   name: default
   annotations:
-    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu2204 nodes"
+    kubernetes.io/description: "General purpose AKSNodeClass for running Ubuntu nodes"
 spec:
-  imageFamily: Ubuntu2204
+  imageFamily: Ubuntu
 EOF
 ```
 Karpenter is now active and ready to begin provisioning nodes.
