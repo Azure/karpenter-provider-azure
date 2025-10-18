@@ -52,11 +52,11 @@ import (
 )
 
 var (
-	CapacityTypeToPriority = map[string]string{
+	CapacityTypeToVMPriority = map[string]string{
 		karpv1.CapacityTypeSpot:     string(armcompute.VirtualMachinePriorityTypesSpot),
 		karpv1.CapacityTypeOnDemand: string(armcompute.VirtualMachinePriorityTypesRegular),
 	}
-	PriorityToCapacityType = map[string]string{
+	VMPriorityToCapacityType = map[string]string{
 		string(armcompute.VirtualMachinePriorityTypesSpot):    karpv1.CapacityTypeSpot,
 		string(armcompute.VirtualMachinePriorityTypesRegular): karpv1.CapacityTypeOnDemand,
 	}
@@ -100,7 +100,7 @@ type VirtualMachinePromise struct {
 	Wait func() error
 }
 
-type Provider interface {
+type VMProvider interface {
 	BeginCreate(context.Context, *v1beta1.AKSNodeClass, *karpv1.NodeClaim, []*corecloudprovider.InstanceType) (*VirtualMachinePromise, error)
 	Get(context.Context, string) (*armcompute.VirtualMachine, error)
 	List(context.Context) ([]*armcompute.VirtualMachine, error)
@@ -112,9 +112,9 @@ type Provider interface {
 }
 
 // assert that DefaultProvider implements Provider interface
-var _ Provider = (*DefaultProvider)(nil)
+var _ VMProvider = (*DefaultVMProvider)(nil)
 
-type DefaultProvider struct {
+type DefaultVMProvider struct {
 	location                     string
 	azClient                     *AZClient
 	instanceTypeProvider         instancetype.Provider
@@ -131,7 +131,7 @@ type DefaultProvider struct {
 	vmListQuery, nicListQuery string
 }
 
-func NewDefaultProvider(
+func NewDefaultVMProvider(
 	azClient *AZClient,
 	instanceTypeProvider instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
@@ -143,8 +143,8 @@ func NewDefaultProvider(
 	subscriptionID string,
 	provisionMode string,
 	diskEncryptionSetID string,
-) *DefaultProvider {
-	return &DefaultProvider{
+) *DefaultVMProvider {
+	return &DefaultVMProvider{
 		azClient:                     azClient,
 		instanceTypeProvider:         instanceTypeProvider,
 		launchTemplateProvider:       launchTemplateProvider,
@@ -171,7 +171,7 @@ func NewDefaultProvider(
 // Errors that occur on the "async side" of the VM create (after the request is accepted, or after polling the
 // VM create and while ) will be returned
 // from the VirtualMachinePromise.Wait() function.
-func (p *DefaultProvider) BeginCreate(
+func (p *DefaultVMProvider) BeginCreate(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
@@ -198,7 +198,7 @@ func (p *DefaultProvider) BeginCreate(
 		"hostname", *vm.Name,
 		"type", string(*vm.Properties.HardwareProfile.VMSize),
 		"zone", zone,
-		"capacity-type", GetCapacityType(vm))
+		"capacity-type", GetCapacityTypeFromVM(vm))
 
 	return vmPromise, nil
 }
@@ -206,7 +206,7 @@ func (p *DefaultProvider) BeginCreate(
 // Update updates the VM with the given updates. If Tags are specified, the tags are also updated on the associated network interface and VM extensions.
 // Note that this means that this method can fail if the extensions have not been created yet. It is expected that the caller handles this and retries the update
 // to propagate the tags to the extensions once they're created.
-func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
+func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update armcompute.VirtualMachineUpdate) error {
 	if update.Tags != nil {
 		// If there are tags for other resources, do those first. This is a hedge to avoid updating the VM first which may cause us to think subsequent updates aren't needed
 		// because the VM already has the updates
@@ -270,7 +270,7 @@ func (p *DefaultProvider) Update(ctx context.Context, vmName string, update armc
 	return nil
 }
 
-func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.VirtualMachine, error) {
+func (p *DefaultVMProvider) Get(ctx context.Context, vmName string) (*armcompute.VirtualMachine, error) {
 	var vm armcompute.VirtualMachinesClientGetResponse
 	var err error
 
@@ -284,7 +284,7 @@ func (p *DefaultProvider) Get(ctx context.Context, vmName string) (*armcompute.V
 	return &vm.VirtualMachine, nil
 }
 
-func (p *DefaultProvider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
+func (p *DefaultVMProvider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
 	req := NewQueryRequest(&(p.subscriptionID), p.vmListQuery)
 	client := p.azClient.azureResourceGraphClient
 	data, err := GetResourceData(ctx, client, *req)
@@ -302,7 +302,7 @@ func (p *DefaultProvider) List(ctx context.Context) ([]*armcompute.VirtualMachin
 	return vmList, nil
 }
 
-func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error {
+func (p *DefaultVMProvider) Delete(ctx context.Context, resourceName string) error {
 	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
 	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted
 	vm, err := p.Get(ctx, resourceName)
@@ -319,7 +319,7 @@ func (p *DefaultProvider) Delete(ctx context.Context, resourceName string) error
 	return p.cleanupAzureResources(ctx, resourceName, false)
 }
 
-func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
+func (p *DefaultVMProvider) GetNic(ctx context.Context, rg, nicName string) (*armnetwork.Interface, error) {
 	nicResponse, err := p.azClient.networkInterfacesClient.Get(ctx, rg, nicName, nil)
 	if err != nil {
 		return nil, err
@@ -328,7 +328,7 @@ func (p *DefaultProvider) GetNic(ctx context.Context, rg, nicName string) (*armn
 }
 
 // ListNics returns all network interfaces in the resource group that have the nodepool tag
-func (p *DefaultProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
+func (p *DefaultVMProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
 	req := NewQueryRequest(&(p.subscriptionID), p.nicListQuery)
 	client := p.azClient.azureResourceGraphClient
 	data, err := GetResourceData(ctx, client, *req)
@@ -346,12 +346,12 @@ func (p *DefaultProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface
 	return nicList, nil
 }
 
-func (p *DefaultProvider) DeleteNic(ctx context.Context, nicName string) error {
+func (p *DefaultVMProvider) DeleteNic(ctx context.Context, nicName string) error {
 	return deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, nicName)
 }
 
 // createAKSIdentifyingExtension attaches a VM extension to identify that this VM participates in an AKS cluster
-func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string, tags map[string]*string) (err error) {
+func (p *DefaultVMProvider) createAKSIdentifyingExtension(ctx context.Context, vmName string, tags map[string]*string) (err error) {
 	vmExt := p.getAKSIdentifyingExtension(tags)
 	vmExtName := *vmExt.Name
 	log.FromContext(ctx).V(1).Info("creating virtual machine AKS identifying extension", "vmName", vmName)
@@ -366,7 +366,7 @@ func (p *DefaultProvider) createAKSIdentifyingExtension(ctx context.Context, vmN
 	return nil
 }
 
-func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool, tags map[string]*string) error {
+func (p *DefaultVMProvider) createCSExtension(ctx context.Context, vmName string, cse string, isWindows bool, tags map[string]*string) error {
 	vmExt := p.getCSExtension(cse, isWindows, tags)
 	vmExtName := *vmExt.Name
 	log.FromContext(ctx).V(1).Info("creating virtual machine CSE", "vmName", vmName)
@@ -381,7 +381,7 @@ func (p *DefaultProvider) createCSExtension(ctx context.Context, vmName string, 
 	return nil
 }
 
-func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
+func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) armnetwork.Interface {
 	var ipv4BackendPools []*armnetwork.BackendAddressPool
 	for _, poolID := range opts.BackendPools.IPv4PoolIDs {
 		ipv4BackendPools = append(ipv4BackendPools, &armnetwork.BackendAddressPool{
@@ -442,6 +442,7 @@ func (p *DefaultProvider) newNetworkInterfaceForVM(opts *createNICOptions) armne
 	return nic
 }
 
+// E.g., aks-default-2jf98
 func GenerateResourceName(nodeClaimName string) string {
 	return fmt.Sprintf("aks-%s", nodeClaimName)
 }
@@ -457,7 +458,7 @@ type createNICOptions struct {
 	NetworkSecurityGroupID string
 }
 
-func (p *DefaultProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
+func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
 	log.FromContext(ctx).V(1).Info("creating network interface", "nicName", opts.NICName)
@@ -539,7 +540,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 				},
 			},
 			Priority: lo.ToPtr(armcompute.VirtualMachinePriorityTypes(
-				CapacityTypeToPriority[opts.CapacityType]),
+				CapacityTypeToVMPriority[opts.CapacityType]),
 			),
 		},
 		Zones: utils.MakeVMZone(opts.Zone),
@@ -620,7 +621,7 @@ type createResult struct {
 }
 
 // createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists, which means opts is not guaranteed except VMName
-func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*createResult, error) {
+func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*createResult, error) {
 	// We assume that if a vm exists, we successfully created it with the right parameters from the nodeclaims during another run before a restart.
 	// there are some non-deterministic properties that may change.
 	// Zones: zones are non-detrminsitic as we do a random pick out of zones on the nodeclaim that satisfy the workload requirements.
@@ -657,7 +658,7 @@ func (p *DefaultProvider) createVirtualMachine(ctx context.Context, opts *create
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
 // nolint: gocyclo
-func (p *DefaultProvider) beginLaunchInstance(
+func (p *DefaultVMProvider) beginLaunchInstance(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
@@ -772,7 +773,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
 				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
 				if err != nil {
-					// An error here is handled by CloudProvider create and calls instanceProvider.Delete (which cleans up the azure resources)
+					// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
 					return err
 				}
 			}
@@ -788,7 +789,7 @@ func (p *DefaultProvider) beginLaunchInstance(
 	}, nil
 }
 
-func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
+func (p *DefaultVMProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
 	for _, handler := range p.responseErrorHandlers {
 		if handler.matchError(responseError) {
 			metrics.VMCreateResponseError.Inc(ctx, "Handling response error", metrics.ResponseError(handler.name))
@@ -799,7 +800,7 @@ func (p *DefaultProvider) handleResponseErrors(ctx context.Context, sku *skewer.
 	return responseError
 }
 
-func (p *DefaultProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
+func (p *DefaultVMProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
 	// set tags
 	nic.Tags = template.Tags
 	for _, ipConfig := range nic.Properties.IPConfigurations {
@@ -807,7 +808,7 @@ func (p *DefaultProvider) applyTemplateToNic(nic *armnetwork.Interface, template
 	}
 }
 
-func (p *DefaultProvider) getLaunchTemplate(
+func (p *DefaultVMProvider) getLaunchTemplate(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
 	nodeClaim *karpv1.NodeClaim,
@@ -841,7 +842,7 @@ func GetAllSingleValuedRequirementLabels(instanceType *corecloudprovider.Instanc
 }
 
 // pick the "best" SKU, priority and zone, from InstanceType options (and their offerings) in the request
-func (p *DefaultProvider) pickSkuSizePriorityAndZone(
+func (p *DefaultVMProvider) pickSkuSizePriorityAndZone(
 	ctx context.Context,
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
@@ -869,7 +870,7 @@ func (p *DefaultProvider) pickSkuSizePriorityAndZone(
 // mustDeleteNic parameter is used to determine whether NIC deletion failure is considered an error.
 // We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
 // NIC garbage collector is expected to handle such cases.
-func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceName string, mustDeleteNic bool) error {
+func (p *DefaultVMProvider) cleanupAzureResources(ctx context.Context, resourceName string, mustDeleteNic bool) error {
 	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
 	if vmErr != nil {
 		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
@@ -901,7 +902,7 @@ func (p *DefaultProvider) cleanupAzureResources(ctx context.Context, resourceNam
 //
 // This returns from a single pre-selected InstanceType, rather than all InstanceType options in nodeRequest,
 // because Azure Cloud Provider does client-side selection of particular InstanceType from options
-func (p *DefaultProvider) getPriorityForInstanceType(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType) string {
+func (p *DefaultVMProvider) getPriorityForInstanceType(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType) string {
 	requirements := scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)
 
 	if requirements.Get(karpv1.CapacityTypeLabelKey).Has(karpv1.CapacityTypeSpot) {
@@ -933,14 +934,14 @@ func orderInstanceTypesByPrice(instanceTypes []*corecloudprovider.InstanceType, 
 	return instanceTypes
 }
 
-func GetCapacityType(instance *armcompute.VirtualMachine) string {
-	if instance != nil && instance.Properties != nil && instance.Properties.Priority != nil {
-		return PriorityToCapacityType[string(*instance.Properties.Priority)]
+func GetCapacityTypeFromVM(vm *armcompute.VirtualMachine) string {
+	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
+		return VMPriorityToCapacityType[string(*vm.Properties.Priority)]
 	}
 	return ""
 }
 
-func (p *DefaultProvider) getAKSIdentifyingExtension(tags map[string]*string) *armcompute.VirtualMachineExtension {
+func (p *DefaultVMProvider) getAKSIdentifyingExtension(tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType                  = "Microsoft.Compute/virtualMachines/extensions"
 		aksIdentifyingExtensionPublisher = "Microsoft.AKS"
@@ -964,7 +965,7 @@ func (p *DefaultProvider) getAKSIdentifyingExtension(tags map[string]*string) *a
 	return vmExtension
 }
 
-func (p *DefaultProvider) getCSExtension(cse string, isWindows bool, tags map[string]*string) *armcompute.VirtualMachineExtension {
+func (p *DefaultVMProvider) getCSExtension(cse string, isWindows bool, tags map[string]*string) *armcompute.VirtualMachineExtension {
 	const (
 		vmExtensionType     = "Microsoft.Compute/virtualMachines/extensions"
 		cseTypeWindows      = "CustomScriptExtension"
