@@ -108,7 +108,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	azClient, err := instance.NewAZClient(ctx, azConfig, env, cred)
 	lo.Must0(err, "creating Azure client")
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
-		vnetGUID, err := getVnetGUID(cred, azConfig, options.FromContext(ctx).SubnetID)
+		vnetGUID, err := getVnetGUID(ctx, cred, azConfig, options.FromContext(ctx).SubnetID)
 		lo.Must0(err, "getting VNET GUID")
 		options.FromContext(ctx).VnetGUID = vnetGUID
 	}
@@ -232,7 +232,7 @@ func getCABundle(restConfig *rest.Config) (*string, error) {
 	return lo.ToPtr(base64.StdEncoding.EncodeToString(transportConfig.TLS.CAData)), nil
 }
 
-func getVnetGUID(creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
+func getVnetGUID(ctx context.Context, creds azcore.TokenCredential, cfg *auth.Config, subnetID string) (string, error) {
 	// TODO: Current the VNET client isn't used anywhere but this method. As such, it is not
 	// held on azclient like the other clients.
 	// We should possibly just put the vnet client on azclient, and then pass azclient in here, rather than
@@ -242,7 +242,8 @@ func getVnetGUID(creds azcore.TokenCredential, cfg *auth.Config, subnetID string
 		return "", err
 	}
 
-	opts := armopts.DefaultARMOpts(env.Cloud)
+	o := options.FromContext(ctx)
+	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
 	vnetClient, err := armnetwork.NewVirtualNetworksClient(cfg.SubscriptionID, creds, opts)
 	if err != nil {
 		return "", err

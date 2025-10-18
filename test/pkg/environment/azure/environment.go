@@ -73,6 +73,8 @@ type Environment struct {
 	subnetClient         *armnetwork.SubnetsClient
 	interfacesClient     *armnetwork.InterfacesClient
 	managedClusterClient *containerservice.ManagedClustersClient
+	agentpoolsClient     *containerservice.AgentPoolsClient
+	machinesClient       *containerservice.MachinesClient
 
 	// Public Clients
 	KeyVaultClient          *armkeyvault.VaultsClient
@@ -117,6 +119,8 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.agentpoolsClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, nil))
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
