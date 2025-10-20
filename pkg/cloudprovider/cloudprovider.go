@@ -175,7 +175,7 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 }
 
 // handleInstancePromise handles the instance promise, primarily deciding on sync/async provisioning.
-func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromise instance.InstancePromise, nodeClaim *karpv1.NodeClaim) error {
+func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim) error {
 	if isNodeClaimStandalone(nodeClaim) {
 		// Standalone NodeClaims aren't re-queued for reconciliation in the provision_trigger controller,
 		// so we delete them synchronously. After marking Launched=true,
@@ -230,7 +230,7 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 	return nil
 }
 
-func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, instancePromise instance.InstancePromise, nodeClaim *karpv1.NodeClaim, waitErr error) {
+func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim, waitErr error) {
 	c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, waitErr))
 	log.FromContext(ctx).Error(waitErr, "failed launching nodeclaim")
 

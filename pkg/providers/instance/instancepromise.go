@@ -21,7 +21,7 @@ import (
 )
 
 // Intended for lifecycle handling on the higher abstractions.
-type InstancePromise interface {
+type Promise interface {
 	// Cleanup removes the instance from the cloud provider.
 	Cleanup(ctx context.Context) error
 	// Wait blocks until the instance is ready.
