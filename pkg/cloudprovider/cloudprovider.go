@@ -181,7 +181,6 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 		// so we delete them synchronously. After marking Launched=true,
 		// their status can't be reverted to false once the delete completes due to how core caches nodeclaims in
 		// the launch controller. This ensures we retry continuously until we hit the registration TTL
-		// return c.waitOnInstancePromise(ctx, instancePromise, nodeClaim, true)
 		err := instancePromise.Wait()
 		if err != nil {
 			c.handleInstancePromiseWaitError(ctx, instancePromise, nodeClaim, err)
@@ -194,7 +193,6 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 	// no issue. If the node doesn't come up successfully in that case, the node and the linked claim will
 	// be garbage collected after the TTL, but the cause of the nodes issue will be lost, as the LRO URL was
 	// only held in memory.
-	// go c.waitOnInstancePromise(ctx, instancePromise, nodeClaim, false)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
