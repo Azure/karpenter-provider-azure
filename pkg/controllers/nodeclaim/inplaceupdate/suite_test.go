@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
