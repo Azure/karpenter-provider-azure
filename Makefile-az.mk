@@ -1,5 +1,5 @@
 AZURE_LOCATION ?= westus2
-AZURE_VM_SIZE ?= ""
+AZURE_VM_SIZE ?=
 COMMON_NAME ?= karpenter
 ENABLE_AZURE_SDK_LOGGING ?= true
 ifeq ($(CODESPACES),true)
