@@ -13,7 +13,7 @@ on:
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "southcentralus"
+        default: "westus3"
       provisionmode:
         type: string
         description: "the karpenter provisioning mode to run the e2e test in"
