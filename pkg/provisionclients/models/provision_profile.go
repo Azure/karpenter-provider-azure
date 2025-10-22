@@ -22,6 +22,7 @@ package models
 
 import (
 	"context"
+	stderrors "errors"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -214,11 +215,15 @@ func (m *ProvisionProfile) validateAgentPoolWindowsProfile(formats strfmt.Regist
 
 	if m.AgentPoolWindowsProfile != nil {
 		if err := m.AgentPoolWindowsProfile.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("agentPoolWindowsProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("agentPoolWindowsProfile")
 			}
+
 			return err
 		}
 	}
@@ -242,11 +247,15 @@ func (m *ProvisionProfile) validateArtifactStreamingProfile(formats strfmt.Regis
 
 	if m.ArtifactStreamingProfile != nil {
 		if err := m.ArtifactStreamingProfile.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("artifactStreamingProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("artifactStreamingProfile")
 			}
+
 			return err
 		}
 	}
@@ -261,11 +270,15 @@ func (m *ProvisionProfile) validateCustomKubeletConfig(formats strfmt.Registry) 
 
 	if m.CustomKubeletConfig != nil {
 		if err := m.CustomKubeletConfig.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("customKubeletConfig")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("customKubeletConfig")
 			}
+
 			return err
 		}
 	}
@@ -280,11 +293,15 @@ func (m *ProvisionProfile) validateCustomLinuxOSConfig(formats strfmt.Registry) 
 
 	if m.CustomLinuxOSConfig != nil {
 		if err := m.CustomLinuxOSConfig.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("customLinuxOSConfig")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("customLinuxOSConfig")
 			}
+
 			return err
 		}
 	}
@@ -308,11 +325,15 @@ func (m *ProvisionProfile) validateGpuProfile(formats strfmt.Registry) error {
 
 	if m.GpuProfile != nil {
 		if err := m.GpuProfile.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("gpuProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("gpuProfile")
 			}
+
 			return err
 		}
 	}
@@ -381,11 +402,15 @@ func (m *ProvisionProfile) validateSecurityProfile(formats strfmt.Registry) erro
 
 	if m.SecurityProfile != nil {
 		if err := m.SecurityProfile.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("securityProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("securityProfile")
 			}
+
 			return err
 		}
 	}
@@ -472,11 +497,15 @@ func (m *ProvisionProfile) contextValidateAgentPoolWindowsProfile(ctx context.Co
 		}
 
 		if err := m.AgentPoolWindowsProfile.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("agentPoolWindowsProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("agentPoolWindowsProfile")
 			}
+
 			return err
 		}
 	}
@@ -493,11 +522,15 @@ func (m *ProvisionProfile) contextValidateArtifactStreamingProfile(ctx context.C
 		}
 
 		if err := m.ArtifactStreamingProfile.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("artifactStreamingProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("artifactStreamingProfile")
 			}
+
 			return err
 		}
 	}
@@ -514,11 +547,15 @@ func (m *ProvisionProfile) contextValidateCustomKubeletConfig(ctx context.Contex
 		}
 
 		if err := m.CustomKubeletConfig.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("customKubeletConfig")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("customKubeletConfig")
 			}
+
 			return err
 		}
 	}
@@ -535,11 +572,15 @@ func (m *ProvisionProfile) contextValidateCustomLinuxOSConfig(ctx context.Contex
 		}
 
 		if err := m.CustomLinuxOSConfig.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("customLinuxOSConfig")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("customLinuxOSConfig")
 			}
+
 			return err
 		}
 	}
@@ -556,11 +597,15 @@ func (m *ProvisionProfile) contextValidateGpuProfile(ctx context.Context, format
 		}
 
 		if err := m.GpuProfile.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("gpuProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("gpuProfile")
 			}
+
 			return err
 		}
 	}
@@ -577,11 +622,15 @@ func (m *ProvisionProfile) contextValidateSecurityProfile(ctx context.Context, f
 		}
 
 		if err := m.SecurityProfile.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("securityProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("securityProfile")
 			}
+
 			return err
 		}
 	}
