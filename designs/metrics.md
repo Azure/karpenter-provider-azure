@@ -49,28 +49,34 @@ ComponentMetric.WithLabelValues(value).Inc()
 
 ### Metric Namespace Identification
 
-To distinguish Azure provider metrics from core Karpenter metrics, we use a **different namespace**:
-
-- **Core Karpenter metrics**: `karpenter_*` (from upstream Karpenter)
-- **Azure provider metrics**: `karpenter_azure_*` (Azure-specific implementations)
+To distinguish Azure provider metrics from core Karpenter metrics, we evaluated using a provider-specific namespace but ultimately decided to **keep emitting metrics in the core `karpenter_*` namespace** for consistency.
 
 This is configured in `pkg/metrics/constants.go`:
 
 ```go
 const (
-    Namespace = "karpenter_aks"  // Identifies Azure provider metrics
+    Namespace = "karpenter"  // Reuse core namespace for consistency
 )
 ```
 
 **Why This Matters:**
-- **Clear separation** between core and provider-specific metrics
+- **Clear expectations** for consumers already relying on the core namespace
 - **Avoids conflicts** with upstream Karpenter metric names
-- **Easy filtering** in monitoring systems (e.g., `karpenter_aks_*` for Azure-only metrics)
-- **Consistent naming** across all Azure provider components
+- **Keeps dashboards/alerts working** without additional filtering
+- **Consistent naming** across all components as we upstream more features
 
 **Metric Naming Examples:**
-- `karpenter_aks_instance_vm_create_start_total` - Azure provider metric
+- `karpenter_instance_vm_create_start_total` - Azure provider metric (new)
 - `karpenter_nodeclaims_created_total` - Core Karpenter metric
+
+### Namespace Rationale
+
+We are intentionally keeping provider metrics in the core `karpenter_*` namespace so that:
+
+- **Compatibility with upstream tooling** remains intact—existing dashboards and alerts maintained by the Karpenter community continue to function. For example, our controller still emits core metrics by wrapping the provider implementation with `metrics.Decorate` in `cmd/controller/main.go` (see [`cmd/controller/main.go#L63`](https://github.com/Azure/karpenter-provider-azure/blob/main/cmd/controller/main.go#L63)).
+- **Stability expectations** stay aligned—metrics such as `ProvisioningDurationSeconds` in `pkg/cloudprovider/cloudprovider.go` (see [`cloudprovider.go#L224`](https://github.com/Azure/karpenter-provider-azure/blob/main/pkg/cloudprovider/cloudprovider.go#L224)) already ship in this namespace and have consumers.
+
+In practice, the controller will continue to emit the decorated core metrics for compatibility, and new Azure-specific metrics (such as the VM create counters) will also use the `karpenter` namespace to maintain a single, consistent surface area. This keeps expectations aligned with upstream Karpenter and simplifies future maintenance and documentation.
 
 ### Co-location Pattern
 
@@ -102,12 +108,12 @@ Each component defines **labels relevant to its operations**:
 // Example from instance provider
 ComponentMetric = prometheus.NewCounterVec(
     prometheus.CounterOpts{
-        Namespace: coremetrics.Namespace,  // From centralized constants
+        Namespace: labels.Namespace,  // From centralized constants
         Subsystem: componentSubsystem,
         Name:      "operation_total",
         Help:      "Total number of operations.",
     },
-    []string{"label1", "label2"},  // Component-specific labels
+    []string{labels.value1, labels.value2},  // Component-specific labels shared from pkg/metrics/constants.go
 )
 ```
 
@@ -118,17 +124,22 @@ ComponentMetric = prometheus.NewCounterVec(
 
 ### Label Constants
 
-Defined locally in each component's metrics file:
+Defined locally in each component's metrics file (snake_case is expected for metric related labels) when they are specific to that component. The component subsystem name stays local, while shared label keys should live in `pkg/metrics/constants.go` to prevent duplication:
 
 ```go
 const (
     componentSubsystem = "component_name"
-    label1 = "label_one"
-    label2 = "label_two"
+)
+
+// Shared labels imported from pkg/metrics/constants.go via
+// coremetrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
+var (
+    capacityTypeLabel = coremetrics.LabelCapacityType
+    zoneLabel         = coremetrics.LabelZone
 )
 ```
 
-These are **component-specific** and don't need to be shared unless multiple components use identical labels.
+Component-only constants stay in the metrics file, while reusable labels are centralized so multiple components can rely on the same canonical names without redefining them.
 
 ### Metric Call Pattern
 
@@ -145,23 +156,20 @@ ComponentMetric.WithLabelValues(value1, value2).Inc()
 - Direct control over label values
 - Clear at call site what's being measured
 
-## Centralized Metrics Package Role
-
-The `pkg/metrics/` package remains important but serves a **different purpose**:
 
 ### Purpose: Infrastructure & Shared Utilities
 
 1. **Constants**
    ```go
    const (
-       Namespace = "karpenter_aks"  // Shared across all metrics
+       Namespace = "karpenter"  // Shared across all metrics
+       LabelCapacityType = "capacity_type"
+       LabelZone         = "zone"
+       LabelErrorCode    = "error"
    )
    ```
 
-2. **Builder Patterns**
-   ```go
-   func NewSubsystemMetrics(subsystem string, labels []string, buckets []float64) *SubsystemMetrics
-   ```
+   Shared label keys live here so multiple components can reuse the same canonical names without redefining them locally.
 
 ## Migration Path for Other Components
 
@@ -174,9 +182,9 @@ When adding metrics to other components, follow this pattern:
 package component
 
 import (
-    coremetrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
+    labels "github.com/Azure/karpenter-provider-azure/pkg/metrics"
     "github.com/prometheus/client_golang/prometheus"
-    crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+    metrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
@@ -186,17 +194,17 @@ const (
 var (
     MyComponentMetric = prometheus.NewCounterVec(
         prometheus.CounterOpts{
-            Namespace: coremetrics.Namespace,
+            Namespace: labels.Namespace,
             Subsystem: componentSubsystem,
             Name:      "operation_total",
             Help:      "Total number of operations.",
         },
-        []string{"operation_type"},
+        []string{coremetrics.LabelCapacityType},
     )
 )
 
 func init() {
-    crmetrics.Registry.MustRegister(MyComponentMetric)
+    metrics.Registry.MustRegister(MyComponentMetric)
 }
 ```
 
