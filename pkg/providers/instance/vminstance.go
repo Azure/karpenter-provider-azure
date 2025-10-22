@@ -800,20 +800,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	}, nil
 }
 
-<<<<<<< HEAD
-=======
-func (p *DefaultVMProvider) handleResponseErrors(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, responseError error) error {
-	for _, handler := range p.responseErrorHandlers {
-		if handler.matchError(responseError) {
-			VMCreateResponseErrorMetric.WithLabelValues(handler.name).Inc()
-			return handler.handleResponseError(ctx, p, sku, instanceType, zone, capacityType, responseError)
-		}
-	}
-	// responseError didn't match any of our handlers, return it as is
-	return responseError
-}
-
->>>>>>> db81e9f (adding design and example)
 func (p *DefaultVMProvider) applyTemplateToNic(nic *armnetwork.Interface, template *launchtemplate.Template) {
 	// set tags
 	nic.Tags = template.Tags
