@@ -17,16 +17,13 @@ limitations under the License.
 package instance
 
 import (
-	coremetrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	metricslabels "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const (
 	instanceSubsystem = "instance"
-
-	imageID   = "image"
-	errorCode = "error"
 )
 
 var (
@@ -35,12 +32,12 @@ var (
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
 	VMCreateStartMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: coremetrics.Namespace,
+			Namespace: metricslabels.Namespace,
 			Subsystem: instanceSubsystem,
 			Name:      "vm_create_start_total",
 			Help:      "Total number of VM creation operations started.",
 		},
-		[]string{imageID},
+		[]string{metricslabels.ImageLabel},
 	)
 
 	// VMCreateSyncFailureMetric tracks synchronous VM creation failures.
@@ -48,12 +45,12 @@ var (
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
 	VMCreateSyncFailureMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: coremetrics.Namespace,
+			Namespace: metricslabels.Namespace,
 			Subsystem: instanceSubsystem,
 			Name:      "vm_create_sync_failure_total",
 			Help:      "Total number of synchronous VM creation failures.",
 		},
-		[]string{imageID},
+		[]string{metricslabels.ImageLabel},
 	)
 
 	// VMCreateAsyncFailureMetric tracks asynchronous VM creation failures.
@@ -61,12 +58,12 @@ var (
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
 	VMCreateAsyncFailureMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: coremetrics.Namespace,
+			Namespace: metricslabels.Namespace,
 			Subsystem: instanceSubsystem,
 			Name:      "vm_create_async_failure_total",
 			Help:      "Failed to create virtual machine during LRO",
 		},
-		[]string{imageID},
+		[]string{metricslabels.ImageLabel},
 	)
 
 	// VMCreateResponseErrorMetric tracks VM creation response errors.
@@ -74,12 +71,12 @@ var (
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
 	VMCreateResponseErrorMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: coremetrics.Namespace,
+			Namespace: metricslabels.Namespace,
 			Subsystem: instanceSubsystem,
 			Name:      "vm_create_response_error_total",
 			Help:      "Total number of VM creation response errors.",
 		},
-		[]string{errorCode},
+		[]string{metricslabels.ErrorCodeLabel},
 	)
 )
 

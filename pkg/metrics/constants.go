@@ -22,4 +22,8 @@ const (
 
 	// Subsystem(s).
 	imageFamilySubsystem = "image"
+
+	// Label key(s).
+	ImageLabel     = "image"
+	ErrorCodeLabel = "error"
 )
