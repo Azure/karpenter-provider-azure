@@ -18,7 +18,7 @@ package metrics
 
 const (
 	// Namespace(s).
-	Namespace = "karpenter_azure"
+	Namespace = "karpenter"
 
 	// Subsystem(s).
 	imageFamilySubsystem = "image"

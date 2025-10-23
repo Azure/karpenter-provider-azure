@@ -42,7 +42,9 @@ metrics.ComponentMetric.Inc(ctx, "description", metrics.Label(value))
 ```go
 // No separate metrics import needed - metrics are in same package
 
-ComponentMetric.WithLabelValues(value).Inc()
+VMCreateStartMetric.With(map[string]string{
+    coremetrics.ImageLabel: imageID,
+}).Inc()
 ```
 
 ## Design Principles
@@ -75,6 +77,7 @@ We are intentionally keeping provider metrics in the core `karpenter_*` namespac
 
 - **Compatibility with upstream tooling** remains intact—existing dashboards and alerts maintained by the Karpenter community continue to function. For example, our controller still emits core metrics by wrapping the provider implementation with `metrics.Decorate` in `cmd/controller/main.go` (see [`cmd/controller/main.go#L63`](https://github.com/Azure/karpenter-provider-azure/blob/main/cmd/controller/main.go#L63)).
 - **Stability expectations** stay aligned—metrics such as `ProvisioningDurationSeconds` in `pkg/cloudprovider/cloudprovider.go` (see [`cloudprovider.go#L224`](https://github.com/Azure/karpenter-provider-azure/blob/main/pkg/cloudprovider/cloudprovider.go#L224)) already ship in this namespace and have consumers.
+- **Clear subsystem identification** still distinguishes our metrics—Azure-specific metrics use distinct subsystem names (e.g., `karpenter_instance_*`, `karpenter_pricing_*`) that make it clear which metrics originate from our provider versus core Karpenter components.
 
 In practice, the controller will continue to emit the decorated core metrics for compatibility, and new Azure-specific metrics (such as the VM create counters) will also use the `karpenter` namespace to maintain a single, consistent surface area. This keeps expectations aligned with upstream Karpenter and simplifies future maintenance and documentation.
 
@@ -132,14 +135,30 @@ const (
 )
 
 // Shared labels imported from pkg/metrics/constants.go via
-// coremetrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
+// metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 var (
-    capacityTypeLabel = coremetrics.LabelCapacityType
-    zoneLabel         = coremetrics.LabelZone
+    capacityTypeLabel = metrics.LabelCapacityType
+    zoneLabel         = metrics.LabelZone
 )
 ```
 
 Component-only constants stay in the metrics file, while reusable labels are centralized so multiple components can rely on the same canonical names without redefining them.
+
+### Safe Metric Recording
+
+To prevent label ordering issues, use the `.With()` method that accepts maps instead of positional arguments:
+
+```go
+// SAFE: Order-independent, self-documenting
+ComponentMetric.With(map[string]string{
+    coremetrics.LabelCapacityType: capacityType,
+    coremetrics.LabelZone:         zone,
+    coremetrics.ImageLabel:        imageID,
+}).Inc()
+
+// UNSAFE: Positional arguments can be accidentally swapped
+// ComponentMetric.WithLabelValues(capacityType, zone, imageID).Inc() // What if you accidentally swap zone and imageID?
+```
 
 ### Metric Call Pattern
 
@@ -199,7 +218,7 @@ var (
             Name:      "operation_total",
             Help:      "Total number of operations.",
         },
-        []string{coremetrics.LabelCapacityType},
+        []string{labels.LabelCapacityType},
     )
 )
 
@@ -215,7 +234,9 @@ func init() {
 package component
 
 func (c *Component) DoOperation() {
-    MyComponentMetric.WithLabelValues("create").Inc()
+    MyComponentMetric.With(map[string]string{
+        coremetrics.LabelCapacityType: "spot",
+    }).Inc()
     // ... operation logic
 }
 ```
