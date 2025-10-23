@@ -17,7 +17,7 @@ limitations under the License.
 package instance
 
 import (
-	metricslabels "github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
@@ -32,12 +32,12 @@ var (
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
 	VMCreateStartMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: metricslabels.Namespace,
+			Namespace: metrics.Namespace,
 			Subsystem: instanceSubsystem,
 			Name:      "vm_create_start_total",
 			Help:      "Total number of VM creation operations started.",
 		},
-		[]string{metricslabels.ImageLabel},
+		[]string{metrics.ImageLabel},
 	)
 
 	// VMCreateSyncFailureMetric tracks synchronous VM creation failures.
@@ -45,12 +45,12 @@ var (
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
 	VMCreateSyncFailureMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: metricslabels.Namespace,
+			Namespace: metrics.Namespace,
 			Subsystem: instanceSubsystem,
 			Name:      "vm_create_sync_failure_total",
 			Help:      "Total number of synchronous VM creation failures.",
 		},
-		[]string{metricslabels.ImageLabel},
+		[]string{metrics.ImageLabel},
 	)
 
 	// VMCreateAsyncFailureMetric tracks asynchronous VM creation failures.
@@ -58,12 +58,12 @@ var (
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
 	VMCreateAsyncFailureMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: metricslabels.Namespace,
+			Namespace: metrics.Namespace,
 			Subsystem: instanceSubsystem,
 			Name:      "vm_create_async_failure_total",
 			Help:      "Failed to create virtual machine during LRO",
 		},
-		[]string{metricslabels.ImageLabel},
+		[]string{metrics.ImageLabel},
 	)
 
 	// VMCreateResponseErrorMetric tracks VM creation response errors.
@@ -71,12 +71,12 @@ var (
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
 	VMCreateResponseErrorMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Namespace: metricslabels.Namespace,
+			Namespace: metrics.Namespace,
 			Subsystem: instanceSubsystem,
 			Name:      "vm_create_response_error_total",
 			Help:      "Total number of VM creation response errors.",
 		},
-		[]string{metricslabels.ErrorCodeLabel},
+		[]string{metrics.ErrorCodeLabel},
 	)
 )
 
