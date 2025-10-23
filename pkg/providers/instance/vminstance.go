@@ -38,7 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
-	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
@@ -642,11 +642,15 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	}
 	vm := newVMObject(opts)
 	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, logging.InstanceType, opts.InstanceType.Name)
-	metrics.VMCreateStartMetric.Inc(ctx, "creating virtual machine", metrics.ImageID(opts.LaunchTemplate.ImageID))
+	VMCreateStartMetric.With(map[string]string{
+		metrics.ImageLabel: opts.LaunchTemplate.ImageID,
+	}).Inc()
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		metrics.VMCreateSyncFailureMetric.Inc(ctx, "failed to create virtual machine on initial put", metrics.ImageID(opts.LaunchTemplate.ImageID))
+		VMCreateSyncFailureMetric.With(map[string]string{
+			metrics.ImageLabel: opts.LaunchTemplate.ImageID,
+		}).Inc()
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
@@ -766,7 +770,10 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				metrics.VMCreateAsyncFailureMetric.Inc(ctx, "failed to create virtual machine during LRO", metrics.ImageID(launchTemplate.ImageID))
+				VMCreateAsyncFailureMetric.With(map[string]string{
+					metrics.ImageLabel: launchTemplate.ImageID,
+				}).Inc()
+
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
