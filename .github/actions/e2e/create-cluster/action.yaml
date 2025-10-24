@@ -6,13 +6,13 @@ inputs:
   #   required: false
   #   default: "1.27"
   client-id:
-    description: 
+    description:
     required: true
   tenant-id:
-    description: 
+    description:
     required: true
   subscription-id:
-    description: 
+    description:
     required: true
   resource_group:
     description: "Name of the resource group to create the cluster within"
@@ -55,8 +55,9 @@ runs:
       env:
         AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-        AZURE_ACR_NAME: ${{ inputs.acr_name }} 
+        AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
+        AZURE_VM_SIZE: Standard_D4ds_v5 # We have more quota for this VM size so force it to avoid quota errors
       run: make az-mkaks-cilium
     - name: az login 2
       uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
