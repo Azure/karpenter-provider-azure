@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -51,9 +51,9 @@ type patchParameters struct {
 	nodeClass *v1beta1.AKSNodeClass
 }
 
-var patchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *armcompute.VirtualMachine) bool{
-	patchIdentities,
-	patchTags,
+var vmPatchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *armcompute.VirtualMachine) bool{
+	patchVMIdentities,
+	patchVMTags,
 }
 
 func CalculateVMPatch(
@@ -70,7 +70,7 @@ func CalculateVMPatch(
 		nodeClaim: nodeClaim,
 	}
 
-	for _, patcher := range patchers {
+	for _, patcher := range vmPatchers {
 		patched := patcher(update, params, currentVM)
 		hasPatches = hasPatches || patched
 	}
@@ -82,7 +82,7 @@ func CalculateVMPatch(
 	return update
 }
 
-func patchIdentities(
+func patchVMIdentities(
 	update *armcompute.VirtualMachineUpdate,
 	params *patchParameters,
 	currentVM *armcompute.VirtualMachine,
@@ -105,7 +105,7 @@ func patchIdentities(
 	return true
 }
 
-func patchTags(
+func patchVMTags(
 	update *armcompute.VirtualMachineUpdate,
 	params *patchParameters,
 	currentVM *armcompute.VirtualMachine,
