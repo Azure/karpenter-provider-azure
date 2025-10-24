@@ -51,6 +51,7 @@ var _ = Describe("Options", func() {
 		"VM_MEMORY_OVERHEAD_PERCENT",
 		"CLUSTER_ID",
 		"KUBELET_BOOTSTRAP_TOKEN",
+		"ENABLE_SECURE_TLS_BOOTSTRAPPING",
 		"SSH_PUBLIC_KEY",
 		"NETWORK_PLUGIN",
 		"NETWORK_POLICY",
@@ -103,6 +104,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("CLUSTER_ENDPOINT", "https://environment-cluster-id-value-for-testing")
 			os.Setenv("VM_MEMORY_OVERHEAD_PERCENT", "0.3")
 			os.Setenv("KUBELET_BOOTSTRAP_TOKEN", "env-bootstrap-token")
+			os.Setenv("ENABLE_SECURE_TLS_BOOTSTRAPPING", "true")
 			os.Setenv("SSH_PUBLIC_KEY", "env-ssh-public-key")
 			os.Setenv("NETWORK_PLUGIN", "none") // Testing with none to make sure the default isn't overriding or something like that with "azure"
 			os.Setenv("NETWORK_PLUGIN_MODE", "")
@@ -131,6 +133,7 @@ var _ = Describe("Options", func() {
 				VMMemoryOverheadPercent:        lo.ToPtr(0.3),
 				ClusterID:                      lo.ToPtr("46593302"),
 				KubeletClientTLSBootstrapToken: lo.ToPtr("env-bootstrap-token"),
+				EnableSecureTLSBootstrapping:   lo.ToPtr(true),
 				LinuxAdminUsername:             lo.ToPtr("customadminusername"),
 				SSHPublicKey:                   lo.ToPtr("env-ssh-public-key"),
 				NetworkPlugin:                  lo.ToPtr("none"),
@@ -211,7 +214,7 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("missing field, cluster-endpoint")))
 		})
-		It("should fail validation when kubeletClientTLSBootstrapToken not included", func() {
+		It("should fail validation when kubeletClientTLSBootstrapToken not included and secure TLS bootstrapping is disabled", func() {
 			err := opts.Parse(
 				fs,
 				"--cluster-name", "my-name",
@@ -219,6 +222,18 @@ var _ = Describe("Options", func() {
 				"--ssh-public-key", "flag-ssh-public-key",
 			)
 			Expect(err).To(MatchError(ContainSubstring("missing field, kubelet-bootstrap-token")))
+		})
+		It("should succeed when kubeletClientTLSBootstrapToken is not provided but secure TLS bootstrapping is enabled", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--enable-secure-tls-bootstrapping",
+			)
+			Expect(err).ToNot(HaveOccurred())
 		})
 		It("should fail validation when SSHPublicKey not included", func() {
 			err := opts.Parse(

@@ -183,6 +183,7 @@ func (p *Provider) getStaticParameters(
 		ClusterID:                      options.FromContext(ctx).ClusterID,
 		APIServerName:                  options.FromContext(ctx).GetAPIServerName(),
 		KubeletClientTLSBootstrapToken: options.FromContext(ctx).KubeletClientTLSBootstrapToken,
+		EnableSecureTLSBootstrapping:   options.FromContext(ctx).EnableSecureTLSBootstrapping,
 		NetworkPlugin:                  getAgentbakerNetworkPlugin(ctx),
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       subnetID,

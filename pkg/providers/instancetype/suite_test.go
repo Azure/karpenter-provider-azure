@@ -1899,6 +1899,31 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should include karpenter.sh/unregistered taint", func() {
 			Expect(kubeletFlags).To(ContainSubstring("--register-with-taints=" + karpv1.UnregisteredNoExecuteTaint.ToString()))
 		})
+
+		It("should set ENABLE_SECURE_TLS_BOOTSTRAPPING to false by default", func() {
+			Expect(customData).To(ContainSubstring("ENABLE_SECURE_TLS_BOOTSTRAPPING=\"false\""))
+		})
+	})
+
+	Context("Bootstrap with secure TLS bootstrapping enabled", func() {
+		BeforeEach(func() {
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				EnableSecureTLSBootstrapping: lo.ToPtr(true),
+			}))
+			azureEnv = test.NewEnvironment(ctx, env)
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
+			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
+		})
+
+		It("should set ENABLE_SECURE_TLS_BOOTSTRAPPING to true when enabled", func() {
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod()
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+			customData := ExpectDecodedCustomData(azureEnv)
+			Expect(customData).To(ContainSubstring("ENABLE_SECURE_TLS_BOOTSTRAPPING=\"true\""))
+		})
 	})
 
 	DescribeTable("Azure CNI node labels and agentbaker network plugin", func(
