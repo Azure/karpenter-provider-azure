@@ -24,13 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type FIPSMode string
-
-var (
-	FIPSModeFIPS     = FIPSMode("FIPS")
-	FIPSModeDisabled = FIPSMode("Disabled")
-)
-
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -83,6 +76,9 @@ type AKSNodeClassSpec struct {
 	MaxPods *int32 `json:"maxPods,omitempty"`
 	// Collection of security related karpenter fields
 	Security *Security `json:"security,omitempty"`
+	// LocalDNSProfile specifies the local DNS configuration for the node
+	// +optional
+	LocalDNSProfile *LocalDNSProfile `json:"localDNSProfile,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -94,6 +90,175 @@ type Security struct {
 	// +optional
 	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }
+
+type FIPSMode string
+
+var (
+	FIPSModeFIPS     = FIPSMode("FIPS")
+	FIPSModeDisabled = FIPSMode("Disabled")
+)
+
+type LocalDNSMode int32
+
+const (
+	// Unspecified mode for localDNS.
+	LocalDNSModeUnspecified LocalDNSMode = 0
+	// If the current orchestrator version supports this feature, prefer enabling localDNS.
+	LocalDNSModePreferred LocalDNSMode = 1
+	// Enable localDNS.
+	LocalDNSModeRequired LocalDNSMode = 2
+	// Disable localDNS.
+	LocalDNSModeDisabled LocalDNSMode = 3
+	// Invalid localDNS mode.
+	LocalDNSModeInvalid LocalDNSMode = 99
+)
+
+type LocalDNSState int32
+
+const (
+	// Unspecified state for localDNS.
+	LocalDNSStateUnspecified LocalDNSState = 0
+	// localDNS is enabled.
+	LocalDNSStateEnabled LocalDNSState = 1
+	// localDNS is disabled.
+	LocalDNSStateDisabled LocalDNSState = 2
+	// Invalid LocalDNS state.
+	LocalDNSStateInvalid LocalDNSState = 99
+)
+
+// LocalDNSProfile specifies the local DNS configuration for nodes
+type LocalDNSProfile struct {
+	// Mode of enablement for localDNS.
+	// Valid values - 0 (Unspecified), 1 (Preferred), 2 (Required), 3 (Disabled), 99 (Invalid).
+	// +kubebuilder:validation:Enum:={0,1,2,3,99}
+	// +optional
+	Mode *LocalDNSMode `json:"mode,omitempty"`
+	// State is the system-generated state of localDNS.
+	// Valid values - 0 (Unspecified), 1 (Enabled), 2 (Disabled), 99 (Invalid).
+	// +kubebuilder:validation:Enum:={0,1,2,99}
+	// +optional
+	State *LocalDNSState `json:"state,omitempty"`
+	// CPULimitInMilliCores is the CPU limit in milli cores for localDNS.
+	// +optional
+	CPULimitInMilliCores *int32 `json:"cpuLimitInMilliCores,omitempty"`
+	// MemoryLimitInMB is the memory limit in MB for localDNS.
+	// +optional
+	MemoryLimitInMB *int32 `json:"memoryLimitInMB,omitempty"`
+	// VnetDNSOverrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+	// +optional
+	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides,omitempty"`
+	// KubeDNSOverrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+	// +optional
+	KubeDNSOverrides map[string]*LocalDNSOverrides `json:"kubeDNSOverrides,omitempty"`
+}
+
+// LocalDNSOverrides specifies DNS override configuration
+type LocalDNSOverrides struct {
+	// QueryLogging is the log level for DNS queries in localDNS.
+	// Valid values - 0 (Unspecified), 1 (Error), 2 (Log), 99 (Invalid).
+	// +kubebuilder:validation:Enum:={0,1,2,99}
+	// +optional
+	QueryLogging *LocalDNSQueryLogging `json:"queryLogging,omitempty"`
+	// Protocol enforces TCP or prefers UDP protocol for connections from localDNS to upstream DNS server.
+	// Valid values - 0 (Unspecified), 1 (PreferUDP), 2 (ForceTCP), 99 (Invalid).
+	// +kubebuilder:validation:Enum:={0,1,2,99}
+	// +optional
+	Protocol *LocalDNSProtocol `json:"protocol,omitempty"`
+	// ForwardDestination is the destination server for DNS queries to be forwarded from localDNS.
+	// Valid values - 0 (Unspecified), 1 (ClusterCoreDNS), 2 (VnetDNS), 99 (Invalid).
+	// +kubebuilder:validation:Enum:={0,1,2,99}
+	// +optional
+	ForwardDestination *LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
+	// ForwardPolicy is the forward policy for selecting upstream DNS server.
+	// Valid values - 0 (Unspecified), 1 (Sequential), 2 (RoundRobin), 3 (Random), 99 (Invalid).
+	// +kubebuilder:validation:Enum:={0,1,2,3,99}
+	// +optional
+	ForwardPolicy *LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
+	// MaxConcurrent is the maximum number of concurrent queries.
+	// +optional
+	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
+	// CacheDurationInSeconds is the cache max TTL in seconds.
+	// +optional
+	CacheDurationInSeconds *int32 `json:"cacheDurationInSeconds,omitempty"`
+	// ServeStaleDurationInSeconds is the serve stale duration in seconds.
+	// +optional
+	ServeStaleDurationInSeconds *int32 `json:"serveStaleDurationInSeconds,omitempty"`
+	// ServeStale is the policy for serving stale data.
+	// Valid values - 0 (Unspecified), 1 (Verify), 2 (Immediate), 3 (Disable), 99 (Invalid).
+	// +kubebuilder:validation:Enum:={0,1,2,3,99}
+	// +optional
+	ServeStale *LocalDNSServeStale `json:"serveStale,omitempty"`
+}
+
+// Placeholder types for LocalDNSOverrides enums - these need to be defined with actual values
+type LocalDNSQueryLogging int32
+
+const (
+	// Unspecified query logging level.
+	LocalDNSQueryLoggingUnspecifiedQueryLogging LocalDNSQueryLogging = 0
+	// Enables error logging in localDNS.
+	LocalDNSQueryLoggingError LocalDNSQueryLogging = 1
+	// Enables query logging in localDNS.
+	LocalDNSQueryLoggingLog LocalDNSQueryLogging = 2
+	// Invalid query logging.
+	LocalDNSQueryLoggingInvalidQueryLogging LocalDNSQueryLogging = 99
+)
+
+type LocalDNSProtocol int32
+
+const (
+	// Unspecified protocol.
+	LocalDNSProtocolUnspecifiedProtocol LocalDNSProtocol = 0
+	// Prefer UDP protocol for connections from localDNS to upstream DNS server.
+	LocalDNSProtocolPreferUDP LocalDNSProtocol = 1
+	// Enforce TCP protocol for connections from localDNS to upstream DNS server.
+	LocalDNSProtocolForceTCP LocalDNSProtocol = 2
+	// Invalid protocol.
+	LocalDNSProtocolInvalidProtocol LocalDNSProtocol = 99
+)
+
+type LocalDNSForwardDestination int32
+
+const (
+	// Unspecified forward destination.
+	LocalDNSForwardDestinationUnspecifiedForwardDestination LocalDNSForwardDestination = 0
+	// Forward DNS queries from localDNS to cluster CoreDNS.
+	LocalDNSForwardDestinationClusterCoreDNS LocalDNSForwardDestination = 1
+	// Forward DNS queries from localDNS to DNS server configured in the VNET. A VNET can have multiple DNS servers configured.
+	LocalDNSForwardDestinationVnetDNS LocalDNSForwardDestination = 2
+	// Invalid forward destination.
+	LocalDNSForwardDestinationInvalidForwardDestination LocalDNSForwardDestination = 99
+)
+
+type LocalDNSForwardPolicy int32
+
+const (
+	// Unspecified forward policy.
+	LocalDNSForwardPolicyUnspecifiedForwardPolicy LocalDNSForwardPolicy = 0
+	// Implements sequential upstream DNS server selection.
+	LocalDNSForwardPolicySequential LocalDNSForwardPolicy = 1
+	// Implements round robin upstream DNS server selection.
+	LocalDNSForwardPolicyRoundRobin LocalDNSForwardPolicy = 2
+	// Implements random upstream DNS server selection.
+	LocalDNSForwardPolicyRandom LocalDNSForwardPolicy = 3
+	// Invalid forward policy.
+	LocalDNSForwardPolicyInvalidForwardPolicy LocalDNSForwardPolicy = 99
+)
+
+type LocalDNSServeStale int32
+
+const (
+	// Unspecified serve stale policy.
+	LocalDNSServeStaleUnspecifiedServeStale LocalDNSServeStale = 0
+	// Serve stale data with verification. First verify that an entry is still unavailable from the source before sending the expired entry to the client.
+	LocalDNSServeStaleVerify LocalDNSServeStale = 1
+	// Serve stale data immediately. Send the expired entry to the client before checking to see if the entry is available from the source.
+	LocalDNSServeStaleImmediate LocalDNSServeStale = 2
+	// Disable serving stale data.
+	LocalDNSServeStaleDisable LocalDNSServeStale = 3
+	// Invalid serve stale policy.
+	LocalDNSServeStaleInvalidServeStale LocalDNSServeStale = 99
+)
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
 // They are a subset of the upstream types, recognizing not all options may be supported.
