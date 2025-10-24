@@ -25,7 +25,7 @@ import (
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -81,8 +81,24 @@ func GetManagedExtensionNames(provisionMode string) []string {
 type Resource = map[string]interface{}
 
 type VirtualMachinePromise struct {
-	VM   *armcompute.VirtualMachine
-	Wait func() error
+	VM       *armcompute.VirtualMachine
+	WaitFunc func() error
+
+	providerRef VMProvider
+}
+
+func (p *VirtualMachinePromise) Cleanup(ctx context.Context) error {
+	// This won't clean up leaked NICs if the VM doesn't exist... intentional?
+	// From Delete(): "Leftover network interfaces (if any) will be cleaned by by GC controller"
+	// Still, we could try to DeleteNic()?
+	return p.providerRef.Delete(ctx, lo.FromPtr(p.VM.Name))
+}
+
+func (p *VirtualMachinePromise) Wait() error {
+	return p.WaitFunc()
+}
+func (p *VirtualMachinePromise) GetInstanceName() string {
+	return lo.FromPtr(p.VM.Name)
 }
 
 type VMProvider interface {
@@ -738,7 +754,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
 
 	return &VirtualMachinePromise{
-		Wait: func() error {
+		providerRef: p,
+		WaitFunc: func() error {
 			if result.Poller == nil {
 				// Poller is nil means the VM existed already and we're done.
 				// TODO: if the VM doesn't have extensions this will still happen and we will have to
