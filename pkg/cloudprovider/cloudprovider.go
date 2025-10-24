@@ -494,7 +494,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	return nodeClaim, nil
 }
 
-func GenerateNodeClaimName(vmName string) string {
+func GetNodeClaimNameFromVMName(vmName string) string {
 	return strings.TrimPrefix(vmName, "aks-")
 }
 
