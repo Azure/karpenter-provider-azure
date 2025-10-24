@@ -24,6 +24,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type FIPSMode string
+
+var (
+	FIPSModeFIPS     = FIPSMode("FIPS")
+	FIPSModeDisabled = FIPSMode("Disabled")
+)
+
 // AKSNodeClassSpec is the top level specification for the AKS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
@@ -90,13 +97,6 @@ type Security struct {
 	// +optional
 	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }
-
-type FIPSMode string
-
-var (
-	FIPSModeFIPS     = FIPSMode("FIPS")
-	FIPSModeDisabled = FIPSMode("Disabled")
-)
 
 type LocalDNSMode int32
 
