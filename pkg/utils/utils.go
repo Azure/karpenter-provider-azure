@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/skewer"
@@ -55,7 +55,7 @@ func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
 	return version
 }
 
-func ResourceIDToProviderID(ctx context.Context, id string) string {
+func VMResourceIDToProviderID(ctx context.Context, id string) string {
 	providerID := fmt.Sprintf("azure://%s", id)
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
