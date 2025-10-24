@@ -97,7 +97,7 @@ func TestConvertContainerLogMaxSizeToMB(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertContainerLogMaxSizeToMB(tt.containerLogMaxSize)
+			result := ConvertContainerLogMaxSizeToMB(tt.containerLogMaxSize)
 			if tt.expected == nil && result != nil {
 				t.Errorf("Expected nil but got %v", *result)
 			} else if tt.expected != nil && result == nil {
@@ -144,7 +144,7 @@ func TestConvertPodMaxPids(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertPodMaxPids(tt.podPidsLimit)
+			result := ConvertPodMaxPids(tt.podPidsLimit)
 			if tt.expected == nil && result != nil {
 				t.Errorf("Expected nil but got %v", *result)
 			} else if tt.expected != nil && result == nil {
