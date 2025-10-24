@@ -63,7 +63,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -108,8 +108,8 @@ func TestAzure(t *testing.T) {
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 
 	fakeClock = &clock.FakeClock{}
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
@@ -172,7 +172,7 @@ var _ = Describe("InstanceType Provider", func() {
 			}))
 			azureEnv = test.NewEnvironment(ctx, env)
 			fakeClock = &clock.FakeClock{}
-			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 		})
@@ -180,7 +180,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ctx = options.ToContext(ctx, test.Options())
 			azureEnv = test.NewEnvironment(ctx, env)
 			fakeClock = &clock.FakeClock{}
-			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 		})
@@ -1491,6 +1491,9 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.LabelSKUGPUCount:                  "1",
 				v1beta1.LabelSKUCPU:                       "24",
 				v1beta1.LabelSKUMemory:                    "8192",
+				// AKS domain.
+				v1beta1.AKSLabelCPU:    "24",
+				v1beta1.AKSLabelMemory: "8192",
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
 				v1.LabelFailureDomainBetaZone:      fakeZone1,
