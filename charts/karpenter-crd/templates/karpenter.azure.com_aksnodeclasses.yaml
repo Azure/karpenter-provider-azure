@@ -716,6 +716,203 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+              localDNSProfile:
+                description: LocalDNSProfile specifies the local DNS configuration
+                  for the node
+                properties:
+                  cpuLimitInMilliCores:
+                    description: CPULimitInMilliCores is the CPU limit in milli cores
+                      for localDNS.
+                    format: int32
+                    type: integer
+                  kubeDNSOverrides:
+                    additionalProperties:
+                      description: LocalDNSOverrides specifies DNS override configuration
+                      properties:
+                        cacheDurationInSeconds:
+                          description: CacheDurationInSeconds is the cache max TTL
+                            in seconds.
+                          format: int32
+                          type: integer
+                        forwardDestination:
+                          description: |-
+                            ForwardDestination is the destination server for DNS queries to be forwarded from localDNS.
+                            Valid values - 0 (Unspecified), 1 (ClusterCoreDNS), 2 (VnetDNS), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 99
+                          format: int32
+                          type: integer
+                        forwardPolicy:
+                          description: |-
+                            ForwardPolicy is the forward policy for selecting upstream DNS server.
+                            Valid values - 0 (Unspecified), 1 (Sequential), 2 (RoundRobin), 3 (Random), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 3
+                          - 99
+                          format: int32
+                          type: integer
+                        maxConcurrent:
+                          description: MaxConcurrent is the maximum number of concurrent
+                            queries.
+                          format: int32
+                          type: integer
+                        protocol:
+                          description: |-
+                            Protocol enforces TCP or prefers UDP protocol for connections from localDNS to upstream DNS server.
+                            Valid values - 0 (Unspecified), 1 (PreferUDP), 2 (ForceTCP), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 99
+                          format: int32
+                          type: integer
+                        queryLogging:
+                          description: |-
+                            QueryLogging is the log level for DNS queries in localDNS.
+                            Valid values - 0 (Unspecified), 1 (Error), 2 (Log), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 99
+                          format: int32
+                          type: integer
+                        serveStale:
+                          description: |-
+                            ServeStale is the policy for serving stale data.
+                            Valid values - 0 (Unspecified), 1 (Verify), 2 (Immediate), 3 (Disable), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 3
+                          - 99
+                          format: int32
+                          type: integer
+                        serveStaleDurationInSeconds:
+                          description: ServeStaleDurationInSeconds is the serve stale
+                            duration in seconds.
+                          format: int32
+                          type: integer
+                      type: object
+                    description: KubeDNSOverrides apply to DNS traffic from pods with
+                      dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+                    type: object
+                  memoryLimitInMB:
+                    description: MemoryLimitInMB is the memory limit in MB for localDNS.
+                    format: int32
+                    type: integer
+                  mode:
+                    description: |-
+                      Mode of enablement for localDNS.
+                      Valid values - 0 (Unspecified), 1 (Preferred), 2 (Required), 3 (Disabled), 99 (Invalid).
+                    enum:
+                    - 0
+                    - 1
+                    - 2
+                    - 3
+                    - 99
+                    format: int32
+                    type: integer
+                  state:
+                    description: |-
+                      State is the system-generated state of localDNS.
+                      Valid values - 0 (Unspecified), 1 (Enabled), 2 (Disabled), 99 (Invalid).
+                    enum:
+                    - 0
+                    - 1
+                    - 2
+                    - 99
+                    format: int32
+                    type: integer
+                  vnetDNSOverrides:
+                    additionalProperties:
+                      description: LocalDNSOverrides specifies DNS override configuration
+                      properties:
+                        cacheDurationInSeconds:
+                          description: CacheDurationInSeconds is the cache max TTL
+                            in seconds.
+                          format: int32
+                          type: integer
+                        forwardDestination:
+                          description: |-
+                            ForwardDestination is the destination server for DNS queries to be forwarded from localDNS.
+                            Valid values - 0 (Unspecified), 1 (ClusterCoreDNS), 2 (VnetDNS), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 99
+                          format: int32
+                          type: integer
+                        forwardPolicy:
+                          description: |-
+                            ForwardPolicy is the forward policy for selecting upstream DNS server.
+                            Valid values - 0 (Unspecified), 1 (Sequential), 2 (RoundRobin), 3 (Random), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 3
+                          - 99
+                          format: int32
+                          type: integer
+                        maxConcurrent:
+                          description: MaxConcurrent is the maximum number of concurrent
+                            queries.
+                          format: int32
+                          type: integer
+                        protocol:
+                          description: |-
+                            Protocol enforces TCP or prefers UDP protocol for connections from localDNS to upstream DNS server.
+                            Valid values - 0 (Unspecified), 1 (PreferUDP), 2 (ForceTCP), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 99
+                          format: int32
+                          type: integer
+                        queryLogging:
+                          description: |-
+                            QueryLogging is the log level for DNS queries in localDNS.
+                            Valid values - 0 (Unspecified), 1 (Error), 2 (Log), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 99
+                          format: int32
+                          type: integer
+                        serveStale:
+                          description: |-
+                            ServeStale is the policy for serving stale data.
+                            Valid values - 0 (Unspecified), 1 (Verify), 2 (Immediate), 3 (Disable), 99 (Invalid).
+                          enum:
+                          - 0
+                          - 1
+                          - 2
+                          - 3
+                          - 99
+                          format: int32
+                          type: integer
+                        serveStaleDurationInSeconds:
+                          description: ServeStaleDurationInSeconds is the serve stale
+                            duration in seconds.
+                          format: int32
+                          type: integer
+                      type: object
+                    description: VnetDNSOverrides apply to DNS traffic from pods with
+                      dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+                    type: object
+                type: object
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
