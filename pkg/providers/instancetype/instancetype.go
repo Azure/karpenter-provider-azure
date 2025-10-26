@@ -177,6 +177,7 @@ func computeRequirements(
 
 		// size parts
 		scheduling.NewRequirement(v1beta1.LabelSKUFamily, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUSeries, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1beta1.LabelSKUVersion, corev1.NodeSelectorOpDoesNotExist),
 
 		// SKU capabilities
@@ -192,6 +193,7 @@ func computeRequirements(
 
 	// size parts
 	requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
+	requirements[v1beta1.LabelSKUSeries].Insert(vmsize.Series)
 
 	setRequirementsEphemeralOSDiskSupported(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)

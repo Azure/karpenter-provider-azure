@@ -123,6 +123,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				// Well Known to Azure
 				v1beta1.LabelSKUName:                      "Standard_D2s_v3",
 				v1beta1.LabelSKUFamily:                    "D",
+				v1beta1.LabelSKUSeries:                    "Ds_v3",
 				v1beta1.LabelSKUVersion:                   "3",
 				v1beta1.LabelSKUCPU:                       "2",
 				v1beta1.LabelSKUMemory:                    "8192",
