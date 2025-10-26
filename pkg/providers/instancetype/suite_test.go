@@ -1482,6 +1482,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// Well Known to AKS
 				v1beta1.LabelSKUName:                      "Standard_NC24ads_A100_v4",
 				v1beta1.LabelSKUFamily:                    "N",
+				v1beta1.LabelSKUSeries:                    "NCads_v4",
 				v1beta1.LabelSKUVersion:                   "4",
 				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "429",
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
