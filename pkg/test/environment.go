@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 
 	"github.com/patrickmn/go-cache"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
@@ -89,6 +90,8 @@ type Environment struct {
 	LaunchTemplateProvider       *launchtemplate.Provider
 	LoadBalancerProvider         *loadbalancer.Provider
 	NetworkSecurityGroupProvider *networksecuritygroup.Provider
+
+	InstanceTypeStore *nodeoverlay.InstanceTypeStore
 
 	// Settings
 	nonZonal       bool
@@ -200,6 +203,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.DiskEncryptionSetID,
 	)
 
+	store := nodeoverlay.NewInstanceTypeStore()
+
 	return &Environment{
 		VirtualMachinesAPI:          virtualMachinesAPI,
 		AuxiliaryTokenServer:        auxiliaryTokenServer,
@@ -231,6 +236,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LaunchTemplateProvider:       launchTemplateProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		NetworkSecurityGroupProvider: networkSecurityGroupProvider,
+
+		InstanceTypeStore: store,
 
 		nonZonal:       nonZonal,
 		SubscriptionID: subscription,
