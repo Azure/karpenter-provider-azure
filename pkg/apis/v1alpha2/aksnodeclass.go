@@ -190,7 +190,6 @@ type LocalDNSOverrides struct {
 	ServeStale *LocalDNSServeStale `json:"serveStale,omitempty"`
 }
 
-// Placeholder types for LocalDNSOverrides enums - these need to be defined with actual values
 type LocalDNSQueryLogging int32
 
 const (
