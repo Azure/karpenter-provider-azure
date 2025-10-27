@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/awslabs/operatorpkg/reconciler"
 	"github.com/awslabs/operatorpkg/singleton"
 
 	"github.com/samber/lo"
@@ -32,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -54,7 +54,7 @@ func NewVirtualMachine(kubeClient client.Client, cloudProvider corecloudprovider
 	}
 }
 
-func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *VirtualMachine) Reconcile(ctx context.Context) (reconciler.Result, error) {
 	ctx = injection.WithControllerName(ctx, "instance.garbagecollection")
 
 	// We LIST VMs on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
@@ -62,7 +62,7 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 	// This works since our CloudProvider instances are deleted based on whether the NodeClaim exists or not, not vice-versa
 	retrieved, err := c.cloudProvider.List(ctx)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("listing cloudprovider VMs, %w", err)
+		return reconciler.Result{}, fmt.Errorf("listing cloudprovider VMs, %w", err)
 	}
 
 	managedRetrieved := lo.Filter(retrieved, func(nc *karpv1.NodeClaim, _ int) bool {
@@ -70,11 +70,11 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 	})
 	nodeClaimList := &karpv1.NodeClaimList{}
 	if err = c.kubeClient.List(ctx, nodeClaimList); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 	nodeList := &v1.NodeList{}
 	if err := c.kubeClient.List(ctx, nodeList); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 	resolvedProviderIDs := sets.New[string](lo.FilterMap(nodeClaimList.Items, func(n karpv1.NodeClaim, _ int) (string, bool) {
 		return n.Status.ProviderID, n.Status.ProviderID != ""
@@ -87,10 +87,10 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 		}
 	})
 	if err = multierr.Combine(errs...); err != nil {
-		return reconcile.Result{}, err
+		return reconciler.Result{}, err
 	}
 	c.successfulCount++
-	return reconcile.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, nil
+	return reconciler.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, nil
 }
 
 func (c *VirtualMachine) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
