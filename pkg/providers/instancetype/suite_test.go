@@ -63,7 +63,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -108,8 +108,8 @@ func TestAzure(t *testing.T) {
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 
 	fakeClock = &clock.FakeClock{}
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
@@ -172,7 +172,7 @@ var _ = Describe("InstanceType Provider", func() {
 			}))
 			azureEnv = test.NewEnvironment(ctx, env)
 			fakeClock = &clock.FakeClock{}
-			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 		})
@@ -180,7 +180,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ctx = options.ToContext(ctx, test.Options())
 			azureEnv = test.NewEnvironment(ctx, env)
 			fakeClock = &clock.FakeClock{}
-			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 		})
@@ -646,6 +646,51 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 		It("should include AKSUbuntu GPU SKUs in list results", func() {
 			Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_NC16as_T4_v3"))))
+		})
+	})
+
+	Context("Filtering by Encryption at Host", func() {
+		var instanceTypes corecloudprovider.InstanceTypes
+		var err error
+		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+		Context("when encryption at host is enabled", func() {
+			BeforeEach(func() {
+				nodeClassWithEncryption := test.AKSNodeClass()
+				if nodeClassWithEncryption.Spec.Security == nil {
+					nodeClassWithEncryption.Spec.Security = &v1beta1.Security{}
+				}
+				nodeClassWithEncryption.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+				ExpectApplied(ctx, env.Client, nodeClassWithEncryption)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithEncryption)
+				Expect(err).ToNot(HaveOccurred())
+			})
+
+			It("should only include SKUs that support encryption at host", func() {
+				// Standard_D2_v2 does not support encryption at host, so it should be filtered out
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+				// Standard_D2s_v3 supports encryption at host, so it should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				// Standard_D2_v5 supports encryption at host, so it should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+			})
+		})
+
+		Context("when encryption at host is disabled or not set", func() {
+			It("should include SKUs regardless of encryption at host support", func() {
+				nodeClassWithoutEncryption := test.AKSNodeClass()
+				// default is disabled when Security is nil or EncryptionAtHost is nil
+				ExpectApplied(ctx, env.Client, nodeClassWithoutEncryption)
+				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithoutEncryption)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Standard_D2_v2 does not support encryption at host, but should still be included when encryption is not required
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v2"))))
+				// Standard_D2s_v3 supports encryption at host and should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
+				// Standard_D2_v5 supports encryption at host and should be included
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
+			})
 		})
 	})
 
@@ -1470,6 +1515,9 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.LabelSKUGPUCount:                  "1",
 				v1beta1.LabelSKUCPU:                       "24",
 				v1beta1.LabelSKUMemory:                    "8192",
+				// AKS domain.
+				v1beta1.AKSLabelCPU:    "24",
+				v1beta1.AKSLabelMemory: "8192",
 				// Deprecated Labels
 				v1.LabelFailureDomainBetaRegion:    fake.Region,
 				v1.LabelFailureDomainBetaZone:      fakeZone1,

@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/ginkgo/v2"
@@ -120,7 +120,7 @@ func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv 
 	GinkgoHelper()
 
 	// The VM should be updated
-	updatedVM, err := azureEnv.InstanceProvider.Get(ctx, name)
+	updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, name)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect(updatedVM.Tags).To(Equal(tags), "Expected VM tags to match")
