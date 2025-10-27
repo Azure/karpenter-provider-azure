@@ -87,6 +87,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, "https://test-sig-access-token-server.com"),
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
-		ClusterDNSServiceIP:            lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
+		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
 	}
 }
