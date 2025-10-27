@@ -122,6 +122,192 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("LocalDNSProfile", func() {
+		DescribeTable("should validate LocalDNSMode", func(mode *v1alpha2.LocalDNSMode, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+						Mode: mode,
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid mode: Unspecified (0)", lo.ToPtr(v1alpha2.LocalDNSModeUnspecified), true),
+			Entry("valid mode: Preferred (1)", lo.ToPtr(v1alpha2.LocalDNSModePreferred), true),
+			Entry("valid mode: Required (2)", lo.ToPtr(v1alpha2.LocalDNSModeRequired), true),
+			Entry("valid mode: Disabled (3)", lo.ToPtr(v1alpha2.LocalDNSModeDisabled), true),
+			Entry("valid mode: Invalid (99)", lo.ToPtr(v1alpha2.LocalDNSModeInvalid), true),
+			Entry("invalid mode: 4", lo.ToPtr(v1alpha2.LocalDNSMode(4)), false),
+			Entry("invalid mode: 50", lo.ToPtr(v1alpha2.LocalDNSMode(50)), false),
+		)
+
+		DescribeTable("should validate LocalDNSState", func(state *v1alpha2.LocalDNSState, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+						State: state,
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid state: Unspecified (0)", lo.ToPtr(v1alpha2.LocalDNSStateUnspecified), true),
+			Entry("valid state: Enabled (1)", lo.ToPtr(v1alpha2.LocalDNSStateEnabled), true),
+			Entry("valid state: Disabled (2)", lo.ToPtr(v1alpha2.LocalDNSStateDisabled), true),
+			Entry("valid state: Invalid (99)", lo.ToPtr(v1alpha2.LocalDNSStateInvalid), true),
+			Entry("invalid state: 3", lo.ToPtr(v1alpha2.LocalDNSState(3)), false),
+			Entry("invalid state: 50", lo.ToPtr(v1alpha2.LocalDNSState(50)), false),
+		)
+
+		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging *v1alpha2.LocalDNSQueryLogging, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								QueryLogging: queryLogging,
+							},
+						},
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid query logging: Unspecified (0)", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingUnspecifiedQueryLogging), true),
+			Entry("valid query logging: Error (1)", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingError), true),
+			Entry("valid query logging: Log (2)", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog), true),
+			Entry("valid query logging: Invalid (99)", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingInvalidQueryLogging), true),
+			Entry("invalid query logging: 3", lo.ToPtr(v1alpha2.LocalDNSQueryLogging(3)), false),
+			Entry("invalid query logging: 50", lo.ToPtr(v1alpha2.LocalDNSQueryLogging(50)), false),
+		)
+
+		DescribeTable("should validate LocalDNSProtocol", func(protocol *v1alpha2.LocalDNSProtocol, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								Protocol: protocol,
+							},
+						},
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid protocol: Unspecified (0)", lo.ToPtr(v1alpha2.LocalDNSProtocolUnspecifiedProtocol), true),
+			Entry("valid protocol: PreferUDP (1)", lo.ToPtr(v1alpha2.LocalDNSProtocolPreferUDP), true),
+			Entry("valid protocol: ForceTCP (2)", lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP), true),
+			Entry("valid protocol: Invalid (99)", lo.ToPtr(v1alpha2.LocalDNSProtocolInvalidProtocol), true),
+			Entry("invalid protocol: 3", lo.ToPtr(v1alpha2.LocalDNSProtocol(3)), false),
+			Entry("invalid protocol: 50", lo.ToPtr(v1alpha2.LocalDNSProtocol(50)), false),
+		)
+
+		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination *v1alpha2.LocalDNSForwardDestination, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								ForwardDestination: forwardDestination,
+							},
+						},
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid forward destination: Unspecified (0)", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationUnspecifiedForwardDestination), true),
+			Entry("valid forward destination: ClusterCoreDNS (1)", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationClusterCoreDNS), true),
+			Entry("valid forward destination: VnetDNS (2)", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS), true),
+			Entry("valid forward destination: Invalid (99)", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationInvalidForwardDestination), true),
+			Entry("invalid forward destination: 3", lo.ToPtr(v1alpha2.LocalDNSForwardDestination(3)), false),
+			Entry("invalid forward destination: 50", lo.ToPtr(v1alpha2.LocalDNSForwardDestination(50)), false),
+		)
+
+		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy *v1alpha2.LocalDNSForwardPolicy, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								ForwardPolicy: forwardPolicy,
+							},
+						},
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid forward policy: Unspecified (0)", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyUnspecifiedForwardPolicy), true),
+			Entry("valid forward policy: Sequential (1)", lo.ToPtr(v1alpha2.LocalDNSForwardPolicySequential), true),
+			Entry("valid forward policy: RoundRobin (2)", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRoundRobin), true),
+			Entry("valid forward policy: Random (3)", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRandom), true),
+			Entry("valid forward policy: Invalid (99)", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyInvalidForwardPolicy), true),
+			Entry("invalid forward policy: 4", lo.ToPtr(v1alpha2.LocalDNSForwardPolicy(4)), false),
+			Entry("invalid forward policy: 50", lo.ToPtr(v1alpha2.LocalDNSForwardPolicy(50)), false),
+		)
+
+		DescribeTable("should validate LocalDNSServeStale", func(serveStale *v1alpha2.LocalDNSServeStale, expected bool) {
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								ServeStale: serveStale,
+							},
+						},
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid serve stale: Unspecified (0)", lo.ToPtr(v1alpha2.LocalDNSServeStaleUnspecifiedServeStale), true),
+			Entry("valid serve stale: Verify (1)", lo.ToPtr(v1alpha2.LocalDNSServeStaleVerify), true),
+			Entry("valid serve stale: Immediate (2)", lo.ToPtr(v1alpha2.LocalDNSServeStaleImmediate), true),
+			Entry("valid serve stale: Disable (3)", lo.ToPtr(v1alpha2.LocalDNSServeStaleDisable), true),
+			Entry("valid serve stale: Invalid (99)", lo.ToPtr(v1alpha2.LocalDNSServeStaleInvalidServeStale), true),
+			Entry("invalid serve stale: 4", lo.ToPtr(v1alpha2.LocalDNSServeStale(4)), false),
+			Entry("invalid serve stale: 50", lo.ToPtr(v1alpha2.LocalDNSServeStale(50)), false),
+		)
+	})
+
 	Context("OSDiskSizeGB", func() {
 		DescribeTable("Should validate OSDiskSizeGB constraints", func(osDiskSizeGB *int32, expected bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{
