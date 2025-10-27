@@ -73,6 +73,12 @@ var _ = Describe("Hash", func() {
 		Entry("ImageFamily", "15616969746300892810", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", "33638514539106194", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", "15508761509963240710", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("LocalDNSProfile.Mode", "6911183351349683704", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired)}}}),
+		Entry("LocalDNSProfile.State", "17192054096732406455", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{State: lo.ToPtr(v1alpha2.LocalDNSStateEnabled)}}}),
+		Entry("LocalDNSProfile.CPULimitInMilliCores", "6265432000329417329", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{CPULimitInMilliCores: lo.ToPtr(int32(100))}}}),
+		Entry("LocalDNSProfile.MemoryLimitInMB", "1734165789990540991", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{MemoryLimitInMB: lo.ToPtr(int32(512))}}}),
+		Entry("LocalDNSProfile.VnetDNSOverrides", "12440482011576519338", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"example.com": {QueryLogging: lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog)}}}}}),
+		Entry("LocalDNSProfile.KubeDNSOverrides", "11145096727805666627", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"example.com": {Protocol: lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP)}}}}}),
 	)
 	It("should match static hash when reordering tags", func() {
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
@@ -89,6 +95,12 @@ var _ = Describe("Hash", func() {
 		Entry("ImageFamily", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("LocalDNSProfile.Mode", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired)}}}),
+		Entry("LocalDNSProfile.State", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{State: lo.ToPtr(v1alpha2.LocalDNSStateEnabled)}}}),
+		Entry("LocalDNSProfile.CPULimitInMilliCores", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{CPULimitInMilliCores: lo.ToPtr(int32(100))}}}),
+		Entry("LocalDNSProfile.MemoryLimitInMB", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{MemoryLimitInMB: lo.ToPtr(int32(512))}}}),
+		Entry("LocalDNSProfile.VnetDNSOverrides", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"example.com": {QueryLogging: lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog)}}}}}),
+		Entry("LocalDNSProfile.KubeDNSOverrides", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNSProfile: &v1alpha2.LocalDNSProfile{KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"example.com": {Protocol: lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP)}}}}}),
 	)
 	It("should not change hash when tags are changed", func() {
 		hash := nodeClass.Hash()
