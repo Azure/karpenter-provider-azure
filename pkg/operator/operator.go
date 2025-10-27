@@ -138,9 +138,14 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
 
 	if options.FromContext(ctx).ClusterDNSServiceIP == "" {
-		ip, err := kubeDNSIP(ctx, inClusterClient)
-		lo.Must0(err, "discovering kubernetes DNS IP address")
-		options.FromContext(ctx).ClusterDNSServiceIP = ip.String()
+		kubeDNSIP, err := kubeDNSIP(ctx, inClusterClient)
+		if err != nil { // fall back to default
+			log.FromContext(ctx).V(1).Info("unable to detect the IP of the kube-dns service, using default 10.0.0.10", "error", err)
+			options.FromContext(ctx).ClusterDNSServiceIP = "10.0.0.10"
+		} else {
+			log.FromContext(ctx).V(1).Info("discovered DNS service IP", "dns-service-ip", kubeDNSIP.String())
+			options.FromContext(ctx).ClusterDNSServiceIP = kubeDNSIP.String()
+		}
 	}
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
