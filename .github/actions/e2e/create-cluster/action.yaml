@@ -6,22 +6,22 @@ inputs:
   #   required: false
   #   default: "1.27"
   client-id:
-    description:
+    description: "ID of the client to create the cluster with"
     required: true
   tenant-id:
-    description:
+    description: "ID of the tenant to create the cluster in"
     required: true
   subscription-id:
-    description:
+    description: "ID of the subscription to create the cluster in"
     required: true
   resource_group:
     description: "Name of the resource group to create the cluster within"
     required: true
   cluster_name:
-    description: 'Name of the cluster to be created'
+    description: "Name of the cluster to be created"
     required: true
   acr_name:
-    description: "Name of the acr holding the karpenter image"
+    description: "Name of the acr holding the Karpenter image"
     required: true
   git_ref:
     description: "The git commit, tag, or branch to check out"
