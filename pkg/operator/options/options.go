@@ -75,7 +75,7 @@ type Options struct {
 	NetworkPolicy     string `json:"networkPolicy,omitempty"`     // => NetworkPolicy in bootstrap
 	NetworkPluginMode string `json:"networkPluginMode,omitempty"` // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
 	NetworkDataplane  string `json:"networkDataplane,omitempty"`
-	DNSServiceIP      string `json:"clusterDNSServiceIP,omitempty"`
+	DNSServiceIP      string `json:"dnsServiceIP,omitempty"`
 
 	NodeIdentities          []string `json:"nodeIdentities,omitempty"`          // => Applied onto each VM
 	KubeletIdentityClientID string   `json:"kubeletIdentityClientID,omitempty"` // => Flows to bootstrap and used in drift

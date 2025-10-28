@@ -21,6 +21,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -659,6 +661,46 @@ var _ = Describe("Options", func() {
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/my-rg/PROVIDERS/MICROSOFT.COMPUTE/DISKENCRYPTIONSETS/my-des",
 			)
 			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("String verification", func() {
+		It("should have a JSON tag for each expected field", func() {
+			opts := &options.Options{}
+
+			// Use reflection to get the type information of the Options struct
+			optionsType := reflect.TypeOf(*opts)
+
+			// Iterate through all fields in the struct
+			for i := 0; i < optionsType.NumField(); i++ {
+				field := optionsType.Field(i)
+				fieldName := field.Name
+
+				// Skip unexported fields (those starting with lowercase)
+				if !field.IsExported() {
+					continue
+				}
+
+				// Get the JSON tag
+				jsonTag, hasJSONTag := field.Tag.Lookup("json")
+
+				// Handle fields that should be excluded from JSON (tagged with "-")
+				if jsonTag == "-" {
+					// These fields are intentionally excluded from JSON serialization
+					// Examples: KubeletClientTLSBootstrapToken, LinuxAdminUsername, SSHPublicKey, etc.
+					continue
+				}
+
+				// For fields that should have JSON tags, verify they exist and match
+				Expect(hasJSONTag).To(BeTrue(), "Field %s should have a JSON tag", fieldName)
+
+				// Parse the JSON tag (it might have options like "omitempty")
+				jsonFieldName := strings.Split(jsonTag, ",")[0]
+
+				// Verify the JSON tag matches the field name (case-insensitive)
+				Expect(strings.ToLower(jsonFieldName)).To(Equal(strings.ToLower(fieldName)),
+					"Field %s JSON tag '%s' should match field name (case-insensitive)", fieldName, jsonFieldName)
+			}
 		})
 	})
 })
