@@ -31,7 +31,8 @@ import (
 )
 
 var _ = Describe("StandaloneNodeClaim", func() {
-	It("should create a standard NodeClaim within the 'D' sku family", func() {
+	FIt("should create a standard NodeClaim within the 'D' sku family", func() {
+		Expect(1).To(Equal(2))
 		nodeClaim := test.NodeClaim(karpv1.NodeClaim{
 			Spec: karpv1.NodeClaimSpec{
 				Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
