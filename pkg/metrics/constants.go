@@ -24,6 +24,9 @@ const (
 	imageFamilySubsystem = "image"
 
 	// Label key(s).
-	ImageLabel     = "image"
-	ErrorCodeLabel = "error"
+	ImageLabel        = "image"
+	ErrorCodeLabel    = "error"
+	SizeLabel         = "size"
+	ZoneLabel         = "zone"
+	CapacityTypeLabel = "capacity_type"
 )

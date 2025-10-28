@@ -643,13 +643,19 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	vm := newVMObject(opts)
 	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, logging.InstanceType, opts.InstanceType.Name)
 	VMCreateStartMetric.With(map[string]string{
-		metrics.ImageLabel: opts.LaunchTemplate.ImageID,
+		metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
+		metrics.SizeLabel:         opts.InstanceType.Name,
+		metrics.ZoneLabel:         opts.Zone,
+		metrics.CapacityTypeLabel: opts.CapacityType,
 	}).Inc()
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
 		VMCreateSyncFailureMetric.With(map[string]string{
-			metrics.ImageLabel: opts.LaunchTemplate.ImageID,
+			metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
+			metrics.SizeLabel:         opts.InstanceType.Name,
+			metrics.ZoneLabel:         opts.Zone,
+			metrics.CapacityTypeLabel: opts.CapacityType,
 		}).Inc()
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
@@ -771,7 +777,10 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
 				VMCreateAsyncFailureMetric.With(map[string]string{
-					metrics.ImageLabel: launchTemplate.ImageID,
+					metrics.ImageLabel:        launchTemplate.ImageID,
+					metrics.SizeLabel:         instanceType.Name,
+					metrics.ZoneLabel:         zone,
+					metrics.CapacityTypeLabel: capacityType,
 				}).Inc()
 
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
