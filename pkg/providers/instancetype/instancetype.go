@@ -117,8 +117,16 @@ func (t TaxBrackets) Calculate(amount float64) float64 {
 	return tax
 }
 
-func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSizeType, kc *v1beta1.KubeletConfiguration, region string,
-	offerings cloudprovider.Offerings, nodeClass *v1beta1.AKSNodeClass, architecture string) *cloudprovider.InstanceType {
+func NewInstanceType(
+	ctx context.Context,
+	sku *skewer.SKU,
+	vmsize *skewer.VMSizeType,
+	kc *v1beta1.KubeletConfiguration,
+	region string,
+	offerings cloudprovider.Offerings,
+	nodeClass *v1beta1.AKSNodeClass,
+	architecture string,
+) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
 		Requirements: computeRequirements(sku, vmsize, architecture, offerings, region),
@@ -132,8 +140,13 @@ func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSize
 	}
 }
 
-func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architecture string,
-	offerings cloudprovider.Offerings, region string) scheduling.Requirements {
+func computeRequirements(
+	sku *skewer.SKU,
+	vmsize *skewer.VMSizeType,
+	architecture string,
+	offerings cloudprovider.Offerings,
+	region string,
+) scheduling.Requirements {
 	requirements := scheduling.NewRequirements(
 		// Well Known Upstream
 		scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, sku.GetName()),

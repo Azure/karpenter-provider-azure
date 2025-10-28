@@ -107,12 +107,12 @@ func getOfferingZone(offering *corecloudprovider.Offering) string {
 // GetAllSingleValuedRequirementLabels converts instanceType.Requirements to labels
 // Like   instanceType.Requirements.Labels() it uses single-valued requirements
 // Unlike instanceType.Requirements.Labels() it does not filter out restricted Node labels
-func GetAllSingleValuedRequirementLabels(instanceType *corecloudprovider.InstanceType) map[string]string {
+func GetAllSingleValuedRequirementLabels(requirements scheduling.Requirements) map[string]string {
 	labels := map[string]string{}
-	if instanceType == nil {
+	if len(requirements) == 0 {
 		return labels
 	}
-	for key, req := range instanceType.Requirements {
+	for key, req := range requirements {
 		if req.Len() == 1 {
 			labels[key] = req.Values()[0]
 		}

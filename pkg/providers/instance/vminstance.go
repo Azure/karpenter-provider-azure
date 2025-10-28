@@ -854,7 +854,14 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 ) (*launchtemplate.Template, error) {
-	additionalLabels := lo.Assign(offerings.GetAllSingleValuedRequirementLabels(instanceType), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
+	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
+	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
+	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
+	additionalLabels := lo.Assign(
+		offerings.GetAllSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)),
+		offerings.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
+		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
+	)
 
 	launchTemplate, err := p.launchTemplateProvider.GetTemplate(ctx, nodeClass, nodeClaim, instanceType, additionalLabels)
 	if err != nil {

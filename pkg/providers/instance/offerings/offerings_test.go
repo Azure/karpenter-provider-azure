@@ -509,22 +509,20 @@ func TestGetOfferingZone(t *testing.T) {
 func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 	cases := []struct {
 		name           string
-		instanceType   *cloudprovider.InstanceType
+		requirements   scheduling.Requirements
 		expectedLabels map[string]string
 	}{
 		{
 			name:           "Nil instance type",
-			instanceType:   nil,
+			requirements:   nil,
 			expectedLabels: map[string]string{},
 		},
 		{
 			name: "Single-valued requirements",
-			instanceType: &cloudprovider.InstanceType{
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
-					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
-				),
-			},
+			requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+			),
 			expectedLabels: map[string]string{
 				"node.kubernetes.io/instance-type": "Standard_D2s_v3",
 				corev1.LabelTopologyZone:           "westus-1",
@@ -532,13 +530,11 @@ func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 		},
 		{
 			name: "Mixed single and multi-valued requirements",
-			instanceType: &cloudprovider.InstanceType{
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
-					scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
-					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
-				),
-			},
+			requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
+				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+			),
 			expectedLabels: map[string]string{
 				"node.kubernetes.io/instance-type": "Standard_D2s_v3",
 				corev1.LabelTopologyZone:           "westus-1",
@@ -547,19 +543,17 @@ func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 		},
 		{
 			name: "No single-valued requirements",
-			instanceType: &cloudprovider.InstanceType{
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
-					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2"),
-				),
-			},
+			requirements: scheduling.NewRequirements(
+				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2"),
+			),
 			expectedLabels: map[string]string{},
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			labels := GetAllSingleValuedRequirementLabels(c.instanceType)
+			labels := GetAllSingleValuedRequirementLabels(c.requirements)
 			assert.Equal(t, c.expectedLabels, labels)
 		})
 	}
