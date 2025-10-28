@@ -486,6 +486,7 @@ type createVMOptions struct {
 	ProvisionMode       string
 	UseSIG              bool
 	DiskEncryptionSetID string
+	NodePoolName        string
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -647,6 +648,7 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 		metrics.SizeLabel:         opts.InstanceType.Name,
 		metrics.ZoneLabel:         opts.Zone,
 		metrics.CapacityTypeLabel: opts.CapacityType,
+		metrics.NodePoolLabel:     opts.NodePoolName,
 	}).Inc()
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
@@ -656,6 +658,7 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 			metrics.SizeLabel:         opts.InstanceType.Name,
 			metrics.ZoneLabel:         opts.Zone,
 			metrics.CapacityTypeLabel: opts.CapacityType,
+			metrics.NodePoolLabel:     opts.NodePoolName,
 		}).Inc()
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
@@ -740,6 +743,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		ProvisionMode:       p.provisionMode,
 		UseSIG:              options.FromContext(ctx).UseSIG,
 		DiskEncryptionSetID: p.diskEncryptionSetID,
+		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
@@ -781,6 +785,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					metrics.SizeLabel:         instanceType.Name,
 					metrics.ZoneLabel:         zone,
 					metrics.CapacityTypeLabel: capacityType,
+					metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
 				}).Inc()
 
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)

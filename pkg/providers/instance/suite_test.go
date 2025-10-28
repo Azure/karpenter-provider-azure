@@ -133,11 +133,14 @@ func metricLabelsMatch(metric *dto.Metric, expected map[string]string) bool {
 	return true
 }
 
-func vmMetricLabelsFromCreateInput(input *fake.VirtualMachineCreateOrUpdateInput) map[string]string {
-	if input == nil {
-		return map[string]string{}
+func vmMetricLabelsFromCreateInput(input *fake.VirtualMachineCreateOrUpdateInput, nodePoolName string) map[string]string {
+	labels := map[string]string{
+		metrics.NodePoolLabel: nodePoolName,
 	}
-	return vmMetricLabelsFromVM(&input.VM)
+	if input == nil {
+		return labels
+	}
+	return lo.Assign(vmMetricLabelsFromVM(&input.VM), labels)
 }
 
 func vmMetricLabelsFromVM(vm *armcompute.VirtualMachine) map[string]string {
@@ -259,7 +262,7 @@ var _ = Describe("VMInstanceProvider", func() {
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-			labels := vmMetricLabelsFromCreateInput(createInput)
+			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
 			Expect(vmPromise.Wait()).To(Succeed())
 			Expect(vmPromise.Cleanup(ctx)).To(Succeed())
@@ -289,7 +292,7 @@ var _ = Describe("VMInstanceProvider", func() {
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-			labels := vmMetricLabelsFromCreateInput(createInput)
+			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
 			metric, ok := findMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
 			Expect(ok).To(BeTrue())
@@ -317,7 +320,7 @@ var _ = Describe("VMInstanceProvider", func() {
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
-			labels := vmMetricLabelsFromCreateInput(createInput)
+			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
 			err = vmPromise.Wait()
 			Expect(err).To(HaveOccurred())

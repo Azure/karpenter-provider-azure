@@ -29,4 +29,5 @@ const (
 	SizeLabel         = "size"
 	ZoneLabel         = "zone"
 	CapacityTypeLabel = "capacity_type"
+	NodePoolLabel     = "nodepool"
 )

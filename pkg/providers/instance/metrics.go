@@ -26,7 +26,7 @@ const (
 	instanceSubsystem = "instance"
 )
 
-// add note about disk metrics being statically defined
+// We don't need to add disk specification since they are statically defined and can be traced with provided labels.
 var (
 	// VMCreateStartMetric tracks when VM creation starts.
 	//
@@ -38,7 +38,7 @@ var (
 			Name:      "vm_create_start_total",
 			Help:      "Total number of VM creation operations started.",
 		},
-		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel},
+		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
 	)
 
 	// VMCreateSyncFailureMetric tracks synchronous VM creation failures.
@@ -51,7 +51,7 @@ var (
 			Name:      "vm_create_sync_failure_total",
 			Help:      "Total number of synchronous VM creation failures.",
 		},
-		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel},
+		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
 	)
 
 	// VMCreateAsyncFailureMetric tracks asynchronous VM creation failures.
@@ -64,7 +64,7 @@ var (
 			Name:      "vm_create_async_failure_total",
 			Help:      "Failed to create virtual machine during LRO",
 		},
-		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel},
+		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
 	)
 
 	// VMCreateResponseErrorMetric tracks VM creation response errors.
@@ -77,7 +77,7 @@ var (
 			Name:      "vm_create_response_error_total",
 			Help:      "Total number of VM creation response errors.",
 		},
-		[]string{metrics.ErrorCodeLabel, metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel},
+		[]string{metrics.ErrorCodeLabel, metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
 	)
 )
 
