@@ -25,9 +25,10 @@ const (
 
 	// Label key(s).
 	ImageLabel        = "image"
-	ErrorCodeLabel    = "error"
+	ErrorCodeLabel    = "error_code"
 	SizeLabel         = "size"
 	ZoneLabel         = "zone"
 	CapacityTypeLabel = "capacity_type"
 	NodePoolLabel     = "nodepool"
+	PhaseLabel        = "phase"
 )

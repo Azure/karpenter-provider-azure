@@ -653,12 +653,14 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		VMCreateSyncFailureMetric.With(map[string]string{
+		VMCreateFailureMetric.With(map[string]string{
 			metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
 			metrics.SizeLabel:         opts.InstanceType.Name,
 			metrics.ZoneLabel:         opts.Zone,
 			metrics.CapacityTypeLabel: opts.CapacityType,
 			metrics.NodePoolLabel:     opts.NodePoolName,
+			metrics.PhaseLabel:        phaseSyncFailure,
+			metrics.ErrorCodeLabel:    err.Error(),
 		}).Inc()
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
@@ -780,12 +782,14 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				VMCreateAsyncFailureMetric.With(map[string]string{
+				VMCreateFailureMetric.With(map[string]string{
 					metrics.ImageLabel:        launchTemplate.ImageID,
 					metrics.SizeLabel:         instanceType.Name,
 					metrics.ZoneLabel:         zone,
 					metrics.CapacityTypeLabel: capacityType,
 					metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+					metrics.PhaseLabel:        phaseAsyncFailure,
+					metrics.ErrorCodeLabel:    err.Error(),
 				}).Inc()
 
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)

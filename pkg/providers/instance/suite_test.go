@@ -27,12 +27,10 @@ import (
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
-	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
@@ -99,40 +97,6 @@ var _ = AfterSuite(func() {
 	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
 })
 
-func findMetricWithLabelValues(metricName string, labels map[string]string) (*dto.Metric, bool) {
-	metricFamilies, err := crmetrics.Registry.Gather()
-	Expect(err).ToNot(HaveOccurred())
-
-	for _, mf := range metricFamilies {
-		if mf.GetName() != metricName {
-			continue
-		}
-		for _, metric := range mf.GetMetric() {
-			if metricLabelsMatch(metric, labels) {
-				return metric, true
-			}
-		}
-	}
-
-	return nil, false
-}
-
-func metricLabelsMatch(metric *dto.Metric, expected map[string]string) bool {
-	labels := metric.GetLabel()
-	if len(labels) != len(expected) {
-		return false
-	}
-
-	for _, label := range labels {
-		value, ok := expected[label.GetName()]
-		if !ok || value != label.GetValue() {
-			return false
-		}
-	}
-
-	return true
-}
-
 func vmMetricLabelsFromCreateInput(input *fake.VirtualMachineCreateOrUpdateInput, nodePoolName string) map[string]string {
 	labels := map[string]string{
 		metrics.NodePoolLabel: nodePoolName,
@@ -147,7 +111,7 @@ func vmMetricLabelsFromVM(vm *armcompute.VirtualMachine) map[string]string {
 	return map[string]string{
 		metrics.ImageLabel:        imageIDFromVM(vm),
 		metrics.SizeLabel:         vmSizeFromVM(vm),
-		metrics.ZoneLabel:         zoneLabelFromVM(vm),
+		metrics.ZoneLabel:         zoneFromVM(vm),
 		metrics.CapacityTypeLabel: instancemetrics.GetCapacityTypeFromVM(vm),
 	}
 }
@@ -157,18 +121,12 @@ func imageIDFromVM(vm *armcompute.VirtualMachine) string {
 		return ""
 	}
 	ref := vm.Properties.StorageProfile.ImageReference
-	switch {
-	case ref.ID != nil:
-		return lo.FromPtr(ref.ID)
-	case ref.CommunityGalleryImageID != nil:
-		return lo.FromPtr(ref.CommunityGalleryImageID)
-	case ref.SharedGalleryImageID != nil:
-		return lo.FromPtr(ref.SharedGalleryImageID)
-	case ref.ExactVersion != nil:
-		return lo.FromPtr(ref.ExactVersion)
-	default:
-		return ""
-	}
+	return lo.CoalesceOrEmpty(
+		lo.FromPtr(ref.ID),
+		lo.FromPtr(ref.CommunityGalleryImageID),
+		lo.FromPtr(ref.SharedGalleryImageID),
+		lo.FromPtr(ref.ExactVersion),
+	)
 }
 
 func vmSizeFromVM(vm *armcompute.VirtualMachine) string {
@@ -178,7 +136,7 @@ func vmSizeFromVM(vm *armcompute.VirtualMachine) string {
 	return string(*vm.Properties.HardwareProfile.VMSize)
 }
 
-func zoneLabelFromVM(vm *armcompute.VirtualMachine) string {
+func zoneFromVM(vm *armcompute.VirtualMachine) string {
 	if vm == nil || vm.Location == nil || len(vm.Zones) == 0 {
 		return ""
 	}
@@ -245,94 +203,87 @@ var _ = Describe("VMInstanceProvider", func() {
 	Context("metrics integration", func() {
 		BeforeEach(func() {
 			instancemetrics.VMCreateStartMetric.Reset()
-			instancemetrics.VMCreateSyncFailureMetric.Reset()
-			instancemetrics.VMCreateAsyncFailureMetric.Reset()
-			instancemetrics.VMCreateResponseErrorMetric.Reset()
+			instancemetrics.VMCreateFailureMetric.Reset()
 		})
 
 		It("records VM create start metric during successful launch", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
-			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(instanceTypes).ToNot(BeEmpty())
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
 
-			vmPromise, err := azureEnv.VMInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(vmPromise).ToNot(BeNil())
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
-			Expect(vmPromise.Wait()).To(Succeed())
-			Expect(vmPromise.Cleanup(ctx)).To(Succeed())
-
-			metric, ok := findMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			metric, ok, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			_, ok = findMetricWithLabelValues("karpenter_instance_vm_create_sync_failure_total", labels)
+			_, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "sync"))
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeFalse())
 
-			_, ok = findMetricWithLabelValues("karpenter_instance_vm_create_async_failure_total", labels)
+			_, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "async"))
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeFalse())
 		})
 
 		It("records VM create sync failure metric when Azure returns an error", func() {
-			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(&azcore.ResponseError{ErrorCode: "OperationNotAllowed"})
+			beginErr := &azcore.ResponseError{ErrorCode: "OperationNotAllowed"}
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(beginErr)
 
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
-			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(instanceTypes).ToNot(BeEmpty())
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
 
-			vmPromise, err := azureEnv.VMInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
-			Expect(err).To(HaveOccurred())
-			Expect(vmPromise).To(BeNil())
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
-			metric, ok := findMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			metric, ok, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			metric, ok = findMetricWithLabelValues("karpenter_instance_vm_create_sync_failure_total", labels)
+			syncFailureLabels := metrics.FailureMetricLabels(labels, "sync", map[string]string{metrics.ErrorCodeLabel: beginErr.Error()})
+			metric, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", syncFailureLabels)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			_, ok = findMetricWithLabelValues("karpenter_instance_vm_create_async_failure_total", labels)
+			_, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "async"))
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeFalse())
 		})
 
 		It("records VM create async failure metric when provisioning poller fails", func() {
-			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(&azcore.ResponseError{ErrorCode: "InternalOperationError"})
+			pollerErr := &azcore.ResponseError{ErrorCode: "InternalOperationError"}
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(pollerErr)
 
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
-			instanceTypes, err := cloudProvider.GetInstanceTypes(ctx, nodePool)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(instanceTypes).ToNot(BeEmpty())
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
 
-			vmPromise, err := azureEnv.VMInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(vmPromise).ToNot(BeNil())
-
-			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
-			err = vmPromise.Wait()
-			Expect(err).To(HaveOccurred())
-
-			metric, ok := findMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			metric, ok, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			_, ok = findMetricWithLabelValues("karpenter_instance_vm_create_sync_failure_total", labels)
+			_, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "sync"))
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeFalse())
 
-			metric, ok = findMetricWithLabelValues("karpenter_instance_vm_create_async_failure_total", labels)
+			asyncFailureLabels := metrics.FailureMetricLabels(labels, "async", map[string]string{metrics.ErrorCodeLabel: pollerErr.Error()})
+			metric, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", asyncFailureLabels)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 		})

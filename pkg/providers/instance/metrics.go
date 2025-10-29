@@ -24,6 +24,8 @@ import (
 
 const (
 	instanceSubsystem = "instance"
+	phaseSyncFailure  = "sync"
+	phaseAsyncFailure = "async"
 )
 
 // We don't need to add disk specification since they are statically defined and can be traced with provided labels.
@@ -41,51 +43,23 @@ var (
 		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
 	)
 
-	// VMCreateSyncFailureMetric tracks synchronous VM creation failures.
+	// VMCreateFailureMetric tracks VM creation failures, regardless of phase.
 	//
 	// STABILITY: ALPHA - This metric may change or be removed without notice.
-	VMCreateSyncFailureMetric = prometheus.NewCounterVec(
+	VMCreateFailureMetric = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metrics.Namespace,
 			Subsystem: instanceSubsystem,
-			Name:      "vm_create_sync_failure_total",
-			Help:      "Total number of synchronous VM creation failures.",
+			Name:      "vm_create_failure_total",
+			Help:      "Total number of VM creation failures.",
 		},
-		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
-	)
-
-	// VMCreateAsyncFailureMetric tracks asynchronous VM creation failures.
-	//
-	// STABILITY: ALPHA - This metric may change or be removed without notice.
-	VMCreateAsyncFailureMetric = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: metrics.Namespace,
-			Subsystem: instanceSubsystem,
-			Name:      "vm_create_async_failure_total",
-			Help:      "Failed to create virtual machine during LRO",
-		},
-		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
-	)
-
-	// VMCreateResponseErrorMetric tracks VM creation response errors.
-	//
-	// STABILITY: ALPHA - This metric may change or be removed without notice.
-	VMCreateResponseErrorMetric = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: metrics.Namespace,
-			Subsystem: instanceSubsystem,
-			Name:      "vm_create_response_error_total",
-			Help:      "Total number of VM creation response errors.",
-		},
-		[]string{metrics.ErrorCodeLabel, metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel},
+		[]string{metrics.ImageLabel, metrics.SizeLabel, metrics.ZoneLabel, metrics.CapacityTypeLabel, metrics.NodePoolLabel, metrics.PhaseLabel, metrics.ErrorCodeLabel},
 	)
 )
 
 func init() {
 	crmetrics.Registry.MustRegister(
 		VMCreateStartMetric,
-		VMCreateSyncFailureMetric,
-		VMCreateAsyncFailureMetric,
-		VMCreateResponseErrorMetric,
+		VMCreateFailureMetric,
 	)
 }
