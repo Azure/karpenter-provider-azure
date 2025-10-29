@@ -208,7 +208,7 @@ spec:
                             - message: label "kubernetes.io/hostname" is restricted
                               rule: self.all(x, x != "kubernetes.io/hostname")
                             - message: label domain "karpenter.azure.com" is restricted
-                              rule: self.all(x, x in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !x.find("^([^/]+)").endsWith("karpenter.azure.com"))
+                              rule: self.all(x, x in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-series", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !x.find("^([^/]+)").endsWith("karpenter.azure.com"))
                       type: object
                     spec:
                       description: |-
@@ -281,7 +281,7 @@ spec:
                                   - message: label "kubernetes.io/hostname" is restricted
                                     rule: self != "kubernetes.io/hostname"
                                   - message: label domain "karpenter.azure.com" is restricted
-                                    rule: self in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
+                                    rule: self in [ "karpenter.azure.com/aksnodeclass", "karpenter.azure.com/sku-name", "karpenter.azure.com/sku-family", "karpenter.azure.com/sku-series", "karpenter.azure.com/sku-version", "karpenter.azure.com/sku-cpu", "karpenter.azure.com/sku-memory", "karpenter.azure.com/sku-networking-accelerated", "karpenter.azure.com/sku-storage-premium-capable", "karpenter.azure.com/sku-storage-ephemeralos-maxsize", "karpenter.azure.com/sku-gpu-name", "karpenter.azure.com/sku-gpu-manufacturer", "karpenter.azure.com/sku-gpu-count" ] || !self.find("^([^/]+)").endsWith("karpenter.azure.com")
                               minValues:
                                 description: |-
                                   This field is ALPHA and can be dropped or replaced at any time
