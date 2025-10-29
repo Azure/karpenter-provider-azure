@@ -122,12 +122,12 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
-	Context("LocalDNSProfile", func() {
+	Context("LocalDNS", func() {
 		DescribeTable("should validate LocalDNSMode", func(mode *v1alpha2.LocalDNSMode, expected bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+					LocalDNS: &v1alpha2.LocalDNS{
 						Mode: mode,
 					},
 				},
@@ -138,7 +138,6 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid mode: Unspecified", lo.ToPtr(v1alpha2.LocalDNSModeUnspecified), true),
 			Entry("valid mode: Preferred", lo.ToPtr(v1alpha2.LocalDNSModePreferred), true),
 			Entry("valid mode: Required", lo.ToPtr(v1alpha2.LocalDNSModeRequired), true),
 			Entry("valid mode: Disabled", lo.ToPtr(v1alpha2.LocalDNSModeDisabled), true),
@@ -150,7 +149,7 @@ var _ = Describe("CEL/Validation", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+					LocalDNS: &v1alpha2.LocalDNS{
 						State: state,
 					},
 				},
@@ -161,7 +160,6 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid state: Unspecified", lo.ToPtr(v1alpha2.LocalDNSStateUnspecified), true),
 			Entry("valid state: Enabled", lo.ToPtr(v1alpha2.LocalDNSStateEnabled), true),
 			Entry("valid state: Disabled", lo.ToPtr(v1alpha2.LocalDNSStateDisabled), true),
 			Entry("invalid state: invalid-string", lo.ToPtr(v1alpha2.LocalDNSState("invalid-string")), false),
@@ -172,7 +170,7 @@ var _ = Describe("CEL/Validation", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
 								QueryLogging: queryLogging,
@@ -187,7 +185,6 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid query logging: Unspecified", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingUnspecified), true),
 			Entry("valid query logging: Error", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingError), true),
 			Entry("valid query logging: Log", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog), true),
 			Entry("invalid query logging: invalid-string", lo.ToPtr(v1alpha2.LocalDNSQueryLogging("invalid-string")), false),
@@ -198,7 +195,7 @@ var _ = Describe("CEL/Validation", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
 								Protocol: protocol,
@@ -213,7 +210,6 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid protocol: Unspecified", lo.ToPtr(v1alpha2.LocalDNSProtocolUnspecified), true),
 			Entry("valid protocol: PreferUDP", lo.ToPtr(v1alpha2.LocalDNSProtocolPreferUDP), true),
 			Entry("valid protocol: ForceTCP", lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP), true),
 			Entry("invalid protocol: invalid-string", lo.ToPtr(v1alpha2.LocalDNSProtocol("invalid-string")), false),
@@ -224,7 +220,7 @@ var _ = Describe("CEL/Validation", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
 								ForwardDestination: forwardDestination,
@@ -239,7 +235,6 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid forward destination: Unspecified", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationUnspecified), true),
 			Entry("valid forward destination: ClusterCoreDNS", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationClusterCoreDNS), true),
 			Entry("valid forward destination: VnetDNS", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS), true),
 			Entry("invalid forward destination: invalid-string", lo.ToPtr(v1alpha2.LocalDNSForwardDestination("invalid-string")), false),
@@ -250,7 +245,7 @@ var _ = Describe("CEL/Validation", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
 								ForwardPolicy: forwardPolicy,
@@ -265,7 +260,6 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid forward policy: Unspecified", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyUnspecified), true),
 			Entry("valid forward policy: Sequential", lo.ToPtr(v1alpha2.LocalDNSForwardPolicySequential), true),
 			Entry("valid forward policy: RoundRobin", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRoundRobin), true),
 			Entry("valid forward policy: Random", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRandom), true),
@@ -277,7 +271,7 @@ var _ = Describe("CEL/Validation", func() {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
-					LocalDNSProfile: &v1alpha2.LocalDNSProfile{
+					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
 								ServeStale: serveStale,
@@ -292,7 +286,6 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
 		},
-			Entry("valid serve stale: Unspecified", lo.ToPtr(v1alpha2.LocalDNSServeStaleUnspecified), true),
 			Entry("valid serve stale: Verify", lo.ToPtr(v1alpha2.LocalDNSServeStaleVerify), true),
 			Entry("valid serve stale: Immediate", lo.ToPtr(v1alpha2.LocalDNSServeStaleImmediate), true),
 			Entry("valid serve stale: Disable", lo.ToPtr(v1alpha2.LocalDNSServeStaleDisable), true),
