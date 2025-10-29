@@ -36,6 +36,12 @@ type CloudErrorHandler struct {
 	HandlerEntries       []cloudErrorHandlerEntry
 }
 
+// Comparing to ResponseErrorHandler, this is handling same errors, but for a different error data model.
+// HandlerEntries should generally be kept in sync.
+//
+// This exists because AKS machine data model returns this armcontainerservice.CloudErrorBody (AKS-specific) instead of azcore.ResponseError (SDK-wide). They have no common interface.
+// VM instance is still using ResponseErrorHandler.
+// Ideally, if AKS machine data model returns azcore.ResponseError, we don't need this split at all.
 func NewCloudErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *CloudErrorHandler {
 	return &CloudErrorHandler{
 		UnavailableOfferings: unavailableOfferings,
