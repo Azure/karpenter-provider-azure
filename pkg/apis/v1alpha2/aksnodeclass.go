@@ -83,6 +83,11 @@ type AKSNodeClassSpec struct {
 	MaxPods *int32 `json:"maxPods,omitempty"`
 	// Collection of security related karpenter fields
 	Security *Security `json:"security,omitempty"`
+	// LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
+	// LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
+	// For more details see aka.ms/aks/localdns.
+	// +optional
+	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -94,6 +99,128 @@ type Security struct {
 	// +optional
 	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
 }
+
+// +kubebuilder:validation:Enum:={Preferred,Required,Disabled}
+type LocalDNSMode string
+
+const (
+	// If the current orchestrator version supports this feature, prefer enabling localDNS.
+	LocalDNSModePreferred LocalDNSMode = "Preferred"
+	// Enable localDNS.
+	LocalDNSModeRequired LocalDNSMode = "Required"
+	// Disable localDNS.
+	LocalDNSModeDisabled LocalDNSMode = "Disabled"
+)
+
+// +kubebuilder:validation:Enum:={Enabled,Disabled}
+type LocalDNSState string
+
+const (
+	// localDNS is enabled.
+	LocalDNSStateEnabled LocalDNSState = "Enabled"
+	// localDNS is disabled.
+	LocalDNSStateDisabled LocalDNSState = "Disabled"
+)
+
+// LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
+// LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
+// For more details see aka.ms/aks/localdns.
+type LocalDNS struct {
+	// Mode of enablement for localDNS.
+	// +optional
+	Mode *LocalDNSMode `json:"mode,omitempty"`
+	// System-generated state of localDNS.
+	// +optional
+	State *LocalDNSState `json:"state,omitempty"`
+	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+	// +optional
+	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides,omitempty"`
+	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+	// +optional
+	KubeDNSOverrides map[string]*LocalDNSOverrides `json:"kubeDNSOverrides,omitempty"`
+}
+
+// LocalDNSOverrides specifies DNS override configuration
+type LocalDNSOverrides struct {
+	// Log level for DNS queries in localDNS.
+	// +optional
+	QueryLogging *LocalDNSQueryLogging `json:"queryLogging,omitempty"`
+	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
+	// +optional
+	Protocol *LocalDNSProtocol `json:"protocol,omitempty"`
+	// Destination server for DNS queries to be forwarded from localDNS.
+	// +optional
+	ForwardDestination *LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
+	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// +optional
+	ForwardPolicy *LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
+	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// +optional
+	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
+	// Cache max TTL in seconds. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// +optional
+	CacheDurationInSeconds *int32 `json:"cacheDurationInSeconds,omitempty"`
+	// Serve stale duration in seconds. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// +optional
+	ServeStaleDurationInSeconds *int32 `json:"serveStaleDurationInSeconds,omitempty"`
+	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// +optional
+	ServeStale *LocalDNSServeStale `json:"serveStale,omitempty"`
+}
+
+// +kubebuilder:validation:Enum:={Error,Log}
+type LocalDNSQueryLogging string
+
+const (
+	// Enables error logging in localDNS. See [errors plugin](https://coredns.io/plugins/errors) for more information.
+	LocalDNSQueryLoggingError LocalDNSQueryLogging = "Error"
+	// Enables query logging in localDNS. See [log plugin](https://coredns.io/plugins/log) for more information.
+	LocalDNSQueryLoggingLog LocalDNSQueryLogging = "Log"
+)
+
+// +kubebuilder:validation:Enum:={PreferUDP,ForceTCP}
+type LocalDNSProtocol string
+
+const (
+	// Prefer UDP protocol for connections from localDNS to upstream DNS server.
+	LocalDNSProtocolPreferUDP LocalDNSProtocol = "PreferUDP"
+	// Enforce TCP protocol for connections from localDNS to upstream DNS server.
+	LocalDNSProtocolForceTCP LocalDNSProtocol = "ForceTCP"
+)
+
+// +kubebuilder:validation:Enum:={ClusterCoreDNS,VnetDNS}
+type LocalDNSForwardDestination string
+
+const (
+	// Forward DNS queries from localDNS to cluster CoreDNS.
+	LocalDNSForwardDestinationClusterCoreDNS LocalDNSForwardDestination = "ClusterCoreDNS"
+	// Forward DNS queries from localDNS to DNS server configured in the VNET. A VNET can have multiple DNS servers configured.
+	LocalDNSForwardDestinationVnetDNS LocalDNSForwardDestination = "VnetDNS"
+)
+
+// +kubebuilder:validation:Enum:={Sequential,RoundRobin,Random}
+type LocalDNSForwardPolicy string
+
+const (
+	// Implements sequential upstream DNS server selection. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	LocalDNSForwardPolicySequential LocalDNSForwardPolicy = "Sequential"
+	// Implements round robin upstream DNS server selection. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	LocalDNSForwardPolicyRoundRobin LocalDNSForwardPolicy = "RoundRobin"
+	// Implements random upstream DNS server selection. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	LocalDNSForwardPolicyRandom LocalDNSForwardPolicy = "Random"
+)
+
+// +kubebuilder:validation:Enum:={Verify,Immediate,Disable}
+type LocalDNSServeStale string
+
+const (
+	// Serve stale data with verification. First verify that an entry is still unavailable from the source before sending the expired entry to the client. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	LocalDNSServeStaleVerify LocalDNSServeStale = "Verify"
+	// Serve stale data immediately. Send the expired entry to the client before checking to see if the entry is available from the source. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	LocalDNSServeStaleImmediate LocalDNSServeStale = "Immediate"
+	// Disable serving stale data.
+	LocalDNSServeStaleDisable LocalDNSServeStale = "Disable"
+)
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
 // They are a subset of the upstream types, recognizing not all options may be supported.
