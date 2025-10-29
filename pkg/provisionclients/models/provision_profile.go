@@ -69,6 +69,9 @@ type ProvisionProfile struct {
 	// kubelet disk type
 	KubeletDiskType *int32 `json:"kubeletDiskType,omitempty"`
 
+	// local DNS profile
+	LocalDNSProfile *LocalDNSProfile `json:"localDNSProfile,omitempty"`
+
 	// max pods
 	// Required: true
 	MaxPods *int32 `json:"maxPods"`
@@ -154,6 +157,10 @@ func (m *ProvisionProfile) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateGpuProfile(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateLocalDNSProfile(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -320,6 +327,25 @@ func (m *ProvisionProfile) validateGpuProfile(formats strfmt.Registry) error {
 	return nil
 }
 
+func (m *ProvisionProfile) validateLocalDNSProfile(formats strfmt.Registry) error {
+	if swag.IsZero(m.LocalDNSProfile) { // not required
+		return nil
+	}
+
+	if m.LocalDNSProfile != nil {
+		if err := m.LocalDNSProfile.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("localDNSProfile")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("localDNSProfile")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *ProvisionProfile) validateMaxPods(formats strfmt.Registry) error {
 
 	if err := validate.Required("maxPods", "body", m.MaxPods); err != nil {
@@ -453,6 +479,10 @@ func (m *ProvisionProfile) ContextValidate(ctx context.Context, formats strfmt.R
 		res = append(res, err)
 	}
 
+	if err := m.contextValidateLocalDNSProfile(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateSecurityProfile(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -560,6 +590,27 @@ func (m *ProvisionProfile) contextValidateGpuProfile(ctx context.Context, format
 				return ve.ValidateName("gpuProfile")
 			} else if ce, ok := err.(*errors.CompositeError); ok {
 				return ce.ValidateName("gpuProfile")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *ProvisionProfile) contextValidateLocalDNSProfile(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.LocalDNSProfile != nil {
+
+		if swag.IsZero(m.LocalDNSProfile) { // not required
+			return nil
+		}
+
+		if err := m.LocalDNSProfile.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("localDNSProfile")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("localDNSProfile")
 			}
 			return err
 		}
