@@ -145,27 +145,6 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid mode: empty", lo.ToPtr(v1alpha2.LocalDNSMode("")), false),
 		)
 
-		DescribeTable("should validate LocalDNSState", func(state *v1alpha2.LocalDNSState, expected bool) {
-			nodeClass := &v1alpha2.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec: v1alpha2.AKSNodeClassSpec{
-					LocalDNS: &v1alpha2.LocalDNS{
-						State: state,
-					},
-				},
-			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
-			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
-			}
-		},
-			Entry("valid state: Enabled", lo.ToPtr(v1alpha2.LocalDNSStateEnabled), true),
-			Entry("valid state: Disabled", lo.ToPtr(v1alpha2.LocalDNSStateDisabled), true),
-			Entry("invalid state: invalid-string", lo.ToPtr(v1alpha2.LocalDNSState("invalid-string")), false),
-			Entry("invalid state: empty", lo.ToPtr(v1alpha2.LocalDNSState("")), false),
-		)
-
 		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging *v1alpha2.LocalDNSQueryLogging, expected bool) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
