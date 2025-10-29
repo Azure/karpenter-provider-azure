@@ -64,6 +64,7 @@ type ProvisionClientBootstrap struct {
 	OSSKU                          string
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
+	LocalDNSProfile                *v1beta1.LocalDNS
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -141,6 +142,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 			Enabled: lo.ToPtr(enableArtifactStreaming),
 		},
+		LocalDNSProfile: convertLocalDNSToModel(p.LocalDNSProfile),
 	}
 
 	// Map OS SKU to AKS provision client's expectation
@@ -202,4 +204,88 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		ProvisionProfile:      provisionProfile,
 		ProvisionHelperValues: provisionHelperValues,
 	}, nil
+}
+
+// convertLocalDNSToModel converts v1beta1.LocalDNS to models.LocalDNSProfile
+func convertLocalDNSToModel(localDNS *v1beta1.LocalDNS) *models.LocalDNSProfile {
+	if localDNS == nil {
+		return nil
+	}
+
+	profile := &models.LocalDNSProfile{}
+
+	if localDNS.Mode != nil {
+		mode := string(*localDNS.Mode)
+		profile.Mode = &mode
+	}
+
+	// Convert VnetDNSOverrides
+	if localDNS.VnetDNSOverrides != nil {
+		profile.VnetDNSOverrides = make(models.LocalDNSOverrides)
+		for key, override := range localDNS.VnetDNSOverrides {
+			if convertedOverride := convertLocalDNSOverrideToModel(override); convertedOverride != nil {
+				profile.VnetDNSOverrides[key] = *convertedOverride
+			}
+		}
+	}
+
+	// Convert KubeDNSOverrides
+	if localDNS.KubeDNSOverrides != nil {
+		profile.KubeDNSOverrides = make(models.LocalDNSOverrides)
+		for key, override := range localDNS.KubeDNSOverrides {
+			if convertedOverride := convertLocalDNSOverrideToModel(override); convertedOverride != nil {
+				profile.KubeDNSOverrides[key] = *convertedOverride
+			}
+		}
+	}
+
+	return profile
+}
+
+// convertLocalDNSOverrideToModel converts v1beta1.LocalDNSOverrides to models.LocalDNSOverride
+func convertLocalDNSOverrideToModel(override *v1beta1.LocalDNSOverrides) *models.LocalDNSOverride {
+	if override == nil {
+		return nil
+	}
+
+	modelOverride := &models.LocalDNSOverride{}
+
+	if override.QueryLogging != nil {
+		queryLogging := string(*override.QueryLogging)
+		modelOverride.QueryLogging = &queryLogging
+	}
+
+	if override.Protocol != nil {
+		protocol := string(*override.Protocol)
+		modelOverride.Protocol = &protocol
+	}
+
+	if override.ForwardDestination != nil {
+		forwardDest := string(*override.ForwardDestination)
+		modelOverride.ForwardDestination = &forwardDest
+	}
+
+	if override.ForwardPolicy != nil {
+		forwardPolicy := string(*override.ForwardPolicy)
+		modelOverride.ForwardPolicy = &forwardPolicy
+	}
+
+	if override.MaxConcurrent != nil {
+		modelOverride.MaxConcurrent = override.MaxConcurrent
+	}
+
+	if override.CacheDurationInSeconds != nil {
+		modelOverride.CacheDurationInSeconds = override.CacheDurationInSeconds
+	}
+
+	if override.ServeStaleDurationInSeconds != nil {
+		modelOverride.ServeStaleDurationInSeconds = override.ServeStaleDurationInSeconds
+	}
+
+	if override.ServeStale != nil {
+		serveStale := string(*override.ServeStale)
+		modelOverride.ServeStale = &serveStale
+	}
+
+	return modelOverride
 }
