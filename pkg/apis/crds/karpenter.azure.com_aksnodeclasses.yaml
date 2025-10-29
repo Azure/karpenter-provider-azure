@@ -254,12 +254,6 @@ spec:
                     - Required
                     - Disabled
                     type: string
-                  state:
-                    description: System-generated state of localDNS.
-                    enum:
-                    - Enabled
-                    - Disabled
-                    type: string
                   vnetDNSOverrides:
                     additionalProperties:
                       description: LocalDNSOverrides specifies DNS override configuration
@@ -730,12 +724,6 @@ spec:
                     enum:
                     - Preferred
                     - Required
-                    - Disabled
-                    type: string
-                  state:
-                    description: System-generated state of localDNS.
-                    enum:
-                    - Enabled
                     - Disabled
                     type: string
                   vnetDNSOverrides:

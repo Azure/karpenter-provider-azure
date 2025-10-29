@@ -74,7 +74,6 @@ var _ = Describe("Hash", func() {
 		Entry("Kubelet", "33638514539106194", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", "15508761509963240710", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
 		Entry("LocalDNS.Mode", "17805442572569734619", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired)}}}),
-		Entry("LocalDNS.State", "17136343835701278373", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{State: lo.ToPtr(v1beta1.LocalDNSStateEnabled)}}}),
 		Entry("LocalDNS.VnetDNSOverrides", "1846993897639680515", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {QueryLogging: lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog)}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", "1649149597266483112", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {Protocol: lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP)}}}}}),
 	)
@@ -91,7 +90,6 @@ var _ = Describe("Hash", func() {
 		Entry("Kubelet", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
 		Entry("LocalDNS.Mode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired)}}}),
-		Entry("LocalDNS.State", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{State: lo.ToPtr(v1beta1.LocalDNSStateEnabled)}}}),
 		Entry("LocalDNS.VnetDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {QueryLogging: lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog)}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {Protocol: lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP)}}}}}),
 	)
