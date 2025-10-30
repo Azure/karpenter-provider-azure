@@ -115,7 +115,8 @@ jobs:
           SUITE: ${{ inputs.suite }}
           HASH: ${{ inputs.hash }}
         run: |
-          RG_NAME="$(echo "karpenter-e2e-$SUITE-$HASH" | awk '{print tolower($0)}')"
+          RAW_RG="karpenter-e2e-${SUITE}-${HASH}"
+          RG_NAME="$(echo "$RAW_RG" | awk '{print tolower($0)}')"
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
@@ -123,7 +124,8 @@ jobs:
           SUITE: ${{ inputs.suite }}
           HASH: ${{ inputs.hash }}
         run: |
-          ACR_NAME="$(echo "${SUITE}acr${HASH}" | awk '{print tolower($0)}')"
+          RAW_ACR="${SUITE}acr${HASH}"
+          ACR_NAME="$(echo "$RAW_ACR" | awk '{print tolower($0)}')"
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
