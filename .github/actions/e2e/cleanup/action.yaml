@@ -39,13 +39,23 @@ runs:
         subscription-id: ${{ inputs.subscription-id }}
     - name: az set sub
       shell: bash
-      run: az account set --subscription ${{ inputs.subscription-id }}
+      env:
+        SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+      run: az account set --subscription $SUBSCRIPTION_ID
     - name: delete cluster ${{ inputs.cluster_name }}
       shell: bash
-      run: az aks delete --name ${{ inputs.cluster_name }} --resource-group ${{ inputs.resource_group }} --yes --no-wait
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster_name }}
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az aks delete --name $CLUSTER_NAME --resource-group $RESOURCE_GROUP --yes --no-wait
     - name: delete acr ${{ inputs.acr_name }}
       shell: bash
-      run: az acr delete --name ${{ inputs.acr_name }} --resource-group ${{ inputs.resource_group }} --yes
+      env:
+        ACR_NAME: ${{ inputs.acr_name }}
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az acr delete --name $ACR_NAME --resource-group $RESOURCE_GROUP --yes
     - name: delete rg ${{ inputs.resource_group }}
       shell: bash
-      run: az group delete --name ${{ inputs.resource_group }} --yes --no-wait
+      env:
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az group delete --name $RESOURCE_GROUP --yes --no-wait
