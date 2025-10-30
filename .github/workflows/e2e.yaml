@@ -159,8 +159,8 @@ jobs:
       - name: build and publish karpenter
         shell: bash
         env:
-          ACR_NAME: ${{ env.ACR_NAME }}
-        run: AZURE_ACR_NAME=$ACR_NAME make az-build
+          AZURE_ACR_NAME: ${{ env.ACR_NAME }}
+        run: make az-build
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
