@@ -47,6 +47,7 @@ type OptionsFields struct {
 	AdditionalTags                 map[string]string
 	EnableAzureSDKLogging          *bool
 	DiskEncryptionSetID            *string
+	ClusterDNSServiceIP            *string
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -86,5 +87,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, "https://test-sig-access-token-server.com"),
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
+		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
 	}
 }

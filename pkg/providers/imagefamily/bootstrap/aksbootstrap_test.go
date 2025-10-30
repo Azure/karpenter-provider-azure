@@ -162,6 +162,7 @@ func TestKubeletConfigMap(t *testing.T) {
 			"memory.available": {Duration: 90 * time.Second},
 		},
 		EvictionMaxPodGracePeriod: to.Ptr[int32](11),
+		ClusterDNSServiceIP:       "10.20.0.10",
 	}
 
 	expectedKubeletConfigs := map[string]string{
@@ -181,6 +182,7 @@ func TestKubeletConfigMap(t *testing.T) {
 		"--eviction-soft":                 "memory.available<99Mi",  // TODO: test multiple resource
 		"--eviction-soft-grace-period":    "memory.available=1m30s",
 		"--eviction-max-pod-grace-period": "11",
+		"--cluster-dns":                   "10.20.0.10",
 	}
 	actualKubeletConfig := kubeletConfigToMap(&kubeletConfiguration)
 
