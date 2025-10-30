@@ -105,7 +105,7 @@ jobs:
         shell: bash
         env:
           SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
-        run: az account set --subscription $SUBSCRIPTION_ID
+        run: az account set --subscription "$SUBSCRIPTION_ID"
       - name: install skaffold
         run: |
           curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
