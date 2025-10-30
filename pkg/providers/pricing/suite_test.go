@@ -61,7 +61,6 @@ func trackProvider(p *pricing.Provider) *pricing.Provider {
 	return p
 }
 
-
 var _ = BeforeEach(func() {
 	// Create and use ctx in the tests below rather than mainCtx because some of
 	// the tests start the pricing poller. Stopping the poller requires canceling the context

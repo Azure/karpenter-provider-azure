@@ -54,8 +54,8 @@ type Provider struct {
 	onDemandPrices     map[string]float64
 	spotUpdateTime     time.Time
 	spotPrices         map[string]float64
-	
-	wg                 sync.WaitGroup
+
+	wg sync.WaitGroup
 }
 
 type Err struct {
