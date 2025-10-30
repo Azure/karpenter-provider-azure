@@ -77,43 +77,6 @@ var _ = Describe("LocalDNS", func() {
 	})
 
 	Context("LocalDNS with Overrides", func() {
-		It("should provision a node with both VnetDNS and KubeDNS overrides", func() {
-			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
-				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					"example.com": {
-						QueryLogging:                lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog),
-						Protocol:                    lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-						ForwardDestination:          lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
-						ForwardPolicy:               lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-						MaxConcurrent:               lo.ToPtr(int32(1000)),
-						CacheDurationInSeconds:      lo.ToPtr(int32(30)),
-						ServeStaleDurationInSeconds: lo.ToPtr(int32(86400)),
-						ServeStale:                  lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
-					},
-				},
-				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					"cluster.local": {
-						QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-						Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
-						ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-						ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicyRandom),
-						MaxConcurrent:      lo.ToPtr(int32(500)),
-					},
-				},
-			}
-
-			pod := test.Pod()
-			env.ExpectCreated(nodeClass, nodePool, pod)
-			env.EventuallyExpectHealthy(pod)
-			env.ExpectCreatedNodeCount("==", 1)
-
-			// Verify the node was created successfully with both VnetDNS and KubeDNS overrides
-			node := env.Monitor.CreatedNodes()[0]
-			Expect(node).ToNot(BeNil())
-			Expect(node.Name).ToNot(BeEmpty())
-		})
-
 		It("should provision a node with comprehensive DNS overrides", func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
