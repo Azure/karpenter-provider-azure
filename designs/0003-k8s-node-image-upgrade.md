@@ -69,7 +69,7 @@ The solutions are based on the following assumptions:
 Upgrade Flow:
 - node image:
     - Defaults: to node image automated upgrade behavior [Not using AKS autoupgrader. Karpenter detects the new versions itself]
-    - Allows overriding to a manual upgrade process by setting the imageVersion on the nodetemplates, and locking associated nodes to the given imageVersion, until either the customer manually upgrades by setting a new imageVersion, or removed to migrate back to autoupgrade 
+    - Allows overriding to a manual upgrade process by setting the imageVersion on the nodetemplates, and locking associated nodes to the given imageVersion, until either the customer manually upgrades by setting a new imageVersion, or removed to migrate back to autoupgrade
 - k8s:
     - locked to always update and upgrade with the MC/Control plane version, with no override option
 
@@ -104,7 +104,7 @@ Pros/Cons:
 ## Option B: Manual [Upgrade via CRs]
 
 Upgrade Flow:
-- node image: 
+- node image:
     - Default: CR gets locked to the latest node image version at the time of creation.
     - Upgrade: Customers can manually trigger upgrades by specifying a node image version, and/or triggering an empty field to retrigger the default fill the upgrade to latest
 - k8s:
@@ -116,7 +116,7 @@ Validation/Defaulting:
     - Requires a supported k8s/node image version, and k8s version to be <= MC/Control Plane version
     - Note: we are missing validation for the MC/Control Plane not getting too far ahead of the Provisioner, which we have similar code in RP for with agentpools.
     - Also, missing other potentially re-usable validation/restrictions like jumping too many k8s versions at once?
-- Defaulting webhook: handles defaulting k8s version to API-server version, and node image to latest. 
+- Defaulting webhook: handles defaulting k8s version to API-server version, and node image to latest.
     - Note: this would be a path for customers to upgrade k8s to MC/Control Plane version, and node image to latest, if they sent an empty field that would be defaulted.
 - The other option for validation, and defaulting is skipping it entirely for preview
     - Note: We might end up not having a choice within this with how the CCP webhooks work as we might not be able to inject this validation logic we want.
@@ -263,9 +263,9 @@ I think this will mostly just be whatever monitoring, alerting, and TSGs we end 
 # Meeting Notes[^6]
 
 **9-22:** <br>
-Updated design heavily from Option B to Option A. 
+Updated design heavily from Option B to Option A.
 
-The original design had gone under the assumed requirement that we weren't providing any autoupgrade solution by default, and so something along those lines would come around when the AKS API was introduced. This assumption had been a misunderstanding, which made Option A available and the new preferable option. 
+The original design had gone under the assumed requirement that we weren't providing any autoupgrade solution by default, and so something along those lines would come around when the AKS API was introduced. This assumption had been a misunderstanding, which made Option A available and the new preferable option.
 
 This doc has been adjusted accordingly
 
