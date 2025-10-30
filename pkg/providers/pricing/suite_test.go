@@ -40,6 +40,7 @@ var stop context.CancelFunc
 
 var fakePricingAPI *fake.PricingAPI
 var env *auth.Environment
+var pricingProviders []*pricing.Provider
 
 func TestAzure(t *testing.T) {
 	mainCtx = TestContextWithLogger(t)
@@ -54,6 +55,13 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 })
 
+// trackProvider adds a pricing provider to the list of providers to be cleaned up after the test
+func trackProvider(p *pricing.Provider) *pricing.Provider {
+	pricingProviders = append(pricingProviders, p)
+	return p
+}
+
+
 var _ = BeforeEach(func() {
 	// Create and use ctx in the tests below rather than mainCtx because some of
 	// the tests start the pricing poller. Stopping the poller requires canceling the context
@@ -62,16 +70,21 @@ var _ = BeforeEach(func() {
 	// in BeforeEach.
 	ctx, stop = context.WithCancel(mainCtx)
 	fakePricingAPI.Reset()
+	pricingProviders = []*pricing.Provider{}
 })
 
 var _ = AfterEach(func() {
 	stop()
+	// Wait for all pricing provider goroutines to exit
+	for _, p := range pricingProviders {
+		p.Shutdown()
+	}
 })
 
 var _ = Describe("Pricing", func() {
 	It("should return static on-demand data if pricing API fails", func() {
 		fakePricingAPI.NextError.Set(fmt.Errorf("failed"))
-		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		p := trackProvider(pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{})))
 		price, ok := p.OnDemandPrice("Standard_D1")
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically(">", 0))
@@ -85,7 +98,7 @@ var _ = Describe("Pricing", func() {
 			},
 		})
 		updateStart := time.Now()
-		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		p := trackProvider(pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{})))
 		Eventually(func() bool { return p.OnDemandLastUpdated().After(updateStart) }).Should(BeTrue())
 
 		price, ok := p.OnDemandPrice("Standard_D1")
@@ -106,7 +119,7 @@ var _ = Describe("Pricing", func() {
 			},
 		})
 		updateStart := time.Now()
-		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		p := trackProvider(pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{})))
 		Eventually(func() bool { return p.SpotLastUpdated().After(updateStart) }).Should(BeTrue())
 
 		price, ok := p.SpotPrice("Standard_D1")
@@ -126,7 +139,7 @@ var _ = Describe("Pricing", func() {
 		skus := instancetype.GetKarpenterWorkingSKUs()
 		providers := []*pricing.Provider{}
 		for _, region := range regions {
-			providers = append(providers, pricing.NewProvider(ctx, env, fakePricingAPI, region, make(chan struct{})))
+			providers = append(providers, trackProvider(pricing.NewProvider(ctx, env, fakePricingAPI, region, make(chan struct{}))))
 		}
 		for _, sku := range skus {
 			foundPricingForSKU := false
@@ -157,7 +170,7 @@ var _ = Describe("Pricing", func() {
 			},
 		})
 		start := make(chan struct{}, 1)
-		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", start)
+		p := trackProvider(pricing.NewProvider(ctx, env, fakePricingAPI, "", start))
 		start <- struct{}{}
 
 		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
@@ -184,7 +197,7 @@ var _ = Describe("Pricing", func() {
 			Cloud: cloud.AzureGovernment,
 		}
 		start := make(chan struct{}, 1)
-		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", start)
+		p := trackProvider(pricing.NewProvider(ctx, env, fakePricingAPI, "", start))
 		start <- struct{}{}
 
 		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than

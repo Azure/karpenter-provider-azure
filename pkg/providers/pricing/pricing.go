@@ -54,6 +54,8 @@ type Provider struct {
 	onDemandPrices     map[string]float64
 	spotUpdateTime     time.Time
 	spotPrices         map[string]float64
+	
+	wg                 sync.WaitGroup
 }
 
 type Err struct {
@@ -95,7 +97,9 @@ func NewProvider(
 
 	// Only poll in public cloud. Other clouds aren't supported currently
 	if auth.IsPublic(env.Cloud) {
+		p.wg.Add(1)
 		go func() {
+			defer p.wg.Done()
 			log.FromContext(ctx).V(0).Info("starting pricing update loop")
 			// perform an initial price update at startup
 			p.updatePricing(ctx)
@@ -340,6 +344,12 @@ func (p *Provider) Reset() {
 	defer p.mu.Unlock()
 	p.onDemandPrices = staticPricing
 	p.onDemandUpdateTime = initialPriceUpdate
+}
+
+// Shutdown waits for the pricing update loop goroutine to exit.
+// This should be called after cancelling the context passed to NewProvider.
+func (p *Provider) Shutdown() {
+	p.wg.Wait()
 }
 
 func Regions() []string {
