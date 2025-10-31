@@ -66,6 +66,19 @@ const (
 	cseNameLinux   = "cse-agent-karpenter"
 )
 
+// errorCodeForMetrics extracts a stable Azure error code for metric labeling when possible, preventing overcardinality in metrics with failures.
+func errorCodeForMetrics(err error) string {
+	if err == nil {
+		return ""
+	}
+	if azErr := sdkerrors.IsResponseError(err); azErr != nil {
+		if azErr.ErrorCode != "" {
+			return azErr.ErrorCode
+		}
+	}
+	return err.Error()
+}
+
 // GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
 // This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
 func GetManagedExtensionNames(provisionMode string) []string {
@@ -660,7 +673,7 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 			metrics.CapacityTypeLabel: opts.CapacityType,
 			metrics.NodePoolLabel:     opts.NodePoolName,
 			metrics.PhaseLabel:        phaseSyncFailure,
-			metrics.ErrorCodeLabel:    err.Error(),
+			metrics.ErrorCodeLabel:    errorCodeForMetrics(err),
 		}).Inc()
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
@@ -789,7 +802,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					metrics.CapacityTypeLabel: capacityType,
 					metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
 					metrics.PhaseLabel:        phaseAsyncFailure,
-					metrics.ErrorCodeLabel:    err.Error(),
+					metrics.ErrorCodeLabel:    errorCodeForMetrics(err),
 				}).Inc()
 
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)

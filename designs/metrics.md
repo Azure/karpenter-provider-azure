@@ -12,22 +12,23 @@ The instance provider serves as the **first example** of this co-location patter
 
 **File Created:** `pkg/providers/instance/metrics.go`
 
-This file contains metrics specific to the instance provider component. As the first implementation of this pattern, it includes VM creation tracking metrics:
+This file contains metrics specific to the instance provider component. As the first implementation of this pattern, it currently ships two VM creation counters:
 
 ```go
 package instance
 
 var (
-    VMCreateStartMetric             // Tracks operations starting
-    VMCreateSyncFailureMetric       // Tracks synchronous failures
-    VMCreateAsyncFailureMetric      // Tracks asynchronous failures
-    VMCreateResponseErrorMetric     // Tracks response errors
+    VMCreateStartMetric   // Counts create attempts initiated
+    VMCreateFailureMetric // Counts create attempts that failed
 )
 ```
 
+* `VMCreateStartMetric` increments every time we attempt to create a VM.
+* `VMCreateFailureMetric` increments for any failure and uses the `phase` label (`sync` or `async`) plus an `error_code` label extracted from Azure ARM responses so callers can distinguish failure modes.
+
 ### 2. Updated Component Implementation
 
-**File Modified:** `pkg/providers/instance/instance.go`
+**File Modified:** `pkg/providers/instance/vminstance.go`
 
 The component uses its co-located metrics directly, without needing centralized metric imports:
 
@@ -43,7 +44,13 @@ metrics.ComponentMetric.Inc(ctx, "description", metrics.Label(value))
 // No separate metrics import needed - metrics are in same package
 
 VMCreateStartMetric.With(map[string]string{
-    coremetrics.ImageLabel: imageID,
+    metrics.ImageLabel: imageID,
+}).Inc()
+
+VMCreateFailureMetric.With(map[string]string{
+    metrics.ImageLabel:     imageID,
+    metrics.PhaseLabel:     "sync",
+    metrics.ErrorCodeLabel: "OperationNotAllowed",
 }).Inc()
 ```
 

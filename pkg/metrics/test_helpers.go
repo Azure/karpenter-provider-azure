@@ -18,6 +18,7 @@ import (
 	"maps"
 
 	dto "github.com/prometheus/client_model/go"
+	"github.com/samber/lo"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -46,16 +47,10 @@ func FindMetricWithLabelValues(metricName string, labels map[string]string) (*dt
 // FailureMetricLabels produces a failure metric label set by merging the provided base labels with
 // the phase label and any additional label maps. Later maps override earlier values when conflicts occur.
 func FailureMetricLabels(base map[string]string, phase string, extra ...map[string]string) map[string]string {
-	labels := make(map[string]string, len(base)+len(extra)+1)
-	maps.Copy(labels, base)
-	labels[PhaseLabel] = phase
-	for _, additional := range extra {
-		if additional == nil {
-			continue
-		}
-		maps.Copy(labels, additional)
+	phaseMap := map[string]string{
+		PhaseLabel: phase,
 	}
-	return labels
+	return lo.Assign(append([]map[string]string{base, phaseMap}, extra...)...)
 }
 
 func metricLabelsEqual(metric *dto.Metric, expected map[string]string) bool {

@@ -248,7 +248,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			Expect(ok).To(BeTrue())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			syncFailureLabels := metrics.FailureMetricLabels(labels, "sync", map[string]string{metrics.ErrorCodeLabel: beginErr.Error()})
+			syncFailureLabels := metrics.FailureMetricLabels(labels, "sync", map[string]string{metrics.ErrorCodeLabel: beginErr.ErrorCode})
 			metric, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", syncFailureLabels)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
@@ -281,7 +281,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeFalse())
 
-			asyncFailureLabels := metrics.FailureMetricLabels(labels, "async", map[string]string{metrics.ErrorCodeLabel: pollerErr.Error()})
+			asyncFailureLabels := metrics.FailureMetricLabels(labels, "async", map[string]string{metrics.ErrorCodeLabel: pollerErr.ErrorCode})
 			metric, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", asyncFailureLabels)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ok).To(BeTrue())
