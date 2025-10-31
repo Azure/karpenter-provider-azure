@@ -117,9 +117,9 @@ func TestErrorCodeForMetrics(t *testing.T) {
 			want: "UnknownError",
 		},
 		{
-			name: "generic error returns message",
+			name: "generic error returns unknown",
 			err:  errors.New("boom"),
-			want: "boom",
+			want: "UnknownError",
 		},
 	}
 

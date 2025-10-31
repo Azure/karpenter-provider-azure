@@ -77,7 +77,7 @@ func ErrorCodeForMetrics(err error) string {
 		}
 		return "UnknownError"
 	}
-	return err.Error()
+	return "UnknownError"
 }
 
 // GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
