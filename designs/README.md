@@ -7,7 +7,7 @@ Designs in this section are specific to Azure.
 These designs are written but not implemented.
 
 <!-- Please add newer designs at the top of this list -->
--
+- [Labels](./0006-labels.md)
 
 ## Completed
 

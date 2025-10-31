@@ -1,6 +1,6 @@
 # <YOUR TITLE HERE>
 
-**Author:** Your name
+**Author:** @<your GH alias>
 
 **Last updated:** Jan 1, 0000
 
@@ -28,11 +28,13 @@ Spell out a general overview of the topic here.
 #### Option B: ...
 <!-- Can include pro/con list here if appropriate -->
 
-**Choice**: Option A
+#### Conclusion: Option A
 
-### FAQ
+<!-- Reasons for the choice -->
 
-#### Question 1
+## FAQ
+
+### Question 1
 Answer 1
 
 ## Testing (optional)
