@@ -66,15 +66,16 @@ const (
 	cseNameLinux   = "cse-agent-karpenter"
 )
 
-// errorCodeForMetrics extracts a stable Azure error code for metric labeling when possible, preventing overcardinality in metrics with failures.
-func errorCodeForMetrics(err error) string {
+// ErrorCodeForMetrics extracts a stable Azure error code for metric labeling when possible.
+func ErrorCodeForMetrics(err error) string {
 	if err == nil {
-		return ""
+		return "UnknownError"
 	}
 	if azErr := sdkerrors.IsResponseError(err); azErr != nil {
 		if azErr.ErrorCode != "" {
 			return azErr.ErrorCode
 		}
+		return "UnknownError"
 	}
 	return err.Error()
 }
@@ -673,7 +674,7 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 			metrics.CapacityTypeLabel: opts.CapacityType,
 			metrics.NodePoolLabel:     opts.NodePoolName,
 			metrics.PhaseLabel:        phaseSyncFailure,
-			metrics.ErrorCodeLabel:    errorCodeForMetrics(err),
+			metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
 		}).Inc()
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
@@ -802,7 +803,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 					metrics.CapacityTypeLabel: capacityType,
 					metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
 					metrics.PhaseLabel:        phaseAsyncFailure,
-					metrics.ErrorCodeLabel:    errorCodeForMetrics(err),
+					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
 				}).Inc()
 
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)

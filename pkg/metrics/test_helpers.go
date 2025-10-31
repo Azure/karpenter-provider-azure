@@ -23,11 +23,11 @@ import (
 )
 
 // FindMetricWithLabelValues locates a metric by name and label values within the controller-runtime registry.
-// It returns the metric, whether it was found, and any error produced while gathering metrics.
-func FindMetricWithLabelValues(metricName string, labels map[string]string) (*dto.Metric, bool, error) {
+// It returns the metric (or nil if not found) and any error produced while gathering metrics.
+func FindMetricWithLabelValues(metricName string, labels map[string]string) (*dto.Metric, error) {
 	metricFamilies, err := crmetrics.Registry.Gather()
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	for _, mf := range metricFamilies {
@@ -36,12 +36,12 @@ func FindMetricWithLabelValues(metricName string, labels map[string]string) (*dt
 		}
 		for _, metric := range mf.GetMetric() {
 			if metricLabelsEqual(metric, labels) {
-				return metric, true, nil
+				return metric, nil
 			}
 		}
 	}
 
-	return nil, false, nil
+	return nil, nil
 }
 
 // FailureMetricLabels produces a failure metric label set by merging the provided base labels with

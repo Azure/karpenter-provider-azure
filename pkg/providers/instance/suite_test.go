@@ -18,6 +18,7 @@ package instance_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -90,6 +91,50 @@ func TestAzure(t *testing.T) {
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 	RunSpecs(t, "Provider/Azure")
+}
+
+func TestErrorCodeForMetrics(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "nil error returns unknown",
+			err:  nil,
+			want: "UnknownError",
+		},
+		{
+			name: "azure error with code",
+			err:  &azcore.ResponseError{ErrorCode: "OperationNotAllowed"},
+			want: "OperationNotAllowed",
+		},
+		{
+			name: "azure error without code",
+			err:  &azcore.ResponseError{StatusCode: http.StatusInternalServerError},
+			want: "UnknownError",
+		},
+		{
+			name: "generic error returns message",
+			err:  errors.New("boom"),
+			want: "boom",
+		},
+	}
+
+	for _, tc := range testCases {
+		// capture range variable
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := instancemetrics.ErrorCodeForMetrics(tc.err)
+			if got != tc.want {
+				t.Fatalf("ErrorCodeForMetrics(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
 }
 
 var _ = AfterSuite(func() {
@@ -216,18 +261,18 @@ var _ = Describe("VMInstanceProvider", func() {
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
-			metric, ok, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			metric, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeTrue())
+			Expect(metric).NotTo(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			_, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "sync"))
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "sync"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeFalse())
+			Expect(metric).To(BeNil())
 
-			_, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "async"))
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "async"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeFalse())
+			Expect(metric).To(BeNil())
 		})
 
 		It("records VM create sync failure metric when Azure returns an error", func() {
@@ -243,20 +288,20 @@ var _ = Describe("VMInstanceProvider", func() {
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
-			metric, ok, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			metric, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeTrue())
+			Expect(metric).NotTo(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
 			syncFailureLabels := metrics.FailureMetricLabels(labels, "sync", map[string]string{metrics.ErrorCodeLabel: beginErr.ErrorCode})
-			metric, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", syncFailureLabels)
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", syncFailureLabels)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeTrue())
+			Expect(metric).NotTo(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			_, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "async"))
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "async"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeFalse())
+			Expect(metric).To(BeNil())
 		})
 
 		It("records VM create async failure metric when provisioning poller fails", func() {
@@ -272,19 +317,19 @@ var _ = Describe("VMInstanceProvider", func() {
 			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
 			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
 
-			metric, ok, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			metric, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeTrue())
+			Expect(metric).NotTo(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 
-			_, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "sync"))
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "sync"))
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeFalse())
+			Expect(metric).To(BeNil())
 
 			asyncFailureLabels := metrics.FailureMetricLabels(labels, "async", map[string]string{metrics.ErrorCodeLabel: pollerErr.ErrorCode})
-			metric, ok, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", asyncFailureLabels)
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", asyncFailureLabels)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ok).To(BeTrue())
+			Expect(metric).NotTo(BeNil())
 			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
 		})
 	})
