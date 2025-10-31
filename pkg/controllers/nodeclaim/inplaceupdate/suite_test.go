@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
@@ -60,7 +60,7 @@ var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	// ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
-	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.InstanceProvider)
+	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider)
 
 })
 
@@ -92,7 +92,7 @@ var _ = Describe("Unit tests", func() {
 				},
 			},
 			Status: karpv1.NodeClaimStatus{
-				ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
+				ProviderID: utils.VMResourceIDToProviderID(ctx, *vm.ID),
 			},
 		})
 
@@ -186,6 +186,185 @@ var _ = Describe("Unit tests", func() {
 
 			// Should be different because NodeClass overrides AdditionalTags
 			Expect(hash1).ToNot(Equal(hash2))
+		})
+	})
+
+	Context("CalculateHash", func() {
+		It("should produce deterministic hashes for identical data", func() {
+			data := map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+			}
+
+			hash1, err := inplaceupdate.CalculateHash(data)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash1).ToNot(BeEmpty())
+
+			hash2, err := inplaceupdate.CalculateHash(data)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash2).ToNot(BeEmpty())
+
+			Expect(hash1).To(Equal(hash2))
+		})
+
+		It("should produce different hashes for different data", func() {
+			data1 := map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+			}
+
+			data2 := map[string]string{
+				"key1": "value1",
+				"key2": "different_value",
+			}
+
+			hash1, err := inplaceupdate.CalculateHash(data1)
+			Expect(err).ToNot(HaveOccurred())
+
+			hash2, err := inplaceupdate.CalculateHash(data2)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(hash1).ToNot(Equal(hash2))
+		})
+
+		It("should handle nil interface{}", func() {
+			var data interface{}
+			hash, err := inplaceupdate.CalculateHash(data)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash).ToNot(BeEmpty())
+
+			// Verify it's deterministic by computing again
+			hash2, err := inplaceupdate.CalculateHash(data)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash).To(Equal(hash2))
+		})
+
+		It("should handle empty types", func() {
+			By("handling empty map")
+			emptyMap := map[string]string{}
+			hash, err := inplaceupdate.CalculateHash(emptyMap)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash).ToNot(BeEmpty())
+
+			By("handling empty slice")
+			emptySlice := []string{}
+			hash, err = inplaceupdate.CalculateHash(emptySlice)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash).ToNot(BeEmpty())
+
+			By("handling nil slice")
+			var nilSlice []string
+			hash, err = inplaceupdate.CalculateHash(nilSlice)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash).ToNot(BeEmpty())
+		})
+
+		It("should handle primitive types", func() {
+			primitives := []interface{}{
+				"test-string",
+				42,
+				true,
+				3.14,
+			}
+
+			for _, data := range primitives {
+				hash, err := inplaceupdate.CalculateHash(data)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(hash).ToNot(BeEmpty())
+			}
+		})
+
+		It("should handle struct types", func() {
+			type testStruct struct {
+				Name  string            `json:"name"`
+				Tags  map[string]string `json:"tags,omitempty"`
+				Count int               `json:"count"`
+			}
+
+			data := testStruct{
+				Name: "test",
+				Tags: map[string]string{
+					"env": "test",
+				},
+				Count: 5,
+			}
+
+			hash, err := inplaceupdate.CalculateHash(data)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash).ToNot(BeEmpty())
+
+			// Test that identical structs produce same hash
+			data2 := testStruct{
+				Name: "test",
+				Tags: map[string]string{
+					"env": "test",
+				},
+				Count: 5,
+			}
+
+			hash2, err := inplaceupdate.CalculateHash(data2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash).To(Equal(hash2))
+		})
+
+		It("should handle map key ordering", func() {
+			// JSON marshaling is deterministic for maps in Go
+			data1 := map[string]string{
+				"b": "value2",
+				"a": "value1",
+				"c": "value3",
+			}
+
+			data2 := map[string]string{
+				"a": "value1",
+				"b": "value2",
+				"c": "value3",
+			}
+
+			hash1, err := inplaceupdate.CalculateHash(data1)
+			Expect(err).ToNot(HaveOccurred())
+
+			hash2, err := inplaceupdate.CalculateHash(data2)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(hash1).To(Equal(hash2))
+		})
+
+		It("should be sensitive to type differences", func() {
+			// String vs int with same value
+			hash1, err := inplaceupdate.CalculateHash("42")
+			Expect(err).ToNot(HaveOccurred())
+
+			hash2, err := inplaceupdate.CalculateHash(42)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(hash1).ToNot(Equal(hash2))
+		})
+
+		It("should return numeric string format", func() {
+			data := "test"
+			hash, err := inplaceupdate.CalculateHash(data)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hash).ToNot(BeEmpty())
+
+			// Verify it's a numeric string (can be parsed as uint64)
+			Expect(hash).To(MatchRegexp(`^\d+$`))
+		})
+
+		It("should handle unmarshalable types gracefully", func() {
+			// Create a type that cannot be marshaled to JSON
+			type unmarshalableStruct struct {
+				Func func() // functions cannot be marshaled to JSON
+			}
+
+			data := unmarshalableStruct{
+				Func: func() {},
+			}
+
+			hash, err := inplaceupdate.CalculateHash(data)
+			Expect(err).To(HaveOccurred())
+			Expect(hash).To(BeEmpty())
+			Expect(err.Error()).To(ContainSubstring("json: unsupported type"))
 		})
 	})
 
@@ -388,7 +567,7 @@ var _ = Describe("In Place Update Controller", func() {
 				},
 			},
 			Status: karpv1.NodeClaimStatus{
-				ProviderID: utils.ResourceIDToProviderID(ctx, *vm.ID),
+				ProviderID: utils.VMResourceIDToProviderID(ctx, *vm.ID),
 			},
 		})
 		// Claims are launched and registered by default
@@ -432,7 +611,7 @@ var _ = Describe("In Place Update Controller", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
-			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+			updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updatedVM).To(Equal(vm)) // No change expected
@@ -460,7 +639,7 @@ var _ = Describe("In Place Update Controller", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
-			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+			updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updatedVM).ToNot(Equal(vm))
@@ -523,7 +702,7 @@ var _ = Describe("In Place Update Controller", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim)
 			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
 
-			updatedVM, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+			updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updatedVM.Identity).ToNot(BeNil())

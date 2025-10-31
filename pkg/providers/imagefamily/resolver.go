@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
@@ -221,6 +221,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	}
 
 	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)
+	kubeletConfig.ClusterDNSServiceIP = options.FromContext(ctx).DNSServiceIP
 
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)

@@ -2,25 +2,25 @@ name: InstallKarpenter
 description: 'Installs Karpenter on the aks cluster'
 inputs:
   client-id:
-    description:
+    description: "ID of the client to install Karpenter with"
     required: true
   tenant-id:
-    description:
+    description: "ID of the tenant containing the cluster to install Karpenter into"
     required: true
   subscription-id:
-    description:
+    description: "ID of the subscription containing the cluster to install Karpenter into"
     required: true
   # region:
   #   description: "Region to create aks cluster"
   #   required: true
   resource_group:
-    description: "Name of the resource group to create the cluster within"
+    description: "Name of the resource group containing the cluster to install Karpenter into"
     required: true
   cluster_name:
-    description: 'Name of the cluster to be created'
+    description: "Name of the cluster to install Karpenter into."
     required: true
   acr_name:
-    description: "Name of the acr holding the karpenter image"
+    description: "Name of the acr holding the Karpenter image"
     required: true
   git_ref:
     description: "The git commit, tag, or branch to check out"
@@ -28,6 +28,9 @@ inputs:
   location:
     description: "the azure location to run the e2e test in"
     default: "eastus"
+  provisionmode:
+    description: "the Karpenter provisioning mode to run the e2e test in"
+    default: "aksscriptless"
 runs:
   using: "composite"
   steps:
@@ -45,7 +48,7 @@ runs:
     run: az account set --subscription ${{ inputs.subscription-id }}
   - name: configure Helm chart values
     shell: bash
-    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} make az-configure-values
+    run: AZURE_CLUSTER_NAME=${{ inputs.cluster_name }} AZURE_RESOURCE_GROUP=${{ inputs.resource_group }} AZURE_LOCATION=${{ inputs.location }} PROVISION_MODE=${{ inputs.provisionmode }} make az-configure-values
   - name: deploy karpenter to cluster
     shell: bash
     run: AZURE_ACR_NAME=${{ inputs.acr_name }} make az-run

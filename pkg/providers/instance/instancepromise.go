@@ -14,21 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package instance
 
-const (
-	// Namespace(s).
-	Namespace = "karpenter"
-
-	// Subsystem(s).
-	imageFamilySubsystem = "image"
-
-	// Label key(s).
-	ImageLabel        = "image"
-	ErrorCodeLabel    = "error_code"
-	SizeLabel         = "size"
-	ZoneLabel         = "zone"
-	CapacityTypeLabel = "capacity_type"
-	NodePoolLabel     = "nodepool"
-	PhaseLabel        = "phase"
+import (
+	"context"
 )
+
+// Intended for lifecycle handling on the higher abstractions.
+type Promise interface {
+	// Cleanup removes the instance from the cloud provider.
+	Cleanup(ctx context.Context) error
+	// Wait blocks until the instance is ready.
+	Wait() error
+	// GetInstanceName returns the name of the instance. Recommended to be used for logging only due to generic nature.
+	GetInstanceName() string
+}

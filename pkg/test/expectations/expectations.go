@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/skewer"
 	. "github.com/onsi/ginkgo/v2"
@@ -40,7 +40,7 @@ func ExpectUnavailable(env *test.Environment, sku *skewer.SKU, zone string, capa
 	Expect(env.UnavailableOfferingsCache.IsUnavailable(sku, zone, capacityType)).To(BeTrue())
 }
 
-func ExpectKubeletFlags(env *test.Environment, customData string, expectedFlags map[string]string) {
+func ExpectKubeletFlags(_ *test.Environment, customData string, expectedFlags map[string]string) {
 	GinkgoHelper()
 	kubeletFlags := customData[strings.Index(customData, "KUBELET_FLAGS=")+len("KUBELET_FLAGS=") : strings.Index(customData, "KUBELET_NODE_LABELS")]
 	for flag, value := range expectedFlags {
@@ -120,7 +120,7 @@ func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv 
 	GinkgoHelper()
 
 	// The VM should be updated
-	updatedVM, err := azureEnv.InstanceProvider.Get(ctx, name)
+	updatedVM, err := azureEnv.VMInstanceProvider.Get(ctx, name)
 	Expect(err).ToNot(HaveOccurred())
 
 	Expect(updatedVM.Tags).To(Equal(tags), "Expected VM tags to match")

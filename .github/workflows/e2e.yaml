@@ -13,7 +13,11 @@ on:
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "southcentralus"
+        default: "westus3"
+      provisionmode:
+        type: string
+        description: "the karpenter provisioning mode to run the e2e test in"
+        default: "aksscriptless"
     #   k8s_version:
     #     type: string
     #     default: "1.27"
@@ -158,6 +162,7 @@ jobs:
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
+          provisionmode: ${{ inputs.provisionmode }}
       - name: run the ${{ inputs.suite }} test suite
         env:
           AZURE_CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
@@ -167,6 +172,7 @@ jobs:
           AZURE_ACR_NAME: ${{ env.ACR_NAME }}
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
+          PROVISION_MODE: ${{ inputs.provisionmode }}
         run: |
           make az-creds
           make e2etests
