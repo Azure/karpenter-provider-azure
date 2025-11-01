@@ -191,11 +191,11 @@ spec:
                     additionalProperties:
                       description: LocalDNSOverrides specifies DNS override configuration
                       properties:
-                        cacheDurationInSeconds:
-                          description: Cache max TTL in seconds. See [cache plugin](https://coredns.io/plugins/cache)
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          format: int32
-                          type: integer
+                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          type: string
                         forwardDestination:
                           description: Destination server for DNS queries to be forwarded
                             from localDNS.
@@ -238,11 +238,11 @@ spec:
                           - Immediate
                           - Disable
                           type: string
-                        serveStaleDurationInSeconds:
-                          description: Serve stale duration in seconds. See [cache
-                            plugin](https://coredns.io/plugins/cache) for more information.
-                          format: int32
-                          type: integer
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          type: string
                       type: object
                     description: KubeDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
@@ -258,11 +258,11 @@ spec:
                     additionalProperties:
                       description: LocalDNSOverrides specifies DNS override configuration
                       properties:
-                        cacheDurationInSeconds:
-                          description: Cache max TTL in seconds. See [cache plugin](https://coredns.io/plugins/cache)
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          format: int32
-                          type: integer
+                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          type: string
                         forwardDestination:
                           description: Destination server for DNS queries to be forwarded
                             from localDNS.
@@ -305,11 +305,11 @@ spec:
                           - Immediate
                           - Disable
                           type: string
-                        serveStaleDurationInSeconds:
-                          description: Serve stale duration in seconds. See [cache
-                            plugin](https://coredns.io/plugins/cache) for more information.
-                          format: int32
-                          type: integer
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          type: string
                       type: object
                     description: VnetDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
@@ -663,11 +663,11 @@ spec:
                     additionalProperties:
                       description: LocalDNSOverrides specifies DNS override configuration
                       properties:
-                        cacheDurationInSeconds:
-                          description: Cache max TTL in seconds. See [cache plugin](https://coredns.io/plugins/cache)
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          format: int32
-                          type: integer
+                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          type: string
                         forwardDestination:
                           description: Destination server for DNS queries to be forwarded
                             from localDNS.
@@ -710,11 +710,11 @@ spec:
                           - Immediate
                           - Disable
                           type: string
-                        serveStaleDurationInSeconds:
-                          description: Serve stale duration in seconds. See [cache
-                            plugin](https://coredns.io/plugins/cache) for more information.
-                          format: int32
-                          type: integer
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          type: string
                       type: object
                     description: KubeDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
@@ -730,11 +730,11 @@ spec:
                     additionalProperties:
                       description: LocalDNSOverrides specifies DNS override configuration
                       properties:
-                        cacheDurationInSeconds:
-                          description: Cache max TTL in seconds. See [cache plugin](https://coredns.io/plugins/cache)
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          format: int32
-                          type: integer
+                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          type: string
                         forwardDestination:
                           description: Destination server for DNS queries to be forwarded
                             from localDNS.
@@ -777,11 +777,11 @@ spec:
                           - Immediate
                           - Disable
                           type: string
-                        serveStaleDurationInSeconds:
-                          description: Serve stale duration in seconds. See [cache
-                            plugin](https://coredns.io/plugins/cache) for more information.
-                          format: int32
-                          type: integer
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          type: string
                       type: object
                     description: VnetDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).

@@ -307,16 +307,8 @@ func (in *LocalDNSOverrides) DeepCopyInto(out *LocalDNSOverrides) {
 		*out = new(int32)
 		**out = **in
 	}
-	if in.CacheDurationInSeconds != nil {
-		in, out := &in.CacheDurationInSeconds, &out.CacheDurationInSeconds
-		*out = new(int32)
-		**out = **in
-	}
-	if in.ServeStaleDurationInSeconds != nil {
-		in, out := &in.ServeStaleDurationInSeconds, &out.ServeStaleDurationInSeconds
-		*out = new(int32)
-		**out = **in
-	}
+	in.CacheDuration.DeepCopyInto(&out.CacheDuration)
+	in.ServeStaleDuration.DeepCopyInto(&out.ServeStaleDuration)
 	if in.ServeStale != nil {
 		in, out := &in.ServeStale, &out.ServeStale
 		*out = new(LocalDNSServeStale)
