@@ -65,6 +65,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
+	localDNS := &v1beta1.LocalDNS{Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled)}
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -76,6 +77,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		localDNS,
 	)
 
 	// Verify the returned bootstrapper is of the correct type
@@ -101,6 +103,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
 	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
 	assert.Equal(t, fipsMode, provisionBootstrapper.FIPSMode, "FIPSMode field must match the input parameter")
+	assert.Equal(t, localDNS, provisionBootstrapper.LocalDNSProfile, "LocalDNSProfile field must match the input parameter")
 }
 
 func TestUbuntu2204_Name(t *testing.T) {

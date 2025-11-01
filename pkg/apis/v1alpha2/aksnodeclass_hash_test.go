@@ -73,6 +73,9 @@ var _ = Describe("Hash", func() {
 		Entry("ImageFamily", "15616969746300892810", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", "33638514539106194", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", "15508761509963240710", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("LocalDNS.Mode", "17805442572569734619", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired)}}}),
+		Entry("LocalDNS.VnetDNSOverrides", "1846993897639680515", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"example.com": {QueryLogging: lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog)}}}}}),
+		Entry("LocalDNS.KubeDNSOverrides", "1649149597266483112", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"example.com": {Protocol: lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP)}}}}}),
 	)
 	It("should match static hash when reordering tags", func() {
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
@@ -89,6 +92,9 @@ var _ = Describe("Hash", func() {
 		Entry("ImageFamily", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("Kubelet", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{Kubelet: &v1alpha2.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("LocalDNS.Mode", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired)}}}),
+		Entry("LocalDNS.VnetDNSOverrides", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"example.com": {QueryLogging: lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog)}}}}}),
+		Entry("LocalDNS.KubeDNSOverrides", v1alpha2.AKSNodeClass{Spec: v1alpha2.AKSNodeClassSpec{LocalDNS: &v1alpha2.LocalDNS{KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"example.com": {Protocol: lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP)}}}}}),
 	)
 	It("should not change hash when tags are changed", func() {
 		hash := nodeClass.Hash()

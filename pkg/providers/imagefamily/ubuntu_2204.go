@@ -140,6 +140,7 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
 	storageProfile string,
 	nodeBootstrappingClient types.NodeBootstrappingAPI,
 	fipsMode *v1beta1.FIPSMode,
+	localDNS *v1beta1.LocalDNS,
 ) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
@@ -160,5 +161,6 @@ func (u Ubuntu2204) CustomScriptsNodeBootstrapping(
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 		FIPSMode:                       fipsMode,
+		LocalDNSProfile:                localDNS,
 	}
 }
