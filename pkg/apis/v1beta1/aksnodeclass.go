@@ -22,6 +22,7 @@ import (
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 type FIPSMode string
@@ -145,12 +146,18 @@ type LocalDNSOverrides struct {
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +optional
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
-	// Cache max TTL in seconds. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+|Never)$`
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
 	// +optional
-	CacheDurationInSeconds *int32 `json:"cacheDurationInSeconds,omitempty"`
-	// Serve stale duration in seconds. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	CacheDuration karpv1.NillableDuration `json:"cacheDuration,omitempty"`
+	// Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+|Never)$`
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
 	// +optional
-	ServeStaleDurationInSeconds *int32 `json:"serveStaleDurationInSeconds,omitempty"`
+	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration,omitempty"`
 	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +optional
 	ServeStale *LocalDNSServeStale `json:"serveStale,omitempty"`
