@@ -274,12 +274,14 @@ func convertLocalDNSOverrideToModel(override *v1beta1.LocalDNSOverrides) *models
 		modelOverride.MaxConcurrent = override.MaxConcurrent
 	}
 
-	if override.CacheDurationInSeconds != nil {
-		modelOverride.CacheDurationInSeconds = override.CacheDurationInSeconds
+	if override.CacheDuration.Duration != nil {
+		seconds := int32(override.CacheDuration.Duration.Seconds())
+		modelOverride.CacheDurationInSeconds = &seconds
 	}
 
-	if override.ServeStaleDurationInSeconds != nil {
-		modelOverride.ServeStaleDurationInSeconds = override.ServeStaleDurationInSeconds
+	if override.ServeStaleDuration.Duration != nil {
+		seconds := int32(override.ServeStaleDuration.Duration.Seconds())
+		modelOverride.ServeStaleDurationInSeconds = &seconds
 	}
 
 	if override.ServeStale != nil {
