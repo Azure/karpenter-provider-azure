@@ -23,6 +23,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -76,6 +77,8 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.Mode", "17805442572569734619", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired)}}}),
 		Entry("LocalDNS.VnetDNSOverrides", "1846993897639680515", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {QueryLogging: lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog)}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", "1649149597266483112", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {Protocol: lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP)}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11176862737221572952", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "10694595590893870496", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
 	)
 
 	DescribeTable("should change hash when static fields are updated", func(changes v1beta1.AKSNodeClass) {
@@ -92,6 +95,8 @@ var _ = Describe("Hash", func() {
 		Entry("LocalDNS.Mode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired)}}}),
 		Entry("LocalDNS.VnetDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {QueryLogging: lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog)}}}}}),
 		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {Protocol: lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP)}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 	)
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
