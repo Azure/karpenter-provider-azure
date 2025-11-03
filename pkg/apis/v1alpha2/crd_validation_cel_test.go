@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -34,11 +35,15 @@ import (
 
 var _ = Describe("CEL/Validation", func() {
 	var nodePool *karpv1.NodePool
+	var validCacheDuration karpv1.NillableDuration
+	var validServeStaleDuration karpv1.NillableDuration
 
 	BeforeEach(func() {
 		if env.Version.Minor() < 25 {
 			Skip("CEL Validation is for 1.25>")
 		}
+		validCacheDuration = karpv1.MustParseNillableDuration("1h")
+		validServeStaleDuration = karpv1.MustParseNillableDuration("30m")
 		nodePool = &karpv1.NodePool{
 			ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 			Spec: karpv1.NodePoolSpec{
@@ -152,7 +157,9 @@ var _ = Describe("CEL/Validation", func() {
 					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
-								QueryLogging: queryLogging,
+								QueryLogging:       queryLogging,
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
 							},
 						},
 					},
@@ -177,7 +184,9 @@ var _ = Describe("CEL/Validation", func() {
 					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
-								Protocol: protocol,
+								Protocol:           protocol,
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
 							},
 						},
 					},
@@ -203,6 +212,8 @@ var _ = Describe("CEL/Validation", func() {
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
 								ForwardDestination: forwardDestination,
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
 							},
 						},
 					},
@@ -227,7 +238,9 @@ var _ = Describe("CEL/Validation", func() {
 					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
-								ForwardPolicy: forwardPolicy,
+								ForwardPolicy:      forwardPolicy,
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
 							},
 						},
 					},
@@ -253,7 +266,9 @@ var _ = Describe("CEL/Validation", func() {
 					LocalDNS: &v1alpha2.LocalDNS{
 						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
 							"test.domain": {
-								ServeStale: serveStale,
+								ServeStale:         serveStale,
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
 							},
 						},
 					},
@@ -271,6 +286,166 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid serve stale: invalid-string", lo.ToPtr(v1alpha2.LocalDNSServeStale("invalid-string")), false),
 			Entry("invalid serve stale: invalid-value", lo.ToPtr(v1alpha2.LocalDNSServeStale("invalid-value")), false),
 		)
+
+		DescribeTable("should validate CacheDuration", func(durationStr string, expected bool) {
+			cacheDuration := karpv1.MustParseNillableDuration(durationStr)
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNS: &v1alpha2.LocalDNS{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								CacheDuration:      cacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
+							},
+						},
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid duration: 1h", "1h", true),
+			Entry("valid duration: 30m", "30m", true),
+			Entry("valid duration: 60s", "60s", true),
+			Entry("valid duration: 1h30m", "1h30m", true),
+			Entry("valid duration: 2h15m30s", "2h15m30s", true),
+		)
+
+		It("should reject CacheDuration with decimal values", func() {
+			// Test using unstructured to bypass Go type parsing
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNS: &v1alpha2.LocalDNS{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
+							},
+						},
+					},
+				},
+			}
+			// Create the object first
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+
+			// Now try to patch with an invalid decimal value using raw JSON
+			patch := []byte(`{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"cacheDuration":"5.5h"}}}}}`)
+			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
+			Expect(err).To(HaveOccurred())
+			GinkgoWriter.Printf("Error for decimal cacheDuration: %s\n", err.Error())
+			Expect(err.Error()).To(ContainSubstring("\"5.5h\": spec.localDNS.vnetDNSOverrides.test.domain.cacheDuration in body should match '^([0-9]+(s|m|h))+$'"))
+		})
+
+		It("should reject CacheDuration with 'Never' value", func() {
+			// Test using unstructured to bypass Go type parsing
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNS: &v1alpha2.LocalDNS{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
+							},
+						},
+					},
+				},
+			}
+			// Create the object first
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+
+			// Now try to patch with 'Never' value using raw JSON
+			patch := []byte(`{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"cacheDuration":"Never"}}}}}`)
+			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
+			Expect(err).To(HaveOccurred())
+			GinkgoWriter.Printf("Error for 'Never' cacheDuration: %s\n", err.Error())
+			Expect(err.Error()).To(ContainSubstring("\"Never\": spec.localDNS.vnetDNSOverrides.test.domain.cacheDuration in body should match '^([0-9]+(s|m|h))+$'"))
+		})
+
+		DescribeTable("should validate ServeStaleDuration", func(durationStr string, expected bool) {
+			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNS: &v1alpha2.LocalDNS{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: serveStaleDuration,
+							},
+						},
+					},
+				},
+			}
+			if expected {
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			} else {
+				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+			}
+		},
+			Entry("valid duration: 1h", "1h", true),
+			Entry("valid duration: 30m", "30m", true),
+			Entry("valid duration: 60s", "60s", true),
+			Entry("valid duration: 1h30m", "1h30m", true),
+			Entry("valid duration: 2h15m30s", "2h15m30s", true),
+		)
+
+		It("should reject ServeStaleDuration with decimal values", func() {
+			// Test using unstructured to bypass Go type parsing
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNS: &v1alpha2.LocalDNS{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
+							},
+						},
+					},
+				},
+			}
+			// Create the object first
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+
+			// Now try to patch with an invalid decimal value using raw JSON
+			patch := []byte(`{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"serveStaleDuration":"5.5h"}}}}}`)
+			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
+			Expect(err).To(HaveOccurred())
+			GinkgoWriter.Printf("Error for decimal serveStaleDuration: %s\n", err.Error())
+			Expect(err.Error()).To(ContainSubstring("\"5.5h\": spec.localDNS.vnetDNSOverrides.test.domain.serveStaleDuration in body should match '^([0-9]+(s|m|h))+$'"))
+		})
+
+		It("should reject ServeStaleDuration with 'Never' value", func() {
+			// Test using unstructured to bypass Go type parsing
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNS: &v1alpha2.LocalDNS{
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+							"test.domain": {
+								CacheDuration:      validCacheDuration,
+								ServeStaleDuration: validServeStaleDuration,
+							},
+						},
+					},
+				},
+			}
+			// Create the object first
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+
+			// Now try to patch with 'Never' value using raw JSON
+			patch := []byte(`{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"serveStaleDuration":"Never"}}}}}`)
+			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
+			Expect(err).To(HaveOccurred())
+			GinkgoWriter.Printf("Error for 'Never' serveStaleDuration: %s\n", err.Error())
+			Expect(err.Error()).To(ContainSubstring("\"Never\": spec.localDNS.vnetDNSOverrides.test.domain.serveStaleDuration in body should match '^([0-9]+(s|m|h))+$'"))
+		})
 	})
 
 	Context("OSDiskSizeGB", func() {
