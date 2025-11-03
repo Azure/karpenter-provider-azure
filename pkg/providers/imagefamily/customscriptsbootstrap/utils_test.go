@@ -22,9 +22,12 @@ import (
 	"math"
 	"testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 func TestReverseVMMemoryOverhead(t *testing.T) {
@@ -205,6 +208,205 @@ func TestHydrateBootstrapTokenIfNeeded(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedCustomData, customData)
 			assert.Equal(t, tt.expectedCSE, cse)
+		})
+	}
+}
+
+func TestConvertLocalDNSToModel(t *testing.T) {
+	tests := []struct {
+		name     string
+		localDNS *v1beta1.LocalDNS
+		expected *models.LocalDNSProfile
+	}{
+		{
+			name:     "Nil LocalDNS",
+			localDNS: nil,
+			expected: nil,
+		},
+		{
+			name: "LocalDNS with mode only",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+			},
+			expected: &models.LocalDNSProfile{
+				Mode: lo.ToPtr("Required"),
+			},
+		},
+		{
+			name: "LocalDNS with VnetDNSOverrides",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+					"example.com": {
+						QueryLogging: lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog),
+						Protocol:     lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
+					},
+				},
+			},
+			expected: &models.LocalDNSProfile{
+				Mode: lo.ToPtr("Preferred"),
+				VnetDNSOverrides: models.LocalDNSOverrides{
+					"example.com": models.LocalDNSOverride{
+						QueryLogging: lo.ToPtr("Log"),
+						Protocol:     lo.ToPtr("ForceTCP"),
+					},
+				},
+			},
+		},
+		{
+			name: "LocalDNS with KubeDNSOverrides",
+			localDNS: &v1beta1.LocalDNS{
+				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+					"cluster.local": {
+						ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+					},
+				},
+			},
+			expected: &models.LocalDNSProfile{
+				KubeDNSOverrides: models.LocalDNSOverrides{
+					"cluster.local": models.LocalDNSOverride{
+						ForwardDestination: lo.ToPtr("ClusterCoreDNS"),
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+					},
+				},
+			},
+		},
+		{
+			name: "LocalDNS with both VnetDNS and KubeDNS overrides",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+					"vnet.domain": {
+						Protocol: lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+					},
+				},
+				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+					"kube.domain": {
+						ForwardPolicy: lo.ToPtr(v1beta1.LocalDNSForwardPolicyRoundRobin),
+					},
+				},
+			},
+			expected: &models.LocalDNSProfile{
+				Mode: lo.ToPtr("Disabled"),
+				VnetDNSOverrides: models.LocalDNSOverrides{
+					"vnet.domain": models.LocalDNSOverride{
+						Protocol: lo.ToPtr("PreferUDP"),
+					},
+				},
+				KubeDNSOverrides: models.LocalDNSOverrides{
+					"kube.domain": models.LocalDNSOverride{
+						ForwardPolicy: lo.ToPtr("RoundRobin"),
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertLocalDNSToModel(tt.localDNS)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestConvertLocalDNSOverrideToModel(t *testing.T) {
+	tests := []struct {
+		name     string
+		override *v1beta1.LocalDNSOverrides
+		expected *models.LocalDNSOverride
+	}{
+		{
+			name:     "Nil override",
+			override: nil,
+			expected: nil,
+		},
+		{
+			name: "Override with all fields",
+			override: &v1beta1.LocalDNSOverrides{
+				QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+				Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
+				ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
+				ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+				MaxConcurrent:      lo.ToPtr(int32(50)),
+				CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+				ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+				ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+			},
+			expected: &models.LocalDNSOverride{
+				QueryLogging:                lo.ToPtr("Error"),
+				Protocol:                    lo.ToPtr("ForceTCP"),
+				ForwardDestination:          lo.ToPtr("VnetDNS"),
+				ForwardPolicy:               lo.ToPtr("Sequential"),
+				MaxConcurrent:               lo.ToPtr(int32(50)),
+				CacheDurationInSeconds:      lo.ToPtr(int32(3600)), // 1 hour = 3600 seconds
+				ServeStaleDurationInSeconds: lo.ToPtr(int32(1800)), // 30 minutes = 1800 seconds
+				ServeStale:                  lo.ToPtr("Verify"),
+			},
+		},
+		{
+			name: "Override with only duration fields",
+			override: &v1beta1.LocalDNSOverrides{
+				CacheDuration:      karpv1.MustParseNillableDuration("2h30m"),
+				ServeStaleDuration: karpv1.MustParseNillableDuration("45m"),
+			},
+			expected: &models.LocalDNSOverride{
+				CacheDurationInSeconds:      lo.ToPtr(int32(9000)), // 2.5 hours = 9000 seconds
+				ServeStaleDurationInSeconds: lo.ToPtr(int32(2700)), // 45 minutes = 2700 seconds
+			},
+		},
+		{
+			name: "Override with complex duration",
+			override: &v1beta1.LocalDNSOverrides{
+				CacheDuration:      karpv1.MustParseNillableDuration("1h30m45s"),
+				ServeStaleDuration: karpv1.MustParseNillableDuration("15m30s"),
+			},
+			expected: &models.LocalDNSOverride{
+				CacheDurationInSeconds:      lo.ToPtr(int32(5445)), // 1h30m45s = 5445 seconds
+				ServeStaleDurationInSeconds: lo.ToPtr(int32(930)),  // 15m30s = 930 seconds
+			},
+		},
+		{
+			name: "Override with zero duration values",
+			override: &v1beta1.LocalDNSOverrides{
+				CacheDuration:      karpv1.NillableDuration{},
+				ServeStaleDuration: karpv1.NillableDuration{},
+			},
+			expected: &models.LocalDNSOverride{},
+		},
+		{
+			name: "Override with only enum fields",
+			override: &v1beta1.LocalDNSOverrides{
+				QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog),
+				Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+				ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+				ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicyRandom),
+				ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
+			},
+			expected: &models.LocalDNSOverride{
+				QueryLogging:       lo.ToPtr("Log"),
+				Protocol:           lo.ToPtr("PreferUDP"),
+				ForwardDestination: lo.ToPtr("ClusterCoreDNS"),
+				ForwardPolicy:      lo.ToPtr("Random"),
+				ServeStale:         lo.ToPtr("Immediate"),
+			},
+		},
+		{
+			name: "Override with MaxConcurrent only",
+			override: &v1beta1.LocalDNSOverrides{
+				MaxConcurrent: lo.ToPtr(int32(200)),
+			},
+			expected: &models.LocalDNSOverride{
+				MaxConcurrent: lo.ToPtr(int32(200)),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertLocalDNSOverrideToModel(tt.override)
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
