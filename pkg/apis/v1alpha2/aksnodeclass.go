@@ -146,13 +146,13 @@ type LocalDNSOverrides struct {
 	// +optional
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
 	// Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache) for more information.
-	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+|Never)$`
+	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
 	// +kubebuilder:validation:Type="string"
 	// +kubebuilder:validation:Schemaless
 	// +optional
 	CacheDuration karpv1.NillableDuration `json:"cacheDuration,omitempty"`
 	// Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache) for more information.
-	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+|Never)$`
+	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
 	// +kubebuilder:validation:Type="string"
 	// +kubebuilder:validation:Schemaless
 	// +optional
