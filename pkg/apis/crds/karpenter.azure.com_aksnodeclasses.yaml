@@ -194,7 +194,7 @@ spec:
                         cacheDuration:
                           description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          pattern: ^([0-9]+(s|m|h))+$
                           type: string
                         forwardDestination:
                           description: Destination server for DNS queries to be forwarded
@@ -241,7 +241,7 @@ spec:
                         serveStaleDuration:
                           description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          pattern: ^([0-9]+(s|m|h))+$
                           type: string
                       type: object
                     description: KubeDNS overrides apply to DNS traffic from pods
@@ -261,7 +261,7 @@ spec:
                         cacheDuration:
                           description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          pattern: ^([0-9]+(s|m|h))+$
                           type: string
                         forwardDestination:
                           description: Destination server for DNS queries to be forwarded
@@ -308,7 +308,7 @@ spec:
                         serveStaleDuration:
                           description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          pattern: ^([0-9]+(s|m|h))+$
                           type: string
                       type: object
                     description: VnetDNS overrides apply to DNS traffic from pods
@@ -666,7 +666,7 @@ spec:
                         cacheDuration:
                           description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          pattern: ^([0-9]+(s|m|h))+$
                           type: string
                         forwardDestination:
                           description: Destination server for DNS queries to be forwarded
@@ -713,7 +713,7 @@ spec:
                         serveStaleDuration:
                           description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          pattern: ^([0-9]+(s|m|h))+$
                           type: string
                       type: object
                     description: KubeDNS overrides apply to DNS traffic from pods
@@ -733,7 +733,7 @@ spec:
                         cacheDuration:
                           description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          pattern: ^([0-9]+(s|m|h))+$
                           type: string
                         forwardDestination:
                           description: Destination server for DNS queries to be forwarded
@@ -780,7 +780,7 @@ spec:
                         serveStaleDuration:
                           description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
                             for more information.
-                          pattern: ^(([0-9]+(s|m|h))+|Never)$
+                          pattern: ^([0-9]+(s|m|h))+$
                           type: string
                       type: object
                     description: VnetDNS overrides apply to DNS traffic from pods
