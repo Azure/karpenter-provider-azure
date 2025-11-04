@@ -38,17 +38,17 @@ runs:
     shell: bash
     env:
       SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
-    run: az account set --subscription $SUBSCRIPTION_ID
+    run: az account set --subscription "$SUBSCRIPTION_ID"
   - name: create ACR
     shell: bash
     env:
-      RESOURCE_GROUP: ${{ inputs.resource_group }}
-      ACR_NAME: ${{ inputs.acr_name }}
-      LOCATION: ${{ inputs.location }}
-    run: AZURE_RESOURCE_GROUP=$RESOURCE_GROUP AZURE_ACR_NAME=$ACR_NAME AZURE_LOCATION=$LOCATION make az-mkacr
+      AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
+      AZURE_ACR_NAME: ${{ inputs.acr_name }}
+      AZURE_LOCATION: ${{ inputs.location }}
+    run: make az-mkacr
   - name: import needed images
     shell: bash
     env:
-      ACR_NAME: ${{ inputs.acr_name }}
+      AZURE_ACR_NAME: ${{ inputs.acr_name }}
     run: |
-      AZURE_ACR_NAME=$ACR_NAME make az-acrimport
+      make az-acrimport

@@ -25,17 +25,22 @@ runs:
             context: process.env.NAME,
             sha: process.env.SHA,
             state: "success",
-            target_url: `https://github.com/${{ process.env.REPO }}/actions/runs/${{ process.env.RUN_ID }}`,
+            target_url: `https://github.com/${process.env.REPO}/actions/runs/${process.env.RUN_ID}`,
           });
     - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
       if: job.status == 'failure' || job.status == 'cancelled'
+      env:
+        NAME: ${{ inputs.name }}
+        SHA: ${{ inputs.git_ref }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
       with:
         script: |
           github.rest.repos.createCommitStatus({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            context: "${{ inputs.name }}",
-            sha: "${{ inputs.git_ref }}",
+            context: process.env.NAME,
+            sha: process.env.SHA,
             state: "failure",
-            target_url: "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            target_url: `https://github.com/${process.env.REPO}/actions/runs/${process.env.RUN_ID}`,
           });
