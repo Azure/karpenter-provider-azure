@@ -204,6 +204,10 @@ func (p *DefaultAKSMachineProvider) BeginCreate(
 }
 
 func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName string, aksMachine armcontainerservice.Machine, etag *string) error {
+	if !shouldAKSMachinesBeVisible(ctx) {
+		return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
+	}
+
 	var options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions
 	if etag != nil {
 		options = &armcontainerservice.MachinesClientBeginCreateOrUpdateOptions{
@@ -229,6 +233,10 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 
 // ASSUMPTION: the AKS machine will be in the current p.aksMachinesPoolName. Otherwise need rework to pass the pool name in.
 func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName string) (*armcontainerservice.Machine, error) {
+	if !shouldAKSMachinesBeVisible(ctx) {
+		return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
+	}
+
 	if p.aksMachinesPoolName == "" {
 		// Possible when this option field is not populated, which is not required when PROVISION_MODE is not aksmachineapi.
 		// But an AKS machine instance exists, whether added manually or from before switching PROVISION_MODE.
@@ -249,6 +257,10 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 }
 
 func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerservice.Machine, error) {
+	if !shouldAKSMachinesBeVisible(ctx) {
+		return []*armcontainerservice.Machine{}, nil
+	}
+
 	if p.aksMachinesPoolName == "" {
 		// Possible when this option field is not populated, which is not required when PROVISION_MODE is not aksmachineapi.
 		// So, we respond similarly to if AKS machines pool is not found.
@@ -264,6 +276,10 @@ func (p *DefaultAKSMachineProvider) List(ctx context.Context) ([]*armcontainerse
 }
 
 func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName string) error {
+	if !shouldAKSMachinesBeVisible(ctx) {
+		return corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("existing AKS machines management is disabled, and provision mode is not AKS machine"))
+	}
+
 	// Note that 'Get' also satisfies cloudprovider.Delete contract expectation (from v1.3.0)
 	// of returning cloudprovider.NewNodeClaimNotFoundError if the instance is already deleted
 	aksMachine, err := p.Get(ctx, aksMachineName)

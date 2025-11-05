@@ -38,6 +38,8 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/resources"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -318,4 +320,8 @@ func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.
 		return fmt.Errorf("irretrievable node image version")
 	}
 	return nil
+}
+
+func shouldAKSMachinesBeVisible(ctx context.Context) bool {
+	return options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI || options.FromContext(ctx).ManageExistingAKSMachines
 }
