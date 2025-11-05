@@ -29,11 +29,14 @@ jobs:
       - if: github.event_name == 'workflow_run'
         uses: ./.github/actions/download-artifact
       - id: resolve-step
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
             echo GIT_REF="$(tail -n 1 /tmp/artifacts/metadata.txt)" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo GIT_REF="${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo GIT_REF="$SHA" >> "$GITHUB_OUTPUT"
           else
             echo GIT_REF="" >> "$GITHUB_OUTPUT"
           fi
