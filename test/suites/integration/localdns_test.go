@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package localdns_test
+package integration_test
 
 import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
