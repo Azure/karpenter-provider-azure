@@ -69,22 +69,37 @@ Labels for which there is one value and that value is (at least for now) static.
 #### Option A: Block
 Block setting these labels on the NodePool/NodeClaim.
 
-#### Option B: Requirements
-Allow setting these labels on the NodePool/NodeClaim, but specify them in requirements, which will effectively require that the user either doesn't request the label on their workload or NodePool/NodeClaim, or if they do
-that it matches the static value.
+#### Option B: Well-known Requirements
+Allow setting these labels on the NodePool/NodeClaim, but specify them in the well-known requirements, which will effectively require that the user either doesn't request the label on their workload
+or NodePool/NodeClaim, or if they do that it matches the static value.
 
 #### Conclusion: Neither option is appropriate for all labels. We need a combination.
 I propose the following guidance for choosing which labels fall into each category:
 * Choose **Option A (Block)** if it is impossible for the label to ever change or vary and/or it doesn't make any sense to attempt to schedule on it.
   For example `kubernetes.azure.com/cluster` seems unlikely to ever change over time. The cluster resource group will be the resource group always.
-* Choose **Option B (Requirements)** if the label is static now but may theoretically be expanded/relaxed to be non-static/multi-valued in the future.
+* Choose **Option B (Well-known Requirements)** if the label is static now but may theoretically be expanded/relaxed to be non-static/multi-valued in the future.
   For example `topology.kubernetes.io/region` - today we do not support cross-region node provisioning but we theoretically could.
 
 ### Decision 2: What to do with system-determined cluster-wide labels?
 Labels for which there is one correct value for the whole cluster, but that value may change over time as the cluster topology changes (usually driven by changes to the AKS ManagedCluster data model).
 Examples: `kubernetes.azure.com/ebpf-dataplane`, `kubernetes.azure.com/network-name`
 
-**TODO**: Fill this in... answer for ebpf-dataplane may need to be special...?
+These labels are tricky to deal with. Unlike static labels, for these labels Karpenter needs to be informed of their values, probably via operator-scoped configuration variables. Some of this is already
+sent to Karpenter today but not all of it. As we work on moving towards the Machine API, we will relax the need for Karpenter to know all of these values assuming we're OK with not supporting these
+labels as requirements. If we want to support these labels as well-known requirements nothing changes Karpenter still needs to know their values so that it can build the set of requirements.
+If the values backing these labels change, _ideally_ we would detect drift and recreate nodes. In practice we don't always have the data today to do what we need there.
+
+#### Option A: Block
+Block setting these labels on the NodePool/NodeClaim. There may need to be some special cases because we already have `kubernetes.azure.com/ebpf-dataplane` on a lot of node pools and we need it for scheduling purposes.
+
+#### Option B: Well-known Requirements
+Allow setting these labels on the NodePool/NodeClaim, but specify them in well-known requirements, which will effectively require that the user either doesn't request the label on their workload or NodePool/NodeClaim, or if they do
+that it matches the current value. Since the value can change it would be strongly recommended to avoid hardcoding it on the NodePool and instead just request it on the workloads that need it.
+
+#### Conclusion: Neither option is appropriate for all labels. We need a combination.
+I propose the following guidance for choosing which labels fall into each category:
+* Choose **Option A (Block)** if it doesn't make any sense to attempt to schedule on it. For example `kubernetes.azure.com/podnetwork-resourcegroup` probably doesn't make sense to schedule against.
+* Choose **Option B (Well-known Requirements)** if the label is required for scheduling. For example `kubernetes.azure.com/ebpf-dataplane` is required for scheduling certain daemonsets.
 
 ### Decision 3: What to do with dynamic system-determined labels?
 Labels that are set at either the per-node or (more likely) per-AgentPool. Examples: `kubernetes.azure.com/os-sku`, `kubernetes.azure.com/os-sku-requested`, `kubernetes.azure.com/kata-vm-isolation`, `kubernetes.azure.com/security-type`.
@@ -92,8 +107,8 @@ Labels that are set at either the per-node or (more likely) per-AgentPool. Examp
 #### Option A: Block + NodeClass
 Block setting these labels on the NodePool/NodeClaim. If they are related to a feature (many are) like `kubernetes.azure.com/kata-vm-isolation`, they can be enabled through strongly typed fields on the `AKSNodeClass` instead.
 
-#### Option B: Requirements
-Allow setting these labels on the NodePool/NodeClaim, but specify them in requirements. The main advantage of this is that it allows a single NodePool to allocate nodes with the feature enabled or disabled.
+#### Option B: Well-known Requirements
+Allow setting these labels on the NodePool/NodeClaim, but specify them in the well-known requirements. The main advantage of this is that it allows a single NodePool to allocate nodes with the feature enabled or disabled.
 Note that this only works well if the feature is relatively simple and can be controlled through a single simple flag corresponding to a label. If there's more complex configuration required (parameter tuning, enabling various options)
 it may still be more appropriate to control via `AKSNodeClass` instead of requirements.
 
@@ -101,9 +116,9 @@ it may still be more appropriate to control via `AKSNodeClass` instead of requir
 * Choose **Option A (Block + NodeClass)** if the label has nothing to do with the VM instance, its OS, or provisioning. There is some leeway here for things that impact those indirectly,
   but anything with complex configuration should be done via the `AKSNodeClass` instead.
   For example `kubernetes.azure.com/kata-vm-isolation` and `kubernetes.azure.com/artifactstreaming-enabled` may have additional configuration and make more sense as a NodeClass feature.
-* Choose **Option B (Requirements)** if the label related to node instance selection or provisioning, or (in some cases) if the feature needs to be able to be specified per-workload rather than per-NodePool.
+* Choose **Option B (Well-known Requirements)** if the label related to node instance selection or provisioning, or (in some cases) if the feature needs to be able to be specified per-workload rather than per-NodePool.
   For example `kubernetes.azure.com/os-sku`, `kubernetes.azure.com/os-sku-requested`, and `kubernetes.azure.com/security-type` all are directly related to VM size selection (security-type is about confidential VMs
-  which are basically specific VM sizes) and so would probably make sense as requirements. Note that even though `kubernetes.azure.com/os-sku` is about `Ubuntu` vs `AzureLinux` which is specified in the NodeClass, it still
+  which are basically specific VM sizes) and so would probably make sense as well-known requirements. Note that even though `kubernetes.azure.com/os-sku` is about `Ubuntu` vs `AzureLinux` which is specified in the NodeClass, it still
   fits into requirements as well because it's about the OS which is very commonly required for scheduling.
 
 ### Decision 4: Which labels will we block, and which labels will we allow scheduling on?
@@ -206,14 +221,16 @@ We will add these labels to WellKnownLabels + requirements:
 
 We will consider adding these labels to WellKnownLabels + requirements in the future:
 
-* kubernetes.azure.com/ebpf-dataplane
+* kubernetes.azure.com/ebpf-dataplane - we may need to add this to requirements in the future to support network-dataplane updates. In the migration from azure -> cilium,
+  at least with how we manage NAP default pools now, we can't update the CRD instance once it has been created so we don't have a good way to dynamically add this to the NodePool.
+  Even if we did, it would solve the migration problem for the managed NodePools but not for any user-created NodePools - the user would need to go update those pools manually themselves.
 * kubernetes.azure.com/os-sku-effective
 * kubernetes.azure.com/os-sku-requested
 * kubernetes.azure.com/security-type
 * kubernetes.azure.com/accelerator
 
 We will allow these labels to be set on the NodePool/NodeClaim (in addition to the labels we already support as schedulable outlined in the tables above):
-* kubernetes.azure.com/ebpf-dataplane
+* kubernetes.azure.com/ebpf-dataplane - for legacy reasons
 * kubernetes.azure.com/cluster-health-monitor-checker-synthetic (due to its high usage...) - This is set by AKS Automatic
 
 Based on usage data, the following `kubernetes.azure.com` labels have some usage today in `NodePool` labels or requirements.
