@@ -41,7 +41,7 @@ var _ = Describe("LocalDNS", func() {
 	// =========================================================================
 	// TEST CASE 1: ENABLE LOCALDNS ONLY
 	// =========================================================================
-	It("should enable LocalDNS and test DNS resolution", func() {
+	It("should enable LocalDNS and test LocalDNS resolution", func() {
 		By("Enabling LocalDNS on NodeClass")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
@@ -117,7 +117,7 @@ var _ = Describe("LocalDNS", func() {
 	// =========================================================================
 	// TEST CASE 3: ENABLE LOCALDNS, THEN DISABLE IT (LIFECYCLE TEST)
 	// =========================================================================
-	It("should enable LocalDNS, test it, disable LocalDNS, then test CoreDNS", func() {
+	It("should enable LocalDNS, test LocalDNS resolution, disable LocalDNS, then test CoreDNS resolution", func() {
 		// =================================================================
 		// PHASE 1: ENABLE LOCALDNS
 		// =================================================================
