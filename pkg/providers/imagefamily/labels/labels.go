@@ -23,6 +23,7 @@ import (
 func AddAgentBakerGeneratedLabels(nodeResourceGroup string, kubeletClientID string, nodeLabels map[string]string) {
 	nodeLabels["kubernetes.azure.com/role"] = "agent"
 	nodeLabels["kubernetes.azure.com/cluster"] = normalizeResourceGroupNameForLabel(nodeResourceGroup)
+	nodeLabels["kubernetes.azure.com/localdns-state"] = "enabled" // TODO: remove this.  this can't always be enabled, but just testing
 	nodeLabels[v1beta1.AKSLabelKubeletIdentityClientID] = kubeletClientID
 }
 
