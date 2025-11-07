@@ -2,9 +2,9 @@
 
 **Author:** @matthchr
 
-**Last updated:** Oct 30, 2025
+**Last updated:** Nov 07, 2025
 
-**Status:** Proposed
+**Status:** Completed
 
 ## Overview
 This document examines Karpenter and AKS managed labels and discusses what is needed to bring what we currently do more in line with what AKS does.
@@ -16,16 +16,16 @@ There are 2 main topics:
 Today, Karpenter has the following categories of labels:
 
 1. Labels Karpenter understands and can target for scheduling (Requirements)
-    * Can be set on Pod when not set on NodePool/NodeClaim
-    * Can be set on NodePool/NodeClaim
-    * May trigger behavior other than just setting a label (inform VM size, zone, etc)
+   * Can be set on Pod when not set on NodePool/NodeClaim
+   * Can be set on NodePool/NodeClaim
+   * May trigger behavior other than just setting a label (inform VM size, zone, etc)
 2. Labels written to the nodes but that Karpenter doesn't understand (can't schedule)
-    * Can NOT be set on Pod when not set on NodePool/NodeClaim
-    * Can be set on NodePool/NodeClaim, but depending on the value set may conflict with the "computed" value internally.
-    * Note that labels written by other parts of the system (daemonsets, operators, etc) generally fall into this category.
+   * Can NOT be set on Pod when not set on NodePool/NodeClaim
+   * Can be set on NodePool/NodeClaim, but depending on the value set may conflict with the "computed" value internally.
+   * Note that labels written by other parts of the system (daemonsets, operators, etc) generally fall into this category.
 3. Labels the user owns entirely (probably not in the `kubernetes.io`/`karpenter.azure.com`/`kubernetes.azure.com` domains)
-    * Can NOT be set on Pod when not set on NodePool/NodeClaim
-    * Can be set on NodePool/NodeClaim
+   * Can NOT be set on Pod when not set on NodePool/NodeClaim
+   * Can be set on NodePool/NodeClaim
 
 ### Well-known requirements
 Well-known requirements (those which come automatically from [computeRequirements](https://github.com/Azure/karpenter-provider-azure/blob/e322adfbad3567eb5ff34d776a2c365e060a5009/pkg/providers/instancetype/instancetype.go#L135))
@@ -57,74 +57,61 @@ that provisioning is done considering them. This is often accomplished via [crea
 * Adding new currently unsupported labels in the karpenter.sh namespace.
 
 ## Decisions
-
 There is a large set of labels where the value is determined by the system, or by the cluster on which Karpenter is running. See the below table for a list.
 
 The user should not be in control of these labels because the correct values for these labels are determined by the system and should not be set by the user.
 
-### Decision 1: What to do with system-determined global static (single-value) labels?
+### Decision 1: What to do with system-managed labels?
+This covers:
+* Global static (single-value) labels, like `topology.kubernetes.io/region` and `kubernetes.azure.com/cluster`.
+* Cluster-wide labels, like `kubernetes.azure.com/ebpf-dataplane` and `kubernetes.azure.com/network-name`.
+  * These labels are tricky to deal with. Unlike static labels, for these labels Karpenter needs to be informed of their values, probably via operator-scoped configuration variables. Some of this is already
+    sent to Karpenter today but not all of it. As we work on moving towards the Machine API, we will relax the need for Karpenter to know all of these values assuming we're OK with not supporting these
+    labels as requirements. If we want to support these labels as well-known requirements nothing changes Karpenter still needs to know their values so that it can build the set of requirements.
+    If the values backing these labels change, _ideally_ we would detect drift and recreate nodes. In practice we don't always have the data today to do what we need there.
+* Dynamic (per-feature or per-AgentPool) labels, like `kubernetes.azure.com/os-sku`, `kubernetes.azure.com/os-sku-requested`, `kubernetes.azure.com/kata-vm-isolation`, and `kubernetes.azure.com/security-type`
 
-Labels for which there is one value and that value is (at least for now) static. Examples: `topology.kubernetes.io/region`, `kubernetes.azure.com/cluster`
+Labels for which there is one correct value for the whole cluster, but that value may change over time as the cluster topology changes (usually driven by changes to the AKS ManagedCluster data model).
+Examples: `kubernetes.azure.com/ebpf-dataplane`, `kubernetes.azure.com/network-name`
 
-#### Option A: Block
+#### Option A: Block (and add to NodeClass where appropriate)
 Block setting these labels on the NodePool/NodeClaim.
+
+For labels that are related with a specific feature, like `kubernetes.azure.com/kata-vm-isolation`, they can be enabled through strongly typed fields on the `AKSNodeClass` instead and scheduling against these
+labels can be approximated by scheduling against the NodePool.
 
 #### Option B: Well-known Requirements
 Allow setting these labels on the NodePool/NodeClaim, but specify them in the well-known requirements, which will effectively require that the user either doesn't request the label on their workload
 or NodePool/NodeClaim, or if they do that it matches the static value.
 
-#### Conclusion: Neither option is appropriate for all labels. We need a combination.
-I propose the following guidance for choosing which labels fall into each category:
-* Choose **Option A (Block)** if it is impossible for the label to ever change or vary and/or it doesn't make any sense to attempt to schedule on it.
-  For example `kubernetes.azure.com/cluster` seems unlikely to ever change over time. The cluster resource group will be the resource group always.
-* Choose **Option B (Well-known Requirements)** if the label is static now but may theoretically be expanded/relaxed to be non-static/multi-valued in the future.
-  For example `topology.kubernetes.io/region` - today we do not support cross-region node provisioning but we theoretically could.
+For labels that can change (cluster-wide or per-feature) it would be strongly recommended to avoid hardcoding it on the NodePool and instead just request it on the workloads that need it.
 
-### Decision 2: What to do with system-determined cluster-wide labels?
-Labels for which there is one correct value for the whole cluster, but that value may change over time as the cluster topology changes (usually driven by changes to the AKS ManagedCluster data model).
-Examples: `kubernetes.azure.com/ebpf-dataplane`, `kubernetes.azure.com/network-name`
-
-These labels are tricky to deal with. Unlike static labels, for these labels Karpenter needs to be informed of their values, probably via operator-scoped configuration variables. Some of this is already
-sent to Karpenter today but not all of it. As we work on moving towards the Machine API, we will relax the need for Karpenter to know all of these values assuming we're OK with not supporting these
-labels as requirements. If we want to support these labels as well-known requirements nothing changes Karpenter still needs to know their values so that it can build the set of requirements.
-If the values backing these labels change, _ideally_ we would detect drift and recreate nodes. In practice we don't always have the data today to do what we need there.
-
-#### Option A: Block
-Block setting these labels on the NodePool/NodeClaim. There may need to be some special cases because we already have `kubernetes.azure.com/ebpf-dataplane` on a lot of node pools and we need it for scheduling purposes.
-
-#### Option B: Well-known Requirements
-Allow setting these labels on the NodePool/NodeClaim, but specify them in well-known requirements, which will effectively require that the user either doesn't request the label on their workload or NodePool/NodeClaim, or if they do
-that it matches the current value. Since the value can change it would be strongly recommended to avoid hardcoding it on the NodePool and instead just request it on the workloads that need it.
-
-#### Conclusion: Neither option is appropriate for all labels. We need a combination.
-I propose the following guidance for choosing which labels fall into each category:
-* Choose **Option A (Block)** if it doesn't make any sense to attempt to schedule on it. For example `kubernetes.azure.com/podnetwork-resourcegroup` probably doesn't make sense to schedule against.
-* Choose **Option B (Well-known Requirements)** if the label is required for scheduling. For example `kubernetes.azure.com/ebpf-dataplane` is required for scheduling certain daemonsets.
-
-### Decision 3: What to do with dynamic system-determined labels?
-Labels that are set at either the per-node or (more likely) per-AgentPool. Examples: `kubernetes.azure.com/os-sku`, `kubernetes.azure.com/os-sku-requested`, `kubernetes.azure.com/kata-vm-isolation`, `kubernetes.azure.com/security-type`.
-
-#### Option A: Block + NodeClass
-Block setting these labels on the NodePool/NodeClaim. If they are related to a feature (many are) like `kubernetes.azure.com/kata-vm-isolation`, they can be enabled through strongly typed fields on the `AKSNodeClass` instead.
-
-#### Option B: Well-known Requirements
-Allow setting these labels on the NodePool/NodeClaim, but specify them in the well-known requirements. The main advantage of this is that it allows a single NodePool to allocate nodes with the feature enabled or disabled.
+For labels that are related to features, the main advantage of this approach is that it allows a single NodePool to allocate nodes with the feature enabled or disabled.
 Note that this only works well if the feature is relatively simple and can be controlled through a single simple flag corresponding to a label. If there's more complex configuration required (parameter tuning, enabling various options)
-it may still be more appropriate to control via `AKSNodeClass` instead of requirements.
+it is more appropriate to control via `AKSNodeClass` instead of requirements.
 
 #### Conclusion: Neither option is appropriate for all labels. We need a combination.
-* Choose **Option A (Block + NodeClass)** if the label has nothing to do with the VM instance, its OS, or provisioning. There is some leeway here for things that impact those indirectly,
-  but anything with complex configuration should be done via the `AKSNodeClass` instead.
-  For example `kubernetes.azure.com/kata-vm-isolation` and `kubernetes.azure.com/artifactstreaming-enabled` may have additional configuration and make more sense as a NodeClass feature.
-* Choose **Option B (Well-known Requirements)** if the label related to node instance selection or provisioning, or (in some cases) if the feature needs to be able to be specified per-workload rather than per-NodePool.
-  For example `kubernetes.azure.com/os-sku`, `kubernetes.azure.com/os-sku-requested`, and `kubernetes.azure.com/security-type` all are directly related to VM size selection (security-type is about confidential VMs
-  which are basically specific VM sizes) and so would probably make sense as well-known requirements. Note that even though `kubernetes.azure.com/os-sku` is about `Ubuntu` vs `AzureLinux` which is specified in the NodeClass, it still
-  fits into requirements as well because it's about the OS which is very commonly required for scheduling.
+I propose the following guidance for choosing which labels fall into each category:
+* Choose **Option A (Block)** if...
+  * The label doesn't make sense to schedule against. For example `kubernetes.azure.com/podnetwork-resourcegroup` and `kubernetes.azure.com/cluster`.
+  * The label is a feature-label and we're adding it to AKSNodeClass instead. For example `kubernetes.azure.com/kata-vm-isolation` and `kubernetes.azure.com/artifactstreaming-enabled`.
+* Choose **Option B (Well-known Requirements)** if...
+  * The label is required for scheduling (even if it is static now but may be expanded to be non-static or multi-valued in the future).
+    For example `topology.kubernetes.io/region` - we could support cross-region scheduling in the future. Other labels like `kubernetes.azure.com/ebpf-dataplane` are required for scheduling certain daemonsets.
+    Other labels like `kubernetes.azure.com/os-sku`, `kubernetes.azure.com/os-sku-requested`, and `kubernetes.azure.com/security-type` are all related to VM size or OS selection and likely to be commonly used
+    to schedule against.
 
-### Decision 4: Which labels will we block, and which labels will we allow scheduling on?
+**Note** AWS has moved to a model where they are very cautious about adding new requirements because if users _only_ use those properties to schedule against and don't include a constraint on
+`karpenter.azure.com/sku-name` or `karpenter.azure.com/sku-family` then users can be surprised by new VM sizes and end up broken if their workloads don't work on those sizes, so when evaluating if
+something can be added as a requirement we should keep that in mind.
 
+### Decision 2: Which labels will we block, and which labels will we allow scheduling on?
 Here's a (probably not exhaustive) list of labels that AKS writes.
 The ones that I think Karpenter should allow scheduling on (but doesn't currently) are **in bold**.
+
+**Note**: AKS (observed or code) means we see the label written on nodes im practice by AKS. This doesn't necessarily mean that the AKS service writes every single one of these labels. Some of them are written directly
+by Kubelet with with integration from Azure CloudProvider, such as `topology.kubernetes.io/zone`, see [pkg/provider/azure_zones.go](https://github.com/kubernetes-sigs/cloud-provider-azure/blob/master/pkg/provider/azure_zones.go)
+for more details.
 
 | Label                                                   | AKS (documented) | AKS (observed or code) | Karpenter (schedulable) | Karpenter (written to node) | Notes                                                                                   |
 | ------------------------------------------------------- | ---------------- | ---------------------- | ----------------------- | --------------------------- | --------------------------------------------------------------------------------------- |
@@ -212,9 +199,9 @@ For completeness, there are also the following karpenter labels. These labels we
 | karpenter.azure.com/sku-hyperv-generation           |                  |                        | ✅                      | ✅                          |       |
 
 #### Conclusion
-We will add these labels to WellKnownLabels + requirements:
+We will add these labels to WellKnownLabels + requirements now/soon:
 * kubernetes.azure.com/scalesetpriority
-* kubernetes.azure.com/node-image-version
+* kubernetes.azure.com/node-image-version - if this turns out to be difficult to do correctly, will move down into future as opposed to doing it now.
 * kubernetes.azure.com/fips_enabled
 * kubernetes.azure.com/os-sku
 * kubernetes.azure.com/mode
@@ -255,7 +242,7 @@ We already block usage of the `karpenter.azure.com` and `karpenter.sh` namespace
 
 We will also block all `kubernetes.azure.com` namespaced labels except for those called out above as either well known labels, or allowed.
 
-### Decision 5: How will we get labels that Karpenter doesn't currently write set on nodes?
+### Decision 3: How will we get labels that Karpenter doesn't currently write set on nodes?
 
 #### Option A: Wait for Machine API migration
 Migrating to the machine API will automatically get all missing labels set on VMs allocated via the machine API.
@@ -264,7 +251,7 @@ Migrating to the machine API will automatically get all missing labels set on VM
 There are some labels that Karpenter sets but that aren't schedulable, defined at [AddAgentBakerGeneratedLabels](https://github.com/Azure/karpenter-provider-azure/blob/main/pkg/providers/imagefamily/labels/labels.go#L23).
 This has already been accounted for in the tables above. We could add more labels there.
 
-#### Conclusion: Wait for machine API for complete parity
+#### Conclusion: Option 3.A Wait for machine API for complete parity
 Machine API is not that far away, and we already write most critical labels. Some additional labels such as `kubernetes.azure.com/os-sku` and `kubernetes.azure.com/fips_enabled` will be enabled for scheduling
 (and thus be written to the nodes) based on decision 4, but other labels and full label parity will come with the machine API migration.
 
@@ -281,13 +268,13 @@ There are currently two paths for labels to get onto the node:
 * Karpenter core writes all NodeClaim labels to the node, see: [syncNode](https://github.com/kubernetes-sigs/karpenter/blob/38e728c99b530f660f685d53d01f2e9ec9696668/pkg/controllers/nodeclaim/lifecycle/registration.go#L128).
 * Karpenter core translates most requirements from the NodeClaim spec into labels, see
   [PopulateNodeClaimDetails](https://github.com/kubernetes-sigs/karpenter/blob/38e728c99b530f660f685d53d01f2e9ec9696668/pkg/controllers/nodeclaim/lifecycle/launch.go#L129)
-    * Note that `.Labels()` excludes labels defined in `WellKnownLabels`, including both those registered by the cloud provider and core. It also excludes labels defined in `RestrictedLabelDomains`, which are
-      labels that are prohibited by Kubelet or reserved by Karpenter, except for certain sub-domains within the restricted domains defined by `LabelDomainExceptions`.
-      See [Labels()](https://github.com/kubernetes-sigs/karpenter/blob/38e728c99b530f660f685d53d01f2e9ec9696668/pkg/scheduling/requirements.go#L270).
-    * Note that `WellKnownLabels` seems to serve two purposes:
-        1. It prevents Karpenter core from automatically including those labels on the node object (though note that AKS Karpenter provider ends up including most of them on the node object anyway).
-        2. It allows pods to ask for that label when the NodeClaim/requirements don't actually have it, and still have scheduling take place (I don't fully understand where/why this is needed but I can see the
-           code for it [here](https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/scheduling/requirements.go#L175))
+  * Note that `.Labels()` excludes labels defined in `WellKnownLabels`, including both those registered by the cloud provider and core. It also excludes labels defined in `RestrictedLabelDomains`, which are
+    labels that are prohibited by Kubelet or reserved by Karpenter, except for certain sub-domains within the restricted domains defined by `LabelDomainExceptions`.
+    See [Labels()](https://github.com/kubernetes-sigs/karpenter/blob/38e728c99b530f660f685d53d01f2e9ec9696668/pkg/scheduling/requirements.go#L270).
+  * Note that `WellKnownLabels` seems to serve two purposes:
+      1. It prevents Karpenter core from automatically including those labels on the node object (though note that AKS Karpenter provider ends up including most of them on the node object anyway).
+      2. It allows pods to ask for that label when the NodeClaim/requirements don't actually have it, and still have scheduling take place (I don't fully understand where/why this is needed but I can see the
+         code for it [here](https://github.com/kubernetes-sigs/karpenter/blob/main/pkg/scheduling/requirements.go#L175))
 * Cloud provider defined labels (as used in `PopulateNodeClaimDetails` mentioned above) are added to the NodeClaim by AKS Karpenter provider in
   [vmInstanceToNodeClaim](https://github.com/Azure/karpenter-provider-azure/blob/b9c8c82edb289ac5b281c85b0851b5a0c45bc4bb/pkg/cloudprovider/cloudprovider.go#L476) by reading
   the instance type requirements.
