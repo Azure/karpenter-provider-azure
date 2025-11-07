@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,21 +39,16 @@ import (
 )
 
 var _ = Describe("LocalDNS", func() {
+	BeforeEach(func() {
+		if env.InClusterController {
+			Skip("LocalDNS tests require NPS (Node Provisioning Service) - only supported in NAP/managed Karpenter mode")
+		}
+	})
+
 	// =========================================================================
 	// TEST CASE 1: ENABLE LOCALDNS ONLY
 	// =========================================================================
 	It("should enable LocalDNS and test LocalDNS resolution", func() {
-		By("=== ENVIRONMENT INFO ===")
-		By(fmt.Sprintf("InClusterController: %v", env.InClusterController))
-		provisionMode := lo.Ternary(env.InClusterController, consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient)
-		By(fmt.Sprintf("ProvisionMode: %s", provisionMode))
-		if provisionMode == consts.ProvisionModeBootstrappingClient {
-			By("⚠️  Using BootstrappingClient mode - LocalDNS label should come from NPS")
-		} else {
-			By("⚠️  Using AKSScriptless mode - LocalDNS label application may differ")
-		}
-		By("======================")
-
 		By("Enabling LocalDNS on NodeClass")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
