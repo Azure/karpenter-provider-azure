@@ -18,9 +18,9 @@ jobs:
     if: github.repository == 'Azure/karpenter-provider-azure'
     runs-on: ubuntu-latest
     permissions:
-      actions: read # github/codeql-action/init@v2
+      actions: read # github/codeql-action/init@v4
       contents: read
-      security-events: write # github/codeql-action/init@v2
+      security-events: write # github/codeql-action/init@v4
 
     steps:
       - name: Harden Runner
@@ -47,11 +47,11 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: ./.github/actions/install-deps
       - run: make vulncheck
-      - uses: github/codeql-action/init@192325c86100d080feab897ff886c34abd4c83a3 # v3.29.5
+      - uses: github/codeql-action/init@0499de31b99561a6d14a36a5f662c2a54f91beee # v4.31.2
         with:
           languages: go
-      - uses: github/codeql-action/autobuild@192325c86100d080feab897ff886c34abd4c83a3 # v3.29.5
-      - uses: github/codeql-action/analyze@192325c86100d080feab897ff886c34abd4c83a3 # v3.29.5
+      - uses: github/codeql-action/autobuild@0499de31b99561a6d14a36a5f662c2a54f91beee # v4.31.2
+      - uses: github/codeql-action/analyze@0499de31b99561a6d14a36a5f662c2a54f91beee # v4.31.2
 
   # Javascript is added here for evaluating Github Action vulnerabilities
   # https://github.blog/2023-08-09-four-tips-to-keep-your-github-actions-workflows-secure/#2-enable-code-scanning-for-workflows
@@ -60,19 +60,11 @@ jobs:
     if: github.repository == 'Azure/karpenter-provider-azure'
     runs-on: ubuntu-latest
     permissions:
-      actions: read # github/codeql-action/init@v2
-      security-events: write # github/codeql-action/init@v2
+      actions: read # github/codeql-action/init@v4
+      security-events: write # github/codeql-action/init@v4
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: github/codeql-action/init@192325c86100d080feab897ff886c34abd4c83a3 # v3.29.5
+      - uses: github/codeql-action/init@0499de31b99561a6d14a36a5f662c2a54f91beee # v4.31.2
         with:
-          languages: javascript
-          config: |
-            packs:
-              # Use the latest version of 'codeql-javascript' published by 'advanced-security'
-              # This will catch things like actions that aren't pinned to a hash
-              - advanced-security/codeql-javascript
-            paths:
-              - '.github/workflows'
-              - '.github/actions'
-      - uses: github/codeql-action/analyze@192325c86100d080feab897ff886c34abd4c83a3 # v3.29.5
+          languages: actions
+      - uses: github/codeql-action/analyze@0499de31b99561a6d14a36a5f662c2a54f91beee # v4.31.2
