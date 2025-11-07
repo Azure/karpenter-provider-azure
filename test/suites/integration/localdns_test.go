@@ -46,7 +46,119 @@ var _ = Describe("LocalDNS", func() {
 	})
 
 	// =========================================================================
-	// TEST CASE 1: ENABLE LOCALDNS ONLY
+	// TEST CASE 0: VERIFY LOCALDNS LABEL ONLY (ENABLED)
+	// =========================================================================
+	It("should set localdns-state=enabled label when LocalDNS is enabled", func() {
+		By("Enabling LocalDNS on NodeClass")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+		}
+
+		By("Creating a test pod to provision a node with LocalDNS enabled")
+		pod := test.Pod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.EventuallyExpectHealthy(pod)
+		env.ExpectCreatedNodeCount("==", 1)
+
+		By("Getting the provisioned node")
+		node := env.Monitor.CreatedNodes()[0]
+
+		By("Verifying node has localdns-state=enabled label")
+		VerifyNodeLocalDNSLabel(node.Name, "enabled")
+
+		By("✓ LocalDNS label verification test completed successfully")
+	})
+
+	// =========================================================================
+	// TEST CASE 0b: VERIFY LOCALDNS LABEL ONLY (DISABLED)
+	// =========================================================================
+	It("should set localdns-state=disabled label when LocalDNS is disabled", func() {
+		By("Disabling LocalDNS on NodeClass")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+		}
+
+		By("Creating a test pod to provision a node with LocalDNS disabled")
+		pod := test.Pod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.EventuallyExpectHealthy(pod)
+		env.ExpectCreatedNodeCount("==", 1)
+
+		By("Getting the provisioned node")
+		node := env.Monitor.CreatedNodes()[0]
+
+		By("Verifying node has localdns-state=disabled label")
+		VerifyNodeLocalDNSLabel(node.Name, "disabled")
+
+		By("✓ LocalDNS disabled label verification test completed successfully")
+	})
+
+	// =========================================================================
+	// TEST CASE 1: VERIFY DNS RESOLUTION WITH LOCALDNS ENABLED
+	// =========================================================================
+	It("should resolve DNS using LocalDNS when enabled", func() {
+		By("Enabling LocalDNS on NodeClass")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+		}
+
+		By("Creating a test pod to provision a node with LocalDNS enabled")
+		pod := test.Pod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.EventuallyExpectHealthy(pod)
+		env.ExpectCreatedNodeCount("==", 1)
+
+		By("Verifying CoreDNS is healthy")
+		VerifyCoreDNSHealthy()
+
+		By("Testing LocalDNS resolution from default namespace")
+		defaultNSResult := RunLocalDNSResolutionFromDefaultNamespace()
+		VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
+
+		By("Testing LocalDNS resolution from CoreDNS namespace (node listener)")
+		coreDNSNSResult := RunLocalDNSResolutionFromCoreDNSPod()
+		VerifyUsingLocalDNSNodeListener(coreDNSNSResult.DNSIP, "CoreDNS namespace DNS")
+
+		By("Testing LocalDNS in-cluster DNS resolution")
+		inClusterResult := RunLocalDNSInClusterResolution()
+		VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
+
+		By("✓ LocalDNS resolution test completed successfully")
+	})
+
+	// =========================================================================
+	// TEST CASE 2: VERIFY DNS RESOLUTION WITH LOCALDNS DISABLED
+	// =========================================================================
+	It("should resolve DNS using CoreDNS when LocalDNS is disabled", func() {
+		By("Disabling LocalDNS on NodeClass (using default CoreDNS)")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+		}
+
+		By("Creating a test pod to provision a node with LocalDNS disabled")
+		pod := test.Pod()
+		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.EventuallyExpectHealthy(pod)
+		env.ExpectCreatedNodeCount("==", 1)
+
+		By("Verifying CoreDNS is healthy")
+		VerifyCoreDNSHealthy()
+
+		By("Testing CoreDNS resolution from default namespace")
+		defaultNSResult := RunCoreDNSResolutionFromDefaultNamespace()
+		VerifyUsingCoreDNS(defaultNSResult.DNSIP, "Default namespace DNS")
+		VerifyNotUsingLocalDNS(defaultNSResult.DNSIP, "Default namespace DNS")
+
+		By("Testing upstream DNS resolution from CoreDNS pods")
+		upstreamResult := RunUpstreamDNSResolution()
+		VerifyUsingAzureDNS(upstreamResult.DNSIP, "Upstream DNS")
+		VerifyNotUsingLocalDNS(upstreamResult.DNSIP, "Upstream DNS")
+
+		By("✓ CoreDNS resolution test completed successfully")
+	})
+
+	// =========================================================================
+	// TEST CASE 3: FULL INTEGRATION TEST WITH LABEL AND DNS (ENABLED)
 	// =========================================================================
 	It("should enable LocalDNS and test LocalDNS resolution", func() {
 		By("Enabling LocalDNS on NodeClass")
@@ -109,7 +221,7 @@ var _ = Describe("LocalDNS", func() {
 	})
 
 	// =========================================================================
-	// TEST CASE 2: DISABLE LOCALDNS ONLY
+	// TEST CASE 4: FULL INTEGRATION TEST WITH LABEL AND DNS (DISABLED)
 	// =========================================================================
 	It("should disable LocalDNS and test CoreDNS resolution", func() {
 		By("Disabling LocalDNS on NodeClass (using default CoreDNS)")
@@ -146,7 +258,7 @@ var _ = Describe("LocalDNS", func() {
 	})
 
 	// =========================================================================
-	// TEST CASE 3: ENABLE LOCALDNS, THEN DISABLE IT (LIFECYCLE TEST)
+	// TEST CASE 5: ENABLE LOCALDNS, THEN DISABLE IT (LIFECYCLE TEST)
 	// =========================================================================
 	It("should enable LocalDNS, test LocalDNS resolution, disable LocalDNS, then test CoreDNS resolution", func() {
 		// =================================================================
