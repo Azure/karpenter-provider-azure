@@ -127,7 +127,7 @@ var _ = Describe("LocalDNS", func() {
 		By("Verifying CoreDNS is healthy")
 		VerifyCoreDNSHealthy()
 
-		By("Testing LocalDNS resolution from default namespace pod")
+		By(fmt.Sprintf("Testing LocalDNS resolution from default namespace pod (name=%s, namespace=%s)", dnsTestPod.Name, dnsTestPod.Namespace))
 		defaultNSResult := GetDNSResultFromPod(dnsTestPod)
 		VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
 
@@ -150,6 +150,7 @@ var _ = Describe("LocalDNS", func() {
 		env.ExpectCreated(kubeSystemPod)
 		env.EventuallyExpectHealthy(kubeSystemPod)
 
+		By(fmt.Sprintf("Testing LocalDNS resolution from kube-system namespace pod (name=%s, namespace=%s)", kubeSystemPod.Name, kubeSystemPod.Namespace))
 		kubeSystemResult := GetDNSResultFromPod(kubeSystemPod)
 		VerifyUsingLocalDNSNodeListener(kubeSystemResult.DNSIP, "Kube-system namespace DNS")
 
@@ -172,6 +173,7 @@ var _ = Describe("LocalDNS", func() {
 		env.ExpectCreated(inClusterPod)
 		env.EventuallyExpectHealthy(inClusterPod)
 
+		By(fmt.Sprintf("Testing LocalDNS in-cluster DNS resolution from pod (name=%s, namespace=%s)", inClusterPod.Name, inClusterPod.Namespace))
 		inClusterResult := GetDNSResultFromPod(inClusterPod)
 		Expect(inClusterResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "In-cluster DNS should resolve kubernetes service")
 		VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
@@ -217,7 +219,7 @@ var _ = Describe("LocalDNS", func() {
 		By("Verifying CoreDNS is healthy")
 		VerifyCoreDNSHealthy()
 
-		By("Testing CoreDNS resolution from default namespace pod")
+		By(fmt.Sprintf("Testing CoreDNS resolution from default namespace pod (name=%s, namespace=%s)", dnsTestPod.Name, dnsTestPod.Namespace))
 		defaultNSResult := GetDNSResultFromPod(dnsTestPod)
 		Expect(defaultNSResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "DNS resolution should succeed")
 		VerifyUsingCoreDNS(defaultNSResult.DNSIP, "Default namespace DNS")
@@ -263,7 +265,7 @@ var _ = Describe("LocalDNS", func() {
 		By("Verifying CoreDNS is healthy")
 		VerifyCoreDNSHealthy()
 
-		By("Testing LocalDNS resolution using dig from agnhost pod")
+		By(fmt.Sprintf("Testing LocalDNS resolution using dig from agnhost pod (name=%s, namespace=%s)", agnhostPod.Name, agnhostPod.Namespace))
 		digResult := GetDNSResultFromPod(agnhostPod)
 		By("Dig output from agnhost pod:\n" + digResult.Logs)
 
