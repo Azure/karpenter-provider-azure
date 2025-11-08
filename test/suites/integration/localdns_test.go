@@ -163,6 +163,11 @@ var _ = Describe("LocalDNS", func() {
 		VerifyNotUsingLocalDNS(upstreamResult.DNSIP, "Upstream DNS")
 
 		By("✓ CoreDNS resolution test completed successfully")
+		// DEBUGGING: Sleep to allow manual inspection of the node
+		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
+		By("   You can now inspect the node, pods, and DNS configuration")
+		By("   Press Ctrl+C to stop the test when done")
+		time.Sleep(60 * time.Minute)
 	})
 
 	// =========================================================================
