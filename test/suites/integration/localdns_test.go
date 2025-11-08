@@ -114,6 +114,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
@@ -147,6 +148,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
@@ -176,6 +178,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
@@ -224,6 +227,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
@@ -276,6 +280,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "dig mcr.microsoft.com 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
