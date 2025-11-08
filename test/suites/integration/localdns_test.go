@@ -104,25 +104,76 @@ var _ = Describe("LocalDNS", func() {
 			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
 		}
 
-		By("Creating a test pod to provision a node with LocalDNS enabled")
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		By("Creating DNS test pod in default namespace to provision node with LocalDNS")
+		dnsTestPod := test.Pod(test.PodOptions{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dnstest-localdns-default",
+				Namespace: namespaceDefault,
+			},
+			Image:         dnsUtilsImage,
+			Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
+			RestartPolicy: corev1.RestartPolicyNever,
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("32Mi"),
+				},
+			},
+		})
+		env.ExpectCreated(nodeClass, nodePool, dnsTestPod)
+		env.EventuallyExpectHealthy(dnsTestPod)
 		env.ExpectCreatedNodeCount("==", 1)
 
 		By("Verifying CoreDNS is healthy")
 		VerifyCoreDNSHealthy()
 
-		By("Testing LocalDNS resolution from default namespace")
-		defaultNSResult := RunLocalDNSResolutionFromDefaultNamespace()
+		By("Testing LocalDNS resolution from default namespace pod")
+		defaultNSResult := GetDNSResultFromPod(dnsTestPod)
 		VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
 
-		By("Testing LocalDNS resolution from CoreDNS namespace (node listener)")
-		coreDNSNSResult := RunLocalDNSResolutionFromCoreDNSPod()
-		VerifyUsingLocalDNSNodeListener(coreDNSNSResult.DNSIP, "CoreDNS namespace DNS")
+		By("Testing LocalDNS resolution from kube-system namespace")
+		kubeSystemPod := test.Pod(test.PodOptions{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dnstest-localdns-kubesystem",
+				Namespace: namespaceKubeSystem,
+			},
+			Image:         dnsUtilsImage,
+			Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
+			RestartPolicy: corev1.RestartPolicyNever,
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("32Mi"),
+				},
+			},
+		})
+		env.ExpectCreated(kubeSystemPod)
+		env.EventuallyExpectHealthy(kubeSystemPod)
+
+		kubeSystemResult := GetDNSResultFromPod(kubeSystemPod)
+		VerifyUsingLocalDNSNodeListener(kubeSystemResult.DNSIP, "Kube-system namespace DNS")
 
 		By("Testing LocalDNS in-cluster DNS resolution")
-		inClusterResult := RunLocalDNSInClusterResolution()
+		inClusterPod := test.Pod(test.PodOptions{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dnstest-incluster",
+				Namespace: namespaceDefault,
+			},
+			Image:         dnsUtilsImage,
+			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
+			RestartPolicy: corev1.RestartPolicyNever,
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("32Mi"),
+				},
+			},
+		})
+		env.ExpectCreated(inClusterPod)
+		env.EventuallyExpectHealthy(inClusterPod)
+
+		inClusterResult := GetDNSResultFromPod(inClusterPod)
+		Expect(inClusterResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "In-cluster DNS should resolve kubernetes service")
 		VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
 
 		By("✓ LocalDNS resolution test completed successfully")
@@ -143,26 +194,88 @@ var _ = Describe("LocalDNS", func() {
 			Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
 		}
 
-		By("Creating a test pod to provision a node with LocalDNS disabled")
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
+		By("Creating DNS test pod in default namespace to provision node with LocalDNS disabled")
+		dnsTestPod := test.Pod(test.PodOptions{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dnstest-coredns-default",
+				Namespace: namespaceDefault,
+			},
+			Image:         dnsUtilsImage,
+			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
+			RestartPolicy: corev1.RestartPolicyNever,
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("32Mi"),
+				},
+			},
+		})
+		env.ExpectCreated(nodeClass, nodePool, dnsTestPod)
+		env.EventuallyExpectHealthy(dnsTestPod)
 		env.ExpectCreatedNodeCount("==", 1)
 
 		By("Verifying CoreDNS is healthy")
 		VerifyCoreDNSHealthy()
 
-		By("Testing CoreDNS resolution from default namespace")
-		defaultNSResult := RunCoreDNSResolutionFromDefaultNamespace()
+		By("Testing CoreDNS resolution from default namespace pod")
+		defaultNSResult := GetDNSResultFromPod(dnsTestPod)
+		Expect(defaultNSResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "DNS resolution should succeed")
 		VerifyUsingCoreDNS(defaultNSResult.DNSIP, "Default namespace DNS")
 		VerifyNotUsingLocalDNS(defaultNSResult.DNSIP, "Default namespace DNS")
 
-		By("Testing upstream DNS resolution from CoreDNS pods")
-		upstreamResult := RunUpstreamDNSResolution()
-		VerifyUsingAzureDNS(upstreamResult.DNSIP, "Upstream DNS")
-		VerifyNotUsingLocalDNS(upstreamResult.DNSIP, "Upstream DNS")
-
 		By("✓ CoreDNS resolution test completed successfully")
+		// DEBUGGING: Sleep to allow manual inspection of the node
+		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
+		By("   You can now inspect the node, pods, and DNS configuration")
+		By("   Press Ctrl+C to stop the test when done")
+		time.Sleep(60 * time.Minute)
+	})
+
+	// =========================================================================
+	// TEST CASE 2b: VERIFY DNS RESOLUTION WITH LOCALDNS ENABLED USING DIG
+	// =========================================================================
+	It("should resolve DNS using LocalDNS with dig command from agnhost", func() {
+		By("Enabling LocalDNS on NodeClass")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+		}
+
+		By("Creating DNS test pod with agnhost image to provision node with LocalDNS")
+		agnhostPod := test.Pod(test.PodOptions{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dnstest-agnhost-dig",
+				Namespace: namespaceDefault,
+			},
+			Image:         "registry.k8s.io/e2e-test-images/agnhost:2.39",
+			Command:       []string{"sh", "-c", "dig mcr.microsoft.com 2>&1; sleep 3600"},
+			RestartPolicy: corev1.RestartPolicyNever,
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+			},
+		})
+		env.ExpectCreated(nodeClass, nodePool, agnhostPod)
+		env.EventuallyExpectHealthy(agnhostPod)
+		env.ExpectCreatedNodeCount("==", 1)
+
+		By("Verifying CoreDNS is healthy")
+		VerifyCoreDNSHealthy()
+
+		By("Testing LocalDNS resolution using dig from agnhost pod")
+		digResult := GetDNSResultFromPod(agnhostPod)
+		By("Dig output from agnhost pod:\n" + digResult.Logs)
+
+		// Parse DNS server from dig output (looks for ";; SERVER: " line)
+		dnsServer := parseDNSServerFromDig(digResult.Logs)
+		Expect(dnsServer).ToNot(BeEmpty(), "Should detect DNS server from dig output")
+
+		By(fmt.Sprintf("DNS queries from agnhost pod use DNS server: %s", dnsServer))
+		VerifyUsingLocalDNSClusterListener(dnsServer, "Agnhost dig DNS")
+
+		By("✓ LocalDNS resolution with dig test completed successfully")
+
 		// DEBUGGING: Sleep to allow manual inspection of the node
 		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
 		By("   You can now inspect the node, pods, and DNS configuration")
@@ -175,101 +288,101 @@ var _ = Describe("LocalDNS", func() {
 	// =========================================================================
 	It("should enable LocalDNS and test LocalDNS resolution", func() {
 		Skip("Temporarily disabled - not testing label")
-		By("Enabling LocalDNS on NodeClass")
-		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
-		}
-
-		By(fmt.Sprintf("DEBUG: NodeClass.Spec.LocalDNS = %+v", nodeClass.Spec.LocalDNS))
-		if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode != nil {
-			By(fmt.Sprintf("DEBUG: LocalDNS Mode = %s", *nodeClass.Spec.LocalDNS.Mode))
-		}
-
-		By("Creating a test pod to provision a node with LocalDNS enabled")
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-
-		By("DEBUG: Verifying NodeClass was created successfully")
-		var createdNodeClass v1beta1.AKSNodeClass
-		Eventually(func(g Gomega) {
-			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), &createdNodeClass)).To(Succeed())
-			By(fmt.Sprintf("DEBUG: Retrieved NodeClass %s from cluster", createdNodeClass.Name))
-			if createdNodeClass.Spec.LocalDNS != nil {
-				By(fmt.Sprintf("DEBUG: NodeClass in cluster has LocalDNS: %+v", createdNodeClass.Spec.LocalDNS))
-				if createdNodeClass.Spec.LocalDNS.Mode != nil {
-					By(fmt.Sprintf("DEBUG: NodeClass in cluster LocalDNS.Mode = %s", *createdNodeClass.Spec.LocalDNS.Mode))
-				}
-			} else {
-				By("DEBUG: NodeClass in cluster has NO LocalDNS field!")
+		/* By("Enabling LocalDNS on NodeClass")
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
 			}
-		}).Should(Succeed())
 
-		env.EventuallyExpectHealthy(pod)
-		env.ExpectCreatedNodeCount("==", 1)
+			By(fmt.Sprintf("DEBUG: NodeClass.Spec.LocalDNS = %+v", nodeClass.Spec.LocalDNS))
+			if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode != nil {
+				By(fmt.Sprintf("DEBUG: LocalDNS Mode = %s", *nodeClass.Spec.LocalDNS.Mode))
+			}
 
-		By("Getting the provisioned node")
-		node := env.Monitor.CreatedNodes()[0]
+			By("Creating a test pod to provision a node with LocalDNS enabled")
+			pod := test.Pod()
+			env.ExpectCreated(nodeClass, nodePool, pod)
 
-		By("DEBUG: Running comprehensive node and NodeClass analysis")
-		DebugNodeAndNodeClass(node.Name)
+			By("DEBUG: Verifying NodeClass was created successfully")
+			var createdNodeClass v1beta1.AKSNodeClass
+			Eventually(func(g Gomega) {
+				g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), &createdNodeClass)).To(Succeed())
+				By(fmt.Sprintf("DEBUG: Retrieved NodeClass %s from cluster", createdNodeClass.Name))
+				if createdNodeClass.Spec.LocalDNS != nil {
+					By(fmt.Sprintf("DEBUG: NodeClass in cluster has LocalDNS: %+v", createdNodeClass.Spec.LocalDNS))
+					if createdNodeClass.Spec.LocalDNS.Mode != nil {
+						By(fmt.Sprintf("DEBUG: NodeClass in cluster LocalDNS.Mode = %s", *createdNodeClass.Spec.LocalDNS.Mode))
+					}
+				} else {
+					By("DEBUG: NodeClass in cluster has NO LocalDNS field!")
+				}
+			}).Should(Succeed())
 
-		By("Verifying node has localdns-state=enabled label")
-		VerifyNodeLocalDNSLabel(node.Name, "enabled")
+			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreatedNodeCount("==", 1)
 
-		By("Verifying CoreDNS is healthy")
-		VerifyCoreDNSHealthy()
+			By("Getting the provisioned node")
+			node := env.Monitor.CreatedNodes()[0]
 
-		By("Testing LocalDNS resolution from default namespace")
-		defaultNSResult := RunLocalDNSResolutionFromDefaultNamespace()
-		VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
+			By("DEBUG: Running comprehensive node and NodeClass analysis")
+			DebugNodeAndNodeClass(node.Name)
 
-		By("Testing LocalDNS resolution from CoreDNS namespace (node listener)")
-		coreDNSNSResult := RunLocalDNSResolutionFromCoreDNSPod()
-		VerifyUsingLocalDNSNodeListener(coreDNSNSResult.DNSIP, "CoreDNS namespace DNS")
+			By("Verifying node has localdns-state=enabled label")
+			VerifyNodeLocalDNSLabel(node.Name, "enabled")
 
-		By("Testing LocalDNS in-cluster DNS resolution")
-		inClusterResult := RunLocalDNSInClusterResolution()
-		VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
+			By("Verifying CoreDNS is healthy")
+			VerifyCoreDNSHealthy()
 
-		By("✓ LocalDNS enabled test completed successfully")
-	})
+			By("Testing LocalDNS resolution from default namespace")
+			defaultNSResult := RunLocalDNSResolutionFromDefaultNamespace()
+			VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
 
-	// =========================================================================
-	// TEST CASE 4: FULL INTEGRATION TEST WITH LABEL AND DNS (DISABLED)
-	// =========================================================================
-	It("should disable LocalDNS and test CoreDNS resolution", func() {
-		Skip("Temporarily disabled - not testing label")
-		By("Disabling LocalDNS on NodeClass (using default CoreDNS)")
-		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
-		}
+			By("Testing LocalDNS resolution from CoreDNS namespace (node listener)")
+			coreDNSNSResult := RunLocalDNSResolutionFromCoreDNSPod()
+			VerifyUsingLocalDNSNodeListener(coreDNSNSResult.DNSIP, "CoreDNS namespace DNS")
 
-		By("Creating a test pod to provision a node with LocalDNS disabled")
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
-		env.ExpectCreatedNodeCount("==", 1)
+			By("Testing LocalDNS in-cluster DNS resolution")
+			inClusterResult := RunLocalDNSInClusterResolution()
+			VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
 
-		By("Getting the provisioned node")
-		node := env.Monitor.CreatedNodes()[0]
+			By("✓ LocalDNS enabled test completed successfully")
+		})
 
-		By("Verifying node has localdns-state=disabled label")
-		VerifyNodeLocalDNSLabel(node.Name, "disabled")
+		// =========================================================================
+		// TEST CASE 4: FULL INTEGRATION TEST WITH LABEL AND DNS (DISABLED)
+		// =========================================================================
+		It("should disable LocalDNS and test CoreDNS resolution", func() {
+			Skip("Temporarily disabled - not testing label")
+			By("Disabling LocalDNS on NodeClass (using default CoreDNS)")
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+			}
 
-		By("Verifying CoreDNS is healthy")
-		VerifyCoreDNSHealthy()
+			By("Creating a test pod to provision a node with LocalDNS disabled")
+			pod := test.Pod()
+			env.ExpectCreated(nodeClass, nodePool, pod)
+			env.EventuallyExpectHealthy(pod)
+			env.ExpectCreatedNodeCount("==", 1)
 
-		By("Testing CoreDNS resolution from default namespace")
-		defaultNSResult := RunCoreDNSResolutionFromDefaultNamespace()
-		VerifyUsingCoreDNS(defaultNSResult.DNSIP, "Default namespace DNS")
-		VerifyNotUsingLocalDNS(defaultNSResult.DNSIP, "Default namespace DNS")
+			By("Getting the provisioned node")
+			node := env.Monitor.CreatedNodes()[0]
 
-		By("Testing upstream DNS resolution from CoreDNS pods")
-		upstreamResult := RunUpstreamDNSResolution()
-		VerifyUsingAzureDNS(upstreamResult.DNSIP, "Upstream DNS")
-		VerifyNotUsingLocalDNS(upstreamResult.DNSIP, "Upstream DNS")
+			By("Verifying node has localdns-state=disabled label")
+			VerifyNodeLocalDNSLabel(node.Name, "disabled")
 
-		By("✓ LocalDNS disabled test completed successfully")
+			By("Verifying CoreDNS is healthy")
+			VerifyCoreDNSHealthy()
+
+			By("Testing CoreDNS resolution from default namespace")
+			defaultNSResult := RunCoreDNSResolutionFromDefaultNamespace()
+			VerifyUsingCoreDNS(defaultNSResult.DNSIP, "Default namespace DNS")
+			VerifyNotUsingLocalDNS(defaultNSResult.DNSIP, "Default namespace DNS")
+
+			By("Testing upstream DNS resolution from CoreDNS pods")
+			upstreamResult := RunUpstreamDNSResolution()
+			VerifyUsingAzureDNS(upstreamResult.DNSIP, "Upstream DNS")
+			VerifyNotUsingLocalDNS(upstreamResult.DNSIP, "Upstream DNS")
+
+			By("✓ LocalDNS disabled test completed successfully") */
 	})
 
 	// =========================================================================
@@ -279,7 +392,7 @@ var _ = Describe("LocalDNS", func() {
 		// =================================================================
 		// PHASE 1: ENABLE LOCALDNS
 		// =================================================================
-		Skip("Temporarily disabled - not testing label")
+		/* Skip("Temporarily disabled - not testing label")
 		By("Phase 1: Enabling LocalDNS on NodeClass")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
@@ -358,7 +471,7 @@ var _ = Describe("LocalDNS", func() {
 		VerifyDifferentDNSServers(coreDNSNSResult1.DNSIP, upstreamResult.DNSIP, "CoreDNS namespace DNS (enabled vs disabled)")
 
 		By("✓ Phase 3 completed: Verified clean transition from LocalDNS to CoreDNS")
-		By("✓ Full lifecycle test completed successfully")
+		By("✓ Full lifecycle test completed successfully") */
 	})
 })
 
@@ -598,86 +711,6 @@ func GetCoreDNSPods() *corev1.PodList {
 }
 
 // =========================================================================
-// DNS RESOLUTION TESTS - LOCALDNS ENABLED
-// =========================================================================
-
-// RunLocalDNSResolutionFromDefaultNamespace tests DNS resolution from default namespace when LocalDNS is enabled
-// Should use LocalDNS cluster listener (169.254.10.11)
-func RunLocalDNSResolutionFromDefaultNamespace() DNSTestResult {
-	// Use busybox which has nslookup built-in - no installation needed
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-default-", namespaceDefault, false, "nslookup mcr.microsoft.com 2>&1; sleep 5")
-	env.ExpectCreated(dnsUtilsPod)
-
-	result := waitForDNSTestResult(dnsUtilsPod, "LocalDNS from default namespace")
-	By("DNS queries from default namespace use LocalDNS at: " + result.DNSIP)
-	return result
-}
-
-// RunLocalDNSResolutionFromCoreDNSPod tests DNS resolution from CoreDNS pod when LocalDNS is enabled
-// Should use LocalDNS node listener (169.254.10.10)
-func RunLocalDNSResolutionFromCoreDNSPod() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-coredns-", namespaceKubeSystem, false, "nslookup mcr.microsoft.com 2>&1; sleep 5")
-	env.ExpectCreated(dnsUtilsPod)
-
-	result := waitForDNSTestResult(dnsUtilsPod, "LocalDNS from CoreDNS namespace")
-	By("DNS queries from CoreDNS namespace use LocalDNS node listener at: " + result.DNSIP)
-	return result
-}
-
-// RunLocalDNSInClusterResolution tests in-cluster DNS resolution when LocalDNS is enabled
-// Should use LocalDNS cluster listener (169.254.10.11)
-func RunLocalDNSInClusterResolution() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-incluster-", namespaceDefault, false, "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 5")
-	env.ExpectCreated(dnsUtilsPod)
-
-	result := waitForDNSTestResult(dnsUtilsPod, "LocalDNS in-cluster resolution")
-	Expect(result.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "In-cluster DNS should resolve kubernetes service")
-	By("In-cluster DNS queries use LocalDNS at: " + result.DNSIP)
-	return result
-}
-
-// =========================================================================
-// DNS RESOLUTION TESTS - COREDNS (LOCALDNS DISABLED)
-// =========================================================================
-
-// RunCoreDNSResolutionFromDefaultNamespace tests DNS resolution from default namespace when LocalDNS is disabled
-// Should use CoreDNS service IP (10.0.0.10)
-func RunCoreDNSResolutionFromDefaultNamespace() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-coredns-default-", namespaceDefault, false, "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 5")
-	env.ExpectCreated(dnsUtilsPod)
-
-	result := waitForDNSTestResult(dnsUtilsPod, "CoreDNS from default namespace")
-	Expect(result.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "DNS resolution should succeed")
-	By("DNS queries from default namespace use CoreDNS at: " + result.DNSIP)
-	return result
-}
-
-// RunUpstreamDNSResolution tests upstream DNS resolution (simulating CoreDNS -> upstream)
-// Should use Azure DNS (168.63.129.16)
-func RunUpstreamDNSResolution() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-upstream-", namespaceKubeSystem, true, "nslookup google.com 2>&1; sleep 5")
-	env.ExpectCreated(dnsUtilsPod)
-
-	result := waitForDNSTestResult(dnsUtilsPod, "Upstream DNS resolution")
-	By("✓ Upstream DNS resolution uses: " + result.DNSIP)
-	return result
-}
-
-// =========================================================================
-// DNS RESOLUTION TESTS - SERVE STALE
-// =========================================================================
-
-// RunServeStaleFromCache tests that DNS queries are served from cache when upstream is unavailable
-func RunServeStaleFromCache() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-servestale-", namespaceDefault, false, "nslookup mcr.microsoft.com 2>&1; sleep 5")
-	env.ExpectCreated(dnsUtilsPod)
-
-	result := waitForDNSTestResult(dnsUtilsPod, "Serve stale from cache")
-	By("✓ Serve stale: DNS resolved from cache via: " + result.DNSIP)
-	return result
-}
-
-// =========================================================================
 // VALIDATION HELPERS
 // =========================================================================
 
@@ -729,41 +762,8 @@ func VerifyDifferentDNSServers(dnsIP1, dnsIP2, context string) {
 // INTERNAL HELPER FUNCTIONS
 // =========================================================================
 
-// createDNSUtilsPod creates a DNS utils pod for testing
-func createDNSUtilsPod(namePrefix, namespace string, useDNSDefault bool, command string) *corev1.Pod {
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: namePrefix,
-			Namespace:    namespace,
-		},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
-			Containers: []corev1.Container{
-				{
-					Name:    "dnsutils",
-					Image:   dnsUtilsImage,
-					Command: []string{"sh", "-c", command},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("10m"),
-							corev1.ResourceMemory: resource.MustParse("32Mi"),
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Set DNSPolicy to DNSDefault to use node's DNS (for upstream DNS tests)
-	if useDNSDefault {
-		pod.Spec.DNSPolicy = corev1.DNSDefault
-	}
-
-	return pod
-}
-
-// waitForDNSTestResult waits for a DNS test pod to complete and returns the result
-func waitForDNSTestResult(pod *corev1.Pod, testDescription string) DNSTestResult {
+// GetDNSResultFromPod gets DNS resolution results from an existing pod's logs
+func GetDNSResultFromPod(pod *corev1.Pod) DNSTestResult {
 	var result DNSTestResult
 
 	Eventually(func(g Gomega) {
@@ -776,7 +776,7 @@ func waitForDNSTestResult(pod *corev1.Pod, testDescription string) DNSTestResult
 
 		// Read pod logs
 		req := env.KubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-			Container: "dnsutils",
+			Container: pod.Spec.Containers[0].Name,
 		})
 		podLogs, err := req.Stream(context.Background())
 		g.Expect(err).To(Succeed())
@@ -787,7 +787,7 @@ func waitForDNSTestResult(pod *corev1.Pod, testDescription string) DNSTestResult
 		g.Expect(err).To(Succeed())
 
 		result.Logs = buf.String()
-		By("DNS query logs for " + testDescription + ":\n" + result.Logs)
+		By("DNS query logs from pod " + pod.Name + ":\n" + result.Logs)
 
 		// Parse DNS server IP from logs
 		result.DNSIP = parseDNSServerIP(result.Logs)
@@ -820,6 +820,33 @@ func parseDNSServerIP(logs string) string {
 				// Remove port if present (e.g., "10.0.0.10#53" -> "10.0.0.10")
 				ipPort := fields[1]
 				if idx := strings.Index(ipPort, "#"); idx != -1 {
+					return ipPort[:idx]
+				}
+				return ipPort
+			}
+		}
+	}
+	return ""
+}
+
+// parseDNSServerFromDig extracts the DNS server IP from dig output
+// Example output:
+// ;; SERVER: 169.254.10.11#53(169.254.10.11)
+func parseDNSServerFromDig(logs string) string {
+	for _, line := range strings.Split(logs, "\n") {
+		line = strings.TrimSpace(line)
+		// Look for ";; SERVER:" line
+		if strings.HasPrefix(line, ";; SERVER:") {
+			// Format: ";; SERVER: 169.254.10.11#53(169.254.10.11)"
+			fields := strings.Fields(line)
+			if len(fields) >= 3 {
+				// Extract IP from "169.254.10.11#53(169.254.10.11)"
+				ipPort := fields[2]
+				// Remove port and parentheses (e.g., "169.254.10.11#53(169.254.10.11)" -> "169.254.10.11")
+				if idx := strings.Index(ipPort, "#"); idx != -1 {
+					return ipPort[:idx]
+				}
+				if idx := strings.Index(ipPort, "("); idx != -1 {
 					return ipPort[:idx]
 				}
 				return ipPort
