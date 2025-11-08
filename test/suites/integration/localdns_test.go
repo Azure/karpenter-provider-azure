@@ -356,7 +356,7 @@ const (
 	coreDNSServiceIP = "10.0.0.10"     // Default CoreDNS service IP in AKS
 
 	// Images
-	dnsUtilsImage = "mcr.microsoft.com/oss/kubernetes/dnsutils:1.3"
+	dnsUtilsImage = "mcr.microsoft.com/aks/devinfra/base-os-runtime-dnsutils:master.251024.1"
 
 	// Namespaces
 	namespaceDefault    = "default"
