@@ -356,7 +356,7 @@ const (
 	coreDNSServiceIP = "10.0.0.10"     // Default CoreDNS service IP in AKS
 
 	// Images
-	dnsUtilsImage = "mcr.microsoft.com/aks/devinfra/base-os-runtime-dnsutils:master.251024.1"
+	dnsUtilsImage = "registry.k8s.io/e2e-test-images/agnhost:2.39"
 
 	// Namespaces
 	namespaceDefault    = "default"
@@ -588,7 +588,7 @@ func GetCoreDNSPods() *corev1.PodList {
 // RunLocalDNSResolutionFromDefaultNamespace tests DNS resolution from default namespace when LocalDNS is enabled
 // Should use LocalDNS cluster listener (169.254.10.11)
 func RunLocalDNSResolutionFromDefaultNamespace() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-default-", namespaceDefault, false, "nslookup mcr.microsoft.com 2>&1; sleep 5")
+	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-default-", namespaceDefault, false, "dig +short +identify mcr.microsoft.com; sleep 5")
 	env.ExpectCreated(dnsUtilsPod)
 
 	result := waitForDNSTestResult(dnsUtilsPod, "LocalDNS from default namespace")
@@ -599,7 +599,7 @@ func RunLocalDNSResolutionFromDefaultNamespace() DNSTestResult {
 // RunLocalDNSResolutionFromCoreDNSPod tests DNS resolution from CoreDNS pod when LocalDNS is enabled
 // Should use LocalDNS node listener (169.254.10.10)
 func RunLocalDNSResolutionFromCoreDNSPod() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-coredns-", namespaceKubeSystem, false, "nslookup mcr.microsoft.com 2>&1; sleep 5")
+	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-coredns-", namespaceKubeSystem, false, "dig +short +identify mcr.microsoft.com; sleep 5")
 	env.ExpectCreated(dnsUtilsPod)
 
 	result := waitForDNSTestResult(dnsUtilsPod, "LocalDNS from CoreDNS namespace")
@@ -610,11 +610,11 @@ func RunLocalDNSResolutionFromCoreDNSPod() DNSTestResult {
 // RunLocalDNSInClusterResolution tests in-cluster DNS resolution when LocalDNS is enabled
 // Should use LocalDNS cluster listener (169.254.10.11)
 func RunLocalDNSInClusterResolution() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-incluster-", namespaceDefault, false, "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 5")
+	dnsUtilsPod := createDNSUtilsPod("dnsutils-localdns-incluster-", namespaceDefault, false, "dig +short +identify kubernetes.default.svc.cluster.local; sleep 5")
 	env.ExpectCreated(dnsUtilsPod)
 
 	result := waitForDNSTestResult(dnsUtilsPod, "LocalDNS in-cluster resolution")
-	Expect(result.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "In-cluster DNS should resolve Kubernetes services")
+	Expect(result.Logs).To(ContainSubstring("10."), "In-cluster DNS should resolve to cluster IP")
 	By("In-cluster DNS queries use LocalDNS at: " + result.DNSIP)
 	return result
 }
@@ -626,11 +626,11 @@ func RunLocalDNSInClusterResolution() DNSTestResult {
 // RunCoreDNSResolutionFromDefaultNamespace tests DNS resolution from default namespace when LocalDNS is disabled
 // Should use CoreDNS service IP (10.0.0.10)
 func RunCoreDNSResolutionFromDefaultNamespace() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-coredns-default-", namespaceDefault, false, "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 5")
+	dnsUtilsPod := createDNSUtilsPod("dnsutils-coredns-default-", namespaceDefault, false, "dig +short +identify kubernetes.default.svc.cluster.local; sleep 5")
 	env.ExpectCreated(dnsUtilsPod)
 
 	result := waitForDNSTestResult(dnsUtilsPod, "CoreDNS from default namespace")
-	Expect(result.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "DNS resolution should succeed")
+	Expect(result.Logs).To(ContainSubstring("10."), "DNS resolution should succeed with cluster IP")
 	By("DNS queries from default namespace use CoreDNS at: " + result.DNSIP)
 	return result
 }
@@ -638,7 +638,7 @@ func RunCoreDNSResolutionFromDefaultNamespace() DNSTestResult {
 // RunUpstreamDNSResolution tests upstream DNS resolution (simulating CoreDNS -> upstream)
 // Should use Azure DNS (168.63.129.16)
 func RunUpstreamDNSResolution() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-upstream-", namespaceKubeSystem, true, "nslookup google.com 2>&1; sleep 5")
+	dnsUtilsPod := createDNSUtilsPod("dnsutils-upstream-", namespaceKubeSystem, true, "dig +short +identify google.com; sleep 5")
 	env.ExpectCreated(dnsUtilsPod)
 
 	result := waitForDNSTestResult(dnsUtilsPod, "Upstream DNS resolution")
@@ -652,7 +652,7 @@ func RunUpstreamDNSResolution() DNSTestResult {
 
 // RunServeStaleFromCache tests that DNS queries are served from cache when upstream is unavailable
 func RunServeStaleFromCache() DNSTestResult {
-	dnsUtilsPod := createDNSUtilsPod("dnsutils-servestale-", namespaceDefault, false, "nslookup mcr.microsoft.com 2>&1; sleep 5")
+	dnsUtilsPod := createDNSUtilsPod("dnsutils-servestale-", namespaceDefault, false, "dig +short +identify mcr.microsoft.com; sleep 5")
 	env.ExpectCreated(dnsUtilsPod)
 
 	result := waitForDNSTestResult(dnsUtilsPod, "Serve stale from cache")
@@ -782,18 +782,18 @@ func waitForDNSTestResult(pod *corev1.Pod, testDescription string) DNSTestResult
 	return result
 }
 
-// parseDNSServerIP extracts the DNS server IP from nslookup output
+// parseDNSServerIP extracts the DNS server IP from dig +short +identify output
+// Example output: "142.250.185.46 from server 169.254.10.11 in 5 ms"
 func parseDNSServerIP(logs string) string {
 	for _, line := range strings.Split(logs, "\n") {
-		if strings.Contains(line, "Server:") || strings.Contains(line, "Address:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				ipPort := fields[len(fields)-1]
-				// Remove port if present (e.g., "10.0.0.10:53" -> "10.0.0.10")
-				ip := strings.Split(ipPort, ":")[0]
-				// Skip comment lines (e.g., "Address: 10.0.0.10#53")
-				if !strings.Contains(ip, "#") {
-					return ip
+		if strings.Contains(line, "from server") {
+			// Extract IP after "from server"
+			parts := strings.Split(line, "from server")
+			if len(parts) >= 2 {
+				// Get the IP (next field after "from server")
+				fields := strings.Fields(parts[1])
+				if len(fields) >= 1 {
+					return fields[0]
 				}
 			}
 		}
