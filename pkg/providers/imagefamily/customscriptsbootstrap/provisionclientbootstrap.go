@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/samber/lo"
@@ -76,6 +77,18 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		return "", "", fmt.Errorf("constructProvisionValues failed with error: %w", err)
 	}
 
+	// DEBUG: Log LocalDNS configuration being sent to NPS
+	if provisionValues != nil && provisionValues.ProvisionProfile != nil {
+		if provisionValues.ProvisionProfile.LocalDNSProfile != nil {
+			fmt.Printf("DEBUG: Sending LocalDNSProfile to NPS: mode=%v, vnetOverrides=%d, kubeOverrides=%d\n",
+				provisionValues.ProvisionProfile.LocalDNSProfile.Mode,
+				len(provisionValues.ProvisionProfile.LocalDNSProfile.VnetDNSOverrides),
+				len(provisionValues.ProvisionProfile.LocalDNSProfile.KubeDNSOverrides))
+		} else {
+			fmt.Printf("DEBUG: LocalDNSProfile is NIL - not being sent to NPS!\n")
+		}
+	}
+
 	if p.NodeBootstrappingProvider == nil {
 		return "", "", fmt.Errorf("nodeBootstrapping provider is not initialized")
 	}
@@ -83,6 +96,20 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	if err != nil {
 		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisited along with retriable status on the server side.
 		return "", "", fmt.Errorf("nodeBootstrapping.Get failed with error: %w", err)
+	}
+
+	// DEBUG: Log what NPS returned
+	fmt.Printf("DEBUG: NPS returned CustomData length=%d, CSE length=%d\n",
+		len(nodeBootstrapping.CustomDataEncodedDehydratable),
+		len(nodeBootstrapping.CSEDehydratable))
+
+	// DEBUG: Check if CSE contains LocalDNS configuration
+	if strings.Contains(nodeBootstrapping.CSEDehydratable, "localdns") ||
+		strings.Contains(nodeBootstrapping.CSEDehydratable, "LocalDNS") ||
+		strings.Contains(nodeBootstrapping.CSEDehydratable, "169.254.10") {
+		fmt.Printf("DEBUG: ✓ CSE script contains LocalDNS configuration!\n")
+	} else {
+		fmt.Printf("DEBUG: ✗ CSE script does NOT contain LocalDNS configuration!\n")
 	}
 
 	customDataHydrated, cseHydrated, err := hydrateBootstrapTokenIfNeeded(nodeBootstrapping.CustomDataEncodedDehydratable, nodeBootstrapping.CSEDehydratable, p.KubeletClientTLSBootstrapToken)
