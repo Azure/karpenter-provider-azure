@@ -103,6 +103,10 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		len(nodeBootstrapping.CustomDataEncodedDehydratable),
 		len(nodeBootstrapping.CSEDehydratable))
 
+	// DEBUG: Print the full CSE script
+	fmt.Printf("DEBUG: ========== CSE SCRIPT START ==========\n%s\n========== CSE SCRIPT END ==========\n",
+		nodeBootstrapping.CSEDehydratable)
+
 	// DEBUG: Check if CSE contains LocalDNS configuration
 	if strings.Contains(nodeBootstrapping.CSEDehydratable, "localdns") ||
 		strings.Contains(nodeBootstrapping.CSEDehydratable, "LocalDNS") ||
