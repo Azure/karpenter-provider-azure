@@ -109,9 +109,9 @@ something can be added as a requirement we should keep that in mind.
 Here's a (probably not exhaustive) list of labels that AKS writes.
 The ones that I think Karpenter should allow scheduling on (but doesn't currently) are **in bold**.
 
-**Note**: AKS (observed or code) means we see the label written on nodes im practice by AKS. This doesn't necessarily mean that the AKS service writes every single one of these labels. Some of them are written directly
-by Kubelet with with integration from Azure CloudProvider, such as `topology.kubernetes.io/zone`, see [pkg/provider/azure_zones.go](https://github.com/kubernetes-sigs/cloud-provider-azure/blob/master/pkg/provider/azure_zones.go)
-for more details.
+**Note**: AKS (observed or code) means we see the label written on nodes im practice by AKS. This doesn't necessarily mean that the AKS service writes every single one of these labels. Some of them are written by other components such
+as directly CloudProvider [node controller](https://github.com/kubernetes/kubernetes/blob/d777de7741d36d1cc465162d94f39200e299070b/staging/src/k8s.io/cloud-provider/controllers/node/node_controller.go#L490). There may also be other
+label writers as well.
 
 | Label                                                   | AKS (documented) | AKS (observed or code) | Karpenter (schedulable) | Karpenter (written to node) | Notes                                                                                   |
 | ------------------------------------------------------- | ---------------- | ---------------------- | ----------------------- | --------------------------- | --------------------------------------------------------------------------------------- |
@@ -257,8 +257,8 @@ Machine API is not that far away, and we already write most critical labels. Som
 
 ## FAQ
 
-### How do the labels get onto the Node?
-There are currently two paths for labels to get onto the node:
+### How do Karpenter labels get onto the Node?
+There are currently two paths for Karpenter labels to get onto the node:
 * Written by Karpenter core onto the node object.
 * Written by Kubelet onto the node object (configured by the Azure Karpenter provider)
 
