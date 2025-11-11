@@ -54,6 +54,7 @@ type Provider struct {
 	onDemandPrices     map[string]float64
 	spotUpdateTime     time.Time
 	spotPrices         map[string]float64
+	done               chan struct{}
 }
 
 type Err struct {
@@ -90,6 +91,7 @@ func NewProvider(
 		spotPrices: staticPricing,
 		pricing:    pricing,
 		cm:         pretty.NewChangeMonitor(),
+		done:       make(chan struct{}),
 	}
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName("pricing").WithValues("region", region))
 
@@ -105,6 +107,7 @@ func NewProvider(
 			select {
 			case <-startAsync:
 			case <-ctx.Done():
+				close(p.done)
 				return
 			}
 			// if it took many hours to be elected leader, we want to re-fetch pricing before we start our periodic
@@ -116,12 +119,15 @@ func NewProvider(
 			for {
 				select {
 				case <-ctx.Done():
+					close(p.done)
 					return
 				case <-time.After(pricingUpdatePeriod):
 					p.updatePricing(ctx)
 				}
 			}
 		}()
+	} else {
+		close(p.done) // done immediately
 	}
 	return p
 }
@@ -340,6 +346,16 @@ func (p *Provider) Reset() {
 	defer p.mu.Unlock()
 	p.onDemandPrices = staticPricing
 	p.onDemandUpdateTime = initialPriceUpdate
+}
+
+// WaitUntilDone should be called after canceling the context passed to NewProvider to wait until all goroutines have exited
+func (p *Provider) WaitUntilDone() error {
+	select {
+	case <-p.done:
+		return nil
+	case <-time.After(5 * time.Second):
+		return errors.New("timeout waiting for pricing provider to shut down")
+	}
 }
 
 func Regions() []string {
