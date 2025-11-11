@@ -106,7 +106,7 @@ var _ = Describe("LocalDNS", func() {
 
 		// Add a unique label to the nodePool to ensure a new node is provisioned
 		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-			"testing.karpenter.sh/test-id": "localdns-enabled",
+			"test.karpenter.azure.com/localdns-test-id": "localdns-enabled",
 		})
 
 		By("Creating DNS test pod in default namespace to provision node with LocalDNS")
@@ -119,7 +119,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			NodeSelector: map[string]string{
-				"testing.karpenter.sh/test-id": "localdns-enabled",
+				"test.karpenter.azure.com/localdns-test-id": "localdns-enabled",
 			},
 			Tolerations: []corev1.Toleration{
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
@@ -156,7 +156,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			NodeSelector: map[string]string{
-				"testing.karpenter.sh/test-id": "localdns-enabled",
+				"test.karpenter.azure.com/localdns-test-id": "localdns-enabled",
 			},
 			Tolerations: []corev1.Toleration{
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
@@ -189,7 +189,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			NodeSelector: map[string]string{
-				"testing.karpenter.sh/test-id": "localdns-enabled",
+				"test.karpenter.azure.com/localdns-test-id": "localdns-enabled",
 			},
 			Tolerations: []corev1.Toleration{
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
@@ -233,7 +233,7 @@ var _ = Describe("LocalDNS", func() {
 
 		// Add a unique label to the nodePool to ensure a new node is provisioned
 		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-			"testing.karpenter.sh/test-id": "localdns-disabled",
+			"test.karpenter.azure.com/localdns-test-id": "localdns-disabled",
 		})
 
 		By("Creating DNS test pod in default namespace to provision node with LocalDNS disabled")
@@ -246,7 +246,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			NodeSelector: map[string]string{
-				"testing.karpenter.sh/test-id": "localdns-disabled",
+				"test.karpenter.azure.com/localdns-test-id": "localdns-disabled",
 			},
 			Tolerations: []corev1.Toleration{
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
@@ -294,7 +294,7 @@ var _ = Describe("LocalDNS", func() {
 
 		// Add a unique label to the nodePool to ensure a new node is provisioned
 		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-			"testing.karpenter.sh/test-id": "localdns-enabled-dig",
+			"test.karpenter.azure.com/localdns-test-id": "localdns-enabled-dig",
 		})
 
 		By("Creating DNS test pod with agnhost image to provision node with LocalDNS")
@@ -307,7 +307,7 @@ var _ = Describe("LocalDNS", func() {
 			Command:       []string{"sh", "-c", "dig mcr.microsoft.com 2>&1; sleep 3600"},
 			RestartPolicy: corev1.RestartPolicyNever,
 			NodeSelector: map[string]string{
-				"testing.karpenter.sh/test-id": "localdns-enabled-dig",
+				"test.karpenter.azure.com/localdns-test-id": "localdns-enabled-dig",
 			},
 			Tolerations: []corev1.Toleration{
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
