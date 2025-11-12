@@ -122,6 +122,7 @@ var _ = Describe("LocalDNS", func() {
 				"localdns-test-id": "localdns-enabled",
 			},
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
@@ -159,6 +160,7 @@ var _ = Describe("LocalDNS", func() {
 				"localdns-test-id": "localdns-enabled",
 			},
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
@@ -192,6 +194,7 @@ var _ = Describe("LocalDNS", func() {
 				"localdns-test-id": "localdns-enabled",
 			},
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
@@ -249,6 +252,7 @@ var _ = Describe("LocalDNS", func() {
 				"localdns-test-id": "localdns-disabled",
 			},
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
@@ -310,6 +314,7 @@ var _ = Describe("LocalDNS", func() {
 				"localdns-test-id": "localdns-enabled-dig",
 			},
 			Tolerations: []corev1.Toleration{
+				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
 				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
 				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
