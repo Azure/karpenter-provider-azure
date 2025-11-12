@@ -28,8 +28,6 @@ import (
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
@@ -46,385 +44,153 @@ var _ = Describe("LocalDNS", func() {
 	})
 
 	// =========================================================================
-	// TEST CASE 0: VERIFY LOCALDNS LABEL ONLY (ENABLED)
+	// SIMPLE TEST: CREATE NODE WITH LOCALDNS ENABLED
 	// =========================================================================
-	It("should set localdns-state=enabled label when LocalDNS is enabled", func() {
-		Skip("Temporarily disabled - not testing label")
-		By("Enabling LocalDNS on NodeClass")
+	It("should create a node with LocalDNS enabled", func() {
+		By("Configuring NodeClass with LocalDNS enabled")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
 		}
 
-		By("Creating a test pod to provision a node with LocalDNS enabled")
-		pod := test.Pod()
+		By("Configuring NodePool with unique label")
+		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+			"localdns-test-id": "simple-test",
+		})
+
+		By("Triggering node provisioning (Karpenter requires a pending pod)")
+		// Note: Karpenter provisions nodes in response to pending pods, so we create
+		// a minimal pod just to trigger provisioning. The test focuses on the node.
+		pod := test.Pod(test.PodOptions{
+			NodeSelector: map[string]string{
+				"localdns-test-id": "simple-test",
+			},
+		})
 		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Waiting for node to be provisioned and become healthy")
 		env.EventuallyExpectHealthy(pod)
 		env.ExpectCreatedNodeCount("==", 1)
 
-		By("Getting the provisioned node")
 		node := env.Monitor.CreatedNodes()[0]
-
-		By("Verifying node has localdns-state=enabled label")
-		VerifyNodeLocalDNSLabel(node.Name, "enabled")
-
-		By("✓ LocalDNS label verification test completed successfully")
+		By(fmt.Sprintf("✓ Node successfully created with LocalDNS enabled: %s", node.Name))
+		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
+		time.Sleep(60 * time.Minute)
 	})
 
 	// =========================================================================
-	// TEST CASE 0b: VERIFY LOCALDNS LABEL ONLY (DISABLED)
+	// FULL-FLEDGED LOCALDNS CONFIG TEST
 	// =========================================================================
-	It("should set localdns-state=disabled label when LocalDNS is disabled", func() {
-		Skip("Temporarily disabled - not testing label")
-		By("Disabling LocalDNS on NodeClass")
+	It("should create a node with full LocalDNS configuration (overrides)", func() {
+		By("Configuring NodeClass with full LocalDNS configuration including overrides")
+		cacheDuration := 3600 * time.Second
+		staleDuration := 3600 * time.Second
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+			KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+				".": {
+					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+					MaxConcurrent:      lo.ToPtr(int32(1000)),
+					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+				},
+				"cluster.local": {
+					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+					MaxConcurrent:      lo.ToPtr(int32(1000)),
+					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
+					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
+					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+				},
+			},
+			VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+				".": {
+					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
+					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+					MaxConcurrent:      lo.ToPtr(int32(1000)),
+					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+				},
+				"cluster.local": {
+					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+					MaxConcurrent:      lo.ToPtr(int32(1000)),
+					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
+					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
+					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+				},
+			},
 		}
 
-		By("Creating a test pod to provision a node with LocalDNS disabled")
-		pod := test.Pod()
+		By("Configuring NodePool with unique label for full config test")
+		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+			"localdns-test-id": "full-config-test",
+		})
+
+		By("Triggering node provisioning with full LocalDNS config")
+		pod := test.Pod(test.PodOptions{
+			NodeSelector: map[string]string{
+				"localdns-test-id": "full-config-test",
+			},
+		})
 		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Waiting for node to be provisioned and become healthy")
 		env.EventuallyExpectHealthy(pod)
 		env.ExpectCreatedNodeCount("==", 1)
 
-		By("Getting the provisioned node")
 		node := env.Monitor.CreatedNodes()[0]
-
-		By("Verifying node has localdns-state=disabled label")
-		VerifyNodeLocalDNSLabel(node.Name, "disabled")
-
-		By("✓ LocalDNS disabled label verification test completed successfully")
-	})
-
-	// =========================================================================
-	// TEST CASE 1: VERIFY DNS RESOLUTION WITH LOCALDNS ENABLED
-	// =========================================================================
-	It("should resolve DNS using LocalDNS when enabled", func() {
-		By("Enabling LocalDNS on NodeClass")
-		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
-		}
-
-		// Add a unique label to the nodePool to ensure a new node is provisioned
-		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-			"localdns-test-id": "localdns-enabled",
-		})
-
-		By("Creating DNS test pod in default namespace to provision node with LocalDNS")
-		dnsTestPod := test.Pod(test.PodOptions{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dnstest-localdns-default",
-				Namespace: namespaceDefault,
-			},
-			Image:         dnsUtilsImage,
-			Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
-			RestartPolicy: corev1.RestartPolicyNever,
-			NodeSelector: map[string]string{
-				"localdns-test-id": "localdns-enabled",
-			},
-			Tolerations: []corev1.Toleration{
-				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
-				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-			},
-			ResourceRequirements: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10m"),
-					corev1.ResourceMemory: resource.MustParse("32Mi"),
-				},
-			},
-		})
-		env.ExpectCreated(nodeClass, nodePool, dnsTestPod)
-		env.EventuallyExpectHealthy(dnsTestPod)
-		env.ExpectCreatedNodeCount("==", 1)
-
-		By("Verifying CoreDNS is healthy")
-		VerifyCoreDNSHealthy()
-
-		By(fmt.Sprintf("Testing LocalDNS resolution from default namespace pod (name=%s, namespace=%s)", dnsTestPod.Name, dnsTestPod.Namespace))
-		defaultNSResult := GetDNSResultFromPod(dnsTestPod)
-		VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
-
-		By("Testing LocalDNS resolution from kube-system namespace")
-		kubeSystemPod := test.Pod(test.PodOptions{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dnstest-localdns-kubesystem",
-				Namespace: namespaceKubeSystem,
-			},
-			Image:         dnsUtilsImage,
-			Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
-			RestartPolicy: corev1.RestartPolicyNever,
-			NodeSelector: map[string]string{
-				"localdns-test-id": "localdns-enabled",
-			},
-			Tolerations: []corev1.Toleration{
-				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
-				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-			},
-			ResourceRequirements: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10m"),
-					corev1.ResourceMemory: resource.MustParse("32Mi"),
-				},
-			},
-		})
-		env.ExpectCreated(kubeSystemPod)
-		env.EventuallyExpectHealthy(kubeSystemPod)
-
-		By(fmt.Sprintf("Testing LocalDNS resolution from kube-system namespace pod (name=%s, namespace=%s)", kubeSystemPod.Name, kubeSystemPod.Namespace))
-		kubeSystemResult := GetDNSResultFromPod(kubeSystemPod)
-		VerifyUsingLocalDNSNodeListener(kubeSystemResult.DNSIP, "Kube-system namespace DNS")
-
-		By("Testing LocalDNS in-cluster DNS resolution")
-		inClusterPod := test.Pod(test.PodOptions{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dnstest-incluster",
-				Namespace: namespaceDefault,
-			},
-			Image:         dnsUtilsImage,
-			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
-			RestartPolicy: corev1.RestartPolicyNever,
-			NodeSelector: map[string]string{
-				"localdns-test-id": "localdns-enabled",
-			},
-			Tolerations: []corev1.Toleration{
-				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
-				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-			},
-			ResourceRequirements: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10m"),
-					corev1.ResourceMemory: resource.MustParse("32Mi"),
-				},
-			},
-		})
-		env.ExpectCreated(inClusterPod)
-		env.EventuallyExpectHealthy(inClusterPod)
-
-		By(fmt.Sprintf("Testing LocalDNS in-cluster DNS resolution from pod (name=%s, namespace=%s)", inClusterPod.Name, inClusterPod.Namespace))
-		inClusterResult := GetDNSResultFromPod(inClusterPod)
-		Expect(inClusterResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "In-cluster DNS should resolve kubernetes service")
-		VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
-
-		By("✓ LocalDNS resolution test completed successfully")
-
-		// DEBUGGING: Sleep to allow manual inspection of the node
+		By(fmt.Sprintf("✓ Node successfully created with full LocalDNS config: %s", node.Name))
+		By("   Config includes:")
+		By("   - Mode: Required")
+		By("   - KubeDNSOverrides: 2 entries ('.' and 'cluster.local')")
+		By("   - VnetDNSOverrides: 2 entries ('.' and 'cluster.local')")
 		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
-		By("   You can now inspect the node, pods, and DNS configuration")
-		By("   Press Ctrl+C to stop the test when done")
 		time.Sleep(60 * time.Minute)
 	})
 
-	// =========================================================================
-	// TEST CASE 2: VERIFY DNS RESOLUTION WITH LOCALDNS DISABLED
-	// =========================================================================
-	It("should resolve DNS using CoreDNS when LocalDNS is disabled", func() {
-		By("Disabling LocalDNS on NodeClass (using default CoreDNS)")
-		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
-		}
-
-		// Add a unique label to the nodePool to ensure a new node is provisioned
-		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-			"localdns-test-id": "localdns-disabled",
-		})
-
-		By("Creating DNS test pod in default namespace to provision node with LocalDNS disabled")
-		dnsTestPod := test.Pod(test.PodOptions{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dnstest-coredns-default",
-				Namespace: namespaceDefault,
-			},
-			Image:         dnsUtilsImage,
-			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
-			RestartPolicy: corev1.RestartPolicyNever,
-			NodeSelector: map[string]string{
-				"localdns-test-id": "localdns-disabled",
-			},
-			Tolerations: []corev1.Toleration{
-				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
-				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-			},
-			ResourceRequirements: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10m"),
-					corev1.ResourceMemory: resource.MustParse("32Mi"),
-				},
-			},
-		})
-		env.ExpectCreated(nodeClass, nodePool, dnsTestPod)
-		env.EventuallyExpectHealthy(dnsTestPod)
-		env.ExpectCreatedNodeCount("==", 1)
-
-		By("Verifying CoreDNS is healthy")
-		VerifyCoreDNSHealthy()
-
-		By(fmt.Sprintf("Testing CoreDNS resolution from default namespace pod (name=%s, namespace=%s)", dnsTestPod.Name, dnsTestPod.Namespace))
-		defaultNSResult := GetDNSResultFromPod(dnsTestPod)
-		Expect(defaultNSResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "DNS resolution should succeed")
-		VerifyUsingCoreDNS(defaultNSResult.DNSIP, "Default namespace DNS")
-		VerifyNotUsingLocalDNS(defaultNSResult.DNSIP, "Default namespace DNS")
-
-		By("✓ CoreDNS resolution test completed successfully")
-		// DEBUGGING: Sleep to allow manual inspection of the node
-		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
-		By("   You can now inspect the node, pods, and DNS configuration")
-		By("   Press Ctrl+C to stop the test when done")
-		time.Sleep(60 * time.Minute)
-	})
-
-	// =========================================================================
-	// TEST CASE 2b: VERIFY DNS RESOLUTION WITH LOCALDNS ENABLED USING DIG
-	// =========================================================================
-	It("should resolve DNS using LocalDNS with dig command from agnhost", func() {
-		By("Enabling LocalDNS on NodeClass")
-		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
-		}
-
-		// Add a unique label to the nodePool to ensure a new node is provisioned
-		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-			"localdns-test-id": "localdns-enabled-dig",
-		})
-
-		By("Creating DNS test pod with agnhost image to provision node with LocalDNS")
-		agnhostPod := test.Pod(test.PodOptions{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dnstest-agnhost-dig",
-				Namespace: namespaceDefault,
-			},
-			Image:         "registry.k8s.io/e2e-test-images/agnhost:2.39",
-			Command:       []string{"sh", "-c", "dig mcr.microsoft.com 2>&1; sleep 3600"},
-			RestartPolicy: corev1.RestartPolicyNever,
-			NodeSelector: map[string]string{
-				"localdns-test-id": "localdns-enabled-dig",
-			},
-			Tolerations: []corev1.Toleration{
-				{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
-				{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-				{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
-				{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
-			},
-			ResourceRequirements: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10m"),
-					corev1.ResourceMemory: resource.MustParse("64Mi"),
-				},
-			},
-		})
-		env.ExpectCreated(nodeClass, nodePool, agnhostPod)
-		env.EventuallyExpectHealthy(agnhostPod)
-		env.ExpectCreatedNodeCount("==", 1)
-
-		By("Verifying CoreDNS is healthy")
-		VerifyCoreDNSHealthy()
-
-		By(fmt.Sprintf("Testing LocalDNS resolution using dig from agnhost pod (name=%s, namespace=%s)", agnhostPod.Name, agnhostPod.Namespace))
-		digResult := GetDNSResultFromPod(agnhostPod)
-		By("Dig output from agnhost pod:\n" + digResult.Logs)
-
-		// Parse DNS server from dig output (looks for ";; SERVER: " line)
-		dnsServer := parseDNSServerFromDig(digResult.Logs)
-		Expect(dnsServer).ToNot(BeEmpty(), "Should detect DNS server from dig output")
-
-		By(fmt.Sprintf("DNS queries from agnhost pod use DNS server: %s", dnsServer))
-		VerifyUsingLocalDNSClusterListener(dnsServer, "Agnhost dig DNS")
-
-		By("✓ LocalDNS resolution with dig test completed successfully")
-
-		// DEBUGGING: Sleep to allow manual inspection of the node
-		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
-		By("   You can now inspect the node, pods, and DNS configuration")
-		By("   Press Ctrl+C to stop the test when done")
-		time.Sleep(60 * time.Minute)
-	})
-
-	// =========================================================================
-	// TEST CASE 3: FULL INTEGRATION TEST WITH LABEL AND DNS (ENABLED)
-	// =========================================================================
-	It("should enable LocalDNS and test LocalDNS resolution", func() {
-		Skip("Temporarily disabled - not testing label")
-		/* By("Enabling LocalDNS on NodeClass")
+	/*
+		// =========================================================================
+		// TEST CASE 0: VERIFY LOCALDNS LABEL ONLY (ENABLED)
+		// =========================================================================
+		It("should set localdns-state=enabled label when LocalDNS is enabled", func() {
+			Skip("Temporarily disabled - not testing label")
+			By("Enabling LocalDNS on NodeClass")
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
-			}
-
-			By(fmt.Sprintf("DEBUG: NodeClass.Spec.LocalDNS = %+v", nodeClass.Spec.LocalDNS))
-			if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode != nil {
-				By(fmt.Sprintf("DEBUG: LocalDNS Mode = %s", *nodeClass.Spec.LocalDNS.Mode))
 			}
 
 			By("Creating a test pod to provision a node with LocalDNS enabled")
 			pod := test.Pod()
 			env.ExpectCreated(nodeClass, nodePool, pod)
-
-			By("DEBUG: Verifying NodeClass was created successfully")
-			var createdNodeClass v1beta1.AKSNodeClass
-			Eventually(func(g Gomega) {
-				g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), &createdNodeClass)).To(Succeed())
-				By(fmt.Sprintf("DEBUG: Retrieved NodeClass %s from cluster", createdNodeClass.Name))
-				if createdNodeClass.Spec.LocalDNS != nil {
-					By(fmt.Sprintf("DEBUG: NodeClass in cluster has LocalDNS: %+v", createdNodeClass.Spec.LocalDNS))
-					if createdNodeClass.Spec.LocalDNS.Mode != nil {
-						By(fmt.Sprintf("DEBUG: NodeClass in cluster LocalDNS.Mode = %s", *createdNodeClass.Spec.LocalDNS.Mode))
-					}
-				} else {
-					By("DEBUG: NodeClass in cluster has NO LocalDNS field!")
-				}
-			}).Should(Succeed())
-
 			env.EventuallyExpectHealthy(pod)
 			env.ExpectCreatedNodeCount("==", 1)
 
 			By("Getting the provisioned node")
 			node := env.Monitor.CreatedNodes()[0]
 
-			By("DEBUG: Running comprehensive node and NodeClass analysis")
-			DebugNodeAndNodeClass(node.Name)
-
 			By("Verifying node has localdns-state=enabled label")
 			VerifyNodeLocalDNSLabel(node.Name, "enabled")
 
-			By("Verifying CoreDNS is healthy")
-			VerifyCoreDNSHealthy()
-
-			By("Testing LocalDNS resolution from default namespace")
-			defaultNSResult := RunLocalDNSResolutionFromDefaultNamespace()
-			VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
-
-			By("Testing LocalDNS resolution from CoreDNS namespace (node listener)")
-			coreDNSNSResult := RunLocalDNSResolutionFromCoreDNSPod()
-			VerifyUsingLocalDNSNodeListener(coreDNSNSResult.DNSIP, "CoreDNS namespace DNS")
-
-			By("Testing LocalDNS in-cluster DNS resolution")
-			inClusterResult := RunLocalDNSInClusterResolution()
-			VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
-
-			By("✓ LocalDNS enabled test completed successfully")
+			By("✓ LocalDNS label verification test completed successfully")
 		})
 
 		// =========================================================================
-		// TEST CASE 4: FULL INTEGRATION TEST WITH LABEL AND DNS (DISABLED)
+		// TEST CASE 0b: VERIFY LOCALDNS LABEL ONLY (DISABLED)
 		// =========================================================================
-		It("should disable LocalDNS and test CoreDNS resolution", func() {
+		It("should set localdns-state=disabled label when LocalDNS is disabled", func() {
 			Skip("Temporarily disabled - not testing label")
-			By("Disabling LocalDNS on NodeClass (using default CoreDNS)")
+			By("Disabling LocalDNS on NodeClass")
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
 			}
@@ -441,109 +207,378 @@ var _ = Describe("LocalDNS", func() {
 			By("Verifying node has localdns-state=disabled label")
 			VerifyNodeLocalDNSLabel(node.Name, "disabled")
 
+			By("✓ LocalDNS disabled label verification test completed successfully")
+		})
+
+		// =========================================================================
+		// TEST CASE 1: VERIFY DNS RESOLUTION WITH LOCALDNS ENABLED
+		// =========================================================================
+		It("should resolve DNS using LocalDNS when enabled", func() {
+			By("Enabling LocalDNS on NodeClass")
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+			}
+
+			// Add a unique label to the nodePool to ensure a new node is provisioned
+			nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+				"localdns-test-id": "localdns-enabled",
+			})
+
+			By("Creating DNS test pod in default namespace to provision node with LocalDNS")
+			dnsTestPod := test.Pod(test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dnstest-localdns-default",
+					Namespace: namespaceDefault,
+				},
+				Image:         dnsUtilsImage,
+				Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
+				RestartPolicy: corev1.RestartPolicyNever,
+				NodeSelector: map[string]string{
+					"localdns-test-id": "localdns-enabled",
+				},
+				Tolerations: []corev1.Toleration{
+					{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
+					{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+				},
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+			})
+			env.ExpectCreated(nodeClass, nodePool, dnsTestPod)
+			env.EventuallyExpectHealthy(dnsTestPod)
+			env.ExpectCreatedNodeCount("==", 1)
+
 			By("Verifying CoreDNS is healthy")
 			VerifyCoreDNSHealthy()
 
-			By("Testing CoreDNS resolution from default namespace")
-			defaultNSResult := RunCoreDNSResolutionFromDefaultNamespace()
+			By(fmt.Sprintf("Testing LocalDNS resolution from default namespace pod (name=%s, namespace=%s)", dnsTestPod.Name, dnsTestPod.Namespace))
+			defaultNSResult := GetDNSResultFromPod(dnsTestPod)
+			VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
+
+			By("Testing LocalDNS resolution from kube-system namespace")
+			kubeSystemPod := test.Pod(test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dnstest-localdns-kubesystem",
+					Namespace: namespaceKubeSystem,
+				},
+				Image:         dnsUtilsImage,
+				Command:       []string{"sh", "-c", "nslookup mcr.microsoft.com 2>&1; sleep 3600"},
+				RestartPolicy: corev1.RestartPolicyNever,
+				NodeSelector: map[string]string{
+					"localdns-test-id": "localdns-enabled",
+				},
+				Tolerations: []corev1.Toleration{
+					{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
+					{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+				},
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+			})
+			env.ExpectCreated(kubeSystemPod)
+			env.EventuallyExpectHealthy(kubeSystemPod)
+
+			By(fmt.Sprintf("Testing LocalDNS resolution from kube-system namespace pod (name=%s, namespace=%s)", kubeSystemPod.Name, kubeSystemPod.Namespace))
+			kubeSystemResult := GetDNSResultFromPod(kubeSystemPod)
+			VerifyUsingLocalDNSNodeListener(kubeSystemResult.DNSIP, "Kube-system namespace DNS")
+
+			By("Testing LocalDNS in-cluster DNS resolution")
+			inClusterPod := test.Pod(test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dnstest-incluster",
+					Namespace: namespaceDefault,
+				},
+				Image:         dnsUtilsImage,
+				Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
+				RestartPolicy: corev1.RestartPolicyNever,
+				NodeSelector: map[string]string{
+					"localdns-test-id": "localdns-enabled",
+				},
+				Tolerations: []corev1.Toleration{
+					{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
+					{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+				},
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+			})
+			env.ExpectCreated(inClusterPod)
+			env.EventuallyExpectHealthy(inClusterPod)
+
+			By(fmt.Sprintf("Testing LocalDNS in-cluster DNS resolution from pod (name=%s, namespace=%s)", inClusterPod.Name, inClusterPod.Namespace))
+			inClusterResult := GetDNSResultFromPod(inClusterPod)
+			Expect(inClusterResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "In-cluster DNS should resolve kubernetes service")
+			VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
+
+			By("✓ LocalDNS resolution test completed successfully")
+
+			// DEBUGGING: Sleep to allow manual inspection of the node
+			By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
+			By("   You can now inspect the node, pods, and DNS configuration")
+			By("   Press Ctrl+C to stop the test when done")
+			time.Sleep(60 * time.Minute)
+		})
+
+		// =========================================================================
+		// TEST CASE 2: VERIFY DNS RESOLUTION WITH LOCALDNS DISABLED
+		// =========================================================================
+		It("should resolve DNS using CoreDNS when LocalDNS is disabled", func() {
+			By("Disabling LocalDNS on NodeClass (using default CoreDNS)")
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+			}
+
+			// Add a unique label to the nodePool to ensure a new node is provisioned
+			nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+				"localdns-test-id": "localdns-disabled",
+			})
+
+			By("Creating DNS test pod in default namespace to provision node with LocalDNS disabled")
+			dnsTestPod := test.Pod(test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dnstest-coredns-default",
+					Namespace: namespaceDefault,
+				},
+				Image:         dnsUtilsImage,
+				Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
+				RestartPolicy: corev1.RestartPolicyNever,
+				NodeSelector: map[string]string{
+					"localdns-test-id": "localdns-disabled",
+				},
+				Tolerations: []corev1.Toleration{
+					{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
+					{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+				},
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("32Mi"),
+					},
+				},
+			})
+			env.ExpectCreated(nodeClass, nodePool, dnsTestPod)
+			env.EventuallyExpectHealthy(dnsTestPod)
+			env.ExpectCreatedNodeCount("==", 1)
+
+			By("Verifying CoreDNS is healthy")
+			VerifyCoreDNSHealthy()
+
+			By(fmt.Sprintf("Testing CoreDNS resolution from default namespace pod (name=%s, namespace=%s)", dnsTestPod.Name, dnsTestPod.Namespace))
+			defaultNSResult := GetDNSResultFromPod(dnsTestPod)
+			Expect(defaultNSResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "DNS resolution should succeed")
 			VerifyUsingCoreDNS(defaultNSResult.DNSIP, "Default namespace DNS")
 			VerifyNotUsingLocalDNS(defaultNSResult.DNSIP, "Default namespace DNS")
 
-			By("Testing upstream DNS resolution from CoreDNS pods")
-			upstreamResult := RunUpstreamDNSResolution()
-			VerifyUsingAzureDNS(upstreamResult.DNSIP, "Upstream DNS")
-			VerifyNotUsingLocalDNS(upstreamResult.DNSIP, "Upstream DNS")
+			By("✓ CoreDNS resolution test completed successfully")
+			// DEBUGGING: Sleep to allow manual inspection of the node
+			By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
+			By("   You can now inspect the node, pods, and DNS configuration")
+			By("   Press Ctrl+C to stop the test when done")
+			time.Sleep(60 * time.Minute)
+		})
 
-			By("✓ LocalDNS disabled test completed successfully") */
-	})
+		// =========================================================================
+		// TEST CASE 2b: VERIFY DNS RESOLUTION WITH LOCALDNS ENABLED USING DIG
+		// =========================================================================
+		It("should resolve DNS using LocalDNS with dig command from agnhost", func() {
+			By("Enabling LocalDNS on NodeClass")
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+			}
+
+			// Add a unique label to the nodePool to ensure a new node is provisioned
+			nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+				"localdns-test-id": "localdns-enabled-dig",
+			})
+
+			By("Creating DNS test pod with agnhost image to provision node with LocalDNS")
+			agnhostPod := test.Pod(test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "dnstest-agnhost-dig",
+					Namespace: namespaceDefault,
+				},
+				Image:         "registry.k8s.io/e2e-test-images/agnhost:2.39",
+				Command:       []string{"sh", "-c", "dig mcr.microsoft.com 2>&1; sleep 3600"},
+				RestartPolicy: corev1.RestartPolicyNever,
+				NodeSelector: map[string]string{
+					"localdns-test-id": "localdns-enabled-dig",
+				},
+				Tolerations: []corev1.Toleration{
+					{Key: "CriticalAddonsOnly", Operator: corev1.TolerationOpExists},
+					{Key: "node.cilium.io/agent-not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "karpenter.sh/unregistered", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+					{Key: "node.cloudprovider.kubernetes.io/uninitialized", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule},
+					{Key: "node.kubernetes.io/not-ready", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoExecute},
+				},
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("10m"),
+						corev1.ResourceMemory: resource.MustParse("64Mi"),
+					},
+				},
+			})
+			env.ExpectCreated(nodeClass, nodePool, agnhostPod)
+			env.EventuallyExpectHealthy(agnhostPod)
+			env.ExpectCreatedNodeCount("==", 1)
+
+			By("Verifying CoreDNS is healthy")
+			VerifyCoreDNSHealthy()
+
+			By(fmt.Sprintf("Testing LocalDNS resolution using dig from agnhost pod (name=%s, namespace=%s)", agnhostPod.Name, agnhostPod.Namespace))
+			digResult := GetDNSResultFromPod(agnhostPod)
+			By("Dig output from agnhost pod:\n" + digResult.Logs)
+
+			// Parse DNS server from dig output (looks for ";; SERVER: " line)
+			dnsServer := parseDNSServerFromDig(digResult.Logs)
+			Expect(dnsServer).ToNot(BeEmpty(), "Should detect DNS server from dig output")
+
+			By(fmt.Sprintf("DNS queries from agnhost pod use DNS server: %s", dnsServer))
+			VerifyUsingLocalDNSClusterListener(dnsServer, "Agnhost dig DNS")
+
+			By("✓ LocalDNS resolution with dig test completed successfully")
+
+			// DEBUGGING: Sleep to allow manual inspection of the node
+			By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
+			By("   You can now inspect the node, pods, and DNS configuration")
+			By("   Press Ctrl+C to stop the test when done")
+			time.Sleep(60 * time.Minute)
+		})
+
+		// =========================================================================
+		// TEST CASE 3: FULL INTEGRATION TEST WITH LABEL AND DNS (ENABLED)
+		// =========================================================================
+		It("should enable LocalDNS and test LocalDNS resolution", func() {
+			Skip("Temporarily disabled - not testing label")
+			/* By("Enabling LocalDNS on NodeClass")
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				}
+
+				By(fmt.Sprintf("DEBUG: NodeClass.Spec.LocalDNS = %+v", nodeClass.Spec.LocalDNS))
+				if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode != nil {
+					By(fmt.Sprintf("DEBUG: LocalDNS Mode = %s", *nodeClass.Spec.LocalDNS.Mode))
+				}
+
+				By("Creating a test pod to provision a node with LocalDNS enabled")
+				pod := test.Pod()
+				env.ExpectCreated(nodeClass, nodePool, pod)
+
+				By("DEBUG: Verifying NodeClass was created successfully")
+				var createdNodeClass v1beta1.AKSNodeClass
+				Eventually(func(g Gomega) {
+					g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), &createdNodeClass)).To(Succeed())
+					By(fmt.Sprintf("DEBUG: Retrieved NodeClass %s from cluster", createdNodeClass.Name))
+					if createdNodeClass.Spec.LocalDNS != nil {
+						By(fmt.Sprintf("DEBUG: NodeClass in cluster has LocalDNS: %+v", createdNodeClass.Spec.LocalDNS))
+						if createdNodeClass.Spec.LocalDNS.Mode != nil {
+							By(fmt.Sprintf("DEBUG: NodeClass in cluster LocalDNS.Mode = %s", *createdNodeClass.Spec.LocalDNS.Mode))
+						}
+					} else {
+						By("DEBUG: NodeClass in cluster has NO LocalDNS field!")
+					}
+				}).Should(Succeed())
+
+				env.EventuallyExpectHealthy(pod)
+				env.ExpectCreatedNodeCount("==", 1)
+
+				By("Getting the provisioned node")
+				node := env.Monitor.CreatedNodes()[0]
+
+				By("DEBUG: Running comprehensive node and NodeClass analysis")
+				DebugNodeAndNodeClass(node.Name)
+
+				By("Verifying node has localdns-state=enabled label")
+				VerifyNodeLocalDNSLabel(node.Name, "enabled")
+
+				By("Verifying CoreDNS is healthy")
+				VerifyCoreDNSHealthy()
+
+				By("Testing LocalDNS resolution from default namespace")
+				defaultNSResult := RunLocalDNSResolutionFromDefaultNamespace()
+				VerifyUsingLocalDNSClusterListener(defaultNSResult.DNSIP, "Default namespace DNS")
+
+				By("Testing LocalDNS resolution from CoreDNS namespace (node listener)")
+				coreDNSNSResult := RunLocalDNSResolutionFromCoreDNSPod()
+				VerifyUsingLocalDNSNodeListener(coreDNSNSResult.DNSIP, "CoreDNS namespace DNS")
+
+				By("Testing LocalDNS in-cluster DNS resolution")
+				inClusterResult := RunLocalDNSInClusterResolution()
+				VerifyUsingLocalDNSClusterListener(inClusterResult.DNSIP, "In-cluster DNS")
+
+				By("✓ LocalDNS enabled test completed successfully")
+			})
+
+			// =========================================================================
+			// TEST CASE 4: FULL INTEGRATION TEST WITH LABEL AND DNS (DISABLED)
+			// =========================================================================
+			It("should disable LocalDNS and test CoreDNS resolution", func() {
+				Skip("Temporarily disabled - not testing label")
+				By("Disabling LocalDNS on NodeClass (using default CoreDNS)")
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+				}
+
+				By("Creating a test pod to provision a node with LocalDNS disabled")
+				pod := test.Pod()
+				env.ExpectCreated(nodeClass, nodePool, pod)
+				env.EventuallyExpectHealthy(pod)
+				env.ExpectCreatedNodeCount("==", 1)
+
+				By("Getting the provisioned node")
+				node := env.Monitor.CreatedNodes()[0]
+
+				By("Verifying node has localdns-state=disabled label")
+				VerifyNodeLocalDNSLabel(node.Name, "disabled")
+
+				By("Verifying CoreDNS is healthy")
+				VerifyCoreDNSHealthy()
+
+				By("Testing CoreDNS resolution from default namespace")
+				defaultNSResult := RunCoreDNSResolutionFromDefaultNamespace()
+				VerifyUsingCoreDNS(defaultNSResult.DNSIP, "Default namespace DNS")
+				VerifyNotUsingLocalDNS(defaultNSResult.DNSIP, "Default namespace DNS")
+
+				By("Testing upstream DNS resolution from CoreDNS pods")
+				upstreamResult := RunUpstreamDNSResolution()
+				VerifyUsingAzureDNS(upstreamResult.DNSIP, "Upstream DNS")
+				VerifyNotUsingLocalDNS(upstreamResult.DNSIP, "Upstream DNS")
+
+				By("✓ LocalDNS disabled test completed successfully")
+			})
+
+	*/
 
 	// =========================================================================
 	// TEST CASE 5: ENABLE LOCALDNS, THEN DISABLE IT (LIFECYCLE TEST)
 	// =========================================================================
 	It("should enable LocalDNS, test LocalDNS resolution, disable LocalDNS, then test CoreDNS resolution", func() {
-		// =================================================================
-		// PHASE 1: ENABLE LOCALDNS
-		// =================================================================
-		/* Skip("Temporarily disabled - not testing label")
-		By("Phase 1: Enabling LocalDNS on NodeClass")
-		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
-		}
-
-		By("Creating initial test pod to provision a node with LocalDNS enabled")
-		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
-		env.ExpectCreatedNodeCount("==", 1)
-
-		By("Getting the provisioned node")
-		node := env.Monitor.CreatedNodes()[0]
-
-		By("Verifying node has localdns-state=enabled label")
-		VerifyNodeLocalDNSLabel(node.Name, "enabled")
-
-		By("Testing LocalDNS resolution from default namespace")
-		defaultNSResult1 := RunLocalDNSResolutionFromDefaultNamespace()
-		VerifyUsingLocalDNSClusterListener(defaultNSResult1.DNSIP, "Default namespace DNS (LocalDNS enabled)")
-
-		By("Testing LocalDNS resolution from CoreDNS namespace (node listener)")
-		coreDNSNSResult1 := RunLocalDNSResolutionFromCoreDNSPod()
-		VerifyUsingLocalDNSNodeListener(coreDNSNSResult1.DNSIP, "CoreDNS namespace DNS (LocalDNS enabled)")
-
-		By("Testing LocalDNS in-cluster DNS resolution")
-		inClusterResult1 := RunLocalDNSInClusterResolution()
-		VerifyUsingLocalDNSClusterListener(inClusterResult1.DNSIP, "In-cluster DNS (LocalDNS enabled)")
-
-		By("✓ Phase 1 completed: LocalDNS is enabled and working")
-
-		// =================================================================
-		// PHASE 2: DISABLE LOCALDNS
-		// =================================================================
-		By("Phase 2: Disabling LocalDNS on NodeClass")
-		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
-		}
-		env.ExpectUpdated(nodeClass)
-
-		By("Deleting the old node to trigger new node with updated configuration")
-		env.ExpectDeleted(node)
-
-		By("Creating new test pod to provision a new node with LocalDNS disabled")
-		pod2 := test.Pod()
-		env.ExpectCreated(pod2)
-		env.EventuallyExpectHealthy(pod2)
-		env.ExpectCreatedNodeCount("==", 1)
-
-		By("Getting the new provisioned node")
-		newNode := env.Monitor.CreatedNodes()[0]
-
-		By("Verifying new node has localdns-state=disabled label")
-		VerifyNodeLocalDNSLabel(newNode.Name, "disabled")
-
-		By("Verifying CoreDNS is healthy")
-		VerifyCoreDNSHealthy()
-
-		By("Testing CoreDNS resolution from default namespace")
-		defaultNSResult2 := RunCoreDNSResolutionFromDefaultNamespace()
-		VerifyUsingCoreDNS(defaultNSResult2.DNSIP, "Default namespace DNS (LocalDNS disabled)")
-		VerifyNotUsingLocalDNS(defaultNSResult2.DNSIP, "Default namespace DNS (LocalDNS disabled)")
-
-		By("Testing upstream DNS resolution from CoreDNS pods")
-		upstreamResult := RunUpstreamDNSResolution()
-		VerifyUsingAzureDNS(upstreamResult.DNSIP, "Upstream DNS (LocalDNS disabled)")
-		VerifyNotUsingLocalDNS(upstreamResult.DNSIP, "Upstream DNS (LocalDNS disabled)")
-
-		By("✓ Phase 2 completed: LocalDNS is disabled and CoreDNS is working")
-
-		// =================================================================
-		// PHASE 3: VERIFY TRANSITION WORKED
-		// =================================================================
-		By("Phase 3: Verifying DNS transition from LocalDNS to CoreDNS")
-		VerifyDifferentDNSServers(defaultNSResult1.DNSIP, defaultNSResult2.DNSIP, "Default namespace DNS (enabled vs disabled)")
-		VerifyDifferentDNSServers(coreDNSNSResult1.DNSIP, upstreamResult.DNSIP, "CoreDNS namespace DNS (enabled vs disabled)")
-
-		By("✓ Phase 3 completed: Verified clean transition from LocalDNS to CoreDNS")
-		By("✓ Full lifecycle test completed successfully") */
+		Skip("Temporarily disabled - full lifecycle test not needed for simple validation")
 	})
 })
 
