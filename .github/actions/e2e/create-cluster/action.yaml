@@ -43,7 +43,9 @@ runs:
         subscription-id: ${{ inputs.subscription-id }}
     - name: az set sub
       shell: bash
-      run: az account set --subscription ${{ inputs.subscription-id }}
+      env:
+        SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+      run: az account set --subscription "$SUBSCRIPTION_ID"
     - name: create workload msi
       shell: bash
       env:

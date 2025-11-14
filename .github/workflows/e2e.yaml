@@ -103,19 +103,27 @@ jobs:
           subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
       - name: az set sub
         shell: bash
-        run: az account set --subscription ${{ secrets.E2E_SUBSCRIPTION_ID }}
+        env:
+          SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+        run: az account set --subscription "$SUBSCRIPTION_ID"
       - name: install skaffold
         run: |
           curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
           install skaffold /usr/local/bin/
       - name: generate rg name
+        env:
+          SUITE: ${{ inputs.suite }}
+          HASH: ${{ inputs.hash }}
         run: |
-          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.hash }} | awk '{print tolower($0)}')
+          RG_NAME=$(echo karpenter-e2e-"$SUITE"-"$HASH" | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
+        env:
+          SUITE: ${{ inputs.suite }}
+          HASH: ${{ inputs.hash }}
         run: |
-          ACR_NAME=$(echo ${{ inputs.suite }}acr${{ inputs.hash }} | awk '{print tolower($0)}')
+          ACR_NAME=$(echo "$SUITE"acr"$HASH" | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
@@ -150,7 +158,9 @@ jobs:
           location: ${{ inputs.location }}
       - name: build and publish karpenter
         shell: bash
-        run: AZURE_ACR_NAME=${{ env.ACR_NAME }} make az-build
+        env:
+          AZURE_ACR_NAME: ${{ env.ACR_NAME }}
+        run: make az-build
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
