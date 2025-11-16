@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	"gorm.io/gorm/logger"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -47,6 +48,8 @@ const (
 	SubnetUnreadyReasonNotFound = "SubnetNotFound"
 
 	SubnetUnreadyReasonIDInvalid = "SubnetIDInvalid"
+
+	SubnetUnreadyReasonNotAllowed = "OperationNotPermitted"
 )
 
 const (
@@ -64,6 +67,17 @@ func (r *SubnetReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKS
 
 func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
 	clusterSubnetID := options.FromContext(ctx).SubnetID
+	clusterSubnetComponents, err := utils.GetVnetSubnetIDComponents(clusterSubnetID)
+	if err != nil {
+		logger.Error(err, "failed to parse cluster vnetSubnetID", "subnetID", clusterSubnetID)
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeSubnetsReady,
+			SubnetUnreadyReasonIDInvalid,
+			fmt.Sprintf("Failed to parse vnetSubnetID %s", clusterSubnetID),
+		)
+		return reconcile.Result{}, nil
+	}
+
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
 	logger := log.FromContext(ctx).WithName(subnetReconcilerName).WithValues("subnetID", subnetID)
 
@@ -77,13 +91,17 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		)
 		return reconcile.Result{}, nil
 	}
+	if clusterSubnetComponents.ResourceGroupName == options.FromContext(ctx).NodeResourceGroup && nodeClass.Spec.VNETSubnetID != nil {
+		logger.Error(nil, "when using the aks managed vnet you may not specify an additional subnetID in the AKSNodeClass")
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeSubnetsReady,
+			SubnetUnreadyReasonNotAllowed,
+			fmt.Sprint("When using the aks managed vnet you may not specify an additional subnetID in the AKSNodeClass"),
+		)
+		return reconcile.Result{}, nil
+	}
 	if subnetID != clusterSubnetID {
-		clusterSubnetIDParts, err := utils.GetVnetSubnetIDComponents(clusterSubnetID) // Assume valid cluster subnet id
-		if err != nil {                                                               // Highly unlikely case but putting it in nonetheless
-			logger.Error(err, "failed to parse cluster subnet ID", "clusterSubnetID", clusterSubnetID)
-			return reconcile.Result{}, nil
-		}
-		if !clusterSubnetIDParts.IsSameVNET(nodeClassSubnetComponents) {
+		if !clusterSubnetComponents.IsSameVNET(nodeClassSubnetComponents) {
 			logger.Error(nil, "subnet does not match cluster subscription, resource group, or virtual network", "subnetID", subnetID)
 			nodeClass.StatusConditions().SetFalse(
 				v1beta1.ConditionTypeSubnetsReady,
