@@ -42,6 +42,10 @@ type LocalDNSProfile struct {
 	// Enum: ["Preferred","Required","Disabled"]
 	Mode *string `json:"mode,omitempty"`
 
+	// System-generated state of localDNS.
+	// Enum: ["Enabled","Disabled"]
+	State string `json:"state,omitempty"`
+
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
 	VnetDNSOverrides LocalDNSOverrides `json:"vnetDNSOverrides,omitempty"`
 }
@@ -55,6 +59,10 @@ func (m *LocalDNSProfile) Validate(formats strfmt.Registry) error {
 	}
 
 	if err := m.validateMode(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateState(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -126,6 +134,48 @@ func (m *LocalDNSProfile) validateMode(formats strfmt.Registry) error {
 
 	// value enum
 	if err := m.validateModeEnum("mode", "body", *m.Mode); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var localDnsProfileTypeStatePropEnum []interface{}
+
+func init() {
+	var res []string
+	if err := json.Unmarshal([]byte(`["Enabled","Disabled"]`), &res); err != nil {
+		panic(err)
+	}
+	for _, v := range res {
+		localDnsProfileTypeStatePropEnum = append(localDnsProfileTypeStatePropEnum, v)
+	}
+}
+
+const (
+
+	// LocalDNSProfileStateEnabled captures enum value "Enabled"
+	LocalDNSProfileStateEnabled string = "Enabled"
+
+	// LocalDNSProfileStateDisabled captures enum value "Disabled"
+	LocalDNSProfileStateDisabled string = "Disabled"
+)
+
+// prop value enum
+func (m *LocalDNSProfile) validateStateEnum(path, location string, value string) error {
+	if err := validate.EnumCase(path, location, value, localDnsProfileTypeStatePropEnum, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *LocalDNSProfile) validateState(formats strfmt.Registry) error {
+	if swag.IsZero(m.State) { // not required
+		return nil
+	}
+
+	// value enum
+	if err := m.validateStateEnum("state", "body", m.State); err != nil {
 		return err
 	}
 

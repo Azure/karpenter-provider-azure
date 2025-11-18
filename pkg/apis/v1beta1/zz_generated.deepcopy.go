@@ -235,6 +235,11 @@ func (in *LocalDNS) DeepCopyInto(out *LocalDNS) {
 		*out = new(LocalDNSMode)
 		**out = **in
 	}
+	if in.State != nil {
+		in, out := &in.State, &out.State
+		*out = new(LocalDNSState)
+		**out = **in
+	}
 	if in.VnetDNSOverrides != nil {
 		in, out := &in.VnetDNSOverrides, &out.VnetDNSOverrides
 		*out = make(map[string]*LocalDNSOverrides, len(*in))
