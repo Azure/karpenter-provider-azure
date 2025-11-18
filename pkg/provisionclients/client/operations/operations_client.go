@@ -21,8 +21,6 @@ package operations
 // Editing this file might prove futile when you re-run the swagger generate command
 
 import (
-	"fmt"
-
 	"github.com/go-openapi/runtime"
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
@@ -86,25 +84,6 @@ func (a *Client) NodeBootstrappingGet(params *NodeBootstrappingGetParams, opts .
 	if params == nil {
 		params = NewNodeBootstrappingGetParams()
 	}
-
-	// DEBUG: Log the exact NPS endpoint being called
-	fmt.Printf("DEBUG: Calling NPS endpoint: /subscriptions/%s/resourceGroups/%s/providers/Microsoft.ContainerService/managedclusters/%s/nodeBootstrapping\n",
-		params.SubscriptionID, params.ResourceGroupName, params.ResourceName)
-
-	// DEBUG: Log LocalDNS information in the request
-	if params.Parameters != nil && params.Parameters.ProvisionProfile != nil {
-		if params.Parameters.ProvisionProfile.LocalDNSProfile != nil {
-			fmt.Printf("DEBUG: Request contains LocalDNSProfile: mode=%v, vnetOverrides=%d, kubeOverrides=%d\n",
-				params.Parameters.ProvisionProfile.LocalDNSProfile.Mode,
-				len(params.Parameters.ProvisionProfile.LocalDNSProfile.VnetDNSOverrides),
-				len(params.Parameters.ProvisionProfile.LocalDNSProfile.KubeDNSOverrides))
-		} else {
-			fmt.Printf("DEBUG: Request LocalDNSProfile is NIL\n")
-		}
-	} else {
-		fmt.Printf("DEBUG: Request Parameters or ProvisionProfile is NIL\n")
-	}
-
 	op := &runtime.ClientOperation{
 		ID:                 "NodeBootstrapping_Get",
 		Method:             "GET",
