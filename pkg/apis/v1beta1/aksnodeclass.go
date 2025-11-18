@@ -117,10 +117,18 @@ const (
 // LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 // LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 // For more details see aka.ms/aks/localdns.
+// +kubebuilder:validation:XValidation:rule="!has(self.state)",message="state is a read-only field and cannot be set by users"
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
 	// +optional
 	Mode *LocalDNSMode `json:"mode,omitempty"`
+
+	// State is the system-generated state of localDNS.
+	// This field is read-only and managed by the system.
+	// +optional
+	// +kubebuilder:validation:Enum:={Enabled,Disabled}
+	State *LocalDNSState `json:"state,omitempty"`
+
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
 	// +optional
 	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides,omitempty"`
@@ -128,6 +136,16 @@ type LocalDNS struct {
 	// +optional
 	KubeDNSOverrides map[string]*LocalDNSOverrides `json:"kubeDNSOverrides,omitempty"`
 }
+
+// +kubebuilder:validation:Enum:={Enabled,Disabled}
+type LocalDNSState string
+
+const (
+	// localDNS is enabled.
+	LocalDNSStateEnabled LocalDNSState = "Enabled"
+	// localDNS is disabled.
+	LocalDNSStateDisabled LocalDNSState = "Disabled"
+)
 
 // LocalDNSOverrides specifies DNS override configuration
 type LocalDNSOverrides struct {
