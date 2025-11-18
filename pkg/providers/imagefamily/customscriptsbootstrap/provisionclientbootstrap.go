@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/samber/lo"
@@ -77,18 +76,6 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 		return "", "", fmt.Errorf("constructProvisionValues failed with error: %w", err)
 	}
 
-	// DEBUG: Log LocalDNS configuration being sent to NPS
-	if provisionValues != nil && provisionValues.ProvisionProfile != nil {
-		if provisionValues.ProvisionProfile.LocalDNSProfile != nil {
-			fmt.Printf("DEBUG: Sending LocalDNSProfile to NPS: mode=%v, vnetOverrides=%d, kubeOverrides=%d\n",
-				provisionValues.ProvisionProfile.LocalDNSProfile.Mode,
-				len(provisionValues.ProvisionProfile.LocalDNSProfile.VnetDNSOverrides),
-				len(provisionValues.ProvisionProfile.LocalDNSProfile.KubeDNSOverrides))
-		} else {
-			fmt.Printf("DEBUG: LocalDNSProfile is NIL - not being sent to NPS!\n")
-		}
-	}
-
 	if p.NodeBootstrappingProvider == nil {
 		return "", "", fmt.Errorf("nodeBootstrapping provider is not initialized")
 	}
@@ -110,47 +97,6 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	if err != nil {
 		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisited along with retriable status on the server side.
 		return "", "", fmt.Errorf("nodeBootstrapping.Get failed with error: %w", err)
-	}
-	// DEBUG: Print the full provisionValues before NPS call
-	fmt.Printf("DEBUG: ========== PROVISION VALUES START ==========\n")
-	fmt.Printf("DEBUG: ProvisionProfile.Name: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.Name))
-	fmt.Printf("DEBUG: ProvisionProfile.Architecture: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.Architecture))
-	fmt.Printf("DEBUG: ProvisionProfile.OsType: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.OsType))
-	fmt.Printf("DEBUG: ProvisionProfile.VMSize: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.VMSize))
-	fmt.Printf("DEBUG: ProvisionProfile.Distro: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.Distro))
-	fmt.Printf("DEBUG: ProvisionProfile.OrchestratorVersion: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.OrchestratorVersion))
-	fmt.Printf("DEBUG: ProvisionProfile.VnetSubnetID: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.VnetSubnetID))
-	fmt.Printf("DEBUG: ProvisionProfile.StorageProfile: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.StorageProfile))
-	fmt.Printf("DEBUG: ProvisionProfile.MaxPods: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.MaxPods))
-	fmt.Printf("DEBUG: ProvisionProfile.EnableFIPS: %v\n", lo.FromPtr(provisionValues.ProvisionProfile.EnableFIPS))
-	fmt.Printf("DEBUG: ProvisionProfile.NodeInitializationTaints: %v\n", provisionValues.ProvisionProfile.NodeInitializationTaints)
-	fmt.Printf("DEBUG: ProvisionProfile.NodeTaints: %v\n", provisionValues.ProvisionProfile.NodeTaints)
-	fmt.Printf("DEBUG: ProvisionProfile.CustomNodeLabels: %v\n", provisionValues.ProvisionProfile.CustomNodeLabels)
-	if provisionValues.ProvisionProfile.LocalDNSProfile != nil {
-		fmt.Printf("DEBUG: ProvisionProfile.LocalDNSProfile.Mode: %v\n", provisionValues.ProvisionProfile.LocalDNSProfile.Mode)
-		fmt.Printf("DEBUG: ProvisionProfile.LocalDNSProfile.VnetDNSOverrides: %v\n", provisionValues.ProvisionProfile.LocalDNSProfile.VnetDNSOverrides)
-		fmt.Printf("DEBUG: ProvisionProfile.LocalDNSProfile.KubeDNSOverrides: %v\n", provisionValues.ProvisionProfile.LocalDNSProfile.KubeDNSOverrides)
-	} else {
-		fmt.Printf("DEBUG: ProvisionProfile.LocalDNSProfile: nil\n")
-	}
-	fmt.Printf("DEBUG: ========== PROVISION VALUES END ==========\n")
-
-	// DEBUG: Log what NPS returned
-	fmt.Printf("DEBUG: NPS returned CustomData length=%d, CSE length=%d\n",
-		len(nodeBootstrapping.CustomDataEncodedDehydratable),
-		len(nodeBootstrapping.CSEDehydratable))
-
-	// DEBUG: Print the full CSE script
-	fmt.Printf("DEBUG: ========== CSE SCRIPT START ==========\n%s\n========== CSE SCRIPT END ==========\n",
-		nodeBootstrapping.CSEDehydratable)
-
-	// DEBUG: Check if CSE contains LocalDNS configuration
-	if strings.Contains(nodeBootstrapping.CSEDehydratable, "localdns") ||
-		strings.Contains(nodeBootstrapping.CSEDehydratable, "LocalDNS") ||
-		strings.Contains(nodeBootstrapping.CSEDehydratable, "169.254.10") {
-		fmt.Printf("DEBUG: ✓ CSE script contains LocalDNS configuration!\n")
-	} else {
-		fmt.Printf("DEBUG: ✗ CSE script does NOT contain LocalDNS configuration!\n")
 	}
 
 	customDataHydrated, cseHydrated, err := hydrateBootstrapTokenIfNeeded(nodeBootstrapping.CustomDataEncodedDehydratable, nodeBootstrapping.CSEDehydratable, p.KubeletClientTLSBootstrapToken)
