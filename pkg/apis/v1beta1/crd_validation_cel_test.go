@@ -446,6 +446,63 @@ var _ = Describe("CEL/Validation", func() {
 			GinkgoWriter.Printf("Error for 'Never' serveStaleDuration: %s\n", err.Error())
 			Expect(err.Error()).To(ContainSubstring("\"Never\": spec.localDNS.vnetDNSOverrides.test.domain.serveStaleDuration in body should match '^([0-9]+(s|m|h))+$'"))
 		})
+
+		It("should reject State field when set by users on create", func() {
+			// Test that users cannot set the state field
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode:  lo.ToPtr(v1beta1.LocalDNSModeRequired),
+						State: lo.ToPtr(v1beta1.LocalDNSStateEnabled), // User trying to set state
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			GinkgoWriter.Printf("Error when user sets state on create: %s\n", err.Error())
+			Expect(err.Error()).To(ContainSubstring("state is a read-only field and cannot be set by users"))
+		})
+
+		It("should reject State field when set by users on patch", func() {
+			// Create a valid nodeClass without state
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+
+			// Try to patch with state field using raw JSON
+			patch := []byte(`{"spec":{"localDNS":{"state":"Enabled"}}}`)
+			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
+			Expect(err).To(HaveOccurred())
+			GinkgoWriter.Printf("Error when user patches state: %s\n", err.Error())
+			Expect(err.Error()).To(ContainSubstring("state is a read-only field and cannot be set by users"))
+		})
+
+		It("should reject State field when set by users on update", func() {
+			// Create a valid nodeClass without state
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+
+			// Try to update with state field
+			nodeClass.Spec.LocalDNS.State = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+			err := env.Client.Update(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			GinkgoWriter.Printf("Error when user updates with state: %s\n", err.Error())
+			Expect(err.Error()).To(ContainSubstring("state is a read-only field and cannot be set by users"))
+		})
 	})
 
 	Context("OSDiskSizeGB", func() {
