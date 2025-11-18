@@ -324,6 +324,28 @@
           "description": "Mode of enablement for localDNS.",
           "default": "Preferred"
         },
+        "state": {
+          "type": "string",
+          "enum": [
+            "Enabled",
+            "Disabled"
+          ],
+          "x-ms-enum": {
+            "name": "LocalDNSState",
+            "modelAsString": true,
+            "values": [
+              {
+                "value": "Enabled",
+                "description": "localDNS is enabled."
+              },
+              {
+                "value": "Disabled",
+                "description": "localDNS is disabled."
+              }
+            ]
+          },
+          "description": "System-generated state of localDNS."
+        },
         "vnetDNSOverrides": {
           "type": "object",
           "description": "VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).",

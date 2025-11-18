@@ -92,6 +92,20 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 	if p.NodeBootstrappingProvider == nil {
 		return "", "", fmt.Errorf("nodeBootstrapping provider is not initialized")
 	}
+
+	// TODO: Delete: Set state field if LocalDNS is configured
+	if p.LocalDNSProfile != nil {
+		mode := v1beta1.LocalDNSModePreferred
+		if p.LocalDNSProfile.Mode != nil {
+			mode = *p.LocalDNSProfile.Mode
+		}
+		if mode == v1beta1.LocalDNSModeDisabled {
+			p.LocalDNSProfile.State = lo.ToPtr(v1beta1.LocalDNSStateDisabled)
+		} else {
+			p.LocalDNSProfile.State = lo.ToPtr(v1beta1.LocalDNSStateEnabled)
+		}
+	}
+
 	nodeBootstrapping, err := p.NodeBootstrappingProvider.Get(ctx, provisionValues)
 	if err != nil {
 		// As of now we just fail the provisioning given the unlikely scenario of retriable error, but could be revisited along with retriable status on the server side.
