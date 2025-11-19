@@ -726,18 +726,6 @@ spec:
                     - Required
                     - Disabled
                     type: string
-                  state:
-                    allOf:
-                    - enum:
-                      - Enabled
-                      - Disabled
-                    - enum:
-                      - Enabled
-                      - Disabled
-                    description: |-
-                      State is the system-generated state of localDNS.
-                      This field is read-only and managed by the system.
-                    type: string
                   vnetDNSOverrides:
                     additionalProperties:
                       description: LocalDNSOverrides specifies DNS override configuration
@@ -799,9 +787,6 @@ spec:
                       with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
                     type: object
                 type: object
-                x-kubernetes-validations:
-                - message: state is a read-only field and cannot be set by users
-                  rule: '!has(self.state)'
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
