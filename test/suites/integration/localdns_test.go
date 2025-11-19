@@ -43,81 +43,36 @@ var _ = Describe("LocalDNS", func() {
 		}
 	})
 
-	It("1: create a node with LocalDNS enabled", func() {
-		cacheDuration := 3600 * time.Second
-		staleDuration := 3600 * time.Second
+	// =========================================================================
+	// SIMPLE TEST: CREATE NODE WITH LOCALDNS ENABLED
+	// =========================================================================
+	It("should create a node with LocalDNS enabled", func() {
+		By("Configuring NodeClass with LocalDNS enabled")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode:  lo.ToPtr(v1beta1.LocalDNSModeRequired),
-			State: lo.ToPtr(v1beta1.LocalDNSStateEnabled),
-			KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-				".": {
-					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-					MaxConcurrent:      lo.ToPtr(int32(1000)),
-					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
-					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
-				},
-				"cluster.local": {
-					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-					MaxConcurrent:      lo.ToPtr(int32(1000)),
-					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
-					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
-					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
-				},
-			},
-			VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-				".": {
-					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
-					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-					MaxConcurrent:      lo.ToPtr(int32(1000)),
-					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
-					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
-				},
-				"cluster.local": {
-					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-					MaxConcurrent:      lo.ToPtr(int32(1000)),
-					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
-					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
-					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
-				},
-			},
+			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
 		}
 
-		dnsTestPod := test.Pod(test.PodOptions{
-			Image:         "alpine:3.20.2",
-			Command:       []string{"sh", "-c", "nslookup kubernetes.default.svc.cluster.local 2>&1; sleep 3600"},
-			RestartPolicy: corev1.RestartPolicyNever,
+		By("Configuring NodePool with unique label")
+		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
+			"localdns-test-id": "simple-test",
 		})
 
+		By("Triggering node provisioning (Karpenter requires a pending pod)")
+		// Note: Karpenter provisions nodes in response to pending pods, so we create
+		// a minimal pod just to trigger provisioning. The test focuses on the node.
+		pod := test.Pod(test.PodOptions{
+			NodeSelector: map[string]string{
+				"localdns-test-id": "simple-test",
+			},
+		})
+		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Waiting for node to be provisioned and become healthy")
+		env.EventuallyExpectHealthy(pod)
 		env.ExpectCreatedNodeCount("==", 1)
 
-		env.ExpectCreated(nodeClass, nodePool, dnsTestPod)
-		env.EventuallyExpectHealthy(dnsTestPod)
-
-		By("Testing LocalDNS resolution from pod")
-		dnsResult := GetDNSResultFromPod(dnsTestPod)
-		Expect(dnsResult.Logs).To(ContainSubstring("kubernetes.default.svc.cluster.local"), "DNS resolution should succeed")
-		VerifyUsingLocalDNSClusterListener(dnsResult.DNSIP, "Pod DNS resolution")
-
-		By("✓ LocalDNS test completed successfully")
-
-		By(fmt.Sprintf("✓ Node successfully created with full LocalDNS config: %s", dnsTestPod.Spec.NodeName))
-		By("   Config includes:")
-		By("   - Mode: Required")
-		By("   - KubeDNSOverrides: 2 entries ('.' and 'cluster.local')")
-		By("   - VnetDNSOverrides: 2 entries ('.' and 'cluster.local')")
+		node := env.Monitor.CreatedNodes()[0]
+		By(fmt.Sprintf("✓ Node successfully created with LocalDNS enabled: %s", node.Name))
 		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
 		time.Sleep(60 * time.Minute)
 	})
@@ -125,7 +80,7 @@ var _ = Describe("LocalDNS", func() {
 	// =========================================================================
 	// FULL-FLEDGED LOCALDNS CONFIG TEST
 	// =========================================================================
-	/*It("should create a node with full LocalDNS configuration (overrides)", func() {
+	It("should create a node with full LocalDNS configuration (overrides)", func() {
 		By("Configuring NodeClass with full LocalDNS configuration including overrides")
 		cacheDuration := 3600 * time.Second
 		staleDuration := 3600 * time.Second
@@ -204,7 +159,7 @@ var _ = Describe("LocalDNS", func() {
 		time.Sleep(60 * time.Minute)
 	})
 
-
+	/*
 		// =========================================================================
 		// TEST CASE 0: VERIFY LOCALDNS LABEL ONLY (ENABLED)
 		// =========================================================================
@@ -636,6 +591,11 @@ const (
 	azureDNSIP       = "168.63.129.16" // Azure's upstream DNS
 	coreDNSServiceIP = "10.0.0.10"     // Default CoreDNS service IP in AKS
 
+	// Images
+	dnsUtilsImage = "alpine:3.20.2" // Small image with nslookup built-in, proven to work in other integration tests
+
+	// Namespaces
+	namespaceDefault    = "default"
 	namespaceKubeSystem = "kube-system"
 
 	// Test timeouts
