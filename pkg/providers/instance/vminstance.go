@@ -509,6 +509,8 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		return &armcompute.VirtualMachine{} // TODO(Windows)
 	}
 
+	diskType := lo.FromPtrOr(opts.NodeClass.Spec.OSDiskType, "Premium_LRS")
+
 	vm := &armcompute.VirtualMachine{
 		Name:     lo.ToPtr(opts.VMName), // TODO: I think it's safe to set this, even though it's read only
 		Location: lo.ToPtr(opts.Location),
@@ -520,8 +522,11 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 
 			StorageProfile: &armcompute.StorageProfile{
 				OSDisk: &armcompute.OSDisk{
-					Name:         lo.ToPtr(opts.VMName),
-					DiskSizeGB:   opts.NodeClass.Spec.OSDiskSizeGB,
+					Name:       lo.ToPtr(opts.VMName),
+					DiskSizeGB: opts.NodeClass.Spec.OSDiskSizeGB,
+					ManagedDisk: &armcompute.ManagedDiskParameters{
+						StorageAccountType: lo.ToPtr(armcompute.StorageAccountTypes(diskType)),
+					},
 					CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesFromImage),
 					DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
 				},
