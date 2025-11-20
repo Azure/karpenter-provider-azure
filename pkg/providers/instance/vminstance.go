@@ -770,8 +770,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 
 	log.FromContext(ctx).Info("virtual machine creation result",
 		"vmName", resourceName,
-		"hasPoller", result.Poller != nil,
-		"vmID", lo.FromPtr(result.VM.ID),
 		"error", err)
 
 	if err != nil {
