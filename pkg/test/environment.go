@@ -70,6 +70,7 @@ type Environment struct {
 	SubnetsAPI                  *fake.SubnetsAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
 	SubscriptionAPI             *fake.SubscriptionsAPI
+	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
 
 	// Cache
 	KubernetesVersionCache    *cache.Cache
@@ -213,6 +214,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		SKUsAPI:                     skusAPI,
 		PricingAPI:                  pricingAPI,
 		SubscriptionAPI:             subscriptionAPI,
+		NodeBootstrappingAPI:        nodeBootstrappingAPI,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
 		NodeImagesCache:           nodeImagesCache,
@@ -248,6 +250,7 @@ func (env *Environment) Reset() {
 	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
 	env.NodeImageVersionsAPI.Reset()
+	env.NodeBootstrappingAPI.Reset()
 	env.SKUsAPI.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
