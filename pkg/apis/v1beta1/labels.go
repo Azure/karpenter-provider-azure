@@ -26,6 +26,9 @@ import (
 
 func init() {
 	karpv1.RestrictedLabelDomains = karpv1.RestrictedLabelDomains.Insert(RestrictedLabelDomains...)
+	// Note that adding to WellKnownLabels here requires a corresponding update to
+	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
+	// Karpenter core expects that WellKnownLabels are mapped to requirements.
 	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Insert(
 		LabelSKUName,
 		LabelSKUFamily,

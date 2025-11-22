@@ -462,7 +462,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	annotations := map[string]string{}
 
 	if instanceType != nil {
-		labels = offerings.GetAllSingleValuedRequirementLabels(instanceType)
+		labels = offerings.GetAllSingleValuedRequirementLabels(instanceType.Requirements)
 		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
