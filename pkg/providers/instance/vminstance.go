@@ -42,6 +42,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
@@ -857,8 +858,13 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
 	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
 	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
+
+	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
+	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
+	claimLabels := offerings.GetAllSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
+	claimLabels = lo.PickBy(claimLabels, func(k string, v string) bool { return labels.IsKubeletLabel(k) })
 	additionalLabels := lo.Assign(
-		offerings.GetAllSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)),
+		claimLabels,
 		offerings.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
 		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
 	)

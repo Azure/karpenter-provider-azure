@@ -1676,6 +1676,44 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 		})
 
+		DescribeTable("should not write restricted labels to kubelet, but should write allowed labels", func(domain string, allowed bool) {
+			nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
+				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: domain + "/team", Operator: v1.NodeSelectorOpExists}},
+				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: domain + "/custom-label", Operator: v1.NodeSelectorOpExists}},
+				{NodeSelectorRequirement: v1.NodeSelectorRequirement{Key: "subdomain." + domain + "/custom-label", Operator: v1.NodeSelectorOpExists}},
+			}
+
+			nodeSelector := map[string]string{
+				domain + "/team":                        "team-1",
+				domain + "/custom-label":                "custom-value",
+				"subdomain." + domain + "/custom-label": "custom-value",
+			}
+
+			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: nodeSelector})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			node := ExpectScheduled(ctx, env.Client, pod)
+
+			// Not checking on the node as not all these labels are expected there (via Karpenter setting them, they'll get there via kubelet)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+			vmInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			vm := vmInput.VM
+
+			// Ensure that the requirements/labels specified above are propagated onto the node and that it didn't do so via kubelet labels
+			for k, v := range nodeSelector {
+				Expect(node.Labels).To(HaveKeyWithValue(k, v))
+				if allowed {
+					ExpectKubeletNodeLabelsInCustomData(&vm, k, v)
+				} else {
+					ExpectKubeletNodeLabelsNotInCustomData(&vm, k, v)
+				}
+			}
+		},
+			Entry("node-restriction.kubernetes.io", "node-restriction.kubernetes.io", false),
+			Entry("node.kubernetes.io", "node.kubernetes.io", true),
+		)
+
 		It("should write other (non-schedulable) labels to kubelet on bootstrap API", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
@@ -2436,4 +2474,23 @@ func ExpectKubeletNodeLabelsInCustomData(vm *armcompute.VirtualMachine, key stri
 	// Extract and check KUBELET_NODE_LABELS contains the expected label
 	kubeletNodeLabels := ExpectKubeletNodeLabelsPassed(decodedString)
 	Expect(kubeletNodeLabels).To(ContainSubstring(fmt.Sprintf("%s=%s", key, value)))
+}
+
+func ExpectKubeletNodeLabelsNotInCustomData(vm *armcompute.VirtualMachine, key string, value string) {
+	GinkgoHelper()
+
+	Expect(vm.Properties).ToNot(BeNil())
+	Expect(vm.Properties.OSProfile).ToNot(BeNil())
+	Expect(vm.Properties.OSProfile.CustomData).ToNot(BeNil())
+
+	customData := *vm.Properties.OSProfile.CustomData
+	Expect(customData).ToNot(BeNil())
+
+	decodedBytes, err := base64.StdEncoding.DecodeString(customData)
+	Expect(err).To(Succeed())
+	decodedString := string(decodedBytes[:])
+
+	// Extract and check KUBELET_NODE_LABELS contains the expected label
+	kubeletNodeLabels := ExpectKubeletNodeLabelsPassed(decodedString)
+	Expect(kubeletNodeLabels).ToNot(ContainSubstring(fmt.Sprintf("%s=%s", key, value)))
 }

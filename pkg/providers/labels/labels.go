@@ -27,6 +27,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/blang/semver/v4"
 	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 var (
@@ -39,6 +41,36 @@ var (
 
 	AKSLabelRole    = v1beta1.AKSLabelDomain + "/role"
 	AKSLabelCluster = v1beta1.AKSLabelDomain + "/cluster"
+)
+
+// This these label definitions taken from here: https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
+const (
+	// LabelOS is a label to indicate the operating system of the node.
+	// The OS labels are promoted to GA in 1.14. kubelet applies GA labels and stop applying the beta OS labels in Kubernetes 1.19.
+	LabelOS = "beta.kubernetes.io/os"
+	// LabelArch is a label to indicate the architecture of the node.
+	// The Arch labels are promoted to GA in 1.14. kubelet applies GA labels and stop applying the beta Arch labels in Kubernetes 1.19.
+	LabelArch = "beta.kubernetes.io/arch"
+)
+
+var kubeletLabelNamespaces = sets.NewString(
+	v1.LabelNamespaceSuffixKubelet,
+	v1.LabelNamespaceSuffixNode,
+)
+
+var kubeletLabels = sets.NewString(
+	v1.LabelHostname,
+	v1.LabelTopologyZone,
+	v1.LabelTopologyRegion,
+	v1.LabelFailureDomainBetaZone,
+	v1.LabelFailureDomainBetaRegion,
+	v1.LabelInstanceType,
+	v1.LabelInstanceTypeStable,
+	v1.LabelOSStable,
+	v1.LabelArchStable,
+
+	LabelOS,
+	LabelArch,
 )
 
 func Get(
@@ -94,6 +126,31 @@ func Get(
 	}
 
 	return labels, nil
+}
+
+// This was inspired by the method added here: https://github.com/kubernetes-sigs/karpenter/pull/2586/files
+// but does not restrict WellKnownLabels (which means this is really the same as )
+// the one used by the node restriction admission https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
+func IsKubeletLabel(key string) bool {
+	if kubeletLabels.Has(key) {
+		return true
+	}
+
+	namespace := getLabelNamespace(key)
+	for allowedNamespace := range kubeletLabelNamespaces {
+		if namespace == allowedNamespace || strings.HasSuffix(namespace, "."+allowedNamespace) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func getLabelNamespace(key string) string {
+	if parts := strings.SplitN(key, "/", 2); len(parts) == 2 {
+		return parts[0]
+	}
+	return ""
 }
 
 func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
