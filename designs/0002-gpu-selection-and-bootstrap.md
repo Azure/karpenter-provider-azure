@@ -107,10 +107,11 @@ The Requirements API needs to provide an interface for selecting GPU SKUs, sizes
 
 Here are some relevant labels:
 
-| Label                                 | Description                               |
-|---------------------------------------|-------------------------------------------|
-| `karpenter.azure.com/sku-family`       | Family of the SKU (N) for GPU          |
-| `karpenter.azure.com/sku-cpu`          | Number of virtual CPUs                    |
+| Label                            | Description                   |
+|----------------------------------|-------------------------------|
+| `karpenter.azure.com/sku-family` | Family of the SKU (N) for GPU |
+| `karpenter.azure.com/sku-series` | Series of the SKU             |
+| `karpenter.azure.com/sku-cpu`    | Number of virtual CPUs        |
 
 **Note:** GPU SKUs usually support only a single hypervisor generation. Explicit image selection is moot in most cases, though there are some exceptions.
 

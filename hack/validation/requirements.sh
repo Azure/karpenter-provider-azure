@@ -9,6 +9,7 @@ rule=$'self in
         "karpenter.azure.com/aksnodeclass",
         "karpenter.azure.com/sku-name",
         "karpenter.azure.com/sku-family",
+        "karpenter.azure.com/sku-series",
         "karpenter.azure.com/sku-version",
         "karpenter.azure.com/sku-cpu",
         "karpenter.azure.com/sku-memory",
