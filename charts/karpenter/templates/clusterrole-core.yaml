@@ -41,14 +41,12 @@ rules:
   - apiGroups: ["apps"]
     resources: ["daemonsets", "deployments", "replicasets", "statefulsets"]
     verbs: ["list", "watch"]
-  {{- if .Values.webhook.enabled }}
-  - apiGroups: ["apiextensions.k8s.io"]
-    resources: ["customresourcedefinitions"]
-    verbs: ["watch", "list"]
-  {{- end }}
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", list, "watch"]
   # Write
   - apiGroups: ["karpenter.sh"]
     resources: ["nodeclaims", "nodeclaims/status"]
@@ -68,15 +66,6 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["delete"]
-  {{- if .Values.webhook.enabled }}
-  - apiGroups: ["apiextensions.k8s.io"]
-    resources: ["customresourcedefinitions/status"]
-    resourceNames: ["aksnodeclasses.karpenter.azure.com", "nodepools.karpenter.sh", "nodeclaims.karpenter.sh"]
-    verbs: ["patch"]
-  - apiGroups: ["apiextensions.k8s.io"]
-    resources: ["customresourcedefinitions"]
-    verbs: ["update"]
-  {{- end }}
   {{- with .Values.additionalClusterRoleRules -}}
   {{ toYaml . | nindent 2 }}
   {{- end -}}

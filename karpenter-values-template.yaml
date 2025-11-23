@@ -8,10 +8,6 @@ controller:
     #- name: GODEBUG
     #  value: http2client=0
     # options
-    - name: CLUSTER_NAME
-      value: ${CLUSTER_NAME}
-    - name: CLUSTER_ENDPOINT
-      value: ${CLUSTER_ENDPOINT}
     - name: KUBELET_BOOTSTRAP_TOKEN
       value: ${BOOTSTRAP_TOKEN}
     - name: SSH_PUBLIC_KEY
@@ -57,3 +53,6 @@ serviceAccount:
 podLabels:
   azure.workload.identity/use: "true"
 logLevel: ${LOG_LEVEL}
+settings:
+  clusterName: ${CLUSTER_NAME}
+  clusterEndpoint: ${CLUSTER_ENDPOINT}
