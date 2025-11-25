@@ -1524,13 +1524,16 @@ var _ = Describe("InstanceType Provider", func() {
 			// AKS domain
 			{Name: v1beta1.AKSLabelCPU, Label: v1beta1.AKSLabelCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			{Name: v1beta1.AKSLabelMemory, Label: v1beta1.AKSLabelMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			// Deprecated Labels -- note that these are not expected in kubelet labels or on the node, they are written by CloudProvider
+			// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
+			// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
+			// the new labels to the old labels for compatibility.
 			{Name: v1.LabelFailureDomainBetaRegion, Label: v1.LabelFailureDomainBetaRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: v1.LabelFailureDomainBetaZone, Label: v1.LabelFailureDomainBetaZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: "beta.kubernetes.io/arch", Label: "beta.kubernetes.io/arch", ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: "beta.kubernetes.io/os", Label: "beta.kubernetes.io/os", ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: v1.LabelInstanceType, Label: v1.LabelInstanceType, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: "topology.disk.csi.azure.com/zone", Label: "topology.disk.csi.azure.com/zone", ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
+			// Unsupported labels
 			{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			// Cluster Label
 			// TODO: The cluster label is not actually used for scheduling so we'll happily get a node that doesn't match this... Also since it's not a well known requirement
@@ -1597,6 +1600,17 @@ var _ = Describe("InstanceType Provider", func() {
 				value := item.ValueFunc()
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: value}})
+				// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
+				// end up with a new node for each scheduling attempt
+				if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
+					bindings := []Bindings{}
+					for i := 0; i < 3; i++ {
+						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
+					}
+					for i := 1; i < len(bindings); i++ {
+						Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
+					}
+				}
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 
@@ -1624,7 +1638,19 @@ var _ = Describe("InstanceType Provider", func() {
 				value := item.ValueFunc()
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: value}})
+				// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
+				// end up with a new node for each scheduling attempt
+				if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
+					bindings := []Bindings{}
+					for i := 0; i < 3; i++ {
+						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
+					}
+					for i := 1; i < len(bindings); i++ {
+						Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
+					}
+				}
 				ExpectProvisioned(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod)
+
 				node := ExpectScheduled(ctx, env.Client, pod)
 
 				if item.ExpectedOnNode {

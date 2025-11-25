@@ -49,8 +49,8 @@ import (
 	cloudproviderevents "github.com/Azure/karpenter-provider-azure/pkg/cloudprovider/events"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
@@ -169,6 +169,11 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 	if err != nil {
 		return nil, err
 	}
+	// Propagate single-value wellKnownLabels from the nodeClaim requirements to the labels,
+	// as this is required for scheduling in core to work correctly. If this is not done, on subsequent scheduling passes before the Node is
+	// registered, the NodeClaim will not have the labels required to match the Pod and so a new NodeClaim will be created each time.
+	newNodeClaim.Labels = lo.Assign(newNodeClaim.Labels, labelspkg.GetWellKnownSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)))
+
 	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
 		return nil, err
 	}
@@ -462,7 +467,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	annotations := map[string]string{}
 
 	if instanceType != nil {
-		labels = offerings.GetAllSingleValuedRequirementLabels(instanceType.Requirements)
+		labels = labelspkg.GetAllSingleValuedRequirementLabels(instanceType.Requirements)
 		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
