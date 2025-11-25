@@ -228,6 +228,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 			),
 			Price:     onDemandPrice,
@@ -237,6 +238,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 		spotOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 			),
 			Price:     spotPrice,
