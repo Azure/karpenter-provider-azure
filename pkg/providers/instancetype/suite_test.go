@@ -1607,7 +1607,7 @@ var _ = Describe("InstanceType Provider", func() {
 					for range 3 {
 						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 					}
-					for i := 1; i < len(bindings); i++ {
+					for i := range len(bindings) {
 						Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
 					}
 				}
@@ -1645,7 +1645,7 @@ var _ = Describe("InstanceType Provider", func() {
 					for range 3 {
 						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 					}
-					for i := 1; i < len(bindings); i++ {
+					for i := range len(bindings) {
 						Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
 					}
 				}
