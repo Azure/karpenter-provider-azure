@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
+// These labels are defined here rather than v1beta1 because we do not support scheduling simulation
+// on these labels
 var (
 	AKSLabelEBPFDataplane       = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
 	AKSLabelAzureCNIOverlay     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"

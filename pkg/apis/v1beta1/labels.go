@@ -62,7 +62,6 @@ var (
 		LabelSKUGPUManufacturer,
 		LabelSKUGPUCount,
 
-		AKSLabelCluster,
 		AKSLabelMode,
 	)
 
@@ -105,7 +104,6 @@ var (
 	// AKS labels
 	AKSLabelDomain = "kubernetes.azure.com"
 
-	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
 	AKSLabelMode                    = AKSLabelDomain + "/mode" // "system" or "user"
 

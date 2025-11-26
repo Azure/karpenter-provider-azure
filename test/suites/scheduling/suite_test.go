@@ -83,8 +83,6 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelWindowsBuild,
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
-			// TODO: review the use of "kubernetes.azure.com/cluster"
-			v1beta1.AKSLabelCluster,
 		)
 
 		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
