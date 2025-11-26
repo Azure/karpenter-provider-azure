@@ -134,16 +134,17 @@ func Get(
 	return labels, nil
 }
 
-// This was inspired by the method added here: https://github.com/kubernetes-sigs/karpenter/pull/2586/files
-// but does not restrict WellKnownLabels (which means this is really the same as )
-// the one used by the node restriction admission https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
+// IsKubeletLabel returns true if the given label is a label kubelet is allowed to set.
+// This is similar to the method one used by the node restriction admission
+// https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
+// with the isKubernetesLabel check from https://github.com/kubernetes/kubernetes/blob/4bed36e03e7bd699b089d33da6f7d7c9ef9eb661/cmd/kubelet/app/options/options.go#L176C6-L176C23.
 func IsKubeletLabel(key string) bool {
 	if kubeletLabels.Has(key) {
 		return true
 	}
 
 	namespace := getLabelNamespace(key)
-	if !isKubernetesLabel(namespace) {
+	if !isKubernetesNamespace(namespace) {
 		return true
 	}
 
@@ -189,7 +190,9 @@ func GetFilteredSingleValuedRequirementLabels(requirements scheduling.Requiremen
 	return labels
 }
 
-func isKubernetesLabel(namespace string) bool {
+// isKubernetesNamespace checks if the given namespace belongs to kubernetes.io or k8s.io domains
+// Similar to https://github.com/kubernetes/kubernetes/blob/4bed36e03e7bd699b089d33da6f7d7c9ef9eb661/cmd/kubelet/app/options/options.go#L176C6-L176C23
+func isKubernetesNamespace(namespace string) bool {
 	for k8sDomain := range K8sLabelDomains {
 		if namespace == k8sDomain || strings.HasSuffix(namespace, "."+k8sDomain) {
 			return true

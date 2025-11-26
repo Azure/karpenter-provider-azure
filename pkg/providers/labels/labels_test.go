@@ -41,24 +41,24 @@ func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 		{
 			name: "Single-valued requirements",
 			requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
+				scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 			),
 			expectedLabels: map[string]string{
-				"node.kubernetes.io/instance-type": "Standard_D2s_v3",
-				corev1.LabelTopologyZone:           "westus-1",
+				corev1.LabelInstanceTypeStable: "Standard_D2s_v3",
+				corev1.LabelTopologyZone:       "westus-1",
 			},
 		},
 		{
 			name: "Mixed single and multi-valued requirements",
 			requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
+				scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 			),
 			expectedLabels: map[string]string{
-				"node.kubernetes.io/instance-type": "Standard_D2s_v3",
-				corev1.LabelTopologyZone:           "westus-1",
+				corev1.LabelInstanceTypeStable: "Standard_D2s_v3",
+				corev1.LabelTopologyZone:       "westus-1",
 				// karpv1.CapacityTypeLabelKey should be excluded because it has multiple values
 			},
 		},
@@ -107,7 +107,7 @@ func TestGetWellKnownSingleValuedRequirementLabels(t *testing.T) {
 			requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, "2"),
 				scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, "8"),
-				scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
+				scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
 				scheduling.NewRequirement("custom.domain.com/label", corev1.NodeSelectorOpIn, "custom-value"),
 			),
 			expectedLabels: map[string]string{
@@ -143,7 +143,7 @@ func TestGetWellKnownSingleValuedRequirementLabels(t *testing.T) {
 		{
 			name: "No well-known single-valued requirements",
 			requirements: scheduling.NewRequirements(
-				scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
+				scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2"),
 			),
 			expectedLabels: map[string]string{},

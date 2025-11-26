@@ -439,7 +439,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Create nodepool that has both ondemand and spot capacity types enabled
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D2_v3", "Standard_D64s_v3"},
 				}})
@@ -756,7 +756,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should prefer NVMe disk if supported for ephemeral", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
+						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"Standard_D128ds_v6"},
 					},
@@ -775,7 +775,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should not select NVMe ephemeral disk placement if the sku has an nvme disk, supports ephemeral os disk, but doesnt support NVMe placement", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
+						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"Standard_NC24ads_A100_v4"},
 					},
@@ -794,7 +794,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should prefer cache disk placement when both cache and temp disk support ephemeral and fit the default 128GB threshold", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
+						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"Standard_D64s_v3"},
 					},
@@ -812,7 +812,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should select managed disk if cache disk is too small but temp disk supports ephemeral and fits osDiskSizeGB to have parity with the AKS Nodepool API", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
+						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"Standard_B20ms"},
 					},
@@ -832,7 +832,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D64s_v3"},
 				}})
@@ -891,7 +891,7 @@ var _ = Describe("InstanceType Provider", func() {
 			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D64s_v3"},
 				}})
@@ -914,7 +914,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// With our rule of 100GB being the minimum OSDiskSize, this VM should be created without local disk
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D2s_v3"},
 				}})
@@ -932,7 +932,7 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should select NvmeDisk for v6 skus with maxNvmeDiskSize > 0", func() {
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D128ds_v6"},
 				}})
@@ -1604,7 +1604,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// end up with a new node for each scheduling attempt
 				if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
 					bindings := []Bindings{}
-					for i := 0; i < 3; i++ {
+					for range 3 {
 						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 					}
 					for i := 1; i < len(bindings); i++ {
@@ -1642,7 +1642,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// end up with a new node for each scheduling attempt
 				if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
 					bindings := []Bindings{}
-					for i := 0; i < 3; i++ {
+					for range 3 {
 						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
 					}
 					for i := 1; i < len(bindings); i++ {
@@ -2062,7 +2062,7 @@ var _ = Describe("InstanceType Provider", func() {
 			node := ExpectScheduled(ctx, env.Client, pod)
 
 			// the following checks assume Standard_NC16as_T4_v3 (surprisingly the cheapest GPU in the test set), so test the assumption
-			Expect(node.Labels).To(HaveKeyWithValue("node.kubernetes.io/instance-type", "Standard_NC16as_T4_v3"))
+			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_NC16as_T4_v3"))
 
 			// Verify GPU related settings in bootstrap (assuming one Standard_NC16as_T4_v3)
 			customData := ExpectDecodedCustomData(azureEnv)

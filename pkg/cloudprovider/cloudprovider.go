@@ -169,9 +169,12 @@ func (c *CloudProvider) createVMInstance(ctx context.Context, nodeClass *v1beta1
 	if err != nil {
 		return nil, err
 	}
-	// Propagate single-value wellKnownLabels from the nodeClaim requirements to the labels,
-	// as this is required for scheduling in core to work correctly. If this is not done, on subsequent scheduling passes before the Node is
+	// Propagate single-value wellKnownLabels from the nodeClaim requirements to the labels.
+	// This is required for scheduling in core to work correctly. If this is not done, on subsequent scheduling passes before the Node is
 	// registered, the NodeClaim will not have the labels required to match the Pod and so a new NodeClaim will be created each time.
+	// Note that AWS does this by explicitly setting the labels in their CloudProvider (see https://github.com/aws/karpenter-provider-aws/blob/main/pkg/cloudprovider/cloudprovider.go#L456)
+	// rather than doing it in bulk here.
+	// TODO: should we do like AWS and smuggle all of these labels through VM tags rather than just setting them here?
 	newNodeClaim.Labels = lo.Assign(newNodeClaim.Labels, labelspkg.GetWellKnownSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...)))
 
 	if err := setAdditionalAnnotationsForNewNodeClaim(ctx, newNodeClaim, nodeClass); err != nil {
