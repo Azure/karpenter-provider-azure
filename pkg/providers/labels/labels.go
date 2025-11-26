@@ -39,8 +39,9 @@ var (
 	AKSLabelPodNetworkType      = v1beta1.AKSLabelDomain + "/podnetwork-type"
 	AKSLabelNetworkStatelessCNI = v1beta1.AKSLabelDomain + "/network-stateless-cni"
 
-	AKSLabelRole    = v1beta1.AKSLabelDomain + "/role"
-	AKSLabelCluster = v1beta1.AKSLabelDomain + "/cluster"
+	AKSLabelRole             = v1beta1.AKSLabelDomain + "/role"
+	AKSLabelCluster          = v1beta1.AKSLabelDomain + "/cluster"
+	AKSLocalDNSStateLabelKey = v1beta1.AKSLabelDomain + "/localdns-state"
 )
 
 // These label definitions taken from here: https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
@@ -123,6 +124,27 @@ func Get(
 		//              - cilium
 
 		labels[AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
+	}
+
+	if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode != nil {
+		switch *nodeClass.Spec.LocalDNS.Mode {
+		case v1beta1.LocalDNSModeRequired:
+			labels[AKSLocalDNSStateLabelKey] = "enabled"
+		case v1beta1.LocalDNSModeDisabled:
+			labels[AKSLocalDNSStateLabelKey] = "disabled"
+		case v1beta1.LocalDNSModePreferred:
+			kubernetesVersion, err := nodeClass.GetKubernetesVersion()
+			if err != nil {
+				return nil, err
+			}
+			parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+			if err != nil {
+				return nil, err
+			}
+			if parsedVersion.GE(semver.Version{Major: 1, Minor: 36}) {
+				labels[AKSLocalDNSStateLabelKey] = "enabled"
+			}
+		}
 	}
 
 	return labels, nil
