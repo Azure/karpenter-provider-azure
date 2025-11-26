@@ -29,6 +29,7 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
 var (
@@ -41,6 +42,31 @@ var (
 
 	AKSLabelRole    = v1beta1.AKSLabelDomain + "/role"
 	AKSLabelCluster = v1beta1.AKSLabelDomain + "/cluster"
+
+	kubeletLabelNamespaces = sets.NewString(
+		v1.LabelNamespaceSuffixKubelet,
+		v1.LabelNamespaceSuffixNode,
+	)
+
+	kubeletLabels = sets.NewString(
+		v1.LabelHostname,
+		v1.LabelTopologyZone,
+		v1.LabelTopologyRegion,
+		v1.LabelFailureDomainBetaZone,
+		v1.LabelFailureDomainBetaRegion,
+		v1.LabelInstanceType,
+		v1.LabelInstanceTypeStable,
+		v1.LabelOSStable,
+		v1.LabelArchStable,
+
+		LabelOS,
+		LabelArch,
+	)
+
+	K8sLabelDomains = sets.New(
+		"kubernetes.io",
+		"k8s.io",
+	)
 )
 
 // These label definitions taken from here: https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
@@ -51,26 +77,6 @@ const (
 	// LabelArch is a label to indicate the architecture of the node.
 	// The Arch labels are promoted to GA in 1.14. kubelet applies GA labels and stop applying the beta Arch labels in Kubernetes 1.19.
 	LabelArch = "beta.kubernetes.io/arch"
-)
-
-var kubeletLabelNamespaces = sets.NewString(
-	v1.LabelNamespaceSuffixKubelet,
-	v1.LabelNamespaceSuffixNode,
-)
-
-var kubeletLabels = sets.NewString(
-	v1.LabelHostname,
-	v1.LabelTopologyZone,
-	v1.LabelTopologyRegion,
-	v1.LabelFailureDomainBetaZone,
-	v1.LabelFailureDomainBetaRegion,
-	v1.LabelInstanceType,
-	v1.LabelInstanceTypeStable,
-	v1.LabelOSStable,
-	v1.LabelArchStable,
-
-	LabelOS,
-	LabelArch,
 )
 
 func Get(
@@ -128,21 +134,70 @@ func Get(
 	return labels, nil
 }
 
-// This was inspired by the method added here: https://github.com/kubernetes-sigs/karpenter/pull/2586/files
-// but does not restrict WellKnownLabels (which means this is really the same as )
-// the one used by the node restriction admission https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
+// IsKubeletLabel returns true if the given label is a label kubelet is allowed to set.
+// This is similar to the method one used by the node restriction admission
+// https://github.com/kubernetes/kubernetes/blob/e319c541f144e9bee6160f1dd8671638a9029f4c/staging/src/k8s.io/kubelet/pkg/apis/well_known_labels.go#L67
+// with the isKubernetesLabel check from https://github.com/kubernetes/kubernetes/blob/4bed36e03e7bd699b089d33da6f7d7c9ef9eb661/cmd/kubelet/app/options/options.go#L176C6-L176C23.
 func IsKubeletLabel(key string) bool {
 	if kubeletLabels.Has(key) {
 		return true
 	}
 
 	namespace := getLabelNamespace(key)
+	if !isKubernetesNamespace(namespace) {
+		return true
+	}
+
 	for allowedNamespace := range kubeletLabelNamespaces {
 		if namespace == allowedNamespace || strings.HasSuffix(namespace, "."+allowedNamespace) {
 			return true
 		}
 	}
 
+	return false
+}
+
+// GetWellKnownSingleValuedRequirementLabels converts well-known Azure single-value instanceType.Requirements to labels
+// This is useful for projecting requirements from the NodeClaim to labels, which is required for scheduling simulation to work
+// correctly.
+func GetWellKnownSingleValuedRequirementLabels(requirements scheduling.Requirements) map[string]string {
+	wellKnown := func(k string, r *scheduling.Requirement) bool {
+		return v1beta1.AzureWellKnownLabels.Has(k)
+	}
+	return GetFilteredSingleValuedRequirementLabels(requirements, wellKnown)
+}
+
+// GetAllSingleValuedRequirementLabels converts single-value instanceType.Requirements to labels
+// Like   instanceType.Requirements.Labels() it uses single-valued requirements
+// Unlike instanceType.Requirements.Labels() it does not filter out restricted Node labels
+func GetAllSingleValuedRequirementLabels(requirements scheduling.Requirements) map[string]string {
+	all := func(k string, r *scheduling.Requirement) bool {
+		return true
+	}
+	return GetFilteredSingleValuedRequirementLabels(requirements, all)
+}
+
+func GetFilteredSingleValuedRequirementLabels(requirements scheduling.Requirements, predicate func(k string, r *scheduling.Requirement) bool) map[string]string {
+	labels := map[string]string{}
+	if len(requirements) == 0 {
+		return labels
+	}
+	for key, req := range requirements {
+		if req.Len() == 1 && predicate(key, req) {
+			labels[key] = req.Values()[0]
+		}
+	}
+	return labels
+}
+
+// isKubernetesNamespace checks if the given namespace belongs to kubernetes.io or k8s.io domains
+// Similar to https://github.com/kubernetes/kubernetes/blob/4bed36e03e7bd699b089d33da6f7d7c9ef9eb661/cmd/kubelet/app/options/options.go#L176C6-L176C23
+func isKubernetesNamespace(namespace string) bool {
+	for k8sDomain := range K8sLabelDomains {
+		if namespace == k8sDomain || strings.HasSuffix(namespace, "."+k8sDomain) {
+			return true
+		}
+	}
 	return false
 }
 

@@ -439,7 +439,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Create nodepool that has both ondemand and spot capacity types enabled
 			coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D2_v3", "Standard_D64s_v3"},
 				}})
@@ -756,7 +756,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should prefer NVMe disk if supported for ephemeral", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
+						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"Standard_D128ds_v6"},
 					},
@@ -775,7 +775,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should not select NVMe ephemeral disk placement if the sku has an nvme disk, supports ephemeral os disk, but doesnt support NVMe placement", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
+						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"Standard_NC24ads_A100_v4"},
 					},
@@ -794,7 +794,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should prefer cache disk placement when both cache and temp disk support ephemeral and fit the default 128GB threshold", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
+						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"Standard_D64s_v3"},
 					},
@@ -812,7 +812,7 @@ var _ = Describe("InstanceType Provider", func() {
 			It("should select managed disk if cache disk is too small but temp disk supports ephemeral and fits osDiskSizeGB to have parity with the AKS Nodepool API", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      "node.kubernetes.io/instance-type",
+						Key:      v1.LabelInstanceTypeStable,
 						Operator: v1.NodeSelectorOpIn,
 						Values:   []string{"Standard_B20ms"},
 					},
@@ -832,7 +832,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// SKU Standard_D64s_v3 has 1600GB of CacheDisk space, so we expect we can create an ephemeral disk with size 128GB
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D64s_v3"},
 				}})
@@ -891,7 +891,7 @@ var _ = Describe("InstanceType Provider", func() {
 			nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](256)
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D64s_v3"},
 				}})
@@ -914,7 +914,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// With our rule of 100GB being the minimum OSDiskSize, this VM should be created without local disk
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D2s_v3"},
 				}})
@@ -932,7 +932,7 @@ var _ = Describe("InstanceType Provider", func() {
 		It("should select NvmeDisk for v6 skus with maxNvmeDiskSize > 0", func() {
 			nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 				NodeSelectorRequirement: v1.NodeSelectorRequirement{
-					Key:      "node.kubernetes.io/instance-type",
+					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_D128ds_v6"},
 				}})
@@ -1524,13 +1524,16 @@ var _ = Describe("InstanceType Provider", func() {
 			// AKS domain
 			{Name: v1beta1.AKSLabelCPU, Label: v1beta1.AKSLabelCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			{Name: v1beta1.AKSLabelMemory, Label: v1beta1.AKSLabelMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
-			// Deprecated Labels -- note that these are not expected in kubelet labels or on the node, they are written by CloudProvider
+			// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
+			// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
+			// the new labels to the old labels for compatibility.
 			{Name: v1.LabelFailureDomainBetaRegion, Label: v1.LabelFailureDomainBetaRegion, ValueFunc: func() string { return fake.Region }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: v1.LabelFailureDomainBetaZone, Label: v1.LabelFailureDomainBetaZone, ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: "beta.kubernetes.io/arch", Label: "beta.kubernetes.io/arch", ValueFunc: func() string { return "amd64" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: "beta.kubernetes.io/os", Label: "beta.kubernetes.io/os", ValueFunc: func() string { return "linux" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: v1.LabelInstanceType, Label: v1.LabelInstanceType, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			{Name: "topology.disk.csi.azure.com/zone", Label: "topology.disk.csi.azure.com/zone", ValueFunc: func() string { return fakeZone1 }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
+			// Unsupported labels
 			{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			// Cluster Label
 			// TODO: The cluster label is not actually used for scheduling so we'll happily get a node that doesn't match this... Also since it's not a well known requirement
@@ -1597,6 +1600,17 @@ var _ = Describe("InstanceType Provider", func() {
 				value := item.ValueFunc()
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: value}})
+				// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
+				// end up with a new node for each scheduling attempt
+				if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
+					bindings := []Bindings{}
+					for range 3 {
+						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
+					}
+					for i := range len(bindings) {
+						Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
+					}
+				}
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 
@@ -1624,7 +1638,19 @@ var _ = Describe("InstanceType Provider", func() {
 				value := item.ValueFunc()
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{NodeSelector: map[string]string{item.Label: value}})
+				// Simulate multiple scheduling passes before final binding, this ensures that when real scheduling happens we won't
+				// end up with a new node for each scheduling attempt
+				if item.Label != v1.LabelWindowsBuild { // TODO: special case right now as we don't support it
+					bindings := []Bindings{}
+					for range 3 {
+						bindings = append(bindings, ExpectProvisionedNoBinding(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod))
+					}
+					for i := range len(bindings) {
+						Expect(lo.Values(bindings[i])[0].Node.Name).To(Equal(lo.Values(bindings[0])[0].Node.Name), "expected all bindings to have the same node name")
+					}
+				}
 				ExpectProvisioned(ctx, env.Client, clusterBootstrap, cloudProviderBootstrap, coreProvisionerBootstrap, pod)
+
 				node := ExpectScheduled(ctx, env.Client, pod)
 
 				if item.ExpectedOnNode {
@@ -2036,7 +2062,7 @@ var _ = Describe("InstanceType Provider", func() {
 			node := ExpectScheduled(ctx, env.Client, pod)
 
 			// the following checks assume Standard_NC16as_T4_v3 (surprisingly the cheapest GPU in the test set), so test the assumption
-			Expect(node.Labels).To(HaveKeyWithValue("node.kubernetes.io/instance-type", "Standard_NC16as_T4_v3"))
+			Expect(node.Labels).To(HaveKeyWithValue(v1.LabelInstanceTypeStable, "Standard_NC16as_T4_v3"))
 
 			// Verify GPU related settings in bootstrap (assuming one Standard_NC16as_T4_v3)
 			customData := ExpectDecodedCustomData(azureEnv)

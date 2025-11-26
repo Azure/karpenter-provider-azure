@@ -861,11 +861,15 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 
 	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
 	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
-	claimLabels := offerings.GetAllSingleValuedRequirementLabels(scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
-	claimLabels = lo.PickBy(claimLabels, func(k string, v string) bool { return labels.IsKubeletLabel(k) })
+	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+		func(k string, req *scheduling.Requirement) bool {
+			return labels.IsKubeletLabel(k)
+		},
+	)
 	additionalLabels := lo.Assign(
 		claimLabels,
-		offerings.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
+		labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
 		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
 	)
 

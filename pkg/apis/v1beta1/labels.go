@@ -29,7 +29,21 @@ func init() {
 	// Note that adding to WellKnownLabels here requires a corresponding update to
 	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
 	// Karpenter core expects that WellKnownLabels are mapped to requirements.
-	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Insert(
+	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Union(AzureWellKnownLabels)
+}
+
+var (
+	TerminationFinalizer     = apis.Group + "/termination"
+	AzureToKubeArchitectures = map[string]string{
+		// TODO: consider using constants like compute.ArchitectureArm64
+		"x64":   karpv1.ArchitectureAmd64,
+		"Arm64": karpv1.ArchitectureArm64,
+	}
+	RestrictedLabelDomains = []string{
+		Group,
+	}
+
+	AzureWellKnownLabels = sets.New(
 		LabelSKUName,
 		LabelSKUFamily,
 		LabelSKUVersion,
@@ -50,18 +64,6 @@ func init() {
 
 		AKSLabelCluster,
 	)
-}
-
-var (
-	TerminationFinalizer     = apis.Group + "/termination"
-	AzureToKubeArchitectures = map[string]string{
-		// TODO: consider using constants like compute.ArchitectureArm64
-		"x64":   karpv1.ArchitectureAmd64,
-		"Arm64": karpv1.ArchitectureArm64,
-	}
-	RestrictedLabelDomains = []string{
-		Group,
-	}
 
 	RestrictedLabels = sets.New(
 		LabelSKUHyperVGeneration,
