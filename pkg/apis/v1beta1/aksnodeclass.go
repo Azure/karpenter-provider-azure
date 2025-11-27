@@ -45,6 +45,10 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum=2048
 	// osDiskSizeGB is the size of the OS disk in GB.
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
+	// osDiskType is the type of the OS disk. If not specified, defaulted to Premium_LRS.
+	// +kubebuilder:default=Premium_LRS
+	// +kubebuilder:validation:Enum:={Premium_LRS,Premium_ZRS,Standard_LRS,StandardSSD_LRS,StandardSSD_ZRS}
+	OSDiskType *string `json:"osDiskType,omitempty"`
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
