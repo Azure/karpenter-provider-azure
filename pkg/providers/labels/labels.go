@@ -133,25 +133,10 @@ func Get(
 		labels[AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
 	}
 
-	if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode != nil {
-		switch *nodeClass.Spec.LocalDNS.Mode {
-		case v1beta1.LocalDNSModeRequired:
-			labels[AKSLocalDNSStateLabelKey] = "enabled"
-		case v1beta1.LocalDNSModeDisabled:
-			labels[AKSLocalDNSStateLabelKey] = "disabled"
-		case v1beta1.LocalDNSModePreferred:
-			kubernetesVersion, err := nodeClass.GetKubernetesVersion()
-			if err != nil {
-				return nil, err
-			}
-			parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
-			if err != nil {
-				return nil, err
-			}
-			if parsedVersion.GE(semver.Version{Major: 1, Minor: 36}) {
-				labels[AKSLocalDNSStateLabelKey] = "enabled"
-			}
-		}
+	if nodeClass.IsLocalDNSEnabled() {
+		labels[AKSLocalDNSStateLabelKey] = "enabled"
+	} else if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode != nil && *nodeClass.Spec.LocalDNS.Mode == v1beta1.LocalDNSModeDisabled {
+		labels[AKSLocalDNSStateLabelKey] = "disabled"
 	}
 
 	return labels, nil
