@@ -49,6 +49,7 @@ type Controller struct {
 	kubernetesVersion *KubernetesVersionReconciler
 	nodeImage         *NodeImageReconciler
 	subnet            *SubnetReconciler
+	localDNS          *LocalDNSReconciler
 }
 
 func NewController(
@@ -64,6 +65,7 @@ func NewController(
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 		subnet:            NewSubnetReconciler(subnetClient),
+		localDNS:          NewLocalDNSReconciler(),
 	}
 }
 
@@ -85,6 +87,7 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 		c.kubernetesVersion,
 		c.nodeImage,
 		c.subnet,
+		c.localDNS,
 	} {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)
