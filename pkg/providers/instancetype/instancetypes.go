@@ -164,6 +164,10 @@ func (p *DefaultProvider) List(
 		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
 			continue
 		}
+		if !p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) {
+			continue
+		}
+
 		result = append(result, instanceType)
 	}
 
@@ -287,6 +291,21 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 		return false
 	}
 	return strings.EqualFold(value, "True")
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// If LocalDNS won't be enabled, all instance types are supported
+	if !nodeClass.IsLocalDNSEnabled() {
+		return true
+	}
+
+	// LocalDNS requires at least 2 vCPUs and 128 MB (122 MiB) of memory
+	cpu, err := sku.VCPU()
+	if err != nil || cpu < 2 {
+		return false
+	}
+
+	return memoryMiB(sku) >= 122
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
