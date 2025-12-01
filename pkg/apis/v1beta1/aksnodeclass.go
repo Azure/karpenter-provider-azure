@@ -18,7 +18,9 @@ package v1beta1
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/blang/semver/v4"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -117,6 +119,10 @@ const (
 // LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 // LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 // For more details see aka.ms/aks/localdns.
+// +kubebuilder:validation:XValidation:message="vnetDNSOverrides must contain required zones '.' and 'cluster.local'",rule="!has(self.vnetDNSOverrides) || (has(self.vnetDNSOverrides['.']) && has(self.vnetDNSOverrides['cluster.local']))"
+// +kubebuilder:validation:XValidation:message="kubeDNSOverrides must contain required zones '.' and 'cluster.local'",rule="!has(self.kubeDNSOverrides) || (has(self.kubeDNSOverrides['.']) && has(self.kubeDNSOverrides['cluster.local']))"
+// +kubebuilder:validation:XValidation:message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS",rule="!has(self.vnetDNSOverrides) || !has(self.vnetDNSOverrides['cluster.local']) || self.vnetDNSOverrides['cluster.local'].forwardDestination != 'VnetDNS'"
+// +kubebuilder:validation:XValidation:message="DNS traffic for root zone '.' cannot be forwarded to ClusterCoreDNS in vnetDNSOverrides",rule="!has(self.vnetDNSOverrides) || !has(self.vnetDNSOverrides['.']) || self.vnetDNSOverrides['.'].forwardDestination != 'ClusterCoreDNS'"
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
 	// +optional
@@ -130,6 +136,8 @@ type LocalDNS struct {
 }
 
 // LocalDNSOverrides specifies DNS override configuration
+// +kubebuilder:validation:XValidation:message="serveStale 'Verify' cannot be used with protocol 'ForceTCP'",rule="!has(self.serveStale) || !has(self.protocol) || self.serveStale != 'Verify' || self.protocol != 'ForceTCP'"
+// +kubebuilder:validation:XValidation:message="maxConcurrent must be non-negative",rule="!has(self.maxConcurrent) || self.maxConcurrent >= 0"
 type LocalDNSOverrides struct {
 	// Log level for DNS queries in localDNS.
 	// +optional
@@ -144,6 +152,7 @@ type LocalDNSOverrides struct {
 	// +optional
 	ForwardPolicy *LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
 	// Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache) for more information.
@@ -348,4 +357,36 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+// IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
+// Returns true for Required mode, false for Disabled mode, and for Preferred mode,
+// returns true only if the Kubernetes version is >= 1.36.
+func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
+	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == nil {
+		return false
+	}
+
+	switch *in.Spec.LocalDNS.Mode {
+	case LocalDNSModeRequired:
+		return true
+	case LocalDNSModeDisabled:
+		return false
+	case LocalDNSModePreferred:
+		// For Preferred mode, check if K8s version >= 1.36
+		kubernetesVersion, err := in.GetKubernetesVersion()
+		if err != nil {
+			return false // If we can't get version, don't enable
+		}
+
+		// Parse version
+		parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+		if err != nil {
+			return false
+		}
+
+		return parsedVersion.GE(semver.Version{Major: 1, Minor: 36})
+	default:
+		return false
+	}
 }
