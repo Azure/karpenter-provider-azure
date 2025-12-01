@@ -18,7 +18,9 @@ package v1alpha2
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/blang/semver/v4"
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -121,9 +123,11 @@ type LocalDNS struct {
 	// +optional
 	Mode *LocalDNSMode `json:"mode,omitempty"`
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+	// +kubebuilder:validation:MaxProperties=100
 	// +optional
 	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides,omitempty"`
 	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+	// +kubebuilder:validation:MaxProperties=100
 	// +optional
 	KubeDNSOverrides map[string]*LocalDNSOverrides `json:"kubeDNSOverrides,omitempty"`
 }
@@ -143,6 +147,7 @@ type LocalDNSOverrides struct {
 	// +optional
 	ForwardPolicy *LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// +kubebuilder:validation:Minimum=0
 	// +optional
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
 	// Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache) for more information.
@@ -347,4 +352,36 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+// IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
+// Returns true for Required mode, false for Disabled mode, and for Preferred mode,
+// returns true only if the Kubernetes version is >= 1.36.
+func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
+	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == nil {
+		return false
+	}
+
+	switch *in.Spec.LocalDNS.Mode {
+	case LocalDNSModeRequired:
+		return true
+	case LocalDNSModeDisabled:
+		return false
+	case LocalDNSModePreferred:
+		// For Preferred mode, check if K8s version >= 1.36
+		kubernetesVersion, err := in.GetKubernetesVersion()
+		if err != nil {
+			return false // If we can't get version, don't enable
+		}
+
+		// Parse version
+		parsedVersion, err := semver.ParseTolerant(strings.TrimPrefix(kubernetesVersion, "v"))
+		if err != nil {
+			return false
+		}
+
+		return parsedVersion.GE(semver.Version{Major: 1, Minor: 36})
+	default:
+		return false
+	}
 }
