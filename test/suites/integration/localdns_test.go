@@ -591,11 +591,6 @@ const (
 	azureDNSIP       = "168.63.129.16" // Azure's upstream DNS
 	coreDNSServiceIP = "10.0.0.10"     // Default CoreDNS service IP in AKS
 
-	// Images
-	dnsUtilsImage = "alpine:3.20.2" // Small image with nslookup built-in, proven to work in other integration tests
-
-	// Namespaces
-	namespaceDefault    = "default"
 	namespaceKubeSystem = "kube-system"
 
 	// Test timeouts
@@ -927,33 +922,6 @@ func parseDNSServerIP(logs string) string {
 				// Remove port if present (e.g., "10.0.0.10#53" -> "10.0.0.10")
 				ipPort := fields[1]
 				if idx := strings.Index(ipPort, "#"); idx != -1 {
-					return ipPort[:idx]
-				}
-				return ipPort
-			}
-		}
-	}
-	return ""
-}
-
-// parseDNSServerFromDig extracts the DNS server IP from dig output
-// Example output:
-// ;; SERVER: 169.254.10.11#53(169.254.10.11)
-func parseDNSServerFromDig(logs string) string {
-	for _, line := range strings.Split(logs, "\n") {
-		line = strings.TrimSpace(line)
-		// Look for ";; SERVER:" line
-		if strings.HasPrefix(line, ";; SERVER:") {
-			// Format: ";; SERVER: 169.254.10.11#53(169.254.10.11)"
-			fields := strings.Fields(line)
-			if len(fields) >= 3 {
-				// Extract IP from "169.254.10.11#53(169.254.10.11)"
-				ipPort := fields[2]
-				// Remove port and parentheses (e.g., "169.254.10.11#53(169.254.10.11)" -> "169.254.10.11")
-				if idx := strings.Index(ipPort, "#"); idx != -1 {
-					return ipPort[:idx]
-				}
-				if idx := strings.Index(ipPort, "("); idx != -1 {
 					return ipPort[:idx]
 				}
 				return ipPort
