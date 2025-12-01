@@ -231,7 +231,7 @@ az-build: ## Build the Karpenter controller and webhook images using skaffold bu
 	skaffold build
 
 az-creds: ## Get cluster credentials
-	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP)
+	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 
 az-run: ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
 	az acr login -n $(AZURE_ACR_NAME)
