@@ -688,6 +688,7 @@ spec:
                           description: Maximum number of concurrent queries. See [forward
                             plugin](https://coredns.io/plugins/forward) for more information.
                           format: int32
+                          minimum: 0
                           type: integer
                         protocol:
                           description: Enforce TCP or prefer UDP protocol for connections
@@ -716,6 +717,13 @@ spec:
                           pattern: ^([0-9]+(s|m|h))+$
                           type: string
                       type: object
+                      x-kubernetes-validations:
+                      - message: serveStale 'Verify' cannot be used with protocol
+                          'ForceTCP'
+                        rule: '!has(self.serveStale) || !has(self.protocol) || self.serveStale
+                          != ''Verify'' || self.protocol != ''ForceTCP'''
+                      - message: maxConcurrent must be non-negative
+                        rule: '!has(self.maxConcurrent) || self.maxConcurrent >= 0'
                     description: KubeDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
                     type: object
@@ -755,6 +763,7 @@ spec:
                           description: Maximum number of concurrent queries. See [forward
                             plugin](https://coredns.io/plugins/forward) for more information.
                           format: int32
+                          minimum: 0
                           type: integer
                         protocol:
                           description: Enforce TCP or prefer UDP protocol for connections
@@ -783,10 +792,33 @@ spec:
                           pattern: ^([0-9]+(s|m|h))+$
                           type: string
                       type: object
+                      x-kubernetes-validations:
+                      - message: serveStale 'Verify' cannot be used with protocol
+                          'ForceTCP'
+                        rule: '!has(self.serveStale) || !has(self.protocol) || self.serveStale
+                          != ''Verify'' || self.protocol != ''ForceTCP'''
+                      - message: maxConcurrent must be non-negative
+                        rule: '!has(self.maxConcurrent) || self.maxConcurrent >= 0'
                     description: VnetDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: vnetDNSOverrides must contain required zones '.' and 'cluster.local'
+                  rule: '!has(self.vnetDNSOverrides) || (has(self.vnetDNSOverrides[''.''])
+                    && has(self.vnetDNSOverrides[''cluster.local'']))'
+                - message: kubeDNSOverrides must contain required zones '.' and 'cluster.local'
+                  rule: '!has(self.kubeDNSOverrides) || (has(self.kubeDNSOverrides[''.''])
+                    && has(self.kubeDNSOverrides[''cluster.local'']))'
+                - message: DNS traffic for 'cluster.local' cannot be forwarded to
+                    VnetDNS
+                  rule: '!has(self.vnetDNSOverrides) || !has(self.vnetDNSOverrides[''cluster.local''])
+                    || self.vnetDNSOverrides[''cluster.local''].forwardDestination
+                    != ''VnetDNS'''
+                - message: DNS traffic for root zone '.' cannot be forwarded to ClusterCoreDNS
+                    in vnetDNSOverrides
+                  rule: '!has(self.vnetDNSOverrides) || !has(self.vnetDNSOverrides[''.''])
+                    || self.vnetDNSOverrides[''.''].forwardDestination != ''ClusterCoreDNS'''
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
