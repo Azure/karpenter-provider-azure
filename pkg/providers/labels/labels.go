@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
+// These labels are defined here rather than v1beta1 because we do not support scheduling simulation
+// on these labels
 var (
 	AKSLabelEBPFDataplane       = v1beta1.AKSLabelDomain + "/ebpf-dataplane"
 	AKSLabelAzureCNIOverlay     = v1beta1.AKSLabelDomain + "/azure-cni-overlay"
@@ -40,8 +42,7 @@ var (
 	AKSLabelPodNetworkType      = v1beta1.AKSLabelDomain + "/podnetwork-type"
 	AKSLabelNetworkStatelessCNI = v1beta1.AKSLabelDomain + "/network-stateless-cni"
 
-	AKSLabelRole    = v1beta1.AKSLabelDomain + "/role"
-	AKSLabelCluster = v1beta1.AKSLabelDomain + "/cluster"
+	AKSLabelRole = v1beta1.AKSLabelDomain + "/role"
 
 	kubeletLabelNamespaces = sets.NewString(
 		v1.LabelNamespaceSuffixKubelet,
@@ -90,7 +91,7 @@ func Get(
 
 	// Add labels that are always there
 	labels[AKSLabelRole] = "agent"
-	labels[AKSLabelCluster] = normalizeResourceGroupNameForLabel(opts.NodeResourceGroup)
+	labels[v1beta1.AKSLabelCluster] = NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)
 	// Note that while we set the Kubelet identity label here, in bootstrap API mode, the actual kubelet identity that is set in the bootstrapping
 	// script is configured by the NPS service. That means the label can be set to the older client ID if the client ID
 	// changed recently. This is OK because drift will correct it.
@@ -208,7 +209,7 @@ func getLabelNamespace(key string) string {
 	return ""
 }
 
-func normalizeResourceGroupNameForLabel(resourceGroupName string) string {
+func NormalizeClusterResourceGroupNameForLabel(resourceGroupName string) string {
 	truncated := resourceGroupName
 	truncated = strings.ReplaceAll(truncated, "(", "-")
 	truncated = strings.ReplaceAll(truncated, ")", "-")
