@@ -17,12 +17,17 @@ limitations under the License.
 package labels_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
+	"github.com/awslabs/operatorpkg/status"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
@@ -230,6 +235,124 @@ func TestIsKubeletLabel(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			result := labels.IsKubeletLabel(c.label)
 			assert.Equal(t, c.expectedKubelet, result)
+		})
+	}
+}
+
+func TestLocalDNSLabels(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		localDNS               *v1beta1.LocalDNS
+		kubernetesVersion      string
+		expectedLabel          string
+		expectedLabelShouldSet bool
+	}{
+		{
+			name: "LocalDNS mode is Required",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+			},
+			kubernetesVersion:      "1.35.0",
+			expectedLabel:          "enabled",
+			expectedLabelShouldSet: true,
+		},
+		{
+			name: "LocalDNS mode is Disabled",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+			},
+			kubernetesVersion:      "1.35.0",
+			expectedLabel:          "disabled",
+			expectedLabelShouldSet: true,
+		},
+		{
+			name: "LocalDNS mode is Preferred with k8s >= 1.36",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+			},
+			kubernetesVersion:      "1.36.0",
+			expectedLabel:          "enabled",
+			expectedLabelShouldSet: true,
+		},
+		{
+			name: "LocalDNS mode is Preferred with k8s 1.37",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+			},
+			kubernetesVersion:      "1.37.0",
+			expectedLabel:          "enabled",
+			expectedLabelShouldSet: true,
+		},
+		{
+			name: "LocalDNS mode is Preferred with k8s < 1.36",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+			},
+			kubernetesVersion:      "1.35.0",
+			expectedLabel:          "",
+			expectedLabelShouldSet: false,
+		},
+		{
+			name: "LocalDNS mode is Preferred with k8s 1.35.9",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+			},
+			kubernetesVersion:      "1.35.9",
+			expectedLabel:          "",
+			expectedLabelShouldSet: false,
+		},
+		{
+			name:                   "LocalDNS is nil",
+			localDNS:               nil,
+			kubernetesVersion:      "1.36.0",
+			expectedLabel:          "",
+			expectedLabelShouldSet: false,
+		},
+		{
+			name: "LocalDNS mode is nil",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: nil,
+			},
+			kubernetesVersion:      "1.36.0",
+			expectedLabel:          "",
+			expectedLabelShouldSet: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := options.ToContext(context.Background(), &options.Options{
+				NodeResourceGroup:       "test-rg",
+				KubeletIdentityClientID: "test-client-id",
+				SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
+			})
+
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: tc.localDNS,
+				},
+				Status: v1beta1.AKSNodeClassStatus{
+					KubernetesVersion: tc.kubernetesVersion,
+					Conditions: []status.Condition{
+						{
+							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
+							Status: metav1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			labelMap, err := labels.Get(ctx, nodeClass)
+			assert.NoError(t, err)
+
+			if tc.expectedLabelShouldSet {
+				assert.Equal(t, tc.expectedLabel, labelMap[labels.AKSLocalDNSStateLabelKey], "Expected localdns-state label to be set")
+			} else {
+				assert.NotContains(t, labelMap, labels.AKSLocalDNSStateLabelKey, "Expected localdns-state label to not be set")
+			}
 		})
 	}
 }
