@@ -46,6 +46,7 @@ var (
 	AzureWellKnownLabels = sets.New(
 		LabelSKUName,
 		LabelSKUFamily,
+		LabelSKUSeries,
 		LabelSKUVersion,
 
 		LabelSKUCPU,
@@ -77,8 +78,9 @@ var (
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
 
-	LabelSKUName    = Group + "/sku-name"    // Standard_A1_v2
-	LabelSKUFamily  = Group + "/sku-family"  // A
+	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
+	LabelSKUFamily  = Group + "/sku-family"  // D
+	LabelSKUSeries  = Group + "/sku-series"  // Dpls_v6
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
