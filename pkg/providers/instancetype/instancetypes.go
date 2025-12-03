@@ -299,13 +299,13 @@ func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nod
 		return true
 	}
 
-	// LocalDNS requires at least 2 vCPUs and 128 MB (122 MiB) of memory
+	// LocalDNS requires at least 4 vCPUs and 256 MB (244.140625 MiB) of memory
 	cpu, err := sku.VCPU()
-	if err != nil || cpu < 2 {
+	if err != nil || cpu < 4 {
 		return false
 	}
 
-	return memoryMiB(sku) >= 122
+	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
