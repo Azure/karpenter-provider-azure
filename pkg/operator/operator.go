@@ -20,7 +20,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -90,6 +93,21 @@ type Operator struct {
 	AZClient                  *instance.AZClient
 }
 
+func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
+	if kubernetesInterface == nil {
+		return nil, fmt.Errorf("no K8s client provided")
+	}
+	dnsService, err := kubernetesInterface.CoreV1().Services("kube-system").Get(ctx, "kube-dns", metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	kubeDNSIP := net.ParseIP(dnsService.Spec.ClusterIP)
+	if kubeDNSIP == nil {
+		return nil, fmt.Errorf("parsing cluster IP")
+	}
+	return kubeDNSIP, nil
+}
+
 func NewOperator(ctx context.Context, operator *operator.Operator) (context.Context, *Operator) {
 	azConfig, err := GetAZConfig()
 	lo.Must0(err, "creating Azure config") // NOTE: we prefer this over the cleaner azConfig := lo.Must(GetAzConfig()), as when initializing the client there are helpful error messages in initializing clients and the azure config
@@ -118,6 +136,17 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	inClusterConfig.RateLimiter = flowcontrol.NewTokenBucketRateLimiter(float32(coreoptions.FromContext(ctx).KubeClientQPS), coreoptions.FromContext(ctx).KubeClientBurst)
 	inClusterConfig.UserAgent = auth.GetUserAgentExtension()
 	inClusterClient := kubernetes.NewForConfigOrDie(inClusterConfig)
+
+	if options.FromContext(ctx).DNSServiceIP == "" {
+		kubeDNSIP, err := kubeDNSIP(ctx, operator.KubernetesInterface)
+		if err != nil { // fall back to default
+			log.FromContext(ctx).V(1).Info("unable to detect the IP of the kube-dns service, using default 10.0.0.10", "error", err)
+			options.FromContext(ctx).DNSServiceIP = "10.0.0.10"
+		} else {
+			log.FromContext(ctx).V(1).Info("discovered DNS service IP", "dns-service-ip", kubeDNSIP.String())
+			options.FromContext(ctx).DNSServiceIP = kubeDNSIP.String()
+		}
+	}
 
 	unavailableOfferingsCache := azurecache.NewUnavailableOfferings()
 	pricingProvider := pricing.NewProvider(

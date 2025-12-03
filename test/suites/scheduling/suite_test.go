@@ -83,8 +83,6 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelWindowsBuild,
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
-			// TODO: review the use of "kubernetes.azure.com/cluster"
-			v1beta1.AKSLabelCluster,
 		)
 
 		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
@@ -123,6 +121,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				// Well Known to Azure
 				v1beta1.LabelSKUName:                      "Standard_D2s_v3",
 				v1beta1.LabelSKUFamily:                    "D",
+				v1beta1.LabelSKUSeries:                    "Ds_v3",
 				v1beta1.LabelSKUVersion:                   "3",
 				v1beta1.LabelSKUCPU:                       "2",
 				v1beta1.LabelSKUMemory:                    "8192",
@@ -131,6 +130,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
+				v1beta1.AKSLabelCluster:                   env.NodeResourceGroup,
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
