@@ -36,6 +36,7 @@ jobs:
           raw.githubusercontent.com:443
           storage.googleapis.com:443
           go.dev:443
+          dl.google.com:443
           sum.golang.org:443
           aquasecurity.github.io:443
           mirror.gcr.io:443
