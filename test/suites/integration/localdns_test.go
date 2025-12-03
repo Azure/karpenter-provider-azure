@@ -44,41 +44,7 @@ var _ = Describe("LocalDNS", func() {
 	})
 
 	// =========================================================================
-	// SIMPLE TEST: CREATE NODE WITH LOCALDNS ENABLED
-	// =========================================================================
-	It("should create a node with LocalDNS enabled", func() {
-		By("Configuring NodeClass with LocalDNS enabled")
-		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
-		}
-
-		By("Configuring NodePool with unique label")
-		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-			"localdns-test-id": "simple-test",
-		})
-
-		By("Triggering node provisioning (Karpenter requires a pending pod)")
-		// Note: Karpenter provisions nodes in response to pending pods, so we create
-		// a minimal pod just to trigger provisioning. The test focuses on the node.
-		pod := test.Pod(test.PodOptions{
-			NodeSelector: map[string]string{
-				"localdns-test-id": "simple-test",
-			},
-		})
-		env.ExpectCreated(nodeClass, nodePool, pod)
-
-		By("Waiting for node to be provisioned and become healthy")
-		env.EventuallyExpectHealthy(pod)
-		env.ExpectCreatedNodeCount("==", 1)
-
-		node := env.Monitor.CreatedNodes()[0]
-		By(fmt.Sprintf("✓ Node successfully created with LocalDNS enabled: %s", node.Name))
-		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
-		time.Sleep(60 * time.Minute)
-	})
-
-	// =========================================================================
-	// FULL-FLEDGED LOCALDNS CONFIG TEST
+	// Happy path LOCALDNS CONFIG TEST
 	// =========================================================================
 	It("should create a node with full LocalDNS configuration (overrides)", func() {
 		By("Cordoning existing nodes in the managed cluster")
