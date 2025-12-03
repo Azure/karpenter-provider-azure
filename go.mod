@@ -1,6 +1,6 @@
 module github.com/Azure/karpenter-provider-azure
 
-go 1.24.9
+go 1.24.11
 
 require (
 	github.com/Azure/aks-middleware v0.0.41
