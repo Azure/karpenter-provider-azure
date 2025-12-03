@@ -25,6 +25,7 @@ jobs:
           proxy.golang.org:443
           raw.githubusercontent.com:443
           storage.googleapis.com:443
+          go.dev:443
           sum.golang.org:443
           vuln.go.dev:443
           aquasecurity.github.io:443
