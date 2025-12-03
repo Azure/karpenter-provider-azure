@@ -687,88 +687,48 @@ var _ = Describe("InstanceType Provider", func() {
 		})
 	})
 
-	Context("Filtering by LocalDNS", func() {
-		var instanceTypes corecloudprovider.InstanceTypes
-		var err error
-		getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
-
-		Context("when LocalDNS is required", func() {
-			BeforeEach(func() {
-				nodeClassWithLocalDNS := test.AKSNodeClass()
-				nodeClassWithLocalDNS.Spec.LocalDNS = &v1beta1.LocalDNS{
-					Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+	DescribeTable("Filtering by LocalDNS",
+		func(localDNSMode *v1beta1.LocalDNSMode, k8sVersion string, shouldIncludeD2s, shouldIncludeD4s bool) {
+			if localDNSMode != nil {
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: localDNSMode,
 				}
-				test.ApplyDefaultStatus(nodeClassWithLocalDNS, env, testOptions.UseSIG)
-				ExpectApplied(ctx, env.Client, nodeClassWithLocalDNS)
-				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithLocalDNS)
-				Expect(err).ToNot(HaveOccurred())
-			})
+			}
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			if k8sVersion != "" {
+				nodeClass.Status.KubernetesVersion = k8sVersion
+			}
+			ExpectApplied(ctx, env.Client, nodeClass)
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).ShouldNot(BeEmpty())
 
-			It("should only include SKUs with at least 2 vCPUs and 122 MiB memory", func() {
-				// All SKUs should meet minimum requirements (2 vCPUs and 122 MiB)
-				// Verify we got some SKUs back
-				Expect(instanceTypes).ShouldNot(BeEmpty())
-				// Standard_D2s_v3 has 2 vCPUs and 8 GiB memory, so it should be included
-				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
-			})
-		})
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
 
-		Context("when LocalDNS is preferred with k8s >= 1.36", func() {
-			BeforeEach(func() {
-				nodeClassWithLocalDNS := test.AKSNodeClass()
-				nodeClassWithLocalDNS.Spec.LocalDNS = &v1beta1.LocalDNS{
-					Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
-				}
-				test.ApplyDefaultStatus(nodeClassWithLocalDNS, env, testOptions.UseSIG)
-				nodeClassWithLocalDNS.Status.KubernetesVersion = "1.36.0"
-				ExpectApplied(ctx, env.Client, nodeClassWithLocalDNS)
-				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithLocalDNS)
-				Expect(err).ToNot(HaveOccurred())
-			})
+			if shouldIncludeD2s {
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+					"Standard_D2s_v3 (2 vCPUs) should be included")
+			} else {
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+					"Standard_D2s_v3 (2 vCPUs) should be excluded")
+			}
 
-			It("should only include SKUs with at least 2 vCPUs and 122 MiB memory", func() {
-				// Standard_D2s_v3 has 2 vCPUs and 8 GiB memory, so it should be included
-				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
-			})
-		})
-
-		Context("when LocalDNS is preferred with k8s < 1.36", func() {
-			BeforeEach(func() {
-				nodeClassWithLocalDNS := test.AKSNodeClass()
-				nodeClassWithLocalDNS.Spec.LocalDNS = &v1beta1.LocalDNS{
-					Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
-				}
-				test.ApplyDefaultStatus(nodeClassWithLocalDNS, env, testOptions.UseSIG)
-				nodeClassWithLocalDNS.Status.KubernetesVersion = "1.35.0"
-				ExpectApplied(ctx, env.Client, nodeClassWithLocalDNS)
-				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithLocalDNS)
-				Expect(err).ToNot(HaveOccurred())
-			})
-
-			It("should include all SKUs regardless of CPU/memory since LocalDNS won't be enabled", func() {
-				// All SKUs should be included since LocalDNS is not enabled for this k8s version
-				Expect(instanceTypes).ShouldNot(BeEmpty())
-				// Standard_D2s_v3 should be included
-				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
-			})
-		})
-
-		Context("when LocalDNS is disabled or not set", func() {
-			It("should include all SKUs regardless of CPU/memory requirements", func() {
-				nodeClassWithoutLocalDNS := test.AKSNodeClass()
-				// default is disabled when LocalDNS is nil
-				test.ApplyDefaultStatus(nodeClassWithoutLocalDNS, env, testOptions.UseSIG)
-				ExpectApplied(ctx, env.Client, nodeClassWithoutLocalDNS)
-				instanceTypes, err = azureEnv.InstanceTypesProvider.List(ctx, nodeClassWithoutLocalDNS)
-				Expect(err).ToNot(HaveOccurred())
-
-				// All SKUs should be included when LocalDNS is not enabled
-				Expect(instanceTypes).ShouldNot(BeEmpty())
-				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))))
-				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))))
-			})
-		})
-	})
+			if shouldIncludeD4s {
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+					"Standard_D4s_v3 (4 vCPUs) should be included")
+			}
+		},
+		Entry("when LocalDNS is required - filters to 4+ vCPUs and 244+ MiB",
+			lo.ToPtr(v1beta1.LocalDNSModeRequired), "", false, true),
+		Entry("when LocalDNS is preferred with k8s >= 1.36 - filters to 4+ vCPUs and 244+ MiB",
+			lo.ToPtr(v1beta1.LocalDNSModePreferred), "1.36.0", false, true),
+		Entry("when LocalDNS is preferred with k8s < 1.36 - includes all SKUs",
+			lo.ToPtr(v1beta1.LocalDNSModePreferred), "1.35.0", true, true),
+		Entry("when LocalDNS is disabled - includes all SKUs",
+			lo.ToPtr(v1beta1.LocalDNSModeDisabled), "", true, true),
+		Entry("when LocalDNS is not set - includes all SKUs",
+			nil, "", true, true),
+	)
 
 	Context("Ephemeral Disk", func() {
 		var originalOptions *options.Options
