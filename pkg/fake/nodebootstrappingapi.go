@@ -25,32 +25,51 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 )
 
+type NodeBootstrappingGetInput struct {
+	Params *models.ProvisionValues
+}
+
+type NodeBootstrappingBehavior struct {
+	NodeBootstrappingGetBehavior MockedFunction[NodeBootstrappingGetInput, types.NodeBootstrapping]
+}
+
 // NodeBootstrappingAPI implements a fake version of the imagefamily.types.NodeBootstrappingAPI
 // for testing purposes.
 type NodeBootstrappingAPI struct {
+	NodeBootstrappingBehavior
 	SimulateDown bool
 }
 
 // Ensure NodeBootstrappingAPI implements the types.NodeBootstrappingAPI interface
 var _ types.NodeBootstrappingAPI = &NodeBootstrappingAPI{}
 
+// Reset must be called between tests otherwise tests will pollute each other.
+func (n *NodeBootstrappingAPI) Reset() {
+	n.NodeBootstrappingGetBehavior.Reset()
+}
+
 // Get implements the NodeBootstrappingAPI interface for testing
 func (n *NodeBootstrappingAPI) Get(ctx context.Context, params *models.ProvisionValues) (types.NodeBootstrapping, error) {
-	if n.SimulateDown {
-		return types.NodeBootstrapping{}, fmt.Errorf("InternalServerError; NodeBootstrappingAPI is down")
+	input := &NodeBootstrappingGetInput{
+		Params: params,
 	}
-	if err := validateProvisionProfile(params.ProvisionProfile); err != nil {
-		return types.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
-	}
+	return n.NodeBootstrappingGetBehavior.Invoke(input, func(input *NodeBootstrappingGetInput) (types.NodeBootstrapping, error) {
+		if n.SimulateDown {
+			return types.NodeBootstrapping{}, fmt.Errorf("InternalServerError; NodeBootstrappingAPI is down")
+		}
+		if err := validateProvisionProfile(input.Params.ProvisionProfile); err != nil {
+			return types.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
+		}
 
-	if err := validateProvisionHelperValues(params.ProvisionHelperValues); err != nil {
-		return types.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
-	}
+		if err := validateProvisionHelperValues(input.Params.ProvisionHelperValues); err != nil {
+			return types.NodeBootstrapping{}, fmt.Errorf("MissingRequiredProperty; ConvertProvisionProfile failed with error: %s", err.Error())
+		}
 
-	return types.NodeBootstrapping{
-		CSEDehydratable:               fmt.Sprintf("CORRECT_CSE_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *params),
-		CustomDataEncodedDehydratable: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("CORRECT_CUSTOM_DATA_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *params))),
-	}, nil
+		return types.NodeBootstrapping{
+			CSEDehydratable:               fmt.Sprintf("CORRECT_CSE_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *input.Params),
+			CustomDataEncodedDehydratable: base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("CORRECT_CUSTOM_DATA_WITH_OMITTED_TLS_BOOTSTRAP_TOKEN_{{.TokenID}}.{{.TokenSecret}}: %v", *input.Params))),
+		}, nil
+	})
 }
 
 // nolint: gocyclo

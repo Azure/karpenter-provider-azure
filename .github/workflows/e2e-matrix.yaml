@@ -8,6 +8,10 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "eastus"
+      provisionmode:
+        type: string
+        description: "the karpenter provisioning mode to run the e2e test in"
+        default: "aksscriptless"
   #     k8s_version:
   #       type: string
   #       default: "1.27"
@@ -29,7 +33,7 @@ jobs:
       E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        uses: step-security/harden-runner@df199fb7be9f65074067a9eb93f12bb4c5547cf2 # v2.13.3
         with:
           disable-telemetry: true
           disable-sudo: true
@@ -58,6 +62,7 @@ jobs:
       suite: ${{ matrix.suite }}
       hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
       location: ${{ inputs.location }}
+      provisionmode: ${{ inputs.provisionmode || 'aksscriptless' }}
   #     k8s_version: ${{ inputs.k8s_version }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}

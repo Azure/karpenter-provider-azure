@@ -45,7 +45,9 @@ type OptionsFields struct {
 	VnetGUID                       *string
 	KubeletIdentityClientID        *string
 	AdditionalTags                 map[string]string
+	EnableAzureSDKLogging          *bool
 	DiskEncryptionSetID            *string
+	ClusterDNSServiceIP            *string
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -79,10 +81,12 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		NodeResourceGroup:              lo.FromPtrOr(options.NodeResourceGroup, "test-resourceGroup"),
 		ProvisionMode:                  lo.FromPtrOr(options.ProvisionMode, "aksscriptless"),
 		NodeBootstrappingServerURL:     lo.FromPtrOr(options.NodeBootstrappingServerURL, ""),
+		EnableAzureSDKLogging:          lo.FromPtrOr(options.EnableAzureSDKLogging, true),
 		UseSIG:                         lo.FromPtrOr(options.UseSIG, false),
 		SIGSubscriptionID:              lo.FromPtrOr(options.SIGSubscriptionID, "12345678-1234-1234-1234-123456789012"),
 		SIGAccessTokenServerURL:        lo.FromPtrOr(options.SIGAccessTokenServerURL, "https://test-sig-access-token-server.com"),
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
+		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
 	}
 }
