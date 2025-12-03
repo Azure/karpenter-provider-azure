@@ -1512,6 +1512,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Well Known to AKS
 			{Name: v1beta1.LabelSKUName, Label: v1beta1.LabelSKUName, ValueFunc: func() string { return "Standard_NC24ads_A100_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			{Name: v1beta1.LabelSKUFamily, Label: v1beta1.LabelSKUFamily, ValueFunc: func() string { return "N" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+			{Name: v1beta1.LabelSKUSeries, Label: v1beta1.LabelSKUSeries, ValueFunc: func() string { return "NCads_v4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			{Name: v1beta1.LabelSKUVersion, Label: v1beta1.LabelSKUVersion, ValueFunc: func() string { return "4" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			{Name: v1beta1.LabelSKUStorageEphemeralOSMaxSize, Label: v1beta1.LabelSKUStorageEphemeralOSMaxSize, ValueFunc: func() string { return "429" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			{Name: v1beta1.LabelSKUAcceleratedNetworking, Label: v1beta1.LabelSKUAcceleratedNetworking, ValueFunc: func() string { return "true" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
@@ -1536,9 +1537,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// Unsupported labels
 			{Name: v1.LabelWindowsBuild, Label: v1.LabelWindowsBuild, ValueFunc: func() string { return "window" }, ExpectedInKubeletLabels: false, ExpectedOnNode: false},
 			// Cluster Label
-			// TODO: The cluster label is not actually used for scheduling so we'll happily get a node that doesn't match this... Also since it's not a well known requirement
-			// Karpenter won't write it to the node which is why ExpectedOnNode is false.
-			{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: false},
+			{Name: v1beta1.AKSLabelCluster, Label: v1beta1.AKSLabelCluster, ValueFunc: func() string { return "test-resourceGroup" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 		}
 
 		It("should support individual instance type labels (when all pods scheduled at once)", func() {
@@ -1676,7 +1675,6 @@ var _ = Describe("InstanceType Provider", func() {
 
 		nonSchedulableLabels := map[string]string{
 			labels.AKSLabelRole:                     "agent",
-			labels.AKSLabelCluster:                  "test-resourceGroup", // TODO: this is currently a WellKnownLabel but planning to remove it
 			v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
 			"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
 			//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there

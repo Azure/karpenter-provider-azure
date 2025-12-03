@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -129,7 +130,7 @@ func NewInstanceType(
 ) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
-		Requirements: computeRequirements(sku, vmsize, architecture, offerings, region),
+		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region),
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, nodeClass),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
@@ -141,6 +142,7 @@ func NewInstanceType(
 }
 
 func computeRequirements(
+	opts *options.Options,
 	sku *skewer.SKU,
 	vmsize *skewer.VMSizeType,
 	architecture string,
@@ -171,12 +173,14 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUCount, corev1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUManufacturer, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUName, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.AKSLabelCluster, corev1.NodeSelectorOpIn, labels.NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)),
 
 		// composites
 		scheduling.NewRequirement(v1beta1.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
 
 		// size parts
 		scheduling.NewRequirement(v1beta1.LabelSKUFamily, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUSeries, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1beta1.LabelSKUVersion, corev1.NodeSelectorOpDoesNotExist),
 
 		// SKU capabilities
@@ -192,6 +196,7 @@ func computeRequirements(
 
 	// size parts
 	requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
+	requirements[v1beta1.LabelSKUSeries].Insert(vmsize.Series)
 
 	setRequirementsEphemeralOSDiskSupported(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)
