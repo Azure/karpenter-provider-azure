@@ -506,65 +506,6 @@ func TestGetOfferingZone(t *testing.T) {
 	}
 }
 
-func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
-	cases := []struct {
-		name           string
-		instanceType   *cloudprovider.InstanceType
-		expectedLabels map[string]string
-	}{
-		{
-			name:           "Nil instance type",
-			instanceType:   nil,
-			expectedLabels: map[string]string{},
-		},
-		{
-			name: "Single-valued requirements",
-			instanceType: &cloudprovider.InstanceType{
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
-					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
-				),
-			},
-			expectedLabels: map[string]string{
-				"node.kubernetes.io/instance-type": "Standard_D2s_v3",
-				corev1.LabelTopologyZone:           "westus-1",
-			},
-		},
-		{
-			name: "Mixed single and multi-valued requirements",
-			instanceType: &cloudprovider.InstanceType{
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement("node.kubernetes.io/instance-type", corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
-					scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
-					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
-				),
-			},
-			expectedLabels: map[string]string{
-				"node.kubernetes.io/instance-type": "Standard_D2s_v3",
-				corev1.LabelTopologyZone:           "westus-1",
-				// karpv1.CapacityTypeLabelKey should be excluded because it has multiple values
-			},
-		},
-		{
-			name: "No single-valued requirements",
-			instanceType: &cloudprovider.InstanceType{
-				Requirements: scheduling.NewRequirements(
-					scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
-					scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2"),
-				),
-			},
-			expectedLabels: map[string]string{},
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			labels := GetAllSingleValuedRequirementLabels(c.instanceType)
-			assert.Equal(t, c.expectedLabels, labels)
-		})
-	}
-}
-
 func TestGetInstanceTypeFromVMSize(t *testing.T) {
 	possibleInstanceTypes := []*cloudprovider.InstanceType{
 		{Name: "Standard_D2s_v3"},

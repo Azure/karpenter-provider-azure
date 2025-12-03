@@ -26,7 +26,6 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -310,8 +309,7 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	}
 
 	// merge and stringify labels
-	kubeletLabels := lo.Assign(getBaseKubeletNodeLabels(), a.Labels)
-	labels.AddAgentBakerGeneratedLabels(a.ResourceGroup, a.KubeletIdentityClientID, kubeletLabels)
+	kubeletLabels := a.Labels
 
 	subnetParts, _ := utils.GetVnetSubnetIDComponents(a.SubnetID)
 	nbv.Subnet = subnetParts.SubnetName
@@ -327,6 +325,9 @@ func (a AKS) applyOptions(nbv *NodeBootstrapVariables) {
 	kubeletFlagsBase := getBaseKubeletFlags()
 	if minorVersion < 31 {
 		kubeletFlagsBase["--keep-terminated-pod-volumes"] = "false"
+	}
+	if minorVersion >= 34 {
+		delete(kubeletFlagsBase, "--cloud-config") // removed in 1.34
 	}
 
 	credentialProviderURL := CredentialProviderURL(a.KubernetesVersion, a.Arch)

@@ -42,6 +42,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
@@ -854,7 +855,23 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 ) (*launchtemplate.Template, error) {
-	additionalLabels := lo.Assign(offerings.GetAllSingleValuedRequirementLabels(instanceType), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
+	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
+	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
+	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
+
+	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
+	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
+	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+		func(k string, req *scheduling.Requirement) bool {
+			return labels.IsKubeletLabel(k)
+		},
+	)
+	additionalLabels := lo.Assign(
+		claimLabels,
+		labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
+		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
+	)
 
 	launchTemplate, err := p.launchTemplateProvider.GetTemplate(ctx, nodeClass, nodeClaim, instanceType, additionalLabels)
 	if err != nil {
