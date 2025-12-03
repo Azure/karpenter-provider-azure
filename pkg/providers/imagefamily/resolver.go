@@ -49,6 +49,7 @@ type Resolver interface {
 		nodeClaim *karpv1.NodeClaim,
 		instanceType *cloudprovider.InstanceType,
 		staticParameters *template.StaticParameters) (*template.Parameters, error)
+	ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error)
 }
 
 // assert that defaultResolver implements Resolver interface
@@ -98,7 +99,9 @@ func NewDefaultResolver(_ client.Client, imageProvider *provider, instanceTypePr
 	}
 }
 
-// Resolve fills in dynamic launch template parameters
+// Resolve fills in dynamic launch template parameters.
+// The name "imageFamilyResolver.Resolve()" is potentially misleading here.
+// Suggestion: refactor would help, but this won't be used by PROVISION_MODE=aksmachineapi anyway. May not be worth it.
 func (r *defaultResolver) Resolve(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -106,17 +109,13 @@ func (r *defaultResolver) Resolve(
 	instanceType *cloudprovider.InstanceType,
 	staticParameters *template.StaticParameters,
 ) (*template.Parameters, error) {
-	nodeImages, err := nodeClass.GetImages()
-	if err != nil {
-		return nil, err
-	}
 	kubernetesVersion, err := nodeClass.GetKubernetesVersion()
 	if err != nil {
 		return nil, err
 	}
 
 	imageFamily := GetImageFamily(nodeClass.Spec.ImageFamily, nodeClass.Spec.FIPSMode, kubernetesVersion, staticParameters)
-	imageID, err := r.resolveNodeImage(nodeImages, instanceType)
+	imageID, err := r.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
 	if err != nil {
 		metrics.ImageSelectionErrorCount.WithLabelValues(imageFamily.Name()).Inc()
 		return nil, err
@@ -221,6 +220,7 @@ func prepareKubeletConfiguration(ctx context.Context, instanceType *cloudprovide
 	}
 
 	kubeletConfig.MaxPods = utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode)
+	kubeletConfig.ClusterDNSServiceIP = options.FromContext(ctx).DNSServiceIP
 
 	// TODO: revisit computeResources implementation
 	kubeletConfig.KubeReserved = utils.StringMap(instanceType.Overhead.KubeReserved)
@@ -263,12 +263,13 @@ func defaultUbuntu(fipsMode *v1beta1.FIPSMode, kubernetesVersion string, paramet
 	return &Ubuntu2204{Options: parameters}
 }
 
-// resolveNodeImage returns Distro and Image ID for the given instance type. Images may vary due to architecture, accelerator, etc
-//
-// Preconditions:
-// - nodeImages is sorted by priority order
-func (r *defaultResolver) resolveNodeImage(nodeImages []v1beta1.NodeImage, instanceType *cloudprovider.InstanceType) (string, error) {
-	// nodeImages are sorted by priority order, so we can return the first one that matches
+// ResolveNodeImageFromNodeClass resolves Distro and image ID for the given node class and instance type. Images may vary due to architecture, accelerator, etc
+func (r *defaultResolver) ResolveNodeImageFromNodeClass(nodeClass *v1beta1.AKSNodeClass, instanceType *cloudprovider.InstanceType) (string, error) {
+	// ASSUMPTION: nodeImages in a NodeClass are always sorted by priority order.
+	nodeImages, err := nodeClass.GetImages()
+	if err != nil {
+		return "", err
+	}
 	for _, availableImage := range nodeImages {
 		if err := instanceType.Requirements.Compatible(
 			scheduling.NewNodeSelectorRequirements(availableImage.Requirements...),
