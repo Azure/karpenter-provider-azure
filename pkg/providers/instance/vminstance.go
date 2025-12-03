@@ -745,11 +745,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		return nil, err
 	}
 
-	log.FromContext(ctx).Info("created network interface",
-		"nicName", resourceName,
-		"nicReference", nicReference,
-		"error", err)
-
 	result, err := p.createVirtualMachine(ctx, &createVMOptions{
 		VMName:              resourceName,
 		NicReference:        nicReference,
@@ -767,11 +762,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		DiskEncryptionSetID: p.diskEncryptionSetID,
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
 	})
-
-	log.FromContext(ctx).Info("virtual machine creation result",
-		"vmName", resourceName,
-		"error", err)
-
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 		if skuErr != nil {
