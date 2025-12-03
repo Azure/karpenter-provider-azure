@@ -27,7 +27,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -103,14 +102,13 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 	}
 
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
-	// Note that while we set the Kubelet identity label here, the actual kubelet identity that is set in the bootstrapping
-	// script is configured by the NPS service. That means the label can be set to the older client ID if the client ID
-	// changed recently. This is OK because drift will correct it.
-	labels.AddAgentBakerGeneratedLabels(p.ResourceGroup, options.FromContext(ctx).KubeletIdentityClientID, nodeLabels)
 
 	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
-	enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
+	// enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
+	//		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
+	// Temporarily disable artifact streaming altogether, until node provisioning performance is fixed
+	// (or until we make artifact streaming configurable)
+	enableArtifactStreaming := false
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
