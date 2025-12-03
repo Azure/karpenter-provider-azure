@@ -40,6 +40,7 @@ var stop context.CancelFunc
 
 var fakePricingAPI *fake.PricingAPI
 var env *auth.Environment
+var providers []*pricing.Provider
 
 func TestAzure(t *testing.T) {
 	mainCtx = TestContextWithLogger(t)
@@ -61,17 +62,23 @@ var _ = BeforeEach(func() {
 	// We still need the mainCtx because it attaches the test logger which we cannot do
 	// in BeforeEach.
 	ctx, stop = context.WithCancel(mainCtx)
+	providers = []*pricing.Provider{}
 	fakePricingAPI.Reset()
 })
 
 var _ = AfterEach(func() {
 	stop()
+	// wait for providers to actually stop
+	for _, p := range providers {
+		Expect(p.WaitUntilDone()).To(Succeed())
+	}
 })
 
 var _ = Describe("Pricing", func() {
 	It("should return static on-demand data if pricing API fails", func() {
 		fakePricingAPI.NextError.Set(fmt.Errorf("failed"))
 		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
 		price, ok := p.OnDemandPrice("Standard_D1")
 		Expect(ok).To(BeTrue())
 		Expect(price).To(BeNumerically(">", 0))
@@ -86,6 +93,7 @@ var _ = Describe("Pricing", func() {
 		})
 		updateStart := time.Now()
 		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
 		Eventually(func() bool { return p.OnDemandLastUpdated().After(updateStart) }).Should(BeTrue())
 
 		price, ok := p.OnDemandPrice("Standard_D1")
@@ -107,6 +115,7 @@ var _ = Describe("Pricing", func() {
 		})
 		updateStart := time.Now()
 		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", make(chan struct{}))
+		providers = append(providers, p)
 		Eventually(func() bool { return p.SpotLastUpdated().After(updateStart) }).Should(BeTrue())
 
 		price, ok := p.SpotPrice("Standard_D1")
@@ -124,7 +133,6 @@ var _ = Describe("Pricing", func() {
 
 		regions := pricing.Regions()
 		skus := instancetype.GetKarpenterWorkingSKUs()
-		providers := []*pricing.Provider{}
 		for _, region := range regions {
 			providers = append(providers, pricing.NewProvider(ctx, env, fakePricingAPI, region, make(chan struct{})))
 		}
@@ -158,6 +166,7 @@ var _ = Describe("Pricing", func() {
 		})
 		start := make(chan struct{}, 1)
 		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", start)
+		providers = append(providers, p)
 		start <- struct{}{}
 
 		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
@@ -185,6 +194,7 @@ var _ = Describe("Pricing", func() {
 		}
 		start := make(chan struct{}, 1)
 		p := pricing.NewProvider(ctx, env, fakePricingAPI, "", start)
+		providers = append(providers, p)
 		start <- struct{}{}
 
 		// TODO: If this were exported or we were in the same package we could just assert on the package variable rather than
