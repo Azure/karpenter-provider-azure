@@ -3,7 +3,7 @@
 ## Overview
 Azure automatically encrypts all data in managed disks at rest. By default, this encryption uses Microsoft-managed keys. However, some customers require additional control over encryption keys for compliance or security requirements.
 
-Azure Disk Encryption Sets enable customers to bring their own keys (BYOK) for encryption at rest, applying to both OS and data disks. This design document outlines the implementation of BYOK support in Karpenter for Azure. 
+Azure Disk Encryption Sets enable customers to bring their own keys (BYOK) for encryption at rest, applying to both OS and data disks. This design document outlines the implementation of BYOK support in Karpenter for Azure.
 
 ## Goals
 - **BYOK Support**: Enable customers to use their own encryption keys for AKS OS and data disks
@@ -15,13 +15,13 @@ Azure Disk Encryption Sets enable customers to bring their own keys (BYOK) for e
 
 ## Non-Goals
 - **Encryption at Host**: [Host-based encryption](https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption) is out of scope
-- **Automatic Key Rotation Detection**: No automatic VM replacement on key expiration. Customers accept the [existing AKS limitations](https://learn.microsoft.com/en-us/azure/aks/azure-disk-customer-managed-keys#limitations) 
+- **Automatic Key Rotation Detection**: No automatic VM replacement on key expiration. Customers accept the [existing AKS limitations](https://learn.microsoft.com/en-us/azure/aks/azure-disk-customer-managed-keys#limitations)
 
 ## Implementation Requirements
 Disk encryption with customer-managed keys must be configured at AKS cluster creation time using the `--node-osdisk-diskencryptionset-id` parameter today. This constraint shapes our implementation approach.
 
 ## Phased Delivery Plan
-### Phase 1: Global Support 
+### Phase 1: Global Support
 - Support `--node-osdisk-diskencryptionset-id` from cluster creation
 - Propagate the setting from options to the instance provider
 - Implement for BootstrappingClient & Scriptless modes
@@ -38,21 +38,21 @@ Disk encryption with customer-managed keys must be configured at AKS cluster cre
   - Automatic node replacement when either AKSNodeClass or cluster-level DES value changes
 - **All Karpenter drift logic completed in this phase**
 
-### Phase 3: Machine API Integration 
+### Phase 3: Machine API Integration
 - Machine API integration for NAP mode
 - Modify aks-rp machine API code to support specifying DES ID through Machine API
 - Support PUT operations on Machine API to set DiskEncryptionSetID
 - Support cluster-level DES inheritance in Machine API
 
-### Phase 4: AKS Managed Cluster + AgentPool API Integration 
+### Phase 4: AKS Managed Cluster + AgentPool API Integration
 - **AKS Only Changes**: Karpenters work to support this pattern is done at this stage
   - Enable PUT operations on AKS Managed Cluster `--node-osdisk-diskencryptionset-id`
   - Enable PUT operations on AKS AgentPool API for DiskEncryptionSetID
   - drift detection already implemented in Phase 2, it will start to be affected starting in this phase
-  - Only affects nodes without AKSNodeClass overrides are effected 
+  - Only affects nodes without AKSNodeClass overrides are effected
 
 
-Phases 1 + 2 can be done in parallel, same with phases 3 + 4. 
+Phases 1 + 2 can be done in parallel, same with phases 3 + 4.
 
 ## Disk Encryption Set ID Configuration
 
@@ -72,7 +72,7 @@ Key behaviors:
 We will adopt a phased approach to DiskEncryptionSetID mutability:
 **Phase 2 (Complete Implementation)**: Field is **mutable with comprehensive drift detection**
 - Implement drift detection for AKSNodeClass DiskEncryptionSetID changes
-- Implement drift detection for cluster-level DiskEncryptionSetID changes  
+- Implement drift detection for cluster-level DiskEncryptionSetID changes
 - Automatic node replacement when either field value changes
 - Enables seamless DES migration at both NodeClass and cluster levels
 - **Complete Karpenter functionality delivered**
@@ -86,8 +86,8 @@ In Phase 2, we need to decide whether to make AKSNodeClass.DiskEncryptionSetID m
 - Changing DES ID: Requires node replacement (what we're discussing here)
 
 #### Option 1: Keep Field Immutable
-We could add a CEL validation rule to constrain karpenter from allowing these fields to mutable, until AKS also adds support for the field being mutable. 
-```yaml 
+We could add a CEL validation rule to constrain karpenter from allowing these fields to mutable, until AKS also adds support for the field being mutable.
+```yaml
   - name: v1
     served: true
     storage: true
@@ -139,7 +139,7 @@ if nodeClass.Spec.DiskEncryptionSetID != nil {
 ### Phase 2 Decision Points
 When deciding if drift is enough, or if we need some other mechanism, we should evaluate:
 - How often do users need to change DES (not just rotate keys)?
-- Common reasons: key vault migration, compliance changes? 
+- Common reasons: key vault migration, compliance changes?
 - Most key rotation happens within same DES, ephemeral nodes are the only ones needing replacement
 - DES changes are rare but high-impact events
 - Usually planned migrations, not emergencies
@@ -149,7 +149,7 @@ When deciding if drift is enough, or if we need some other mechanism, we should 
 ### Recommendation
 Start with mutability + implement drift early on, so karpenter doesn't have to do additional work to conform with a new AKS pattern.
 
-Note: Node Rotation + Replacement comes from changing the DES, not from the key being rotated. That will still follow the existing AKS limitations. 
+Note: Node Rotation + Replacement comes from changing the DES, not from the key being rotated. That will still follow the existing AKS limitations.
 
 **Phase 4 (AKS API Enhancement)**: Enable **cluster-level API mutability**
 - AKS API changes to allow cluster-level mutation of DiskEncryptionSetID
@@ -231,7 +231,7 @@ Azure automatically updates managed disks to use the latest rotated key version 
 #### Ephemeral OS Disks
 Ephemeral disks have immutable encryption settings. The only way to apply a new encryption key is to:
 1. Delete the existing VM
-2. Create a new VM (which will use the latest key version) 
+2. Create a new VM (which will use the latest key version)
 
 ### AKS Limitations and Rotation Strategies
 
@@ -273,7 +273,7 @@ func (c *CloudProvider) isDiskEncryptionSetDrifted(
     nodeClass *v1beta1.AKSNodeClass,
 ) (cloudprovider.DriftReason, error) {
     vmDES := getVMDiskEncryptionSetID(nodeClaim) // Get from VM properties
-    
+
     // Phase 2: Check AKSNodeClass override first (has precedence)
     if nodeClass.Spec.DiskEncryptionSetID != nil {
         if *nodeClass.Spec.DiskEncryptionSetID != vmDES {
@@ -281,13 +281,13 @@ func (c *CloudProvider) isDiskEncryptionSetDrifted(
         }
         return "", nil // AKSNodeClass matches, no drift
     }
-    
+
     // Phase 4: Check cluster-level setting if no AKSNodeClass override
     clusterDES := options.FromContext(ctx).DiskEncryptionSetID
     if vmDES != clusterDES {
         return DiskEncryptionSetDrift, nil
     }
-    
+
     return "", nil
 }
 ```
@@ -295,13 +295,13 @@ This is how we implement drift for AKSNodeClass and CRP APIs, machine IsDrifted 
 
 ### Key Principles:
 - **Phase 2**: Complete drift detection for both AKSNodeClass and cluster-level DiskEncryptionSetID changes
-- **Precedence**: AKSNodeClass overrides cluster-level settings  
+- **Precedence**: AKSNodeClass overrides cluster-level settings
 - **Selective drift**: Cluster-level changes only affect nodes without AKSNodeClass overrides
 - **Phase 4**: No additional Karpenter drift logic needed
 
 **Important**: Read this doc for context as to what happens to disk I/O when the key is either [deleted, disabled or expired](https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#full-control-of-your-keys)
 
-Currently, NAP mode validation blocks DiskEncryptionSetID. 
+Currently, NAP mode validation blocks DiskEncryptionSetID.
 
 ### Machine API Integration
 - **Phase 3 Changes**: Support updates to cluster-level DiskEncryptionSetID
@@ -310,18 +310,18 @@ Currently, NAP mode validation blocks DiskEncryptionSetID.
 
 ### Validation Updates
 
-**Phase 1**: Remove validation blocking customers from enabling nap when they have disk encryption set id enabled. 
+**Phase 1**: Remove validation blocking customers from enabling nap when they have disk encryption set id enabled.
 **Phase 3**: Allow PUT operations on cluster DiskEncryptionSetID when NAP is enabled
 
 
-## RBAC: Azure RBAC Requirements 
-1. DES Access: The DES is the Azure resource that links the AKS disks to the Key Vault Key. To allow AKS to use CMKs, the user must grant the Cluster Identity permission to use the Disk Encryption Set. 
+## RBAC: Azure RBAC Requirements
+1. DES Access: The DES is the Azure resource that links the AKS disks to the Key Vault Key. To allow AKS to use CMKs, the user must grant the Cluster Identity permission to use the Disk Encryption Set.
 2. Key Vault Access: The managed identity associated with AKS must be able to access the keys within the key vault, this allows AKS to wrap and unwrap the data encryption keys used for disk encryption with the master key
 
-| Principal | Role Assignment | Scope | 
-| - | - | - | 
-| Cluster Identity | Disk Encryption Set Reader | diskEncryptionSetID | 
-| Cluster Identity | Key Vault Crypto Service Encryption User | Key Vault Resource | 
+| Principal | Role Assignment | Scope |
+| - | - | - |
+| Cluster Identity | Disk Encryption Set Reader | diskEncryptionSetID |
+| Cluster Identity | Key Vault Crypto Service Encryption User | Key Vault Resource |
 
 Karpenter could support marking the AKSNodeClass as unready if we do not have the proper RBAC to do the encryption. Our project needs a larger conversation RE Webhooks VS Readiness Conditions
 

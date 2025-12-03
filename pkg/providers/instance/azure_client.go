@@ -23,7 +23,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -141,7 +141,7 @@ func NewAZClientFromAPI(
 // nolint: gocyclo
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	o := options.FromContext(ctx)
-	opts := armopts.DefaultARMOpts(env.Cloud)
+	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {
 		return nil, err
@@ -213,7 +213,8 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			cfg.ResourceGroup,
 			o.ClusterName,
 			cred,
-			o.NodeBootstrappingServerURL)
+			o.NodeBootstrappingServerURL,
+			o.EnableAzureSDKLogging)
 		if err != nil {
 			return nil, err
 		}
