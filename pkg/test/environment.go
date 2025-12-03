@@ -70,6 +70,7 @@ type Environment struct {
 	SubnetsAPI                  *fake.SubnetsAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
 	SubscriptionAPI             *fake.SubscriptionsAPI
+	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
 	AKSMachinesAPI              *fake.AKSMachinesAPI
 	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
 
@@ -85,7 +86,7 @@ type Environment struct {
 
 	// Providers
 	InstanceTypesProvider        instancetype.Provider
-	InstanceProvider             instance.Provider
+	VMInstanceProvider           instance.VMProvider
 	PricingProvider              *pricing.Provider
 	KubernetesVersionProvider    kubernetesversion.KubernetesVersionProvider
 	ImageProvider                imagefamily.NodeImageProvider
@@ -198,7 +199,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		skusAPI,
 		subscriptionAPI,
 	)
-	instanceProvider := instance.NewDefaultProvider(
+	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypesProvider,
 		launchTemplateProvider,
@@ -226,6 +227,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		SKUsAPI:                     skusAPI,
 		PricingAPI:                  pricingAPI,
 		SubscriptionAPI:             subscriptionAPI,
+		NodeBootstrappingAPI:        nodeBootstrappingAPI,
 		AKSMachinesAPI:              aksMachinesAPI,
 		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
 
@@ -238,7 +240,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancerCache:         loadBalancerCache,
 
 		InstanceTypesProvider:        instanceTypesProvider,
-		InstanceProvider:             instanceProvider,
+		VMInstanceProvider:           vmInstanceProvider,
 		PricingProvider:              pricingProvider,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageFamilyProvider,
@@ -267,6 +269,7 @@ func (env *Environment) Reset() {
 	env.SubnetsAPI.Reset()
 	env.CommunityImageVersionsAPI.Reset()
 	env.NodeImageVersionsAPI.Reset()
+	env.NodeBootstrappingAPI.Reset()
 	env.SKUsAPI.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()

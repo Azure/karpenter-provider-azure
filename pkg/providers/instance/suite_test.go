@@ -18,6 +18,7 @@ package instance_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -43,17 +44,20 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	instancemetrics "github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 var ctx context.Context
@@ -81,12 +85,56 @@ func TestAzure(t *testing.T) {
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.InstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
 	RunSpecs(t, "Provider/Azure")
+}
+
+func TestErrorCodeForMetrics(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "nil error returns unknown",
+			err:  nil,
+			want: "UnknownError",
+		},
+		{
+			name: "azure error with code",
+			err:  &azcore.ResponseError{ErrorCode: "OperationNotAllowed"},
+			want: "OperationNotAllowed",
+		},
+		{
+			name: "azure error without code",
+			err:  &azcore.ResponseError{StatusCode: http.StatusInternalServerError},
+			want: "UnknownError",
+		},
+		{
+			name: "generic error returns unknown",
+			err:  errors.New("boom"),
+			want: "UnknownError",
+		},
+	}
+
+	for _, tc := range testCases {
+		// capture range variable
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := instancemetrics.ErrorCodeForMetrics(tc.err)
+			if got != tc.want {
+				t.Fatalf("ErrorCodeForMetrics(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
+	}
 }
 
 var _ = AfterSuite(func() {
@@ -94,7 +142,57 @@ var _ = AfterSuite(func() {
 	Expect(env.Stop()).To(Succeed(), "Failed to stop environment")
 })
 
-var _ = Describe("InstanceProvider", func() {
+func vmMetricLabelsFromCreateInput(input *fake.VirtualMachineCreateOrUpdateInput, nodePoolName string) map[string]string {
+	labels := map[string]string{
+		metrics.NodePoolLabel: nodePoolName,
+	}
+	if input == nil {
+		return labels
+	}
+	return lo.Assign(vmMetricLabelsFromVM(&input.VM), labels)
+}
+
+func vmMetricLabelsFromVM(vm *armcompute.VirtualMachine) map[string]string {
+	return map[string]string{
+		metrics.ImageLabel:        imageIDFromVM(vm),
+		metrics.SizeLabel:         vmSizeFromVM(vm),
+		metrics.ZoneLabel:         zoneFromVM(vm),
+		metrics.CapacityTypeLabel: instancemetrics.GetCapacityTypeFromVM(vm),
+	}
+}
+
+func imageIDFromVM(vm *armcompute.VirtualMachine) string {
+	if vm == nil || vm.Properties == nil || vm.Properties.StorageProfile == nil || vm.Properties.StorageProfile.ImageReference == nil {
+		return ""
+	}
+	ref := vm.Properties.StorageProfile.ImageReference
+	return lo.CoalesceOrEmpty(
+		lo.FromPtr(ref.ID),
+		lo.FromPtr(ref.CommunityGalleryImageID),
+		lo.FromPtr(ref.SharedGalleryImageID),
+		lo.FromPtr(ref.ExactVersion),
+	)
+}
+
+func vmSizeFromVM(vm *armcompute.VirtualMachine) string {
+	if vm == nil || vm.Properties == nil || vm.Properties.HardwareProfile == nil || vm.Properties.HardwareProfile.VMSize == nil {
+		return ""
+	}
+	return string(*vm.Properties.HardwareProfile.VMSize)
+}
+
+func zoneFromVM(vm *armcompute.VirtualMachine) string {
+	if vm == nil || vm.Location == nil || len(vm.Zones) == 0 {
+		return ""
+	}
+	zonePtr := vm.Zones[0]
+	if zonePtr == nil {
+		return ""
+	}
+	return utils.MakeZone(strings.ToLower(lo.FromPtr(vm.Location)), lo.FromPtr(zonePtr))
+}
+
+var _ = Describe("VMInstanceProvider", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	var nodePool *karpv1.NodePool
 	var nodeClaim *karpv1.NodeClaim
@@ -147,6 +245,95 @@ var _ = Describe("InstanceProvider", func() {
 		Entry("non-zonal", azureEnvNonZonal, cloudProviderNonZonal),
 	}
 
+	Context("metrics integration", func() {
+		BeforeEach(func() {
+			instancemetrics.VMCreateStartMetric.Reset()
+			instancemetrics.VMCreateFailureMetric.Reset()
+		})
+
+		It("records VM create start metric during successful launch", func() {
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
+			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			metric, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).NotTo(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "sync"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).To(BeNil())
+
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "async"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).To(BeNil())
+		})
+
+		It("records VM create sync failure metric when Azure returns an error", func() {
+			beginErr := &azcore.ResponseError{ErrorCode: "OperationNotAllowed"}
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.BeginError.Set(beginErr)
+
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectNotScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
+			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			metric, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).NotTo(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			syncFailureLabels := metrics.FailureMetricLabels(labels, "sync", map[string]string{metrics.ErrorCodeLabel: beginErr.ErrorCode})
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", syncFailureLabels)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).NotTo(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "async"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).To(BeNil())
+		})
+
+		It("records VM create async failure metric when provisioning poller fails", func() {
+			pollerErr := &azcore.ResponseError{ErrorCode: "InternalOperationError"}
+			azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.Error.Set(pollerErr)
+
+			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
+			pod := coretest.UnschedulablePod(coretest.PodOptions{})
+			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectScheduled(ctx, env.Client, pod)
+
+			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
+			createInput := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+			labels := vmMetricLabelsFromCreateInput(createInput, nodePool.Name)
+
+			metric, err := metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_start_total", labels)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).NotTo(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", metrics.FailureMetricLabels(labels, "sync"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).To(BeNil())
+
+			asyncFailureLabels := metrics.FailureMetricLabels(labels, "async", map[string]string{metrics.ErrorCodeLabel: pollerErr.ErrorCode})
+			metric, err = metrics.FindMetricWithLabelValues("karpenter_instance_vm_create_failure_total", asyncFailureLabels)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metric).NotTo(BeNil())
+			Expect(metric.GetCounter().GetValue()).To(BeNumerically("==", 1))
+		})
+	})
+
 	DescribeTable("should return an ICE error when all attempted instance types return an ICE error",
 		func(azEnv *test.Environment, cp *cloudprovider.CloudProvider) {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
@@ -161,7 +348,7 @@ var _ = Describe("InstanceProvider", func() {
 			instanceTypes = lo.Filter(instanceTypes, func(i *corecloudprovider.InstanceType, _ int) bool { return i.Name == "Standard_D2_v2" })
 
 			// Since all the offerings are unavailable, this should return back an ICE error
-			instance, err := azEnv.InstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
+			instance, err := azEnv.VMInstanceProvider.BeginCreate(ctx, nodeClass, nodeClaim, instanceTypes)
 			Expect(corecloudprovider.IsInsufficientCapacityError(err)).To(BeTrue())
 			Expect(instance).To(BeNil())
 		},
@@ -184,7 +371,7 @@ var _ = Describe("InstanceProvider", func() {
 				newOptions)
 			azureEnv = test.NewEnvironment(ctx, env)
 			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider,
-				azureEnv.InstanceProvider,
+				azureEnv.VMInstanceProvider,
 				events.NewRecorder(&record.FakeRecorder{}),
 				env.Client,
 				azureEnv.ImageProvider,
@@ -342,7 +529,7 @@ var _ = Describe("InstanceProvider", func() {
 
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 		vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
-		vm, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+		vm, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 		Expect(err).To(BeNil())
 		tags := vm.Tags
 		Expect(lo.FromPtr(tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
@@ -373,7 +560,7 @@ var _ = Describe("InstanceProvider", func() {
 
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 		vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
-		vm, err := azureEnv.InstanceProvider.Get(ctx, vmName)
+		vm, err := azureEnv.VMInstanceProvider.Get(ctx, vmName)
 		Expect(err).To(BeNil())
 		tags := vm.Tags
 		Expect(lo.FromPtr(tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
@@ -392,7 +579,7 @@ var _ = Describe("InstanceProvider", func() {
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
 		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 		ExpectScheduled(ctx, env.Client, pod)
-		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
+		interfaces, err := azureEnv.VMInstanceProvider.ListNics(ctx)
 		Expect(err).To(BeNil())
 		Expect(len(interfaces)).To(Equal(1))
 	})
@@ -402,7 +589,7 @@ var _ = Describe("InstanceProvider", func() {
 
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
 		azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(unmanagedNic.ID), *unmanagedNic)
-		interfaces, err := azureEnv.InstanceProvider.ListNics(ctx)
+		interfaces, err := azureEnv.VMInstanceProvider.ListNics(ctx)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(len(interfaces)).To(Equal(1))
 		Expect(interfaces[0].Name).To(Equal(managedNic.Name))
@@ -499,7 +686,7 @@ var _ = Describe("InstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
 			// Update the VM identities
-			err := azureEnv.InstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Identity: &armcompute.VirtualMachineIdentity{
 					UserAssignedIdentities: map[string]*armcompute.UserAssignedIdentitiesValue{
 						"/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.ManagedIdentity/userAssignedIdentities/aks-agentpool-00000000-identity": {},
@@ -559,7 +746,7 @@ var _ = Describe("InstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
 			// Update the VM tags
-			err := azureEnv.InstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
 					"test-tag":                    lo.ToPtr("test-value"),
@@ -609,7 +796,7 @@ var _ = Describe("InstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 
 			// Update the VM tags
-			err := azureEnv.InstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
+			err := azureEnv.VMInstanceProvider.Update(ctx, vmName, armcompute.VirtualMachineUpdate{
 				Tags: map[string]*string{
 					"karpenter.azure.com_cluster": lo.ToPtr("test-cluster"),
 					"test-tag":                    lo.ToPtr("test-value"),

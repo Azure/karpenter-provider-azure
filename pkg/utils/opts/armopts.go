@@ -29,15 +29,17 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 )
 
-func DefaultARMOpts(cloudConfig cloud.Configuration) *arm.ClientOptions {
+func DefaultARMOpts(cloudConfig cloud.Configuration, enableLogging bool) *arm.ClientOptions {
 	opts := &arm.ClientOptions{}
 	opts.Telemetry = DefaultTelemetryOpts()
 	opts.Retry = DefaultRetryOpts()
 	opts.Transport = defaultHTTPClient
 	opts.Cloud = cloudConfig
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	opts.PerCallPolicies = append(opts.PerCallPolicies, shPolicy.NewLoggingPolicy(*logger))
+	if enableLogging {
+		logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+		opts.PerCallPolicies = append(opts.PerCallPolicies, shPolicy.NewLoggingPolicy(*logger))
+	}
 	return opts
 }
 

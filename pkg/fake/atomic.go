@@ -19,6 +19,7 @@ package fake
 import (
 	"bytes"
 	"encoding/json"
+	"iter"
 	"log"
 	"math"
 	"sync"
@@ -163,6 +164,20 @@ func (a *AtomicPtrStack[T]) Pop() *T {
 	last := a.values[len(a.values)-1]
 	a.values = a.values[0 : len(a.values)-1]
 	return last
+}
+
+// All returns an iterator over all values in the stack
+// NOTE: This pops the values from the stack
+func (a *AtomicPtrStack[T]) All() iter.Seq[*T] {
+	return func(yield func(*T) bool) {
+		len := a.Len()
+		for i := 0; i < len; i++ {
+			v := a.Pop()
+			if !yield(v) {
+				return
+			}
+		}
+	}
 }
 
 // AtomicPtrSlice exposes a slice of a pointer type in a race-free manner.

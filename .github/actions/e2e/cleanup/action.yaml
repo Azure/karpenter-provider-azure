@@ -28,7 +28,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+    - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       with:
         ref: ${{ inputs.git_ref }}
     - name: az login
@@ -39,13 +39,23 @@ runs:
         subscription-id: ${{ inputs.subscription-id }}
     - name: az set sub
       shell: bash
-      run: az account set --subscription ${{ inputs.subscription-id }}
-    - name: delete cluster ${{ inputs.cluster_name }}
+      env:
+        SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+      run: az account set --subscription "$SUBSCRIPTION_ID"
+    - name: delete cluster
       shell: bash
-      run: az aks delete --name ${{ inputs.cluster_name }} --resource-group ${{ inputs.resource_group }} --yes --no-wait
-    - name: delete acr ${{ inputs.acr_name }}
+      env:
+        CLUSTER_NAME: ${{ inputs.cluster_name }}
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az aks delete --name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP" --yes --no-wait
+    - name: delete acr
       shell: bash
-      run: az acr delete --name ${{ inputs.acr_name }} --resource-group ${{ inputs.resource_group }} --yes
-    - name: delete rg ${{ inputs.resource_group }}
+      env:
+        ACR_NAME: ${{ inputs.acr_name }}
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az acr delete --name "$ACR_NAME" --resource-group "$RESOURCE_GROUP" --yes
+    - name: delete rg
       shell: bash
-      run: az group delete --name ${{ inputs.resource_group }} --yes --no-wait
+      env:
+        RESOURCE_GROUP: ${{ inputs.resource_group }}
+      run: az group delete --name "$RESOURCE_GROUP" --yes --no-wait
