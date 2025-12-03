@@ -14,21 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package metrics
+package options
 
-const (
-	// Namespace(s).
-	Namespace = "karpenter"
-
-	// Subsystem(s).
-	imageFamilySubsystem = "image"
-
-	// Label key(s).
-	ImageLabel        = "image"
-	ErrorCodeLabel    = "error_code"
-	SizeLabel         = "size"
-	ZoneLabel         = "zone"
-	CapacityTypeLabel = "capacity_type"
-	NodePoolLabel     = "nodepool"
-	PhaseLabel        = "phase"
+import (
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 )
+
+func (o *Options) IsAzureCNIOverlay() bool {
+	return o.NetworkPlugin == consts.NetworkPluginAzure && o.NetworkPluginMode == consts.NetworkPluginModeOverlay
+}
+
+func (o *Options) IsCiliumNodeSubnet() bool {
+	return o.NetworkPlugin == consts.NetworkPluginAzure && o.NetworkPluginMode == consts.NetworkPluginModeNone && o.NetworkDataplane == consts.NetworkDataplaneCilium
+}
+
+func (o *Options) IsNetworkPluginNone() bool {
+	return o.NetworkPlugin == consts.NetworkPluginNone
+}
