@@ -45,7 +45,7 @@ const (
 	ImageDrift           cloudprovider.DriftReason = "ImageDrift"
 	SubnetDrift          cloudprovider.DriftReason = "SubnetDrift"
 	KubeletIdentityDrift cloudprovider.DriftReason = "KubeletIdentityDrift"
-	ClusterConfigDrift   cloudprovider.DriftReason = "ClusterConfigDrift"
+	ClusterConfigDrift   cloudprovider.DriftReason = "ClusterConfigDrift" // This is a catch-all for cluster-level config changes (e.g., from PUT ManagedCluster), where Karpenter does not directly "own" them.
 
 	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
 	NoDrift cloudprovider.DriftReason = ""
