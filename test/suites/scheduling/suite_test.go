@@ -131,6 +131,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
 				v1beta1.AKSLabelCluster:                   env.NodeResourceGroup,
+				v1beta1.AKSLabelMode:                      "system",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
