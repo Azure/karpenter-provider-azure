@@ -87,7 +87,7 @@ type AKSMachinesBehavior struct {
 	AKSMachineCreateOrUpdateBehavior   MockedLRO[AKSMachineCreateOrUpdateInput, armcontainerservice.MachinesClientCreateOrUpdateResponse]
 	AKSMachineGetBehavior              MockedFunction[AKSMachineGetInput, armcontainerservice.MachinesClientGetResponse]
 	AKSMachineNewListPagerBehavior     MockedFunction[AKSMachineListInput, *runtime.Pager[armcontainerservice.MachinesClientListResponse]]
-	AfterPollProvisioningErrorOverride *armcontainerservice.CloudErrorBody
+	AfterPollProvisioningErrorOverride *armcontainerservice.ErrorDetail
 }
 
 var AKSMachineAPIErrorFromAKSMachineNotFound = &azcore.ResponseError{
@@ -106,11 +106,11 @@ var AKSMachineAPIErrorAny = &azcore.ResponseError{
 	ErrorCode: "SomeRandomError",
 }
 
-func AKSMachineAPIProvisioningErrorSkuNotAvailable(sku string, location string) *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorSkuNotAvailable(sku string, location string) *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("SkuNotAvailable"),
 		Message: lo.ToPtr(fmt.Sprintf("Code=\"SkuNotAvailable\" Message=\"The requested VM size for resource 'Following SKUs have failed for Capacity Restrictions: %s' is currently not available in location '%s'. Please try another size or deploy to a different location or different zone. See https://aka.ms/azureskunotavailable for details.\" Target=\"sku.name\"", sku, location)),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("SkuNotAvailable"),
 				Message: lo.ToPtr(fmt.Sprintf("The requested VM size for resource 'Following SKUs have failed for Capacity Restrictions: %s' is currently not available in location '%s'. Please try another size or deploy to a different location or different zone. See https://aka.ms/azureskunotavailable for details.", sku, location)),
@@ -119,11 +119,11 @@ func AKSMachineAPIProvisioningErrorSkuNotAvailable(sku string, location string) 
 	}
 }
 
-func AKSMachineAPIProvisioningErrorLowPriorityCoresQuota(location string) *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorLowPriorityCoresQuota(location string) *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("QuotaExceeded"),
 		Message: lo.ToPtr(fmt.Sprintf("Code=\"OperationNotAllowed\" Message=\"Operation could not be completed as it results in exceeding approved LowPriorityCores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: 3, Current Usage: 0, Additional Required: 6, (Minimum) New Limit Required: 6.\"", location)),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("OperationNotAllowed"),
 				Message: lo.ToPtr(fmt.Sprintf("Operation could not be completed as it results in exceeding approved LowPriorityCores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: 3, Current Usage: 0, Additional Required: 6, (Minimum) New Limit Required: 6.", location)),
@@ -132,11 +132,11 @@ func AKSMachineAPIProvisioningErrorLowPriorityCoresQuota(location string) *armco
 	}
 }
 
-func AKSMachineAPIProvisioningErrorOverconstrainedZonalAllocation() *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorOverconstrainedZonalAllocation() *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("OverconstrainedZonalAllocationRequest"),
 		Message: lo.ToPtr("original error: Code=\"OverconstrainedZonalAllocationRequest\" Message=\"Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again. Constraints applied are:\\n  - Availability Zone\\n  - Low Priority VMs\\n  - Networking Constraints (such as Accelerated Networking or IPv6)\\n  - Preemptible VMs (VM might be preempted by another VM with a higher priority)\\n  - VM Size\\n\" Target=\"6\""),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("OverconstrainedZonalAllocationRequest"),
 				Message: lo.ToPtr("Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again. Constraints applied are:\n  - Availability Zone\n  - Low Priority VMs\n  - Networking Constraints (such as Accelerated Networking or IPv6)\n  - Preemptible VMs (VM might be preempted by another VM with a higher priority)\n  - VM Size\n"),
@@ -146,11 +146,11 @@ func AKSMachineAPIProvisioningErrorOverconstrainedZonalAllocation() *armcontaine
 	}
 }
 
-func AKSMachineAPIProvisioningErrorOverconstrainedAllocation() *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorOverconstrainedAllocation() *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("OverconstrainedAllocationRequest"),
 		Message: lo.ToPtr("Code=\"OverconstrainedAllocationRequest\" Message=\"Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again. Constraints applied are:\\n  - Differencing (Ephemeral) Disks\\n  - Networking Constraints (such as Accelerated Networking or IPv6)\\n  - Subscription Pinning\\n  - VM Size\\n\" Target=\"0\""),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("OverconstrainedAllocationRequest"),
 				Message: lo.ToPtr("Allocation failed. VM(s) with the following constraints cannot be allocated, because the condition is too restrictive. Please remove some constraints and try again. Constraints applied are:\n  - Differencing (Ephemeral) Disks\n  - Networking Constraints (such as Accelerated Networking or IPv6)\n  - Subscription Pinning\n  - VM Size\n"),
@@ -160,11 +160,11 @@ func AKSMachineAPIProvisioningErrorOverconstrainedAllocation() *armcontainerserv
 	}
 }
 
-func AKSMachineAPIProvisioningErrorAllocationFailed() *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorAllocationFailed() *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("AllocationFailed"),
 		Message: lo.ToPtr("original error: Code=\"AllocationFailed\" Message=\"Allocation failed. If you are trying to add a new VM to a Virtual Machine Scale Set with a single placement group or update/resize an existing VM in a Virtual Machine Scale Set with a single placement group, please note that such allocation is scoped to a single cluster, and it is possible that the cluster is out of capacity. Please read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance.\" Target=\"243\""),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("AllocationFailed"),
 				Message: lo.ToPtr("Allocation failed. If you are trying to add a new VM to a Virtual Machine Scale Set with a single placement group or update/resize an existing VM in a Virtual Machine Scale Set with a single placement group, please note that such allocation is scoped to a single cluster, and it is possible that the cluster is out of capacity. Please read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance."),
@@ -174,11 +174,11 @@ func AKSMachineAPIProvisioningErrorAllocationFailed() *armcontainerservice.Cloud
 	}
 }
 
-func AKSMachineAPIProvisioningErrorVMFamilyQuotaExceeded(location string, familyName string, currentLimit int32, currentUsage int32, additionalRequired int32, newLimitRequired int32) *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorVMFamilyQuotaExceeded(location string, familyName string, currentLimit int32, currentUsage int32, additionalRequired int32, newLimitRequired int32) *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("QuotaExceeded"),
 		Message: lo.ToPtr(fmt.Sprintf("Code=\"OperationNotAllowed\" Message=\"Operation could not be completed as it results in exceeding approved %s Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: %d, Current Usage: %d, Additional Required: %d, (Minimum) New Limit Required: %d.\"", familyName, location, currentLimit, currentUsage, additionalRequired, newLimitRequired)),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("OperationNotAllowed"),
 				Message: lo.ToPtr(fmt.Sprintf("Operation could not be completed as it results in exceeding approved %s Family Cores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: %d, Current Usage: %d, Additional Required: %d, (Minimum) New Limit Required: %d.", familyName, location, currentLimit, currentUsage, additionalRequired, newLimitRequired)),
@@ -187,11 +187,11 @@ func AKSMachineAPIProvisioningErrorVMFamilyQuotaExceeded(location string, family
 	}
 }
 
-func AKSMachineAPIProvisioningErrorTotalRegionalCoresQuota(location string) *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorTotalRegionalCoresQuota(location string) *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("QuotaExceeded"),
 		Message: lo.ToPtr(fmt.Sprintf("Code=\"OperationNotAllowed\" Message=\"Operation could not be completed as it results in exceeding approved Total Regional Cores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: 10, Current Usage: 8, Additional Required: 8, (Minimum) New Limit Required: 16.\"", location)),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("OperationNotAllowed"),
 				Message: lo.ToPtr(fmt.Sprintf("Operation could not be completed as it results in exceeding approved Total Regional Cores quota. Additional details - Deployment Model: Resource Manager, Location: %s, Current Limit: 10, Current Usage: 8, Additional Required: 8, (Minimum) New Limit Required: 16.", location)),
@@ -200,11 +200,11 @@ func AKSMachineAPIProvisioningErrorTotalRegionalCoresQuota(location string) *arm
 	}
 }
 
-func AKSMachineAPIProvisioningErrorZoneAllocationFailed(sku string, zone string) *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorZoneAllocationFailed(sku string, zone string) *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("ZonalAllocationFailed"),
 		Message: lo.ToPtr(fmt.Sprintf("Code=\"ZonalAllocationFailed\" Message=\"Allocation failed. We do not have sufficient capacity for the requested VM size %s in zone %s. Read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance\"", sku, zone)),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("ZonalAllocationFailed"),
 				Message: lo.ToPtr(fmt.Sprintf("Allocation failed. We do not have sufficient capacity for the requested VM size %s in zone %s. Read more about improving likelihood of allocation success at http://aka.ms/allocation-guidance", sku, zone)),
@@ -213,11 +213,11 @@ func AKSMachineAPIProvisioningErrorZoneAllocationFailed(sku string, zone string)
 	}
 }
 
-func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.CloudErrorBody {
-	return &armcontainerservice.CloudErrorBody{
+func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.ErrorDetail {
+	return &armcontainerservice.ErrorDetail{
 		Code:    lo.ToPtr("SomeRandomError"),
 		Message: lo.ToPtr("An unexpected error occurred."),
-		Details: []*armcontainerservice.CloudErrorBody{
+		Details: []*armcontainerservice.ErrorDetail{
 			{
 				Code:    lo.ToPtr("SomeRandomError"),
 				Message: lo.ToPtr("An unexpected error occurred."),
