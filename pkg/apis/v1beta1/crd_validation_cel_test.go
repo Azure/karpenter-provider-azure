@@ -329,7 +329,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("valid duration: 2h15m30s", "2h15m30s", ""),
 		)
 
-		It("should reject CacheDuration with decimal values", func() {
+		DescribeTable("should reject invalid duration values", func(patchJSON string, expectedErr string) {
 			// Test using unstructured to bypass Go type parsing
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -347,39 +347,17 @@ var _ = Describe("CEL/Validation", func() {
 			// Create the object first
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 
-			// Now try to patch with an invalid decimal value using raw JSON
-			patch := []byte(`{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"cacheDuration":"5.5h"}}}}}`)
+			// Now try to patch with an invalid value using raw JSON
+			patch := []byte(patchJSON)
 			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
 			Expect(err).To(HaveOccurred())
-			GinkgoWriter.Printf("Error for decimal cacheDuration: %s\n", err.Error())
-			Expect(err.Error()).To(ContainSubstring("\"5.5h\": spec.localDNS.vnetDNSOverrides.test.domain.cacheDuration in body should match '^([0-9]+(s|m|h))+$'"))
-		})
-
-		It("should reject CacheDuration with 'Never' value", func() {
-			// Test using unstructured to bypass Go type parsing
-			nodeClass := &v1beta1.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec: v1beta1.AKSNodeClassSpec{
-					LocalDNS: &v1beta1.LocalDNS{
-						VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-							"test.domain": {
-								CacheDuration:      validCacheDuration,
-								ServeStaleDuration: validServeStaleDuration,
-							},
-						},
-					},
-				},
-			}
-			// Create the object first
-			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
-
-			// Now try to patch with 'Never' value using raw JSON
-			patch := []byte(`{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"cacheDuration":"Never"}}}}}`)
-			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
-			Expect(err).To(HaveOccurred())
-			GinkgoWriter.Printf("Error for 'Never' cacheDuration: %s\n", err.Error())
-			Expect(err.Error()).To(ContainSubstring("\"Never\": spec.localDNS.vnetDNSOverrides.test.domain.cacheDuration in body should match '^([0-9]+(s|m|h))+$'"))
-		})
+			Expect(err.Error()).To(ContainSubstring(expectedErr))
+		},
+			Entry("CacheDuration with decimal values", `{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"cacheDuration":"5.5h"}}}}}`, "\"5.5h\": spec.localDNS.vnetDNSOverrides.test.domain.cacheDuration in body should match '^([0-9]+(s|m|h))+$'"),
+			Entry("CacheDuration with 'Never' value", `{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"cacheDuration":"Never"}}}}}`, "\"Never\": spec.localDNS.vnetDNSOverrides.test.domain.cacheDuration in body should match '^([0-9]+(s|m|h))+$'"),
+			Entry("ServeStaleDuration with decimal values", `{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"serveStaleDuration":"5.5h"}}}}}`, "\"5.5h\": spec.localDNS.vnetDNSOverrides.test.domain.serveStaleDuration in body should match '^([0-9]+(s|m|h))+$'"),
+			Entry("ServeStaleDuration with 'Never' value", `{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"serveStaleDuration":"Never"}}}}}`, "\"Never\": spec.localDNS.vnetDNSOverrides.test.domain.serveStaleDuration in body should match '^([0-9]+(s|m|h))+$'"),
+		)
 
 		DescribeTable("should validate ServeStaleDuration", func(durationStr string, expectedErr string) {
 			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
@@ -410,58 +388,6 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("valid duration: 1h30m", "1h30m", ""),
 			Entry("valid duration: 2h15m30s", "2h15m30s", ""),
 		)
-
-		It("should reject ServeStaleDuration with decimal values", func() {
-			// Test using unstructured to bypass Go type parsing
-			nodeClass := &v1beta1.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec: v1beta1.AKSNodeClassSpec{
-					LocalDNS: &v1beta1.LocalDNS{
-						VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-							"test.domain": {
-								CacheDuration:      validCacheDuration,
-								ServeStaleDuration: validServeStaleDuration,
-							},
-						},
-					},
-				},
-			}
-			// Create the object first
-			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
-
-			// Now try to patch with an invalid decimal value using raw JSON
-			patch := []byte(`{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"serveStaleDuration":"5.5h"}}}}}`)
-			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
-			Expect(err).To(HaveOccurred())
-			GinkgoWriter.Printf("Error for decimal serveStaleDuration: %s\n", err.Error())
-			Expect(err.Error()).To(ContainSubstring("\"5.5h\": spec.localDNS.vnetDNSOverrides.test.domain.serveStaleDuration in body should match '^([0-9]+(s|m|h))+$'"))
-		})
-
-		It("should reject ServeStaleDuration with 'Never' value", func() {
-			// Test using unstructured to bypass Go type parsing
-			nodeClass := &v1beta1.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec: v1beta1.AKSNodeClassSpec{
-					LocalDNS: &v1beta1.LocalDNS{
-						VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-							"test.domain": {
-								CacheDuration:      validCacheDuration,
-								ServeStaleDuration: validServeStaleDuration,
-							},
-						},
-					},
-				},
-			}
-			// Create the object first
-			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
-
-			// Now try to patch with 'Never' value using raw JSON
-			patch := []byte(`{"spec":{"localDNS":{"vnetDNSOverrides":{"test.domain":{"serveStaleDuration":"Never"}}}}}`)
-			err := env.Client.Patch(ctx, nodeClass, client.RawPatch(client.Merge.Type(), patch))
-			Expect(err).To(HaveOccurred())
-			GinkgoWriter.Printf("Error for 'Never' serveStaleDuration: %s\n", err.Error())
-			Expect(err.Error()).To(ContainSubstring("\"Never\": spec.localDNS.vnetDNSOverrides.test.domain.serveStaleDuration in body should match '^([0-9]+(s|m|h))+$'"))
-		})
 	})
 
 	Context("OSDiskSizeGB", func() {
