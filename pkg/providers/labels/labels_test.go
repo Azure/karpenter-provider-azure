@@ -241,81 +241,72 @@ func TestIsKubeletLabel(t *testing.T) {
 
 func TestLocalDNSLabels(t *testing.T) {
 	testCases := []struct {
-		name                   string
-		localDNS               *v1beta1.LocalDNS
-		kubernetesVersion      string
-		expectedLabel          string
-		expectedLabelShouldSet bool
+		name              string
+		localDNS          *v1beta1.LocalDNS
+		kubernetesVersion string
+		expectedLabel     string
 	}{
 		{
 			name: "LocalDNS mode is Required",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
 			},
-			kubernetesVersion:      "1.35.0",
-			expectedLabel:          "enabled",
-			expectedLabelShouldSet: true,
+			kubernetesVersion: "1.35.0",
+			expectedLabel:     "enabled",
 		},
 		{
 			name: "LocalDNS mode is Disabled",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
 			},
-			kubernetesVersion:      "1.35.0",
-			expectedLabel:          "disabled",
-			expectedLabelShouldSet: true,
+			kubernetesVersion: "1.35.0",
+			expectedLabel:     "disabled",
 		},
 		{
 			name: "LocalDNS mode is Preferred with k8s >= 1.36",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
 			},
-			kubernetesVersion:      "1.36.0",
-			expectedLabel:          "enabled",
-			expectedLabelShouldSet: true,
+			kubernetesVersion: "1.36.0",
+			expectedLabel:     "enabled",
 		},
 		{
 			name: "LocalDNS mode is Preferred with k8s 1.37",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
 			},
-			kubernetesVersion:      "1.37.0",
-			expectedLabel:          "enabled",
-			expectedLabelShouldSet: true,
+			kubernetesVersion: "1.37.0",
+			expectedLabel:     "enabled",
 		},
 		{
 			name: "LocalDNS mode is Preferred with k8s < 1.36",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
 			},
-			kubernetesVersion:      "1.35.0",
-			expectedLabel:          "",
-			expectedLabelShouldSet: false,
+			kubernetesVersion: "1.35.0",
+			expectedLabel:     "disabled",
 		},
 		{
 			name: "LocalDNS mode is Preferred with k8s 1.35.9",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
 			},
-			kubernetesVersion:      "1.35.9",
-			expectedLabel:          "",
-			expectedLabelShouldSet: false,
+			kubernetesVersion: "1.35.9",
+			expectedLabel:     "disabled",
 		},
 		{
-			name:                   "LocalDNS is nil",
-			localDNS:               nil,
-			kubernetesVersion:      "1.36.0",
-			expectedLabel:          "",
-			expectedLabelShouldSet: false,
+			name:              "LocalDNS is nil",
+			localDNS:          nil,
+			kubernetesVersion: "1.36.0",
+			expectedLabel:     "disabled",
 		},
 		{
 			name: "LocalDNS mode is nil",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: nil,
 			},
-			kubernetesVersion:      "1.36.0",
-			expectedLabel:          "",
-			expectedLabelShouldSet: false,
+			kubernetesVersion: "1.36.0",
+			expectedLabel:     "disabled",
 		},
 	}
 
@@ -347,12 +338,7 @@ func TestLocalDNSLabels(t *testing.T) {
 
 			labelMap, err := labels.Get(ctx, nodeClass)
 			assert.NoError(t, err)
-
-			if tc.expectedLabelShouldSet {
-				assert.Equal(t, tc.expectedLabel, labelMap[labels.AKSLocalDNSStateLabelKey], "Expected localdns-state label to be set")
-			} else {
-				assert.NotContains(t, labelMap, labels.AKSLocalDNSStateLabelKey, "Expected localdns-state label to not be set")
-			}
+			assert.Equal(t, tc.expectedLabel, labelMap[labels.AKSLocalDNSStateLabelKey])
 		})
 	}
 }
