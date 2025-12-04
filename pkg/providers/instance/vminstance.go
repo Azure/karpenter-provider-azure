@@ -203,7 +203,7 @@ func (p *DefaultVMProvider) BeginCreate(
 		return nil, err
 	}
 	vm := vmPromise.VM
-	zone, err := utils.GetAKSLabelZoneFromVM(vm)
+	zone, err := utils.MakeAKSLabelZoneFromVM(vm)
 	if err != nil {
 		log.FromContext(ctx).V(1).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	}
@@ -557,7 +557,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			},
 			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
 		},
-		Zones: utils.GetARMZonesFromAKSLabelZone(opts.Zone),
+		Zones: utils.MakeARMZonesFromAKSLabelZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
