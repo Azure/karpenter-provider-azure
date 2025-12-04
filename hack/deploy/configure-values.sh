@@ -75,6 +75,6 @@ export CLUSTER_NAME AZURE_LOCATION AZURE_RESOURCE_GROUP_MC KARPENTER_SERVICE_ACC
 
 # get karpenter-values-template.yaml, if not already present (e.g. outside of repo context)
 if [ ! -f karpenter-values-template.yaml ]; then
-    curl -sO https://raw.githubusercontent.com/Azure/karpenter/main/karpenter-values-template.yaml
+    curl -sO https://raw.githubusercontent.com/Azure/karpenter-provider-azure/main/karpenter-values-template.yaml
 fi
 yq '(.. | select(tag == "!!str")) |= envsubst(nu)' karpenter-values-template.yaml > karpenter-values.yaml
