@@ -128,7 +128,7 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("LocalDNS", func() {
-		DescribeTable("should validate LocalDNSMode", func(mode *v1alpha2.LocalDNSMode, expected bool) {
+		DescribeTable("should validate LocalDNSMode", func(mode *v1alpha2.LocalDNSMode, expectedErr string) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
@@ -137,20 +137,22 @@ var _ = Describe("CEL/Validation", func() {
 					},
 				},
 			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
 			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid mode: Preferred", lo.ToPtr(v1alpha2.LocalDNSModePreferred), true),
-			Entry("valid mode: Required", lo.ToPtr(v1alpha2.LocalDNSModeRequired), true),
-			Entry("valid mode: Disabled", lo.ToPtr(v1alpha2.LocalDNSModeDisabled), true),
-			Entry("invalid mode: invalid-string", lo.ToPtr(v1alpha2.LocalDNSMode("invalid-string")), false),
-			Entry("invalid mode: empty", lo.ToPtr(v1alpha2.LocalDNSMode("")), false),
+			Entry("valid mode: Preferred", lo.ToPtr(v1alpha2.LocalDNSModePreferred), ""),
+			Entry("valid mode: Required", lo.ToPtr(v1alpha2.LocalDNSModeRequired), ""),
+			Entry("valid mode: Disabled", lo.ToPtr(v1alpha2.LocalDNSModeDisabled), ""),
+			Entry("invalid mode: invalid-string", lo.ToPtr(v1alpha2.LocalDNSMode("invalid-string")), "spec.localDNS.mode"),
+			Entry("invalid mode: empty", lo.ToPtr(v1alpha2.LocalDNSMode("")), "spec.localDNS.mode"),
 		)
 
-		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging *v1alpha2.LocalDNSQueryLogging, expected bool) {
+		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging *v1alpha2.LocalDNSQueryLogging, expectedErr string) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
@@ -165,19 +167,21 @@ var _ = Describe("CEL/Validation", func() {
 					},
 				},
 			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
 			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid query logging: Error", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingError), true),
-			Entry("valid query logging: Log", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog), true),
-			Entry("invalid query logging: invalid-string", lo.ToPtr(v1alpha2.LocalDNSQueryLogging("invalid-string")), false),
-			Entry("invalid query logging: invalid-value", lo.ToPtr(v1alpha2.LocalDNSQueryLogging("invalid-value")), false),
+			Entry("valid query logging: Error", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingError), ""),
+			Entry("valid query logging: Log", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog), ""),
+			Entry("invalid query logging: invalid-string", lo.ToPtr(v1alpha2.LocalDNSQueryLogging("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid query logging: invalid-value", lo.ToPtr(v1alpha2.LocalDNSQueryLogging("invalid-value")), "spec.localDNS.vnetDNSOverrides"),
 		)
 
-		DescribeTable("should validate LocalDNSProtocol", func(protocol *v1alpha2.LocalDNSProtocol, expected bool) {
+		DescribeTable("should validate LocalDNSProtocol", func(protocol *v1alpha2.LocalDNSProtocol, expectedErr string) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
@@ -192,19 +196,21 @@ var _ = Describe("CEL/Validation", func() {
 					},
 				},
 			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
 			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid protocol: PreferUDP", lo.ToPtr(v1alpha2.LocalDNSProtocolPreferUDP), true),
-			Entry("valid protocol: ForceTCP", lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP), true),
-			Entry("invalid protocol: invalid-string", lo.ToPtr(v1alpha2.LocalDNSProtocol("invalid-string")), false),
-			Entry("invalid protocol: invalid-value", lo.ToPtr(v1alpha2.LocalDNSProtocol("invalid-value")), false),
+			Entry("valid protocol: PreferUDP", lo.ToPtr(v1alpha2.LocalDNSProtocolPreferUDP), ""),
+			Entry("valid protocol: ForceTCP", lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP), ""),
+			Entry("invalid protocol: invalid-string", lo.ToPtr(v1alpha2.LocalDNSProtocol("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid protocol: invalid-value", lo.ToPtr(v1alpha2.LocalDNSProtocol("invalid-value")), "spec.localDNS.vnetDNSOverrides"),
 		)
 
-		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination *v1alpha2.LocalDNSForwardDestination, expected bool) {
+		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination *v1alpha2.LocalDNSForwardDestination, expectedErr string) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
@@ -219,19 +225,21 @@ var _ = Describe("CEL/Validation", func() {
 					},
 				},
 			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
 			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid forward destination: ClusterCoreDNS", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationClusterCoreDNS), true),
-			Entry("valid forward destination: VnetDNS", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS), true),
-			Entry("invalid forward destination: invalid-string", lo.ToPtr(v1alpha2.LocalDNSForwardDestination("invalid-string")), false),
-			Entry("invalid forward destination: invalid-value", lo.ToPtr(v1alpha2.LocalDNSForwardDestination("invalid-value")), false),
+			Entry("valid forward destination: ClusterCoreDNS", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationClusterCoreDNS), ""),
+			Entry("valid forward destination: VnetDNS", lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS), ""),
+			Entry("invalid forward destination: invalid-string", lo.ToPtr(v1alpha2.LocalDNSForwardDestination("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid forward destination: invalid-value", lo.ToPtr(v1alpha2.LocalDNSForwardDestination("invalid-value")), "spec.localDNS.vnetDNSOverrides"),
 		)
 
-		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy *v1alpha2.LocalDNSForwardPolicy, expected bool) {
+		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy *v1alpha2.LocalDNSForwardPolicy, expectedErr string) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
@@ -246,20 +254,22 @@ var _ = Describe("CEL/Validation", func() {
 					},
 				},
 			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
 			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid forward policy: Sequential", lo.ToPtr(v1alpha2.LocalDNSForwardPolicySequential), true),
-			Entry("valid forward policy: RoundRobin", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRoundRobin), true),
-			Entry("valid forward policy: Random", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRandom), true),
-			Entry("invalid forward policy: invalid-string", lo.ToPtr(v1alpha2.LocalDNSForwardPolicy("invalid-string")), false),
-			Entry("invalid forward policy: invalid-value", lo.ToPtr(v1alpha2.LocalDNSForwardPolicy("invalid-value")), false),
+			Entry("valid forward policy: Sequential", lo.ToPtr(v1alpha2.LocalDNSForwardPolicySequential), ""),
+			Entry("valid forward policy: RoundRobin", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRoundRobin), ""),
+			Entry("valid forward policy: Random", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRandom), ""),
+			Entry("invalid forward policy: invalid-string", lo.ToPtr(v1alpha2.LocalDNSForwardPolicy("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid forward policy: invalid-value", lo.ToPtr(v1alpha2.LocalDNSForwardPolicy("invalid-value")), "spec.localDNS.vnetDNSOverrides"),
 		)
 
-		DescribeTable("should validate LocalDNSServeStale", func(serveStale *v1alpha2.LocalDNSServeStale, expected bool) {
+		DescribeTable("should validate LocalDNSServeStale", func(serveStale *v1alpha2.LocalDNSServeStale, expectedErr string) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
@@ -274,20 +284,22 @@ var _ = Describe("CEL/Validation", func() {
 					},
 				},
 			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
 			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid serve stale: Verify", lo.ToPtr(v1alpha2.LocalDNSServeStaleVerify), true),
-			Entry("valid serve stale: Immediate", lo.ToPtr(v1alpha2.LocalDNSServeStaleImmediate), true),
-			Entry("valid serve stale: Disable", lo.ToPtr(v1alpha2.LocalDNSServeStaleDisable), true),
-			Entry("invalid serve stale: invalid-string", lo.ToPtr(v1alpha2.LocalDNSServeStale("invalid-string")), false),
-			Entry("invalid serve stale: invalid-value", lo.ToPtr(v1alpha2.LocalDNSServeStale("invalid-value")), false),
+			Entry("valid serve stale: Verify", lo.ToPtr(v1alpha2.LocalDNSServeStaleVerify), ""),
+			Entry("valid serve stale: Immediate", lo.ToPtr(v1alpha2.LocalDNSServeStaleImmediate), ""),
+			Entry("valid serve stale: Disable", lo.ToPtr(v1alpha2.LocalDNSServeStaleDisable), ""),
+			Entry("invalid serve stale: invalid-string", lo.ToPtr(v1alpha2.LocalDNSServeStale("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid serve stale: invalid-value", lo.ToPtr(v1alpha2.LocalDNSServeStale("invalid-value")), "spec.localDNS.vnetDNSOverrides"),
 		)
 
-		DescribeTable("should validate CacheDuration", func(durationStr string, expected bool) {
+		DescribeTable("should validate CacheDuration", func(durationStr string, expectedErr string) {
 			cacheDuration := karpv1.MustParseNillableDuration(durationStr)
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -302,17 +314,19 @@ var _ = Describe("CEL/Validation", func() {
 					},
 				},
 			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
 			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid duration: 1h", "1h", true),
-			Entry("valid duration: 30m", "30m", true),
-			Entry("valid duration: 60s", "60s", true),
-			Entry("valid duration: 1h30m", "1h30m", true),
-			Entry("valid duration: 2h15m30s", "2h15m30s", true),
+			Entry("valid duration: 1h", "1h", ""),
+			Entry("valid duration: 30m", "30m", ""),
+			Entry("valid duration: 60s", "60s", ""),
+			Entry("valid duration: 1h30m", "1h30m", ""),
+			Entry("valid duration: 2h15m30s", "2h15m30s", ""),
 		)
 
 		It("should reject CacheDuration with decimal values", func() {
@@ -367,7 +381,7 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(err.Error()).To(ContainSubstring("\"Never\": spec.localDNS.vnetDNSOverrides.test.domain.cacheDuration in body should match '^([0-9]+(s|m|h))+$'"))
 		})
 
-		DescribeTable("should validate ServeStaleDuration", func(durationStr string, expected bool) {
+		DescribeTable("should validate ServeStaleDuration", func(durationStr string, expectedErr string) {
 			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -382,17 +396,19 @@ var _ = Describe("CEL/Validation", func() {
 					},
 				},
 			}
-			if expected {
-				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
 			} else {
-				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid duration: 1h", "1h", true),
-			Entry("valid duration: 30m", "30m", true),
-			Entry("valid duration: 60s", "60s", true),
-			Entry("valid duration: 1h30m", "1h30m", true),
-			Entry("valid duration: 2h15m30s", "2h15m30s", true),
+			Entry("valid duration: 1h", "1h", ""),
+			Entry("valid duration: 30m", "30m", ""),
+			Entry("valid duration: 60s", "60s", ""),
+			Entry("valid duration: 1h30m", "1h30m", ""),
+			Entry("valid duration: 2h15m30s", "2h15m30s", ""),
 		)
 
 		It("should reject ServeStaleDuration with decimal values", func() {
