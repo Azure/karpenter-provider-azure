@@ -28,9 +28,11 @@ import (
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
-	"sigs.k8s.io/karpenter/pkg/test"
+	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -114,22 +116,39 @@ var _ = Describe("LocalDNS", func() {
 			},
 		}
 
-		By("Configuring NodePool with unique label for full config test")
-		nodePool.Spec.Template.Labels = lo.Assign(nodePool.Spec.Template.Labels, map[string]string{
-			"localdns-test-id": "full-config-test",
-		})
-
-		By("Triggering node provisioning with full LocalDNS config")
-		pod := test.Pod(test.PodOptions{
-			NodeSelector: map[string]string{
-				"localdns-test-id": "full-config-test",
+		By("Creating inflate deployment to trigger node provisioning")
+		deployment := coretest.Deployment(coretest.DeploymentOptions{
+			Replicas: 1,
+			PodOptions: coretest.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "inflate",
+					},
+				},
+				Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6",
+				ResourceRequirements: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("1"),
+						corev1.ResourceMemory: resource.MustParse("256M"),
+					},
+				},
 			},
 		})
-		env.ExpectCreated(nodeClass, nodePool, pod)
+		deployment.Name = "inflate"
+		env.ExpectCreated(nodeClass, nodePool, deployment)
 
-		By("Waiting for node to be provisioned and become healthy")
-		env.EventuallyExpectHealthy(pod)
+		By("Waiting for node to be provisioned")
 		env.ExpectCreatedNodeCount("==", 1)
+
+		By("Waiting for inflate pod to be scheduled and running")
+		var inflatePod *corev1.Pod
+		Eventually(func(g Gomega) {
+			podList := &corev1.PodList{}
+			g.Expect(env.Client.List(env.Context, podList, client.InNamespace("default"), client.MatchingLabels{"app": "inflate"})).To(Succeed())
+			g.Expect(podList.Items).To(HaveLen(1))
+			inflatePod = &podList.Items[0]
+			g.Expect(inflatePod.Status.Phase).To(Equal(corev1.PodRunning))
+		}).WithTimeout(5 * time.Minute).Should(Succeed())
 
 		node := env.Monitor.CreatedNodes()[0]
 
@@ -147,8 +166,8 @@ var _ = Describe("LocalDNS", func() {
 			By(fmt.Sprintf("✓ Node %s has localdns-state=enabled label", node.Name))
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
-		By("Verifying LocalDNS configuration is active using existing test pod")
-		result := GetDNSResultFromPod(pod)
+		By("Verifying LocalDNS configuration is active from the provisioned node")
+		result := GetDNSResultFromNode(node)
 		VerifyUsingLocalDNSClusterListener(result.DNSIP, "Full config LocalDNS")
 
 		By("✓ Verified LocalDNS is actively handling DNS resolution")
@@ -476,7 +495,51 @@ func GetDNSResultFromPod(pod *corev1.Pod) DNSTestResult {
 	return result
 }
 
-// parseDNSServerIP extracts the DNS server IP from nslookup output
+// GetDNSResultFromNode gets DNS resolution results by creating a pod with hostNetwork on the specified node
+func GetDNSResultFromNode(node *corev1.Node) DNSTestResult {
+	var result DNSTestResult
+
+	By(fmt.Sprintf("Creating host-network pod on node %s to test DNS resolution", node.Name))
+
+	// Create a pod with hostNetwork to test DNS from the node's perspective
+	testPod := coretest.Pod(coretest.PodOptions{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "dns-test-",
+			Namespace:    "default",
+		},
+		Image: "busybox:1.36",
+		Command: []string{
+			"sh", "-c",
+			"nslookup kubernetes.default.svc.cluster.local && sleep 30",
+		},
+		NodeSelector: map[string]string{
+			corev1.LabelHostname: node.Name,
+		},
+		RestartPolicy: corev1.RestartPolicyNever,
+	})
+	// Use hostNetwork to test DNS from the node's network namespace
+	testPod.Spec.HostNetwork = true
+
+	env.ExpectCreated(testPod)
+	defer func() {
+		By("Cleaning up DNS test pod")
+		env.ExpectDeleted(testPod)
+	}()
+
+	// Wait for pod to complete
+	Eventually(func(g Gomega) {
+		var currentPod corev1.Pod
+		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: testPod.Name, Namespace: testPod.Namespace}, &currentPod)).To(Succeed())
+		g.Expect(currentPod.Status.Phase).ToNot(Equal(corev1.PodPending), "Pod should have started")
+	}).WithTimeout(2 * time.Minute).Should(Succeed())
+
+	// Get the logs from the pod
+	result = GetDNSResultFromPod(testPod)
+
+	By("DNS query output from node " + node.Name + ":\n" + result.Logs)
+
+	return result
+} // parseDNSServerIP extracts the DNS server IP from nslookup output
 // Example output:
 // Server:    169.254.10.11
 // Address:   169.254.10.11:53
