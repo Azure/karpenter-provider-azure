@@ -222,7 +222,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).DiskEncryptionSetID,
 	)
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
-		ctx,
 		azClient,
 		instanceTypeProvider,
 		imageResolver,

@@ -136,7 +136,6 @@ type DefaultAKSMachineProvider struct {
 }
 
 func NewAKSMachineProvider(
-	ctx context.Context,
 	azClient *AZClient,
 	instanceTypeProvider instancetype.Provider,
 	imageResolver imagefamily.Resolver,
@@ -151,8 +150,8 @@ func NewAKSMachineProvider(
 		azClient:                azClient,
 		instanceTypeProvider:    instanceTypeProvider,
 		imageResolver:           imageResolver,
-		clusterResourceGroup:    clusterResourceGroup,
 		subscriptionID:          subscriptionID,
+		clusterResourceGroup:    clusterResourceGroup,
 		clusterName:             clusterName,
 		aksMachinesPoolName:     aksMachinesPoolName,
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
@@ -244,7 +243,6 @@ func (p *DefaultAKSMachineProvider) Get(ctx context.Context, aksMachineName stri
 		return nil, corecloudprovider.NewNodeClaimNotFoundError(fmt.Errorf("failed to get AKS machine, AKS machines pool name is empty"))
 	}
 
-	// ASSUMPTION: AKS machines API accepts only AKS machine name.
 	aksMachine, err := p.getMachine(ctx, aksMachineName)
 	if err != nil {
 		if IsAKSMachineOrMachinesPoolNotFound(err) {
@@ -306,6 +304,7 @@ func (p *DefaultAKSMachineProvider) GetMachinesPoolLocation() string {
 
 func (p *DefaultAKSMachineProvider) rehydrateMachine(aksMachine *armcontainerservice.Machine) {
 	// This needs to be rehydrated per the current behavior of both AKS machine API and AKS AgentPool API: priority will shows up only for spot.
+	// An example use of this down the codepath is  to construct a NodeClaim representation (BuildNodeClaimFromAKSMachine).
 	// Suggestion: rework/research more on this pattern RP-side?
 	if aksMachine.Properties != nil && aksMachine.Properties.Priority == nil {
 		aksMachine.Properties.Priority = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
