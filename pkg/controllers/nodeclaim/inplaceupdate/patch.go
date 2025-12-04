@@ -76,6 +76,20 @@ var aksMachinePatchers = []func(*armcontainerservice.Machine, *patchParameters, 
 	patchAKSMachineTags,
 }
 
+func stringPtrEqual(v1, v2 *string) bool {
+	if v1 == nil && v2 == nil {
+		return true
+	}
+	if v1 == nil || v2 == nil {
+		return false
+	}
+	return *v1 == *v2
+}
+
+func tagsEqual(expected, current map[string]*string) bool {
+	return maps.EqualFunc(expected, current, stringPtrEqual)
+}
+
 func CalculateVMPatch(
 	options *options.Options,
 	nodeClaim *karpv1.NodeClaim,
@@ -163,17 +177,7 @@ func patchVMTags(
 		params.nodeClaim,
 	)
 
-	eq := func(v1, v2 *string) bool {
-		if v1 == nil && v2 == nil {
-			return true
-		}
-		if v1 == nil || v2 == nil {
-			return false
-		}
-		return *v1 == *v2
-	}
-
-	if maps.EqualFunc(expectedTags, currentVM.Tags, eq) {
+	if tagsEqual(expectedTags, currentVM.Tags) {
 		return false // No update to perform
 	}
 
@@ -196,16 +200,6 @@ func patchAKSMachineTags(
 		creationTimestamp,
 	)
 
-	eq := func(v1, v2 *string) bool {
-		if v1 == nil && v2 == nil {
-			return true
-		}
-		if v1 == nil || v2 == nil {
-			return false
-		}
-		return *v1 == *v2
-	}
-
 	if patchingAKSMachine.Properties == nil {
 		// Should not be possible, but handle it gracefully
 		if len(expectedTags) == 0 {
@@ -220,7 +214,7 @@ func patchAKSMachineTags(
 		return true
 	}
 
-	if maps.EqualFunc(expectedTags, patchingAKSMachine.Properties.Tags, eq) {
+	if tagsEqual(expectedTags, patchingAKSMachine.Properties.Tags) {
 		return false // No update to perform
 	}
 
@@ -232,18 +226,20 @@ func patchAKSMachineTags(
 	return true
 }
 
+// For CreationTimestamp tag:
+// - If existing machine tag exists/valid, leave it unchanged (preserve existing)
+//   - Still prone to user modification:
+//   - If it is valid but incorrect, then there is no current way to detect it
+//   - If it is corrupted, then the logic below will repair it
+//   - Although, this is significant only for instance garbage collection in the first 5 minutes of the instance, so, not critical now
+//
+// - Otherwise, fallback/default to epoch
+//   - Still, logic elsewhere should not assume that this is the case, as reconciliation may naturally come later
+//   - But still good to repair it
+//
+// Also, we don't update it to actual NodeClaim.CreationTimestamp because that is NodeClaim creation time, not instance creation time.
+// See notes in aksmachineinstanceutils.go for context and suggestions.
 func getCorrectedAKSMachineCreationTimestamp(aksMachine *armcontainerservice.Machine) time.Time {
-	// For CreationTimestamp tag:
-	// - If existing machine tag exists/valid, leave it unchanged (preserve existing)
-	//   - Still prone to user modification:
-	//     - If it is valid but incorrect, then there is no current way to detect it
-	//     - If it is corrupted, then the logic below will repair it
-	//     - Although, this is significant only for instance garbage collection in the first 5 minutes of the instance, so, not critical now
-	// - Otherwise, fallback/default to epoch
-	//   - Still, logic elsewhere should not assume that this is the case, as reconciliation may naturally come later
-	//   - But still good to repair it
-	// Also, we don't update it to actual NodeClaim.CreationTimestamp because that is NodeClaim creation time, not instance creation time.
-	// See notes in aksmachineinstanceutils.go for context and suggestions.
 	var creationTimestamp time.Time
 	if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {
 		if timestampTag, ok := aksMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineCreationTimestampTagKey]; ok && timestampTag != nil {

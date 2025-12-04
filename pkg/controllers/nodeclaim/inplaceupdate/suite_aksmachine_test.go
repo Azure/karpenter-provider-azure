@@ -392,6 +392,24 @@ var _ = Describe("In Place Update Controller", func() {
 
 			// Reset the error for other tests
 			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Error.Reset()
+
+			// Try reconciling again.
+			ExpectObjectReconciled(ctx, env.Client, inPlaceUpdateController, nodeClaim)
+
+			// Verify update succeeded
+			updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify tags were applied
+			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
+			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+
+			// Verify ETag was updated after successful operation
+			Expect(updatedAKSMachine.Properties.ETag).ToNot(BeNil())
+			Expect(*updatedAKSMachine.Properties.ETag).ToNot(Equal("valid-etag"))
+
+			// Verify API was called
+			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
 		})
 
 		It("should successfully update AKS machine with correct ETag", func() {
