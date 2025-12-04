@@ -135,7 +135,7 @@ func Get(
 
 	if nodeClass.IsLocalDNSEnabled() {
 		labels[AKSLocalDNSStateLabelKey] = "enabled"
-	} else if nodeClass.Spec.LocalDNS != nil && nodeClass.Spec.LocalDNS.Mode != nil && *nodeClass.Spec.LocalDNS.Mode == v1beta1.LocalDNSModeDisabled {
+	} else {
 		labels[AKSLocalDNSStateLabelKey] = "disabled"
 	}
 
