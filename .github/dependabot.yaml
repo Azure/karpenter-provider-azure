@@ -21,6 +21,10 @@ updates:
         exclude-patterns:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
+    ignore:
+      - dependency-name: "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice"
+        versions:
+          - ">=v8.0.0"  # AKS Machine API is externally in preview. Need to preserve beta versions of the module.
   - package-ecosystem: docker
     directories:
       - /.devcontainer/**/*
