@@ -56,6 +56,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 	//       produce a lazy at-most-once that allows a check to cache a value for later checks to read.
 
 	if nodeClaim == nil || nodeClaim.Status.ProviderID == "" {
+		// This is technically not possible (as of the time of writing). IsDrifted() won't be called by core until NodeClaim is launched.
 		return "", fmt.Errorf("nodeclaim %s is missing provider ID", nodeClaim.Name)
 	}
 
