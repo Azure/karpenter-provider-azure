@@ -64,16 +64,18 @@ func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, no
 		tags = lo.Assign(options.AdditionalTags, nodeClass.Spec.Tags)
 	}
 
+	var hashStruct interface{}
 	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
-		hashStruct := &aksMachineInPlaceUpdateFields{
+		// AKS machine-based node
+		hashStruct = &aksMachineInPlaceUpdateFields{
 			Tags: tags,
 		}
-		return CalculateHash(hashStruct)
-	}
-
-	hashStruct := &vmInPlaceUpdateFields{
-		Identities: sets.New(options.NodeIdentities...),
-		Tags:       tags,
+	} else {
+		// VM instance-based node
+		hashStruct = &vmInPlaceUpdateFields{
+			Identities: sets.New(options.NodeIdentities...),
+			Tags:       tags,
+		}
 	}
 
 	return CalculateHash(hashStruct)

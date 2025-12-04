@@ -40,21 +40,21 @@ import (
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-type CloudProviderInstances struct {
+type Instance struct {
 	kubeClient      client.Client
 	cloudProvider   corecloudprovider.CloudProvider
 	successfulCount uint64 // keeps track of successful reconciles for more aggressive requeuing near the start of the controller
 }
 
-func NewCloudProviderInstances(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *CloudProviderInstances {
-	return &CloudProviderInstances{
+func NewInstance(kubeClient client.Client, cloudProvider corecloudprovider.CloudProvider) *Instance {
+	return &Instance{
 		kubeClient:      kubeClient,
 		cloudProvider:   cloudProvider,
 		successfulCount: 0,
 	}
 }
 
-func (c *CloudProviderInstances) Reconcile(ctx context.Context) (reconcile.Result, error) {
+func (c *Instance) Reconcile(ctx context.Context) (reconcile.Result, error) {
 	ctx = injection.WithControllerName(ctx, "instance.garbagecollection")
 
 	// We LIST instances on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
@@ -99,7 +99,7 @@ func (c *CloudProviderInstances) Reconcile(ctx context.Context) (reconcile.Resul
 	return reconcile.Result{RequeueAfter: lo.Ternary(c.successfulCount <= 20, time.Second*10, time.Minute*2)}, nil
 }
 
-func (c *CloudProviderInstances) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
+func (c *Instance) garbageCollect(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeList *v1.NodeList) error {
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithValues("providerID", nodeClaim.Status.ProviderID))
 	if err := c.cloudProvider.Delete(ctx, nodeClaim); err != nil {
 		return corecloudprovider.IgnoreNodeClaimNotFoundError(err)
@@ -118,7 +118,7 @@ func (c *CloudProviderInstances) garbageCollect(ctx context.Context, nodeClaim *
 	return nil
 }
 
-func (c *CloudProviderInstances) Register(_ context.Context, m manager.Manager) error {
+func (c *Instance) Register(_ context.Context, m manager.Manager) error {
 	return controllerruntime.NewControllerManagedBy(m).
 		Named("instance.garbagecollection").
 		WatchesRawSource(singleton.Source()).
