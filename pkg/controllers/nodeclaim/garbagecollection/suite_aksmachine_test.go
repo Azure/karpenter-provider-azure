@@ -39,7 +39,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
-var _ = Describe("CloudProviderInstances Garbage Collection", func() {
+var _ = Describe("Instance Garbage Collection", func() {
 	var vm *armcompute.VirtualMachine
 	var aksMachine *armcontainerservice.Machine
 	var providerID string
@@ -66,7 +66,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -76,7 +76,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr("malformed-timestamp")
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
@@ -87,7 +87,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			delete(aksMachine.Properties.Tags, "karpenter.azure.com_aksmachine_creationtimestamp")
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
@@ -102,7 +102,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			})
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -112,7 +112,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp()))
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -132,7 +132,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			})
 			ExpectApplied(ctx, env.Client, nodeClaim, node)
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 			_, err := cloudProvider.Get(ctx, providerID)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectExists(ctx, env.Client, node)
@@ -147,7 +147,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			})
 			ExpectApplied(ctx, env.Client, node)
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -219,7 +219,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 
 				// Garbage collection reconciles - should garbage collect due to no NodeClaim owner + timestamp defaulting to epoch
 				// This is expected, but not what we really wanted... See suggestions in respective modules.
-				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).To(HaveOccurred())
 				Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
@@ -277,7 +277,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Expect(*updatedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
 
 				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -294,7 +294,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				Expect(*unchangedAKSMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal("corner-case-nodeclaim"))
 
 				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -305,7 +305,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 
 				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -339,7 +339,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				ExpectApplied(ctx, env.Client, nodeClaim)
 
 				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -360,7 +360,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				ExpectApplied(ctx, env.Client, nodeClaim)
 
 				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -385,7 +385,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 				ExpectApplied(ctx, env.Client, nodeClaim)
 
 				// Garbage collection reconciles - should not garbage collect due to NodeClaim owner
-				ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+				ExpectSingletonReconciled(ctx, InstanceGCController)
 				_, err = cloudProvider.Get(ctx, providerID)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(azureEnv.AKSAgentPoolsAPI.AgentPoolDeleteMachinesBehavior.CalledWithInput.Len()).To(Equal(0))
@@ -427,7 +427,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			aksMachineProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 
 			// Both instances should be deleted
 			_, err := cloudProvider.Get(ctx, vmProviderID)
@@ -467,7 +467,7 @@ var _ = Describe("CloudProviderInstances Garbage Collection", func() {
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
 			aksMachineProviderID := utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 
-			ExpectSingletonReconciled(ctx, cloudProviderInstancesGCController)
+			ExpectSingletonReconciled(ctx, InstanceGCController)
 
 			// VM with NodeClaim should be preserved
 			_, err := cloudProvider.Get(ctx, vmProviderID)

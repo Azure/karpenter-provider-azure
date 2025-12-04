@@ -59,7 +59,7 @@ func NewControllers(
 		nodeclassstatus.NewController(kubeClient, kubernetesVersionProvider, nodeImageProvider, inClusterKubernetesInterface, subnetsClient),
 		nodeclasstermination.NewController(kubeClient, recorder),
 
-		nodeclaimgarbagecollection.NewCloudProviderInstances(kubeClient, cloudProvider),
+		nodeclaimgarbagecollection.NewInstance(kubeClient, cloudProvider),
 		nodeclaimgarbagecollection.NewNetworkInterface(kubeClient, vmInstanceProvider),
 
 		// TODO: nodeclaim tagging
