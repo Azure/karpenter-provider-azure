@@ -231,7 +231,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	}
 
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
-		ctx,
 		azClient,
 		instanceTypesProvider,
 		imageFamilyResolver,
@@ -387,7 +386,6 @@ func (env *Environment) ReapplyContextWithOptions(ctx context.Context) {
 	)
 
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
-		ctx,
 		azClient,
 		instanceTypesProvider,
 		imageFamilyResolver,
