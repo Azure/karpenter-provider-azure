@@ -152,6 +152,7 @@ func (o *Options) validateRequiredFields() error {
 func (o *Options) validateUseSIG() error {
 	if o.UseSIG {
 		if o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
+			// For ProvisionModeAKSMachineAPI, we don't need SIGAccessTokenServerURL etc. given AKS Machine API would handle it.
 			if o.SIGAccessTokenServerURL == "" {
 				return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
 			}

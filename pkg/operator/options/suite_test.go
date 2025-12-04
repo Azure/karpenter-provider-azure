@@ -449,54 +449,6 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("sig-access-token-scope")))
 		})
-		It("should fail if additional-tags is malformed", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
-				"--network-plugin", "azure",
-				"--network-plugin-mode", "overlay",
-				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
-				"--node-resource-group", "my-node-rg",
-				"--additional-tags", "key1/value2",
-			)
-			Expect(err).To(MatchError(ContainSubstring("invalid value \"key1/value2\" for flag -additional-tags: malformed pair, expect string=string")))
-		})
-		It("should fail if additional-tags has duplicate keys", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
-				"--network-plugin", "azure",
-				"--network-plugin-mode", "overlay",
-				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
-				"--node-resource-group", "my-node-rg",
-				"--additional-tags", "key1=value1,key2=value2,KEY1=value3",
-			)
-			Expect(err).To(MatchError(ContainSubstring("is not unique (case-insensitive). Duplicate key found")))
-		})
-		It("should fail if additional-tags has invalid character", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
-				"--network-plugin", "azure",
-				"--network-plugin-mode", "overlay",
-				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
-				"--node-resource-group", "my-node-rg",
-				"--additional-tags", "<key1>=value1,",
-			)
-			Expect(err).To(MatchError(ContainSubstring("validating options, additional-tags key \"<key1>\" contains invalid characters.")))
-		})
 
 		It("should default manage-existing-aks-machines to false", func() {
 			err := opts.Parse(
@@ -865,20 +817,6 @@ var _ = Describe("Options", func() {
 			Expect(err).To(MatchError(ContainSubstring("exceeds maximum length of 256 characters")))
 		})
 
-		It("should fail if additional-tags has case-insensitive duplicate keys", func() {
-			err := opts.Parse(
-				fs,
-				"--cluster-name", "my-name",
-				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
-				"--kubelet-bootstrap-token", "flag-bootstrap-token",
-				"--ssh-public-key", "flag-ssh-public-key",
-				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
-				"--node-resource-group", "my-node-rg",
-				"--additional-tags", "Env=prod,ENV=staging",
-			)
-			Expect(err).To(MatchError(ContainSubstring("is not unique (case-insensitive). Duplicate key found")))
-		})
-
 		It("should fail if additional-tags contains invalid characters in key", func() {
 			invalidChars := []string{"<", ">", "%", "&", "\\", "?", "/"}
 			for _, char := range invalidChars {
@@ -910,6 +848,40 @@ var _ = Describe("Options", func() {
 				"--additional-tags", fmt.Sprintf("%s=%s", maxKey, maxValue),
 			)
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should fail if additional-tags is malformed", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "azure",
+				"--network-plugin-mode", "overlay",
+				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
+				"--node-resource-group", "my-node-rg",
+				"--additional-tags", "key1/value2",
+			)
+			Expect(err).To(MatchError(ContainSubstring("invalid value \"key1/value2\" for flag -additional-tags: malformed pair, expect string=string")))
+		})
+
+		It("should fail if additional-tags has duplicate keys", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--network-plugin", "azure",
+				"--network-plugin-mode", "overlay",
+				"--vnet-guid", "a519e60a-cac0-40b2-b883-084477fe6f5c",
+				"--node-resource-group", "my-node-rg",
+				"--additional-tags", "key1=value1,key2=value2,KEY1=value3",
+			)
+			Expect(err).To(MatchError(ContainSubstring("is not unique (case-insensitive). Duplicate key found")))
 		})
 	})
 })
