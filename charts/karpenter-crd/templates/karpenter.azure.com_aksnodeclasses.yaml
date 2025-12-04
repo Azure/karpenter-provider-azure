@@ -244,6 +244,15 @@ spec:
                             for more information.
                           pattern: ^([0-9]+(s|m|h))+$
                           type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
                       type: object
                     description: KubeDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
@@ -313,11 +322,24 @@ spec:
                             for more information.
                           pattern: ^([0-9]+(s|m|h))+$
                           type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
                       type: object
                     description: VnetDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
                     maxProperties: 100
                     type: object
+                required:
+                - kubeDNSOverrides
+                - mode
+                - vnetDNSOverrides
                 type: object
               maxPods:
                 description: |-
@@ -720,6 +742,15 @@ spec:
                             for more information.
                           pattern: ^([0-9]+(s|m|h))+$
                           type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
                       type: object
                     description: KubeDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
@@ -788,10 +819,23 @@ spec:
                             for more information.
                           pattern: ^([0-9]+(s|m|h))+$
                           type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
                       type: object
                     description: VnetDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
                     type: object
+                required:
+                - kubeDNSOverrides
+                - mode
+                - vnetDNSOverrides
                 type: object
               maxPods:
                 description: |-

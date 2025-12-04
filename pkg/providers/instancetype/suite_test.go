@@ -690,8 +690,33 @@ var _ = Describe("InstanceType Provider", func() {
 	DescribeTable("Filtering by LocalDNS",
 		func(localDNSMode *v1beta1.LocalDNSMode, k8sVersion string, shouldIncludeD2s, shouldIncludeD4s bool) {
 			if localDNSMode != nil {
+				// Create complete LocalDNS configuration with all required fields
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 					Mode: localDNSMode,
+					VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+						"*": {
+							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+							ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+							ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+						},
+					},
+					KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+						"*": {
+							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+							ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+							ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+						},
+					},
 				}
 			}
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)

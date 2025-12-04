@@ -121,49 +121,49 @@ const (
 // For more details see aka.ms/aks/localdns.
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
-	// +optional
-	Mode *LocalDNSMode `json:"mode,omitempty"`
+	// +required
+	Mode *LocalDNSMode `json:"mode"`
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
-	// +optional
-	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides,omitempty"`
+	// +required
+	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides"`
 	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
-	// +optional
-	KubeDNSOverrides map[string]*LocalDNSOverrides `json:"kubeDNSOverrides,omitempty"`
+	// +required
+	KubeDNSOverrides map[string]*LocalDNSOverrides `json:"kubeDNSOverrides"`
 }
 
 // LocalDNSOverrides specifies DNS override configuration
 type LocalDNSOverrides struct {
 	// Log level for DNS queries in localDNS.
-	// +optional
-	QueryLogging *LocalDNSQueryLogging `json:"queryLogging,omitempty"`
+	// +required
+	QueryLogging *LocalDNSQueryLogging `json:"queryLogging"`
 	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
-	// +optional
-	Protocol *LocalDNSProtocol `json:"protocol,omitempty"`
+	// +required
+	Protocol *LocalDNSProtocol `json:"protocol"`
 	// Destination server for DNS queries to be forwarded from localDNS.
-	// +optional
-	ForwardDestination *LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
+	// +required
+	ForwardDestination *LocalDNSForwardDestination `json:"forwardDestination"`
 	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
-	// +optional
-	ForwardPolicy *LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
+	// +required
+	ForwardPolicy *LocalDNSForwardPolicy `json:"forwardPolicy"`
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
-	// +optional
-	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
+	// +required
+	MaxConcurrent *int32 `json:"maxConcurrent"`
 	// Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
 	// +kubebuilder:validation:Type="string"
 	// +kubebuilder:validation:Schemaless
-	// +optional
-	CacheDuration karpv1.NillableDuration `json:"cacheDuration,omitempty"`
+	// +required
+	CacheDuration karpv1.NillableDuration `json:"cacheDuration"`
 	// Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
 	// +kubebuilder:validation:Type="string"
 	// +kubebuilder:validation:Schemaless
-	// +optional
-	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration,omitempty"`
+	// +required
+	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
 	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
-	// +optional
-	ServeStale *LocalDNSServeStale `json:"serveStale,omitempty"`
+	// +required
+	ServeStale *LocalDNSServeStale `json:"serveStale"`
 }
 
 // +kubebuilder:validation:Enum:={Error,Log}
