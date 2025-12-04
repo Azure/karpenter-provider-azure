@@ -71,7 +71,8 @@ var (
 // Other Karpenter-level fields are also included as they may be easily retrieved during templating phase.
 // Not assuming that NodeClaim exists.
 func BuildNodeClaimFromAKSMachineTemplate(
-	ctx context.Context, aksMachineTemplate *armcontainerservice.Machine,
+	ctx context.Context,
+	aksMachineTemplate *armcontainerservice.Machine,
 	instanceType *corecloudprovider.InstanceType, // optional; won't be populated for standalone nodeclaims
 	capacityType string,
 	zone *string, // <region>-<zone-id>, optional
