@@ -18,6 +18,12 @@ ENABLE_AZURE_SDK_LOGGING=$5
 PROVISION_MODE=${6:-}
 AKS_MACHINES_POOL_NAME=${7:-testmpool}
 
+# Validate PROVISION_MODE
+if [[ -n "$PROVISION_MODE" && "$PROVISION_MODE" != "aksmachineapi" && "$PROVISION_MODE" != "bootstrappingclient" && "$PROVISION_MODE" != "aksscriptless" ]]; then
+    echo "Error: Invalid provision-mode '$PROVISION_MODE'. Must be one of: aksmachineapi, bootstrappingclient, aksscriptless, or empty"
+    exit 1
+fi
+
 # Optional values through env vars:
 LOG_LEVEL=${LOG_LEVEL:-"info"}
 
