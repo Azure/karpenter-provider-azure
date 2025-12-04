@@ -37,9 +37,9 @@ type ResponseErrorHandler struct {
 	HandlerEntries       []responseErrorHandlerEntry
 }
 
-// Comparing to CloudErrorHandler, this is handling same errors, but for a different error data model.
+// Comparing to ErrorDetailHandler, this is handling same errors, but for a different error data model.
 // HandlerEntries should generally be kept in sync.
-// See CloudErrorHandler for more details.
+// See ErrorDetailHandler for more details.
 func NewResponseErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *ResponseErrorHandler {
 	return &ResponseErrorHandler{
 		UnavailableOfferings: unavailableOfferings,

@@ -6,7 +6,7 @@ require (
 	github.com/Azure/aks-middleware v0.0.41
 	github.com/Azure/azure-kusto-go v0.16.1
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
-	github.com/Azure/azure-sdk-for-go-extensions v0.2.1-0.20250924093303-adf3c22e7580
+	github.com/Azure/azure-sdk-for-go-extensions v0.2.1-0.20251204022158-6da2003b8d4a
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0

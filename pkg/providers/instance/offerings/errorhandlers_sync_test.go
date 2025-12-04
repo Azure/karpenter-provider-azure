@@ -25,15 +25,15 @@ import (
 )
 
 // Just a sanity check that both error handlers are kept in sync.
-// More details in comments in CloudErrorHandler.
+// More details in comments in ErrorDetailHandler.
 func TestErrorHandlerEquivalency(t *testing.T) {
 	unavailableOfferings := cache.NewUnavailableOfferings()
 
-	cloudHandler := NewCloudErrorHandler(unavailableOfferings)
+	cloudHandler := NewErrorDetailHandler(unavailableOfferings)
 	responseHandler := NewResponseErrorHandler(unavailableOfferings)
 
 	if len(cloudHandler.HandlerEntries) != len(responseHandler.HandlerEntries) {
-		t.Errorf("Handler entry count mismatch: CloudErrorHandler has %d entries, ResponseErrorHandler has %d entries",
+		t.Errorf("Handler entry count mismatch: ErrorDetailHandler has %d entries, ResponseErrorHandler has %d entries",
 			len(cloudHandler.HandlerEntries), len(responseHandler.HandlerEntries))
 	}
 
@@ -42,7 +42,7 @@ func TestErrorHandlerEquivalency(t *testing.T) {
 		responseHandleFunc := runtime.FuncForPC(reflect.ValueOf(responseHandler.HandlerEntries[i].handle).Pointer())
 
 		if cloudHandleFunc.Name() != responseHandleFunc.Name() {
-			t.Errorf("Handler function mismatch at index %d: CloudErrorHandler uses %s, ResponseErrorHandler uses %s",
+			t.Errorf("Handler function mismatch at index %d: ErrorDetailHandler uses %s, ResponseErrorHandler uses %s",
 				i, cloudHandleFunc.Name(), responseHandleFunc.Name())
 		}
 	}

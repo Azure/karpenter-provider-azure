@@ -20,83 +20,83 @@ import (
 	"context"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
 
-type cloudErrorHandlerEntry struct {
-	match  func(cloudError armcontainerservice.CloudErrorBody) bool
+type errorDetailHandlerEntry struct {
+	match  func(errorDetail armcontainerservice.ErrorDetail) bool
 	handle errorHandle
 }
 
-type CloudErrorHandler struct {
+type ErrorDetailHandler struct {
 	UnavailableOfferings *cache.UnavailableOfferings
-	HandlerEntries       []cloudErrorHandlerEntry
+	HandlerEntries       []errorDetailHandlerEntry
 }
 
 // Comparing to ResponseErrorHandler, this is handling same errors, but for a different error data model.
 // HandlerEntries should generally be kept in sync.
 //
-// This exists because AKS machine data model returns this armcontainerservice.CloudErrorBody (AKS-specific) instead of azcore.ResponseError (SDK-wide). They have no common interface.
+// This exists because AKS machine data model returns this armcontainerservice.ErrorDetail (AKS-specific) instead of azcore.ResponseError (SDK-wide). They have no common interface.
 // VM instance is still using ResponseErrorHandler.
 // Ideally, if AKS machine data model returns azcore.ResponseError, we don't need this split at all.
-func NewCloudErrorHandler(unavailableOfferings *cache.UnavailableOfferings) *CloudErrorHandler {
-	return &CloudErrorHandler{
+func NewErrorDetailHandler(unavailableOfferings *cache.UnavailableOfferings) *ErrorDetailHandler {
+	return &ErrorDetailHandler{
 		UnavailableOfferings: unavailableOfferings,
-		HandlerEntries: []cloudErrorHandlerEntry{
+		HandlerEntries: []errorDetailHandlerEntry{
 			{
-				match:  sdkerrors.LowPriorityQuotaHasBeenReachedInCloudError,
+				match:  sdkerrors.LowPriorityQuotaHasBeenReachedInErrorDetail,
 				handle: handleLowPriorityQuotaError,
 			},
 			{
-				match:  sdkerrors.SKUFamilyQuotaHasBeenReachedInCloudError,
+				match:  sdkerrors.SKUFamilyQuotaHasBeenReachedInErrorDetail,
 				handle: handleSKUFamilyQuotaError,
 			},
 			{
-				match:  sdkerrors.IsSKUNotAvailableInCloudError,
+				match:  sdkerrors.IsSKUNotAvailableInErrorDetail,
 				handle: handleSKUNotAvailableError,
 			},
 			{
-				match:  sdkerrors.ZonalAllocationFailureOccurredInCloudError,
+				match:  sdkerrors.ZonalAllocationFailureOccurredInErrorDetail,
 				handle: handleZonalAllocationFailureError,
 			},
 			{
-				match:  sdkerrors.AllocationFailureOccurredInCloudError,
+				match:  sdkerrors.AllocationFailureOccurredInErrorDetail,
 				handle: handleAllocationFailureError,
 			},
 			{
-				match:  sdkerrors.OverconstrainedZonalAllocationFailureOccurredInCloudError,
+				match:  sdkerrors.OverconstrainedZonalAllocationFailureOccurredInErrorDetail,
 				handle: handleOverconstrainedZonalAllocationFailureError,
 			},
 			{
-				match:  sdkerrors.OverconstrainedAllocationFailureOccurredInCloudError,
+				match:  sdkerrors.OverconstrainedAllocationFailureOccurredInErrorDetail,
 				handle: handleOverconstrainedAllocationFailureError,
 			},
 			{
-				match:  sdkerrors.RegionalQuotaHasBeenReachedInCloudError,
+				match:  sdkerrors.RegionalQuotaHasBeenReachedInErrorDetail,
 				handle: handleRegionalQuotaError,
 			},
 		},
 	}
 }
 
-func (h *CloudErrorHandler) extractErrorCodeAndMessage(cloudError armcontainerservice.CloudErrorBody) (string, string) {
+func (h *ErrorDetailHandler) extractErrorCodeAndMessage(errorDetail armcontainerservice.ErrorDetail) (string, string) {
 	var code, message string
-	if cloudError.Code != nil {
-		code = *cloudError.Code
+	if errorDetail.Code != nil {
+		code = *errorDetail.Code
 	}
-	if cloudError.Message != nil {
-		message = *cloudError.Message
+	if errorDetail.Message != nil {
+		message = *errorDetail.Message
 	}
 	return code, message
 }
 
-func (h *CloudErrorHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, cloudError armcontainerservice.CloudErrorBody) error {
+func (h *ErrorDetailHandler) Handle(ctx context.Context, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType string, errorDetail armcontainerservice.ErrorDetail) error {
 	for _, handler := range h.HandlerEntries {
-		if handler.match(cloudError) {
-			errorCode, errorMessage := h.extractErrorCodeAndMessage(cloudError)
+		if handler.match(errorDetail) {
+			errorCode, errorMessage := h.extractErrorCodeAndMessage(errorDetail)
 			return handler.handle(ctx, h.UnavailableOfferings, sku, instanceType, zone, capacityType, errorCode, errorMessage)
 		}
 	}
