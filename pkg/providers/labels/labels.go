@@ -97,6 +97,7 @@ func Get(
 	// changed recently. This is OK because drift will correct it.
 	labels[v1beta1.AKSLabelKubeletIdentityClientID] = opts.KubeletIdentityClientID
 	labels["kubernetes.azure.com/mode"] = "user"
+	labels[v1beta1.AKSLabelScaleSetPriority] = v1beta1.ScaleSetPriorityRegular
 
 	if opts.IsAzureCNIOverlay() {
 		// TODO: make conditional on pod subnet
