@@ -65,7 +65,7 @@ func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv
 			c.areStaticFieldsDrifted,
 			c.isK8sVersionDrifted,
 			c.isImageVersionDrifted,
-			c.isMachineDriftActionAvailable,
+			c.isMachineDrifted,
 		}
 	} else {
 		// For legacy nodes
@@ -352,8 +352,8 @@ func getSubnetFromPrimaryIPConfig(nic *armnetwork.Interface) string {
 	return ""
 }
 
-// isMachineDriftActionAvailable checks the DriftAction field of the AKS machine to determine if drift exists
-func (c *CloudProvider) isMachineDriftActionAvailable(ctx context.Context, nodeClaim *karpv1.NodeClaim, _ *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
+// isMachineDrifted checks the DriftAction field of the AKS machine to determine if drift exists
+func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, _ *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
 	aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim)
 	if !isAKSMachine {
