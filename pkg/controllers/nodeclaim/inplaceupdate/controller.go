@@ -226,7 +226,7 @@ func (c *Controller) applyAKSMachinePatch(
 			etag = aksMachine.Properties.ETag
 		}
 
-		// Given AKS machine support PUT, but not PATCH, the AKS machine object will be patched directly.
+		// Given AKS machine support PUT, but not PATCH, the AKS machine object will be updated directly w/ etag check
 		err := c.aksMachineInstanceProvider.Update(ctx, aksMachineName, *aksMachine, etag)
 		if err != nil {
 			// ASSUMPTION: if it is etag mismatch, the next try would work (if without another mismatch)
