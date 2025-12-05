@@ -1,0 +1,15 @@
+controller:
+  resources:
+    requests:
+      cpu: 200m
+    limits:
+      cpu: 512m
+podAnnotations:
+  profiles.grafana.com/memory.scrape: "true"
+  profiles.grafana.com/memory.port_name: "http-metrics"
+  profiles.grafana.com/cpu.scrape: "true"
+  profiles.grafana.com/cpu.port_name: "http-metrics"
+  profiles.grafana.com/goroutine.scrape: "true"
+  profiles.grafana.com/goroutine.port_name: "http-metrics"
+  profiles.grafana.com/service_repository: "github.com/Azure/karpenter-provider-azure"
+  profiles.grafana.com/service_git_ref: "v1.4.0"
