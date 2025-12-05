@@ -96,7 +96,7 @@ func Get(
 	// script is configured by the NPS service. That means the label can be set to the older client ID if the client ID
 	// changed recently. This is OK because drift will correct it.
 	labels[v1beta1.AKSLabelKubeletIdentityClientID] = opts.KubeletIdentityClientID
-	labels["kubernetes.azure.com/mode"] = "user"
+	labels[v1beta1.AKSLabelMode] = v1beta1.ModeUser
 
 	if opts.IsAzureCNIOverlay() {
 		// TODO: make conditional on pod subnet

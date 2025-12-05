@@ -1525,6 +1525,8 @@ var _ = Describe("InstanceType Provider", func() {
 			// AKS domain
 			{Name: v1beta1.AKSLabelCPU, Label: v1beta1.AKSLabelCPU, ValueFunc: func() string { return "24" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			{Name: v1beta1.AKSLabelMemory, Label: v1beta1.AKSLabelMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+			{Name: v1beta1.AKSLabelMode + "=user", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "user" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+			{Name: v1beta1.AKSLabelMode + "=system", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "system" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 			// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
 			// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
 			// the new labels to the old labels for compatibility.
@@ -1676,7 +1678,6 @@ var _ = Describe("InstanceType Provider", func() {
 		nonSchedulableLabels := map[string]string{
 			labels.AKSLabelRole:                     "agent",
 			v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
-			"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
 			//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there
 			labels.AKSLabelSubnetName:      "aks-subnet",
 			labels.AKSLabelVNetGUID:        test.Options().VnetGUID,
