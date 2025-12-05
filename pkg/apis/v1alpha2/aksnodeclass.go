@@ -118,6 +118,8 @@ const (
 // LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 // LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 // For more details see aka.ms/aks/localdns.
+// +kubebuilder:validation:XValidation:rule="'.' in self.vnetDNSOverrides && 'cluster.local' in self.vnetDNSOverrides",message="vnetDNSOverrides must contain required zones '.' and 'cluster.local'"
+// +kubebuilder:validation:XValidation:rule="'.' in self.kubeDNSOverrides && 'cluster.local' in self.kubeDNSOverrides",message="kubeDNSOverrides must contain required zones '.' and 'cluster.local'"
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
 	// +required
