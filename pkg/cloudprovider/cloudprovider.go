@@ -503,7 +503,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 }
 
 func GetNodeClaimNameFromVMName(vmName string) string {
-	return strings.TrimLeft("aks-", vmName)
+	return strings.TrimPrefix(vmName, "aks-")
 }
 
 const truncateAt = 1200
