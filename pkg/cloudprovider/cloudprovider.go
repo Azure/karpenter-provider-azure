@@ -572,7 +572,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 		labels[karpv1.NodePoolLabelKey] = *tag
 	}
 
-	nodeClaim.Name = GenerateNodeClaimName(*vm.Name)
+	nodeClaim.Name = GetNodeClaimNameFromVMName(*vm.Name)
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
 	nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
@@ -587,7 +587,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	return nodeClaim, nil
 }
 
-func GenerateNodeClaimName(vmName string) string {
+func GetNodeClaimNameFromVMName(vmName string) string {
 	return strings.TrimPrefix(vmName, "aks-")
 }
 
