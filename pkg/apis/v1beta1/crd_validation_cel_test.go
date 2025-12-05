@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1_test
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -1100,6 +1101,80 @@ var _ = Describe("CEL/Validation", func() {
 				Entry("invalid: label too long 64 chars", strings.Repeat("a", 64)+".example.com", "kubeDNSOverrides contains invalid zone name format"),
 				Entry("invalid: only hyphen", "-.example.com", "kubeDNSOverrides contains invalid zone name format"),
 				Entry("invalid: only underscore", "_.example.com", "kubeDNSOverrides contains invalid zone name format"),
+			)
+		})
+
+		Context("LocalDNS MaxProperties validation", func() {
+			DescribeTable("should validate VnetDNSOverrides property limits",
+				func(numZones int, expectedErr string) {
+					overrides := make(map[string]*v1beta1.LocalDNSOverrides)
+					overrides["."] = createCompleteLocalDNSOverrides(true)
+					overrides["cluster.local"] = createCompleteLocalDNSOverrides(false)
+					// Add additional zones beyond the required 2
+					for i := 1; i <= numZones-2; i++ {
+						overrides[fmt.Sprintf("zone%d.local", i)] = createCompleteLocalDNSOverrides(false)
+					}
+
+					nodeClass := &v1beta1.AKSNodeClass{
+						ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+						Spec: v1beta1.AKSNodeClassSpec{
+							LocalDNS: &v1beta1.LocalDNS{
+								Mode:             lo.ToPtr(v1beta1.LocalDNSModeRequired),
+								VnetDNSOverrides: overrides,
+								KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+									".":             createCompleteLocalDNSOverrides(false),
+									"cluster.local": createCompleteLocalDNSOverrides(false),
+								},
+							},
+						},
+					}
+					err := env.Client.Create(ctx, nodeClass)
+					if expectedErr == "" {
+						Expect(err).To(Succeed())
+					} else {
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring(expectedErr))
+					}
+				},
+				Entry("valid: exactly 10 properties", 10, ""),
+				Entry("invalid: 11 properties (exceeds limit)", 11, "must have at most 10 items"),
+				Entry("invalid: 12 properties (exceeds limit)", 12, "must have at most 10 items"),
+			)
+
+			DescribeTable("should validate KubeDNSOverrides property limits",
+				func(numZones int, expectedErr string) {
+					overrides := make(map[string]*v1beta1.LocalDNSOverrides)
+					overrides["."] = createCompleteLocalDNSOverrides(false)
+					overrides["cluster.local"] = createCompleteLocalDNSOverrides(false)
+					// Add additional zones beyond the required 2
+					for i := 1; i <= numZones-2; i++ {
+						overrides[fmt.Sprintf("zone%d.local", i)] = createCompleteLocalDNSOverrides(false)
+					}
+
+					nodeClass := &v1beta1.AKSNodeClass{
+						ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+						Spec: v1beta1.AKSNodeClassSpec{
+							LocalDNS: &v1beta1.LocalDNS{
+								Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+								VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
+									".":             createCompleteLocalDNSOverrides(true),
+									"cluster.local": createCompleteLocalDNSOverrides(false),
+								},
+								KubeDNSOverrides: overrides,
+							},
+						},
+					}
+					err := env.Client.Create(ctx, nodeClass)
+					if expectedErr == "" {
+						Expect(err).To(Succeed())
+					} else {
+						Expect(err).To(HaveOccurred())
+						Expect(err.Error()).To(ContainSubstring(expectedErr))
+					}
+				},
+				Entry("valid: exactly 10 properties", 10, ""),
+				Entry("invalid: 11 properties (exceeds limit)", 11, "must have at most 10 items"),
+				Entry("invalid: 12 properties (exceeds limit)", 12, "must have at most 10 items"),
 			)
 		})
 
