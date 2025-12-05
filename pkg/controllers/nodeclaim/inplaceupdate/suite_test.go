@@ -236,16 +236,9 @@ var _ = Describe("Unit tests", func() {
 				"nodeclass-tag": "nodeclass-value",
 			}
 
-			update := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
 
-			Expect(update).ToNot(BeNil())
-			Expect(update.Properties).ToNot(BeNil())
-			Expect(update.Properties.Tags).To(HaveKey("test-tag"))
-			Expect(update.Properties.Tags).To(HaveKey("nodeclass-tag"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
-
+			Expect(patchExists).To(BeTrue())
 			// Verify original aksMachine was modified (expected behavior for AKS machines - PUT only, not PATCH)
 			Expect(aksMachine.Properties.Tags).To(HaveKey("test-tag"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
@@ -276,9 +269,9 @@ var _ = Describe("Unit tests", func() {
 				"nodeclass-tag": "nodeclass-value",
 			}
 
-			update := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
 
-			Expect(update).To(BeNil())
+			Expect(patchExists).To(BeFalse())
 
 			// Verify original aksMachine tags remain unchanged
 			Expect(aksMachine.Properties.Tags).To(HaveLen(5))
@@ -299,14 +292,9 @@ var _ = Describe("Unit tests", func() {
 				"test-tag": "my-tag",
 			}
 
-			update := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
 
-			Expect(update).ToNot(BeNil())
-			Expect(update.Properties).ToNot(BeNil())
-			Expect(update.Properties.Tags).To(HaveKey("test-tag"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+			Expect(patchExists).To(BeTrue())
 
 			// Verify original aksMachine properties were created and populated (expected behavior for AKS machines - PUT only, not PATCH)
 			Expect(aksMachine.Properties).ToNot(BeNil())
@@ -333,15 +321,9 @@ var _ = Describe("Unit tests", func() {
 				"new-tag": "new-value",
 			}
 
-			update := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
 
-			Expect(update).ToNot(BeNil())
-			Expect(update.Properties).ToNot(BeNil())
-			Expect(update.Properties.Tags).To(HaveKey("new-tag"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
-			Expect(update.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
-			Expect(update.Properties.Tags).ToNot(HaveKey("old-tag"))
+			Expect(patchExists).To(BeTrue())
 
 			// Verify original aksMachine tags were replaced (expected behavior for AKS machines - PUT only, not PATCH)
 			Expect(aksMachine.Properties.Tags).To(HaveKey("new-tag"))
@@ -366,11 +348,9 @@ var _ = Describe("Unit tests", func() {
 				"conflict-tag": "nodeclass-value",
 			}
 
-			update := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
 
-			Expect(update).ToNot(BeNil())
-			Expect(update.Properties).ToNot(BeNil())
-			Expect(update.Properties.Tags["conflict-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
+			Expect(patchExists).To(BeTrue())
 
 			// Verify original aksMachine was modified with correct priority (expected behavior for AKS machines - PUT only, not PATCH)
 			Expect(aksMachine.Properties.Tags["conflict-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))

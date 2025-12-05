@@ -22,6 +22,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -47,14 +48,14 @@ func logVMPatch(ctx context.Context, update *armcompute.VirtualMachineUpdate) {
 	}
 }
 
-func logAKSMachinePatch(ctx context.Context, update *armcontainerservice.Machine) {
+func logAKSMachinePatch(ctx context.Context, before, after *armcontainerservice.Machine) {
 	if log.FromContext(ctx).V(1).Enabled() {
-		rawStr := "<nil>"
-		if update != nil {
-			raw, _ := json.Marshal(update)
-			rawStr = string(raw)
+		diff := cmp.Diff(before, after)
+		if diff == "" {
+			log.FromContext(ctx).V(1).Info("no changes to AKS machine")
+		} else {
+			log.FromContext(ctx).V(1).Info("patching AKS machine", "diff", diff)
 		}
-		log.FromContext(ctx).V(1).Info("patching AKS machine", "aksMachinePatch", rawStr)
 	} else {
 		log.FromContext(ctx).V(0).Info("patching AKS machine")
 	}
@@ -71,7 +72,7 @@ var vmPatchers = []func(*armcompute.VirtualMachineUpdate, *patchParameters, *arm
 	patchVMTags,
 }
 
-var aksMachinePatchers = []func(*armcontainerservice.Machine, *patchParameters, *armcontainerservice.Machine) bool{
+var aksMachinePatchers = []func(*patchParameters, *armcontainerservice.Machine) bool{
 	// VM identities are handled server-side for AKS machines. No need here.
 	patchAKSMachineTags,
 }
@@ -116,14 +117,14 @@ func CalculateVMPatch(
 	return update
 }
 
-// Given AKS machine support PUT, but not PATCH, the AKS machine object will be patched directly, while the returning Machine object is just a tracker for logging purposes.
+// Note: AKS machine patching flow is different from VM patching, given AKS machine API supports PUT but not PATCH (i.e., send only diff to the API rather than the whole object).
+// Thus, the patch will be applied locally on the AKS machine object, before the object is sent to the API.
 func CalculateAKSMachinePatch(
 	options *options.Options,
 	nodeClaim *karpv1.NodeClaim,
 	nodeClass *v1beta1.AKSNodeClass,
 	patchingAKSMachine *armcontainerservice.Machine,
-) *armcontainerservice.Machine {
-	update := &armcontainerservice.Machine{}
+) bool {
 	hasPatches := false
 	params := &patchParameters{
 		opts:      options,
@@ -132,15 +133,11 @@ func CalculateAKSMachinePatch(
 	}
 
 	for _, patcher := range aksMachinePatchers {
-		patched := patcher(update, params, patchingAKSMachine)
+		patched := patcher(params, patchingAKSMachine)
 		hasPatches = hasPatches || patched
 	}
 
-	if !hasPatches {
-		return nil // No update to perform
-	}
-
-	return update
+	return hasPatches
 }
 
 func patchVMIdentities(
@@ -186,7 +183,6 @@ func patchVMTags(
 }
 
 func patchAKSMachineTags(
-	update *armcontainerservice.Machine,
 	params *patchParameters,
 	patchingAKSMachine *armcontainerservice.Machine,
 ) bool {
@@ -208,9 +204,6 @@ func patchAKSMachineTags(
 		patchingAKSMachine.Properties = &armcontainerservice.MachineProperties{
 			Tags: expectedTags,
 		}
-		update.Properties = &armcontainerservice.MachineProperties{
-			Tags: expectedTags,
-		}
 		return true
 	}
 
@@ -219,10 +212,6 @@ func patchAKSMachineTags(
 	}
 
 	patchingAKSMachine.Properties.Tags = expectedTags
-	if update.Properties == nil {
-		update.Properties = &armcontainerservice.MachineProperties{}
-	}
-	update.Properties.Tags = expectedTags
 	return true
 }
 
