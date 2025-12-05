@@ -217,8 +217,11 @@ func (c *Controller) applyAKSMachinePatch(
 	// Create a deep copy of the original for diff comparison
 	originalBytes, _ := json.Marshal(aksMachine)
 	var originalAKSMachine armcontainerservice.Machine
-	json.Unmarshal(originalBytes, &originalAKSMachine)
-	
+	err := json.Unmarshal(originalBytes, &originalAKSMachine)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal original AKS machine for comparison: %w", err)
+	}
+
 	patchExists := CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
 	// This is safe only as long as we're not updating fields which we consider secret.
 	// If we do/are, we need to redact them.
