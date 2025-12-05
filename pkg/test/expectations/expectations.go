@@ -32,14 +32,13 @@ import (
 	"github.com/samber/lo"
 
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/metrics"
-	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	coreexpectations "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
 
 func ExpectUnavailable(env *test.Environment, sku *skewer.SKU, zone string, capacityType string) {
@@ -153,11 +152,11 @@ func ExpectInstanceResourcesHaveTags(ctx context.Context, name string, azureEnv 
 }
 
 // TODO: Upstream this?
-func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider corecloudprovider.CloudProvider, provisioner *provisioning.Provisioner, pods ...*v1.Pod) {
+func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider corecloudprovider.CloudProvider, provisioner *provisioning.Provisioner, pods ...*corev1.Pod) {
 	GinkgoHelper()
 	// Persist objects
 	for _, pod := range pods {
-		ExpectApplied(ctx, c, pod)
+		coreexpectations.ExpectApplied(ctx, c, pod)
 	}
 	results, err := provisioner.Schedule(ctx)
 	Expect(err).ToNot(HaveOccurred())
@@ -167,7 +166,7 @@ func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider coreclou
 		Expect(err).ToNot(HaveOccurred())
 		createdNodeClaim := &karpv1.NodeClaim{}
 		Expect(c.Get(ctx, types.NamespacedName{Name: nodeClaimName}, createdNodeClaim)).To(Succeed())
-		_, err = ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, createdNodeClaim)
+		_, err = coreexpectations.ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, createdNodeClaim)
 		Expect(err).ToNot(HaveOccurred())
 	}
 }

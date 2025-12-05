@@ -653,8 +653,6 @@ var _ = Describe("Options", func() {
 
 	Context("String verification", func() {
 		It("should have a JSON tag for each expected field", func() {
-			opts := &options.Options{}
-
 			// Use reflection to get the type information of the Options struct
 			optionsType := reflect.TypeOf(*opts)
 
