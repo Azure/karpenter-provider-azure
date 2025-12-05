@@ -41,6 +41,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
+	labelspkg "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -87,7 +88,7 @@ func BuildNodeClaimFromAKSMachineTemplate(
 
 	annotations[v1beta1.AnnotationAKSMachineResourceID] = aksMachineResourceID
 	if instanceType != nil {
-		labels = offerings.GetAllSingleValuedRequirementLabels(instanceType)
+		labels = labelspkg.GetAllSingleValuedRequirementLabels(instanceType.Requirements)
 		nodeClaim.Status.Capacity = lo.PickBy(instanceType.Capacity, func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
