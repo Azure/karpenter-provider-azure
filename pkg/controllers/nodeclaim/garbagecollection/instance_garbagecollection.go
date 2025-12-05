@@ -81,9 +81,19 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 	})...)
 	errs := make([]error, len(retrieved))
 	workqueue.ParallelizeUntil(ctx, 100, len(managedRetrieved), func(i int) {
+		// managedRetrieved, although represented as NodeClaim, is actually actually populated by provider.List() rather than sourcing from the cluster.
+		// In the implementation, CreationTimestamp in this context is also different: representing instance's (not NodeClaim's) creation time.
+		// Suggestion: this "borrowing" pattern and its inconsistency is not intuitive..., should reconsider this implementation?
+		// Also, this pattern is what Karpenter core relies on a lot (and there could be more reasons). Changing all would be a bigger effort.
 		if !resolvedProviderIDs.Has(managedRetrieved[i].Status.ProviderID) &&
+			// Garbage collect if the instance has been around for more than 5 minutes, yet still no matching (per ProviderID) NodeClaim.
+			// Note that the "match" occurs after cloudprovider.Create() returns and ProviderID is populated as a result.
+			// Although, the intention of garbage collection is to clear instances with missing/deleted NodeClaim.
+			// This 5m is more of a grace period for newly-created instances that have yet to populate NodeClaim after.
 			time.Since(managedRetrieved[i].CreationTimestamp.Time) > time.Minute*5 {
 			errs[i] = c.garbageCollect(ctx, managedRetrieved[i], nodeList)
+			// In the case that CreationTimestamp is irretrievable (technically, when CreationTimestamp = 0 = epoch), grace period will effectively be disabled.
+			// Which could be dangerous if the instance is legitimately awaiting NodeClaim population.
 		}
 	})
 	if err = multierr.Combine(errs...); err != nil {
