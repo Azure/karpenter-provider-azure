@@ -182,7 +182,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		}
 	}
 
-	if modeString, ok := p.Labels["kubernetes.azure.com/mode"]; ok && modeString == "system" {
+	if modeString, ok := p.Labels[v1beta1.AKSLabelMode]; ok && modeString == v1beta1.ModeSystem {
 		provisionProfile.Mode = lo.ToPtr(models.AgentPoolModeSystem)
 	} else {
 		provisionProfile.Mode = lo.ToPtr(models.AgentPoolModeUser)
