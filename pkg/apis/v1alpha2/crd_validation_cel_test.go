@@ -492,6 +492,35 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("valid duration: 2h15m30s", "2h15m30s", ""),
 		)
 
+		DescribeTable("should validate MaxConcurrent", func(maxConcurrent *int32, expectedErr string) {
+			overrideConfig := createCompleteLocalDNSOverrides(false)
+			overrideConfig.MaxConcurrent = maxConcurrent
+			nodeClass := &v1alpha2.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1alpha2.AKSNodeClassSpec{
+					LocalDNS: &v1alpha2.LocalDNS{
+						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
+						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{".": createCompleteLocalDNSOverrides(true), "cluster.local": createCompleteLocalDNSOverrides(false), "test.domain": overrideConfig},
+						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{".": createCompleteLocalDNSOverrides(false), "cluster.local": createCompleteLocalDNSOverrides(false)},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			if expectedErr == "" {
+				Expect(err).To(Succeed())
+			} else {
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			}
+		},
+			Entry("valid: 0 (minimum)", lo.ToPtr(int32(0)), ""),
+			Entry("valid: 1", lo.ToPtr(int32(1)), ""),
+			Entry("valid: 100", lo.ToPtr(int32(100)), ""),
+			Entry("valid: 1000", lo.ToPtr(int32(1000)), ""),
+			Entry("invalid: -1 (below minimum)", lo.ToPtr(int32(-1)), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid: -100 (below minimum)", lo.ToPtr(int32(-100)), "spec.localDNS.vnetDNSOverrides"),
+		)
+
 		DescribeTable("should validate required zones in VnetDNSOverrides", func(zones map[string]*v1alpha2.LocalDNSOverrides, expectedErr string) {
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -723,6 +752,106 @@ var _ = Describe("CEL/Validation", func() {
 				}
 				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 			})
+
+			It("should allow forwarding root zone '.' to ClusterCoreDNS from kubeDNSOverrides", func() {
+				rootOverride := createCompleteLocalDNSOverrides(false)
+				rootOverride.ForwardDestination = lo.ToPtr(v1alpha2.LocalDNSForwardDestinationClusterCoreDNS)
+
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						LocalDNS: &v1alpha2.LocalDNS{
+							Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired),
+							VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             createCompleteLocalDNSOverrides(true), // Root zone must use VnetDNS
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+							KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             rootOverride,
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+						},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			})
+
+			It("should allow forwarding root zone '.' to VnetDNS from kubeDNSOverrides", func() {
+				rootOverride := createCompleteLocalDNSOverrides(false)
+				rootOverride.ForwardDestination = lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS)
+
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						LocalDNS: &v1alpha2.LocalDNS{
+							Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired),
+							VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             createCompleteLocalDNSOverrides(true), // Root zone must use VnetDNS
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+							KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             rootOverride,
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+						},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			})
+
+			It("should allow forwarding non-cluster.local zones to VnetDNS", func() {
+				exampleOverride := createCompleteLocalDNSOverrides(false)
+				exampleOverride.ForwardDestination = lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS)
+
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						LocalDNS: &v1alpha2.LocalDNS{
+							Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired),
+							VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             createCompleteLocalDNSOverrides(true), // Root zone must use VnetDNS
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+								"example.com":   exampleOverride,
+							},
+							KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             createCompleteLocalDNSOverrides(false),
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+						},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			})
+
+			It("should reject multiple subzones ending with cluster.local forwarded to VnetDNS", func() {
+				subZoneOverride1 := createCompleteLocalDNSOverrides(false)
+				subZoneOverride1.ForwardDestination = lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS)
+
+				subZoneOverride2 := createCompleteLocalDNSOverrides(false)
+				subZoneOverride2.ForwardDestination = lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS)
+
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						LocalDNS: &v1alpha2.LocalDNS{
+							Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired),
+							VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":                  createCompleteLocalDNSOverrides(true), // Root zone must use VnetDNS
+								"cluster.local":      createCompleteLocalDNSOverrides(false),
+								"sub1.cluster.local": subZoneOverride1,
+								"sub2.cluster.local": subZoneOverride2,
+							},
+							KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             createCompleteLocalDNSOverrides(false),
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS"))
+			})
 		})
 
 		Context("ServeStale and Protocol validation", func() {
@@ -752,9 +881,59 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring("ServeStale verify cannot be used with ForceTCP protocol"))
 			})
 
+			It("should reject ServeStale Verify with ForceTCP protocol in kubeDNSOverrides", func() {
+				invalidOverride := createCompleteLocalDNSOverrides(false)
+				invalidOverride.ServeStale = lo.ToPtr(v1alpha2.LocalDNSServeStaleVerify)
+				invalidOverride.Protocol = lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP)
+
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						LocalDNS: &v1alpha2.LocalDNS{
+							Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired),
+							VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             createCompleteLocalDNSOverrides(true),
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+							KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             invalidOverride,
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("ServeStale verify cannot be used with ForceTCP protocol"))
+			})
+
 			It("should allow ServeStale Immediate with ForceTCP protocol", func() {
 				validOverride := createCompleteLocalDNSOverrides(true) // Root zone needs VnetDNS
 				validOverride.ServeStale = lo.ToPtr(v1alpha2.LocalDNSServeStaleImmediate)
+				validOverride.Protocol = lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP)
+
+				nodeClass := &v1alpha2.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1alpha2.AKSNodeClassSpec{
+						LocalDNS: &v1alpha2.LocalDNS{
+							Mode: lo.ToPtr(v1alpha2.LocalDNSModeRequired),
+							VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             validOverride,
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+							KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{
+								".":             createCompleteLocalDNSOverrides(false),
+								"cluster.local": createCompleteLocalDNSOverrides(false),
+							},
+						},
+					},
+				}
+				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			})
+
+			It("should allow ServeStale Disable with ForceTCP protocol", func() {
+				validOverride := createCompleteLocalDNSOverrides(true) // Root zone needs VnetDNS
+				validOverride.ServeStale = lo.ToPtr(v1alpha2.LocalDNSServeStaleDisable)
 				validOverride.Protocol = lo.ToPtr(v1alpha2.LocalDNSProtocolForceTCP)
 
 				nodeClass := &v1alpha2.AKSNodeClass{
