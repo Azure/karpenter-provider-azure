@@ -93,6 +93,8 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 }
 
 // nolint: gocyclo
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context) (*models.ProvisionValues, error) {
 	if p.IsWindows {
 		// TODO(Windows)
