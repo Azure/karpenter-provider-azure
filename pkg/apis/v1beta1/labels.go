@@ -64,6 +64,7 @@ var (
 		LabelSKUGPUCount,
 
 		AKSLabelCluster,
+		AKSLabelMode,
 	)
 
 	RestrictedLabels = sets.New(
@@ -108,9 +109,15 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
+	AKSLabelMode                    = AKSLabelDomain + "/mode" // "system" or "user"
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
+)
+
+const (
+	ModeUser   = "user"
+	ModeSystem = "system"
 )
 
 const (
