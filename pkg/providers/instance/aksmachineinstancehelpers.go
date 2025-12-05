@@ -197,9 +197,16 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	allTaints := sets.NewString(nodeInitializationTaints...).Union(sets.NewString(nodeTaints...))
 	if !allTaints.Has(karpv1.UnregisteredNoExecuteTaint.ToString()) {
 		nodeInitializationTaints = append(nodeInitializationTaints, karpv1.UnregisteredNoExecuteTaint.ToString())
+		allTaints = allTaints.Insert(karpv1.UnregisteredNoExecuteTaint.ToString())
 	}
-	nodeInitializationTaintPtrs := lo.Map(nodeInitializationTaints, func(taint string, _ int) *string { return lo.ToPtr(taint) })
-	nodeTaintPtrs := lo.Map(nodeTaints, func(taint string, _ int) *string { return lo.ToPtr(taint) })
+
+	// Currently, we will use "nodeInitializationTaints" field for all taints, as "taints" field are subjected to server-side reconciliation and extra validation
+	// Server-side reconciliation is not necessarily a bad thing, but needs to resolve validation conflicts at least. E.g., system node cannot have hard taints other than CriticalAddonsOnly, per AKS Machine API.
+	// If changing, don't forget to update unit + acceptance tests accordingly.
+	// nodeInitializationTaintPtrs := lo.Map(nodeInitializationTaints, func(taint string, _ int) *string { return lo.ToPtr(taint) })
+	// nodeTaintPtrs := lo.Map(nodeTaints, func(taint string, _ int) *string { return lo.ToPtr(taint) })
+	nodeInitializationTaintPtrs := lo.Map(allTaints.List(), func(taint string, _ int) *string { return lo.ToPtr(taint) })
+	nodeTaintPtrs := []*string{}
 	return nodeInitializationTaintPtrs, nodeTaintPtrs
 }
 
