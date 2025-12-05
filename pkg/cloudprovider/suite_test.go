@@ -28,16 +28,13 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
 	"sigs.k8s.io/karpenter/pkg/events"
-	"sigs.k8s.io/karpenter/pkg/metrics"
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
@@ -78,25 +75,6 @@ var nodeClaim *karpv1.NodeClaim
 
 var fakeZone1 = utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
-
-func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider corecloudprovider.CloudProvider, provisioner *provisioning.Provisioner, pods ...*v1.Pod) {
-	GinkgoHelper()
-	// Persist objects
-	for _, pod := range pods {
-		ExpectApplied(ctx, c, pod)
-	}
-	results, err := provisioner.Schedule(ctx)
-	Expect(err).ToNot(HaveOccurred())
-	for _, m := range results.NewNodeClaims {
-		var nodeClaimName string
-		nodeClaimName, err = provisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
-		Expect(err).ToNot(HaveOccurred())
-		createdNodeClaim := &karpv1.NodeClaim{}
-		Expect(c.Get(ctx, types.NamespacedName{Name: nodeClaimName}, createdNodeClaim)).To(Succeed())
-		_, err = ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, createdNodeClaim)
-		Expect(err).ToNot(HaveOccurred())
-	}
-}
 
 func TestCloudProvider(t *testing.T) {
 	ctx = TestContextWithLogger(t)
