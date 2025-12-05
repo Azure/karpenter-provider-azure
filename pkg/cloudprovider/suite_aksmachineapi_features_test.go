@@ -595,7 +595,8 @@ var _ = Describe("CloudProvider", func() {
 				machine := input.AKSMachine
 
 				// Check that taints are configured
-				Expect(machine.Properties.Kubernetes.NodeTaints).To(ContainElement(lo.ToPtr("test-taint=test-value:NoSchedule")))
+				// Currently, we will use "nodeInitializationTaints" field for all taints. More details in the relevant code (aksmachineinstancehelpers.go).
+				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(lo.ToPtr("test-taint=test-value:NoSchedule")))
 				Expect(machine.Properties.Kubernetes.NodeInitializationTaints).To(ContainElement(lo.ToPtr("startup-taint=startup-value:NoExecute")))
 			})
 
