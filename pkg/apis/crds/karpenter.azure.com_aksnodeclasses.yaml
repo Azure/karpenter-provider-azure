@@ -260,7 +260,6 @@ spec:
                           && has(self.protocol) && self.protocol == ''ForceTCP'')'
                     description: KubeDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
-                    maxProperties: 100
                     type: object
                   mode:
                     description: Mode of enablement for localDNS.
@@ -342,7 +341,6 @@ spec:
                           && has(self.protocol) && self.protocol == ''ForceTCP'')'
                     description: VnetDNS overrides apply to DNS traffic from pods
                       with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
-                    maxProperties: 100
                     type: object
                 required:
                 - kubeDNSOverrides
