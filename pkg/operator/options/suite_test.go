@@ -70,6 +70,7 @@ var _ = Describe("Options", func() {
 		"LINUX_ADMIN_USERNAME",
 		"ADDITIONAL_TAGS",
 		"ENABLE_AZURE_SDK_LOGGING",
+		"MANAGE_EXISTING_AKS_MACHINES",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -123,6 +124,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "2345678-1234-1234-1234-123456789012")
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
+			os.Setenv("MANAGE_EXISTING_AKS_MACHINES", "true")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -152,6 +154,7 @@ var _ = Describe("Options", func() {
 				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
 				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
+				ManageExistingAKSMachines:      lo.ToPtr(true),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
 		})
@@ -490,6 +493,35 @@ var _ = Describe("Options", func() {
 				"--additional-tags", "<key1>=value1,",
 			)
 			Expect(err).To(MatchError(ContainSubstring("validating options, additional-tags key \"<key1>\" contains invalid characters.")))
+		})
+
+		It("should default manage-existing-aks-machines to false", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeFalse())
+		})
+
+		It("should succeed with manage-existing-aks-machines set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--manage-existing-aks-machines",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
 		})
 	})
 

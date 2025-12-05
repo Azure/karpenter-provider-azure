@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -40,6 +41,17 @@ import (
 
 	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
 )
+
+type AKSMachinesAPI interface {
+	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine, options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error)
+	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error)
+	NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse]
+}
+
+type AKSAgentPoolsAPI interface {
+	Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.AgentPoolsClientGetOptions) (armcontainerservice.AgentPoolsClientGetResponse, error)
+	BeginDeleteMachines(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachines armcontainerservice.AgentPoolDeleteMachinesParameter, options *armcontainerservice.AgentPoolsClientBeginDeleteMachinesOptions) (*runtime.Poller[armcontainerservice.AgentPoolsClientDeleteMachinesResponse], error)
+}
 
 type VirtualMachinesAPI interface {
 	BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, vmName string, parameters armcompute.VirtualMachine, options *armcompute.VirtualMachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcompute.VirtualMachinesClientCreateOrUpdateResponse], error)
@@ -72,6 +84,8 @@ type SubnetsAPI interface {
 type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
+	aksMachinesClient              AKSMachinesAPI
+	agentPoolsClient               AKSAgentPoolsAPI
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI
 	networkInterfacesClient        NetworkInterfacesAPI
 	subnetsClient                  SubnetsAPI
@@ -93,6 +107,8 @@ func (c *AZClient) SubnetsClient() SubnetsAPI {
 func NewAZClientFromAPI(
 	virtualMachinesClient VirtualMachinesAPI,
 	azureResourceGraphClient AzureResourceGraphAPI,
+	aksMachinesClient AKSMachinesAPI,
+	agentPoolsClient AKSAgentPoolsAPI,
 	virtualMachinesExtensionClient VirtualMachineExtensionsAPI,
 	interfacesClient NetworkInterfacesAPI,
 	subnetsClient SubnetsAPI,
@@ -107,6 +123,8 @@ func NewAZClientFromAPI(
 	return &AZClient{
 		virtualMachinesClient:          virtualMachinesClient,
 		azureResourceGraphClient:       azureResourceGraphClient,
+		aksMachinesClient:              aksMachinesClient,
+		agentPoolsClient:               agentPoolsClient,
 		virtualMachinesExtensionClient: virtualMachinesExtensionClient,
 		networkInterfacesClient:        interfacesClient,
 		subnetsClient:                  subnetsClient,
@@ -184,7 +202,9 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
 
-	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI = nil
+	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
+	var aksMachinesClient AKSMachinesAPI
+	var agentPoolsClient AKSAgentPoolsAPI
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		nodeBootstrappingClient, err = imagefamily.NewNodeBootstrappingClient(
 			ctx,
@@ -199,10 +219,34 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			return nil, err
 		}
 	}
+	if o.ManageExistingAKSMachines {
+		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			return nil, err
+		}
+		agentPoolsClient, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Try create true clients
+		_, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			log.FromContext(ctx).Info("failed to create true AKS machines client, but tolerated due to currently on dry client", "error", err)
+		}
+		_, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
+		if err != nil {
+			log.FromContext(ctx).Info("failed to create true AKS agent pools client, but tolerated due to currently on dry client", "error", err)
+		}
+		aksMachinesClient = NewNoAKSMachinesClient()
+		agentPoolsClient = NewNoAKSAgentPoolsClient()
+	}
 
 	return NewAZClientFromAPI(
 		virtualMachinesClient,
 		azureResourceGraphClient,
+		aksMachinesClient,
+		agentPoolsClient,
 		extensionsClient,
 		interfacesClient,
 		subnetsClient,
