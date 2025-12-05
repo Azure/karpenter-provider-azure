@@ -41,12 +41,20 @@ var _ = Describe("CEL/Validation", func() {
 		return &v1alpha2.LocalDNSOverrides{
 			QueryLogging:       lo.ToPtr(v1alpha2.LocalDNSQueryLoggingError),
 			Protocol:           lo.ToPtr(v1alpha2.LocalDNSProtocolPreferUDP),
-			ForwardDestination: lo.ToPtr(v1alpha2.LocalDNSForwardDestinationClusterCoreDNS),
+			ForwardDestination: lo.ToPtr(v1alpha2.LocalDNSForwardDestinationVnetDNS),
 			ForwardPolicy:      lo.ToPtr(v1alpha2.LocalDNSForwardPolicySequential),
 			MaxConcurrent:      lo.ToPtr(int32(100)),
 			CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 			ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-			ServeStale:         lo.ToPtr(v1alpha2.LocalDNSServeStaleVerify),
+			ServeStale:         lo.ToPtr(v1alpha2.LocalDNSServeStaleImmediate),
+		}
+	}
+
+	// Helper function to create LocalDNS with required zones
+	createLocalDNSWithRequiredZones := func() map[string]*v1alpha2.LocalDNSOverrides {
+		return map[string]*v1alpha2.LocalDNSOverrides{
+			".":             createCompleteLocalDNSOverrides(),
+			"cluster.local": createCompleteLocalDNSOverrides(),
 		}
 	}
 
@@ -154,8 +162,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: createLocalDNSWithRequiredZones(),
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -195,13 +203,15 @@ var _ = Describe("CEL/Validation", func() {
 			func(modifyOverrides func(*v1alpha2.LocalDNSOverrides)) {
 				overrides := createCompleteLocalDNSOverrides()
 				modifyOverrides(overrides)
+				vnetOverrides := createLocalDNSWithRequiredZones()
+				vnetOverrides["."] = overrides
 				nodeClass := &v1alpha2.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1alpha2.AKSNodeClassSpec{
 						LocalDNS: &v1alpha2.LocalDNS{
 							Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-							VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": overrides},
-							KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+							VnetDNSOverrides: vnetOverrides,
+							KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 						},
 					},
 				}
@@ -223,8 +233,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             mode,
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: createLocalDNSWithRequiredZones(),
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -246,13 +256,15 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging *v1alpha2.LocalDNSQueryLogging, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides()
 			overrideConfig.QueryLogging = queryLogging
+			vnetOverrides := createLocalDNSWithRequiredZones()
+			vnetOverrides["test.domain"] = overrideConfig
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"test.domain": overrideConfig},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: vnetOverrides,
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -273,13 +285,15 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSProtocol", func(protocol *v1alpha2.LocalDNSProtocol, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides()
 			overrideConfig.Protocol = protocol
+			vnetOverrides := createLocalDNSWithRequiredZones()
+			vnetOverrides["test.domain"] = overrideConfig
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"test.domain": overrideConfig},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: vnetOverrides,
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -300,13 +314,15 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination *v1alpha2.LocalDNSForwardDestination, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides()
 			overrideConfig.ForwardDestination = forwardDestination
+			vnetOverrides := createLocalDNSWithRequiredZones()
+			vnetOverrides["test.domain"] = overrideConfig
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"test.domain": overrideConfig},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: vnetOverrides,
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -327,13 +343,15 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy *v1alpha2.LocalDNSForwardPolicy, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides()
 			overrideConfig.ForwardPolicy = forwardPolicy
+			vnetOverrides := createLocalDNSWithRequiredZones()
+			vnetOverrides["test.domain"] = overrideConfig
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"test.domain": overrideConfig},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: vnetOverrides,
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -355,13 +373,15 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSServeStale", func(serveStale *v1alpha2.LocalDNSServeStale, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides()
 			overrideConfig.ServeStale = serveStale
+			vnetOverrides := createLocalDNSWithRequiredZones()
+			vnetOverrides["test.domain"] = overrideConfig
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"test.domain": overrideConfig},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: vnetOverrides,
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -384,13 +404,15 @@ var _ = Describe("CEL/Validation", func() {
 			cacheDuration := karpv1.MustParseNillableDuration(durationStr)
 			overrideConfig := createCompleteLocalDNSOverrides()
 			overrideConfig.CacheDuration = cacheDuration
+			vnetOverrides := createLocalDNSWithRequiredZones()
+			vnetOverrides["test.domain"] = overrideConfig
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"test.domain": overrideConfig},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: vnetOverrides,
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -411,13 +433,15 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should reject invalid duration values", func(patchJSON string, expectedErr string) {
 			// Test using unstructured to bypass Go type parsing
+			vnetOverrides := createLocalDNSWithRequiredZones()
+			vnetOverrides["test.domain"] = createCompleteLocalDNSOverrides()
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"test.domain": createCompleteLocalDNSOverrides()},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: vnetOverrides,
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}
@@ -440,13 +464,15 @@ var _ = Describe("CEL/Validation", func() {
 			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
 			overrideConfig := createCompleteLocalDNSOverrides()
 			overrideConfig.ServeStaleDuration = serveStaleDuration
+			vnetOverrides := createLocalDNSWithRequiredZones()
+			vnetOverrides["test.domain"] = overrideConfig
 			nodeClass := &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
 						Mode:             lo.ToPtr(v1alpha2.LocalDNSModeRequired),
-						VnetDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"test.domain": overrideConfig},
-						KubeDNSOverrides: map[string]*v1alpha2.LocalDNSOverrides{"*": createCompleteLocalDNSOverrides()},
+						VnetDNSOverrides: vnetOverrides,
+						KubeDNSOverrides: createLocalDNSWithRequiredZones(),
 					},
 				},
 			}

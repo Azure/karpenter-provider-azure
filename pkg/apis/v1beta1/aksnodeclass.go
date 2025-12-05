@@ -119,6 +119,13 @@ const (
 // LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 // LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 // For more details see aka.ms/aks/localdns.
+// +kubebuilder:validation:XValidation:rule="'.' in self.vnetDNSOverrides && 'cluster.local' in self.vnetDNSOverrides",message="vnetDNSOverrides must contain required zones '.' and 'cluster.local'"
+// +kubebuilder:validation:XValidation:rule="'.' in self.kubeDNSOverrides && 'cluster.local' in self.kubeDNSOverrides",message="kubeDNSOverrides must contain required zones '.' and 'cluster.local'"
+// +kubebuilder:validation:XValidation:rule="!('.' in self.vnetDNSOverrides && has(self.vnetDNSOverrides['.'].forwardDestination) && self.vnetDNSOverrides['.'].forwardDestination == 'ClusterCoreDNS')",message="DNS traffic for root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides"
+// +kubebuilder:validation:XValidation:rule="!self.vnetDNSOverrides.exists(zone, zone.endsWith('cluster.local') && has(self.vnetDNSOverrides[zone].forwardDestination) && self.vnetDNSOverrides[zone].forwardDestination == 'VnetDNS')",message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS from vnetDNSOverrides"
+// +kubebuilder:validation:XValidation:rule="!self.kubeDNSOverrides.exists(zone, zone.endsWith('cluster.local') && has(self.kubeDNSOverrides[zone].forwardDestination) && self.kubeDNSOverrides[zone].forwardDestination == 'VnetDNS')",message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS from kubeDNSOverrides"
+// +kubebuilder:validation:XValidation:rule="self.vnetDNSOverrides.all(zone, zone == '.' || (zone.matches('^[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*\\.?$') && zone.split('.').all(label, label == \"\" || size(label) <= 63)))",message="vnetDNSOverrides contains invalid zone name format"
+// +kubebuilder:validation:XValidation:rule="self.kubeDNSOverrides.all(zone, zone == '.' || (zone.matches('^[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*\\.?$') && zone.split('.').all(label, label == \"\" || size(label) <= 63)))",message="kubeDNSOverrides contains invalid zone name format"
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
 	// +required
@@ -132,6 +139,7 @@ type LocalDNS struct {
 }
 
 // LocalDNSOverrides specifies DNS override configuration
+// +kubebuilder:validation:XValidation:rule="!(has(self.serveStale) && self.serveStale == 'Verify' && has(self.protocol) && self.protocol == 'ForceTCP')",message="ServeStale verify cannot be used with ForceTCP protocol"
 type LocalDNSOverrides struct {
 	// Log level for DNS queries in localDNS.
 	// +required
