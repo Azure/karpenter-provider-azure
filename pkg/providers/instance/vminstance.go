@@ -565,6 +565,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
+	setVMPropertiesPatchSettings(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -626,6 +627,32 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+	}
+}
+
+func setVMPropertiesPatchSettings(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
+	if nodeClass.Spec.Patching == nil {
+		return
+	}
+
+	if nodeClass.Spec.Patching.AssessmentMode == nil && nodeClass.Spec.Patching.PatchMode == nil {
+		return
+	}
+
+	if vmProperties.OSProfile.LinuxConfiguration.PatchSettings == nil {
+		vmProperties.OSProfile.LinuxConfiguration.PatchSettings = &armcompute.LinuxPatchSettings{}
+	}
+
+	if nodeClass.Spec.Patching.AssessmentMode != nil {
+		vmProperties.OSProfile.LinuxConfiguration.PatchSettings.AssessmentMode = (*armcompute.LinuxPatchAssessmentMode)(nodeClass.Spec.Patching.AssessmentMode)
+	}
+
+	if nodeClass.Spec.Patching.PatchMode != nil {
+		vmProperties.OSProfile.LinuxConfiguration.PatchSettings.PatchMode = (*armcompute.LinuxVMGuestPatchMode)(nodeClass.Spec.Patching.PatchMode)
+	}
+
+	if lo.FromPtr(vmProperties.OSProfile.LinuxConfiguration.PatchSettings.AssessmentMode) == armcompute.LinuxPatchAssessmentModeAutomaticByPlatform || lo.FromPtr(vmProperties.OSProfile.LinuxConfiguration.PatchSettings.PatchMode) == armcompute.LinuxVMGuestPatchModeAutomaticByPlatform {
+		vmProperties.OSProfile.LinuxConfiguration.ProvisionVMAgent = lo.ToPtr(true)
 	}
 }
 
