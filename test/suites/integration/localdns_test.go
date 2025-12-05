@@ -180,7 +180,15 @@ var _ = Describe("LocalDNS", func() {
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
 		//	By("Verifying LocalDNS configuration is active from the provisioned node (host network)")
-		//	result := GetDNSResultFromNode(node)
+		result := GetDNSResultFromNode(node)
+		By(fmt.Sprintf("DNS resolution results from node (host network): DNSIP=%s, Success=%t", result.DNSIP, result.Success))
+		By(fmt.Sprintf("Node DNS logs:\n%s", result.Logs))
+
+		// For host network DNS resolution on LocalDNS-enabled nodes, we expect:
+		// - 169.254.10.10 (localDNSNodeListenerIP) for node-level DNS queries
+		Expect(result.DNSIP).To(Equal(localDNSNodeListenerIP),
+			fmt.Sprintf("Host network DNS should use LocalDNS node listener (%s), but found %s",
+				localDNSNodeListenerIP, result.DNSIP))
 
 		By("Verifying DNS resolution from the inflate pod (pod network)")
 		inflateResult := GetDNSResultFromPod(inflatePod)
@@ -206,8 +214,8 @@ const (
 	localDNSNodeListenerIP    = "169.254.10.10" // Handles external DNS from CoreDNS pods
 
 	// Standard DNS IPs
-	azureDNSIP       = "168.63.129.16" // Azure's upstream DNS
-	coreDNSServiceIP = "10.0.0.10"     // Default CoreDNS service IP in AKS
+	// azureDNSIP       = "168.63.129.16" // Azure's upstream DNS
+	// coreDNSServiceIP = "10.0.0.10"     // Default CoreDNS service IP in AKS
 
 	namespaceKubeSystem = "kube-system"
 
