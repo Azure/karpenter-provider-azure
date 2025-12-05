@@ -24,21 +24,6 @@ manifests:
           controller.image.digest: "{{.IMAGE_DIGEST_controller}}"
         valuesFiles:
           - karpenter-values.yaml
-        overrides:
-          controller:
-            resources:
-              requests:
-                cpu: 200m
-              limits:
-                cpu: 500m
-          podAnnotations:
-            profiles.grafana.com/memory.scrape: "true"
-            profiles.grafana.com/memory.port_name: "http-metrics"
-            profiles.grafana.com/cpu.scrape: "true"
-            profiles.grafana.com/cpu.port_name: "http-metrics"
-            profiles.grafana.com/goroutine.scrape: "true"
-            profiles.grafana.com/goroutine.port_name: "http-metrics"
-            profiles.grafana.com/service_repository: "github.com/Azure/karpenter-provider-azure"
-            profiles.grafana.com/service_git_ref: "v1.4.0"
+          - skaffold-overrides.yaml
 deploy:
   helm: {}
