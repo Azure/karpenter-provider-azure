@@ -18,6 +18,7 @@ package inplaceupdate
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -213,13 +214,18 @@ func (c *Controller) applyAKSMachinePatch(
 	aksMachineName string,
 	aksMachine *armcontainerservice.Machine,
 ) error {
-	update := CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+	// Create a deep copy of the original for diff comparison
+	originalBytes, _ := json.Marshal(aksMachine)
+	var originalAKSMachine armcontainerservice.Machine
+	json.Unmarshal(originalBytes, &originalAKSMachine)
+	
+	patchExists := CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
 	// This is safe only as long as we're not updating fields which we consider secret.
 	// If we do/are, we need to redact them.
-	logAKSMachinePatch(ctx, update)
 
 	// Apply the update, if one is needed
-	if update != nil {
+	if patchExists {
+		logAKSMachinePatch(ctx, &originalAKSMachine, aksMachine)
 		// Extract ETag for optimistic concurrency control
 		var etag *string
 		if aksMachine.Properties != nil && aksMachine.Properties.ETag != nil {
