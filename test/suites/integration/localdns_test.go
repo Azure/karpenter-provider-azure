@@ -26,7 +26,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/samber/lo"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +35,60 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+)
+
+var (
+	// Standard LocalDNS configuration durations
+	cacheDuration = 3600 * time.Second
+	staleDuration = 3600 * time.Second
+
+	// Complete KubeDNS overrides configuration
+	completeKubeDNSOverrides = map[string]*v1beta1.LocalDNSOverrides{
+		".": {
+			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+			MaxConcurrent:      lo.ToPtr(int32(1000)),
+			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+			ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+		},
+		"cluster.local": {
+			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+			MaxConcurrent:      lo.ToPtr(int32(1000)),
+			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
+			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+			ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
+			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+		},
+	}
+
+	// Complete VnetDNS overrides configuration
+	completeVnetDNSOverrides = map[string]*v1beta1.LocalDNSOverrides{
+		".": {
+			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
+			ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+			MaxConcurrent:      lo.ToPtr(int32(1000)),
+			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+			ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+		},
+		"cluster.local": {
+			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
+			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+			MaxConcurrent:      lo.ToPtr(int32(1000)),
+			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
+			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+			ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
+			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
+		},
+	}
 )
 
 var _ = Describe("LocalDNS", func() {
@@ -66,54 +119,10 @@ var _ = Describe("LocalDNS", func() {
 		}
 
 		By("Configuring NodeClass with full LocalDNS configuration including overrides")
-		cacheDuration := 3600 * time.Second
-		staleDuration := 3600 * time.Second
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
-			KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-				".": {
-					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-					MaxConcurrent:      lo.ToPtr(int32(1000)),
-					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
-					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
-				},
-				"cluster.local": {
-					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-					MaxConcurrent:      lo.ToPtr(int32(1000)),
-					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
-					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
-					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
-				},
-			},
-			VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-				".": {
-					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
-					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-					MaxConcurrent:      lo.ToPtr(int32(1000)),
-					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
-					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
-				},
-				"cluster.local": {
-					CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-					ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-					ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
-					MaxConcurrent:      lo.ToPtr(int32(1000)),
-					Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
-					QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-					ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
-					ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
-				},
-			},
+			Mode:             lo.ToPtr(v1beta1.LocalDNSModeRequired),
+			KubeDNSOverrides: completeKubeDNSOverrides,
+			VnetDNSOverrides: completeVnetDNSOverrides,
 		}
 
 		By("Creating inflate deployment to trigger node provisioning")
@@ -125,7 +134,11 @@ var _ = Describe("LocalDNS", func() {
 						"app": "inflate",
 					},
 				},
-				Image: "mcr.microsoft.com/oss/kubernetes/pause:3.6",
+				Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
+				Command: []string{
+					"sh", "-c",
+					"while true; do nslookup microsoft.com | grep Server: && sleep 30; done",
+				},
 				ResourceRequirements: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("1"),
@@ -166,13 +179,24 @@ var _ = Describe("LocalDNS", func() {
 			By(fmt.Sprintf("✓ Node %s has localdns-state=enabled label", node.Name))
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 
-		By("Verifying LocalDNS configuration is active from the provisioned node")
-		result := GetDNSResultFromNode(node)
-		VerifyUsingLocalDNSClusterListener(result.DNSIP, "Full config LocalDNS")
+		//	By("Verifying LocalDNS configuration is active from the provisioned node (host network)")
+		//	result := GetDNSResultFromNode(node)
 
-		By("✓ Verified LocalDNS is actively handling DNS resolution")
-		By("⏸️  PAUSING for 60 minutes to allow manual node inspection")
-		time.Sleep(60 * time.Minute)
+		By("Verifying DNS resolution from the inflate pod (pod network)")
+		inflateResult := GetDNSResultFromPod(inflatePod)
+
+		By(fmt.Sprintf("DNS resolution results from inflate pod: DNSIP=%s, Success=%t", inflateResult.DNSIP, inflateResult.Success))
+		By(fmt.Sprintf("Inflate pod logs:\n%s", inflateResult.Logs))
+		// Pods with default dnsPolicy (ClusterFirst) use CoreDNS service IP
+		// CoreDNS pods themselves use LocalDNS on LocalDNS-enabled nodes
+		// Verify that the inflate pod is using the expected DNS configuration
+		// For LocalDNS-enabled nodes, CoreDNS pods themselves use LocalDNS
+		// This means the inflate pod should see LocalDNS cluster listener in the logs
+		Expect(inflateResult.DNSIP).To(Equal(localDNSClusterListenerIP),
+			fmt.Sprintf("Inflate pod should use LocalDNS cluster listener (%s), but found %s",
+				localDNSClusterListenerIP, inflateResult.DNSIP))
+
+		By("✓ Verified LocalDNS is configured on the node")
 	})
 })
 
@@ -380,20 +404,6 @@ func VerifyAllNodesLocalDNSLabel(expectedValue string) {
 	}).WithTimeout(nodeLabelTimeout).WithPolling(pollInterval).Should(Succeed())
 }
 
-// =========================================================================
-// COREDNS HEALTH CHECKS
-// =========================================================================
-
-// VerifyCoreDNSHealthy verifies that CoreDNS deployment is healthy
-func VerifyCoreDNSHealthy() {
-	Eventually(func(g Gomega) {
-		var coreDNSDeployment appsv1.Deployment
-		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: "coredns", Namespace: namespaceKubeSystem}, &coreDNSDeployment)).To(Succeed())
-		g.Expect(coreDNSDeployment.Status.ReadyReplicas).To(BeNumerically(">", 0), "CoreDNS should have ready replicas")
-		By(fmt.Sprintf("✓ CoreDNS deployment is healthy with %d ready replicas", coreDNSDeployment.Status.ReadyReplicas))
-	}).WithTimeout(healthCheckTimeout).Should(Succeed())
-}
-
 // GetCoreDNSPods returns the list of CoreDNS pods
 func GetCoreDNSPods() *corev1.PodList {
 	coreDNSPods := &corev1.PodList{}
@@ -404,54 +414,6 @@ func GetCoreDNSPods() *corev1.PodList {
 
 	By(fmt.Sprintf("Found %d CoreDNS pod(s)", len(coreDNSPods.Items)))
 	return coreDNSPods
-}
-
-// =========================================================================
-// VALIDATION HELPERS
-// =========================================================================
-
-// VerifyNotUsingLocalDNS verifies that the provided DNS IP is NOT a LocalDNS listener IP
-func VerifyNotUsingLocalDNS(dnsIP string, context string) {
-	Expect(dnsIP).ToNot(Equal(localDNSClusterListenerIP), context+" should NOT use LocalDNS cluster listener")
-	Expect(dnsIP).ToNot(Equal(localDNSNodeListenerIP), context+" should NOT use LocalDNS node listener")
-	By("✓ Confirmed " + context + " NOT using LocalDNS listener IPs")
-}
-
-// VerifyUsingLocalDNS verifies that the provided DNS IP IS a LocalDNS listener IP
-func VerifyUsingLocalDNS(dnsIP string, context string) {
-	isLocalDNS := dnsIP == localDNSClusterListenerIP || dnsIP == localDNSNodeListenerIP
-	Expect(isLocalDNS).To(BeTrue(), context+" should use LocalDNS listener (either "+localDNSClusterListenerIP+" or "+localDNSNodeListenerIP+")")
-	By("✓ Confirmed " + context + " IS using LocalDNS listener: " + dnsIP)
-}
-
-// VerifyUsingLocalDNSClusterListener verifies that the provided DNS IP is the LocalDNS cluster listener
-func VerifyUsingLocalDNSClusterListener(dnsIP string, context string) {
-	Expect(dnsIP).To(Equal(localDNSClusterListenerIP), context+" should use LocalDNS cluster listener ("+localDNSClusterListenerIP+")")
-	By("✓ Confirmed " + context + " using LocalDNS cluster listener: " + dnsIP)
-}
-
-// VerifyUsingLocalDNSNodeListener verifies that the provided DNS IP is the LocalDNS node listener
-func VerifyUsingLocalDNSNodeListener(dnsIP string, context string) {
-	Expect(dnsIP).To(Equal(localDNSNodeListenerIP), context+" should use LocalDNS node listener ("+localDNSNodeListenerIP+")")
-	By("✓ Confirmed " + context + " using LocalDNS node listener: " + dnsIP)
-}
-
-// VerifyUsingAzureDNS verifies that the provided DNS IP is Azure DNS
-func VerifyUsingAzureDNS(dnsIP string, context string) {
-	Expect(dnsIP).To(Equal(azureDNSIP), context+" should use Azure DNS ("+azureDNSIP+")")
-	By("✓ Confirmed " + context + " using Azure DNS: " + dnsIP)
-}
-
-// VerifyUsingCoreDNS verifies that the provided DNS IP is the CoreDNS service IP
-func VerifyUsingCoreDNS(dnsIP string, context string) {
-	Expect(dnsIP).To(Equal(coreDNSServiceIP), context+" should use CoreDNS service ("+coreDNSServiceIP+")")
-	By("✓ Confirmed " + context + " using CoreDNS service: " + dnsIP)
-}
-
-// VerifyDifferentDNSServers verifies that two DNS IPs are different
-func VerifyDifferentDNSServers(dnsIP1, dnsIP2, context string) {
-	Expect(dnsIP1).ToNot(Equal(dnsIP2), context+": DNS servers should be different")
-	By("✓ Confirmed different DNS servers for " + context + ": " + dnsIP1 + " != " + dnsIP2)
 }
 
 // =========================================================================
@@ -507,7 +469,7 @@ func GetDNSResultFromNode(node *corev1.Node) DNSTestResult {
 			GenerateName: "dns-test-",
 			Namespace:    "default",
 		},
-		Image: "busybox:1.36",
+		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
 		Command: []string{
 			"sh", "-c",
 			"nslookup kubernetes.default.svc.cluster.local && sleep 30",
@@ -540,6 +502,7 @@ func GetDNSResultFromNode(node *corev1.Node) DNSTestResult {
 
 	return result
 } // parseDNSServerIP extracts the DNS server IP from nslookup output
+
 // Example output:
 // Server:    169.254.10.11
 // Address:   169.254.10.11:53
