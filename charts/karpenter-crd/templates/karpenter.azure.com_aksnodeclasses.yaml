@@ -366,12 +366,6 @@ spec:
                   rule: '!self.kubeDNSOverrides.exists(zone, zone.endsWith(''cluster.local'')
                     && has(self.kubeDNSOverrides[zone].forwardDestination) && self.kubeDNSOverrides[zone].forwardDestination
                     == ''VnetDNS'')'
-                - message: vnetDNSOverrides contains invalid zone name format
-                  rule: self.vnetDNSOverrides.all(zone, zone == '.' || (zone.matches('^[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*\\.?$')
-                    && zone.split('.').all(label, label == "" || size(label) <= 63)))
-                - message: kubeDNSOverrides contains invalid zone name format
-                  rule: self.kubeDNSOverrides.all(zone, zone == '.' || (zone.matches('^[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*\\.?$')
-                    && zone.split('.').all(label, label == "" || size(label) <= 63)))
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
@@ -895,12 +889,6 @@ spec:
                   rule: '!self.kubeDNSOverrides.exists(zone, zone.endsWith(''cluster.local'')
                     && has(self.kubeDNSOverrides[zone].forwardDestination) && self.kubeDNSOverrides[zone].forwardDestination
                     == ''VnetDNS'')'
-                - message: vnetDNSOverrides contains invalid zone name format
-                  rule: self.vnetDNSOverrides.all(zone, zone == '.' || (zone.matches('^[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*\\.?$')
-                    && zone.split('.').all(label, label == "" || size(label) <= 63)))
-                - message: kubeDNSOverrides contains invalid zone name format
-                  rule: self.kubeDNSOverrides.all(zone, zone == '.' || (zone.matches('^[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9_-]*[A-Za-z0-9])?)*\\.?$')
-                    && zone.split('.').all(label, label == "" || size(label) <= 63)))
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
