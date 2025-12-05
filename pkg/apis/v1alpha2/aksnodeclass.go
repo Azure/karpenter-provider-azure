@@ -89,7 +89,6 @@ type AKSNodeClassSpec struct {
 	// LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 	// LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 	// For more details see aka.ms/aks/localdns.
-	// Note: LocalDNS requires Kubernetes 1.36+ when using mode 'Preferred'. Use mode 'Required' at your own risk on older versions.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
 }
@@ -131,11 +130,9 @@ type LocalDNS struct {
 	// +required
 	Mode *LocalDNSMode `json:"mode"`
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
-	// +kubebuilder:validation:MaxProperties=10
 	// +required
 	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides"`
 	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
-	// +kubebuilder:validation:MaxProperties=10
 	// +required
 	KubeDNSOverrides map[string]*LocalDNSOverrides `json:"kubeDNSOverrides"`
 }
