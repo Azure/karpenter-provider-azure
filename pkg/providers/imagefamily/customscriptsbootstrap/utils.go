@@ -80,8 +80,8 @@ func convertLocalDNSToModel(localDNS *v1beta1.LocalDNS) *models.LocalDNSProfile 
 
 	profile := &models.LocalDNSProfile{}
 
-	if localDNS.Mode != nil {
-		mode := string(*localDNS.Mode)
+	if localDNS.Mode != "" {
+		mode := string(localDNS.Mode)
 		profile.Mode = &mode
 	}
 

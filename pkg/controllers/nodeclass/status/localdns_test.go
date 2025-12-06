@@ -21,7 +21,6 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
-	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -60,7 +59,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 	Context("when LocalDNS has valid zone names", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode: v1beta1.LocalDNSModeRequired,
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					".":             {},
 					"example.com":   {},
@@ -87,7 +86,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 	Context("when VnetDNSOverrides has invalid zone name", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode: v1beta1.LocalDNSModeRequired,
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					".":             {},
 					"cluster.local": {},
@@ -112,7 +111,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 	Context("when KubeDNSOverrides has invalid zone name", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode: v1beta1.LocalDNSModeRequired,
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					".":           {},
 					"example.com": {},
@@ -140,7 +139,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 	Context("when zone name contains special characters", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode: v1beta1.LocalDNSModeRequired,
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					".":                {},
 					"invalid@test.com": {}, // Invalid: contains @
@@ -162,7 +161,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 	Context("when VnetDNSOverrides is nil but KubeDNSOverrides is configured", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-				Mode:             lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode:             v1beta1.LocalDNSModeRequired,
 				VnetDNSOverrides: nil,
 				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					".":           {},
@@ -184,7 +183,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 	Context("when both override maps are nil", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-				Mode:             lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode:             v1beta1.LocalDNSModeRequired,
 				VnetDNSOverrides: nil,
 				KubeDNSOverrides: nil,
 			}
@@ -203,7 +202,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 	Context("when multiple invalid zone names exist", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode: v1beta1.LocalDNSModeRequired,
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					".":            {},
 					"-invalid.com": {}, // First invalid zone

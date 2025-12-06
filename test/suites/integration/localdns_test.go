@@ -120,7 +120,7 @@ var _ = Describe("LocalDNS", func() {
 
 		By("Configuring NodeClass with full LocalDNS configuration including overrides")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode:             lo.ToPtr(v1beta1.LocalDNSModeRequired),
+			Mode:             v1beta1.LocalDNSModeRequired,
 			KubeDNSOverrides: completeKubeDNSOverrides,
 			VnetDNSOverrides: completeVnetDNSOverrides,
 		}
@@ -294,10 +294,10 @@ func logLocalDNSConfig(localDNS *v1beta1.LocalDNS) {
 
 	By(fmt.Sprintf("DEBUG: NodeClass.Spec.LocalDNS IS SET: %+v", localDNS))
 
-	if localDNS.Mode != nil {
-		By(fmt.Sprintf("DEBUG: NodeClass.Spec.LocalDNS.Mode = %s", *localDNS.Mode))
+	if localDNS.Mode != "" {
+		By(fmt.Sprintf("DEBUG: NodeClass.Spec.LocalDNS.Mode = %s", localDNS.Mode))
 	} else {
-		By("DEBUG: NodeClass.Spec.LocalDNS.Mode is NIL")
+		By("DEBUG: NodeClass.Spec.LocalDNS.Mode is empty")
 	}
 
 	if localDNS.VnetDNSOverrides != nil {

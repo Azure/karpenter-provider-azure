@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/awslabs/operatorpkg/status"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -249,7 +248,7 @@ func TestLocalDNSLabels(t *testing.T) {
 		{
 			name: "LocalDNS mode is Required",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode: v1beta1.LocalDNSModeRequired,
 			},
 			kubernetesVersion: "1.35.0",
 			expectedLabel:     "enabled",
@@ -257,7 +256,7 @@ func TestLocalDNSLabels(t *testing.T) {
 		{
 			name: "LocalDNS mode is Disabled",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+				Mode: v1beta1.LocalDNSModeDisabled,
 			},
 			kubernetesVersion: "1.35.0",
 			expectedLabel:     "disabled",
@@ -265,7 +264,7 @@ func TestLocalDNSLabels(t *testing.T) {
 		{
 			name: "LocalDNS mode is Preferred with k8s >= 1.36",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+				Mode: v1beta1.LocalDNSModePreferred,
 			},
 			kubernetesVersion: "1.36.0",
 			expectedLabel:     "enabled",
@@ -273,7 +272,7 @@ func TestLocalDNSLabels(t *testing.T) {
 		{
 			name: "LocalDNS mode is Preferred with k8s 1.37",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+				Mode: v1beta1.LocalDNSModePreferred,
 			},
 			kubernetesVersion: "1.37.0",
 			expectedLabel:     "enabled",
@@ -281,7 +280,7 @@ func TestLocalDNSLabels(t *testing.T) {
 		{
 			name: "LocalDNS mode is Preferred with k8s < 1.36",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+				Mode: v1beta1.LocalDNSModePreferred,
 			},
 			kubernetesVersion: "1.35.0",
 			expectedLabel:     "disabled",
@@ -289,7 +288,7 @@ func TestLocalDNSLabels(t *testing.T) {
 		{
 			name: "LocalDNS mode is Preferred with k8s 1.35.9",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+				Mode: v1beta1.LocalDNSModePreferred,
 			},
 			kubernetesVersion: "1.35.9",
 			expectedLabel:     "disabled",
@@ -301,9 +300,9 @@ func TestLocalDNSLabels(t *testing.T) {
 			expectedLabel:     "disabled",
 		},
 		{
-			name: "LocalDNS mode is nil",
+			name: "LocalDNS mode is empty",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: nil,
+				Mode: "",
 			},
 			kubernetesVersion: "1.36.0",
 			expectedLabel:     "disabled",

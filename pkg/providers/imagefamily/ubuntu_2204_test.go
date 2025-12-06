@@ -65,7 +65,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
-	localDNS := &v1beta1.LocalDNS{Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled)}
+	localDNS := &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
