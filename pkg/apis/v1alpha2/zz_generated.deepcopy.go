@@ -282,11 +282,6 @@ func (in *LocalDNSOverrides) DeepCopyInto(out *LocalDNSOverrides) {
 		*out = new(LocalDNSQueryLogging)
 		**out = **in
 	}
-	if in.Protocol != nil {
-		in, out := &in.Protocol, &out.Protocol
-		*out = new(LocalDNSProtocol)
-		**out = **in
-	}
 	if in.MaxConcurrent != nil {
 		in, out := &in.MaxConcurrent, &out.MaxConcurrent
 		*out = new(int32)

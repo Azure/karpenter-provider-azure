@@ -121,8 +121,8 @@ func convertLocalDNSOverrideToModel(override *v1beta1.LocalDNSOverrides) *models
 		modelOverride.QueryLogging = &queryLogging
 	}
 
-	if override.Protocol != nil {
-		protocol := string(*override.Protocol)
+	if override.Protocol != "" {
+		protocol := string(override.Protocol)
 		modelOverride.Protocol = &protocol
 	}
 

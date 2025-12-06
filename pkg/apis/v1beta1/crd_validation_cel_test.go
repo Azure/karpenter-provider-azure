@@ -45,7 +45,7 @@ var _ = Describe("CEL/Validation", func() {
 		}
 		return &v1beta1.LocalDNSOverrides{
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+			Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 			ForwardDestination: forwardDest,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(100)),
@@ -233,7 +233,7 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring("Required value"))
 			},
 			Entry("missing QueryLogging", func(o *v1beta1.LocalDNSOverrides) { o.QueryLogging = nil }),
-			Entry("missing Protocol", func(o *v1beta1.LocalDNSOverrides) { o.Protocol = nil }),
+			Entry("missing Protocol", func(o *v1beta1.LocalDNSOverrides) { o.Protocol = "" }),
 			Entry("missing MaxConcurrent", func(o *v1beta1.LocalDNSOverrides) { o.MaxConcurrent = nil }),
 		)
 
@@ -290,11 +290,11 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid query logging: empty", lo.ToPtr(v1beta1.LocalDNSQueryLogging("")), "spec.localDNS.vnetDNSOverrides"),
 		)
 
-		DescribeTable("should validate LocalDNSProtocol", func(protocol *v1beta1.LocalDNSProtocol, expectedErr string) {
+		DescribeTable("should validate LocalDNSProtocol", func(protocol v1beta1.LocalDNSProtocol, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides(false)
 			overrideConfig.Protocol = protocol
 			// When using ForceTCP, we can't use ServeStaleVerify, so use Immediate instead
-			if protocol != nil && *protocol == v1beta1.LocalDNSProtocolForceTCP {
+			if protocol == v1beta1.LocalDNSProtocolForceTCP {
 				overrideConfig.ServeStale = v1beta1.LocalDNSServeStaleImmediate
 			}
 			nodeClass := &v1beta1.AKSNodeClass{
@@ -315,10 +315,10 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid protocol: PreferUDP", lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP), ""),
-			Entry("valid protocol: ForceTCP", lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP), ""),
-			Entry("invalid protocol: invalid-string", lo.ToPtr(v1beta1.LocalDNSProtocol("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
-			Entry("invalid protocol: empty", lo.ToPtr(v1beta1.LocalDNSProtocol("")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("valid protocol: PreferUDP", v1beta1.LocalDNSProtocolPreferUDP, ""),
+			Entry("valid protocol: ForceTCP", v1beta1.LocalDNSProtocolForceTCP, ""),
+			Entry("invalid protocol: invalid-string", v1beta1.LocalDNSProtocol("invalid-string"), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid protocol: empty", v1beta1.LocalDNSProtocol(""), "spec.localDNS.vnetDNSOverrides"),
 		)
 
 		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination v1beta1.LocalDNSForwardDestination, expectedErr string) {
@@ -849,7 +849,7 @@ var _ = Describe("CEL/Validation", func() {
 			It("should reject ServeStale Verify with ForceTCP protocol", func() {
 				invalidOverride := createCompleteLocalDNSOverrides(true) // Root zone needs VnetDNS
 				invalidOverride.ServeStale = v1beta1.LocalDNSServeStaleVerify
-				invalidOverride.Protocol = lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP)
+				invalidOverride.Protocol = v1beta1.LocalDNSProtocolForceTCP
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -875,7 +875,7 @@ var _ = Describe("CEL/Validation", func() {
 			It("should reject ServeStale Verify with ForceTCP protocol in kubeDNSOverrides", func() {
 				invalidOverride := createCompleteLocalDNSOverrides(false)
 				invalidOverride.ServeStale = v1beta1.LocalDNSServeStaleVerify
-				invalidOverride.Protocol = lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP)
+				invalidOverride.Protocol = v1beta1.LocalDNSProtocolForceTCP
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -901,7 +901,7 @@ var _ = Describe("CEL/Validation", func() {
 			It("should allow ServeStale Immediate with ForceTCP protocol", func() {
 				validOverride := createCompleteLocalDNSOverrides(true) // Root zone needs VnetDNS
 				validOverride.ServeStale = v1beta1.LocalDNSServeStaleImmediate
-				validOverride.Protocol = lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP)
+				validOverride.Protocol = v1beta1.LocalDNSProtocolForceTCP
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -925,7 +925,7 @@ var _ = Describe("CEL/Validation", func() {
 			It("should allow ServeStale Disable with ForceTCP protocol", func() {
 				validOverride := createCompleteLocalDNSOverrides(true) // Root zone needs VnetDNS
 				validOverride.ServeStale = v1beta1.LocalDNSServeStaleDisable
-				validOverride.Protocol = lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP)
+				validOverride.Protocol = v1beta1.LocalDNSProtocolForceTCP
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -949,7 +949,7 @@ var _ = Describe("CEL/Validation", func() {
 			It("should allow ServeStale Verify with PreferUDP protocol", func() {
 				validOverride := createCompleteLocalDNSOverrides(true) // Root zone needs VnetDNS
 				validOverride.ServeStale = v1beta1.LocalDNSServeStaleVerify
-				validOverride.Protocol = lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP)
+				validOverride.Protocol = v1beta1.LocalDNSProtocolPreferUDP
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},

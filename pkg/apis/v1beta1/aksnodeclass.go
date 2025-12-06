@@ -144,7 +144,7 @@ type LocalDNSOverrides struct {
 	QueryLogging *LocalDNSQueryLogging `json:"queryLogging"`
 	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
 	// +required
-	Protocol *LocalDNSProtocol `json:"protocol"`
+	Protocol LocalDNSProtocol `json:"protocol"`
 	// Destination server for DNS queries to be forwarded from localDNS.
 	// +required
 	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination"`
