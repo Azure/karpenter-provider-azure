@@ -154,7 +154,7 @@ type LocalDNSOverrides struct {
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
 	// +required
-	MaxConcurrent *int32 `json:"maxConcurrent"`
+	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
 	// Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
 	// +kubebuilder:validation:Type="string"
