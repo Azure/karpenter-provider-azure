@@ -47,7 +47,7 @@ var (
 		".": {
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-			ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
@@ -57,7 +57,7 @@ var (
 		"cluster.local": {
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-			ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
@@ -71,7 +71,7 @@ var (
 		".": {
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
-			ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
@@ -81,7 +81,7 @@ var (
 		"cluster.local": {
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-			ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),

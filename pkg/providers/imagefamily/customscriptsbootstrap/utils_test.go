@@ -283,7 +283,7 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 				},
 				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					"kube.domain": {
-						ForwardPolicy: lo.ToPtr(v1beta1.LocalDNSForwardPolicyRoundRobin),
+						ForwardPolicy: v1beta1.LocalDNSForwardPolicyRoundRobin,
 					},
 				},
 			},
@@ -328,7 +328,7 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 				QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
 				Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
 				ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
-				ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicySequential),
+				ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 				MaxConcurrent:      lo.ToPtr(int32(50)),
 				CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 				ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
@@ -381,7 +381,7 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 				QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog),
 				Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
 				ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
-				ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicyRandom),
+				ForwardPolicy:      v1beta1.LocalDNSForwardPolicyRandom,
 				ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
 			},
 			expected: &models.LocalDNSOverride{
