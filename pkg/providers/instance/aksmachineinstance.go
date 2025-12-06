@@ -463,24 +463,32 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	return NewAKSMachinePromise(
 		p,
 		aksMachineTemplate,
-		func() error {
-			_, err := poller.PollUntilDone(ctx, nil)
+		func() (pollingErr error) {
+			defer func() {
+				if r := recover(); r != nil {
+					err := fmt.Errorf("%v", r)
+					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO, AKS API panicked: %w", aksMachineName, err)
+				}
+			}()
+			_, err := poller.PollUntilDone(ctx, nil) // This may panic if it is deleted mid-way.
 			if err != nil {
 				// Could be quota error; will be handled with custom logic below
 
 				// Get once after begin create to retrieve error details. This is because if the poller returns error, the sdk doesn't let us look at the real results.
 				failedAKSMachine, _ := p.getMachine(ctx, aksMachineName)
 				if failedAKSMachine.Properties != nil && failedAKSMachine.Properties.Status != nil && failedAKSMachine.Properties.Status.ProvisioningError != nil {
-					return p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, nodeClass, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
+					pollingErr = p.handleMachineProvisioningError(ctx, "LRO", aksMachineName, nodeClass, instanceType, zone, capacityType, failedAKSMachine.Properties.Status.ProvisioningError)
+					return
 				}
 				// This should not be expected.
-				return fmt.Errorf("failed to create AKS machine %q during LRO, AKS API returned error: %w", aksMachineName, err)
+				pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO, AKS API returned error: %w", aksMachineName, err)
+				return
 			}
 
 			log.FromContext(ctx).V(1).Info("successfully created AKS machine",
 				"aksMachineName", aksMachineName,
 				"aksMachineID", gotAKSMachine.ID)
-			return nil
+			return
 		},
 		aksMachineName,
 		instanceType,
