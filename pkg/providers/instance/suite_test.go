@@ -85,8 +85,8 @@ func TestAzure(t *testing.T) {
 	ctx, stop = context.WithCancel(ctx)
 	azureEnv = test.NewEnvironment(ctx, env)
 	azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
 	fakeClock = &clock.FakeClock{}
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	coreProvisioner = provisioning.NewProvisioner(env.Client, events.NewRecorder(&record.FakeRecorder{}), cloudProvider, cluster, fakeClock)
@@ -374,6 +374,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			azureEnv = test.NewEnvironment(ctx, env)
 			cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider,
 				azureEnv.VMInstanceProvider,
+				azureEnv.AKSMachineProvider,
 				events.NewRecorder(&record.FakeRecorder{}),
 				env.Client,
 				azureEnv.ImageProvider,

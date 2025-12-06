@@ -46,15 +46,11 @@ func NewAKSDataStorage() *AKSDataStorage {
 	}
 }
 
-type VMImageIDContextKey string
-
-const VMImageIDKey VMImageIDContextKey = "vmimageid"
-
 // This is not really the real one being used, which is the header.
 // But the header cannot be extracted due to azure-sdk-for-go being restrictive. This is good enough.
 func GetVMImageIDFromContext(ctx context.Context) string {
-	if ctx.Value(VMImageIDKey) != nil {
-		return ctx.Value(VMImageIDKey).(string)
+	if ctx.Value(instance.VMImageIDKey) != nil {
+		return ctx.Value(instance.VMImageIDKey).(string)
 	}
 	return ""
 }
@@ -510,9 +506,9 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	}
 
 	// Set ResourceID - simulates VM resource ID
-	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
+	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm
 	if machine.Properties.ResourceID == nil {
-		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm0", agentPoolName, *machine.Name)
+		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm", agentPoolName, *machine.Name)
 		vmResourceID := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Compute/virtualMachines/%s", vmName)
 		machine.Properties.ResourceID = lo.ToPtr(vmResourceID)
 	}

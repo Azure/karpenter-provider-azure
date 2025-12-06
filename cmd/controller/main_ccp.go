@@ -53,6 +53,7 @@ func main() {
 	aksCloudProvider := cloudprovider.New(
 		op.InstanceTypesProvider,
 		op.VMInstanceProvider,
+		op.AKSMachineProvider,
 		op.EventRecorder,
 		op.GetClient(),
 		op.ImageProvider,
@@ -80,6 +81,7 @@ func main() {
 			op.EventRecorder,
 			aksCloudProvider,
 			op.VMInstanceProvider,
+			op.AKSMachineProvider,
 			// TODO: still need to refactor ImageProvider side of things.
 			op.KubernetesVersionProvider,
 			op.ImageProvider,
