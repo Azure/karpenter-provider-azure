@@ -127,7 +127,7 @@ const (
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
 	// +required
-	Mode *LocalDNSMode `json:"mode"`
+	Mode LocalDNSMode `json:"mode"`
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
 	// +required
 	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides"`
@@ -363,11 +363,11 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 // Returns true for Required mode, false for Disabled mode, and for Preferred mode,
 // returns true only if the Kubernetes version is >= 1.36.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
-	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == nil {
+	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
 		return false
 	}
 
-	switch *in.Spec.LocalDNS.Mode {
+	switch in.Spec.LocalDNS.Mode {
 	case LocalDNSModeRequired:
 		return true
 	case LocalDNSModeDisabled:

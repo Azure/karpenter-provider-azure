@@ -688,8 +688,8 @@ var _ = Describe("InstanceType Provider", func() {
 	})
 
 	DescribeTable("Filtering by LocalDNS",
-		func(localDNSMode *v1beta1.LocalDNSMode, k8sVersion string, shouldIncludeD2s, shouldIncludeD4s bool) {
-			if localDNSMode != nil {
+		func(localDNSMode v1beta1.LocalDNSMode, k8sVersion string, shouldIncludeD2s, shouldIncludeD4s bool) {
+			if localDNSMode != "" {
 				// Create complete LocalDNS configuration with all required fields
 				// Note: VnetDNS and KubeDNS overrides must contain both "." and "cluster.local" zones
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
@@ -765,15 +765,15 @@ var _ = Describe("InstanceType Provider", func() {
 			}
 		},
 		Entry("when LocalDNS is required - filters to 4+ vCPUs and 244+ MiB",
-			lo.ToPtr(v1beta1.LocalDNSModeRequired), "", false, true),
+			v1beta1.LocalDNSModeRequired, "", false, true),
 		Entry("when LocalDNS is preferred with k8s >= 1.36 - filters to 4+ vCPUs and 244+ MiB",
-			lo.ToPtr(v1beta1.LocalDNSModePreferred), "1.36.0", false, true),
+			v1beta1.LocalDNSModePreferred, "1.36.0", false, true),
 		Entry("when LocalDNS is preferred with k8s < 1.36 - includes all SKUs",
-			lo.ToPtr(v1beta1.LocalDNSModePreferred), "1.35.0", true, true),
+			v1beta1.LocalDNSModePreferred, "1.35.0", true, true),
 		Entry("when LocalDNS is disabled - includes all SKUs",
-			lo.ToPtr(v1beta1.LocalDNSModeDisabled), "", true, true),
+			v1beta1.LocalDNSModeDisabled, "", true, true),
 		Entry("when LocalDNS is not set - includes all SKUs",
-			nil, "", true, true),
+			v1beta1.LocalDNSMode(""), "", true, true),
 	)
 
 	Context("Ephemeral Disk", func() {

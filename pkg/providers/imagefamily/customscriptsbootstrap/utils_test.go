@@ -226,7 +226,7 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 		{
 			name: "LocalDNS with mode only",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeRequired),
+				Mode: v1beta1.LocalDNSModeRequired,
 			},
 			expected: &models.LocalDNSProfile{
 				Mode: lo.ToPtr("Required"),
@@ -235,7 +235,7 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 		{
 			name: "LocalDNS with VnetDNSOverrides",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModePreferred),
+				Mode: v1beta1.LocalDNSModePreferred,
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					"example.com": {
 						QueryLogging: lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog),
@@ -275,7 +275,7 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 		{
 			name: "LocalDNS with both VnetDNS and KubeDNS overrides",
 			localDNS: &v1beta1.LocalDNS{
-				Mode: lo.ToPtr(v1beta1.LocalDNSModeDisabled),
+				Mode: v1beta1.LocalDNSModeDisabled,
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					"vnet.domain": {
 						Protocol: lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
