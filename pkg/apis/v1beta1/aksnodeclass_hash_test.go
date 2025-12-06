@@ -75,10 +75,10 @@ var _ = Describe("Hash", func() {
 		Entry("Kubelet", "33638514539106194", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", "15508761509963240710", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
 		Entry("LocalDNS.Mode", "17805442572569734619", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}}}),
-		Entry("LocalDNS.VnetDNSOverrides", "1846993897639680515", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
-		Entry("LocalDNS.KubeDNSOverrides", "1649149597266483112", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
-		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11176862737221572952", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
-		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "10694595590893870496", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides", "1846993897639680515", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
+		Entry("LocalDNS.KubeDNSOverrides", "1649149597266483112", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11176862737221572952", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "10694595590893870496", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
 	)
 
 	DescribeTable("should change hash when static fields are updated", func(changes v1beta1.AKSNodeClass) {
@@ -93,10 +93,10 @@ var _ = Describe("Hash", func() {
 		Entry("Kubelet", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
 		Entry("LocalDNS.Mode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}}}),
-		Entry("LocalDNS.VnetDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
-		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
-		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
-		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{"example.com": {ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
+		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 	)
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()

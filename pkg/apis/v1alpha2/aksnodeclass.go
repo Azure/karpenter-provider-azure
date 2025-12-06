@@ -118,25 +118,66 @@ const (
 // LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 // LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 // For more details see aka.ms/aks/localdns.
-// +kubebuilder:validation:XValidation:rule="'.' in self.vnetDNSOverrides && 'cluster.local' in self.vnetDNSOverrides",message="vnetDNSOverrides must contain required zones '.' and 'cluster.local'"
-// +kubebuilder:validation:XValidation:rule="'.' in self.kubeDNSOverrides && 'cluster.local' in self.kubeDNSOverrides",message="kubeDNSOverrides must contain required zones '.' and 'cluster.local'"
-// +kubebuilder:validation:XValidation:rule="!('.' in self.vnetDNSOverrides && has(self.vnetDNSOverrides['.'].forwardDestination) && self.vnetDNSOverrides['.'].forwardDestination == 'ClusterCoreDNS')",message="DNS traffic for root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides"
-// +kubebuilder:validation:XValidation:rule="!self.vnetDNSOverrides.exists(zone, zone.endsWith('cluster.local') && has(self.vnetDNSOverrides[zone].forwardDestination) && self.vnetDNSOverrides[zone].forwardDestination == 'VnetDNS')",message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS from vnetDNSOverrides"
-// +kubebuilder:validation:XValidation:rule="!self.kubeDNSOverrides.exists(zone, zone.endsWith('cluster.local') && has(self.kubeDNSOverrides[zone].forwardDestination) && self.kubeDNSOverrides[zone].forwardDestination == 'VnetDNS')",message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS from kubeDNSOverrides"
+// +kubebuilder:validation:XValidation:rule="self.vnetDNSOverrides.exists(o, o.zone == '.') && self.vnetDNSOverrides.exists(o, o.zone == 'cluster.local')",message="vnetDNSOverrides must contain required zones '.' and 'cluster.local'"
+// +kubebuilder:validation:XValidation:rule="self.kubeDNSOverrides.exists(o, o.zone == '.') && self.kubeDNSOverrides.exists(o, o.zone == 'cluster.local')",message="kubeDNSOverrides must contain required zones '.' and 'cluster.local'"
+// +kubebuilder:validation:XValidation:rule="!self.vnetDNSOverrides.exists(o, o.zone == '.' && has(o.forwardDestination) && o.forwardDestination == 'ClusterCoreDNS')",message="DNS traffic for root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides"
+// +kubebuilder:validation:XValidation:rule="!self.vnetDNSOverrides.exists(o, o.zone.endsWith('cluster.local') && has(o.forwardDestination) && o.forwardDestination == 'VnetDNS')",message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS from vnetDNSOverrides"
+// +kubebuilder:validation:XValidation:rule="!self.kubeDNSOverrides.exists(o, o.zone.endsWith('cluster.local') && has(o.forwardDestination) && o.forwardDestination == 'VnetDNS')",message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS from kubeDNSOverrides"
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
 	// +required
 	Mode LocalDNSMode `json:"mode"`
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+	// +kubebuilder:validation:XValidation:rule="self.all(o, self.exists_one(p, p.zone == o.zone))",message="each zone must be unique in vnetDNSOverrides"
 	// +required
-	VnetDNSOverrides map[string]*LocalDNSOverrides `json:"vnetDNSOverrides"`
+	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides"`
 	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+	// +kubebuilder:validation:XValidation:rule="self.all(o, self.exists_one(p, p.zone == o.zone))",message="each zone must be unique in kubeDNSOverrides"
 	// +required
-	KubeDNSOverrides map[string]*LocalDNSOverrides `json:"kubeDNSOverrides"`
+	KubeDNSOverrides []LocalDNSZoneOverride `json:"kubeDNSOverrides"`
+}
+
+// LocalDNSZoneOverride specifies DNS override configuration for a specific zone
+// +kubebuilder:validation:XValidation:rule="!(has(self.serveStale) && self.serveStale == 'Verify' && has(self.protocol) && self.protocol == 'ForceTCP')",message="ServeStale verify cannot be used with ForceTCP protocol"
+type LocalDNSZoneOverride struct {
+	// Zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
+	// +required
+	Zone string `json:"zone"`
+	// Log level for DNS queries in localDNS.
+	// +required
+	QueryLogging LocalDNSQueryLogging `json:"queryLogging"`
+	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
+	// +required
+	Protocol LocalDNSProtocol `json:"protocol"`
+	// Destination server for DNS queries to be forwarded from localDNS.
+	// +required
+	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination"`
+	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// +required
+	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy"`
+	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// +kubebuilder:validation:Minimum=0
+	// +required
+	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
+	// Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
+	// +required
+	CacheDuration karpv1.NillableDuration `json:"cacheDuration"`
+	// Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// +kubebuilder:validation:Pattern=`^([0-9]+(s|m|h))+$`
+	// +kubebuilder:validation:Type="string"
+	// +kubebuilder:validation:Schemaless
+	// +required
+	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
+	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// +required
+	ServeStale LocalDNSServeStale `json:"serveStale"`
 }
 
 // LocalDNSOverrides specifies DNS override configuration
-// +kubebuilder:validation:XValidation:rule="!(has(self.serveStale) && self.serveStale == 'Verify' && has(self.protocol) && self.protocol == 'ForceTCP')",message="ServeStale verify cannot be used with ForceTCP protocol"
+// Deprecated: Use LocalDNSZoneOverride instead
 type LocalDNSOverrides struct {
 	// Log level for DNS queries in localDNS.
 	// +required
