@@ -44,7 +44,7 @@ var _ = Describe("CEL/Validation", func() {
 			forwardDest = v1alpha2.LocalDNSForwardDestinationVnetDNS
 		}
 		return &v1alpha2.LocalDNSOverrides{
-			QueryLogging:       lo.ToPtr(v1alpha2.LocalDNSQueryLoggingError),
+			QueryLogging:       v1alpha2.LocalDNSQueryLoggingError,
 			Protocol:           v1alpha2.LocalDNSProtocolPreferUDP,
 			ForwardDestination: forwardDest,
 			ForwardPolicy:      v1alpha2.LocalDNSForwardPolicySequential,
@@ -232,7 +232,7 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("Required value"))
 			},
-			Entry("missing QueryLogging", func(o *v1alpha2.LocalDNSOverrides) { o.QueryLogging = nil }),
+			Entry("missing QueryLogging", func(o *v1alpha2.LocalDNSOverrides) { o.QueryLogging = "" }),
 			Entry("missing Protocol", func(o *v1alpha2.LocalDNSOverrides) { o.Protocol = "" }),
 			Entry("missing MaxConcurrent", func(o *v1alpha2.LocalDNSOverrides) { o.MaxConcurrent = nil }),
 		)
@@ -263,7 +263,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid mode: empty", v1alpha2.LocalDNSMode(""), "spec.localDNS.mode"),
 		)
 
-		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging *v1alpha2.LocalDNSQueryLogging, expectedErr string) {
+		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging v1alpha2.LocalDNSQueryLogging, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides(false)
 			overrideConfig.QueryLogging = queryLogging
 			nodeClass := &v1alpha2.AKSNodeClass{
@@ -284,10 +284,10 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid query logging: Error", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingError), ""),
-			Entry("valid query logging: Log", lo.ToPtr(v1alpha2.LocalDNSQueryLoggingLog), ""),
-			Entry("invalid query logging: invalid-string", lo.ToPtr(v1alpha2.LocalDNSQueryLogging("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
-			Entry("invalid query logging: empty", lo.ToPtr(v1alpha2.LocalDNSQueryLogging("")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("valid query logging: Error", v1alpha2.LocalDNSQueryLoggingError, ""),
+			Entry("valid query logging: Log", v1alpha2.LocalDNSQueryLoggingLog, ""),
+			Entry("invalid query logging: invalid-string", v1alpha2.LocalDNSQueryLogging("invalid-string"), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid query logging: empty", v1alpha2.LocalDNSQueryLogging(""), "spec.localDNS.vnetDNSOverrides"),
 		)
 
 		DescribeTable("should validate LocalDNSProtocol", func(protocol v1alpha2.LocalDNSProtocol, expectedErr string) {
