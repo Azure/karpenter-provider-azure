@@ -697,7 +697,7 @@ var _ = Describe("InstanceType Provider", func() {
 					VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 						".": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 							MaxConcurrent:      lo.ToPtr(int32(100)),
@@ -707,7 +707,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 						"cluster.local": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 							MaxConcurrent:      lo.ToPtr(int32(100)),
@@ -719,7 +719,7 @@ var _ = Describe("InstanceType Provider", func() {
 					KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 						".": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 							MaxConcurrent:      lo.ToPtr(int32(100)),
@@ -729,7 +729,7 @@ var _ = Describe("InstanceType Provider", func() {
 						},
 						"cluster.local": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 							MaxConcurrent:      lo.ToPtr(int32(100)),

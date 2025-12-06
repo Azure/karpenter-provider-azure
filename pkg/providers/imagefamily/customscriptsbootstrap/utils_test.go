@@ -239,7 +239,7 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					"example.com": {
 						QueryLogging: lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog),
-						Protocol:     lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
+						Protocol:     v1beta1.LocalDNSProtocolForceTCP,
 					},
 				},
 			},
@@ -278,7 +278,7 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 				Mode: v1beta1.LocalDNSModeDisabled,
 				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 					"vnet.domain": {
-						Protocol: lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+						Protocol: v1beta1.LocalDNSProtocolPreferUDP,
 					},
 				},
 				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
@@ -326,7 +326,7 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 			name: "Override with all fields",
 			override: &v1beta1.LocalDNSOverrides{
 				QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-				Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
+				Protocol:           v1beta1.LocalDNSProtocolForceTCP,
 				ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 				ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 				MaxConcurrent:      lo.ToPtr(int32(50)),
@@ -379,7 +379,7 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 			name: "Override with only enum fields",
 			override: &v1beta1.LocalDNSOverrides{
 				QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingLog),
-				Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
+				Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 				ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 				ForwardPolicy:      v1beta1.LocalDNSForwardPolicyRandom,
 				ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
