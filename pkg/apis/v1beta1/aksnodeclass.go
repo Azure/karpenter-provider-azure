@@ -169,7 +169,7 @@ type LocalDNSOverrides struct {
 	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
 	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
-	ServeStale *LocalDNSServeStale `json:"serveStale"`
+	ServeStale LocalDNSServeStale `json:"serveStale"`
 }
 
 // +kubebuilder:validation:Enum:={Error,Log}

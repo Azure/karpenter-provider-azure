@@ -51,7 +51,7 @@ var (
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-			ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+			ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
 		},
 		"cluster.local": {
@@ -61,7 +61,7 @@ var (
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-			ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
+			ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
 			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
 		},
 	}
@@ -75,7 +75,7 @@ var (
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-			ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+			ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
 		},
 		"cluster.local": {
@@ -85,7 +85,7 @@ var (
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
-			ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
+			ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
 			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
 		},
 	}

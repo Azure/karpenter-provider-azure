@@ -332,7 +332,7 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 				MaxConcurrent:      lo.ToPtr(int32(50)),
 				CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 				ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-				ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+				ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 			},
 			expected: &models.LocalDNSOverride{
 				QueryLogging:                lo.ToPtr("Error"),
@@ -382,7 +382,7 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 				Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
 				ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
 				ForwardPolicy:      lo.ToPtr(v1beta1.LocalDNSForwardPolicyRandom),
-				ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleImmediate),
+				ServeStale:         v1beta1.LocalDNSServeStaleImmediate,
 			},
 			expected: &models.LocalDNSOverride{
 				QueryLogging:       lo.ToPtr("Log"),
