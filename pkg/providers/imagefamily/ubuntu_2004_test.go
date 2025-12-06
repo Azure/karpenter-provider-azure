@@ -76,6 +76,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		nil, // Ubuntu 20.04 does not support LocalDNS
 	)
 
 	// Verify the returned bootstrapper is of the correct type
@@ -101,6 +102,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
 	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
 	assert.Equal(t, fipsMode, provisionBootstrapper.FIPSMode, "FIPSMode field must match the input parameter")
+	assert.Nil(t, provisionBootstrapper.LocalDNSProfile, "Ubuntu 20.04 does not support LocalDNS")
 }
 
 func TestUbuntu2004_Name(t *testing.T) {
