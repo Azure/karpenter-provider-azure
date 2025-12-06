@@ -78,6 +78,7 @@ KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_R
 KUBELET_IDENTITY_CLIENT_ID=$(jq -r ".identityProfile.kubeletidentity.clientId // empty" <<< "$AKS_JSON")
 
 AZURE_SIG_SUBSCRIPTION_ID=""
+USE_SIG="false"
 # For Machine API mode
 if [[ "${PROVISION_MODE:-}" == "aksmachineapi" ]]; then
     USE_SIG="true"
