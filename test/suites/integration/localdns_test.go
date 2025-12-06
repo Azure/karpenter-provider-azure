@@ -206,9 +206,6 @@ var _ = Describe("LocalDNS", func() {
 
 		By("✓ Verified LocalDNS is configured on the node")
 		By("Adding sleep to allow for system stabilization")
-
-		// TODO: REMOVE THIS, IM NOT SURE WHY THE NODE IS NOT BEING PROVISIONED
-		time.Sleep(30 * time.Minute)
 	})
 })
 
