@@ -21,12 +21,34 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+// createZoneOverride creates a LocalDNSZoneOverride with all required fields
+func createZoneOverride(zone string, forwardToVnetDNS bool) v1beta1.LocalDNSZoneOverride {
+	forwardDest := v1beta1.LocalDNSForwardDestinationClusterCoreDNS
+	if forwardToVnetDNS {
+		forwardDest = v1beta1.LocalDNSForwardDestinationVnetDNS
+	}
+	return v1beta1.LocalDNSZoneOverride{
+		Zone:               zone,
+		QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+		Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+		ForwardDestination: forwardDest,
+		ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+		MaxConcurrent:      lo.ToPtr(int32(100)),
+		CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+		ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+		ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+	}
+}
 
 var _ = Describe("LocalDNS Reconciler", func() {
 	var ctx context.Context
@@ -60,15 +82,16 @@ var _ = Describe("LocalDNS Reconciler", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModeRequired,
-				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					".":             {},
-					"example.com":   {},
-					"cluster.local": {},
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					createZoneOverride("example.com", false),
+					createZoneOverride("cluster.local", false),
 				},
-				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					".":                 {},
-					"my-domain.com":     {},
-					"sub.example.local": {},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("my-domain.com", false),
+					createZoneOverride("sub.example.local", false),
+					createZoneOverride("cluster.local", false),
 				},
 			}
 		})
@@ -87,10 +110,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModeRequired,
-				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					".":             {},
-					"cluster.local": {},
-					"-invalid.com":  {}, // Invalid: starts with hyphen
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					createZoneOverride("cluster.local", false),
+					createZoneOverride("-invalid.com", false), // Invalid: starts with hyphen
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
 				},
 			}
 		})
@@ -112,13 +139,15 @@ var _ = Describe("LocalDNS Reconciler", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModeRequired,
-				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					".":           {},
-					"example.com": {},
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					createZoneOverride("example.com", false),
+					createZoneOverride("cluster.local", false),
 				},
-				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					".":            {},
-					"invalid..com": {}, // Invalid: double dots
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("invalid..com", false), // Invalid: double dots
+					createZoneOverride("cluster.local", false),
 				},
 			}
 		})
@@ -140,9 +169,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModeRequired,
-				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					".":                {},
-					"invalid@test.com": {}, // Invalid: contains @
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					createZoneOverride("invalid@test.com", false), // Invalid: contains @
+					createZoneOverride("cluster.local", false),
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
 				},
 			}
 		})
@@ -163,14 +197,15 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode:             v1beta1.LocalDNSModeRequired,
 				VnetDNSOverrides: nil,
-				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					".":           {},
-					"example.com": {},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("example.com", false),
+					createZoneOverride("cluster.local", false),
 				},
 			}
 		})
 
-		It("should set LocalDNSReady condition to true (nil maps are allowed)", func() {
+		It("should set LocalDNSReady condition to true (nil slices are allowed)", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
@@ -180,7 +215,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 		})
 	})
 
-	Context("when both override maps are nil", func() {
+	Context("when both override slices are nil", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode:             v1beta1.LocalDNSModeRequired,
@@ -189,7 +224,7 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to true (nil maps are allowed)", func() {
+		It("should set LocalDNSReady condition to true (nil slices are allowed)", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
@@ -203,10 +238,15 @@ var _ = Describe("LocalDNS Reconciler", func() {
 		BeforeEach(func() {
 			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModeRequired,
-				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					".":            {},
-					"-invalid.com": {}, // First invalid zone
-					"_bad.com":     {}, // Second invalid zone
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					createZoneOverride("-invalid.com", false), // First invalid zone
+					createZoneOverride("_bad.com", false),     // Second invalid zone
+					createZoneOverride("cluster.local", false),
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
 				},
 			}
 		})
