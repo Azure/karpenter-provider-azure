@@ -116,8 +116,8 @@ func convertLocalDNSOverrideToModel(override *v1beta1.LocalDNSOverrides) *models
 
 	modelOverride := &models.LocalDNSOverride{}
 
-	if override.QueryLogging != nil {
-		queryLogging := string(*override.QueryLogging)
+	if override.QueryLogging != "" {
+		queryLogging := string(override.QueryLogging)
 		modelOverride.QueryLogging = &queryLogging
 	}
 

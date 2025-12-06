@@ -140,7 +140,7 @@ type LocalDNS struct {
 type LocalDNSOverrides struct {
 	// Log level for DNS queries in localDNS.
 	// +required
-	QueryLogging *LocalDNSQueryLogging `json:"queryLogging"`
+	QueryLogging LocalDNSQueryLogging `json:"queryLogging"`
 	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
 	// +required
 	Protocol LocalDNSProtocol `json:"protocol"`

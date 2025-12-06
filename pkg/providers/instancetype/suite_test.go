@@ -696,7 +696,7 @@ var _ = Describe("InstanceType Provider", func() {
 					Mode: localDNSMode,
 					VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 						".": {
-							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
@@ -706,7 +706,7 @@ var _ = Describe("InstanceType Provider", func() {
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
 						"cluster.local": {
-							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
@@ -718,7 +718,7 @@ var _ = Describe("InstanceType Provider", func() {
 					},
 					KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
 						".": {
-							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
@@ -728,7 +728,7 @@ var _ = Describe("InstanceType Provider", func() {
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
 						"cluster.local": {
-							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
