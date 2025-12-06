@@ -118,21 +118,14 @@ const (
 // LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 // LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 // For more details see aka.ms/aks/localdns.
-// +kubebuilder:validation:XValidation:rule="self.vnetDNSOverrides.exists(o, o.zone == '.') && self.vnetDNSOverrides.exists(o, o.zone == 'cluster.local')",message="vnetDNSOverrides must contain required zones '.' and 'cluster.local'"
-// +kubebuilder:validation:XValidation:rule="self.kubeDNSOverrides.exists(o, o.zone == '.') && self.kubeDNSOverrides.exists(o, o.zone == 'cluster.local')",message="kubeDNSOverrides must contain required zones '.' and 'cluster.local'"
-// +kubebuilder:validation:XValidation:rule="!self.vnetDNSOverrides.exists(o, o.zone == '.' && has(o.forwardDestination) && o.forwardDestination == 'ClusterCoreDNS')",message="DNS traffic for root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides"
-// +kubebuilder:validation:XValidation:rule="!self.vnetDNSOverrides.exists(o, o.zone.endsWith('cluster.local') && has(o.forwardDestination) && o.forwardDestination == 'VnetDNS')",message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS from vnetDNSOverrides"
-// +kubebuilder:validation:XValidation:rule="!self.kubeDNSOverrides.exists(o, o.zone.endsWith('cluster.local') && has(o.forwardDestination) && o.forwardDestination == 'VnetDNS')",message="DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS from kubeDNSOverrides"
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
 	// +required
 	Mode LocalDNSMode `json:"mode"`
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
-	// +kubebuilder:validation:XValidation:rule="self.all(o, self.exists_one(p, p.zone == o.zone))",message="each zone must be unique in vnetDNSOverrides"
 	// +required
 	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides"`
 	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
-	// +kubebuilder:validation:XValidation:rule="self.all(o, self.exists_one(p, p.zone == o.zone))",message="each zone must be unique in kubeDNSOverrides"
 	// +required
 	KubeDNSOverrides []LocalDNSZoneOverride `json:"kubeDNSOverrides"`
 }
