@@ -46,7 +46,7 @@ var _ = Describe("CEL/Validation", func() {
 		return &v1beta1.LocalDNSOverrides{
 			QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-			ForwardDestination: lo.ToPtr(forwardDest),
+			ForwardDestination: forwardDest,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(100)),
 			CacheDuration:      karpv1.MustParseNillableDuration("1h"),
@@ -234,7 +234,6 @@ var _ = Describe("CEL/Validation", func() {
 			},
 			Entry("missing QueryLogging", func(o *v1beta1.LocalDNSOverrides) { o.QueryLogging = nil }),
 			Entry("missing Protocol", func(o *v1beta1.LocalDNSOverrides) { o.Protocol = nil }),
-			Entry("missing ForwardDestination", func(o *v1beta1.LocalDNSOverrides) { o.ForwardDestination = nil }),
 			Entry("missing MaxConcurrent", func(o *v1beta1.LocalDNSOverrides) { o.MaxConcurrent = nil }),
 		)
 
@@ -322,7 +321,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid protocol: empty", lo.ToPtr(v1beta1.LocalDNSProtocol("")), "spec.localDNS.vnetDNSOverrides"),
 		)
 
-		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination *v1beta1.LocalDNSForwardDestination, expectedErr string) {
+		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination v1beta1.LocalDNSForwardDestination, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides(false)
 			overrideConfig.ForwardDestination = forwardDestination
 			nodeClass := &v1beta1.AKSNodeClass{
@@ -343,10 +342,10 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid forward destination: ClusterCoreDNS", lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS), ""),
-			Entry("valid forward destination: VnetDNS", lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS), ""),
-			Entry("invalid forward destination: invalid-string", lo.ToPtr(v1beta1.LocalDNSForwardDestination("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
-			Entry("invalid forward destination: empty", lo.ToPtr(v1beta1.LocalDNSForwardDestination("")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("valid forward destination: ClusterCoreDNS", v1beta1.LocalDNSForwardDestinationClusterCoreDNS, ""),
+			Entry("valid forward destination: VnetDNS", v1beta1.LocalDNSForwardDestinationVnetDNS, ""),
+			Entry("invalid forward destination: invalid-string", v1beta1.LocalDNSForwardDestination("invalid-string"), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid forward destination: empty", v1beta1.LocalDNSForwardDestination(""), "spec.localDNS.vnetDNSOverrides"),
 		)
 
 		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy v1beta1.LocalDNSForwardPolicy, expectedErr string) {
@@ -606,8 +605,7 @@ var _ = Describe("CEL/Validation", func() {
 		Context("DNS forwarding restrictions", func() {
 			It("should reject forwarding root zone '.' to ClusterCoreDNS from vnetDNSOverrides", func() {
 				rootOverride := createCompleteLocalDNSOverrides(true) // Root zone needs VnetDNS
-				rootOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS)
-
+				rootOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationClusterCoreDNS
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
@@ -631,8 +629,7 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should allow forwarding root zone '.' to VnetDNS from vnetDNSOverrides", func() {
 				rootOverride := createCompleteLocalDNSOverrides(true) // Root zone needs VnetDNS
-				rootOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS)
-
+				rootOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationVnetDNS
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
@@ -654,7 +651,7 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should reject forwarding 'cluster.local' to VnetDNS from vnetDNSOverrides", func() {
 				clusterLocalOverride := createCompleteLocalDNSOverrides(false)
-				clusterLocalOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS)
+				clusterLocalOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationVnetDNS
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -679,7 +676,7 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should reject forwarding 'cluster.local' to VnetDNS from kubeDNSOverrides", func() {
 				clusterLocalOverride := createCompleteLocalDNSOverrides(false)
-				clusterLocalOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS)
+				clusterLocalOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationVnetDNS
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -704,8 +701,7 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should reject forwarding zones ending with 'cluster.local' to VnetDNS", func() {
 				subZoneOverride := createCompleteLocalDNSOverrides(false)
-				subZoneOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS)
-
+				subZoneOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationVnetDNS
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
@@ -730,8 +726,7 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should allow forwarding 'cluster.local' to ClusterCoreDNS", func() {
 				clusterLocalOverride := createCompleteLocalDNSOverrides(false)
-				clusterLocalOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS)
-
+				clusterLocalOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationClusterCoreDNS
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
@@ -753,7 +748,7 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should allow forwarding root zone '.' to ClusterCoreDNS from kubeDNSOverrides", func() {
 				rootOverride := createCompleteLocalDNSOverrides(false)
-				rootOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS)
+				rootOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationClusterCoreDNS
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -776,7 +771,7 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should allow forwarding root zone '.' to VnetDNS from kubeDNSOverrides", func() {
 				rootOverride := createCompleteLocalDNSOverrides(false)
-				rootOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS)
+				rootOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationVnetDNS
 
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -799,8 +794,7 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should allow forwarding non-cluster.local zones to VnetDNS", func() {
 				exampleOverride := createCompleteLocalDNSOverrides(false)
-				exampleOverride.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS)
-
+				exampleOverride.ForwardDestination = v1beta1.LocalDNSForwardDestinationVnetDNS
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
@@ -823,11 +817,10 @@ var _ = Describe("CEL/Validation", func() {
 
 			It("should reject multiple subzones ending with cluster.local forwarded to VnetDNS", func() {
 				subZoneOverride1 := createCompleteLocalDNSOverrides(false)
-				subZoneOverride1.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS)
+				subZoneOverride1.ForwardDestination = v1beta1.LocalDNSForwardDestinationVnetDNS
 
 				subZoneOverride2 := createCompleteLocalDNSOverrides(false)
-				subZoneOverride2.ForwardDestination = lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS)
-
+				subZoneOverride2.ForwardDestination = v1beta1.LocalDNSForwardDestinationVnetDNS
 				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{

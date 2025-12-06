@@ -46,7 +46,7 @@ var (
 	completeKubeDNSOverrides = map[string]*v1beta1.LocalDNSOverrides{
 		".": {
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
@@ -56,7 +56,7 @@ var (
 		},
 		"cluster.local": {
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),
@@ -70,7 +70,7 @@ var (
 	completeVnetDNSOverrides = map[string]*v1beta1.LocalDNSOverrides{
 		".": {
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
+			ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
@@ -80,7 +80,7 @@ var (
 		},
 		"cluster.local": {
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
-			ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(1000)),
 			Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolForceTCP),

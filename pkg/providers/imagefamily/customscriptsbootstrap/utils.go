@@ -126,8 +126,8 @@ func convertLocalDNSOverrideToModel(override *v1beta1.LocalDNSOverrides) *models
 		modelOverride.Protocol = &protocol
 	}
 
-	if override.ForwardDestination != nil {
-		forwardDest := string(*override.ForwardDestination)
+	if override.ForwardDestination != "" {
+		forwardDest := string(override.ForwardDestination)
 		modelOverride.ForwardDestination = &forwardDest
 	}
 

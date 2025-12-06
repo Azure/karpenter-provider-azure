@@ -147,7 +147,7 @@ type LocalDNSOverrides struct {
 	Protocol *LocalDNSProtocol `json:"protocol"`
 	// Destination server for DNS queries to be forwarded from localDNS.
 	// +required
-	ForwardDestination *LocalDNSForwardDestination `json:"forwardDestination"`
+	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination"`
 	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +required
 	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy"`

@@ -698,7 +698,7 @@ var _ = Describe("InstanceType Provider", func() {
 						".": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
 							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-							ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationVnetDNS),
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 							MaxConcurrent:      lo.ToPtr(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
@@ -708,7 +708,7 @@ var _ = Describe("InstanceType Provider", func() {
 						"cluster.local": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
 							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-							ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 							MaxConcurrent:      lo.ToPtr(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
@@ -720,7 +720,7 @@ var _ = Describe("InstanceType Provider", func() {
 						".": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
 							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-							ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 							MaxConcurrent:      lo.ToPtr(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
@@ -730,7 +730,7 @@ var _ = Describe("InstanceType Provider", func() {
 						"cluster.local": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
 							Protocol:           lo.ToPtr(v1beta1.LocalDNSProtocolPreferUDP),
-							ForwardDestination: lo.ToPtr(v1beta1.LocalDNSForwardDestinationClusterCoreDNS),
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
 							MaxConcurrent:      lo.ToPtr(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
