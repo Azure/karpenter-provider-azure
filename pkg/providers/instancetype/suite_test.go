@@ -703,7 +703,7 @@ var _ = Describe("InstanceType Provider", func() {
 							MaxConcurrent:      lo.ToPtr(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
 						"cluster.local": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
@@ -713,7 +713,7 @@ var _ = Describe("InstanceType Provider", func() {
 							MaxConcurrent:      lo.ToPtr(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
 					},
 					KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
@@ -725,7 +725,7 @@ var _ = Describe("InstanceType Provider", func() {
 							MaxConcurrent:      lo.ToPtr(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
 						"cluster.local": {
 							QueryLogging:       lo.ToPtr(v1beta1.LocalDNSQueryLoggingError),
@@ -735,7 +735,7 @@ var _ = Describe("InstanceType Provider", func() {
 							MaxConcurrent:      lo.ToPtr(int32(100)),
 							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
-							ServeStale:         lo.ToPtr(v1beta1.LocalDNSServeStaleVerify),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
 					},
 				}

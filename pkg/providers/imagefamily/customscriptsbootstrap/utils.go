@@ -150,8 +150,8 @@ func convertLocalDNSOverrideToModel(override *v1beta1.LocalDNSOverrides) *models
 		modelOverride.ServeStaleDurationInSeconds = &seconds
 	}
 
-	if override.ServeStale != nil {
-		serveStale := string(*override.ServeStale)
+	if override.ServeStale != "" {
+		serveStale := string(override.ServeStale)
 		modelOverride.ServeStale = &serveStale
 	}
 
