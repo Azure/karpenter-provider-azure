@@ -151,7 +151,7 @@ var _ = Describe("LocalDNS", func() {
 		env.ExpectCreated(nodeClass, nodePool, deployment)
 
 		By("Waiting for node to be provisioned")
-		env.ExpectCreatedNodeCount("==", 1)
+		env.EventuallyExpectCreatedNodeCount("==", 1)
 
 		By("Waiting for inflate pod to be scheduled and running")
 		var inflatePod *corev1.Pod
