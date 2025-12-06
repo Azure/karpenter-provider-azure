@@ -149,7 +149,7 @@ type LocalDNSOverrides struct {
 	ForwardDestination *LocalDNSForwardDestination `json:"forwardDestination"`
 	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +required
-	ForwardPolicy *LocalDNSForwardPolicy `json:"forwardPolicy"`
+	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy"`
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
 	// +required

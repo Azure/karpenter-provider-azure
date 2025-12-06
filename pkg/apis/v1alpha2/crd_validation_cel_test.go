@@ -47,7 +47,7 @@ var _ = Describe("CEL/Validation", func() {
 			QueryLogging:       lo.ToPtr(v1alpha2.LocalDNSQueryLoggingError),
 			Protocol:           lo.ToPtr(v1alpha2.LocalDNSProtocolPreferUDP),
 			ForwardDestination: lo.ToPtr(forwardDest),
-			ForwardPolicy:      lo.ToPtr(v1alpha2.LocalDNSForwardPolicySequential),
+			ForwardPolicy:      v1alpha2.LocalDNSForwardPolicySequential,
 			MaxConcurrent:      lo.ToPtr(int32(100)),
 			CacheDuration:      karpv1.MustParseNillableDuration("1h"),
 			ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
@@ -235,7 +235,6 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("missing QueryLogging", func(o *v1alpha2.LocalDNSOverrides) { o.QueryLogging = nil }),
 			Entry("missing Protocol", func(o *v1alpha2.LocalDNSOverrides) { o.Protocol = nil }),
 			Entry("missing ForwardDestination", func(o *v1alpha2.LocalDNSOverrides) { o.ForwardDestination = nil }),
-			Entry("missing ForwardPolicy", func(o *v1alpha2.LocalDNSOverrides) { o.ForwardPolicy = nil }),
 			Entry("missing MaxConcurrent", func(o *v1alpha2.LocalDNSOverrides) { o.MaxConcurrent = nil }),
 		)
 
@@ -350,7 +349,7 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid forward destination: empty", lo.ToPtr(v1alpha2.LocalDNSForwardDestination("")), "spec.localDNS.vnetDNSOverrides"),
 		)
 
-		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy *v1alpha2.LocalDNSForwardPolicy, expectedErr string) {
+		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy v1alpha2.LocalDNSForwardPolicy, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSOverrides(false)
 			overrideConfig.ForwardPolicy = forwardPolicy
 			nodeClass := &v1alpha2.AKSNodeClass{
@@ -371,11 +370,11 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid forward policy: Sequential", lo.ToPtr(v1alpha2.LocalDNSForwardPolicySequential), ""),
-			Entry("valid forward policy: RoundRobin", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRoundRobin), ""),
-			Entry("valid forward policy: Random", lo.ToPtr(v1alpha2.LocalDNSForwardPolicyRandom), ""),
-			Entry("invalid forward policy: invalid-string", lo.ToPtr(v1alpha2.LocalDNSForwardPolicy("invalid-string")), "spec.localDNS.vnetDNSOverrides"),
-			Entry("invalid forward policy: empty", lo.ToPtr(v1alpha2.LocalDNSForwardPolicy("")), "spec.localDNS.vnetDNSOverrides"),
+			Entry("valid forward policy: Sequential", v1alpha2.LocalDNSForwardPolicySequential, ""),
+			Entry("valid forward policy: RoundRobin", v1alpha2.LocalDNSForwardPolicyRoundRobin, ""),
+			Entry("valid forward policy: Random", v1alpha2.LocalDNSForwardPolicyRandom, ""),
+			Entry("invalid forward policy: invalid-string", v1alpha2.LocalDNSForwardPolicy("invalid-string"), "spec.localDNS.vnetDNSOverrides"),
+			Entry("invalid forward policy: empty", v1alpha2.LocalDNSForwardPolicy(""), "spec.localDNS.vnetDNSOverrides"),
 		)
 
 		DescribeTable("should validate LocalDNSServeStale", func(serveStale v1alpha2.LocalDNSServeStale, expectedErr string) {

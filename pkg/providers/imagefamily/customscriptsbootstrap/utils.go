@@ -131,8 +131,8 @@ func convertLocalDNSOverrideToModel(override *v1beta1.LocalDNSOverrides) *models
 		modelOverride.ForwardDestination = &forwardDest
 	}
 
-	if override.ForwardPolicy != nil {
-		forwardPolicy := string(*override.ForwardPolicy)
+	if override.ForwardPolicy != "" {
+		forwardPolicy := string(override.ForwardPolicy)
 		modelOverride.ForwardPolicy = &forwardPolicy
 	}
 
