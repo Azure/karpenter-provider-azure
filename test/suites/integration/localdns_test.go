@@ -43,8 +43,9 @@ var (
 	staleDuration = 3600 * time.Second
 
 	// Complete KubeDNS overrides configuration
-	completeKubeDNSOverrides = map[string]*v1beta1.LocalDNSOverrides{
-		".": {
+	completeKubeDNSOverrides = []v1beta1.LocalDNSZoneOverride{
+		{
+			Zone:               ".",
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
@@ -54,7 +55,8 @@ var (
 			ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
 		},
-		"cluster.local": {
+		{
+			Zone:               "cluster.local",
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
@@ -67,8 +69,9 @@ var (
 	}
 
 	// Complete VnetDNS overrides configuration
-	completeVnetDNSOverrides = map[string]*v1beta1.LocalDNSOverrides{
-		".": {
+	completeVnetDNSOverrides = []v1beta1.LocalDNSZoneOverride{
+		{
+			Zone:               ".",
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
@@ -78,7 +81,8 @@ var (
 			ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 			ServeStaleDuration: karpv1.NillableDuration{Duration: &staleDuration},
 		},
-		"cluster.local": {
+		{
+			Zone:               "cluster.local",
 			CacheDuration:      karpv1.NillableDuration{Duration: &cacheDuration},
 			ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 			ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,

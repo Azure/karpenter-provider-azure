@@ -86,21 +86,21 @@ func convertLocalDNSToModel(localDNS *v1beta1.LocalDNS) *models.LocalDNSProfile 
 	}
 
 	// Convert VnetDNSOverrides
-	if localDNS.VnetDNSOverrides != nil {
+	if len(localDNS.VnetDNSOverrides) > 0 {
 		profile.VnetDNSOverrides = make(models.LocalDNSOverrides)
-		for key, override := range localDNS.VnetDNSOverrides {
-			if convertedOverride := convertLocalDNSOverrideToModel(override); convertedOverride != nil {
-				profile.VnetDNSOverrides[key] = *convertedOverride
+		for _, override := range localDNS.VnetDNSOverrides {
+			if convertedOverride := convertLocalDNSZoneOverrideToModel(&override); convertedOverride != nil {
+				profile.VnetDNSOverrides[override.Zone] = *convertedOverride
 			}
 		}
 	}
 
 	// Convert KubeDNSOverrides
-	if localDNS.KubeDNSOverrides != nil {
+	if len(localDNS.KubeDNSOverrides) > 0 {
 		profile.KubeDNSOverrides = make(models.LocalDNSOverrides)
-		for key, override := range localDNS.KubeDNSOverrides {
-			if convertedOverride := convertLocalDNSOverrideToModel(override); convertedOverride != nil {
-				profile.KubeDNSOverrides[key] = *convertedOverride
+		for _, override := range localDNS.KubeDNSOverrides {
+			if convertedOverride := convertLocalDNSZoneOverrideToModel(&override); convertedOverride != nil {
+				profile.KubeDNSOverrides[override.Zone] = *convertedOverride
 			}
 		}
 	}
@@ -108,8 +108,8 @@ func convertLocalDNSToModel(localDNS *v1beta1.LocalDNS) *models.LocalDNSProfile 
 	return profile
 }
 
-// convertLocalDNSOverrideToModel converts v1beta1.LocalDNSOverrides to models.LocalDNSOverride
-func convertLocalDNSOverrideToModel(override *v1beta1.LocalDNSOverrides) *models.LocalDNSOverride {
+// convertLocalDNSZoneOverrideToModel converts v1beta1.LocalDNSZoneOverride to models.LocalDNSOverride
+func convertLocalDNSZoneOverrideToModel(override *v1beta1.LocalDNSZoneOverride) *models.LocalDNSOverride {
 	if override == nil {
 		return nil
 	}

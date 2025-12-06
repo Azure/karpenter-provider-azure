@@ -694,8 +694,9 @@ var _ = Describe("InstanceType Provider", func() {
 				// Note: VnetDNS and KubeDNS overrides must contain both "." and "cluster.local" zones
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 					Mode: localDNSMode,
-					VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-						".": {
+					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
 							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
@@ -705,7 +706,8 @@ var _ = Describe("InstanceType Provider", func() {
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
-						"cluster.local": {
+						{
+							Zone:               "cluster.local",
 							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
@@ -716,8 +718,9 @@ var _ = Describe("InstanceType Provider", func() {
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
 					},
-					KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-						".": {
+					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
 							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
@@ -727,7 +730,8 @@ var _ = Describe("InstanceType Provider", func() {
 							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
 							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
 						},
-						"cluster.local": {
+						{
+							Zone:               "cluster.local",
 							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,

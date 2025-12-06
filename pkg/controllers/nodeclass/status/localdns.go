@@ -74,29 +74,29 @@ type validationError struct {
 
 func (r *LocalDNSReconciler) validate(logger logr.Logger, localDNS *v1beta1.LocalDNS) *validationError {
 	// Validate VnetDNSOverrides
-	if err := r.validateOverridesMap(logger, localDNS.VnetDNSOverrides); err != nil {
+	if err := r.validateOverridesList(logger, localDNS.VnetDNSOverrides); err != nil {
 		return err
 	}
 
 	// Validate KubeDNSOverrides
-	if err := r.validateOverridesMap(logger, localDNS.KubeDNSOverrides); err != nil {
+	if err := r.validateOverridesList(logger, localDNS.KubeDNSOverrides); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (r *LocalDNSReconciler) validateOverridesMap(logger logr.Logger, overrides map[string]*v1beta1.LocalDNSOverrides) *validationError {
-	if overrides == nil {
+func (r *LocalDNSReconciler) validateOverridesList(logger logr.Logger, overrides []v1beta1.LocalDNSZoneOverride) *validationError {
+	if len(overrides) == 0 {
 		return nil
 	}
 	// Validate zone name format
-	for zone := range overrides {
-		if zone != "." && !zoneRegex.MatchString(zone) {
-			logger.Info("Invalid zone name format", "zone", zone)
+	for _, override := range overrides {
+		if override.Zone != "." && !zoneRegex.MatchString(override.Zone) {
+			logger.Info("Invalid zone name format", "zone", override.Zone)
 			return &validationError{
 				reason:  LocalDNSUnreadyReasonInvalidConfiguration,
-				message: fmt.Sprintf("Invalid zone name format: '%s'. Zone names must be valid DNS labels (alphanumeric with hyphens/underscores, max 63 characters per label, cannot start/end with hyphen or underscore)", zone),
+				message: fmt.Sprintf("Invalid zone name format: '%s'. Zone names must be valid DNS labels (alphanumeric with hyphens/underscores, max 63 characters per label, cannot start/end with hyphen or underscore)", override.Zone),
 			}
 		}
 	}

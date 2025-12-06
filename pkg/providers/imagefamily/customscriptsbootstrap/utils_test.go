@@ -236,8 +236,9 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 			name: "LocalDNS with VnetDNSOverrides",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
-				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					"example.com": {
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:         "example.com",
 						QueryLogging: v1beta1.LocalDNSQueryLoggingLog,
 						Protocol:     v1beta1.LocalDNSProtocolForceTCP,
 					},
@@ -256,8 +257,9 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 		{
 			name: "LocalDNS with KubeDNSOverrides",
 			localDNS: &v1beta1.LocalDNS{
-				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					"cluster.local": {
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               "cluster.local",
 						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
 						MaxConcurrent:      lo.ToPtr(int32(100)),
 					},
@@ -276,13 +278,15 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 			name: "LocalDNS with both VnetDNS and KubeDNS overrides",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModeDisabled,
-				VnetDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					"vnet.domain": {
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:     "vnet.domain",
 						Protocol: v1beta1.LocalDNSProtocolPreferUDP,
 					},
 				},
-				KubeDNSOverrides: map[string]*v1beta1.LocalDNSOverrides{
-					"kube.domain": {
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:          "kube.domain",
 						ForwardPolicy: v1beta1.LocalDNSForwardPolicyRoundRobin,
 					},
 				},
@@ -311,10 +315,10 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 	}
 }
 
-func TestConvertLocalDNSOverrideToModel(t *testing.T) {
+func TestConvertLocalDNSZoneOverrideToModel(t *testing.T) {
 	tests := []struct {
 		name     string
-		override *v1beta1.LocalDNSOverrides
+		override *v1beta1.LocalDNSZoneOverride
 		expected *models.LocalDNSOverride
 	}{
 		{
@@ -324,7 +328,8 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 		},
 		{
 			name: "Override with all fields",
-			override: &v1beta1.LocalDNSOverrides{
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:               "example.com",
 				QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
 				Protocol:           v1beta1.LocalDNSProtocolForceTCP,
 				ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
@@ -347,7 +352,8 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 		},
 		{
 			name: "Override with only duration fields",
-			override: &v1beta1.LocalDNSOverrides{
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:               "example.com",
 				CacheDuration:      karpv1.MustParseNillableDuration("2h30m"),
 				ServeStaleDuration: karpv1.MustParseNillableDuration("45m"),
 			},
@@ -358,7 +364,8 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 		},
 		{
 			name: "Override with complex duration",
-			override: &v1beta1.LocalDNSOverrides{
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:               "example.com",
 				CacheDuration:      karpv1.MustParseNillableDuration("1h30m45s"),
 				ServeStaleDuration: karpv1.MustParseNillableDuration("15m30s"),
 			},
@@ -369,7 +376,8 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 		},
 		{
 			name: "Override with zero duration values",
-			override: &v1beta1.LocalDNSOverrides{
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:               "example.com",
 				CacheDuration:      karpv1.NillableDuration{},
 				ServeStaleDuration: karpv1.NillableDuration{},
 			},
@@ -377,7 +385,8 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 		},
 		{
 			name: "Override with only enum fields",
-			override: &v1beta1.LocalDNSOverrides{
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:               "example.com",
 				QueryLogging:       v1beta1.LocalDNSQueryLoggingLog,
 				Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
 				ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
@@ -394,7 +403,8 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 		},
 		{
 			name: "Override with MaxConcurrent only",
-			override: &v1beta1.LocalDNSOverrides{
+			override: &v1beta1.LocalDNSZoneOverride{
+				Zone:          "example.com",
 				MaxConcurrent: lo.ToPtr(int32(200)),
 			},
 			expected: &models.LocalDNSOverride{
@@ -405,7 +415,7 @@ func TestConvertLocalDNSOverrideToModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertLocalDNSOverrideToModel(tt.override)
+			result := convertLocalDNSZoneOverrideToModel(tt.override)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
