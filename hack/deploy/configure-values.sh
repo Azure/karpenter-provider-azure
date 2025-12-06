@@ -77,6 +77,7 @@ NODE_IDENTITIES=$(jq -r ".identityProfile.kubeletidentity.resourceId" <<< "$AKS_
 KARPENTER_USER_ASSIGNED_CLIENT_ID=$(az identity show --resource-group "${AZURE_RESOURCE_GROUP}" --name "${AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME}" --query 'clientId' -otsv)
 KUBELET_IDENTITY_CLIENT_ID=$(jq -r ".identityProfile.kubeletidentity.clientId // empty" <<< "$AKS_JSON")
 
+AZURE_SIG_SUBSCRIPTION_ID=""
 # For Machine API mode
 if [[ "${PROVISION_MODE:-}" == "aksmachineapi" ]]; then
     USE_SIG="true"
