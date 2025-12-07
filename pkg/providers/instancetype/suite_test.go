@@ -780,6 +780,98 @@ var _ = Describe("InstanceType Provider", func() {
 			v1beta1.LocalDNSMode(""), "", true, true),
 	)
 
+	Context("Cache invalidation with LocalDNS", func() {
+		It("should return different instance type lists when LocalDNS mode changes", func() {
+			// First, get instance types with LocalDNS disabled
+			nodeClassDisabled := test.AKSNodeClass()
+			nodeClassDisabled.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeDisabled,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+			}
+			ExpectApplied(ctx, env.Client, nodeClassDisabled)
+			instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Now get instance types with LocalDNS required
+			nodeClassEnabled := test.AKSNodeClass()
+			nodeClassEnabled.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+			}
+			ExpectApplied(ctx, env.Client, nodeClassEnabled)
+			instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
+			Expect(err).ToNot(HaveOccurred())
+
+			// The lists should be different sizes
+			Expect(len(instanceTypesEnabled)).To(BeNumerically("<", len(instanceTypesDisabled)),
+				"LocalDNS Required should filter out small SKUs")
+
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			// Verify that small SKUs (< 4 vCPUs) are present when disabled but absent when enabled
+			Expect(instanceTypesDisabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+				"Standard_D2s_v3 (2 vCPUs) should be included when LocalDNS is disabled")
+			Expect(instanceTypesEnabled).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+				"Standard_D2s_v3 (2 vCPUs) should be excluded when LocalDNS is required")
+
+			// Verify that large SKUs (>= 4 vCPUs) are present in both
+			Expect(instanceTypesDisabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+				"Standard_D4s_v3 (4 vCPUs) should be included when LocalDNS is disabled")
+			Expect(instanceTypesEnabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+				"Standard_D4s_v3 (4 vCPUs) should be included when LocalDNS is required")
+		})
+	})
+
 	Context("Ephemeral Disk", func() {
 		var originalOptions *options.Options
 		BeforeEach(func() {
