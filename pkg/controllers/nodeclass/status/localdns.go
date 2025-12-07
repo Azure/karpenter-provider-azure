@@ -78,22 +78,27 @@ type validationError struct {
 }
 
 func (r *LocalDNSReconciler) validate(logger logr.Logger, localDNS *v1beta1.LocalDNS) *validationError {
-	// Validate VnetDNSOverrides (isVnetDNS=true enables extra forwarding restriction)
-	if err := r.validateOverridesList(logger, localDNS.VnetDNSOverrides, fieldVnetDNSOverrides, true); err != nil {
+	// Validate VnetDNSOverrides
+	if err := r.validateOverridesList(logger, localDNS.VnetDNSOverrides, true); err != nil {
 		return err
 	}
 
 	// Validate KubeDNSOverrides
-	if err := r.validateOverridesList(logger, localDNS.KubeDNSOverrides, fieldKubeDNSOverrides, false); err != nil {
+	if err := r.validateOverridesList(logger, localDNS.KubeDNSOverrides, false); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (r *LocalDNSReconciler) validateOverridesList(logger logr.Logger, overrides []v1beta1.LocalDNSZoneOverride, fieldName string, isVnetDNS bool) *validationError {
+func (r *LocalDNSReconciler) validateOverridesList(logger logr.Logger, overrides []v1beta1.LocalDNSZoneOverride, isVnetDNS bool) *validationError {
 	if len(overrides) == 0 {
 		return nil
+	}
+
+	fieldName := fieldKubeDNSOverrides
+	if isVnetDNS {
+		fieldName = fieldVnetDNSOverrides
 	}
 
 	seenZones := make(map[string]bool)

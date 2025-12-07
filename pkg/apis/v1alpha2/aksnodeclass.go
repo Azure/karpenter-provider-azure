@@ -131,7 +131,6 @@ type LocalDNS struct {
 }
 
 // LocalDNSZoneOverride specifies DNS override configuration for a specific zone
-// +kubebuilder:validation:XValidation:rule="!(has(self.serveStale) && self.serveStale == 'Verify' && has(self.protocol) && self.protocol == 'ForceTCP')",message="ServeStale verify cannot be used with ForceTCP protocol"
 type LocalDNSZoneOverride struct {
 	// Zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
 	// +required

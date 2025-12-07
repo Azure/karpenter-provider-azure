@@ -262,4 +262,201 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			Expect(condition.Message).To(ContainSubstring("Invalid zone name format"))
 		})
 	})
+
+	Context("when VnetDNSOverrides has duplicate zones", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					createZoneOverride("example.com", false),
+					createZoneOverride("example.com", false), // Duplicate
+					createZoneOverride("cluster.local", false),
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
+				},
+			}
+		})
+
+		It("should set LocalDNSReady condition to false", func() {
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Message).To(ContainSubstring("Duplicate zone 'example.com'"))
+			Expect(condition.Message).To(ContainSubstring("vnetDNSOverrides"))
+		})
+	})
+
+	Context("when KubeDNSOverrides has duplicate zones", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					createZoneOverride("cluster.local", false),
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
+					createZoneOverride("cluster.local", false), // Duplicate
+				},
+			}
+		})
+
+		It("should set LocalDNSReady condition to false", func() {
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Message).To(ContainSubstring("Duplicate zone 'cluster.local'"))
+			Expect(condition.Message).To(ContainSubstring("kubeDNSOverrides"))
+		})
+	})
+
+	Context("when VnetDNSOverrides missing required zones", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride("example.com", false),
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
+				},
+			}
+		})
+
+		It("should set LocalDNSReady condition to false", func() {
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Message).To(ContainSubstring("vnetDNSOverrides must contain required zones '.' and 'cluster.local'"))
+		})
+	})
+
+	Context("when KubeDNSOverrides missing required zones", func() {
+		BeforeEach(func() {
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					createZoneOverride("cluster.local", false),
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride("example.com", false),
+				},
+			}
+		})
+
+		It("should set LocalDNSReady condition to false", func() {
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Message).To(ContainSubstring("kubeDNSOverrides must contain required zones '.' and 'cluster.local'"))
+		})
+	})
+
+	Context("when cluster.local zone forwards to VnetDNS", func() {
+		BeforeEach(func() {
+			invalidOverride := createZoneOverride("cluster.local", true) // true means forward to VnetDNS
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", true),
+					invalidOverride,
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
+				},
+			}
+		})
+
+		It("should set LocalDNSReady condition to false", func() {
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Message).To(ContainSubstring("DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS"))
+		})
+	})
+
+	Context("when root zone in VnetDNSOverrides forwards to ClusterCoreDNS", func() {
+		BeforeEach(func() {
+			invalidOverride := createZoneOverride(".", false) // false means forward to ClusterCoreDNS
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					invalidOverride,
+					createZoneOverride("cluster.local", false),
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
+				},
+			}
+		})
+
+		It("should set LocalDNSReady condition to false", func() {
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Message).To(ContainSubstring("DNS traffic for root zone cannot be forwarded to ClusterCoreDNS"))
+		})
+	})
+
+	Context("when ServeStale Verify is used with ForceTCP protocol", func() {
+		BeforeEach(func() {
+			invalidOverride := createZoneOverride(".", true)
+			invalidOverride.Protocol = v1beta1.LocalDNSProtocolForceTCP
+			invalidOverride.ServeStale = v1beta1.LocalDNSServeStaleVerify
+			nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					invalidOverride,
+					createZoneOverride("cluster.local", false),
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					createZoneOverride(".", false),
+					createZoneOverride("cluster.local", false),
+				},
+			}
+		})
+
+		It("should set LocalDNSReady condition to false", func() {
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			Expect(condition.IsFalse()).To(BeTrue())
+			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Message).To(ContainSubstring("ServeStale verify cannot be used with ForceTCP protocol"))
+		})
+	})
 })
