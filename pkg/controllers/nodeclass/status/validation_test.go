@@ -50,14 +50,14 @@ func createZoneOverride(zone string, forwardToVnetDNS bool) v1beta1.LocalDNSZone
 	}
 }
 
-var _ = Describe("LocalDNS Reconciler", func() {
+var _ = Describe("Validation Reconciler", func() {
 	var ctx context.Context
-	var reconciler *status.LocalDNSReconciler
+	var reconciler *status.ValidationReconciler
 	var nodeClass *v1beta1.AKSNodeClass
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		reconciler = status.NewLocalDNSReconciler()
+		reconciler = status.NewValidationReconciler()
 		nodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "test-nodeclass",
@@ -68,12 +68,12 @@ var _ = Describe("LocalDNS Reconciler", func() {
 	})
 
 	Context("when LocalDNS is not configured", func() {
-		It("should set LocalDNSReady condition to true", func() {
+		It("should set ValidationSucceeded condition to true", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
 	})
@@ -96,12 +96,12 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to true", func() {
+		It("should set ValidationSucceeded condition to true", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
 	})
@@ -122,14 +122,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false with InvalidConfiguration reason", func() {
+		It("should set ValidationSucceeded condition to false with InvalidConfiguration reason", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("invalid zone name format"))
 			Expect(condition.Message).To(ContainSubstring("-invalid.com"))
 		})
@@ -152,14 +152,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false with InvalidConfiguration reason", func() {
+		It("should set ValidationSucceeded condition to false with InvalidConfiguration reason", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("invalid zone name format"))
 			Expect(condition.Message).To(ContainSubstring("invalid..com"))
 		})
@@ -181,14 +181,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false", func() {
+		It("should set ValidationSucceeded condition to false", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 		})
 	})
 
@@ -205,12 +205,12 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to true (nil slices are allowed)", func() {
+		It("should set ValidationSucceeded condition to true (nil slices are allowed)", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
 	})
@@ -224,12 +224,12 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to true (nil slices are allowed)", func() {
+		It("should set ValidationSucceeded condition to true (nil slices are allowed)", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
 	})
@@ -256,9 +256,9 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("invalid zone name format"))
 		})
 	})
@@ -280,14 +280,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false", func() {
+		It("should set ValidationSucceeded condition to false", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("Duplicate zone 'example.com'"))
 			Expect(condition.Message).To(ContainSubstring("vnetDNSOverrides"))
 		})
@@ -309,14 +309,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false", func() {
+		It("should set ValidationSucceeded condition to false", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("Duplicate zone 'cluster.local'"))
 			Expect(condition.Message).To(ContainSubstring("kubeDNSOverrides"))
 		})
@@ -336,14 +336,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false", func() {
+		It("should set ValidationSucceeded condition to false", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("vnetDNSOverrides must contain required zones '.' and 'cluster.local'"))
 		})
 	})
@@ -362,14 +362,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false", func() {
+		It("should set ValidationSucceeded condition to false", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("kubeDNSOverrides must contain required zones '.' and 'cluster.local'"))
 		})
 	})
@@ -390,14 +390,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false", func() {
+		It("should set ValidationSucceeded condition to false", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("DNS traffic for 'cluster.local' cannot be forwarded to VnetDNS"))
 		})
 	})
@@ -418,14 +418,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false", func() {
+		It("should set ValidationSucceeded condition to false", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("DNS traffic for root zone cannot be forwarded to ClusterCoreDNS"))
 		})
 	})
@@ -448,14 +448,14 @@ var _ = Describe("LocalDNS Reconciler", func() {
 			}
 		})
 
-		It("should set LocalDNSReady condition to false", func() {
+		It("should set ValidationSucceeded condition to false", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{}))
 
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeLocalDNSReady)
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.LocalDNSUnreadyReasonInvalidConfiguration))
+			Expect(condition.Reason).To(Equal(status.LocalDNSValidationFailed))
 			Expect(condition.Message).To(ContainSubstring("ServeStale verify cannot be used with ForceTCP protocol"))
 		})
 	})

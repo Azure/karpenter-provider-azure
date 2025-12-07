@@ -29,46 +29,42 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 )
 
-type LocalDNSReconciler struct{}
+type ValidationReconciler struct{}
 
-func NewLocalDNSReconciler() *LocalDNSReconciler {
-	return &LocalDNSReconciler{}
+func NewValidationReconciler() *ValidationReconciler {
+	return &ValidationReconciler{}
 }
 
 const (
-	LocalDNSUnreadyReasonInvalidConfiguration = "InvalidConfiguration"
-	localDNSReconcilerName                    = "nodeclass.localdns"
-	zoneRoot                                  = "."
-	zoneClusterLocal                          = "cluster.local"
-	fieldVnetDNSOverrides                     = "vnetDNSOverrides"
-	fieldKubeDNSOverrides                     = "kubeDNSOverrides"
+	LocalDNSValidationFailed = "LocalDNSValidationFailed"
+	validationReconcilerName = "nodeclass.validation"
+	zoneRoot                 = "."
+	zoneClusterLocal         = "cluster.local"
+	fieldVnetDNSOverrides    = "vnetDNSOverrides"
+	fieldKubeDNSOverrides    = "kubeDNSOverrides"
 )
 
 var (
 	zoneRegex = regexp.MustCompile(`^(?:[A-Za-z0-9](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9])?\.?$`)
 )
 
-func (r *LocalDNSReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	logger := log.FromContext(ctx).WithName(localDNSReconcilerName)
+func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
+	logger := log.FromContext(ctx).WithName(validationReconcilerName)
 
-	// If LocalDNS is not configured, mark as ready (it's optional)
-	if nodeClass.Spec.LocalDNS == nil {
-		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
-		return reconcile.Result{}, nil
-	}
-
-	// Run all validations
-	if err := r.validate(logger, nodeClass.Spec.LocalDNS); err != nil {
-		nodeClass.StatusConditions().SetFalse(
-			v1beta1.ConditionTypeLocalDNSReady,
-			err.reason,
-			err.message,
-		)
-		return reconcile.Result{}, nil
+	// Run LocalDNS validation if configured
+	if nodeClass.Spec.LocalDNS != nil {
+		if err := r.validateLocalDNS(logger, nodeClass.Spec.LocalDNS); err != nil {
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeValidationSucceeded,
+				err.reason,
+				err.message,
+			)
+			return reconcile.Result{}, nil
+		}
 	}
 
 	// All validations passed
-	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeLocalDNSReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{}, nil
 }
 
@@ -77,7 +73,7 @@ type validationError struct {
 	message string
 }
 
-func (r *LocalDNSReconciler) validate(logger logr.Logger, localDNS *v1beta1.LocalDNS) *validationError {
+func (r *ValidationReconciler) validateLocalDNS(logger logr.Logger, localDNS *v1beta1.LocalDNS) *validationError {
 	// Validate VnetDNSOverrides
 	if err := r.validateOverridesList(logger, localDNS.VnetDNSOverrides, true); err != nil {
 		return err
@@ -91,7 +87,7 @@ func (r *LocalDNSReconciler) validate(logger logr.Logger, localDNS *v1beta1.Loca
 	return nil
 }
 
-func (r *LocalDNSReconciler) validateOverridesList(logger logr.Logger, overrides []v1beta1.LocalDNSZoneOverride, isVnetDNS bool) *validationError {
+func (r *ValidationReconciler) validateOverridesList(logger logr.Logger, overrides []v1beta1.LocalDNSZoneOverride, isVnetDNS bool) *validationError {
 	if len(overrides) == 0 {
 		return nil
 	}
@@ -108,7 +104,7 @@ func (r *LocalDNSReconciler) validateOverridesList(logger logr.Logger, overrides
 		if seenZones[override.Zone] {
 			logger.Info("Duplicate zone found", "zone", override.Zone, "field", fieldName)
 			return &validationError{
-				reason:  LocalDNSUnreadyReasonInvalidConfiguration,
+				reason:  LocalDNSValidationFailed,
 				message: fmt.Sprintf("Duplicate zone '%s' in %s. Each zone must be unique.", override.Zone, fieldName),
 			}
 		}
@@ -118,7 +114,7 @@ func (r *LocalDNSReconciler) validateOverridesList(logger logr.Logger, overrides
 		if err := validateZoneForCoreDNSConfigMap(override.Zone); err != nil {
 			logger.Info("Invalid zone name format", "zone", override.Zone, "error", err)
 			return &validationError{
-				reason:  LocalDNSUnreadyReasonInvalidConfiguration,
+				reason:  LocalDNSValidationFailed,
 				message: err.Error(),
 			}
 		}
@@ -127,7 +123,7 @@ func (r *LocalDNSReconciler) validateOverridesList(logger logr.Logger, overrides
 		if err := validateOverrideForZone(override, isVnetDNS); err != nil {
 			logger.Info("Invalid override for zone", "zone", override.Zone, "error", err)
 			return &validationError{
-				reason:  LocalDNSUnreadyReasonInvalidConfiguration,
+				reason:  LocalDNSValidationFailed,
 				message: err.Error(),
 			}
 		}
@@ -137,7 +133,7 @@ func (r *LocalDNSReconciler) validateOverridesList(logger logr.Logger, overrides
 	if !seenZones[zoneRoot] || !seenZones[zoneClusterLocal] {
 		logger.Info("Missing required zones", "field", fieldName, "hasRootZone", seenZones[zoneRoot], "hasClusterLocal", seenZones[zoneClusterLocal])
 		return &validationError{
-			reason:  LocalDNSUnreadyReasonInvalidConfiguration,
+			reason:  LocalDNSValidationFailed,
 			message: fmt.Sprintf("%s must contain required zones '%s' and '%s'", fieldName, zoneRoot, zoneClusterLocal),
 		}
 	}
