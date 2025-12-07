@@ -262,14 +262,7 @@ spec:
                       - serveStaleDuration
                       - zone
                       type: object
-                      x-kubernetes-validations:
-                      - message: ServeStale verify cannot be used with ForceTCP protocol
-                        rule: '!(has(self.serveStale) && self.serveStale == ''Verify''
-                          && has(self.protocol) && self.protocol == ''ForceTCP'')'
                     type: array
-                    x-kubernetes-validations:
-                    - message: each zone must be unique in kubeDNSOverrides
-                      rule: self.all(o, self.exists_one(p, p.zone == o.zone))
                   mode:
                     description: Mode of enablement for localDNS.
                     enum:
@@ -352,38 +345,12 @@ spec:
                       - serveStaleDuration
                       - zone
                       type: object
-                      x-kubernetes-validations:
-                      - message: ServeStale verify cannot be used with ForceTCP protocol
-                        rule: '!(has(self.serveStale) && self.serveStale == ''Verify''
-                          && has(self.protocol) && self.protocol == ''ForceTCP'')'
                     type: array
-                    x-kubernetes-validations:
-                    - message: each zone must be unique in vnetDNSOverrides
-                      rule: self.all(o, self.exists_one(p, p.zone == o.zone))
                 required:
                 - kubeDNSOverrides
                 - mode
                 - vnetDNSOverrides
                 type: object
-                x-kubernetes-validations:
-                - message: vnetDNSOverrides must contain required zones '.' and 'cluster.local'
-                  rule: self.vnetDNSOverrides.exists(o, o.zone == '.') && self.vnetDNSOverrides.exists(o,
-                    o.zone == 'cluster.local')
-                - message: kubeDNSOverrides must contain required zones '.' and 'cluster.local'
-                  rule: self.kubeDNSOverrides.exists(o, o.zone == '.') && self.kubeDNSOverrides.exists(o,
-                    o.zone == 'cluster.local')
-                - message: DNS traffic for root zone '.' cannot be forwarded to ClusterCoreDNS
-                    from vnetDNSOverrides
-                  rule: '!self.vnetDNSOverrides.exists(o, o.zone == ''.'' && has(o.forwardDestination)
-                    && o.forwardDestination == ''ClusterCoreDNS'')'
-                - message: DNS traffic for 'cluster.local' cannot be forwarded to
-                    VnetDNS from vnetDNSOverrides
-                  rule: '!self.vnetDNSOverrides.exists(o, o.zone.endsWith(''cluster.local'')
-                    && has(o.forwardDestination) && o.forwardDestination == ''VnetDNS'')'
-                - message: DNS traffic for 'cluster.local' cannot be forwarded to
-                    VnetDNS from kubeDNSOverrides
-                  rule: '!self.kubeDNSOverrides.exists(o, o.zone.endsWith(''cluster.local'')
-                    && has(o.forwardDestination) && o.forwardDestination == ''VnetDNS'')'
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
@@ -803,14 +770,7 @@ spec:
                       - serveStaleDuration
                       - zone
                       type: object
-                      x-kubernetes-validations:
-                      - message: ServeStale verify cannot be used with ForceTCP protocol
-                        rule: '!(has(self.serveStale) && self.serveStale == ''Verify''
-                          && has(self.protocol) && self.protocol == ''ForceTCP'')'
                     type: array
-                    x-kubernetes-validations:
-                    - message: each zone must be unique in kubeDNSOverrides
-                      rule: self.all(o, self.exists_one(p, p.zone == o.zone))
                   mode:
                     description: Mode of enablement for localDNS.
                     enum:
@@ -893,38 +853,12 @@ spec:
                       - serveStaleDuration
                       - zone
                       type: object
-                      x-kubernetes-validations:
-                      - message: ServeStale verify cannot be used with ForceTCP protocol
-                        rule: '!(has(self.serveStale) && self.serveStale == ''Verify''
-                          && has(self.protocol) && self.protocol == ''ForceTCP'')'
                     type: array
-                    x-kubernetes-validations:
-                    - message: each zone must be unique in vnetDNSOverrides
-                      rule: self.all(o, self.exists_one(p, p.zone == o.zone))
                 required:
                 - kubeDNSOverrides
                 - mode
                 - vnetDNSOverrides
                 type: object
-                x-kubernetes-validations:
-                - message: vnetDNSOverrides must contain required zones '.' and 'cluster.local'
-                  rule: self.vnetDNSOverrides.exists(o, o.zone == '.') && self.vnetDNSOverrides.exists(o,
-                    o.zone == 'cluster.local')
-                - message: kubeDNSOverrides must contain required zones '.' and 'cluster.local'
-                  rule: self.kubeDNSOverrides.exists(o, o.zone == '.') && self.kubeDNSOverrides.exists(o,
-                    o.zone == 'cluster.local')
-                - message: DNS traffic for root zone '.' cannot be forwarded to ClusterCoreDNS
-                    from vnetDNSOverrides
-                  rule: '!self.vnetDNSOverrides.exists(o, o.zone == ''.'' && has(o.forwardDestination)
-                    && o.forwardDestination == ''ClusterCoreDNS'')'
-                - message: DNS traffic for 'cluster.local' cannot be forwarded to
-                    VnetDNS from vnetDNSOverrides
-                  rule: '!self.vnetDNSOverrides.exists(o, o.zone.endsWith(''cluster.local'')
-                    && has(o.forwardDestination) && o.forwardDestination == ''VnetDNS'')'
-                - message: DNS traffic for 'cluster.local' cannot be forwarded to
-                    VnetDNS from kubeDNSOverrides
-                  rule: '!self.kubeDNSOverrides.exists(o, o.zone.endsWith(''cluster.local'')
-                    && has(o.forwardDestination) && o.forwardDestination == ''VnetDNS'')'
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
