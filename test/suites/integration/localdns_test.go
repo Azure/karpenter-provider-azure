@@ -185,9 +185,6 @@ var _ = Describe("LocalDNS", func() {
 		expectDNSResult(getDNSResultFromPod(disabledInternalPod), coreDNSServiceIP, "Test pod should use default DNS for internal DNS")
 
 		By("✓ Verified LocalDNS is properly disabled and DNS falls back to default configuration")
-
-		By("Adding sleep for manual inspection of pods")
-		time.Sleep(30 * time.Minute)
 	})
 })
 
