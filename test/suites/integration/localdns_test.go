@@ -105,8 +105,8 @@ var _ = Describe("LocalDNS", func() {
 	// =========================================================================
 	// Happy path LOCALDNS CONFIG TEST
 	// =========================================================================
-	It("should create a node with full LocalDNS configuration (overrides)", func() {
-		By("Configuring NodeClass with full LocalDNS configuration including overrides")
+	It("should enable and disable localdns", func() {
+		By("[PART 1: ENABLE LOCALDNS] Configuring NodeClass with full LocalDNS configuration including overrides")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
 			Mode:             v1beta1.LocalDNSModeRequired,
 			KubeDNSOverrides: completeKubeDNSOverrides,
@@ -126,6 +126,32 @@ var _ = Describe("LocalDNS", func() {
 		expectDNSResult(getDNSResultFromPod(pod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener")
 
 		By("✓ Verified LocalDNS is configured on the node")
+
+		// PART 2
+		By("[PART 2: DISABLE LOCALDNS] Disabling LocalDNS to test configuration change")
+		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+			Mode: v1beta1.LocalDNSModeDisabled,
+		}
+		env.ExpectUpdated(nodeClass)
+
+		By("Creating new pod to trigger node update with disabled LocalDNS")
+		disabledPod := createDNSTestPod()
+		env.ExpectCreated(disabledPod)
+		env.EventuallyExpectHealthy(disabledPod)
+
+		By("Waiting for LocalDNS to be disabled on the node")
+		expectNodeLocalDNSLabel(node, "disabled")
+
+		By("Verifying DNS resolution uses default DNS after LocalDNS is disabled")
+		expectDNSResult(getDNSResultFromNode(node), azureDNSIP, "Host network DNS should use default DNS")
+
+		By("Verifying DNS resolution from the test pod (pod network)")
+		expectDNSResult(getDNSResultFromPod(disabledPod), coreDNSServiceIP, "Test pod should use default DNS")
+
+		By("✓ Verified LocalDNS is properly disabled and DNS falls back to default configuration")
+
+		By("Adding sleep for manual inspection of pods")
+		time.Sleep(30 * time.Minute)
 	})
 })
 
@@ -135,8 +161,8 @@ const (
 	localDNSNodeListenerIP    = "169.254.10.10" // Handles external DNS from CoreDNS pods
 
 	// Standard DNS IPs
-	// azureDNSIP       = "168.63.129.16" // Azure's upstream DNS
-	// coreDNSServiceIP = "10.0.0.10"     // Default CoreDNS service IP in AKS
+	azureDNSIP       = "168.63.129.16" // Azure's upstream DNS
+	coreDNSServiceIP = "10.0.0.10"     // Default CoreDNS service IP in AKS
 
 	// Test timeouts
 	dnsTestTimeout = 3 * time.Minute
