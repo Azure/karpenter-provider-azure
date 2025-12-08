@@ -130,7 +130,9 @@ var _ = Describe("LocalDNS", func() {
 		// PART 2
 		By("[PART 2: DISABLE LOCALDNS] Disabling LocalDNS to test configuration change")
 		nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
-			Mode: v1beta1.LocalDNSModeDisabled,
+			Mode:             v1beta1.LocalDNSModeDisabled,
+			KubeDNSOverrides: completeKubeDNSOverrides,
+			VnetDNSOverrides: completeVnetDNSOverrides,
 		}
 		env.ExpectUpdated(nodeClass)
 
