@@ -136,10 +136,6 @@ var _ = Describe("LocalDNS", func() {
 		}
 		env.ExpectUpdated(nodeClass)
 
-		By("Creating new pod to trigger provisioning of a new node with disabled LocalDNS")
-		disabledPod := createDNSTestPod()
-		env.ExpectCreated(disabledPod)
-
 		By("Waiting for new node to be provisioned with disabled LocalDNS (drift will replace the old node)")
 		newNodes := env.EventuallyExpectCreatedNodeCount("==", 2)
 		var disabledNode *corev1.Node
@@ -150,12 +146,36 @@ var _ = Describe("LocalDNS", func() {
 			}
 		}
 		Expect(disabledNode).ToNot(BeNil(), "Should have provisioned a new node")
-		env.EventuallyExpectHealthy(disabledPod)
 
 		By(fmt.Sprintf("New node %s provisioned to replace old node %s", disabledNode.Name, enabledNode.Name))
 
 		By("Waiting for LocalDNS to be disabled on the new node")
 		expectNodeLocalDNSLabel(disabledNode, "disabled")
+
+		By("Creating pod with node selector to ensure it schedules on the new disabled node")
+		disabledPod := coretest.UnschedulablePod(coretest.PodOptions{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					"app": "localdns-test-disabled",
+				},
+			},
+			Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
+			Command: []string{
+				"sh", "-c",
+				"while true; do nslookup microsoft.com | grep Server: && sleep 30; done",
+			},
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("256M"),
+				},
+			},
+			NodeSelector: map[string]string{
+				corev1.LabelHostname: disabledNode.Name,
+			},
+		})
+		env.ExpectCreated(disabledPod)
+		env.EventuallyExpectHealthy(disabledPod)
 
 		By("Verifying DNS resolution uses default DNS after LocalDNS is disabled")
 		expectDNSResult(getDNSResultFromNode(disabledNode), azureDNSIP, "Host network DNS should use default DNS")
@@ -313,7 +333,7 @@ func getDNSResultFromNode(node *corev1.Node) DNSTestResult {
 		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
 		Command: []string{
 			"sh", "-c",
-			"nslookup kubernetes.default.svc.cluster.local && sleep 30",
+			"nslookup microsoft.com && sleep 30",
 		},
 		NodeSelector: map[string]string{
 			corev1.LabelHostname: node.Name,
