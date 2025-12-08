@@ -19,8 +19,8 @@ package v1beta1_test
 import (
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
