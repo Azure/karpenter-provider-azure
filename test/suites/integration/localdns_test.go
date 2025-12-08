@@ -113,8 +113,17 @@ var _ = Describe("LocalDNS", func() {
 			VnetDNSOverrides: completeVnetDNSOverrides,
 		}
 
-		enabledPod, enabledNode := createPodAndExpectNodeProvisioned(nodeClass, nodePool)
+		By("Creating unschedulable pods to trigger node provisioning on new Karpenter node")
+		enabledExternalPod := createDNSTestPod("microsoft.com", nil)
+		enabledInternalPod := createDNSTestPod("kubernetes.default.svc.cluster.local", nil)
+		env.ExpectCreated(nodeClass, nodePool, enabledExternalPod, enabledInternalPod)
 
+		By("Waiting for node to be provisioned")
+		enabledNode := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
+		env.EventuallyExpectHealthy(enabledExternalPod)
+		env.EventuallyExpectHealthy(enabledInternalPod)
+
+		By(fmt.Sprintf("✓ Node %s successfully created", enabledNode.Name))
 		By(fmt.Sprintf("✓ Node %s successfully created with full LocalDNS configuration", enabledNode.Name))
 
 		expectNodeLocalDNSLabel(enabledNode, "enabled")
@@ -122,8 +131,11 @@ var _ = Describe("LocalDNS", func() {
 		//	By("Verifying LocalDNS configuration is active from the provisioned node (host network)")
 		expectDNSResult(getDNSResultFromNode(enabledNode), localDNSNodeListenerIP, "Host network DNS should use LocalDNS node listener")
 
-		By("Verifying DNS resolution from the test pod (pod network)")
-		expectDNSResult(getDNSResultFromPod(enabledPod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener")
+		By("Verifying external DNS resolution from the test pod (pod network)")
+		expectDNSResult(getDNSResultFromPod(enabledExternalPod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener for external DNS")
+
+		By("Verifying internal DNS resolution from the test pod (pod network)")
+		expectDNSResult(getDNSResultFromPod(enabledInternalPod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener for internal DNS")
 
 		By("✓ Verified LocalDNS is configured on the node")
 
@@ -152,36 +164,25 @@ var _ = Describe("LocalDNS", func() {
 		By("Waiting for LocalDNS to be disabled on the new node")
 		expectNodeLocalDNSLabel(disabledNode, "disabled")
 
-		By("Creating pod with node selector to ensure it schedules on the new disabled node")
-		disabledPod := coretest.UnschedulablePod(coretest.PodOptions{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"app": "localdns-test-disabled",
-				},
-			},
-			Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
-			Command: []string{
-				"sh", "-c",
-				"while true; do nslookup microsoft.com | grep Server: && sleep 30; done",
-			},
-			ResourceRequirements: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("1"),
-					corev1.ResourceMemory: resource.MustParse("256M"),
-				},
-			},
-			NodeSelector: map[string]string{
-				corev1.LabelHostname: disabledNode.Name,
-			},
+		By("Creating pods with node selector to ensure they schedule on the new disabled node")
+		disabledExternalPod := createDNSTestPod("microsoft.com", map[string]string{
+			corev1.LabelHostname: disabledNode.Name,
 		})
-		env.ExpectCreated(disabledPod)
-		env.EventuallyExpectHealthy(disabledPod)
+		disabledInternalPod := createDNSTestPod("kubernetes.default.svc.cluster.local", map[string]string{
+			corev1.LabelHostname: disabledNode.Name,
+		})
+		env.ExpectCreated(disabledExternalPod, disabledInternalPod)
+		env.EventuallyExpectHealthy(disabledExternalPod)
+		env.EventuallyExpectHealthy(disabledInternalPod)
 
 		By("Verifying DNS resolution uses default DNS after LocalDNS is disabled")
 		expectDNSResult(getDNSResultFromNode(disabledNode), azureDNSIP, "Host network DNS should use default DNS")
 
-		By("Verifying DNS resolution from the test pod (pod network)")
-		expectDNSResult(getDNSResultFromPod(disabledPod), coreDNSServiceIP, "Test pod should use default DNS")
+		By("Verifying external DNS resolution from the test pod uses default DNS (pod network)")
+		expectDNSResult(getDNSResultFromPod(disabledExternalPod), coreDNSServiceIP, "Test pod should use default DNS for external DNS")
+
+		By("Verifying internal DNS resolution from the test pod uses default DNS (pod network)")
+		expectDNSResult(getDNSResultFromPod(disabledInternalPod), coreDNSServiceIP, "Test pod should use default DNS for internal DNS")
 
 		By("✓ Verified LocalDNS is properly disabled and DNS falls back to default configuration")
 
@@ -239,28 +240,11 @@ func expectNodeLocalDNSLabel(node *corev1.Node, expectedValue string) {
 	}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 }
 
-// createPodAndExpectNodeProvisioned creates a DNS test pod with given NodeClass and NodePool,
-// waits for Karpenter to provision a new node, and returns both the pod and node.
-// This is a common pattern for LocalDNS tests that need to verify configuration on fresh nodes.
-func createPodAndExpectNodeProvisioned(nodeClass *v1beta1.AKSNodeClass, nodePool *karpv1.NodePool) (*corev1.Pod, *corev1.Node) {
-	By("Creating unschedulable pod to trigger node provisioning on new Karpenter node")
-	pod := createDNSTestPod()
-	env.ExpectCreated(nodeClass, nodePool, pod)
-
-	By("Waiting for node to be provisioned")
-	node := env.EventuallyExpectCreatedNodeCount("==", 1)[0]
-	env.EventuallyExpectHealthy(pod)
-
-	By(fmt.Sprintf("✓ Node %s successfully created", node.Name))
-
-	return pod, node
-}
-
-// createDNSTestPod creates an unschedulable pod that continuously performs DNS lookups.
+// createDNSTestPod creates an unschedulable pod that continuously performs DNS lookups for a specific domain.
 // The pod is designed to trigger Karpenter to provision a new node and verify DNS configuration.
-// Use UnschedulablePod with resource requests to force Karpenter to provision a new node
-// rather than potentially scheduling on existing system nodes.
-func createDNSTestPod() *corev1.Pod {
+// domain: the domain to query (e.g., "microsoft.com" or "kubernetes.default.svc.cluster.local")
+// nodeSelector: optional node selector to target a specific node (nil for unschedulable pod)
+func createDNSTestPod(domain string, nodeSelector map[string]string) *corev1.Pod {
 	return coretest.UnschedulablePod(coretest.PodOptions{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
@@ -270,7 +254,7 @@ func createDNSTestPod() *corev1.Pod {
 		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
 		Command: []string{
 			"sh", "-c",
-			"while true; do nslookup microsoft.com | grep Server: && sleep 30; done",
+			fmt.Sprintf("while true; do nslookup %s | grep Server: && sleep 30; done", domain),
 		},
 		ResourceRequirements: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
@@ -278,6 +262,7 @@ func createDNSTestPod() *corev1.Pod {
 				corev1.ResourceMemory: resource.MustParse("256M"),
 			},
 		},
+		NodeSelector: nodeSelector,
 	})
 }
 
