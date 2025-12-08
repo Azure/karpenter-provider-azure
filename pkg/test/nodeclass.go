@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"sort"
 
+	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
-	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
