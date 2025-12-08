@@ -113,17 +113,17 @@ var _ = Describe("LocalDNS", func() {
 			VnetDNSOverrides: completeVnetDNSOverrides,
 		}
 
-		pod, node := createPodAndExpectNodeProvisioned(nodeClass, nodePool)
+		enabledPod, enabledNode := createPodAndExpectNodeProvisioned(nodeClass, nodePool)
 
-		By(fmt.Sprintf("✓ Node %s successfully created with full LocalDNS configuration", node.Name))
+		By(fmt.Sprintf("✓ Node %s successfully created with full LocalDNS configuration", enabledNode.Name))
 
-		expectNodeLocalDNSLabel(node, "enabled")
+		expectNodeLocalDNSLabel(enabledNode, "enabled")
 
 		//	By("Verifying LocalDNS configuration is active from the provisioned node (host network)")
-		expectDNSResult(getDNSResultFromNode(node), localDNSNodeListenerIP, "Host network DNS should use LocalDNS node listener")
+		expectDNSResult(getDNSResultFromNode(enabledNode), localDNSNodeListenerIP, "Host network DNS should use LocalDNS node listener")
 
 		By("Verifying DNS resolution from the test pod (pod network)")
-		expectDNSResult(getDNSResultFromPod(pod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener")
+		expectDNSResult(getDNSResultFromPod(enabledPod), localDNSClusterListenerIP, "Test pod should use LocalDNS cluster listener")
 
 		By("✓ Verified LocalDNS is configured on the node")
 
@@ -136,16 +136,29 @@ var _ = Describe("LocalDNS", func() {
 		}
 		env.ExpectUpdated(nodeClass)
 
-		By("Creating new pod to trigger node update with disabled LocalDNS")
+		By("Creating new pod to trigger provisioning of a new node with disabled LocalDNS")
 		disabledPod := createDNSTestPod()
 		env.ExpectCreated(disabledPod)
+
+		By("Waiting for new node to be provisioned with disabled LocalDNS (drift will replace the old node)")
+		newNodes := env.EventuallyExpectCreatedNodeCount("==", 2)
+		var disabledNode *corev1.Node
+		for i := range newNodes {
+			if newNodes[i].Name != enabledNode.Name {
+				disabledNode = newNodes[i]
+				break
+			}
+		}
+		Expect(disabledNode).ToNot(BeNil(), "Should have provisioned a new node")
 		env.EventuallyExpectHealthy(disabledPod)
 
-		By("Waiting for LocalDNS to be disabled on the node")
-		expectNodeLocalDNSLabel(node, "disabled")
+		By(fmt.Sprintf("New node %s provisioned to replace old node %s", disabledNode.Name, enabledNode.Name))
+
+		By("Waiting for LocalDNS to be disabled on the new node")
+		expectNodeLocalDNSLabel(disabledNode, "disabled")
 
 		By("Verifying DNS resolution uses default DNS after LocalDNS is disabled")
-		expectDNSResult(getDNSResultFromNode(node), azureDNSIP, "Host network DNS should use default DNS")
+		expectDNSResult(getDNSResultFromNode(disabledNode), azureDNSIP, "Host network DNS should use default DNS")
 
 		By("Verifying DNS resolution from the test pod (pod network)")
 		expectDNSResult(getDNSResultFromPod(disabledPod), coreDNSServiceIP, "Test pod should use default DNS")
