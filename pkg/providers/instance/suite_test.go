@@ -647,6 +647,23 @@ var _ = Describe("VMInstanceProvider", func() {
 		Expect(lo.FromPtr(nic.Properties.NetworkSecurityGroup.ID)).To(Equal(expectedNSGID))
 	})
 
+	It("should create VM with non-default OS disk type", func() {
+		nodeClass.Spec.OSDiskType = lo.ToPtr("Standard_LRS")
+
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		pod := coretest.UnschedulablePod(coretest.PodOptions{})
+		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectScheduled(ctx, env.Client, pod)
+		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+
+		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+		vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
+
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.StorageAccountType).ToNot(BeNil())
+		Expect(*vm.Properties.StorageProfile.OSDisk.ManagedDisk.StorageAccountType).To(Equal(armcompute.StorageAccountTypesStandardLRS))
+	})
+
 	It("should attach nsg to nic when NodeClass VNET specified", func() {
 		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/aks-vnet-12345678/subnets/aks-subnet") // different RG
 
