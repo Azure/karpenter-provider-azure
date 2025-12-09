@@ -123,12 +123,11 @@ var _ = Describe("LocalDNS", func() {
 		env.EventuallyExpectHealthy(enabledExternalPod)
 		env.EventuallyExpectHealthy(enabledInternalPod)
 
-		By(fmt.Sprintf("✓ Node %s successfully created", enabledNode.Name))
 		By(fmt.Sprintf("✓ Node %s successfully created with full LocalDNS configuration", enabledNode.Name))
 
 		expectNodeLocalDNSLabel(enabledNode, "enabled")
 
-		//	By("Verifying LocalDNS configuration is active from the provisioned node (host network)")
+		By("Verifying LocalDNS configuration is active from the provisioned node (host network)")
 		expectDNSResult(getDNSResultFromNode(enabledNode), localDNSNodeListenerIP, "Host network DNS should use LocalDNS node listener")
 
 		By("Verifying external DNS resolution from the test pod (pod network)")
@@ -251,7 +250,7 @@ func createDNSTestPod(domain string, nodeSelector map[string]string) *corev1.Pod
 		Image: "mcr.microsoft.com/azurelinux/busybox:1.36",
 		Command: []string{
 			"sh", "-c",
-			fmt.Sprintf("while true; do nslookup %s | grep Server: && sleep 30; done", domain),
+			fmt.Sprintf("nslookup %s && sleep 30", domain),
 		},
 		ResourceRequirements: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
