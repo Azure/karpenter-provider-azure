@@ -82,6 +82,9 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
+	// Collection of patching-related karpenter fields
+	Patching *Patching `json:"patching,omitempty"`
+
 	// Collection of security related karpenter fields
 	Security *Security `json:"security,omitempty"`
 }
@@ -94,6 +97,33 @@ type Security struct {
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
 	// +optional
 	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
+}
+
+// Patching defines args to be used when configuring automatic patching on the provisioned node.
+// Relevant requirements for enabling automatic patching:
+// * The virtual machine must have the Azure VM Agent for Windows or Linux installed.
+// * For Linux VMs, the Azure Linux agent must be version 2.2.53.1 or higher. Update the Linux agent if the current version is lower than the required version.
+// * The virtual machine must be able to access the configured update endpoints. If your virtual machine is configured to use private repositories for Linux or Windows Server Update Services (WSUS) for Windows VMs, the relevant update endpoints must be accessible.
+// * Use Compute API version 2021-03-01 or higher to access all functionality including on-demand assessment and on-demand patching.
+// * Custom images aren't currently supported.
+// https://learn.microsoft.com/en-us/azure/virtual-machines/automatic-vm-guest-patching
+type Patching struct {
+	// AssessmentMode defines when the provisioned node is assessed for updates.
+	// Possible values are:
+	// ImageDefault - You control the timing of patch assessments on a virtual machine.
+	// AutomaticByPlatform - The platform will trigger periodic patch assessments.
+	// The Azure VM Agent will be installed on the node.
+	// +kubebuilder:default=ImageDefault
+	// +kubebuilder:validation:Enum:={ImageDefault,AutomaticByPlatform}
+	AssessmentMode *string `json:"assessmentMode,omitempty"`
+	// PatchMode defines how the provisioned node is patched.
+	// Possible values are:
+	// ImageDefault - The virtual machine's default patching configuration is used.
+	// AutomaticByPlatform - The virtual machine will be automatically updated by the platform.
+	// The Azure VM Agent will be installed on the node.
+	// +kubebuilder:default=ImageDefault
+	// +kubebuilder:validation:Enum:={ImageDefault,AutomaticByPlatform}
+	PatchMode *string `json:"patchMode,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.

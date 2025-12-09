@@ -539,6 +539,34 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              patching:
+                description: Collection of patching-related karpenter fields
+                properties:
+                  assessmentMode:
+                    default: ImageDefault
+                    description: |-
+                      AssessmentMode defines when the provisioned node is assessed for updates.
+                      Possible values are:
+                      ImageDefault - You control the timing of patch assessments on a virtual machine.
+                      AutomaticByPlatform - The platform will trigger periodic patch assessments.
+                      The Azure VM Agent will be installed on the node.
+                    enum:
+                    - ImageDefault
+                    - AutomaticByPlatform
+                    type: string
+                  patchMode:
+                    default: ImageDefault
+                    description: |-
+                      PatchMode defines how the provisioned node is patched.
+                      Possible values are:
+                      ImageDefault - The virtual machine's default patching configuration is used.
+                      AutomaticByPlatform - The virtual machine will be automatically updated by the platform.
+                      The Azure VM Agent will be installed on the node.
+                    enum:
+                    - ImageDefault
+                    - AutomaticByPlatform
+                    type: string
+                type: object
               security:
                 description: Collection of security related karpenter fields
                 properties:
