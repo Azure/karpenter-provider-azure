@@ -250,6 +250,7 @@ spec:
                         zone:
                           description: Zone is the DNS zone this override applies
                             to (e.g., ".", "cluster.local").
+                          minLength: 1
                           type: string
                       required:
                       - cacheDuration
@@ -263,6 +264,9 @@ spec:
                       - zone
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
                   mode:
                     description: Mode of enablement for localDNS.
                     enum:
@@ -333,6 +337,7 @@ spec:
                         zone:
                           description: Zone is the DNS zone this override applies
                             to (e.g., ".", "cluster.local").
+                          minLength: 1
                           type: string
                       required:
                       - cacheDuration
@@ -346,6 +351,9 @@ spec:
                       - zone
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
                 required:
                 - kubeDNSOverrides
                 - mode
@@ -758,6 +766,7 @@ spec:
                         zone:
                           description: Zone is the DNS zone this override applies
                             to (e.g., ".", "cluster.local").
+                          minLength: 1
                           type: string
                       required:
                       - cacheDuration
@@ -771,6 +780,9 @@ spec:
                       - zone
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
                   mode:
                     description: Mode of enablement for localDNS.
                     enum:
@@ -841,6 +853,7 @@ spec:
                         zone:
                           description: Zone is the DNS zone this override applies
                             to (e.g., ".", "cluster.local").
+                          minLength: 1
                           type: string
                       required:
                       - cacheDuration
@@ -854,6 +867,9 @@ spec:
                       - zone
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
                 required:
                 - kubeDNSOverrides
                 - mode

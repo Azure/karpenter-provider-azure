@@ -122,32 +122,37 @@ const (
 type LocalDNS struct {
 	// Mode of enablement for localDNS.
 	// +required
-	Mode LocalDNSMode `json:"mode"`
+	Mode LocalDNSMode `json:"mode,omitempty"`
 	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
 	// +required
-	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides"`
+	// +listType=map
+	// +listMapKey=zone
+	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides,omitempty,"`
 	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
 	// +required
-	KubeDNSOverrides []LocalDNSZoneOverride `json:"kubeDNSOverrides"`
+	// +listType=map
+	// +listMapKey=zone
+	KubeDNSOverrides []LocalDNSZoneOverride `json:"kubeDNSOverrides,omitempty"`
 }
 
 // LocalDNSZoneOverride specifies DNS override configuration for a specific zone
 type LocalDNSZoneOverride struct {
 	// Zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
 	// +required
-	Zone string `json:"zone"`
+	// +kubebuilder:validation:MinLength=1
+	Zone string `json:"zone,omitempty"`
 	// Log level for DNS queries in localDNS.
 	// +required
-	QueryLogging LocalDNSQueryLogging `json:"queryLogging"`
+	QueryLogging LocalDNSQueryLogging `json:"queryLogging,omitempty"`
 	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
 	// +required
-	Protocol LocalDNSProtocol `json:"protocol"`
+	Protocol LocalDNSProtocol `json:"protocol,omitempty"`
 	// Destination server for DNS queries to be forwarded from localDNS.
 	// +required
-	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination"`
+	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
 	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +required
-	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy"`
+	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
 	// +required
@@ -166,7 +171,7 @@ type LocalDNSZoneOverride struct {
 	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
 	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
-	ServeStale LocalDNSServeStale `json:"serveStale"`
+	ServeStale LocalDNSServeStale `json:"serveStale,omitempty"`
 }
 
 // LocalDNSOverrides specifies DNS override configuration
@@ -174,16 +179,16 @@ type LocalDNSZoneOverride struct {
 type LocalDNSOverrides struct {
 	// Log level for DNS queries in localDNS.
 	// +required
-	QueryLogging LocalDNSQueryLogging `json:"queryLogging"`
+	QueryLogging LocalDNSQueryLogging `json:"queryLogging,omitempty"`
 	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
 	// +required
-	Protocol LocalDNSProtocol `json:"protocol"`
+	Protocol LocalDNSProtocol `json:"protocol,omitempty"`
 	// Destination server for DNS queries to be forwarded from localDNS.
 	// +required
-	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination"`
+	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
 	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +required
-	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy"`
+	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
 	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
 	// +required
@@ -202,7 +207,7 @@ type LocalDNSOverrides struct {
 	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
 	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
-	ServeStale LocalDNSServeStale `json:"serveStale"`
+	ServeStale LocalDNSServeStale `json:"serveStale,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={Error,Log}
