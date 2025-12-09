@@ -175,6 +175,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
+		nil,
+		nil,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
 		subnetsAPI,
