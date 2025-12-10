@@ -209,10 +209,12 @@ var _ = Describe("CEL/Validation", func() {
 						Mode: v1beta1.LocalDNSModeRequired,
 						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
 							createCompleteLocalDNSZoneOverride(".", true),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
 							overrideConfig,
 						},
 						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
 							createCompleteLocalDNSZoneOverride(".", false),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
 						},
 					},
 				},
@@ -243,8 +245,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
 						Mode:             v1beta1.LocalDNSModeRequired,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), overrideConfig},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
 					},
 				},
 			}
@@ -270,8 +272,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
 						Mode:             v1beta1.LocalDNSModeRequired,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), overrideConfig},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
 					},
 				},
 			}
@@ -297,8 +299,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
 						Mode:             v1beta1.LocalDNSModeRequired,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), overrideConfig},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
 					},
 				},
 			}
@@ -325,8 +327,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
 						Mode:             v1beta1.LocalDNSModeRequired,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), overrideConfig},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
 					},
 				},
 			}
@@ -354,8 +356,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
 						Mode:             v1beta1.LocalDNSModeRequired,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), overrideConfig},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
 					},
 				},
 			}
@@ -383,8 +385,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
 						Mode:             v1beta1.LocalDNSModeRequired,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), overrideConfig},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
 					},
 				},
 			}
@@ -411,8 +413,8 @@ var _ = Describe("CEL/Validation", func() {
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
 						Mode:             v1beta1.LocalDNSModeRequired,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), overrideConfig},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false), overrideConfig},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
 					},
 				},
 			}
