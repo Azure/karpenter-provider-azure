@@ -127,19 +127,30 @@ type LocalDNS struct {
 	// +required
 	// +listType=map
 	// +listMapKey=zone
-	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides,omitempty,"`
+	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="['.', 'cluster.local'].all(z, self.exists(x, x.zone == z))"
+	// +kubebuilder:validation:XValidation:message="must not contain duplicate zones",rule="self.all(x, self.exists_one(y, x.zone == y.zone))"
+	// +kubebuilder:validation:XValidation:message="root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides",rule="!self.exists(x, x.zone == '.' && x.forwardDestination == 'ClusterCoreDNS')"
+	// +kubebuilder:validation:MaxItems=100
+	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides,omitempty"`
 	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
 	// +required
 	// +listType=map
 	// +listMapKey=zone
+	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="['.', 'cluster.local'].all(z, self.exists(x, x.zone == z))"
+	// +kubebuilder:validation:XValidation:message="must not contain duplicate zones",rule="self.all(x, self.exists_one(y, x.zone == y.zone))"
+	// +kubebuilder:validation:MaxItems=100
 	KubeDNSOverrides []LocalDNSZoneOverride `json:"kubeDNSOverrides,omitempty"`
 }
 
 // LocalDNSZoneOverride specifies DNS override configuration for a specific zone
+// +kubebuilder:validation:XValidation:message="'cluster.local' cannot be forwarded to VnetDNS",rule="!(self.zone.endsWith('cluster.local') && self.forwardDestination == 'VnetDNS')"
+// +kubebuilder:validation:XValidation:message="serveStale Verify cannot be used with protocol ForceTCP",rule="!(self.serveStale == 'Verify' && self.protocol == 'ForceTCP')"
 type LocalDNSZoneOverride struct {
 	// Zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
 	// +required
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=254
+	// +kubebuilder:validation:Pattern=`^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$`
 	Zone string `json:"zone,omitempty"`
 	// Log level for DNS queries in localDNS.
 	// +required
