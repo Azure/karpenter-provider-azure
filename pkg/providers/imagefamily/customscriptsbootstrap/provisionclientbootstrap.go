@@ -64,6 +64,7 @@ type ProvisionClientBootstrap struct {
 	OSSKU                          string
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
+	LocalDNSProfile                *v1beta1.LocalDNS
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -141,6 +142,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 			Enabled: lo.ToPtr(enableArtifactStreaming),
 		},
+		LocalDNSProfile: convertLocalDNSToModel(p.LocalDNSProfile),
 	}
 
 	// Map OS SKU to AKS provision client's expectation

@@ -181,6 +181,184 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+              localDNS:
+                description: |-
+                  LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
+                  LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
+                  For more details see aka.ms/aks/localdns.
+                properties:
+                  kubeDNSOverrides:
+                    description: KubeDNS overrides apply to DNS traffic from pods
+                      with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+                    items:
+                      description: LocalDNSZoneOverride specifies DNS override configuration
+                        for a specific zone
+                      properties:
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        forwardDestination:
+                          description: Destination server for DNS queries to be forwarded
+                            from localDNS.
+                          enum:
+                          - ClusterCoreDNS
+                          - VnetDNS
+                          type: string
+                        forwardPolicy:
+                          description: Forward policy for selecting upstream DNS server.
+                            See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          enum:
+                          - Sequential
+                          - RoundRobin
+                          - Random
+                          type: string
+                        maxConcurrent:
+                          description: Maximum number of concurrent queries. See [forward
+                            plugin](https://coredns.io/plugins/forward) for more information.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        protocol:
+                          description: Enforce TCP or prefer UDP protocol for connections
+                            from localDNS to upstream DNS server.
+                          enum:
+                          - PreferUDP
+                          - ForceTCP
+                          type: string
+                        queryLogging:
+                          description: Log level for DNS queries in localDNS.
+                          enum:
+                          - Error
+                          - Log
+                          type: string
+                        serveStale:
+                          description: Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          enum:
+                          - Verify
+                          - Immediate
+                          - Disable
+                          type: string
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        zone:
+                          description: Zone is the DNS zone this override applies
+                            to (e.g., ".", "cluster.local").
+                          minLength: 1
+                          type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
+                      - zone
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
+                  mode:
+                    description: Mode of enablement for localDNS.
+                    enum:
+                    - Preferred
+                    - Required
+                    - Disabled
+                    type: string
+                  vnetDNSOverrides:
+                    description: VnetDNS overrides apply to DNS traffic from pods
+                      with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+                    items:
+                      description: LocalDNSZoneOverride specifies DNS override configuration
+                        for a specific zone
+                      properties:
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        forwardDestination:
+                          description: Destination server for DNS queries to be forwarded
+                            from localDNS.
+                          enum:
+                          - ClusterCoreDNS
+                          - VnetDNS
+                          type: string
+                        forwardPolicy:
+                          description: Forward policy for selecting upstream DNS server.
+                            See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          enum:
+                          - Sequential
+                          - RoundRobin
+                          - Random
+                          type: string
+                        maxConcurrent:
+                          description: Maximum number of concurrent queries. See [forward
+                            plugin](https://coredns.io/plugins/forward) for more information.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        protocol:
+                          description: Enforce TCP or prefer UDP protocol for connections
+                            from localDNS to upstream DNS server.
+                          enum:
+                          - PreferUDP
+                          - ForceTCP
+                          type: string
+                        queryLogging:
+                          description: Log level for DNS queries in localDNS.
+                          enum:
+                          - Error
+                          - Log
+                          type: string
+                        serveStale:
+                          description: Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          enum:
+                          - Verify
+                          - Immediate
+                          - Disable
+                          type: string
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        zone:
+                          description: Zone is the DNS zone this override applies
+                            to (e.g., ".", "cluster.local").
+                          minLength: 1
+                          type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
+                      - zone
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
+                required:
+                - kubeDNSOverrides
+                - mode
+                - vnetDNSOverrides
+                type: object
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
@@ -519,6 +697,184 @@ spec:
                   rule: 'has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent)
                     ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  :
                     true'
+              localDNS:
+                description: |-
+                  LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
+                  LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
+                  For more details see aka.ms/aks/localdns.
+                properties:
+                  kubeDNSOverrides:
+                    description: KubeDNS overrides apply to DNS traffic from pods
+                      with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+                    items:
+                      description: LocalDNSZoneOverride specifies DNS override configuration
+                        for a specific zone
+                      properties:
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        forwardDestination:
+                          description: Destination server for DNS queries to be forwarded
+                            from localDNS.
+                          enum:
+                          - ClusterCoreDNS
+                          - VnetDNS
+                          type: string
+                        forwardPolicy:
+                          description: Forward policy for selecting upstream DNS server.
+                            See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          enum:
+                          - Sequential
+                          - RoundRobin
+                          - Random
+                          type: string
+                        maxConcurrent:
+                          description: Maximum number of concurrent queries. See [forward
+                            plugin](https://coredns.io/plugins/forward) for more information.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        protocol:
+                          description: Enforce TCP or prefer UDP protocol for connections
+                            from localDNS to upstream DNS server.
+                          enum:
+                          - PreferUDP
+                          - ForceTCP
+                          type: string
+                        queryLogging:
+                          description: Log level for DNS queries in localDNS.
+                          enum:
+                          - Error
+                          - Log
+                          type: string
+                        serveStale:
+                          description: Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          enum:
+                          - Verify
+                          - Immediate
+                          - Disable
+                          type: string
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        zone:
+                          description: Zone is the DNS zone this override applies
+                            to (e.g., ".", "cluster.local").
+                          minLength: 1
+                          type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
+                      - zone
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
+                  mode:
+                    description: Mode of enablement for localDNS.
+                    enum:
+                    - Preferred
+                    - Required
+                    - Disabled
+                    type: string
+                  vnetDNSOverrides:
+                    description: VnetDNS overrides apply to DNS traffic from pods
+                      with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+                    items:
+                      description: LocalDNSZoneOverride specifies DNS override configuration
+                        for a specific zone
+                      properties:
+                        cacheDuration:
+                          description: Cache max TTL. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        forwardDestination:
+                          description: Destination server for DNS queries to be forwarded
+                            from localDNS.
+                          enum:
+                          - ClusterCoreDNS
+                          - VnetDNS
+                          type: string
+                        forwardPolicy:
+                          description: Forward policy for selecting upstream DNS server.
+                            See [forward plugin](https://coredns.io/plugins/forward)
+                            for more information.
+                          enum:
+                          - Sequential
+                          - RoundRobin
+                          - Random
+                          type: string
+                        maxConcurrent:
+                          description: Maximum number of concurrent queries. See [forward
+                            plugin](https://coredns.io/plugins/forward) for more information.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        protocol:
+                          description: Enforce TCP or prefer UDP protocol for connections
+                            from localDNS to upstream DNS server.
+                          enum:
+                          - PreferUDP
+                          - ForceTCP
+                          type: string
+                        queryLogging:
+                          description: Log level for DNS queries in localDNS.
+                          enum:
+                          - Error
+                          - Log
+                          type: string
+                        serveStale:
+                          description: Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          enum:
+                          - Verify
+                          - Immediate
+                          - Disable
+                          type: string
+                        serveStaleDuration:
+                          description: Serve stale duration. See [cache plugin](https://coredns.io/plugins/cache)
+                            for more information.
+                          pattern: ^([0-9]+(s|m|h))+$
+                          type: string
+                        zone:
+                          description: Zone is the DNS zone this override applies
+                            to (e.g., ".", "cluster.local").
+                          minLength: 1
+                          type: string
+                      required:
+                      - cacheDuration
+                      - forwardDestination
+                      - forwardPolicy
+                      - maxConcurrent
+                      - protocol
+                      - queryLogging
+                      - serveStale
+                      - serveStaleDuration
+                      - zone
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - zone
+                    x-kubernetes-list-type: map
+                required:
+                - kubeDNSOverrides
+                - mode
+                - vnetDNSOverrides
+                type: object
               maxPods:
                 description: |-
                   MaxPods is an override for the maximum number of pods that can run on a worker node instance.
