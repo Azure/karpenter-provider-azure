@@ -151,6 +151,7 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 		})
 
 		It("should accept complete LocalDNS configuration with all required fields", func() {
@@ -171,6 +172,7 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 		})
 
 		DescribeTable("should validate LocalDNSMode", func(mode v1beta1.LocalDNSMode, expectedErr string) {
