@@ -187,6 +187,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -222,6 +223,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -253,6 +255,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -280,6 +283,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -307,6 +311,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -335,6 +340,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -364,6 +370,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -393,6 +400,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -421,6 +429,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -566,7 +575,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate protocol and serveStale combinations",
 			func(protocol v1alpha2.LocalDNSProtocol, serveStale v1alpha2.LocalDNSServeStale, shouldSucceed bool) {
-				override := createCompleteLocalDNSZoneOverride("example.com", false)
+				override := createCompleteLocalDNSZoneOverride("example.com", true)
 				override.Protocol = protocol
 				override.ServeStale = serveStale
 				nodeClass := &v1alpha2.AKSNodeClass{
@@ -589,6 +598,7 @@ var _ = Describe("CEL/Validation", func() {
 				err := env.Client.Create(ctx, nodeClass)
 				if shouldSucceed {
 					Expect(err).To(Succeed())
+					Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
 				} else {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("serveStale Verify cannot be used with protocol ForceTCP"))
