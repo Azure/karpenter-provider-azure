@@ -487,6 +487,118 @@ var _ = Describe("CEL/Validation", func() {
 			// The API server rejects this due to listType=map enforcement
 			Expect(err.Error()).To(ContainSubstring("Duplicate value: map[string]interface {}{\"zone\":\"test.com\"}"))
 		})
+
+		DescribeTable("should validate required zones in overrides",
+			func(vnetOverrides []v1beta1.LocalDNSZoneOverride, kubeOverrides []v1beta1.LocalDNSZoneOverride, expectedErr string) {
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode:             v1beta1.LocalDNSModeRequired,
+							VnetDNSOverrides: vnetOverrides,
+							KubeDNSOverrides: kubeOverrides,
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			},
+			Entry("VnetDNSOverrides missing root zone '.'",
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				"must contain required zones '.' and 'cluster.local'"),
+			Entry("VnetDNSOverrides missing 'cluster.local'",
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true)},
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				"must contain required zones '.' and 'cluster.local'"),
+			Entry("KubeDNSOverrides missing root zone '.'",
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				"must contain required zones '.' and 'cluster.local'"),
+			Entry("KubeDNSOverrides missing 'cluster.local'",
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", true), createCompleteLocalDNSZoneOverride("cluster.local", false)},
+				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride(".", false)},
+				"must contain required zones '.' and 'cluster.local'"),
+		)
+
+		DescribeTable("should validate zone forwarding restrictions",
+			func(testZone string, forwardDest v1beta1.LocalDNSForwardDestination, expectedErr string) {
+				override := createCompleteLocalDNSZoneOverride(testZone, false)
+				override.ForwardDestination = forwardDest
+				vnetOverrides := []v1beta1.LocalDNSZoneOverride{
+					createCompleteLocalDNSZoneOverride(".", true),
+					createCompleteLocalDNSZoneOverride("cluster.local", false),
+				}
+				// Replace the appropriate zone in vnetOverrides
+				if testZone == "." {
+					vnetOverrides[0] = override
+				} else {
+					vnetOverrides = append(vnetOverrides, override)
+				}
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode:             v1beta1.LocalDNSModeRequired,
+							VnetDNSOverrides: vnetOverrides,
+							KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+								createCompleteLocalDNSZoneOverride(".", false),
+								createCompleteLocalDNSZoneOverride("cluster.local", false),
+							},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(expectedErr))
+			},
+			Entry("root zone '.' cannot be forwarded to ClusterCoreDNS in VnetDNSOverrides",
+				".", v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+				"root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides"),
+			Entry("'cluster.local' cannot be forwarded to VnetDNS",
+				"cluster.local", v1beta1.LocalDNSForwardDestinationVnetDNS,
+				"'cluster.local' cannot be forwarded to VnetDNS"),
+			Entry("subdomain of 'cluster.local' cannot be forwarded to VnetDNS",
+				"svc.cluster.local", v1beta1.LocalDNSForwardDestinationVnetDNS,
+				"'cluster.local' cannot be forwarded to VnetDNS"),
+		)
+
+		DescribeTable("should validate protocol and serveStale combinations",
+			func(protocol v1beta1.LocalDNSProtocol, serveStale v1beta1.LocalDNSServeStale, shouldSucceed bool) {
+				override := createCompleteLocalDNSZoneOverride("example.com", false)
+				override.Protocol = protocol
+				override.ServeStale = serveStale
+				nodeClass := &v1beta1.AKSNodeClass{
+					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+					Spec: v1beta1.AKSNodeClassSpec{
+						LocalDNS: &v1beta1.LocalDNS{
+							Mode: v1beta1.LocalDNSModeRequired,
+							VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+								createCompleteLocalDNSZoneOverride(".", true),
+								createCompleteLocalDNSZoneOverride("cluster.local", false),
+								override,
+							},
+							KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+								createCompleteLocalDNSZoneOverride(".", false),
+								createCompleteLocalDNSZoneOverride("cluster.local", false),
+							},
+						},
+					},
+				}
+				err := env.Client.Create(ctx, nodeClass)
+				if shouldSucceed {
+					Expect(err).To(Succeed())
+				} else {
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("serveStale Verify cannot be used with protocol ForceTCP"))
+				}
+			},
+			Entry("reject: ForceTCP with Verify", v1beta1.LocalDNSProtocolForceTCP, v1beta1.LocalDNSServeStaleVerify, false),
+			Entry("accept: ForceTCP with Immediate", v1beta1.LocalDNSProtocolForceTCP, v1beta1.LocalDNSServeStaleImmediate, true),
+			Entry("accept: ForceTCP with Disable", v1beta1.LocalDNSProtocolForceTCP, v1beta1.LocalDNSServeStaleDisable, true),
+			Entry("accept: PreferUDP with Verify", v1beta1.LocalDNSProtocolPreferUDP, v1beta1.LocalDNSServeStaleVerify, true),
+		)
 	})
 
 	Context("OSDiskSizeGB", func() {
