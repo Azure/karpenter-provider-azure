@@ -433,6 +433,60 @@ var _ = Describe("CEL/Validation", func() {
 			Entry("invalid: -1 (below minimum)", lo.ToPtr(int32(-1)), "maxConcurrent"),
 			Entry("invalid: -100 (below minimum)", lo.ToPtr(int32(-100)), "maxConcurrent"),
 		)
+
+		It("should reject duplicate zones in VnetDNSOverrides due to listType=map", func() {
+			// This test proves that listType=map with listMapKey=zone enforces uniqueness
+			// at the API server level, making explicit CEL duplicate validation redundant
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", true),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+							createCompleteLocalDNSZoneOverride("example.com", false),
+							createCompleteLocalDNSZoneOverride("example.com", false), // Duplicate zone
+						},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", false),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+						},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			// The API server rejects this due to listType=map enforcement
+			Expect(err.Error()).To(ContainSubstring("Duplicate value: map[string]interface {}{\"zone\":\"example.com\"}"))
+		})
+
+		It("should reject duplicate zones in KubeDNSOverrides due to listType=map", func() {
+			// This test proves that listType=map with listMapKey=zone enforces uniqueness
+			// at the API server level, making explicit CEL duplicate validation redundant
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", true),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+						},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", false),
+							createCompleteLocalDNSZoneOverride("cluster.local", false),
+							createCompleteLocalDNSZoneOverride("test.com", false),
+							createCompleteLocalDNSZoneOverride("test.com", false), // Duplicate zone
+						},
+					},
+				},
+			}
+			err := env.Client.Create(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			// The API server rejects this due to listType=map enforcement
+			Expect(err.Error()).To(ContainSubstring("Duplicate value: map[string]interface {}{\"zone\":\"test.com\"}"))
+		})
 	})
 
 	Context("OSDiskSizeGB", func() {

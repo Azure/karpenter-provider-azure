@@ -128,7 +128,6 @@ type LocalDNS struct {
 	// +listType=map
 	// +listMapKey=zone
 	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="['.', 'cluster.local'].all(z, self.exists(x, x.zone == z))"
-	// +kubebuilder:validation:XValidation:message="must not contain duplicate zones",rule="self.all(x, self.exists_one(y, x.zone == y.zone))"
 	// +kubebuilder:validation:XValidation:message="root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides",rule="!self.exists(x, x.zone == '.' && x.forwardDestination == 'ClusterCoreDNS')"
 	// +kubebuilder:validation:MaxItems=100
 	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides,omitempty"`
@@ -137,7 +136,6 @@ type LocalDNS struct {
 	// +listType=map
 	// +listMapKey=zone
 	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="['.', 'cluster.local'].all(z, self.exists(x, x.zone == z))"
-	// +kubebuilder:validation:XValidation:message="must not contain duplicate zones",rule="self.all(x, self.exists_one(y, x.zone == y.zone))"
 	// +kubebuilder:validation:MaxItems=100
 	KubeDNSOverrides []LocalDNSZoneOverride `json:"kubeDNSOverrides,omitempty"`
 }
