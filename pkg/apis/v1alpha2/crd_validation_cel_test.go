@@ -469,7 +469,8 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			Expect(err).To(HaveOccurred())
 			// The API server rejects this due to listType=map enforcement
-			Expect(err.Error()).To(ContainSubstring("Duplicate value: map[string]interface {}{\"zone\":\"example.com\"}"))
+			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
+			Expect(err.Error()).To(ContainSubstring("{\"zone\":\"example.com\"}"))
 		})
 
 		It("should reject duplicate zones in KubeDNSOverrides due to listType=map", func() {
@@ -496,7 +497,8 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			Expect(err).To(HaveOccurred())
 			// The API server rejects this due to listType=map enforcement
-			Expect(err.Error()).To(ContainSubstring("Duplicate value: map[string]interface {}{\"zone\":\"test.com\"}"))
+			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
+			Expect(err.Error()).To(ContainSubstring("{\"zone\":\"test.com\"}"))
 		})
 
 		DescribeTable("should validate required zones in overrides",
@@ -577,7 +579,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate protocol and serveStale combinations",
 			func(protocol v1alpha2.LocalDNSProtocol, serveStale v1alpha2.LocalDNSServeStale, shouldSucceed bool) {
-				override := createCompleteLocalDNSZoneOverride("example.com", true)
+				override := createCompleteLocalDNSZoneOverride("example.com", false)
 				override.Protocol = protocol
 				override.ServeStale = serveStale
 				nodeClass := &v1alpha2.AKSNodeClass{
