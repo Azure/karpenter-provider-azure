@@ -482,7 +482,7 @@ var _ = Describe("CEL/Validation", func() {
 		It("should reject duplicate zones in KubeDNSOverrides due to listType=map", func() {
 			// This test proves that listType=map with listMapKey=zone enforces uniqueness
 			// at the API server level, making explicit CEL duplicate validation redundant
-			nodeClass := &v1alpha2.AKSNodeClass{
+			nodeClass = &v1alpha2.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1alpha2.AKSNodeClassSpec{
 					LocalDNS: &v1alpha2.LocalDNS{
@@ -505,11 +505,12 @@ var _ = Describe("CEL/Validation", func() {
 			// The API server rejects this due to listType=map enforcement
 			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
 			Expect(err.Error()).To(ContainSubstring("{\"zone\":\"test.com\"}"))
+			nodeClass = nil
 		})
 
 		DescribeTable("should validate required zones in overrides",
 			func(vnetOverrides []v1alpha2.LocalDNSZoneOverride, kubeOverrides []v1alpha2.LocalDNSZoneOverride, expectedErr string) {
-				nodeClass := &v1alpha2.AKSNodeClass{
+				nodeClass = &v1alpha2.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1alpha2.AKSNodeClassSpec{
 						LocalDNS: &v1alpha2.LocalDNS{
@@ -522,6 +523,7 @@ var _ = Describe("CEL/Validation", func() {
 				err := env.Client.Create(ctx, nodeClass)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
+				nodeClass = nil
 			},
 			Entry("VnetDNSOverrides missing root zone '.'",
 				[]v1alpha2.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride("cluster.local", false)},
@@ -555,7 +557,7 @@ var _ = Describe("CEL/Validation", func() {
 				} else {
 					vnetOverrides = append(vnetOverrides, override)
 				}
-				nodeClass := &v1alpha2.AKSNodeClass{
+				nodeClass = &v1alpha2.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1alpha2.AKSNodeClassSpec{
 						LocalDNS: &v1alpha2.LocalDNS{
@@ -571,6 +573,7 @@ var _ = Describe("CEL/Validation", func() {
 				err := env.Client.Create(ctx, nodeClass)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
+				nodeClass = nil
 			},
 			Entry("root zone '.' cannot be forwarded to ClusterCoreDNS in VnetDNSOverrides",
 				".", v1alpha2.LocalDNSForwardDestinationClusterCoreDNS,
