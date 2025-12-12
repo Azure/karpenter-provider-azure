@@ -143,16 +143,8 @@ var _ = Describe("CEL/Validation", func() {
 	})
 
 	Context("LocalDNS", func() {
-		var nodeClass *v1beta1.AKSNodeClass
-
-		AfterEach(func() {
-			if nodeClass != nil {
-				Expect(env.Client.Delete(ctx, nodeClass)).To(Succeed())
-			}
-		})
-
 		It("should accept when LocalDNS is completely omitted", func() {
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec:       v1beta1.AKSNodeClassSpec{
 					// LocalDNS is nil - should be accepted
@@ -162,7 +154,7 @@ var _ = Describe("CEL/Validation", func() {
 		})
 
 		It("should accept complete LocalDNS configuration with all required fields", func() {
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -182,7 +174,7 @@ var _ = Describe("CEL/Validation", func() {
 		})
 
 		DescribeTable("should validate LocalDNSMode", func(mode v1beta1.LocalDNSMode, expectedErr string) {
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -198,7 +190,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid mode: Preferred", v1beta1.LocalDNSModePreferred, ""),
@@ -211,7 +202,7 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging v1beta1.LocalDNSQueryLogging, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
 			overrideConfig.QueryLogging = queryLogging
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -234,7 +225,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid query logging: Error", v1beta1.LocalDNSQueryLoggingError, ""),
@@ -250,7 +240,7 @@ var _ = Describe("CEL/Validation", func() {
 			if protocol == v1beta1.LocalDNSProtocolForceTCP {
 				overrideConfig.ServeStale = v1beta1.LocalDNSServeStaleImmediate
 			}
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -266,7 +256,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid protocol: PreferUDP", v1beta1.LocalDNSProtocolPreferUDP, ""),
@@ -278,7 +267,7 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination v1beta1.LocalDNSForwardDestination, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
 			overrideConfig.ForwardDestination = forwardDestination
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -294,7 +283,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid forward destination: ClusterCoreDNS", v1beta1.LocalDNSForwardDestinationClusterCoreDNS, ""),
@@ -306,7 +294,7 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy v1beta1.LocalDNSForwardPolicy, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
 			overrideConfig.ForwardPolicy = forwardPolicy
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -322,7 +310,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid forward policy: Sequential", v1beta1.LocalDNSForwardPolicySequential, ""),
@@ -335,7 +322,7 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate LocalDNSServeStale", func(serveStale v1beta1.LocalDNSServeStale, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
 			overrideConfig.ServeStale = serveStale
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -351,7 +338,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid serve stale: Verify", v1beta1.LocalDNSServeStaleVerify, ""),
@@ -365,7 +351,7 @@ var _ = Describe("CEL/Validation", func() {
 			cacheDuration := karpv1.MustParseNillableDuration(durationStr)
 			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
 			overrideConfig.CacheDuration = cacheDuration
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -381,7 +367,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid duration: 1h", "1h", ""),
@@ -395,7 +380,7 @@ var _ = Describe("CEL/Validation", func() {
 			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
 			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
 			overrideConfig.ServeStaleDuration = serveStaleDuration
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -411,7 +396,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid duration: 1h", "1h", ""),
@@ -424,7 +408,7 @@ var _ = Describe("CEL/Validation", func() {
 		DescribeTable("should validate MaxConcurrent", func(maxConcurrent *int32, expectedErr string) {
 			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
 			overrideConfig.MaxConcurrent = maxConcurrent
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -440,7 +424,6 @@ var _ = Describe("CEL/Validation", func() {
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			}
 		},
 			Entry("valid: 0 (minimum)", lo.ToPtr(int32(0)), ""),
@@ -454,7 +437,7 @@ var _ = Describe("CEL/Validation", func() {
 		It("should reject duplicate zones in VnetDNSOverrides due to listType=map", func() {
 			// This test proves that listType=map with listMapKey=zone enforces uniqueness
 			// at the API server level, making explicit CEL duplicate validation redundant
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -477,13 +460,12 @@ var _ = Describe("CEL/Validation", func() {
 			// The API server rejects this due to listType=map enforcement
 			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
 			Expect(err.Error()).To(ContainSubstring("{\"zone\":\"example.com\"}"))
-			nodeClass = nil
 		})
 
 		It("should reject duplicate zones in KubeDNSOverrides due to listType=map", func() {
 			// This test proves that listType=map with listMapKey=zone enforces uniqueness
 			// at the API server level, making explicit CEL duplicate validation redundant
-			nodeClass = &v1beta1.AKSNodeClass{
+			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -506,12 +488,11 @@ var _ = Describe("CEL/Validation", func() {
 			// The API server rejects this due to listType=map enforcement
 			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
 			Expect(err.Error()).To(ContainSubstring("{\"zone\":\"test.com\"}"))
-			nodeClass = nil
 		})
 
 		DescribeTable("should validate required zones in overrides",
 			func(vnetOverrides []v1beta1.LocalDNSZoneOverride, kubeOverrides []v1beta1.LocalDNSZoneOverride, expectedErr string) {
-				nodeClass = &v1beta1.AKSNodeClass{
+				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
 						LocalDNS: &v1beta1.LocalDNS{
@@ -524,7 +505,6 @@ var _ = Describe("CEL/Validation", func() {
 				err := env.Client.Create(ctx, nodeClass)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			},
 			Entry("VnetDNSOverrides missing root zone '.'",
 				[]v1beta1.LocalDNSZoneOverride{createCompleteLocalDNSZoneOverride("cluster.local", false)},
@@ -558,7 +538,7 @@ var _ = Describe("CEL/Validation", func() {
 				} else {
 					vnetOverrides = append(vnetOverrides, override)
 				}
-				nodeClass = &v1beta1.AKSNodeClass{
+				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
 						LocalDNS: &v1beta1.LocalDNS{
@@ -574,7 +554,6 @@ var _ = Describe("CEL/Validation", func() {
 				err := env.Client.Create(ctx, nodeClass)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
-				nodeClass = nil
 			},
 			Entry("root zone '.' cannot be forwarded to ClusterCoreDNS in VnetDNSOverrides",
 				".", v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
@@ -592,7 +571,7 @@ var _ = Describe("CEL/Validation", func() {
 				override := createCompleteLocalDNSZoneOverride("example.com", false)
 				override.Protocol = protocol
 				override.ServeStale = serveStale
-				nodeClass = &v1beta1.AKSNodeClass{
+				nodeClass := &v1beta1.AKSNodeClass{
 					ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 					Spec: v1beta1.AKSNodeClassSpec{
 						LocalDNS: &v1beta1.LocalDNS{
@@ -615,7 +594,6 @@ var _ = Describe("CEL/Validation", func() {
 				} else {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("serveStale Verify cannot be used with protocol ForceTCP"))
-					nodeClass = nil
 				}
 			},
 			Entry("reject: ForceTCP with Verify", v1beta1.LocalDNSProtocolForceTCP, v1beta1.LocalDNSServeStaleVerify, false),
@@ -866,4 +844,14 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 	})
+})
+
+var _ = AfterEach(func() {
+	// Clean up all AKSNodeClasses created during LocalDNS tests
+	nodeClassList := &v1beta1.AKSNodeClassList{}
+	if err := env.Client.List(ctx, nodeClassList); err == nil {
+		for i := range nodeClassList.Items {
+			_ = env.Client.Delete(ctx, &nodeClassList.Items[i])
+		}
+	}
 })
