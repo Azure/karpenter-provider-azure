@@ -18,12 +18,7 @@ package status
 
 import (
 	"context"
-	"fmt"
-	"regexp"
-	"strings"
 
-	"github.com/go-logr/logr"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -35,137 +30,11 @@ func NewValidationReconciler() *ValidationReconciler {
 	return &ValidationReconciler{}
 }
 
-const (
-	LocalDNSValidationFailed = "LocalDNSValidationFailed"
-	validationReconcilerName = "nodeclass.validation"
-	zoneRoot                 = "."
-	zoneClusterLocal         = "cluster.local"
-	fieldVnetDNSOverrides    = "vnetDNSOverrides"
-	fieldKubeDNSOverrides    = "kubeDNSOverrides"
-)
-
-var (
-	zoneRegex = regexp.MustCompile(`^(?:[A-Za-z0-9](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9_-]{0,61}[A-Za-z0-9])?\.?$`)
-)
-
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	logger := log.FromContext(ctx).WithName(validationReconcilerName)
+	// This is currently a skeleton for future runtime validations that cannot be expressed
+	// declaratively in the CRD schema (e.g., validations requiring external API calls,
+	// cross-resource checks, or complex contextual business logic).
 
-	// Run LocalDNS validation if configured
-	if nodeClass.Spec.LocalDNS != nil {
-		if err := r.validateLocalDNS(logger, nodeClass.Spec.LocalDNS); err != nil {
-			nodeClass.StatusConditions().SetFalse(
-				v1beta1.ConditionTypeValidationSucceeded,
-				err.reason,
-				err.message,
-			)
-			return reconcile.Result{}, nil
-		}
-	}
-
-	// All validations passed
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{}, nil
-}
-
-type validationError struct {
-	reason  string
-	message string
-}
-
-func (r *ValidationReconciler) validateLocalDNS(logger logr.Logger, localDNS *v1beta1.LocalDNS) *validationError {
-	// Validate VnetDNSOverrides
-	if err := r.validateOverridesList(logger, localDNS.VnetDNSOverrides, true); err != nil {
-		return err
-	}
-
-	// Validate KubeDNSOverrides
-	if err := r.validateOverridesList(logger, localDNS.KubeDNSOverrides, false); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *ValidationReconciler) validateOverridesList(logger logr.Logger, overrides []v1beta1.LocalDNSZoneOverride, isVnetDNS bool) *validationError {
-	if len(overrides) == 0 {
-		return nil
-	}
-
-	fieldName := fieldKubeDNSOverrides
-	if isVnetDNS {
-		fieldName = fieldVnetDNSOverrides
-	}
-
-	seenZones := make(map[string]bool)
-
-	for _, override := range overrides {
-		// Check for duplicate zones
-		if seenZones[override.Zone] {
-			logger.Info("Duplicate zone found", "zone", override.Zone, "field", fieldName)
-			return &validationError{
-				reason:  LocalDNSValidationFailed,
-				message: fmt.Sprintf("Duplicate zone '%s' in %s. Each zone must be unique.", override.Zone, fieldName),
-			}
-		}
-		seenZones[override.Zone] = true
-
-		// Validate zone name format
-		if err := validateZoneForCoreDNSConfigMap(override.Zone); err != nil {
-			logger.Info("Invalid zone name format", "zone", override.Zone, "error", err)
-			return &validationError{
-				reason:  LocalDNSValidationFailed,
-				message: err.Error(),
-			}
-		}
-
-		// Validate zone-specific rules
-		if err := validateOverrideForZone(override, isVnetDNS); err != nil {
-			logger.Info("Invalid override for zone", "zone", override.Zone, "error", err)
-			return &validationError{
-				reason:  LocalDNSValidationFailed,
-				message: err.Error(),
-			}
-		}
-	}
-
-	// Check required zones
-	if !seenZones[zoneRoot] || !seenZones[zoneClusterLocal] {
-		logger.Info("Missing required zones", "field", fieldName, "hasRootZone", seenZones[zoneRoot], "hasClusterLocal", seenZones[zoneClusterLocal])
-		return &validationError{
-			reason:  LocalDNSValidationFailed,
-			message: fmt.Sprintf("%s must contain required zones '%s' and '%s'", fieldName, zoneRoot, zoneClusterLocal),
-		}
-	}
-
-	return nil
-}
-
-// validateZoneForCoreDNSConfigMap validates that a zone name is valid for use in a CoreDNS ConfigMap.
-// The root zone "." is always valid. Other zones must be valid DNS labels.
-func validateZoneForCoreDNSConfigMap(zone string) error {
-	if zone == zoneRoot {
-		return nil
-	}
-	if !zoneRegex.MatchString(zone) {
-		return fmt.Errorf("invalid zone name format: '%s'. Zone names must be valid DNS labels (alphanumeric with hyphens/underscores, max 63 characters per label, cannot start/end with hyphen or underscore)", zone)
-	}
-	return nil
-}
-
-// validateOverrideForZone validates zone-specific rules.
-func validateOverrideForZone(override v1beta1.LocalDNSZoneOverride, isVnetDNS bool) error {
-	// Reject forwarding "cluster.local" to VnetDNS
-	if strings.HasSuffix(override.Zone, zoneClusterLocal) && override.ForwardDestination == v1beta1.LocalDNSForwardDestinationVnetDNS {
-		return fmt.Errorf("DNS traffic for '%s' cannot be forwarded to VnetDNS", override.Zone)
-	}
-	// Reject forwarding root "." to ClusterCoreDNS from vnetDNSOverrides
-	if isVnetDNS && override.Zone == zoneRoot && override.ForwardDestination == v1beta1.LocalDNSForwardDestinationClusterCoreDNS {
-		return fmt.Errorf("DNS traffic for root zone cannot be forwarded to ClusterCoreDNS")
-	}
-	// Reject ServeStale verify when TCP protocol is used
-	if override.ServeStale == v1beta1.LocalDNSServeStaleVerify && override.Protocol == v1beta1.LocalDNSProtocolForceTCP {
-		return fmt.Errorf("ServeStale verify cannot be used with ForceTCP protocol for zone '%s'", override.Zone)
-	}
-	return nil
 }
