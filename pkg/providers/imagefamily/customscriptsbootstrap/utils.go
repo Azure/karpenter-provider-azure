@@ -47,7 +47,7 @@ func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory flo
 	return adjustedMemory / (1 - vmMemoryOverheadPercent)
 }
 
-func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
+func ConvertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	q, err := resource.ParseQuantity(containerLogMaxSize)
 	if err == nil {
 		// This could be improved later
@@ -56,7 +56,7 @@ func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	return nil
 }
 
-func convertPodMaxPids(podPidsLimit *int64) *int32 {
+func ConvertPodMaxPids(podPidsLimit *int64) *int32 {
 	if podPidsLimit != nil {
 		podPidsLimitInt64 := *podPidsLimit
 		if podPidsLimitInt64 > int64(math.MaxInt32) {
