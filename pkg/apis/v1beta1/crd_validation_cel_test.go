@@ -454,7 +454,7 @@ var _ = Describe("CEL/Validation", func() {
 		It("should reject duplicate zones in VnetDNSOverrides due to listType=map", func() {
 			// This test proves that listType=map with listMapKey=zone enforces uniqueness
 			// at the API server level, making explicit CEL duplicate validation redundant
-			nodeClass := &v1beta1.AKSNodeClass{
+			nodeClass = &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
 				Spec: v1beta1.AKSNodeClassSpec{
 					LocalDNS: &v1beta1.LocalDNS{
@@ -477,6 +477,7 @@ var _ = Describe("CEL/Validation", func() {
 			// The API server rejects this due to listType=map enforcement
 			Expect(err.Error()).To(ContainSubstring("Duplicate value"))
 			Expect(err.Error()).To(ContainSubstring("{\"zone\":\"example.com\"}"))
+			nodeClass = nil
 		})
 
 		It("should reject duplicate zones in KubeDNSOverrides due to listType=map", func() {
