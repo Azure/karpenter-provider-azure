@@ -34,6 +34,17 @@ import (
 
 var _ = Describe("CEL/Validation", func() {
 	var nodePool *karpv1.NodePool
+	var createdNodeClasses []string
+
+	AfterEach(func() {
+		// Clean up only the AKSNodeClasses we created in this test
+		for _, name := range createdNodeClasses {
+			nodeClass := &v1alpha2.AKSNodeClass{}
+			nodeClass.Name = name
+			_ = env.Client.Delete(ctx, nodeClass)
+		}
+		createdNodeClasses = nil
+	})
 
 	// Helper function to create a complete LocalDNSZoneOverride with all required fields
 	// Use forwardToVnetDNS=true for root zone "." in vnetDNSOverrides
@@ -55,7 +66,13 @@ var _ = Describe("CEL/Validation", func() {
 		}
 	}
 
+	// Helper function to track nodeClass creation
+	trackNodeClass := func(nodeClass *v1alpha2.AKSNodeClass) {
+		createdNodeClasses = append(createdNodeClasses, nodeClass.Name)
+	}
+
 	BeforeEach(func() {
+		createdNodeClasses = nil
 		if env.Version.Minor() < 25 {
 			Skip("CEL Validation is for 1.25>")
 		}
@@ -92,6 +109,7 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			if expected {
 				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
@@ -151,6 +169,7 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			trackNodeClass(nodeClass)
 		})
 
 		It("should accept complete LocalDNS configuration with all required fields", func() {
@@ -171,6 +190,7 @@ var _ = Describe("CEL/Validation", func() {
 				},
 			}
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+			trackNodeClass(nodeClass)
 		})
 
 		DescribeTable("should validate LocalDNSMode", func(mode v1alpha2.LocalDNSMode, expectedErr string) {
@@ -187,6 +207,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -222,6 +243,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -253,6 +275,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -280,6 +303,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -307,6 +331,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -335,6 +360,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -364,6 +390,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -393,6 +420,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -421,6 +449,7 @@ var _ = Describe("CEL/Validation", func() {
 			err := env.Client.Create(ctx, nodeClass)
 			if expectedErr == "" {
 				Expect(err).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
@@ -591,6 +620,7 @@ var _ = Describe("CEL/Validation", func() {
 				err := env.Client.Create(ctx, nodeClass)
 				if shouldSucceed {
 					Expect(err).To(Succeed())
+					trackNodeClass(nodeClass)
 				} else {
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("serveStale Verify cannot be used with protocol ForceTCP"))
@@ -613,6 +643,7 @@ var _ = Describe("CEL/Validation", func() {
 			}
 			if expected {
 				Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+				trackNodeClass(nodeClass)
 			} else {
 				Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
 			}
@@ -824,14 +855,4 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 	})
-})
-
-var _ = AfterEach(func() {
-	// Clean up all AKSNodeClasses created during LocalDNS tests
-	nodeClassList := &v1alpha2.AKSNodeClassList{}
-	if err := env.Client.List(ctx, nodeClassList); err == nil {
-		for i := range nodeClassList.Items {
-			_ = env.Client.Delete(ctx, &nodeClassList.Items[i])
-		}
-	}
 })
