@@ -88,7 +88,7 @@ func TestUbuntu2404_CustomScriptsNodeBootstrapping(t *testing.T) {
 	}
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
-		nil, nil, nil, nil, nil, "test-distro", "Standard_LRS", nil, nil,
+		nil, nil, nil, nil, nil, "test-distro", "Standard_LRS", nil, nil, nil,
 	)
 	provisionBootstrapper, ok := bootstrapper.(customscriptsbootstrap.ProvisionClientBootstrap)
 	assert.True(t, ok, "Expected ProvisionClientBootstrap type")
