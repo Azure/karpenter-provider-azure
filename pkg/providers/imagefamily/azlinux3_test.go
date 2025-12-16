@@ -64,6 +64,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	var fipsMode *v1beta1.FIPSMode // to test with nil
+	var localDNS *v1beta1.LocalDNS // to test with nil
 
 	bootstrapper := azureLinux3.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -75,6 +76,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		localDNS,
 	)
 
 	// Verify the returned bootstrapper is of the correct type
@@ -100,6 +102,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
 	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
 	assert.Nil(t, provisionBootstrapper.FIPSMode, "FIPSMode should be nil when not specified")
+	assert.Nil(t, provisionBootstrapper.LocalDNSProfile, "LocalDNSProfile should be nil when not specified")
 }
 
 func TestAzureLinux3_Name(t *testing.T) {

@@ -19,7 +19,7 @@ package test
 import (
 	"fmt"
 
-	"github.com/imdario/mergo"
+	"dario.cat/mergo"
 	"github.com/samber/lo"
 
 	azoptions "github.com/Azure/karpenter-provider-azure/pkg/operator/options"
