@@ -41,6 +41,7 @@ var (
 	AKSLabelVNetGUID            = v1beta1.AKSLabelDomain + "/nodenetwork-vnetguid"
 	AKSLabelPodNetworkType      = v1beta1.AKSLabelDomain + "/podnetwork-type"
 	AKSLabelNetworkStatelessCNI = v1beta1.AKSLabelDomain + "/network-stateless-cni"
+	AKSLocalDNSStateLabelKey    = v1beta1.AKSLabelDomain + "/localdns-state"
 
 	AKSLabelRole = v1beta1.AKSLabelDomain + "/role"
 
@@ -130,6 +131,12 @@ func Get(
 		//              - cilium
 
 		labels[AKSLabelEBPFDataplane] = consts.NetworkDataplaneCilium
+	}
+
+	if nodeClass.IsLocalDNSEnabled() {
+		labels[AKSLocalDNSStateLabelKey] = "enabled"
+	} else {
+		labels[AKSLocalDNSStateLabelKey] = "disabled"
 	}
 
 	return labels, nil
