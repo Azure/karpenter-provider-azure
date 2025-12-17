@@ -92,7 +92,8 @@ var fakeClock *clock.FakeClock
 var coreProvisioner, coreProvisionerNonZonal, coreProvisionerBootstrap *provisioning.Provisioner
 var cluster, clusterNonZonal, clusterBootstrap *state.Cluster
 var cloudProvider, cloudProviderNonZonal, cloudProviderBootstrap *cloudprovider.CloudProvider
-var fakeZone1 = utils.MakeZone(fake.Region, "1")
+
+var fakeZone1 = utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 
 var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
 
@@ -393,7 +394,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectNotScheduled(ctx, env.Client, pod)
 
 			// ensure that initial zone was made unavailable
-			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+			zone, err := utils.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectUnavailable(azureEnv, defaultTestSKU, zone, karpv1.CapacityTypeSpot)
 
@@ -463,7 +464,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// ensure that initial VM size was made unavailable
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			initialVMSize := *vm.Properties.HardwareProfile.VMSize
-			zone, err := utils.GetZone(&vm)
+			zone, err := utils.MakeAKSLabelZoneFromVM(&vm)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectUnavailable(azureEnv, &skewer.SKU{Name: lo.ToPtr(string(initialVMSize))}, zone, karpv1.CapacityTypeSpot)
 
@@ -1443,7 +1444,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Eventually(func() []*karpv1.NodeClaim { return ExpectNodeClaims(ctx, env.Client) }).To(HaveLen(0))
 
 			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
-			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+			zone, err := utils.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
 			for _, skuToCheck := range expectedUnavailableSKUs {
 				Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
@@ -1583,7 +1584,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 				for _, zoneID := range []string{"1", "2", "3"} {
-					ExpectUnavailable(azureEnv, sku, utils.MakeZone(fake.Region, zoneID), capacityType)
+					ExpectUnavailable(azureEnv, sku, utils.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), capacityType)
 				}
 			}
 
