@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"sort"
 
+	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	imagefamilytypes "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	opstatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
-	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -76,6 +76,7 @@ func ApplyDefaultStatus(nodeClass *v1beta1.AKSNodeClass, env *coretest.Environme
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 	nodeClass.StatusConditions().SetTrue(opstatus.ConditionReady)
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeSubnetsReady)
+	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 
 	conditions := []opstatus.Condition{}
 	for _, condition := range nodeClass.GetConditions() {

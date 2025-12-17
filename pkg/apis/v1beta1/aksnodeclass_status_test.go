@@ -104,7 +104,7 @@ var _ = Describe("Status, successful outcomes", func() {
 	It("should return status conditions", func() {
 		conditionSet := nodeClass.StatusConditions()
 		Expect(conditionSet).ToNot(BeNil())
-		Expect(conditionSet.List()).To(HaveLen(4)) // KubernetesVersionReady, SubnetReady, ImagesReady, Ready
+		Expect(conditionSet.List()).To(HaveLen(5)) // KubernetesVersionReady, SubnetReady, ImagesReady, ValidationSucceeded, Ready
 		Expect(conditionSet.Root().Type).To(Equal(status.ConditionReady))
 	})
 	It("should return kubernetes version", func() {

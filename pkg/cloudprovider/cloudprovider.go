@@ -206,7 +206,10 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 		defer func() {
 			if r := recover(); r != nil {
 				err := fmt.Errorf("%v", r)
-				log.FromContext(ctx).Error(err, "panic during waiting on instance promise")
+				// Only log if context is still active to avoid logging after test completes
+				if ctx.Err() == nil {
+					log.FromContext(ctx).Error(err, "panic during waiting on instance promise")
+				}
 			}
 		}()
 
@@ -260,7 +263,10 @@ func (c *CloudProvider) waitUntilLaunched(ctx context.Context, nodeClaim *karpv1
 			if client.IgnoreNotFound(err) == nil {
 				return
 			}
-			log.FromContext(ctx).Error(err, "failed getting nodeclaim to wait until launched")
+			// Only log if context is still active to avoid logging after test completes
+			if ctx.Err() == nil {
+				log.FromContext(ctx).Error(err, "failed getting nodeclaim to wait until launched")
+			}
 		}
 
 		if cond := freshClaim.StatusConditions().Get(karpv1.ConditionTypeLaunched); !cond.IsUnknown() {
@@ -503,7 +509,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 }
 
 func GetNodeClaimNameFromVMName(vmName string) string {
-	return strings.TrimLeft("aks-", vmName)
+	return strings.TrimPrefix(vmName, "aks-")
 }
 
 const truncateAt = 1200
