@@ -475,8 +475,8 @@ var _ = Describe("CEL/Validation", func() {
 						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
 							createCompleteLocalDNSZoneOverride(".", true),
 							createCompleteLocalDNSZoneOverride("cluster.local", false),
-						createCompleteLocalDNSZoneOverride("example.com", true),
-						createCompleteLocalDNSZoneOverride("example.com", true), // Duplicate zone
+							createCompleteLocalDNSZoneOverride("example.com", true),
+							createCompleteLocalDNSZoneOverride("example.com", true), // Duplicate zone
 						},
 						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
 							createCompleteLocalDNSZoneOverride(".", false),
