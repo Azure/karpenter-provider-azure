@@ -16,7 +16,7 @@ tools() {
     go install github.com/google/ko@v0.17.1
     go install github.com/mikefarah/yq/v4@v4.45.1
     go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
-    go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
+    go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
     go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
     go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
