@@ -183,6 +183,26 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 
+		It("should accept cluster.local with trailing dot", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					LocalDNS: &v1beta1.LocalDNS{
+						Mode: v1beta1.LocalDNSModeRequired,
+						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", true),
+							createCompleteLocalDNSZoneOverride("cluster.local.", false),
+						},
+						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+							createCompleteLocalDNSZoneOverride(".", false),
+							createCompleteLocalDNSZoneOverride("cluster.local.", false),
+						},
+					},
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
 		DescribeTable("should validate LocalDNSMode", func(mode v1beta1.LocalDNSMode, expectedErr string) {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -210,7 +230,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSQueryLogging", func(queryLogging v1beta1.LocalDNSQueryLogging, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.QueryLogging = queryLogging
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -244,7 +264,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSProtocol", func(protocol v1beta1.LocalDNSProtocol, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.Protocol = protocol
 			// When using ForceTCP, we can't use ServeStaleVerify, so use Immediate instead
 			if protocol == v1beta1.LocalDNSProtocolForceTCP {
@@ -275,7 +295,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSForwardDestination", func(forwardDestination v1beta1.LocalDNSForwardDestination, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ForwardDestination = forwardDestination
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -295,14 +315,14 @@ var _ = Describe("CEL/Validation", func() {
 				Expect(err.Error()).To(ContainSubstring(expectedErr))
 			}
 		},
-			Entry("valid forward destination: ClusterCoreDNS", v1beta1.LocalDNSForwardDestinationClusterCoreDNS, ""),
+			Entry("invalid forward destination: ClusterCoreDNS for external domain", v1beta1.LocalDNSForwardDestinationClusterCoreDNS, "external domains cannot be forwarded to ClusterCoreDNS"),
 			Entry("valid forward destination: VnetDNS", v1beta1.LocalDNSForwardDestinationVnetDNS, ""),
 			Entry("invalid forward destination: invalid-string", v1beta1.LocalDNSForwardDestination("invalid-string"), "forwardDestination"),
 			Entry("invalid forward destination: empty", v1beta1.LocalDNSForwardDestination(""), "forwardDestination"),
 		)
 
 		DescribeTable("should validate LocalDNSForwardPolicy", func(forwardPolicy v1beta1.LocalDNSForwardPolicy, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ForwardPolicy = forwardPolicy
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -330,7 +350,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate LocalDNSServeStale", func(serveStale v1beta1.LocalDNSServeStale, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ServeStale = serveStale
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -359,7 +379,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate CacheDuration", func(durationStr string, expectedErr string) {
 			cacheDuration := karpv1.MustParseNillableDuration(durationStr)
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.CacheDuration = cacheDuration
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -388,7 +408,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate ServeStaleDuration", func(durationStr string, expectedErr string) {
 			serveStaleDuration := karpv1.MustParseNillableDuration(durationStr)
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.ServeStaleDuration = serveStaleDuration
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -416,7 +436,7 @@ var _ = Describe("CEL/Validation", func() {
 		)
 
 		DescribeTable("should validate MaxConcurrent", func(maxConcurrent *int32, expectedErr string) {
-			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", false)
+			overrideConfig := createCompleteLocalDNSZoneOverride("test.domain", true)
 			overrideConfig.MaxConcurrent = maxConcurrent
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
@@ -455,8 +475,8 @@ var _ = Describe("CEL/Validation", func() {
 						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
 							createCompleteLocalDNSZoneOverride(".", true),
 							createCompleteLocalDNSZoneOverride("cluster.local", false),
-							createCompleteLocalDNSZoneOverride("example.com", false),
-							createCompleteLocalDNSZoneOverride("example.com", false), // Duplicate zone
+						createCompleteLocalDNSZoneOverride("example.com", true),
+						createCompleteLocalDNSZoneOverride("example.com", true), // Duplicate zone
 						},
 						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
 							createCompleteLocalDNSZoneOverride(".", false),
@@ -578,7 +598,7 @@ var _ = Describe("CEL/Validation", func() {
 
 		DescribeTable("should validate protocol and serveStale combinations",
 			func(protocol v1beta1.LocalDNSProtocol, serveStale v1beta1.LocalDNSServeStale, shouldSucceed bool) {
-				override := createCompleteLocalDNSZoneOverride("example.com", false)
+				override := createCompleteLocalDNSZoneOverride("example.com", true)
 				override.Protocol = protocol
 				override.ServeStale = serveStale
 				nodeClass := &v1beta1.AKSNodeClass{

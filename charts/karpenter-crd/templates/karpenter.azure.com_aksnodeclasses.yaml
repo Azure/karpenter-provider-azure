@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   name: aksnodeclasses.karpenter.azure.com
 spec:
   group: karpenter.azure.com
@@ -279,8 +279,8 @@ spec:
                     x-kubernetes-list-type: map
                     x-kubernetes-validations:
                     - message: must contain required zones '.' and 'cluster.local'
-                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
-                        == z))'
+                      rule: self.exists(x, x.zone == '.') && (self.exists(x, x.zone
+                        == 'cluster.local') || self.exists(x, x.zone == 'cluster.local.'))
                   mode:
                     description: Mode of enablement for localDNS.
                     enum:
@@ -380,11 +380,16 @@ spec:
                     x-kubernetes-list-type: map
                     x-kubernetes-validations:
                     - message: must contain required zones '.' and 'cluster.local'
-                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
-                        == z))'
+                      rule: self.exists(x, x.zone == '.') && (self.exists(x, x.zone
+                        == 'cluster.local') || self.exists(x, x.zone == 'cluster.local.'))
                     - message: root zone '.' cannot be forwarded to ClusterCoreDNS
                         from vnetDNSOverrides
                       rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
+                        == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !(x.zone.endsWith(''cluster.local'')
+                        || x.zone.endsWith(''cluster.local.'')) && x.forwardDestination
                         == ''ClusterCoreDNS'')'
                 required:
                 - kubeDNSOverrides
@@ -827,8 +832,8 @@ spec:
                     x-kubernetes-list-type: map
                     x-kubernetes-validations:
                     - message: must contain required zones '.' and 'cluster.local'
-                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
-                        == z))'
+                      rule: self.exists(x, x.zone == '.') && (self.exists(x, x.zone
+                        == 'cluster.local') || self.exists(x, x.zone == 'cluster.local.'))
                   mode:
                     description: Mode of enablement for localDNS.
                     enum:
@@ -928,11 +933,16 @@ spec:
                     x-kubernetes-list-type: map
                     x-kubernetes-validations:
                     - message: must contain required zones '.' and 'cluster.local'
-                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
-                        == z))'
+                      rule: self.exists(x, x.zone == '.') && (self.exists(x, x.zone
+                        == 'cluster.local') || self.exists(x, x.zone == 'cluster.local.'))
                     - message: root zone '.' cannot be forwarded to ClusterCoreDNS
                         from vnetDNSOverrides
                       rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
+                        == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !(x.zone.endsWith(''cluster.local'')
+                        || x.zone.endsWith(''cluster.local.'')) && x.forwardDestination
                         == ''ClusterCoreDNS'')'
                 required:
                 - kubeDNSOverrides
