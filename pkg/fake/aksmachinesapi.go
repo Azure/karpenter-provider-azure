@@ -253,7 +253,15 @@ func (c *AKSMachinesAPI) Reset() {
 	c.AfterPollProvisioningErrorOverride = nil
 }
 
-func (c *AKSMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, parameters armcontainerservice.Machine, options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
+func (c *AKSMachinesAPI) BeginCreateOrUpdate(
+	ctx context.Context,
+	resourceGroupName string,
+	resourceName string,
+	agentPoolName string,
+	aksMachineName string,
+	parameters armcontainerservice.Machine,
+	options *armcontainerservice.MachinesClientBeginCreateOrUpdateOptions,
+) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
 	input := &AKSMachineCreateOrUpdateInput{
 		ResourceGroupName: resourceGroupName,
 		ResourceName:      resourceName,
@@ -280,7 +288,7 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(ctx context.Context, resourceGroupN
 
 	// Default values + update status, for sync phase
 	vmImageID := GetVMImageIDFromContext(ctx)
-	c.setDefaultMachineValues(&aksMachine, vmImageID, input.AgentPoolName)
+	c.setDefaultMachineValues(&aksMachine, vmImageID, input.ResourceGroupName, input.AgentPoolName)
 	aksMachine.Properties.ProvisioningState = lo.ToPtr("Creating")
 	c.aksDataStorage.AKSMachines.Store(id, aksMachine)
 
@@ -345,7 +353,14 @@ func (c *AKSMachinesAPI) simulateCreateStatusAtAsync(aksMachine armcontainerserv
 	return aksMachine, pollingError
 }
 
-func (c *AKSMachinesAPI) Get(ctx context.Context, resourceGroupName string, resourceName string, agentPoolName string, aksMachineName string, options *armcontainerservice.MachinesClientGetOptions) (armcontainerservice.MachinesClientGetResponse, error) {
+func (c *AKSMachinesAPI) Get(
+	ctx context.Context,
+	resourceGroupName string,
+	resourceName string,
+	agentPoolName string,
+	aksMachineName string,
+	options *armcontainerservice.MachinesClientGetOptions,
+) (armcontainerservice.MachinesClientGetResponse, error) {
 	input := &AKSMachineGetInput{
 		ResourceGroupName: resourceGroupName,
 		ResourceName:      resourceName,
@@ -372,7 +387,12 @@ func (c *AKSMachinesAPI) Get(ctx context.Context, resourceGroupName string, reso
 	})
 }
 
-func (c *AKSMachinesAPI) NewListPager(resourceGroupName string, resourceName string, agentPoolName string, options *armcontainerservice.MachinesClientListOptions) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
+func (c *AKSMachinesAPI) NewListPager(
+	resourceGroupName string,
+	resourceName string,
+	agentPoolName string,
+	options *armcontainerservice.MachinesClientListOptions,
+) *runtime.Pager[armcontainerservice.MachinesClientListResponse] {
 	input := &AKSMachineListInput{
 		ResourceGroupName: resourceGroupName,
 		ResourceName:      resourceName,
@@ -393,9 +413,14 @@ func (c *AKSMachinesAPI) NewListPager(resourceGroupName string, resourceName str
 				}
 
 				var aksMachines []*armcontainerservice.Machine
+				expectedIDPrefix := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.ContainerService/managedClusters/%s/agentPools/%s/machines/",
+					input.ResourceGroupName, input.ResourceName, input.AgentPoolName)
 				c.aksDataStorage.AKSMachines.Range(func(key, value any) bool {
-					aksMachine := value.(armcontainerservice.Machine)
-					aksMachines = append(aksMachines, &aksMachine)
+					machineID := key.(string)
+					if strings.HasPrefix(machineID, expectedIDPrefix) {
+						aksMachine := value.(armcontainerservice.Machine)
+						aksMachines = append(aksMachines, &aksMachine)
+					}
 					return true
 				})
 
@@ -486,7 +511,7 @@ func getAKSMachineNodeImageVersionFromSIGImageID(imageID string) (string, error)
 // setDefaultMachineValues sets comprehensive default values for AKS machine creation
 // Note: this may not be accurate. But likely sufficient for testing.
 // nolint: gocyclo
-func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, vmImageID string, agentPoolName string) {
+func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, vmImageID string, resourceGroupName string, agentPoolName string) {
 	if machine.Properties == nil {
 		machine.Properties = &armcontainerservice.MachineProperties{}
 	}
@@ -513,7 +538,7 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
 	if machine.Properties.ResourceID == nil {
 		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm0", agentPoolName, *machine.Name)
-		vmResourceID := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/test-resourceGroup/providers/Microsoft.Compute/virtualMachines/%s", vmName)
+		vmResourceID := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", resourceGroupName, vmName)
 		machine.Properties.ResourceID = lo.ToPtr(vmResourceID)
 	}
 
