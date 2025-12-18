@@ -1,6 +1,6 @@
 module github.com/Azure/karpenter-provider-azure
 
-go 1.24.11
+go 1.25.5
 
 require (
 	dario.cat/mergo v1.0.2
