@@ -127,7 +127,7 @@ type LocalDNS struct {
 	// +required
 	// +listType=map
 	// +listMapKey=zone
-	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="self.exists(x, x.zone == '.') && (self.exists(x, x.zone == 'cluster.local') || self.exists(x, x.zone == 'cluster.local.'))"
+	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="self.exists(x, x.zone == '.') && self.exists(x, x.zone == 'cluster.local')"
 	// +kubebuilder:validation:XValidation:message="root zone '.' cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides",rule="!self.exists(x, x.zone == '.' && x.forwardDestination == 'ClusterCoreDNS')"
 	// +kubebuilder:validation:XValidation:message="external domains cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides",rule="!self.exists(x, x.zone != '.' && !(x.zone.endsWith('cluster.local') || x.zone.endsWith('cluster.local.')) && x.forwardDestination == 'ClusterCoreDNS')"
 	// +kubebuilder:validation:MaxItems=100
@@ -136,7 +136,7 @@ type LocalDNS struct {
 	// +required
 	// +listType=map
 	// +listMapKey=zone
-	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="self.exists(x, x.zone == '.') && (self.exists(x, x.zone == 'cluster.local') || self.exists(x, x.zone == 'cluster.local.'))"
+	// +kubebuilder:validation:XValidation:message="must contain required zones '.' and 'cluster.local'",rule="self.exists(x, x.zone == '.') && self.exists(x, x.zone == 'cluster.local')"
 	// +kubebuilder:validation:MaxItems=100
 	KubeDNSOverrides []LocalDNSZoneOverride `json:"kubeDNSOverrides,omitempty"`
 }

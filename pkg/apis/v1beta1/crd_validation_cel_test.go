@@ -183,26 +183,6 @@ var _ = Describe("CEL/Validation", func() {
 			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
 		})
 
-		It("should accept cluster.local with trailing dot", func() {
-			nodeClass := &v1beta1.AKSNodeClass{
-				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
-				Spec: v1beta1.AKSNodeClassSpec{
-					LocalDNS: &v1beta1.LocalDNS{
-						Mode: v1beta1.LocalDNSModeRequired,
-						VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
-							createCompleteLocalDNSZoneOverride(".", true),
-							createCompleteLocalDNSZoneOverride("cluster.local.", false),
-						},
-						KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
-							createCompleteLocalDNSZoneOverride(".", false),
-							createCompleteLocalDNSZoneOverride("cluster.local.", false),
-						},
-					},
-				},
-			}
-			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
-		})
-
 		DescribeTable("should validate LocalDNSMode", func(mode v1beta1.LocalDNSMode, expectedErr string) {
 			nodeClass := &v1beta1.AKSNodeClass{
 				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
