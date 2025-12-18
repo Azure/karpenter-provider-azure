@@ -30,6 +30,9 @@ var agentPoolNotFoundRespError = &azcore.ResponseError{
 	StatusCode: http.StatusNotFound,
 }
 
+// This "fake" client simulates the behavior of when there are no AKS machines present.
+// There will be no outgoing calls.
+// An example use case is when we want to cut the comms. with AKS machine API when we don't want to manage existing machines.
 type noAKSMachinesClient struct{}
 
 func NewNoAKSMachinesClient() AKSMachinesAPI {

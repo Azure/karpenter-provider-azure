@@ -202,9 +202,12 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// TODO Move this over to track 2 when skewer is migrated
 	skuClient := skuclient.NewSkuClient(cfg.SubscriptionID, cred, env.Cloud)
 
+	// These clients are used for Azure instance management.
 	var nodeBootstrappingClient imagefamilytypes.NodeBootstrappingAPI
 	var aksMachinesClient AKSMachinesAPI
 	var agentPoolsClient AKSAgentPoolsAPI
+
+	// Only create the bootstrapping client if we need to use it.
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		nodeBootstrappingClient, err = imagefamily.NewNodeBootstrappingClient(
 			ctx,
@@ -219,6 +222,9 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			return nil, err
 		}
 	}
+
+	// Only create AKS machine clients if we need to use them.
+	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
 	if o.ManageExistingAKSMachines {
 		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
@@ -229,7 +235,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 			return nil, err
 		}
 	} else {
-		// Try create true clients
+		aksMachinesClient = NewNoAKSMachinesClient()
+		agentPoolsClient = NewNoAKSAgentPoolsClient()
+
+		// Try create true clients. This is just for diagnostic purposes and serves no real functionality.
+		// This portion of code can be removed once we are confident that this works reliably.
 		_, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
 			log.FromContext(ctx).Info("failed to create true AKS machines client, but tolerated due to currently on dry client", "error", err)
@@ -238,8 +248,6 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		if err != nil {
 			log.FromContext(ctx).Info("failed to create true AKS agent pools client, but tolerated due to currently on dry client", "error", err)
 		}
-		aksMachinesClient = NewNoAKSMachinesClient()
-		agentPoolsClient = NewNoAKSAgentPoolsClient()
 	}
 
 	return NewAZClientFromAPI(
