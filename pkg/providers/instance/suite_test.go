@@ -189,7 +189,7 @@ func zoneFromVM(vm *armcompute.VirtualMachine) string {
 	if zonePtr == nil {
 		return ""
 	}
-	return utils.MakeZone(strings.ToLower(lo.FromPtr(vm.Location)), lo.FromPtr(zonePtr))
+	return utils.MakeAKSLabelZoneFromARMZone(strings.ToLower(lo.FromPtr(vm.Location)), lo.FromPtr(zonePtr))
 }
 
 var _ = Describe("VMInstanceProvider", func() {
