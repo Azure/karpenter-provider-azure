@@ -22,6 +22,10 @@ import (
 	"strings"
 )
 
+var (
+	sigImageIDRegex = regexp.MustCompile(`(?i)/subscriptions/(\S+)/resourceGroups/(\S+)/providers/Microsoft.Compute/galleries/(\S+)/images/(\S+)/versions/(\S+)`)
+)
+
 // WARNING: not supporting CIG images yet.
 func GetAKSMachineNodeImageVersionFromImageID(imageID string) (string, error) {
 	if strings.HasPrefix(imageID, "/CommunityGalleries") {
@@ -35,22 +39,22 @@ func GetAKSMachineNodeImageVersionFromImageID(imageID string) (string, error) {
 // Convert from "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
 // to "AKSUbuntu-2204gen2containerd-2022.10.03".
 func GetAKSMachineNodeImageVersionFromSIGImageID(imageID string) (string, error) {
-	matches := regexp.MustCompile(`(?i)/subscriptions/(\S+)/resourceGroups/(\S+)/providers/Microsoft.Compute/galleries/(\S+)/images/(\S+)/versions/(\S+)`).FindStringSubmatch(imageID)
+	matches := sigImageIDRegex.FindStringSubmatch(imageID)
 	if matches == nil {
 		return "", fmt.Errorf("incorrect SIG image ID id=%s", imageID)
 	}
 
-	// SubscriptionID := matches[1]
-	// ResourceGroup := matches[2]
-	Gallery := matches[3]
-	Definition := matches[4]
-	Version := matches[5]
+	// subscriptionID := matches[1]
+	// resourceGroup := matches[2]
+	gallery := matches[3]
+	definition := matches[4]
+	version := matches[5]
 
-	prefix := Gallery
-	osVersion := Definition
+	prefix := gallery
+	osVersion := definition
 	// if strings.Contains(prefix, windowsPrefix) {		// TODO(Windows)
-	// 	osVersion = extractOsVersionForWindows(Definition)
+	// 	osVersion = extractOsVersionForWindows(definition)
 	// }
 
-	return strings.Join([]string{prefix, osVersion, Version}, "-"), nil
+	return strings.Join([]string{prefix, osVersion, version}, "-"), nil
 }
