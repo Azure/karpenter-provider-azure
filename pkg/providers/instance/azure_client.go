@@ -242,11 +242,11 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		// This portion of code can be removed once we are confident that this works reliably.
 		_, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
-			log.FromContext(ctx).Info("failed to create true AKS machines client, but tolerated due to currently on dry client", "error", err)
+			log.FromContext(ctx).Info("failed to create true AKS machines client, but tolerated due to currently on no-client", "error", err)
 		}
 		_, err = armcontainerservice.NewAgentPoolsClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
-			log.FromContext(ctx).Info("failed to create true AKS agent pools client, but tolerated due to currently on dry client", "error", err)
+			log.FromContext(ctx).Info("failed to create true AKS agent pools client, but tolerated due to currently on no-client", "error", err)
 		}
 	}
 
