@@ -19,7 +19,7 @@ package test
 import (
 	"fmt"
 
-	"github.com/imdario/mergo"
+	"dario.cat/mergo"
 	"github.com/samber/lo"
 
 	azoptions "github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -48,6 +48,7 @@ type OptionsFields struct {
 	EnableAzureSDKLogging          *bool
 	DiskEncryptionSetID            *string
 	ClusterDNSServiceIP            *string
+	ManageExistingAKSMachines      *bool
 
 	// SIG Flags not required by the self hosted offering
 	UseSIG                  *bool
@@ -88,5 +89,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
 		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
+		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 	}
 }

@@ -64,6 +64,7 @@ type ProvisionClientBootstrap struct {
 	OSSKU                          string
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
+	LocalDNSProfile                *v1beta1.LocalDNS
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -93,6 +94,8 @@ func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (stri
 }
 
 // nolint: gocyclo
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context) (*models.ProvisionValues, error) {
 	if p.IsWindows {
 		// TODO(Windows)
@@ -141,6 +144,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		ArtifactStreamingProfile: &models.ArtifactStreamingProfile{
 			Enabled: lo.ToPtr(enableArtifactStreaming),
 		},
+		LocalDNSProfile: convertLocalDNSToModel(p.LocalDNSProfile),
 	}
 
 	// Map OS SKU to AKS provision client's expectation
@@ -160,9 +164,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 			CPUCfsQuota:           p.KubeletConfig.CPUCFSQuota,
 			ImageGcHighThreshold:  p.KubeletConfig.ImageGCHighThresholdPercent,
 			ImageGcLowThreshold:   p.KubeletConfig.ImageGCLowThresholdPercent,
-			ContainerLogMaxSizeMB: convertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
+			ContainerLogMaxSizeMB: ConvertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
 			ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
-			PodMaxPids:            convertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			PodMaxPids:            ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
 		}
 
 		// NodeClaim defaults don't work somehow and keep giving invalid values. Can be improved later.
