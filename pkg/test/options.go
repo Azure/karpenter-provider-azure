@@ -89,6 +89,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
 		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
-		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, true),
+		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 	}
 }
