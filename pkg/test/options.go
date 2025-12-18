@@ -19,7 +19,7 @@ package test
 import (
 	"fmt"
 
-	"github.com/imdario/mergo"
+	"dario.cat/mergo"
 	"github.com/samber/lo"
 
 	azoptions "github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -89,6 +89,6 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		AdditionalTags:                 options.AdditionalTags,
 		DiskEncryptionSetID:            lo.FromPtrOr(options.DiskEncryptionSetID, ""),
 		DNSServiceIP:                   lo.FromPtrOr(options.ClusterDNSServiceIP, ""),
-		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, true),
+		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 	}
 }

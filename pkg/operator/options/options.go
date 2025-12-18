@@ -92,7 +92,9 @@ type Options struct {
 	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
 	EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
 	DiskEncryptionSetID        string            `json:"diskEncryptionSetId,omitempty"`
-	ManageExistingAKSMachines  bool              `json:"manageExistingAKSMachines,omitempty"` // If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.
+
+	// If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.
+	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {

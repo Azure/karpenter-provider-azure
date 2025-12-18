@@ -92,7 +92,8 @@ var fakeClock *clock.FakeClock
 var coreProvisioner, coreProvisionerNonZonal, coreProvisionerBootstrap *provisioning.Provisioner
 var cluster, clusterNonZonal, clusterBootstrap *state.Cluster
 var cloudProvider, cloudProviderNonZonal, cloudProviderBootstrap *cloudprovider.CloudProvider
-var fakeZone1 = utils.MakeZone(fake.Region, "1")
+
+var fakeZone1 = utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")
 
 var defaultTestSKU = &skewer.SKU{Name: lo.ToPtr("Standard_D2_v3"), Family: lo.ToPtr("standardD2v3Family")}
 
@@ -393,7 +394,7 @@ var _ = Describe("InstanceType Provider", func() {
 			ExpectNotScheduled(ctx, env.Client, pod)
 
 			// ensure that initial zone was made unavailable
-			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+			zone, err := utils.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectUnavailable(azureEnv, defaultTestSKU, zone, karpv1.CapacityTypeSpot)
 
@@ -463,7 +464,7 @@ var _ = Describe("InstanceType Provider", func() {
 			// ensure that initial VM size was made unavailable
 			vm := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 			initialVMSize := *vm.Properties.HardwareProfile.VMSize
-			zone, err := utils.GetZone(&vm)
+			zone, err := utils.MakeAKSLabelZoneFromVM(&vm)
 			Expect(err).ToNot(HaveOccurred())
 			ExpectUnavailable(azureEnv, &skewer.SKU{Name: lo.ToPtr(string(initialVMSize))}, zone, karpv1.CapacityTypeSpot)
 
@@ -684,6 +685,235 @@ var _ = Describe("InstanceType Provider", func() {
 				// Standard_D2_v5 supports encryption at host and should be included
 				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2_v5"))))
 			})
+		})
+	})
+
+	DescribeTable("Filtering by LocalDNS",
+		func(localDNSMode v1beta1.LocalDNSMode, k8sVersion string, shouldIncludeD2s, shouldIncludeD4s bool) {
+			if localDNSMode != "" {
+				// Create complete LocalDNS configuration with all required fields
+				// Note: VnetDNS and KubeDNS overrides must contain both "." and "cluster.local" zones
+				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{
+					Mode: localDNSMode,
+					VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+						{
+							Zone:               "cluster.local",
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+					},
+					KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+						{
+							Zone:               ".",
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+						{
+							Zone:               "cluster.local",
+							QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+							Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+							ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+							ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+							MaxConcurrent:      lo.ToPtr(int32(100)),
+							CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+							ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+							ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+						},
+					},
+				}
+			}
+			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
+			if k8sVersion != "" {
+				nodeClass.Status.KubernetesVersion = k8sVersion
+			}
+			ExpectApplied(ctx, env.Client, nodeClass)
+			instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(instanceTypes).ShouldNot(BeEmpty())
+
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			if shouldIncludeD2s {
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+					"Standard_D2s_v3 (2 vCPUs) should be included")
+			} else {
+				Expect(instanceTypes).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+					"Standard_D2s_v3 (2 vCPUs) should be excluded")
+			}
+
+			if shouldIncludeD4s {
+				Expect(instanceTypes).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+					"Standard_D4s_v3 (4 vCPUs) should be included")
+			}
+		},
+		Entry("when LocalDNS is required - filters to 4+ vCPUs and 244+ MiB",
+			v1beta1.LocalDNSModeRequired, "", false, true),
+		Entry("when LocalDNS is preferred with k8s >= 1.36 - filters to 4+ vCPUs and 244+ MiB",
+			v1beta1.LocalDNSModePreferred, "1.36.0", false, true),
+		Entry("when LocalDNS is preferred with k8s < 1.36 - includes all SKUs",
+			v1beta1.LocalDNSModePreferred, "1.35.0", true, true),
+		Entry("when LocalDNS is disabled - includes all SKUs",
+			v1beta1.LocalDNSModeDisabled, "", true, true),
+		Entry("when LocalDNS is not set - includes all SKUs",
+			v1beta1.LocalDNSMode(""), "", true, true),
+	)
+
+	Context("Cache invalidation with LocalDNS", func() {
+		It("should return different instance type lists when LocalDNS mode changes", func() {
+			// First, get instance types with LocalDNS disabled
+			nodeClassDisabled := test.AKSNodeClass()
+			nodeClassDisabled.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeDisabled,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+					{
+						Zone:               "cluster.local",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+					{
+						Zone:               "cluster.local",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+			}
+			ExpectApplied(ctx, env.Client, nodeClassDisabled)
+			instanceTypesDisabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassDisabled)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Now get instance types with LocalDNS required
+			nodeClassEnabled := test.AKSNodeClass()
+			nodeClassEnabled.Spec.LocalDNS = &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModeRequired,
+				VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationVnetDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+					{
+						Zone:               "cluster.local",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+				KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{
+					{
+						Zone:               ".",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+					{
+						Zone:               "cluster.local",
+						QueryLogging:       v1beta1.LocalDNSQueryLoggingError,
+						Protocol:           v1beta1.LocalDNSProtocolPreferUDP,
+						ForwardDestination: v1beta1.LocalDNSForwardDestinationClusterCoreDNS,
+						ForwardPolicy:      v1beta1.LocalDNSForwardPolicySequential,
+						MaxConcurrent:      lo.ToPtr(int32(100)),
+						CacheDuration:      karpv1.MustParseNillableDuration("1h"),
+						ServeStaleDuration: karpv1.MustParseNillableDuration("30m"),
+						ServeStale:         v1beta1.LocalDNSServeStaleVerify,
+					},
+				},
+			}
+			ExpectApplied(ctx, env.Client, nodeClassEnabled)
+			instanceTypesEnabled, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClassEnabled)
+			Expect(err).ToNot(HaveOccurred())
+
+			// The lists should be different sizes
+			Expect(len(instanceTypesEnabled)).To(BeNumerically("<", len(instanceTypesDisabled)),
+				"LocalDNS Required should filter out small SKUs")
+
+			getName := func(instanceType *corecloudprovider.InstanceType) string { return instanceType.Name }
+
+			// Verify that small SKUs (< 4 vCPUs) are present when disabled but absent when enabled
+			Expect(instanceTypesDisabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+				"Standard_D2s_v3 (2 vCPUs) should be included when LocalDNS is disabled")
+			Expect(instanceTypesEnabled).ShouldNot(ContainElement(WithTransform(getName, Equal("Standard_D2s_v3"))),
+				"Standard_D2s_v3 (2 vCPUs) should be excluded when LocalDNS is required")
+
+			// Verify that large SKUs (>= 4 vCPUs) are present in both
+			Expect(instanceTypesDisabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+				"Standard_D4s_v3 (4 vCPUs) should be included when LocalDNS is disabled")
+			Expect(instanceTypesEnabled).Should(ContainElement(WithTransform(getName, Equal("Standard_D4s_v3"))),
+				"Standard_D4s_v3 (4 vCPUs) should be included when LocalDNS is required")
 		})
 	})
 
@@ -1214,7 +1444,7 @@ var _ = Describe("InstanceType Provider", func() {
 			Eventually(func() []*karpv1.NodeClaim { return ExpectNodeClaims(ctx, env.Client) }).To(HaveLen(0))
 
 			By("marking whatever zone was picked as unavailable - for both spot and on-demand")
-			zone, err := utils.GetZone(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
+			zone, err := utils.MakeAKSLabelZoneFromVM(&azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM)
 			Expect(err).ToNot(HaveOccurred())
 			for _, skuToCheck := range expectedUnavailableSKUs {
 				Expect(azureEnv.UnavailableOfferingsCache.IsUnavailable(skuToCheck, zone, karpv1.CapacityTypeSpot)).To(BeTrue())
@@ -1354,7 +1584,7 @@ var _ = Describe("InstanceType Provider", func() {
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 				for _, zoneID := range []string{"1", "2", "3"} {
-					ExpectUnavailable(azureEnv, sku, utils.MakeZone(fake.Region, zoneID), capacityType)
+					ExpectUnavailable(azureEnv, sku, utils.MakeAKSLabelZoneFromARMZone(fake.Region, zoneID), capacityType)
 				}
 			}
 
