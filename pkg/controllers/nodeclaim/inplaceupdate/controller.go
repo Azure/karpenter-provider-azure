@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/operator/injection"
 	corenodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -43,17 +43,17 @@ import (
 )
 
 type Controller struct {
-	kubeClient       client.Client
-	instanceProvider instance.Provider
+	kubeClient         client.Client
+	vmInstanceProvider instance.VMProvider
 }
 
 func NewController(
 	kubeClient client.Client,
-	instanceProvider instance.Provider,
+	vmInstanceProvider instance.VMProvider,
 ) *Controller {
 	return &Controller{
-		kubeClient:       kubeClient,
-		instanceProvider: instanceProvider,
+		kubeClient:         kubeClient,
+		vmInstanceProvider: vmInstanceProvider,
 	}
 }
 
@@ -92,14 +92,10 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 
 	stored := nodeClaim.DeepCopy()
 
-	vm, err := nodeclaimutils.GetVM(ctx, c.instanceProvider, nodeClaim)
+	// VM-based nodeClaim
+	err = c.processVMInstance(ctx, options, nodeClaim, nodeClass)
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
-	}
-
-	err = c.applyPatch(ctx, options, nodeClaim, nodeClass, vm)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
+		return reconcile.Result{}, fmt.Errorf("processing VM instance for nodeClaim %s: %w", nodeClaim.Name, err)
 	}
 
 	if nodeClaim.Annotations == nil {
@@ -112,7 +108,6 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	if err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
-	log.FromContext(ctx).V(1).Info("successfully saved new in-place update hash", "goalHash", goalHash)
 
 	return reconcile.Result{}, nil
 }
@@ -136,7 +131,26 @@ func (c *Controller) shouldProcess(ctx context.Context, nodeClaim *karpv1.NodeCl
 	return true, reconcile.Result{}
 }
 
-func (c *Controller) applyPatch(
+func (c *Controller) processVMInstance(
+	ctx context.Context,
+	options *options.Options,
+	nodeClaim *karpv1.NodeClaim,
+	nodeClass *v1beta1.AKSNodeClass,
+) error {
+	vm, err := nodeclaimutils.GetVM(ctx, c.vmInstanceProvider, nodeClaim)
+	if err != nil {
+		return fmt.Errorf("getting VM for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	err = c.applyVMPatch(ctx, options, nodeClaim, nodeClass, vm)
+	if err != nil {
+		return fmt.Errorf("applying patch to VM for nodeClaim %s: %w", nodeClaim.Name, err)
+	}
+
+	return nil
+}
+
+func (c *Controller) applyVMPatch(
 	ctx context.Context,
 	options *options.Options,
 	nodeClaim *karpv1.NodeClaim,
@@ -150,7 +164,7 @@ func (c *Controller) applyPatch(
 
 	// Apply the update, if one is needed
 	if update != nil {
-		err := c.instanceProvider.Update(ctx, lo.FromPtr(vm.Name), *update)
+		err := c.vmInstanceProvider.Update(ctx, lo.FromPtr(vm.Name), *update)
 		if err != nil {
 			return fmt.Errorf("failed to apply update to VM, %w", err)
 		}

@@ -75,6 +75,7 @@ type Options struct {
 	NetworkPolicy     string `json:"networkPolicy,omitempty"`     // => NetworkPolicy in bootstrap
 	NetworkPluginMode string `json:"networkPluginMode,omitempty"` // => Network Plugin Mode is used to control the mode the network plugin should operate in. For example, "overlay" used with --network-plugin=azure will use an overlay network (non-VNET IPs) for pods in the cluster. Learn more about overlay networking here: https://learn.microsoft.com/en-us/azure/aks/azure-cni-overlay?tabs=kubectl#overview-of-overlay-networking
 	NetworkDataplane  string `json:"networkDataplane,omitempty"`
+	DNSServiceIP      string `json:"dnsServiceIP,omitempty"`
 
 	NodeIdentities          []string `json:"nodeIdentities,omitempty"`          // => Applied onto each VM
 	KubeletIdentityClientID string   `json:"kubeletIdentityClientID,omitempty"` // => Flows to bootstrap and used in drift
@@ -89,7 +90,11 @@ type Options struct {
 	SIGSubscriptionID          string            `json:"sigSubscriptionId,omitempty"`
 	NodeResourceGroup          string            `json:"nodeResourceGroup,omitempty"`
 	AdditionalTags             map[string]string `json:"additionalTags,omitempty"`
+	EnableAzureSDKLogging      bool              `json:"enableAzureSDKLogging,omitempty"` // Controls whether Azure SDK middleware logging is enabled
 	DiskEncryptionSetID        string            `json:"diskEncryptionSetId,omitempty"`
+
+	// If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.
+	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -100,6 +105,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.LinuxAdminUsername, "linux-admin-username", env.WithDefaultString("LINUX_ADMIN_USERNAME", "azureuser"), "The admin username for Linux VMs.")
 	fs.StringVar(&o.SSHPublicKey, "ssh-public-key", env.WithDefaultString("SSH_PUBLIC_KEY", ""), "[REQUIRED] VM SSH public key.")
 	fs.StringVar(&o.NetworkPlugin, "network-plugin", env.WithDefaultString("NETWORK_PLUGIN", consts.NetworkPluginAzure), "The network plugin used by the cluster.")
+	fs.StringVar(&o.DNSServiceIP, "dns-service-ip", env.WithDefaultString("DNS_SERVICE_IP", ""), "The IP address of cluster DNS service.")
 	fs.StringVar(&o.NetworkPluginMode, "network-plugin-mode", env.WithDefaultString("NETWORK_PLUGIN_MODE", consts.NetworkPluginModeOverlay), "network plugin mode of the cluster.")
 	fs.StringVar(&o.NetworkPolicy, "network-policy", env.WithDefaultString("NETWORK_POLICY", ""), "The network policy used by the cluster.")
 	fs.StringVar(&o.NetworkDataplane, "network-dataplane", env.WithDefaultString("NETWORK_DATAPLANE", "cilium"), "The network dataplane used by the cluster.")
@@ -114,6 +120,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	fs.StringVar(&o.SIGAccessTokenServerURL, "sig-access-token-server-url", env.WithDefaultString("SIG_ACCESS_TOKEN_SERVER_URL", ""), "The URL for the SIG access token server. Only used for AKS managed karpenter. UseSIG must be set tot true for this to take effect.")
 	fs.StringVar(&o.SIGSubscriptionID, "sig-subscription-id", env.WithDefaultString("SIG_SUBSCRIPTION_ID", ""), "The subscription ID of the shared image gallery.")
 	fs.StringVar(&o.DiskEncryptionSetID, "node-osdisk-diskencryptionset-id", env.WithDefaultString("NODE_OSDISK_DISKENCRYPTIONSET_ID", ""), "The ARM resource ID of the disk encryption set to use for customer-managed key (BYOK) encryption.")
+	fs.BoolVar(&o.ManageExistingAKSMachines, "manage-existing-aks-machines", env.WithDefaultBool("MANAGE_EXISTING_AKS_MACHINES", false), "If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.")
 
 	additionalTagsFlag := k8sflag.NewMapStringString(&o.AdditionalTags)
 	if err := additionalTagsFlag.Set(env.WithDefaultString("ADDITIONAL_TAGS", "")); err != nil {
@@ -121,6 +128,7 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	}
 	// See https://github.com/Azure/karpenter-provider-azure/issues/1042 for issue discussing improvements around this
 	fs.Var(additionalTagsFlag, "additional-tags", "Additional tags to apply to the resources in Azure. Format is key1=value1,key2=value2. These tags will be merged with the tags specified on the NodePool. In the case of a tag collision, the NodePool tag wins. These tags only apply to new nodes and do not trigger drift, which means that adding tags to this collection will not update existing nodes until drift triggers for some other reason.")
+	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", true), "If set to false then Azure SDK middleware logging is disabled for debugging, and won't be logging all HTTP requests/responses to Azure APIs.")
 }
 
 func (o *Options) GetAPIServerName() string {

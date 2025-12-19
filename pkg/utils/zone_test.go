@@ -20,12 +20,12 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetZone(t *testing.T) {
+func TestMakeAKSLabelZoneFromVM(t *testing.T) {
 	tc := []struct {
 		testName      string
 		input         *armcompute.VirtualMachine
@@ -74,7 +74,7 @@ func TestGetZone(t *testing.T) {
 	}
 
 	for _, c := range tc {
-		zone, err := utils.GetZone(c.input)
+		zone, err := utils.MakeAKSLabelZoneFromVM(c.input)
 		assert.Equal(t, c.expectedZone, zone, c.testName)
 		if err == nil && c.expectedError != "" {
 			assert.Fail(t, "expected error but got nil", c.testName)

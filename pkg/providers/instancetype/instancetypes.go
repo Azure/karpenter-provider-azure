@@ -32,7 +32,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -119,7 +119,7 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
@@ -127,6 +127,7 @@ func (p *DefaultProvider) List(
 		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
+		nodeClass.IsLocalDNSEnabled(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -164,6 +165,10 @@ func (p *DefaultProvider) List(
 		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
 			continue
 		}
+		if !p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) {
+			continue
+		}
+
 		result = append(result, instanceType)
 	}
 
@@ -196,7 +201,7 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
 	if len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
-			return utils.MakeZone(p.region, zone)
+			return utils.MakeAKSLabelZoneFromARMZone(p.region, zone)
 		})...)
 	}
 	return sets.New("") // empty string means non-zonal offering
@@ -287,6 +292,21 @@ func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
 		return false
 	}
 	return strings.EqualFold(value, "True")
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// If LocalDNS won't be enabled, all instance types are supported
+	if !nodeClass.IsLocalDNSEnabled() {
+		return true
+	}
+
+	// LocalDNS requires at least 4 vCPUs and 256 MB (244.140625 MiB) of memory
+	cpu, err := sku.VCPU()
+	if err != nil || cpu < 4 {
+		return false
+	}
+
+	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters

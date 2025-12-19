@@ -21,6 +21,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -54,6 +56,7 @@ var _ = Describe("Options", func() {
 		"SSH_PUBLIC_KEY",
 		"NETWORK_PLUGIN",
 		"NETWORK_POLICY",
+		"DNS_SERVICE_IP",
 		"NODE_IDENTITIES",
 		"PROVISION_MODE",
 		"NODEBOOTSTRAPPING_SERVER_URL",
@@ -66,6 +69,8 @@ var _ = Describe("Options", func() {
 		"KUBELET_IDENTITY_CLIENT_ID",
 		"LINUX_ADMIN_USERNAME",
 		"ADDITIONAL_TAGS",
+		"ENABLE_AZURE_SDK_LOGGING",
+		"MANAGE_EXISTING_AKS_MACHINES",
 	}
 
 	var fs *coreoptions.FlagSet
@@ -106,6 +111,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("NETWORK_PLUGIN", "none") // Testing with none to make sure the default isn't overriding or something like that with "azure"
 			os.Setenv("NETWORK_PLUGIN_MODE", "")
 			os.Setenv("NETWORK_POLICY", "env-network-policy")
+			os.Setenv("DNS_SERVICE_IP", "10.244.0.1")
 			os.Setenv("NODE_IDENTITIES", "/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid1,/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/envid2")
 			os.Setenv("VNET_SUBNET_ID", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub")
 			os.Setenv("PROVISION_MODE", "bootstrappingclient")
@@ -118,6 +124,7 @@ var _ = Describe("Options", func() {
 			os.Setenv("KUBELET_IDENTITY_CLIENT_ID", "2345678-1234-1234-1234-123456789012")
 			os.Setenv("LINUX_ADMIN_USERNAME", "customadminusername")
 			os.Setenv("ADDITIONAL_TAGS", "test-tag=test-value")
+			os.Setenv("MANAGE_EXISTING_AKS_MACHINES", "true")
 			fs = &coreoptions.FlagSet{
 				FlagSet: flag.NewFlagSet("karpenter", flag.ContinueOnError),
 			}
@@ -146,6 +153,8 @@ var _ = Describe("Options", func() {
 				NodeResourceGroup:              lo.ToPtr("my-node-rg"),
 				KubeletIdentityClientID:        lo.ToPtr("2345678-1234-1234-1234-123456789012"),
 				AdditionalTags:                 map[string]string{"test-tag": "test-value"},
+				ClusterDNSServiceIP:            lo.ToPtr("10.244.0.1"),
+				ManageExistingAKSMachines:      lo.ToPtr(true),
 			})
 			Expect(opts).To(BeComparableTo(expectedOpts, cmpopts.IgnoreUnexported(options.Options{})))
 		})
@@ -191,6 +200,16 @@ var _ = Describe("Options", func() {
 				"--network-dataplane", "ciluum",
 			)
 			Expect(err).To(MatchError(ContainSubstring("network dataplane ciluum is not a valid network dataplane, valid dataplanes are ('azure', 'cilium')")))
+		})
+		It("should fail validation when cluster DNS IP is not valid", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--dns-service-ip", "999.1.2.3",
+			)
+			Expect(err).To(MatchError(ContainSubstring("dns-service-ip is invalid")))
 		})
 		It("should fail validation when clusterName not included", func() {
 			err := opts.Parse(
@@ -475,6 +494,35 @@ var _ = Describe("Options", func() {
 			)
 			Expect(err).To(MatchError(ContainSubstring("validating options, additional-tags key \"<key1>\" contains invalid characters.")))
 		})
+
+		It("should default manage-existing-aks-machines to false", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeFalse())
+		})
+
+		It("should succeed with manage-existing-aks-machines set", func() {
+			err := opts.Parse(
+				fs,
+				"--cluster-name", "my-name",
+				"--cluster-endpoint", "https://karpenter-000000000000.hcp.westus2.staging.azmk8s.io",
+				"--kubelet-bootstrap-token", "flag-bootstrap-token",
+				"--ssh-public-key", "flag-ssh-public-key",
+				"--vnet-subnet-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/sillygeese/providers/Microsoft.Network/virtualNetworks/karpentervnet/subnets/karpentersub",
+				"--node-resource-group", "my-node-rg",
+				"--manage-existing-aks-machines",
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(opts.ManageExistingAKSMachines).To(BeTrue())
+		})
 	})
 
 	Context("Admin Username Validation", func() {
@@ -645,6 +693,46 @@ var _ = Describe("Options", func() {
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/my-rg/PROVIDERS/MICROSOFT.COMPUTE/DISKENCRYPTIONSETS/my-des",
 			)
 			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("String verification", func() {
+		It("should have a JSON tag for each expected field", func() {
+			opts := &options.Options{}
+
+			// Use reflection to get the type information of the Options struct
+			optionsType := reflect.TypeOf(*opts)
+
+			// Iterate through all fields in the struct
+			for i := 0; i < optionsType.NumField(); i++ {
+				field := optionsType.Field(i)
+				fieldName := field.Name
+
+				// Skip unexported fields (those starting with lowercase)
+				if !field.IsExported() {
+					continue
+				}
+
+				// Get the JSON tag
+				jsonTag, hasJSONTag := field.Tag.Lookup("json")
+
+				// Handle fields that should be excluded from JSON (tagged with "-")
+				if jsonTag == "-" {
+					// These fields are intentionally excluded from JSON serialization
+					// Examples: KubeletClientTLSBootstrapToken, LinuxAdminUsername, SSHPublicKey, etc.
+					continue
+				}
+
+				// For fields that should have JSON tags, verify they exist and match
+				Expect(hasJSONTag).To(BeTrue(), "Field %s should have a JSON tag", fieldName)
+
+				// Parse the JSON tag (it might have options like "omitempty")
+				jsonFieldName := strings.Split(jsonTag, ",")[0]
+
+				// Verify the JSON tag matches the field name (case-insensitive)
+				Expect(strings.ToLower(jsonFieldName)).To(Equal(strings.ToLower(fieldName)),
+					"Field %s JSON tag '%s' should match field name (case-insensitive)", fieldName, jsonFieldName)
+			}
 		})
 	})
 })
