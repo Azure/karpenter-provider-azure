@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.19.0
+    controller-gen.kubebuilder.io/version: v0.20.0
   name: aksnodeclasses.karpenter.azure.com
 spec:
   group: karpenter.azure.com
@@ -386,6 +386,10 @@ spec:
                         from vnetDNSOverrides
                       rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
                         == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !x.zone.endsWith(''cluster.local'')
+                        && x.forwardDestination == ''ClusterCoreDNS'')'
                 required:
                 - kubeDNSOverrides
                 - mode
@@ -934,6 +938,10 @@ spec:
                         from vnetDNSOverrides
                       rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
                         == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !x.zone.endsWith(''cluster.local'')
+                        && x.forwardDestination == ''ClusterCoreDNS'')'
                 required:
                 - kubeDNSOverrides
                 - mode
