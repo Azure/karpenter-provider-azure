@@ -65,8 +65,33 @@ var _ = Describe("Subnets", func() {
 				AddressPrefix: lo.ToPtr("10.225.0.0/16"),
 			},
 		}
-		vnet := env.GetClusterVNET()
-		env.ExpectCreatedSubnet(lo.FromPtr(vnet.Name), subnet)
+
+		// Check if the cluster uses a managed VNet
+		clusterSubnet := env.GetClusterSubnet()
+		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		var vnetName string
+		if isManaged {
+			// Create a BYO VNet for testing
+			vnetName = "test-byo-vnet-drift"
+			byoVNet := &armnetwork.VirtualNetwork{
+				Name:     lo.ToPtr(vnetName),
+				Location: lo.ToPtr(env.Region),
+				Properties: &armnetwork.VirtualNetworkPropertiesFormat{
+					AddressSpace: &armnetwork.AddressSpace{
+						AddressPrefixes: []*string{lo.ToPtr("10.225.0.0/16")},
+					},
+				},
+			}
+			env.ExpectCreatedVNet(byoVNet)
+		} else {
+			// Use existing cluster VNet
+			vnet := env.GetClusterVNET()
+			vnetName = lo.FromPtr(vnet.Name)
+		}
+
+		env.ExpectCreatedSubnet(vnetName, subnet)
 		nodeClass.Spec.VNETSubnetID = subnet.ID // Should be populated by the Expect call above
 		env.ExpectCreatedOrUpdated(nodeClass)
 		env.EventuallyExpectDrifted(nodeClaim)
@@ -79,8 +104,33 @@ var _ = Describe("Subnets", func() {
 				AddressPrefix: lo.ToPtr("10.225.0.0/16"),
 			},
 		}
-		vnet := env.GetClusterVNET()
-		env.ExpectCreatedSubnet(lo.FromPtr(vnet.Name), subnet)
+
+		// Check if the cluster uses a managed VNet
+		clusterSubnet := env.GetClusterSubnet()
+		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		var vnetName string
+		if isManaged {
+			// Create a BYO VNet for testing
+			vnetName = "test-byo-vnet-alloc"
+			byoVNet := &armnetwork.VirtualNetwork{
+				Name:     lo.ToPtr(vnetName),
+				Location: lo.ToPtr(env.Region),
+				Properties: &armnetwork.VirtualNetworkPropertiesFormat{
+					AddressSpace: &armnetwork.AddressSpace{
+						AddressPrefixes: []*string{lo.ToPtr("10.225.0.0/16")},
+					},
+				},
+			}
+			env.ExpectCreatedVNet(byoVNet)
+		} else {
+			// Use existing cluster VNet
+			vnet := env.GetClusterVNET()
+			vnetName = lo.FromPtr(vnet.Name)
+		}
+
+		env.ExpectCreatedSubnet(vnetName, subnet)
 
 		nodeClass.Spec.VNETSubnetID = subnet.ID // Should be populated by the Expect call above
 
@@ -118,6 +168,42 @@ var _ = Describe("Subnets", func() {
 		Expect(err.Error()).To(ContainSubstring("Invalid value"))
 		Expect(err.Error()).To(ContainSubstring("spec.vnetSubnetID"))
 		Expect(err.Error()).To(ContainSubstring("should match"))
+	})
+
+	It("should mark the AKSNodeClass as unready if custom subnet is in managed VNet", func() {
+		clusterSubnet := env.GetClusterSubnet()
+		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		// E.g., runs when cluster is created with az-mkaks, az-mkaks-cilium, az-mkaks-overlay, etc.
+		// Skips when cluster is created with az-mkaks-custom-vnet (BYO VNet).
+		if !isManaged {
+			Skip("Skipping test: cluster uses BYO VNet, cannot test managed VNet blocking")
+		}
+
+		// Try to create a custom subnet in the managed VNet
+		vnet := env.GetClusterVNET()
+		vnetResourceID, err := arm.ParseResourceID(lo.FromPtr(vnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		customSubnetID := utils.GetSubnetResourceID(
+			vnetResourceID.SubscriptionID,
+			vnetResourceID.ResourceGroupName,
+			vnetResourceID.Name,
+			"custom-test-subnet",
+		)
+
+		nodeClass.Spec.VNETSubnetID = lo.ToPtr(customSubnetID)
+		env.ExpectCreated(nodeClass)
+
+		Eventually(func(g Gomega) {
+			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			g.Expect(condition).ToNot(BeNil())
+			g.Expect(condition.IsFalse()).To(BeTrue())
+			g.Expect(condition.Message).To(ContainSubstring("custom subnet cannot be in the same VNet as cluster managed VNet"))
+			g.Expect(condition.Message).To(ContainSubstring(customSubnetID))
+		}).Should(Succeed())
 	})
 
 	DescribeTable("should mark the AKSNodeClass as unready if the subnetID doesn't belong to the cluster vnet",
