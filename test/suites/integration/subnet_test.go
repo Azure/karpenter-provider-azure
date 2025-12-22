@@ -19,6 +19,7 @@ package integration_test
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,8 +56,33 @@ var _ = Describe("Subnets", func() {
 				AddressPrefix: lo.ToPtr("10.225.0.0/16"),
 			},
 		}
-		vnet := env.GetClusterVNET()
-		env.ExpectCreatedSubnet(lo.FromPtr(vnet.Name), subnet)
+		
+		// Check if the cluster uses a managed VNet
+		clusterSubnet := env.GetClusterSubnet()
+		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		var vnetName string
+		if isManaged {
+			// Create a BYO VNet for testing
+			vnetName = "test-byo-vnet"
+			byoVNet := &armnetwork.VirtualNetwork{
+				Name:     lo.ToPtr(vnetName),
+				Location: lo.ToPtr(env.Region),
+				Properties: &armnetwork.VirtualNetworkPropertiesFormat{
+					AddressSpace: &armnetwork.AddressSpace{
+						AddressPrefixes: []*string{lo.ToPtr("10.225.0.0/16")},
+					},
+				},
+			}
+			env.ExpectCreatedVNet(byoVNet)
+		} else {
+			// Use existing cluster VNet
+			vnet := env.GetClusterVNET()
+			vnetName = lo.FromPtr(vnet.Name)
+		}
+		
+		env.ExpectCreatedSubnet(vnetName, subnet)
 		nodeClass.Spec.VNETSubnetID = subnet.ID // Should be populated by the Expect call above
 
 		env.ExpectCreated(nodeClass, nodePool, dep)
