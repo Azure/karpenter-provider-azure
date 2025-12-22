@@ -481,7 +481,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 		nodeClaim.Status.Allocatable = lo.PickBy(instanceType.Allocatable(), func(_ corev1.ResourceName, v resource.Quantity) bool { return !resources.IsZero(v) })
 	}
 
-	if zone, err := utils.GetZone(vm); err != nil {
+	if zone, err := utils.MakeAKSLabelZoneFromVM(vm); err != nil {
 		log.FromContext(ctx).Info("failed to get zone for VM, zone label will be empty", "vmName", *vm.Name, "error", err)
 	} else {
 		labels[corev1.LabelTopologyZone] = zone
@@ -509,7 +509,7 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 }
 
 func GetNodeClaimNameFromVMName(vmName string) string {
-	return strings.TrimLeft("aks-", vmName)
+	return strings.TrimPrefix(vmName, "aks-")
 }
 
 const truncateAt = 1200
