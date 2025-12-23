@@ -109,13 +109,13 @@ func (env *Environment) ExpectParsedProviderID(providerID string) string {
 
 func (env *Environment) ExpectCreatedVNet(vnet *armnetwork.VirtualNetwork) {
 	GinkgoHelper()
-	poller, err := env.vnetClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, lo.FromPtr(vnet.Name), *vnet, nil)
+	poller, err := env.vnetClient.BeginCreateOrUpdate(env.Context, env.VNETResourceGroup, lo.FromPtr(vnet.Name), *vnet, nil)
 	Expect(err).ToNot(HaveOccurred())
 	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
 	*vnet = resp.VirtualNetwork
 	env.tracker.Add(lo.FromPtr(resp.ID), func() error {
-		deletePoller, err := env.vnetClient.BeginDelete(env.Context, env.NodeResourceGroup, lo.FromPtr(vnet.Name), nil)
+		deletePoller, err := env.vnetClient.BeginDelete(env.Context, env.VNETResourceGroup, lo.FromPtr(vnet.Name), nil)
 		if err != nil {
 			return fmt.Errorf("failed to delete vnet %s: %w", lo.FromPtr(vnet.Name), err)
 		}
@@ -129,13 +129,13 @@ func (env *Environment) ExpectCreatedVNet(vnet *armnetwork.VirtualNetwork) {
 
 func (env *Environment) ExpectCreatedSubnet(vnetName string, subnet *armnetwork.Subnet) {
 	GinkgoHelper()
-	poller, err := env.subnetClient.BeginCreateOrUpdate(env.Context, env.NodeResourceGroup, vnetName, lo.FromPtr(subnet.Name), *subnet, nil)
+	poller, err := env.subnetClient.BeginCreateOrUpdate(env.Context, env.VNETResourceGroup, vnetName, lo.FromPtr(subnet.Name), *subnet, nil)
 	Expect(err).ToNot(HaveOccurred())
 	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
 	*subnet = resp.Subnet
 	env.tracker.Add(lo.FromPtr(resp.ID), func() error {
-		deletePoller, err := env.subnetClient.BeginDelete(env.Context, env.NodeResourceGroup, vnetName, lo.FromPtr(subnet.Name), nil)
+		deletePoller, err := env.subnetClient.BeginDelete(env.Context, env.VNETResourceGroup, vnetName, lo.FromPtr(subnet.Name), nil)
 		if err != nil {
 			return fmt.Errorf("failed to delete subnet %s: %w", lo.FromPtr(subnet.Name), err)
 		}
