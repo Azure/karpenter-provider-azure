@@ -95,6 +95,7 @@ runs:
         AZURE_LOCATION: ${{ inputs.location }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+        VNET_RESOURCE_GROUP: ${{ inputs.resource_group }}
       run: |
         make az-perm
         make az-perm-acr
