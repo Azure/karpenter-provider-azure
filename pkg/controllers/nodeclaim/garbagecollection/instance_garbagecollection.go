@@ -60,30 +60,36 @@ func (c *VirtualMachine) Reconcile(ctx context.Context) (reconcile.Result, error
 	// We LIST VMs on the CloudProvider BEFORE we grab NodeClaims/Nodes on the cluster so that we make sure that, if
 	// LISTing instances takes a long time, our information is more updated by the time we get to nodeclaim and Node LIST
 	// This works since our CloudProvider instances are deleted based on whether the NodeClaim exists or not, not vice-versa
-	retrieved, err := c.cloudProvider.List(ctx)
+	cloudNodeClaims, err := c.cloudProvider.List(ctx)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("listing cloudprovider VMs, %w", err)
 	}
 
-	managedRetrieved := lo.Filter(retrieved, func(nc *karpv1.NodeClaim, _ int) bool {
+	cloudNodeClaims = lo.Filter(cloudNodeClaims, func(nc *karpv1.NodeClaim, _ int) bool {
 		return nc.DeletionTimestamp.IsZero()
 	})
-	nodeClaimList := &karpv1.NodeClaimList{}
-	if err = c.kubeClient.List(ctx, nodeClaimList); err != nil {
+	clusterNodeClaims := &karpv1.NodeClaimList{}
+	if err = c.kubeClient.List(ctx, clusterNodeClaims); err != nil {
 		return reconcile.Result{}, err
 	}
 	nodeList := &v1.NodeList{}
 	if err := c.kubeClient.List(ctx, nodeList); err != nil {
 		return reconcile.Result{}, err
 	}
-	resolvedProviderIDs := sets.New[string](lo.FilterMap(nodeClaimList.Items, func(n karpv1.NodeClaim, _ int) (string, bool) {
+	clusterProviderIDs := sets.New[string](lo.FilterMap(clusterNodeClaims.Items, func(n karpv1.NodeClaim, _ int) (string, bool) {
 		return n.Status.ProviderID, n.Status.ProviderID != ""
 	})...)
-	errs := make([]error, len(retrieved))
-	workqueue.ParallelizeUntil(ctx, 100, len(managedRetrieved), func(i int) {
-		if !resolvedProviderIDs.Has(managedRetrieved[i].Status.ProviderID) &&
-			time.Since(managedRetrieved[i].CreationTimestamp.Time) > time.Minute*5 {
-			errs[i] = c.garbageCollect(ctx, managedRetrieved[i], nodeList)
+	errs := make([]error, len(cloudNodeClaims))
+	workqueue.ParallelizeUntil(ctx, 100, len(cloudNodeClaims), func(i int) {
+		// Garbage collect if the cloud instance has been around for more than 5 minutes, yet still no matching (per ProviderID) cluster NodeClaim.
+		// Note that the "match" occurs after cloudprovider.Create() returns and cluster NodeClaim ProviderID is populated as a result.
+		// Although, the intention of garbage collection is to clear instances with missing/deleted NodeClaim.
+		// This 5m is more of a grace period for newly-created instances that have yet to populate NodeClaim after.
+		if !clusterProviderIDs.Has(cloudNodeClaims[i].Status.ProviderID) &&
+			time.Since(cloudNodeClaims[i].CreationTimestamp.Time) > time.Minute*5 {
+			errs[i] = c.garbageCollect(ctx, cloudNodeClaims[i], nodeList)
+			// In the case that CreationTimestamp is irretrievable (technically, when CreationTimestamp = 0 = epoch), grace period will effectively be disabled.
+			// Which could be dangerous if the instance is legitimately awaiting NodeClaim population.
 		}
 	})
 	if err = multierr.Combine(errs...); err != nil {
