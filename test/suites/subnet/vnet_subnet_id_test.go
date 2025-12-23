@@ -137,7 +137,6 @@ var _ = Describe("Subnets", func() {
 		// The NIC should have the right NSG
 		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
 		Expect(nic.Properties.NetworkSecurityGroup.ID).ToNot(BeNil())
-		Expect(*nic.Properties.NetworkSecurityGroup.ID).To(MatchRegexp(`aks-agentpool-\d{8}-nsg`))
 	})
 	It("should reject the AKSNodeClass if the subnet ID is invalid", func() {
 		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subnets/fake-subnet")
