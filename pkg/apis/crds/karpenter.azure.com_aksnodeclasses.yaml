@@ -706,6 +706,10 @@ spec:
                       Default: -1
                     format: int64
                     type: integer
+                  serializeImagePulls:
+                    default: true
+                    description: SerializeImagePulls enables serial image pulls.
+                    type: boolean
                   topologyManagerPolicy:
                     default: none
                     description: |-
