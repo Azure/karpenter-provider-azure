@@ -386,6 +386,10 @@ spec:
                         from vnetDNSOverrides
                       rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
                         == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !x.zone.endsWith(''cluster.local'')
+                        && x.forwardDestination == ''ClusterCoreDNS'')'
                 required:
                 - kubeDNSOverrides
                 - mode
@@ -934,6 +938,10 @@ spec:
                         from vnetDNSOverrides
                       rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
                         == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !x.zone.endsWith(''cluster.local'')
+                        && x.forwardDestination == ''ClusterCoreDNS'')'
                 required:
                 - kubeDNSOverrides
                 - mode
