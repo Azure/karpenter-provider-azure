@@ -224,6 +224,43 @@ var _ = Describe("Persistent Volumes", func() {
 			env.EventuallyExpectHealthy(pod)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
+		It("should schedule a pod with ZRS PV when pod targets a specific zone", func() {
+			zones := env.GetAvailableZones()
+			if len(zones) == 0 {
+				Skip(fmt.Sprintf("skipping ZRS test because region %s does not support availability zones", env.Region))
+			}
+
+			// Create ZRS storage class with Immediate binding
+			zrsStorageClass := &storagev1.StorageClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "azuredisk-sc-zrs",
+				},
+				Provisioner:       "disk.csi.azure.com",
+				Parameters:        map[string]string{"skuname": "Premium_ZRS"},
+				VolumeBindingMode: lo.ToPtr(storagev1.VolumeBindingImmediate),
+			}
+
+			pvc := test.PersistentVolumeClaim(test.PersistentVolumeClaimOptions{
+				StorageClassName: lo.ToPtr(zrsStorageClass.Name),
+			})
+
+			env.ExpectCreated(nodeClass, nodePool, zrsStorageClass, pvc)
+			env.EventuallyExpectPVCBound(pvc)
+
+			// ZRS disks are available in all zones of the region; schedule pod in a specific zone
+			mutable.Shuffle(zones)
+			zone := utils.MakeAKSLabelZoneFromARMZone(env.Region, zones[0])
+
+			pod := test.Pod(test.PodOptions{
+				PersistentVolumeClaims: []string{pvc.Name},
+				NodeSelector:           map[string]string{corev1.LabelTopologyZone: zone},
+			})
+
+			env.ExpectCreated(pod)
+			env.EventuallyExpectHealthy(pod)
+			nodes := env.ExpectCreatedNodeCount("==", 1)
+			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+		})
 	})
 })
 
