@@ -78,11 +78,7 @@ type Environment struct {
 	managedClusterClient *containerservice.ManagedClustersClient
 	agentpoolsClient     *containerservice.AgentPoolsClient
 	machinesClient       *containerservice.MachinesClient
-<<<<<<< HEAD
 	zoneProvider         *zone.Provider
-=======
-	supportsZones        bool
->>>>>>> 46622082 (test(integration): add ZRS PV multi-zone scheduling test)
 
 	// Public Clients
 	KeyVaultClient          *armkeyvault.VaultsClient

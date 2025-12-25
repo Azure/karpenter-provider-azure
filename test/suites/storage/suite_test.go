@@ -224,6 +224,8 @@ var _ = Describe("Persistent Volumes", func() {
 			env.EventuallyExpectHealthy(pod)
 			env.ExpectCreatedNodeCount("==", 1)
 		})
+		// Validates the sigs.k8s.io/karpenter fix (PR kubernetes-sigs/karpenter#2743) to schedule pods
+		// on nodes in specific zones, even when PV is accessible in multiple zones.
 		It("should schedule a pod with ZRS PV when pod targets a specific zone", func() {
 			zones := env.GetAvailableZones()
 			if len(zones) == 0 {
@@ -247,19 +249,21 @@ var _ = Describe("Persistent Volumes", func() {
 			env.ExpectCreated(nodeClass, nodePool, zrsStorageClass, pvc)
 			env.EventuallyExpectPVCBound(pvc)
 
-			// ZRS disks are available in all zones of the region; schedule pod in a specific zone
-			mutable.Shuffle(zones)
-			zone := utils.MakeAKSLabelZoneFromARMZone(env.Region, zones[0])
+			// ZRS disks are available in all zones of the region. To test that Karpenter
+			// considers ALL PV node affinity terms (not just the first), we intentionally
+			// schedule the pod in zone 2. Without the sigs.k8s.io/karpenter fix, this would fail
+			// because the scheduler only looked at the first zone.
+			zone2 := utils.MakeAKSLabelZoneFromARMZone(env.Region, zones[1])
 
 			pod := test.Pod(test.PodOptions{
 				PersistentVolumeClaims: []string{pvc.Name},
-				NodeSelector:           map[string]string{corev1.LabelTopologyZone: zone},
+				NodeSelector:           map[string]string{corev1.LabelTopologyZone: zone2},
 			})
 
 			env.ExpectCreated(pod)
 			env.EventuallyExpectHealthy(pod)
 			nodes := env.ExpectCreatedNodeCount("==", 1)
-			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone))
+			Expect(nodes[0].Labels[corev1.LabelTopologyZone]).To(Equal(zone2))
 		})
 	})
 })
