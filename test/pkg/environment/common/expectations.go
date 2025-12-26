@@ -510,6 +510,19 @@ func (env *Environment) EventuallyExpectHealthyPodCountWithTimeout(timeout time.
 	return pods
 }
 
+// EventuallyExpectPVCBound waits for the PVC to reach Bound phase and returns its PV.
+func (env *Environment) EventuallyExpectPVCBound(pvc *corev1.PersistentVolumeClaim) *corev1.PersistentVolume {
+	GinkgoHelper()
+	pv := &corev1.PersistentVolume{}
+	Eventually(func(g Gomega) {
+		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(pvc), pvc)).To(Succeed())
+		g.Expect(pvc.Status.Phase).To(Equal(corev1.ClaimBound))
+		g.Expect(pvc.Spec.VolumeName).ToNot(BeEmpty())
+		g.Expect(env.Client.Get(env.Context, client.ObjectKey{Name: pvc.Spec.VolumeName}, pv)).To(Succeed())
+	}).Should(Succeed())
+	return pv
+}
+
 func (env *Environment) ExpectHealthyPodCount(selector labels.Selector, numPods int) []*corev1.Pod {
 	GinkgoHelper()
 	By(fmt.Sprintf("expecting %d pods matching selector %s to be ready", numPods, selector.String()))
