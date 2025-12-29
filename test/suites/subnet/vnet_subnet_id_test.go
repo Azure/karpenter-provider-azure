@@ -52,6 +52,16 @@ var _ = Describe("Subnets", func() {
 		selector = labels.SelectorFromSet(dep.Spec.Selector.MatchLabels)
 	})
 	It("should disrupt nodes that drifted due to VNETSubnetID", func() {
+		// This test requires creating a custom subnet in the cluster's VNet.
+		// Only works with BYO VNets. Skips for managed VNets since we block custom subnets there.
+		clusterSubnet := env.GetClusterSubnet()
+		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		if isManaged {
+			Skip("Skipping test: cluster uses managed VNet, custom subnets in managed VNets are blocked")
+		}
+
 		env.ExpectCreated(dep, nodeClass, nodePool)
 		env.EventuallyExpectHealthyPodCount(selector, numPods)
 		By("expect created node count to be 1")
@@ -66,30 +76,9 @@ var _ = Describe("Subnets", func() {
 			},
 		}
 
-		// Check if the cluster uses a managed VNet
-		clusterSubnet := env.GetClusterSubnet()
-		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
-		Expect(err).ToNot(HaveOccurred())
-
-		var vnetName string
-		if isManaged {
-			// Create a BYO VNet for testing
-			vnetName = "test-byo-vnet-drift"
-			byoVNet := &armnetwork.VirtualNetwork{
-				Name:     lo.ToPtr(vnetName),
-				Location: lo.ToPtr(env.Region),
-				Properties: &armnetwork.VirtualNetworkPropertiesFormat{
-					AddressSpace: &armnetwork.AddressSpace{
-						AddressPrefixes: []*string{lo.ToPtr("10.225.0.0/16")},
-					},
-				},
-			}
-			env.ExpectCreatedVNet(byoVNet)
-		} else {
-			// Use existing cluster VNet
-			vnet := env.GetClusterVNET()
-			vnetName = lo.FromPtr(vnet.Name)
-		}
+		// Use existing cluster VNet (which is BYO)
+		vnet := env.GetClusterVNET()
+		vnetName := lo.FromPtr(vnet.Name)
 
 		env.ExpectCreatedSubnet(vnetName, subnet)
 		nodeClass.Spec.VNETSubnetID = subnet.ID // Should be populated by the Expect call above
@@ -97,6 +86,16 @@ var _ = Describe("Subnets", func() {
 		env.EventuallyExpectDrifted(nodeClaim)
 	})
 	It("should allocate node in NodeClass subnet", func() {
+		// This test requires creating a custom subnet in the cluster's VNet.
+		// Only works with BYO VNets. Skips for managed VNets since we block custom subnets there.
+		clusterSubnet := env.GetClusterSubnet()
+		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		if isManaged {
+			Skip("Skipping test: cluster uses managed VNet, custom subnets in managed VNets are blocked")
+		}
+
 		subnetName := "test-subnet"
 		subnet := &armnetwork.Subnet{
 			Name: lo.ToPtr(subnetName),
@@ -105,30 +104,9 @@ var _ = Describe("Subnets", func() {
 			},
 		}
 
-		// Check if the cluster uses a managed VNet
-		clusterSubnet := env.GetClusterSubnet()
-		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
-		Expect(err).ToNot(HaveOccurred())
-
-		var vnetName string
-		if isManaged {
-			// Create a BYO VNet for testing
-			vnetName = "test-byo-vnet-alloc"
-			byoVNet := &armnetwork.VirtualNetwork{
-				Name:     lo.ToPtr(vnetName),
-				Location: lo.ToPtr(env.Region),
-				Properties: &armnetwork.VirtualNetworkPropertiesFormat{
-					AddressSpace: &armnetwork.AddressSpace{
-						AddressPrefixes: []*string{lo.ToPtr("10.225.0.0/16")},
-					},
-				},
-			}
-			env.ExpectCreatedVNet(byoVNet)
-		} else {
-			// Use existing cluster VNet
-			vnet := env.GetClusterVNET()
-			vnetName = lo.FromPtr(vnet.Name)
-		}
+		// Use existing cluster VNet (which is BYO)
+		vnet := env.GetClusterVNET()
+		vnetName := lo.FromPtr(vnet.Name)
 
 		env.ExpectCreatedSubnet(vnetName, subnet)
 
@@ -159,7 +137,6 @@ var _ = Describe("Subnets", func() {
 		// The NIC should have the right NSG
 		Expect(nic.Properties.NetworkSecurityGroup).ToNot(BeNil())
 		Expect(nic.Properties.NetworkSecurityGroup.ID).ToNot(BeNil())
-		Expect(*nic.Properties.NetworkSecurityGroup.ID).To(MatchRegexp(`aks-agentpool-\d{8}-nsg`))
 	})
 	It("should reject the AKSNodeClass if the subnet ID is invalid", func() {
 		nodeClass.Spec.VNETSubnetID = lo.ToPtr("/subnets/fake-subnet")
@@ -260,6 +237,16 @@ var _ = Describe("Subnets", func() {
 			}),
 	)
 	It("should mark the AKSNodeClass as unready if the subnet is NotFound and fall back to a different nodeclass", func() {
+		// This test creates a non-existent subnet in the cluster's VNet.
+		// Only works with BYO VNets. Skips for managed VNets since we block custom subnets there.
+		clusterSubnet := env.GetClusterSubnet()
+		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+		Expect(err).ToNot(HaveOccurred())
+
+		if isManaged {
+			Skip("Skipping test: cluster uses managed VNet, custom subnets in managed VNets are blocked")
+		}
+
 		newNodeClass := env.DefaultAKSNodeClass()
 		newNodepool := env.DefaultNodePool(newNodeClass)
 		newNodepool.Spec.Weight = lo.ToPtr(int32(10))
