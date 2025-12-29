@@ -147,41 +147,43 @@ var _ = Describe("Subnets", func() {
 		Expect(err.Error()).To(ContainSubstring("should match"))
 	})
 
-	It("should mark the AKSNodeClass as unready if custom subnet is in managed VNet", func() {
-		clusterSubnet := env.GetClusterSubnet()
-		isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
-		Expect(err).ToNot(HaveOccurred())
+	// TODO: Re-enable once we NAP image (containing the updated validation logic) is bumped.
+	// This is to not break NAP E2E unnecessarily, as it has been fetching scenario definitions, but not the image, from upstream main.
+	// It("should mark the AKSNodeClass as unready if custom subnet is in managed VNet", func() {
+	// 	clusterSubnet := env.GetClusterSubnet()
+	// 	isManaged, err := utils.IsAKSManagedVNET(env.NodeResourceGroup, lo.FromPtr(clusterSubnet.ID))
+	// 	Expect(err).ToNot(HaveOccurred())
 
-		// E.g., runs when cluster is created with az-mkaks, az-mkaks-cilium, az-mkaks-overlay, etc.
-		// Skips when cluster is created with az-mkaks-custom-vnet (BYO VNet).
-		if !isManaged {
-			Skip("Skipping test: cluster uses BYO VNet, cannot test managed VNet blocking")
-		}
+	// 	// E.g., runs when cluster is created with az-mkaks, az-mkaks-cilium, az-mkaks-overlay, etc.
+	// 	// Skips when cluster is created with az-mkaks-custom-vnet (BYO VNet).
+	// 	if !isManaged {
+	// 		Skip("Skipping test: cluster uses BYO VNet, cannot test managed VNet blocking")
+	// 	}
 
-		// Try to create a custom subnet in the managed VNet
-		vnet := env.GetClusterVNET()
-		vnetResourceID, err := arm.ParseResourceID(lo.FromPtr(vnet.ID))
-		Expect(err).ToNot(HaveOccurred())
+	// 	// Try to create a custom subnet in the managed VNet
+	// 	vnet := env.GetClusterVNET()
+	// 	vnetResourceID, err := arm.ParseResourceID(lo.FromPtr(vnet.ID))
+	// 	Expect(err).ToNot(HaveOccurred())
 
-		customSubnetID := utils.GetSubnetResourceID(
-			vnetResourceID.SubscriptionID,
-			vnetResourceID.ResourceGroupName,
-			vnetResourceID.Name,
-			"custom-test-subnet",
-		)
+	// 	customSubnetID := utils.GetSubnetResourceID(
+	// 		vnetResourceID.SubscriptionID,
+	// 		vnetResourceID.ResourceGroupName,
+	// 		vnetResourceID.Name,
+	// 		"custom-test-subnet",
+	// 	)
 
-		nodeClass.Spec.VNETSubnetID = lo.ToPtr(customSubnetID)
-		env.ExpectCreated(nodeClass)
+	// 	nodeClass.Spec.VNETSubnetID = lo.ToPtr(customSubnetID)
+	// 	env.ExpectCreated(nodeClass)
 
-		Eventually(func(g Gomega) {
-			g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
-			g.Expect(condition).ToNot(BeNil())
-			g.Expect(condition.IsFalse()).To(BeTrue())
-			g.Expect(condition.Message).To(ContainSubstring("custom subnet cannot be in the same VNet as cluster managed VNet"))
-			g.Expect(condition.Message).To(ContainSubstring(customSubnetID))
-		}).Should(Succeed())
-	})
+	// 	Eventually(func(g Gomega) {
+	// 		g.Expect(env.Client.Get(env.Context, client.ObjectKeyFromObject(nodeClass), nodeClass)).To(Succeed())
+	// 		condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+	// 		g.Expect(condition).ToNot(BeNil())
+	// 		g.Expect(condition.IsFalse()).To(BeTrue())
+	// 		g.Expect(condition.Message).To(ContainSubstring("custom subnet cannot be in the same VNet as cluster managed VNet"))
+	// 		g.Expect(condition.Message).To(ContainSubstring(customSubnetID))
+	// 	}).Should(Succeed())
+	// })
 
 	DescribeTable("should mark the AKSNodeClass as unready if the subnetID doesn't belong to the cluster vnet",
 		func(modifyComponents func(utils.VnetSubnetResource) utils.VnetSubnetResource) {
