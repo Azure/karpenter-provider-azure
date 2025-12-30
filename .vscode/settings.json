@@ -27,6 +27,5 @@
                 "query": "repo:${owner}/${repository} is:open -label:dependencies"
             }
         ]
-    },
-    "github.copilot.chat.githubMcpServer.enabled": true,
+    }
 }

@@ -15,7 +15,8 @@
 			"settings": {
 				"go.toolsManagement.checkForUpdates": "local",
 				"go.useLanguageServer": true,
-				"go.gopath": "/go"
+				"go.gopath": "/go",
+				"github.copilot.chat.githubMcpServer.enabled": true
 			},
 
 			// Add the IDs of extensions you want installed when the container is created.
@@ -63,7 +64,7 @@
 			"version": "none"
 		},
 		"ghcr.io/devcontainers/features/node:1": {
-			"version": "none"
+			"version": "latest"	// mostly for MCP servers
 		},
 		"ghcr.io/devcontainers/features/git:1": {
 			"version": "latest",
