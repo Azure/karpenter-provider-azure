@@ -531,8 +531,6 @@ func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.C
 		return fmt.Errorf("failed to create AKS machine %q during %s, handled provisioning error: %w", aksMachineName, phase, handledError)
 	}
 
-	// XPMT: TODO(comtalyst): revalidate this + see if it makes more sense to loop over
-
 	return fmt.Errorf("failed to create AKS machine %q during %s, unhandled provisioning error: code=%s, message=%s", aksMachineName, phase, lo.FromPtr(innerError.Code), lo.FromPtr(innerError.Message))
 }
 

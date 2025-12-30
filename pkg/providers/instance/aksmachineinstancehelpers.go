@@ -222,7 +222,7 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 	}
 
 	// TEMPORARY
-	// XPMT: TODO(charliedmcb): verify/rework this, also do the same for taints (which don't have sanitization logic like this yet)
+	// TODO(mattchr): verify/rework this, also do the same for taints (which don't have sanitization logic like this yet)
 	labelsToRemove := []string{
 		"beta.kubernetes.io/instance-type",
 		"failure-domain.beta.kubernetes.io/region",
