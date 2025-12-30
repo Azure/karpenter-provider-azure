@@ -30,7 +30,9 @@
 				"GitHub.vscode-pull-request-github",
 				"jinliming2.vscode-go-template",
 				"tekumara.typos-vscode",
-				"github.vscode-github-actions"
+				"github.vscode-github-actions",
+				"GitHub.copilot-chat",
+				"ms-azuretools.vscode-azure-github-copilot" // also adds MCP server and Azure resources
 			]
 		}
 	},
