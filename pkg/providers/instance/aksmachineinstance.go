@@ -456,6 +456,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if gotAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == "Failed" {
 		// We luckily catch failed state early (compared to during polling).
 		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
+		if gotAKSMachine.Properties.Status == nil || gotAKSMachine.Properties.Status.ProvisioningError == nil {
+			return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: AKS machine is in Failed state but ProvisioningError is nil", aksMachineName)
+		}
 		return nil, p.handleMachineProvisioningError(ctx, "get once after begin creation", aksMachineName, nodeClass, instanceType, zone, capacityType, gotAKSMachine.Properties.Status.ProvisioningError)
 	}
 
@@ -502,6 +505,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 
 // For use in beginCreateMachine only. Otherwise need to rework parameters, do nil check better, and generalize error messaging.
 func (p *DefaultAKSMachineProvider) handleMachineProvisioningError(ctx context.Context, phase string, aksMachineName string, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType, zone string, capacityType string, provisioningError *armcontainerservice.ErrorDetail) error {
+	if provisioningError == nil {
+		return fmt.Errorf("failed to create AKS machine %q during %s, unhandled provisioning error: nil", aksMachineName, phase)
+	}
+
 	var innerError armcontainerservice.ErrorDetail
 	if len(provisioningError.Details) > 0 && provisioningError.Details[0] != nil {
 		// This should be VM creation error.
@@ -566,6 +573,9 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	if existingAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(existingAKSMachine.Properties.ProvisioningState) == "Failed" {
 		// Unfortunately, that was more like a remain than a usable aksMachine.
 		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
+		if existingAKSMachine.Properties.Status == nil || existingAKSMachine.Properties.Status.ProvisioningError == nil {
+			return nil, fmt.Errorf("found existing AKS machine %s, but it is in Failed state and ProvisioningError is nil", aksMachineName)
+		}
 		return nil, p.handleMachineProvisioningError(ctx, "reusing existing AKS machine", aksMachineName, nodeClass, instanceType, zone, capacityType, existingAKSMachine.Properties.Status.ProvisioningError)
 	}
 
