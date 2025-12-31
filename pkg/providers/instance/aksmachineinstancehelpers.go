@@ -236,15 +236,11 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 		"kubernetes.io/os",
 		"node.kubernetes.io/windows-build",
 	}
-	for _, label := range labelsToRemove {
-		delete(nodeLabels, label)
-	}
+	nodeLabels = lo.OmitByKeys(nodeLabels, labelsToRemove)
 	// Remove all labels with kubernetes.azure.com prefix
-	for label := range nodeLabels {
-		if strings.HasPrefix(label, "kubernetes.azure.com/") {
-			delete(nodeLabels, label)
-		}
-	}
+	nodeLabels = lo.OmitBy(nodeLabels, func(key string, _ string) bool {
+		return strings.HasPrefix(key, "kubernetes.azure.com/")
+	})
 
 	nodeLabelPtrs := make(map[string]*string, len(nodeLabels))
 	for k, v := range nodeLabels {
