@@ -48,6 +48,11 @@ var _ = Describe("In Place Update Controller", func() {
 		var nodeClass *v1beta1.AKSNodeClass
 
 		BeforeEach(func() {
+			// Enable AKS machines management for these tests
+			ctx = options.ToContext(ctx, test.Options(test.OptionsFields{
+				ManageExistingAKSMachines: lo.ToPtr(true),
+			}))
+
 			nodeClaimName := test.RandomName("nodeclaim")
 			aksMachine = test.AKSMachine(test.AKSMachineOptions{
 				ClusterName:      opts.ClusterName,
@@ -88,8 +93,6 @@ var _ = Describe("In Place Update Controller", func() {
 
 			// Apply the nodeClass to the test environment
 			ExpectApplied(ctx, env.Client, nodeClass)
-
-			ctx = options.ToContext(ctx, test.Options())
 
 			azureEnv.Reset()
 
@@ -179,6 +182,7 @@ var _ = Describe("In Place Update Controller", func() {
 				ctx,
 				test.Options(
 					test.OptionsFields{
+						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -219,6 +223,7 @@ var _ = Describe("In Place Update Controller", func() {
 				ctx,
 				test.Options(
 					test.OptionsFields{
+						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -369,6 +374,7 @@ var _ = Describe("In Place Update Controller", func() {
 				ctx,
 				test.Options(
 					test.OptionsFields{
+						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -421,6 +427,7 @@ var _ = Describe("In Place Update Controller", func() {
 				ctx,
 				test.Options(
 					test.OptionsFields{
+						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},
@@ -454,6 +461,7 @@ var _ = Describe("In Place Update Controller", func() {
 				ctx,
 				test.Options(
 					test.OptionsFields{
+						ManageExistingAKSMachines: lo.ToPtr(true),
 						AdditionalTags: map[string]string{
 							"test-tag": "my-tag",
 						},

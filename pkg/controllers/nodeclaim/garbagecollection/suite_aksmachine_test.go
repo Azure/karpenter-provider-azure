@@ -47,6 +47,12 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 	var _ = Context("AKS machine instances", func() {
 		BeforeEach(func() {
+			// Enable AKS machines management for these tests
+			testOptions = test.Options(test.OptionsFields{
+				ManageExistingAKSMachines: lo.ToPtr(true),
+			})
+			ctx = options.ToContext(ctx, testOptions)
+
 			// Assume that AKS machines pool exists at this point.
 			// Retrieve parameters from context to match the exact parameters used by the AKS machine provider
 			opts := options.FromContext(ctx)
@@ -395,6 +401,12 @@ var _ = Describe("Instance Garbage Collection", func() {
 
 	var _ = Context("Mixed VM and AKS machine instances", func() {
 		BeforeEach(func() {
+			// Enable AKS machines management for these tests
+			testOptions = test.Options(test.OptionsFields{
+				ManageExistingAKSMachines: lo.ToPtr(true),
+			})
+			ctx = options.ToContext(ctx, testOptions)
+
 			// Set up agent pool for AKS machines in mixed tests
 			opts := options.FromContext(ctx)
 			agentPool := test.AKSAgentPool(test.AKSAgentPoolOptions{
