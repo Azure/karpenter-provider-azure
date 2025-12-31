@@ -163,11 +163,8 @@ func NewAKSMachineProvider(
 
 // BeginCreate creates an instance given the constraints.
 // Note that the returned instance may not be finished provisioning yet.
-// Errors that occur on the "sync side" of the VM create, such as BadRequest due
-// to invalid user input, and similar, will have the error returned here.
-// Errors that occur on the "async side" of the VM create (after the request is accepted, or after polling the
-// VM create and while ) will be returned
-// from the AKSMachinePromise.Wait().
+// Errors that occur on the "sync side" of the VM create, such as BadRequest due to invalid user input, and similar, will have the error returned here.
+// Errors that occur on the "async side" of the VM create (after the request is accepted) will be returned from AKSMachinePromise.Wait().
 func (p *DefaultAKSMachineProvider) BeginCreate(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
