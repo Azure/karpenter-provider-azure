@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	// AKSMachineTimestampFormat is the RFC3339 format used for AKS machine creation timestamp tags
-	AKSMachineTimestampFormat = "2006-01-02T15:04:05.00Z"
+	// aksMachineTimestampFormat is the RFC3339 format, but with 2 decimal digits for fractional seconds. Used for AKS machine creation timestamp tags
+	aksMachineTimestampFormat = "2006-01-02T15:04:05.00Z"
 )
 
 func standardizeAKSMachineTimestamp(t time.Time) time.Time {
@@ -43,12 +43,12 @@ func ZeroAKSMachineTimestamp() time.Time {
 
 // AKSMachineTimestampToTag converts a time.Time to the string format used in AKS machine creation timestamp tags
 func AKSMachineTimestampToTag(t time.Time) string {
-	return standardizeAKSMachineTimestamp(t).Format(AKSMachineTimestampFormat)
+	return standardizeAKSMachineTimestamp(t).Format(aksMachineTimestampFormat)
 }
 
 // AKSMachineTimestampFromTag parses an AKS machine creation timestamp tag value back to time.Time
 func AKSMachineTimestampFromTag(timestampStr string) (time.Time, error) {
-	parsed, err := time.Parse(AKSMachineTimestampFormat, timestampStr)
+	parsed, err := time.Parse(aksMachineTimestampFormat, timestampStr)
 	if err != nil {
 		return time.Time{}, err
 	}

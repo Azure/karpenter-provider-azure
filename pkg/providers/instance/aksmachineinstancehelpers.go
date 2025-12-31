@@ -196,7 +196,7 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 	nodeTaints := lo.Map(nodeClaim.Spec.Taints, func(taint v1.Taint, _ int) string { return taint.ToString() })
 	allTaints := sets.NewString(nodeInitializationTaints...).Union(sets.NewString(nodeTaints...))
 	if !allTaints.Has(karpv1.UnregisteredNoExecuteTaint.ToString()) {
-		nodeInitializationTaints = append(nodeInitializationTaints, karpv1.UnregisteredNoExecuteTaint.ToString())
+		// nodeInitializationTaints = append(nodeInitializationTaints, karpv1.UnregisteredNoExecuteTaint.ToString())
 		allTaints = allTaints.Insert(karpv1.UnregisteredNoExecuteTaint.ToString())
 	}
 

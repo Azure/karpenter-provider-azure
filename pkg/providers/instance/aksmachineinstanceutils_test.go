@@ -483,7 +483,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 		It("should return error for insufficient parts", func() {
 			poolName := "machines"
-			vmName := "aks-machines-a1b2c"
+			vmName := "aks-machines-12345678-vm" // has -vm but no machine name part
 
 			_, err := GetAKSMachineNameFromVMName(poolName, vmName)
 

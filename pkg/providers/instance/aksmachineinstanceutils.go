@@ -197,10 +197,12 @@ func GetAKSMachineNameFromNodeClaimName(nodeClaimName string) (string, error) {
 		// Safe to use the whole name
 		return nodeClaimName, nil
 	}
-	splitted := strings.Split(nodeClaimName, "-")
-	// Combine the parts except the last one (NodeClaim hash suffix)
-	prefix := strings.Join(splitted[:len(splitted)-1], "-")
-	suffix := "-" + splitted[len(splitted)-1]
+	lastDash := strings.LastIndex(nodeClaimName, "-")
+	if lastDash == -1 {
+		return "", fmt.Errorf("invalid NodeClaim name format: no dash found in %q", nodeClaimName)
+	}
+	prefix := nodeClaimName[:lastDash]
+	suffix := nodeClaimName[lastDash:]
 
 	// Keep the legit part of the prefix intact, but hash the rest
 	// ASSUMPTION: prefix length is at least 6 characters at this point (which means suffix length is not too large)
@@ -223,8 +225,7 @@ func GetAKSMachineNameFromNodeClaim(nodeClaim *karpv1.NodeClaim) (string, bool) 
 	// ASSUMPTION: A NodeClaim is associated with an AKS machine iff the annotation is present (e.g., annotated when creating NodeClaim from a AKS machine instance).
 	// ASSUMPTION: If exists, the annotation is always set to the correct AKS machine resource ID.
 	if aksMachineResourceID, ok := nodeClaim.Annotations[v1beta1.AnnotationAKSMachineResourceID]; ok {
-		splitted := strings.Split(aksMachineResourceID, "/")
-		aksMachineName := splitted[len(splitted)-1] // The last part of the resource ID is the AKS machine name
+		aksMachineName := aksMachineResourceID[strings.LastIndex(aksMachineResourceID, "/")+1:] // The last part of the resource ID is the AKS machine name
 		return aksMachineName, true
 	}
 	return "", false
@@ -242,16 +243,17 @@ func GetAKSMachineNameFromVMName(aksMachinesPoolName, vmName string) (string, er
 	}
 	prefixTrimmed := strings.TrimPrefix(vmName, "aks-"+aksMachinesPoolName+"-")
 
-	splitted := strings.Split(prefixTrimmed, "-")
-	if len(splitted) < 3 {
+	// Check it ends with -vm
+	if !strings.HasSuffix(prefixTrimmed, "-vm") {
+		return "", fmt.Errorf("vm name %s does not end with expected suffix -vm", vmName)
+	}
+	// Remove -vm, then find the last dash to remove ########
+	withoutVM := strings.TrimSuffix(prefixTrimmed, "-vm")
+	lastDash := strings.LastIndex(withoutVM, "-")
+	if lastDash == -1 {
 		return "", fmt.Errorf("vm name %s does not have enough parts after prefix aks-%s-", vmName, aksMachinesPoolName)
 	}
-	// Check whether the last part is "vm"
-	if splitted[len(splitted)-1] != "vm" {
-		return "", fmt.Errorf("vm name %s does not end with expected suffix vm", vmName)
-	}
-	// Remove the last two parts (########-vm) and join the rest to get the AKS machine name
-	aksMachineName := strings.Join(splitted[:len(splitted)-2], "-")
+	aksMachineName := withoutVM[:lastDash]
 
 	return aksMachineName, nil
 }
