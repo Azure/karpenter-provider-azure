@@ -60,6 +60,8 @@ require (
 	sigs.k8s.io/karpenter v1.6.2
 )
 
+replace sigs.k8s.io/karpenter => github.com/tallaxes/karpenter-core v0.0.0-20251221063144-7863910ee631
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.2 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v6 v6.4.0 // indirect
