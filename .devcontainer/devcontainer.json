@@ -34,7 +34,16 @@
 				"github.vscode-github-actions",
 				"GitHub.copilot-chat",
 				"ms-azuretools.vscode-azure-github-copilot" // also adds MCP server and Azure resources
-			]
+			],
+			"mcp": {
+				"servers": {
+					"deepwiki": {
+						"type": "http",
+						"url": "https://mcp.deepwiki.com/mcp"
+					}
+					// codewiki.google does not have MCP server, can just use web access
+				}
+			}
 		}
 	},
 
