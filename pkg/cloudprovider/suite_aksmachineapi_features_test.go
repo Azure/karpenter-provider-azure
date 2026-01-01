@@ -494,11 +494,20 @@ var _ = Describe("CloudProvider", func() {
 				}
 				nodeClass.Spec.ImageFamily = lo.ToPtr(v1beta1.Ubuntu2204ImageFamily)
 
-				// Extract cluster subnet components and create a test subnet in the same VNET
-				clusterSubnetID := options.FromContext(ctx).SubnetID
-				clusterSubnetComponents, err := utils.GetVnetSubnetIDComponents(clusterSubnetID)
+				// Override context to use a BYO VNet instead of managed VNet
+				// This allows testing custom subnet configuration (managed VNet doesn't allow custom subnets)
+				byoClusterSubnetID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/test-resourceGroup/providers/Microsoft.Network/virtualNetworks/byo-vnet-customname/subnets/cluster-subnet"
+				byoOpts := test.Options(test.OptionsFields{
+					ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
+					UseSIG:        lo.ToPtr(true),
+					SubnetID:      lo.ToPtr(byoClusterSubnetID),
+				})
+				byoCtx := options.ToContext(ctx, byoOpts)
+
+				// Extract cluster subnet components and create a test subnet in the same VNet
+				clusterSubnetComponents, err := utils.GetVnetSubnetIDComponents(byoClusterSubnetID)
 				Expect(err).ToNot(HaveOccurred())
-				testSubnetID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/test-subnet",
+				testSubnetID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Network/virtualNetworks/%s/subnets/nodeclass-subnet",
 					clusterSubnetComponents.SubscriptionID, clusterSubnetComponents.ResourceGroupName, clusterSubnetComponents.VNetName)
 				nodeClass.Spec.VNETSubnetID = lo.ToPtr(testSubnetID)
 				nodeClass.Spec.Tags = map[string]string{
@@ -520,10 +529,10 @@ var _ = Describe("CloudProvider", func() {
 					},
 				})
 
-				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
-				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
-				ExpectScheduled(ctx, env.Client, pod)
+				ExpectApplied(byoCtx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(byoCtx, env.Client, statusController, nodeClass)
+				ExpectProvisioned(byoCtx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(byoCtx, env.Client, pod)
 
 				// Verify AKS machine was created
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -540,7 +549,7 @@ var _ = Describe("CloudProvider", func() {
 				// Verify image family configuration
 				Expect(string(*aksMachine.Properties.OperatingSystem.OSSKU)).To(Equal(v1beta1.Ubuntu2204ImageFamily))
 
-				// Verify subnet configuration (AKS machine should use the specified subnet)
+				// Verify subnet configuration (AKS machine should use the specified custom subnet)
 				Expect(aksMachine.Properties.Network).ToNot(BeNil())
 				Expect(aksMachine.Properties.Network.VnetSubnetID).ToNot(BeNil())
 				Expect(*aksMachine.Properties.Network.VnetSubnetID).To(Equal(testSubnetID))
