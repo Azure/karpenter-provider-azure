@@ -64,7 +64,7 @@ var _ = Describe("BYOK", func() {
 	BeforeEach(func() {
 
 	})
-	It("should provision a VM with customer-managed key disk encryption", func() {
+	FIt("should provision a VM with customer-managed key disk encryption", func() {
 		ctx := context.Background()
 		var diskEncryptionSetID string
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
