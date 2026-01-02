@@ -250,7 +250,9 @@ spec:
                         zone:
                           description: Zone is the DNS zone this override applies
                             to (e.g., ".", "cluster.local").
+                          maxLength: 254
                           minLength: 1
+                          pattern: ^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$
                           type: string
                       required:
                       - cacheDuration
@@ -263,10 +265,22 @@ spec:
                       - serveStaleDuration
                       - zone
                       type: object
+                      x-kubernetes-validations:
+                      - message: '''cluster.local'' cannot be forwarded to VnetDNS'
+                        rule: '!(self.zone.endsWith(''cluster.local'') && self.forwardDestination
+                          == ''VnetDNS'')'
+                      - message: serveStale Verify cannot be used with protocol ForceTCP
+                        rule: '!(self.serveStale == ''Verify'' && self.protocol ==
+                          ''ForceTCP'')'
+                    maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
                     - zone
                     x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: must contain required zones '.' and 'cluster.local'
+                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
+                        == z))'
                   mode:
                     description: Mode of enablement for localDNS.
                     enum:
@@ -337,7 +351,9 @@ spec:
                         zone:
                           description: Zone is the DNS zone this override applies
                             to (e.g., ".", "cluster.local").
+                          maxLength: 254
                           minLength: 1
+                          pattern: ^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$
                           type: string
                       required:
                       - cacheDuration
@@ -350,10 +366,30 @@ spec:
                       - serveStaleDuration
                       - zone
                       type: object
+                      x-kubernetes-validations:
+                      - message: '''cluster.local'' cannot be forwarded to VnetDNS'
+                        rule: '!(self.zone.endsWith(''cluster.local'') && self.forwardDestination
+                          == ''VnetDNS'')'
+                      - message: serveStale Verify cannot be used with protocol ForceTCP
+                        rule: '!(self.serveStale == ''Verify'' && self.protocol ==
+                          ''ForceTCP'')'
+                    maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
                     - zone
                     x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: must contain required zones '.' and 'cluster.local'
+                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
+                        == z))'
+                    - message: root zone '.' cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
+                        == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !x.zone.endsWith(''cluster.local'')
+                        && x.forwardDestination == ''ClusterCoreDNS'')'
                 required:
                 - kubeDNSOverrides
                 - mode
@@ -766,7 +802,9 @@ spec:
                         zone:
                           description: Zone is the DNS zone this override applies
                             to (e.g., ".", "cluster.local").
+                          maxLength: 254
                           minLength: 1
+                          pattern: ^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$
                           type: string
                       required:
                       - cacheDuration
@@ -779,10 +817,22 @@ spec:
                       - serveStaleDuration
                       - zone
                       type: object
+                      x-kubernetes-validations:
+                      - message: '''cluster.local'' cannot be forwarded to VnetDNS'
+                        rule: '!(self.zone.endsWith(''cluster.local'') && self.forwardDestination
+                          == ''VnetDNS'')'
+                      - message: serveStale Verify cannot be used with protocol ForceTCP
+                        rule: '!(self.serveStale == ''Verify'' && self.protocol ==
+                          ''ForceTCP'')'
+                    maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
                     - zone
                     x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: must contain required zones '.' and 'cluster.local'
+                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
+                        == z))'
                   mode:
                     description: Mode of enablement for localDNS.
                     enum:
@@ -853,7 +903,9 @@ spec:
                         zone:
                           description: Zone is the DNS zone this override applies
                             to (e.g., ".", "cluster.local").
+                          maxLength: 254
                           minLength: 1
+                          pattern: ^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$
                           type: string
                       required:
                       - cacheDuration
@@ -866,10 +918,30 @@ spec:
                       - serveStaleDuration
                       - zone
                       type: object
+                      x-kubernetes-validations:
+                      - message: '''cluster.local'' cannot be forwarded to VnetDNS'
+                        rule: '!(self.zone.endsWith(''cluster.local'') && self.forwardDestination
+                          == ''VnetDNS'')'
+                      - message: serveStale Verify cannot be used with protocol ForceTCP
+                        rule: '!(self.serveStale == ''Verify'' && self.protocol ==
+                          ''ForceTCP'')'
+                    maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
                     - zone
                     x-kubernetes-list-type: map
+                    x-kubernetes-validations:
+                    - message: must contain required zones '.' and 'cluster.local'
+                      rule: '[''.'', ''cluster.local''].all(z, self.exists(x, x.zone
+                        == z))'
+                    - message: root zone '.' cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone == ''.'' && x.forwardDestination
+                        == ''ClusterCoreDNS'')'
+                    - message: external domains cannot be forwarded to ClusterCoreDNS
+                        from vnetDNSOverrides
+                      rule: '!self.exists(x, x.zone != ''.'' && !x.zone.endsWith(''cluster.local'')
+                        && x.forwardDestination == ''ClusterCoreDNS'')'
                 required:
                 - kubeDNSOverrides
                 - mode

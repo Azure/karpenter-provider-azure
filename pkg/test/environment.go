@@ -72,6 +72,11 @@ type Environment struct {
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
 	SubscriptionAPI             *fake.SubscriptionsAPI
 	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
+	AKSMachinesAPI              *fake.AKSMachinesAPI
+	AKSAgentPoolsAPI            *fake.AKSAgentPoolsAPI
+
+	// Fake data stores for the APIs
+	AKSDataStorage *fake.AKSDataStorage
 
 	// Cache
 	KubernetesVersionCache    *cache.Cache
@@ -96,6 +101,8 @@ type Environment struct {
 	// Settings
 	nonZonal       bool
 	SubscriptionID string
+	coreEnv        *coretest.Environment
+	region         string
 }
 
 func NewEnvironment(ctx context.Context, env *coretest.Environment) *Environment {
@@ -130,6 +137,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	nodeImageVersionsAPI := &fake.NodeImageVersionsAPI{}
 	nodeBootstrappingAPI := &fake.NodeBootstrappingAPI{}
 	subscriptionAPI := &fake.SubscriptionsAPI{}
+
+	aksDataStorage := fake.NewAKSDataStorage()
+	aksAgentPoolsAPI := fake.NewAKSAgentPoolsAPI(aksDataStorage)
+	aksMachinesAPI := fake.NewAKSMachinesAPI(aksDataStorage)
 
 	azureResourceGraphAPI := fake.NewAzureResourceGraphAPI(resourceGroup, virtualMachinesAPI, networkInterfacesAPI)
 	// Cache
@@ -178,6 +189,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
+		aksMachinesAPI,
+		aksAgentPoolsAPI,
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
 		subnetsAPI,
@@ -220,6 +233,10 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		PricingAPI:                  pricingAPI,
 		SubscriptionAPI:             subscriptionAPI,
 		NodeBootstrappingAPI:        nodeBootstrappingAPI,
+		AKSMachinesAPI:              aksMachinesAPI,
+		AKSAgentPoolsAPI:            aksAgentPoolsAPI,
+
+		AKSDataStorage: aksDataStorage,
 
 		KubernetesVersionCache:    kubernetesVersionCache,
 		NodeImagesCache:           nodeImagesCache,
@@ -241,6 +258,8 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 		nonZonal:       nonZonal,
 		SubscriptionID: subscription,
+		region:         region,
+		coreEnv:        env,
 	}
 }
 
@@ -261,6 +280,8 @@ func (env *Environment) Reset() {
 	env.SKUsAPI.Reset()
 	env.PricingAPI.Reset()
 	env.PricingProvider.Reset()
+	env.AKSMachinesAPI.Reset()
+	env.AKSAgentPoolsAPI.Reset()
 
 	env.KubernetesVersionCache.Flush()
 	env.NodeImagesCache.Flush()

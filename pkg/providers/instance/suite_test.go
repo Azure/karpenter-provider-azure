@@ -189,9 +189,11 @@ func zoneFromVM(vm *armcompute.VirtualMachine) string {
 	if zonePtr == nil {
 		return ""
 	}
-	return utils.MakeZone(strings.ToLower(lo.FromPtr(vm.Location)), lo.FromPtr(zonePtr))
+	return utils.MakeAKSLabelZoneFromARMZone(strings.ToLower(lo.FromPtr(vm.Location)), lo.FromPtr(zonePtr))
 }
 
+// Attention: tests like below for AKSMachineInstanceProvider are added to cloudprovider module to reflect its end-to-end nature.
+// Suggestion: move these tests there too(?)
 var _ = Describe("VMInstanceProvider", func() {
 	var nodeClass *v1beta1.AKSNodeClass
 	var nodePool *karpv1.NodePool
