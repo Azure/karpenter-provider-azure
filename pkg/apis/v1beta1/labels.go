@@ -26,9 +26,27 @@ import (
 
 func init() {
 	karpv1.RestrictedLabelDomains = karpv1.RestrictedLabelDomains.Insert(RestrictedLabelDomains...)
-	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Insert(
+	// Note that adding to WellKnownLabels here requires a corresponding update to
+	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
+	// Karpenter core expects that WellKnownLabels are mapped to requirements.
+	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Union(AzureWellKnownLabels)
+}
+
+var (
+	TerminationFinalizer     = apis.Group + "/termination"
+	AzureToKubeArchitectures = map[string]string{
+		// TODO: consider using constants like compute.ArchitectureArm64
+		"x64":   karpv1.ArchitectureAmd64,
+		"Arm64": karpv1.ArchitectureArm64,
+	}
+	RestrictedLabelDomains = []string{
+		Group,
+	}
+
+	AzureWellKnownLabels = sets.New(
 		LabelSKUName,
 		LabelSKUFamily,
+		LabelSKUSeries,
 		LabelSKUVersion,
 
 		LabelSKUCPU,
@@ -46,19 +64,8 @@ func init() {
 		LabelSKUGPUCount,
 
 		AKSLabelCluster,
+		AKSLabelMode,
 	)
-}
-
-var (
-	TerminationFinalizer     = apis.Group + "/termination"
-	AzureToKubeArchitectures = map[string]string{
-		// TODO: consider using constants like compute.ArchitectureArm64
-		"x64":   karpv1.ArchitectureAmd64,
-		"Arm64": karpv1.ArchitectureArm64,
-	}
-	RestrictedLabelDomains = []string{
-		Group,
-	}
 
 	RestrictedLabels = sets.New(
 		LabelSKUHyperVGeneration,
@@ -72,8 +79,9 @@ var (
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
 
-	LabelSKUName    = Group + "/sku-name"    // Standard_A1_v2
-	LabelSKUFamily  = Group + "/sku-family"  // A
+	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
+	LabelSKUFamily  = Group + "/sku-family"  // D
+	LabelSKUSeries  = Group + "/sku-series"  // Dpls_v6
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
@@ -101,9 +109,15 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
+	AKSLabelMode                    = AKSLabelDomain + "/mode" // "system" or "user"
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
+)
+
+const (
+	ModeUser   = "user"
+	ModeSystem = "system"
 )
 
 const (

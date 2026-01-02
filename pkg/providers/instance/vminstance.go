@@ -38,10 +38,11 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/logging"
-	"github.com/Azure/karpenter-provider-azure/pkg/metrics"
+	metrics "github.com/Azure/karpenter-provider-azure/pkg/metrics"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/loadbalancer"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/networksecuritygroup"
@@ -65,6 +66,20 @@ const (
 	cseNameWindows = "windows-cse-agent-karpenter"
 	cseNameLinux   = "cse-agent-karpenter"
 )
+
+// ErrorCodeForMetrics extracts a stable Azure error code for metric labeling when possible.
+func ErrorCodeForMetrics(err error) string {
+	if err == nil {
+		return "UnknownError"
+	}
+	if azErr := sdkerrors.IsResponseError(err); azErr != nil {
+		if azErr.ErrorCode != "" {
+			return azErr.ErrorCode
+		}
+		return "UnknownError"
+	}
+	return "UnknownError"
+}
 
 // GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
 // This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
@@ -188,7 +203,7 @@ func (p *DefaultVMProvider) BeginCreate(
 		return nil, err
 	}
 	vm := vmPromise.VM
-	zone, err := utils.GetZone(vm)
+	zone, err := utils.MakeAKSLabelZoneFromVM(vm)
 	if err != nil {
 		log.FromContext(ctx).V(1).Info("failed to get zone for VM", "vmName", *vm.Name, "error", err)
 	}
@@ -486,6 +501,7 @@ type createVMOptions struct {
 	ProvisionMode       string
 	UseSIG              bool
 	DiskEncryptionSetID string
+	NodePoolName        string
 }
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
@@ -541,7 +557,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 			},
 			Priority: lo.ToPtr(KarpCapacityTypeToVMPriority[opts.CapacityType]),
 		},
-		Zones: utils.MakeVMZone(opts.Zone),
+		Zones: utils.MakeARMZonesFromAKSLabelZone(opts.Zone),
 		Tags:  opts.LaunchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
@@ -642,11 +658,25 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	}
 	vm := newVMObject(opts)
 	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, logging.InstanceType, opts.InstanceType.Name)
-	metrics.VMCreateStartMetric.Inc(ctx, "creating virtual machine", metrics.ImageID(opts.LaunchTemplate.ImageID))
+	VMCreateStartMetric.With(map[string]string{
+		metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
+		metrics.SizeLabel:         opts.InstanceType.Name,
+		metrics.ZoneLabel:         opts.Zone,
+		metrics.CapacityTypeLabel: opts.CapacityType,
+		metrics.NodePoolLabel:     opts.NodePoolName,
+	}).Inc()
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		metrics.VMCreateSyncFailureMetric.Inc(ctx, "failed to create virtual machine on initial put", metrics.ImageID(opts.LaunchTemplate.ImageID))
+		VMCreateFailureMetric.With(map[string]string{
+			metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
+			metrics.SizeLabel:         opts.InstanceType.Name,
+			metrics.ZoneLabel:         opts.Zone,
+			metrics.CapacityTypeLabel: opts.CapacityType,
+			metrics.NodePoolLabel:     opts.NodePoolName,
+			metrics.PhaseLabel:        phaseSyncFailure,
+			metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
+		}).Inc()
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
 	return &createResult{Poller: poller, VM: vm}, nil
@@ -730,6 +760,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		ProvisionMode:       p.provisionMode,
 		UseSIG:              options.FromContext(ctx).UseSIG,
 		DiskEncryptionSetID: p.diskEncryptionSetID,
+		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
 	})
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
@@ -766,7 +797,16 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 
 			_, err = result.Poller.PollUntilDone(ctx, nil)
 			if err != nil {
-				metrics.VMCreateAsyncFailureMetric.Inc(ctx, "failed to create virtual machine during LRO", metrics.ImageID(launchTemplate.ImageID))
+				VMCreateFailureMetric.With(map[string]string{
+					metrics.ImageLabel:        launchTemplate.ImageID,
+					metrics.SizeLabel:         instanceType.Name,
+					metrics.ZoneLabel:         zone,
+					metrics.CapacityTypeLabel: capacityType,
+					metrics.NodePoolLabel:     nodeClaim.Labels[karpv1.NodePoolLabelKey],
+					metrics.PhaseLabel:        phaseAsyncFailure,
+					metrics.ErrorCodeLabel:    ErrorCodeForMetrics(err),
+				}).Inc()
+
 				sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 				if skuErr != nil {
 					return fmt.Errorf("failed to get instance type %q: %w", instanceType.Name, err)
@@ -815,7 +855,23 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 	instanceType *corecloudprovider.InstanceType,
 	capacityType string,
 ) (*launchtemplate.Template, error) {
-	additionalLabels := lo.Assign(offerings.GetAllSingleValuedRequirementLabels(instanceType), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
+	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
+	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
+	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
+
+	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
+	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
+	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+		func(k string, req *scheduling.Requirement) bool {
+			return labels.IsKubeletLabel(k)
+		},
+	)
+	additionalLabels := lo.Assign(
+		claimLabels,
+		labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements),
+		map[string]string{karpv1.CapacityTypeLabelKey: capacityType},
+	)
 
 	launchTemplate, err := p.launchTemplateProvider.GetTemplate(ctx, nodeClass, nodeClaim, instanceType, additionalLabels)
 	if err != nil {

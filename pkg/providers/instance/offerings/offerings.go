@@ -104,22 +104,6 @@ func getOfferingZone(offering *corecloudprovider.Offering) string {
 	return offering.Requirements.Get(v1.LabelTopologyZone).Any()
 }
 
-// GetAllSingleValuedRequirementLabels converts instanceType.Requirements to labels
-// Like   instanceType.Requirements.Labels() it uses single-valued requirements
-// Unlike instanceType.Requirements.Labels() it does not filter out restricted Node labels
-func GetAllSingleValuedRequirementLabels(instanceType *corecloudprovider.InstanceType) map[string]string {
-	labels := map[string]string{}
-	if instanceType == nil {
-		return labels
-	}
-	for key, req := range instanceType.Requirements {
-		if req.Len() == 1 {
-			labels[key] = req.Values()[0]
-		}
-	}
-	return labels
-}
-
 // May return nil if there is no match
 func GetInstanceTypeFromVMSize(vmSize string, possibleInstanceTypes []*corecloudprovider.InstanceType) *corecloudprovider.InstanceType {
 	instanceType, _ := lo.Find(possibleInstanceTypes, func(i *corecloudprovider.InstanceType) bool {

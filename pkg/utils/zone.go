@@ -23,16 +23,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 )
 
-// MakeZone returns the zone value in format of <region>-<zone-id>.
-func MakeZone(location string, zoneID string) string {
+// MakeAKSLabelZoneFromARMZone returns the zone value in format of <region>-<zone-id>.
+func MakeAKSLabelZoneFromARMZone(location string, zoneID string) string {
 	if zoneID == "" {
 		return ""
 	}
 	return fmt.Sprintf("%s-%s", strings.ToLower(location), zoneID)
 }
 
-// VM Zones field expects just the zone number, without region
-func MakeVMZone(zone string) []*string {
+// MakeARMZonesFromAKSLabelZone returns the zone ID from <region>-<zone-id>.
+func MakeARMZonesFromAKSLabelZone(zone string) []*string {
 	if zone == "" {
 		return []*string{}
 	}
@@ -40,8 +40,8 @@ func MakeVMZone(zone string) []*string {
 	return []*string{&zoneNum}
 }
 
-// GetZone returns the zone for the given virtual machine, or an empty string if there is no zone specified
-func GetZone(vm *armcompute.VirtualMachine) (string, error) {
+// MakeAKSLabelZoneFromVM returns the zone for the given virtual machine, or an empty string if there is no zone specified
+func MakeAKSLabelZoneFromVM(vm *armcompute.VirtualMachine) (string, error) {
 	if vm == nil {
 		return "", fmt.Errorf("cannot pass in a nil virtual machine")
 	}
@@ -52,7 +52,7 @@ func GetZone(vm *armcompute.VirtualMachine) (string, error) {
 		if vm.Location == nil {
 			return "", fmt.Errorf("virtual machine is missing location")
 		}
-		return MakeZone(*vm.Location, *(vm.Zones)[0]), nil
+		return MakeAKSLabelZoneFromARMZone(*vm.Location, *(vm.Zones)[0]), nil
 	}
 	if len(vm.Zones) > 1 {
 		return "", fmt.Errorf("virtual machine has multiple zones")
