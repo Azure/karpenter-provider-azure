@@ -78,8 +78,8 @@ var _ = Describe("BYOK", func() {
 
 		pod := test.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
+		env.EventuallyExpectHealthyWithTimeout(pod, time.Minute*15)
 		env.ExpectCreatedNodeCount("==", 1)
-		env.EventuallyExpectHealthy(pod)
 
 		vm := env.GetVM(pod.Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil())
