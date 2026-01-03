@@ -867,7 +867,7 @@ var _ = Describe("Consolidation", Ordered, func() {
 	})
 })
 
-var _ = FDescribe("Node Overlay", func() {
+var _ = Describe("Node Overlay", func() {
 	var nodePool *karpv1.NodePool
 
 	BeforeEach(func() {
