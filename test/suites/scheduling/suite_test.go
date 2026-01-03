@@ -549,7 +549,7 @@ func ephemeralInitContainer(requirements corev1.ResourceRequirements) corev1.Con
 	}
 }
 
-var _ = FDescribe("Node Overlay", func() {
+var _ = Describe("Node Overlay", func() {
 	BeforeEach(func() {
 		// remove this if NodeOverlay feature gate is enabled by default
 		if env.InClusterController {
