@@ -28,6 +28,32 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+  workflow_dispatch:
+    inputs:
+      suite:
+        type: choice
+        required: true
+        description: "Test suite to run"
+        options:
+          - Scheduling
+          - Utilization
+          - GPU
+          - Drift
+          - Integration
+          - NodeClaim
+          - Consolidation
+          - Chaos
+          - ACR
+          - KubernetesUpgrade
+          - Spot
+      location:
+        type: choice
+        description: "Azure location to run the e2e test in"
+        default: westus3
+        options:
+          - westus3
+          - southcentralus
+          - eastus
 
 permissions:
   contents: read
@@ -91,12 +117,12 @@ jobs:
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          ref: ${{ inputs.git_ref }}
+          ref: ${{ inputs.git_ref || github.ref }}
       - if: always() && github.event_name == 'workflow_run'
         uses: ./.github/actions/commit-status/start
         with:
           name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
-          git_ref: ${{ inputs.git_ref }}
+          git_ref: ${{ inputs.git_ref || github.ref }}
       - uses: ./.github/actions/install-deps
       - name: az login
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
@@ -116,7 +142,7 @@ jobs:
       - name: generate rg name
         env:
           SUITE: ${{ inputs.suite }}
-          HASH: ${{ inputs.hash }}
+          HASH: ${{ inputs.hash || github.run_id }}
         run: |
           RG_NAME=$(echo karpenter-e2e-"$SUITE"-"$HASH" | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
@@ -124,7 +150,7 @@ jobs:
       - name: generate acr name
         env:
           SUITE: ${{ inputs.suite }}
-          HASH: ${{ inputs.hash }}
+          HASH: ${{ inputs.hash || github.run_id }}
         run: |
           ACR_NAME=$(echo "$SUITE"acr"$HASH" | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
@@ -137,7 +163,7 @@ jobs:
           subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           acr_name: ${{ env.ACR_NAME }}
-          git_ref: ${{ inputs.git_ref }}
+          git_ref: ${{ inputs.git_ref || github.ref }}
           location: ${{ inputs.location }}
       - name: add jitter on cluster creation
         run: |
@@ -157,7 +183,7 @@ jobs:
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
-          git_ref: ${{ inputs.git_ref }}
+          git_ref: ${{ inputs.git_ref || github.ref }}
           location: ${{ inputs.location }}
       - name: build and publish karpenter
         shell: bash
@@ -173,7 +199,7 @@ jobs:
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
-          git_ref: ${{ inputs.git_ref }}
+          git_ref: ${{ inputs.git_ref || github.ref }}
           location: ${{ inputs.location }}
           provisionmode: ${{ inputs.provisionmode }}
       - name: run the ${{ inputs.suite }} test suite
@@ -198,7 +224,7 @@ jobs:
           subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
-          git_ref: ${{ inputs.git_ref }}
+          git_ref: ${{ inputs.git_ref || github.ref }}
       - name: cleanup resources
         uses: ./.github/actions/e2e/cleanup
         if: always()
@@ -209,9 +235,9 @@ jobs:
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
-          git_ref: ${{ inputs.git_ref }}
+          git_ref: ${{ inputs.git_ref || github.ref }}
       - if: always() && github.event_name == 'workflow_run'
         uses: ./.github/actions/commit-status/end
         with:
           name: ${{ github.workflow }} / e2e (${{ inputs.suite }})
-          git_ref: ${{ inputs.git_ref }}
+          git_ref: ${{ inputs.git_ref || github.ref }}
