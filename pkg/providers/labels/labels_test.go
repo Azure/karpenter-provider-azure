@@ -341,3 +341,30 @@ func TestLocalDNSLabels(t *testing.T) {
 		})
 	}
 }
+
+func TestDoNotSyncTaintsLabel(t *testing.T) {
+	ctx := options.ToContext(context.Background(), &options.Options{
+		NodeResourceGroup:       "test-rg",
+		KubeletIdentityClientID: "test-client-id",
+		SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
+	})
+
+	nodeClass := &v1beta1.AKSNodeClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-nodeclass",
+		},
+		Status: v1beta1.AKSNodeClassStatus{
+			KubernetesVersion: "1.35.0",
+			Conditions: []status.Condition{
+				{
+					Type:   v1beta1.ConditionTypeKubernetesVersionReady,
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	labelMap, err := labels.Get(ctx, nodeClass)
+	assert.NoError(t, err)
+	assert.Equal(t, "true", labelMap[karpv1.NodeDoNotSyncTaintsLabelKey])
+}
