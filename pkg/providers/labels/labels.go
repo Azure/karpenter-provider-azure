@@ -99,7 +99,7 @@ func Get(
 	// changed recently. This is OK because drift will correct it.
 	labels[v1beta1.AKSLabelKubeletIdentityClientID] = opts.KubeletIdentityClientID
 	labels[v1beta1.AKSLabelMode] = v1beta1.ModeUser
-	// Prevent race conditions with startup taints by telling kubelet not to sync taints from the node to the NodeClaim
+	// Prevent race conditions with startup taints by telling Karpenter not to sync taints from the NodeClaim to the Node
 	// See https://github.com/kubernetes-sigs/karpenter/issues/1772
 	labels[karpv1.NodeDoNotSyncTaintsLabelKey] = "true"
 
