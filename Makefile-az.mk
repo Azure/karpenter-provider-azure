@@ -53,7 +53,7 @@ az-all-savm:         az-login                        az-mkaks-savm              
 
 az-login: ## Login into Azure
 	az config set core.login_experience_v2=off # disable interactive subscription selection in favor of scripted
-	az account show -o none || CODESPACES=off az login -o none
+	az account show -o none || CODESPACES=false az login -o none
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
 
 az-mkrg: ## Create resource group
