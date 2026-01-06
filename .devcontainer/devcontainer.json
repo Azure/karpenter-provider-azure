@@ -20,7 +20,11 @@
 				"go.toolsManagement.checkForUpdates": "local",
 				"go.useLanguageServer": true,
 				"go.gopath": "/go",
-				"github.copilot.chat.githubMcpServer.enabled": true
+				"github.copilot.chat.githubMcpServer.enabled": true,
+				"github.copilot.chat.githubMcpServer.toolsets": [
+					"default", // https://github.com/github/github-mcp-server/blob/main/README.md#default-toolset
+					"actions"
+				]
 			},
 
 			// Add the IDs of extensions you want installed when the container is created.
@@ -38,7 +42,18 @@
 				"github.vscode-github-actions",
 				"GitHub.copilot-chat",
 				"ms-azuretools.vscode-azure-github-copilot" // also adds MCP server and Azure resources
-			]
+			],
+			"mcp": {
+				"servers": {
+					// Azure MCP server - installed via extension
+					// GitHub MCP server - via GitHub Copilot Chat built-in
+					"deepwiki": {
+						"type": "http",
+						"url": "https://mcp.deepwiki.com/mcp"
+					}
+					// codewiki.google does not have MCP server, can just use web access
+				}
+			}
 		}
 	},
 
