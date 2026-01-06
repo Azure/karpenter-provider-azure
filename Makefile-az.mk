@@ -52,7 +52,7 @@ az-all-user:	     az-login                        az-mkaks-user                 
 az-all-savm:         az-login                        az-mkaks-savm                                 az-perm-savm                      az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
 az-login: ## Login into Azure
-	az config set core.login_experience_v2=off
+	az config set core.login_experience_v2=off # disable interactive subscription selection in favor of scripted
 	az account show -o none || CODESPACES=off az login -o none
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
 
