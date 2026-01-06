@@ -41,6 +41,8 @@
 			],
 			"mcp": {
 				"servers": {
+					// Azure MCP server - installed via extension
+					// GitHub MCP server - via GitHub Copilot Chat built-in
 					"deepwiki": {
 						"type": "http",
 						"url": "https://mcp.deepwiki.com/mcp"
