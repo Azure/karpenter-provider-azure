@@ -16,7 +16,11 @@
 				"go.toolsManagement.checkForUpdates": "local",
 				"go.useLanguageServer": true,
 				"go.gopath": "/go",
-				"github.copilot.chat.githubMcpServer.enabled": true
+				"github.copilot.chat.githubMcpServer.enabled": true,
+				"github.copilot.chat.githubMcpServer.toolsets": [
+					"default", // https://github.com/github/github-mcp-server/blob/main/README.md#default-toolset
+					"actions"
+				]
 			},
 
 			// Add the IDs of extensions you want installed when the container is created.
