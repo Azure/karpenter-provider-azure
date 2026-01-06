@@ -29,6 +29,7 @@ import (
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
@@ -98,6 +99,9 @@ func Get(
 	// changed recently. This is OK because drift will correct it.
 	labels[v1beta1.AKSLabelKubeletIdentityClientID] = opts.KubeletIdentityClientID
 	labels[v1beta1.AKSLabelMode] = v1beta1.ModeUser
+	// Prevent race conditions with startup taints by telling Karpenter not to sync taints from the NodeClaim to the Node
+	// See https://github.com/kubernetes-sigs/karpenter/issues/1772
+	labels[karpv1.NodeDoNotSyncTaintsLabelKey] = "true"
 
 	if opts.IsAzureCNIOverlay() {
 		// TODO: make conditional on pod subnet
