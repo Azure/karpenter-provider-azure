@@ -25,7 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -161,6 +161,7 @@ func createCommonErrorInstanceType(instanceName string, offerings ...offering) *
 }
 
 func TestMarkOfferingsUnavailableForCapacityType(t *testing.T) {
+	g := NewWithT(t)
 	ctx := context.Background()
 	unavailableOfferings := cache.NewUnavailableOfferings()
 	instanceType := createCommonErrorInstanceType(testInstanceName,
@@ -170,15 +171,16 @@ func TestMarkOfferingsUnavailableForCapacityType(t *testing.T) {
 	markOfferingsUnavailableForCapacityType(ctx, unavailableOfferings, instanceType, karpv1.CapacityTypeSpot, SKUNotAvailableReason, SKUNotAvailableSpotTTL)
 
 	// Check that spot offerings are unavailable
-	assert.True(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeSpot))
-	assert.True(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeSpot))
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeSpot)).To(BeTrue())
 
 	// Check that on-demand offerings are still available
-	assert.False(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeOnDemand))
-	assert.False(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeOnDemand))
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeOnDemand)).To(BeFalse())
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeOnDemand)).To(BeFalse())
 }
 
 func TestMarkAllZonesUnavailableForBothCapacityTypes(t *testing.T) {
+	g := NewWithT(t)
 	ctx := context.Background()
 	unavailableOfferings := cache.NewUnavailableOfferings()
 	instanceType := createCommonErrorInstanceType(testInstanceName,
@@ -188,10 +190,10 @@ func TestMarkAllZonesUnavailableForBothCapacityTypes(t *testing.T) {
 	markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, instanceType, AllocationFailureReason, AllocationFailureTTL)
 
 	// Check that all zones and capacity types are unavailable
-	assert.True(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeOnDemand))
-	assert.True(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeSpot))
-	assert.True(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeOnDemand))
-	assert.True(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeSpot))
-	assert.True(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone3, karpv1.CapacityTypeOnDemand))
-	assert.True(t, unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone3, karpv1.CapacityTypeSpot))
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone1, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone2, karpv1.CapacityTypeSpot)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone3, karpv1.CapacityTypeOnDemand)).To(BeTrue())
+	g.Expect(unavailableOfferings.IsUnavailable(createDefaultCommonErrorTestSKU(), testZone3, karpv1.CapacityTypeSpot)).To(BeTrue())
 }
