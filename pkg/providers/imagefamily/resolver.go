@@ -203,12 +203,11 @@ func (r *defaultResolver) getStorageProfile(ctx context.Context, instanceType *c
 		return "", nil, err
 	}
 
-	_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
-
 	if instancetype.UseEphemeralDisk(sku, nodeClass) {
+		_, placement = instancetype.FindMaxEphemeralSizeGBAndPlacement(sku)
 		return consts.StorageProfileEphemeral, placement, nil
 	}
-	return consts.StorageProfileManagedDisks, placement, nil
+	return consts.StorageProfileManagedDisks, nil, nil
 }
 
 func mapToImageDistro(imageID string, fipsMode *v1beta1.FIPSMode, imageFamily ImageFamily, useSIG bool) (string, error) {
