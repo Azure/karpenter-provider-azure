@@ -2486,10 +2486,11 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
 				"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
 				//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there
-				labels.AKSLabelSubnetName:      "aks-subnet",
-				labels.AKSLabelVNetGUID:        test.Options().VnetGUID,
-				labels.AKSLabelAzureCNIOverlay: strconv.FormatBool(true),
-				labels.AKSLabelPodNetworkType:  consts.NetworkPluginModeOverlay,
+				labels.AKSLabelSubnetName:          "aks-subnet",
+				labels.AKSLabelVNetGUID:            test.Options().VnetGUID,
+				labels.AKSLabelAzureCNIOverlay:     strconv.FormatBool(true),
+				labels.AKSLabelPodNetworkType:      consts.NetworkPluginModeOverlay,
+				karpv1.NodeDoNotSyncTaintsLabelKey: "true",
 			}
 
 			It("should write other (non-schedulable) labels to kubelet", func() {
