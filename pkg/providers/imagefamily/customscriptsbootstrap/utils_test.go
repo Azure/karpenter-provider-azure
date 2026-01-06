@@ -25,8 +25,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
@@ -198,16 +198,17 @@ func TestHydrateBootstrapTokenIfNeeded(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			customData, cse, err := hydrateBootstrapTokenIfNeeded(tt.customDataDehydratable, tt.cseDehydratable, tt.bootstrapToken)
 
 			if tt.expectError {
-				assert.Error(t, err)
+				g.Expect(err).To(HaveOccurred())
 				return
 			}
 
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedCustomData, customData)
-			assert.Equal(t, tt.expectedCSE, cse)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(customData).To(Equal(tt.expectedCustomData))
+			g.Expect(cse).To(Equal(tt.expectedCSE))
 		})
 	}
 }
@@ -309,8 +310,9 @@ func TestConvertLocalDNSToModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := convertLocalDNSToModel(tt.localDNS)
-			assert.Equal(t, tt.expected, result)
+			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
 }
@@ -415,8 +417,9 @@ func TestConvertLocalDNSZoneOverrideToModel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := convertLocalDNSZoneOverrideToModel(tt.override)
-			assert.Equal(t, tt.expected, result)
+			g.Expect(result).To(Equal(tt.expected))
 		})
 	}
 }

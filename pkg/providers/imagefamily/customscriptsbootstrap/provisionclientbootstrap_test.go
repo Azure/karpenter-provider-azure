@@ -29,8 +29,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -158,6 +158,7 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			// Setup context with options
 			ctx := options.ToContext(context.Background(), &options.Options{
 				VMMemoryOverheadPercent: 0.075,
@@ -173,22 +174,22 @@ func TestGetCustomDataAndCSE(t *testing.T) {
 			customData, cse, err := tt.bootstrapper.GetCustomDataAndCSE(ctx)
 
 			if tt.expectError {
-				assert.Error(t, err)
+				g.Expect(err).To(HaveOccurred())
 				return
 			}
 
-			assert.NoError(t, err)
-			assert.NotEmpty(t, customData)
-			assert.NotEmpty(t, cse)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(customData).ToNot(BeEmpty())
+			g.Expect(cse).ToNot(BeEmpty())
 
 			// Verify that the bootstrap token template is not present in the output
 			// This ensures proper hydration or that no token template was needed
-			assert.NotContains(t, cse, "{{.TokenID}}.{{.TokenSecret}}")
+			g.Expect(cse).ToNot(ContainSubstring("{{.TokenID}}.{{.TokenSecret}}"))
 
 			// Check CustomData has no token template
 			decodedCustomData, err := base64.StdEncoding.DecodeString(customData)
-			assert.NoError(t, err)
-			assert.NotContains(t, string(decodedCustomData), "{{.TokenID}}.{{.TokenSecret}}")
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(string(decodedCustomData)).ToNot(ContainSubstring("{{.TokenID}}.{{.TokenSecret}}"))
 		})
 	}
 }
@@ -226,27 +227,28 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
-				assert.NotNil(t, values.ProvisionProfile)
-				assert.NotNil(t, values.ProvisionHelperValues)
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
+				g.Expect(values.ProvisionHelperValues).ToNot(BeNil())
 
 				// Check Profile
 				profile := values.ProvisionProfile
-				assert.Equal(t, "x64", *profile.Architecture)
-				assert.Equal(t, models.OSTypeLinux, *profile.OsType)
-				assert.Equal(t, models.OSSKUUbuntu, *profile.OsSku)
-				assert.Equal(t, "Standard_D2s_v3", *profile.VMSize)
-				assert.Equal(t, "aks-ubuntu-fips-containerd-20.04-gen2", *profile.Distro)
-				assert.Equal(t, "1.31.0", *profile.OrchestratorVersion)
-				assert.Equal(t, "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", *profile.VnetSubnetID)
-				assert.Equal(t, consts.StorageProfileManagedDisks, *profile.StorageProfile)
-				assert.Equal(t, int32(110), *profile.MaxPods)
-				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
-				assert.True(t, *profile.EnableFIPS)
+				g.Expect(*profile.Architecture).To(Equal("x64"))
+				g.Expect(*profile.OsType).To(Equal(models.OSTypeLinux))
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUUbuntu))
+				g.Expect(*profile.VMSize).To(Equal("Standard_D2s_v3"))
+				g.Expect(*profile.Distro).To(Equal("aks-ubuntu-fips-containerd-20.04-gen2"))
+				g.Expect(*profile.OrchestratorVersion).To(Equal("1.31.0"))
+				g.Expect(*profile.VnetSubnetID).To(Equal("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"))
+				g.Expect(*profile.StorageProfile).To(Equal(consts.StorageProfileManagedDisks))
+				g.Expect(*profile.MaxPods).To(Equal(int32(110)))
+				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeUser))
+				g.Expect(*profile.EnableFIPS).To(BeTrue())
 
 				// Check Helper Values
 				helperValues := values.ProvisionHelperValues
-				assert.Equal(t, float64(2), *helperValues.SkuCPU)
-				assert.InDelta(t, float64(9), *helperValues.SkuMemory, 0.1) // Checking approximate value due to overhead calculation
+				g.Expect(*helperValues.SkuCPU).To(Equal(float64(2)))
+				g.Expect(*helperValues.SkuMemory).To(BeNumerically("~", float64(9), 0.1)) // Checking approximate value due to overhead calculation
 			},
 		},
 		{
@@ -275,27 +277,28 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
-				assert.NotNil(t, values.ProvisionProfile)
-				assert.NotNil(t, values.ProvisionHelperValues)
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
+				g.Expect(values.ProvisionHelperValues).ToNot(BeNil())
 
 				// Check Profile
 				profile := values.ProvisionProfile
-				assert.Equal(t, "x64", *profile.Architecture)
-				assert.Equal(t, models.OSTypeLinux, *profile.OsType)
-				assert.Equal(t, models.OSSKUUbuntu, *profile.OsSku)
-				assert.Equal(t, "Standard_D2s_v3", *profile.VMSize)
-				assert.Equal(t, "aks-ubuntu-containerd-22.04-gen2", *profile.Distro)
-				assert.Equal(t, "1.31.0", *profile.OrchestratorVersion)
-				assert.Equal(t, "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", *profile.VnetSubnetID)
-				assert.Equal(t, consts.StorageProfileManagedDisks, *profile.StorageProfile)
-				assert.Equal(t, int32(110), *profile.MaxPods)
-				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
-				assert.False(t, *profile.EnableFIPS)
+				g.Expect(*profile.Architecture).To(Equal("x64"))
+				g.Expect(*profile.OsType).To(Equal(models.OSTypeLinux))
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUUbuntu))
+				g.Expect(*profile.VMSize).To(Equal("Standard_D2s_v3"))
+				g.Expect(*profile.Distro).To(Equal("aks-ubuntu-containerd-22.04-gen2"))
+				g.Expect(*profile.OrchestratorVersion).To(Equal("1.31.0"))
+				g.Expect(*profile.VnetSubnetID).To(Equal("/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"))
+				g.Expect(*profile.StorageProfile).To(Equal(consts.StorageProfileManagedDisks))
+				g.Expect(*profile.MaxPods).To(Equal(int32(110)))
+				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeUser))
+				g.Expect(*profile.EnableFIPS).To(BeFalse())
 
 				// Check Helper Values
 				helperValues := values.ProvisionHelperValues
-				assert.Equal(t, float64(2), *helperValues.SkuCPU)
-				assert.InDelta(t, float64(9), *helperValues.SkuMemory, 0.1) // Checking approximate value due to overhead calculation
+				g.Expect(*helperValues.SkuCPU).To(Equal(float64(2)))
+				g.Expect(*helperValues.SkuMemory).To(BeNumerically("~", float64(9), 0.1)) // Checking approximate value due to overhead calculation
 			},
 		},
 		{
@@ -323,21 +326,22 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
-				assert.NotNil(t, values.ProvisionProfile)
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
 
 				// Check Profile
 				profile := values.ProvisionProfile
-				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
-				assert.Equal(t, "aks-azurelinux-v2-gen2", *profile.Distro)
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureLinux))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v2-gen2"))
 
 				// Check system mode
-				assert.Equal(t, models.AgentPoolModeSystem, *profile.Mode)
+				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeSystem))
 
 				// Check artifact streaming is disabled
-				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
 
 				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
-				assert.False(t, *profile.EnableFIPS)
+				g.Expect(*profile.EnableFIPS).To(BeFalse())
 			},
 		},
 		{
@@ -365,19 +369,20 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
-				assert.NotNil(t, values.ProvisionProfile)
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
 
 				// Check Profile
 				profile := values.ProvisionProfile
-				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
-				assert.Equal(t, "aks-azurelinux-v3-gen2", *profile.Distro)
-				assert.Equal(t, models.AgentPoolModeUser, *profile.Mode)
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureLinux))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-gen2"))
+				g.Expect(*profile.Mode).To(Equal(models.AgentPoolModeUser))
 
 				// Check artifact streaming is disabled for AzureLinux3
-				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
 
 				// Check FIPS enablement (unset/nil FIPSMode is effectively false for now)
-				assert.False(t, *profile.EnableFIPS)
+				g.Expect(*profile.EnableFIPS).To(BeFalse())
 			},
 		},
 		{
@@ -429,9 +434,10 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
-				assert.NotNil(t, values.ProvisionProfile.GpuProfile)
-				assert.True(t, *values.ProvisionProfile.GpuProfile.InstallGPUDriver)
-				assert.Equal(t, models.DriverTypeCUDA, *values.ProvisionProfile.GpuProfile.DriverType)
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile.GpuProfile).ToNot(BeNil())
+				g.Expect(*values.ProvisionProfile.GpuProfile.InstallGPUDriver).To(BeTrue())
+				g.Expect(*values.ProvisionProfile.GpuProfile.DriverType).To(Equal(models.DriverTypeCUDA))
 			},
 		},
 		{
@@ -458,10 +464,11 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
-				assert.Equal(t, "Arm64", *values.ProvisionProfile.Architecture)
+				g := NewWithT(t)
+				g.Expect(*values.ProvisionProfile.Architecture).To(Equal("Arm64"))
 
 				// Artifact streaming should be disabled for ARM64
-				assert.False(t, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
+				g.Expect(*values.ProvisionProfile.ArtifactStreamingProfile.Enabled).To(BeFalse())
 			},
 		},
 		{
@@ -488,16 +495,17 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
-				assert.NotNil(t, values.ProvisionProfile)
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
 
 				// Check Profile
 				profile := values.ProvisionProfile
-				assert.Equal(t, "Arm64", *profile.Architecture)
-				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
-				assert.Equal(t, "aks-azurelinux-v2-arm64-gen2", *profile.Distro)
+				g.Expect(*profile.Architecture).To(Equal("Arm64"))
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureLinux))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v2-arm64-gen2"))
 
 				// Artifact streaming should be disabled for ARM64
-				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
 			},
 		},
 		{
@@ -524,16 +532,17 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
-				assert.NotNil(t, values.ProvisionProfile)
+				g := NewWithT(t)
+				g.Expect(values.ProvisionProfile).ToNot(BeNil())
 
 				// Check Profile
 				profile := values.ProvisionProfile
-				assert.Equal(t, "Arm64", *profile.Architecture)
-				assert.Equal(t, models.OSSKUAzureLinux, *profile.OsSku)
-				assert.Equal(t, "aks-azurelinux-v3-arm64-gen2", *profile.Distro)
+				g.Expect(*profile.Architecture).To(Equal("Arm64"))
+				g.Expect(*profile.OsSku).To(Equal(models.OSSKUAzureLinux))
+				g.Expect(*profile.Distro).To(Equal("aks-azurelinux-v3-arm64-gen2"))
 
 				// Artifact streaming should be disabled for ARM64
-				assert.False(t, *profile.ArtifactStreamingProfile.Enabled)
+				g.Expect(*profile.ArtifactStreamingProfile.Enabled).To(BeFalse())
 			},
 		},
 		{
@@ -598,38 +607,40 @@ func TestConstructProvisionValues(t *testing.T) {
 			},
 			expectError: false,
 			validate: func(t *testing.T, values *models.ProvisionValues) {
+				g := NewWithT(t)
 				// Validate that CustomKubeletConfig was properly set
-				assert.NotNil(t, values.ProvisionProfile.CustomKubeletConfig)
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig).ToNot(BeNil())
 
 				// CPU config
-				assert.True(t, *values.ProvisionProfile.CustomKubeletConfig.CPUCfsQuota)
-				assert.Equal(t, "100ms", *values.ProvisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod)
-				assert.Equal(t, "static", *values.ProvisionProfile.CustomKubeletConfig.CPUManagerPolicy)
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.CPUCfsQuota).To(BeTrue())
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.CPUCfsQuotaPeriod).To(Equal("100ms"))
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.CPUManagerPolicy).To(Equal("static"))
 
 				// Topology manager
-				assert.Equal(t, "single-numa-node", *values.ProvisionProfile.CustomKubeletConfig.TopologyManagerPolicy)
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.TopologyManagerPolicy).To(Equal("single-numa-node"))
 
 				// Image GC
-				assert.Equal(t, int32(85), *values.ProvisionProfile.CustomKubeletConfig.ImageGcHighThreshold)
-				assert.Equal(t, int32(75), *values.ProvisionProfile.CustomKubeletConfig.ImageGcLowThreshold)
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.ImageGcHighThreshold).To(Equal(int32(85)))
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.ImageGcLowThreshold).To(Equal(int32(75)))
 
 				// Container logs
-				assert.Equal(t, int32(100), *values.ProvisionProfile.CustomKubeletConfig.ContainerLogMaxSizeMB)
-				assert.Equal(t, int32(10), *values.ProvisionProfile.CustomKubeletConfig.ContainerLogMaxFiles)
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.ContainerLogMaxSizeMB).To(Equal(int32(100)))
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.ContainerLogMaxFiles).To(Equal(int32(10)))
 
 				// Pod PIDs
-				assert.Equal(t, int32(1024), *values.ProvisionProfile.CustomKubeletConfig.PodMaxPids)
+				g.Expect(*values.ProvisionProfile.CustomKubeletConfig.PodMaxPids).To(Equal(int32(1024)))
 
 				// Sysctls
-				assert.Len(t, values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls, 2)
-				assert.Contains(t, values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls, "kernel.msg*")
-				assert.Contains(t, values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls, "net.ipv4.route.min_pmtu")
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(HaveLen(2))
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(ContainElement("kernel.msg*"))
+				g.Expect(values.ProvisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls).To(ContainElement("net.ipv4.route.min_pmtu"))
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			// Setup context with options
 			ctx := options.ToContext(context.Background(), &options.Options{
 				VMMemoryOverheadPercent: 0.075,
@@ -640,12 +651,12 @@ func TestConstructProvisionValues(t *testing.T) {
 			values, err := tt.bootstrapper.ConstructProvisionValues(ctx)
 
 			if tt.expectError {
-				assert.Error(t, err)
+				g.Expect(err).To(HaveOccurred())
 				return
 			}
 
-			assert.NoError(t, err)
-			assert.NotNil(t, values)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(values).ToNot(BeNil())
 
 			// Run custom validation if provided
 			if tt.validate != nil {
@@ -779,6 +790,7 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			// Create a copy of the base bootstrapper and modify for this test
 			bootstrapper := *baseBootstrapper
 			bootstrapper.Arch = tt.arch
@@ -796,34 +808,34 @@ func TestArtifactStreamingEnablement(t *testing.T) {
 
 			// For unsupported OSSKU, we expect an error and should not continue validation
 			if tt.ossku == "CustomUnsupportedOSSKU" {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "unsupported OSSKU")
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("unsupported OSSKU"))
 				return
 			}
 
 			// For all other cases, expect success
-			assert.NoError(t, err, tt.description)
-			assert.NotNil(t, values, "ProvisionValues should not be nil")
-			assert.NotNil(t, values.ProvisionProfile, "ProvisionProfile should not be nil")
-			assert.NotNil(t, values.ProvisionProfile.ArtifactStreamingProfile, "ArtifactStreamingProfile should not be nil")
-			assert.NotNil(t, values.ProvisionProfile.ArtifactStreamingProfile.Enabled, "ArtifactStreamingProfile.Enabled should not be nil")
+			g.Expect(err).ToNot(HaveOccurred(), tt.description)
+			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
+			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
+			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile).ToNot(BeNil(), "ArtifactStreamingProfile should not be nil")
+			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile.Enabled).ToNot(BeNil(), "ArtifactStreamingProfile.Enabled should not be nil")
 
 			// Check artifact streaming enablement
 			actualEnabled := *values.ProvisionProfile.ArtifactStreamingProfile.Enabled
-			assert.Equal(t, tt.expectedArtifactStreamingEnabled, actualEnabled,
+			g.Expect(actualEnabled).To(Equal(tt.expectedArtifactStreamingEnabled),
 				"Artifact streaming enablement mismatch: %s. Expected: %v, Actual: %v",
 				tt.description, tt.expectedArtifactStreamingEnabled, actualEnabled)
 
 			// Additional validation for enabled cases
 			if tt.expectedArtifactStreamingEnabled {
-				assert.True(t, actualEnabled, "Artifact streaming should be enabled for %s", tt.description)
-				assert.Equal(t, karpv1.ArchitectureAmd64, tt.arch, "Architecture should be AMD64 when artifact streaming is enabled")
-				assert.Contains(t, []string{
+				g.Expect(actualEnabled).To(BeTrue(), "Artifact streaming should be enabled for %s", tt.description)
+				g.Expect(tt.arch).To(Equal(karpv1.ArchitectureAmd64), "Architecture should be AMD64 when artifact streaming is enabled")
+				g.Expect([]string{
 					customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
 					customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
-				}, tt.ossku, "OSSKU should be Ubuntu2204 or AzureLinux2 when artifact streaming is enabled")
+				}).To(ContainElement(tt.ossku), "OSSKU should be Ubuntu2204 or AzureLinux2 when artifact streaming is enabled")
 			} else {
-				assert.False(t, actualEnabled, "Artifact streaming should be disabled for %s", tt.description)
+				g.Expect(actualEnabled).To(BeFalse(), "Artifact streaming should be disabled for %s", tt.description)
 			}
 		})
 	}
@@ -945,6 +957,7 @@ func TestFIPSEnablement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			// Create a copy of the base bootstrapper and modify for this test
 			bootstrapper := *baseBootstrapper
 			bootstrapper.OSSKU = tt.ossku
@@ -961,11 +974,11 @@ func TestFIPSEnablement(t *testing.T) {
 			values, err := bootstrapper.ConstructProvisionValues(ctx)
 
 			// For all cases, expect success
-			assert.NoError(t, err, tt.description)
-			assert.NotNil(t, values, "ProvisionValues should not be nil")
-			assert.NotNil(t, values.ProvisionProfile, "ProvisionProfile should not be nil")
+			g.Expect(err).ToNot(HaveOccurred(), tt.description)
+			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
+			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
 
-			assert.Equal(t, lo.ToPtr(tt.expectedEnableFIPS), values.ProvisionProfile.EnableFIPS,
+			g.Expect(values.ProvisionProfile.EnableFIPS).To(Equal(lo.ToPtr(tt.expectedEnableFIPS)),
 				"FIPS enablement mismatch: %s. Expected: %t, Actual: %t",
 				tt.description, tt.expectedEnableFIPS, *values.ProvisionProfile.EnableFIPS)
 		})

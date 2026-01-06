@@ -25,8 +25,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
@@ -61,6 +61,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.testName, func(t *testing.T) {
+			g := NewWithT(t)
 			for _, name := range c.vmNames {
 				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, name, armcompute.VirtualMachine{Tags: c.tags, Zones: []*string{lo.ToPtr("1")}})
 				if err != nil {
@@ -75,7 +76,7 @@ func TestAzureResourceGraphAPI_Resources_VM(t *testing.T) {
 				return
 			}
 			if data == nil {
-				assert.Equal(t, c.expectedError, "Unexpected nil resource data")
+				g.Expect("Unexpected nil resource data").To(Equal(c.expectedError))
 			}
 			if c.expectedError == "" {
 				if len(data) != len(c.vmNames) {
@@ -194,6 +195,7 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 
 	for _, c := range cases {
 		t.Run(c.testName, func(t *testing.T) {
+			g := NewWithT(t)
 			// Create VMs with different tag configurations
 			for _, vmConfig := range c.vmConfigs {
 				_, err := instance.CreateVirtualMachine(context.Background(), virtualMachinesAPI, resourceGroup, vmConfig.name, armcompute.VirtualMachine{
@@ -216,9 +218,9 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 			}
 
 			if c.expectedError != "" {
-				assert.Equal(t, c.expectedError, "Unexpected nil resource data")
+				g.Expect("Unexpected nil resource data").To(Equal(c.expectedError))
 			} else {
-				assert.Equal(t, len(c.expectedVMNames), len(data), "Unexpected number of VMs returned")
+				g.Expect(data).To(HaveLen(len(c.expectedVMNames)), "Unexpected number of VMs returned")
 
 				// Verify the correct VMs are returned
 				returnedNames := make([]string, 0, len(data))
@@ -232,7 +234,7 @@ func TestAzureResourceGraphAPI_Resources_VM_WithKarpenterAKSMachineTagFiltering(
 				}
 
 				for _, expectedName := range c.expectedVMNames {
-					assert.Contains(t, returnedNames, expectedName, "Expected VM not found in results")
+					g.Expect(returnedNames).To(ContainElement(expectedName), "Expected VM not found in results")
 				}
 			}
 
@@ -334,6 +336,7 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 
 	for _, c := range cases {
 		t.Run(c.testName, func(t *testing.T) {
+			g := NewWithT(t)
 			// Create NICs with different tag configurations
 			for _, nicConfig := range c.nicConfigs {
 				nic := armnetwork.Interface{
@@ -356,9 +359,9 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 			}
 
 			if c.expectedError != "" {
-				assert.Equal(t, c.expectedError, "Unexpected nil resource data")
+				g.Expect("Unexpected nil resource data").To(Equal(c.expectedError))
 			} else {
-				assert.Equal(t, len(c.expectedNICNames), len(data), "Unexpected number of NICs returned")
+				g.Expect(data).To(HaveLen(len(c.expectedNICNames)), "Unexpected number of NICs returned")
 
 				// Verify the correct NICs are returned
 				returnedNames := make([]string, 0, len(data))
@@ -372,7 +375,7 @@ func TestAzureResourceGraphAPI_Resources_NIC_WithKarpenterAKSMachineTagFiltering
 				}
 
 				for _, expectedName := range c.expectedNICNames {
-					assert.Contains(t, returnedNames, expectedName, "Expected NIC not found in results")
+					g.Expect(returnedNames).To(ContainElement(expectedName), "Expected NIC not found in results")
 				}
 			}
 
