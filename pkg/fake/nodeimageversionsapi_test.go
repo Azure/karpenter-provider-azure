@@ -26,11 +26,11 @@ import (
 
 func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
 	nodeImageVersionAPI := NodeImageVersionsAPI{}
-	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "", "")
-	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions.Values)
+	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "")
+	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions)
 	for _, val := range filteredNodeImages {
-		assert.NotEqual(t, val.OS, "AKSWindows")
-		assert.NotEqual(t, val.OS, "AKSUbuntuEdgeZone")
+		assert.NotEqual(t, *val.OS, "AKSWindows")
+		assert.NotEqual(t, *val.OS, "AKSUbuntuEdgeZone")
 	}
 }
 
@@ -66,7 +66,7 @@ func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
 	found := false
 
 	for _, val := range filteredNodeImages {
-		if val.SKU == "2204gen2containerd" && val.Version == expectedVersion {
+		if *val.SKU == "2204gen2containerd" && *val.Version == expectedVersion {
 			found = true
 			break
 		}
@@ -82,14 +82,14 @@ func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
 // the fake imports the same clientside filtering so we need to assert that behavior is the same
 func TestFilteredNodeImageVersionsFromProviderList(t *testing.T) {
 	nodeImageVersionsAPI := NodeImageVersionsAPI{}
-	filteredNodeImages, err := nodeImageVersionsAPI.List(context.TODO(), "", "")
+	filteredNodeImages, err := nodeImageVersionsAPI.List(context.TODO(), "")
 	assert.Nil(t, err)
 
 	expectedVersion := "202505.27.0"
 	found := false
 
-	for _, val := range filteredNodeImages.Values {
-		if val.SKU == "2204gen2containerd" && val.Version == expectedVersion {
+	for _, val := range filteredNodeImages {
+		if *val.SKU == "2204gen2containerd" && *val.Version == expectedVersion {
 			found = true
 			break
 		}

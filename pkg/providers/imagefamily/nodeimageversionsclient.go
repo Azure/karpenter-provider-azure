@@ -24,7 +24,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/samber/lo"
 )
 
@@ -42,61 +41,50 @@ func NewNodeImageVersionsClient(subscriptionID string, cred azcore.TokenCredenti
 	}, nil
 }
 
-func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscription string) (types.NodeImageVersionsResponse, error) {
-	// Note: subscription parameter is part of the interface but not used here since
-	// the SDK client was already configured with subscriptionID during initialization.
-	// We maintain the parameter for interface compatibility with NodeImageVersionsAPI.
+func (l *NodeImageVersionsClient) List(ctx context.Context, location string) ([]*armcontainerservice.NodeImageVersion, error) {
 	pager := l.client.NewListNodeImageVersionsPager(location, nil)
 	
-	var allVersions []types.NodeImageVersion
+	var allVersions []*armcontainerservice.NodeImageVersion
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return types.NodeImageVersionsResponse{}, err
+			return nil, err
 		}
 		
-		// Convert SDK types to our internal types
-		for _, sdkVersion := range page.Value {
-			if sdkVersion == nil {
-				continue
-			}
-			nodeImageVersion := types.NodeImageVersion{
-				FullName: lo.FromPtr(sdkVersion.FullName),
-				OS:       lo.FromPtr(sdkVersion.OS),
-				SKU:      lo.FromPtr(sdkVersion.SKU),
-				Version:  lo.FromPtr(sdkVersion.Version),
-			}
-			allVersions = append(allVersions, nodeImageVersion)
-		}
+		allVersions = append(allVersions, page.Value...)
 	}
 
-	response := types.NodeImageVersionsResponse{
-		Values: FilteredNodeImages(allVersions),
-	}
-	return response, nil
+	return FilteredNodeImages(allVersions), nil
 }
 
 // FilteredNodeImages filters on two conditions
 // 1. The image is the latest version for the given OS and SKU
 // 2. the image belongs to a supported gallery(AKS Ubuntu or Azure Linux)
-func FilteredNodeImages(nodeImageVersions []types.NodeImageVersion) []types.NodeImageVersion {
-	latestImages := make(map[string]types.NodeImageVersion)
+func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersion) []*armcontainerservice.NodeImageVersion {
+	latestImages := make(map[string]*armcontainerservice.NodeImageVersion)
 
 	for _, image := range nodeImageVersions {
+		if image == nil {
+			continue
+		}
+		os := lo.FromPtr(image.OS)
+		sku := lo.FromPtr(image.SKU)
+		version := lo.FromPtr(image.Version)
+		
 		// Skip the galleries that Karpenter does not support
-		if image.OS != AKSUbuntuGalleryName && image.OS != AKSAzureLinuxGalleryName {
+		if os != AKSUbuntuGalleryName && os != AKSAzureLinuxGalleryName {
 			continue
 		}
 
-		key := image.OS + "-" + image.SKU
+		key := os + "-" + sku
 
 		currentLatest, exists := latestImages[key]
-		if !exists || isNewerVersion(image.Version, currentLatest.Version) {
+		if !exists || isNewerVersion(version, lo.FromPtr(currentLatest.Version)) {
 			latestImages[key] = image
 		}
 	}
 
-	var filteredImages []types.NodeImageVersion
+	var filteredImages []*armcontainerservice.NodeImageVersion
 	for _, image := range latestImages {
 		filteredImages = append(filteredImages, image)
 	}
