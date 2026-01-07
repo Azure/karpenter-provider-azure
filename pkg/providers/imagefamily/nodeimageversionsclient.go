@@ -43,6 +43,9 @@ func NewNodeImageVersionsClient(subscriptionID string, cred azcore.TokenCredenti
 }
 
 func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscription string) (types.NodeImageVersionsResponse, error) {
+	// Note: subscription parameter is part of the interface but not used here since
+	// the SDK client was already configured with subscriptionID during initialization.
+	// We maintain the parameter for interface compatibility with NodeImageVersionsAPI.
 	pager := l.client.NewListNodeImageVersionsPager(location, nil)
 	
 	var allVersions []types.NodeImageVersion
