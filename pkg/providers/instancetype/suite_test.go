@@ -113,9 +113,9 @@ func TestAzure(t *testing.T) {
 	azureEnvBootstrap = test.NewEnvironment(ctxBootstrap, env)
 
 	fakeClock = &clock.FakeClock{}
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
-	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, azureEnvBootstrap.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, azureEnvBootstrap.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnv.InstanceTypeStore)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
@@ -2483,10 +2483,11 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
 				"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
 				//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there
-				labels.AKSLabelSubnetName:      "aks-subnet",
-				labels.AKSLabelVNetGUID:        test.Options().VnetGUID,
-				labels.AKSLabelAzureCNIOverlay: strconv.FormatBool(true),
-				labels.AKSLabelPodNetworkType:  consts.NetworkPluginModeOverlay,
+				labels.AKSLabelSubnetName:          "aks-subnet",
+				labels.AKSLabelVNetGUID:            test.Options().VnetGUID,
+				labels.AKSLabelAzureCNIOverlay:     strconv.FormatBool(true),
+				labels.AKSLabelPodNetworkType:      consts.NetworkPluginModeOverlay,
+				karpv1.NodeDoNotSyncTaintsLabelKey: "true",
 			}
 
 			It("should write other (non-schedulable) labels to kubelet", func() {

@@ -115,11 +115,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 
 	log.FromContext(ctx).V(0).Info("Initial AZConfig", "azConfig", azConfig.String())
 
-	cred, err := getCredential()
-	lo.Must0(err, "getting Azure credential")
-
 	env, err := auth.ResolveCloudEnvironment(azConfig)
 	lo.Must0(err, "resolving cloud environment")
+
+	cred, err := getCredential(env)
+	lo.Must0(err, "getting Azure credential")
 
 	// Get a token to ensure we can
 	lo.Must0(ensureToken(cred, env), "ensuring Azure token can be retrieved")
@@ -370,9 +370,13 @@ func ensureToken(cred azcore.TokenCredential, env *auth.Environment) error {
 	return nil
 }
 
-func getCredential() (azcore.TokenCredential, error) {
+func getCredential(env *auth.Environment) (azcore.TokenCredential, error) {
 	// TODO: Don't use NewDefaultAzureCredential
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	cred, err := azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: env.Cloud,
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
