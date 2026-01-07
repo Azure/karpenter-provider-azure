@@ -18,69 +18,58 @@ package imagefamily
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/karpenter-provider-azure/pkg/auth"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
+	"github.com/samber/lo"
 )
 
 type NodeImageVersionsClient struct {
-	cred  azcore.TokenCredential
-	cloud cloud.Configuration
+	client *armcontainerservice.Client
 }
 
-func NewNodeImageVersionsClient(cred azcore.TokenCredential, cloud cloud.Configuration) *NodeImageVersionsClient {
-	return &NodeImageVersionsClient{
-		cred:  cred,
-		cloud: cloud,
+func NewNodeImageVersionsClient(subscriptionID string, cred azcore.TokenCredential, opts *arm.ClientOptions) (*NodeImageVersionsClient, error) {
+	client, err := armcontainerservice.NewClient(subscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
 	}
+	return &NodeImageVersionsClient{
+		client: client,
+	}, nil
 }
 
 func (l *NodeImageVersionsClient) List(ctx context.Context, location, subscription string) (types.NodeImageVersionsResponse, error) {
-	resourceManagerConfig := l.cloud.Services[cloud.ResourceManager]
-
-	resourceURL := fmt.Sprintf(
-		"%s/subscriptions/%s/providers/Microsoft.ContainerService/locations/%s/nodeImageVersions?api-version=%s",
-		resourceManagerConfig.Endpoint, subscription, location, "2024-04-02-preview",
-	)
-
-	token, err := l.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{auth.TokenScope(l.cloud)},
-	})
-	if err != nil {
-		return types.NodeImageVersionsResponse{}, err
+	pager := l.client.NewListNodeImageVersionsPager(location, nil)
+	
+	var allVersions []types.NodeImageVersion
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return types.NodeImageVersionsResponse{}, err
+		}
+		
+		// Convert SDK types to our internal types
+		for _, sdkVersion := range page.Value {
+			if sdkVersion == nil {
+				continue
+			}
+			nodeImageVersion := types.NodeImageVersion{
+				FullName: lo.FromPtr(sdkVersion.FullName),
+				OS:       lo.FromPtr(sdkVersion.OS),
+				SKU:      lo.FromPtr(sdkVersion.SKU),
+				Version:  lo.FromPtr(sdkVersion.Version),
+			}
+			allVersions = append(allVersions, nodeImageVersion)
+		}
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), "GET", resourceURL, nil)
-	if err != nil {
-		return types.NodeImageVersionsResponse{}, err
+	response := types.NodeImageVersionsResponse{
+		Values: FilteredNodeImages(allVersions),
 	}
-
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return types.NodeImageVersionsResponse{}, err
-	}
-	defer resp.Body.Close()
-
-	var response types.NodeImageVersionsResponse
-	decoder := json.NewDecoder(resp.Body)
-	err = decoder.Decode(&response)
-	if err != nil {
-		return types.NodeImageVersionsResponse{}, err
-	}
-
-	response.Values = FilteredNodeImages(response.Values)
 	return response, nil
 }
 
