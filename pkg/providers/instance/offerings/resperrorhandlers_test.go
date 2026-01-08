@@ -28,7 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/skewer"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 )
@@ -121,18 +121,17 @@ func newTestResponseErrorHandling() *ResponseErrorHandler {
 
 func assertOfferingsState(t *testing.T, unavailableOfferings *cache.UnavailableOfferings, unavailable, available []offeringToCheck) {
 	t.Helper()
+	g := NewWithT(t)
 
 	for _, info := range unavailable {
-		assert.True(t,
-			unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType),
+		g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeTrue(),
 			"Expected offering %s in zone %s with capacity type %s to be unavailable",
 			info.skuToCheck.GetName(), info.zone, info.capacityType,
 		)
 	}
 
 	for _, info := range available {
-		assert.False(t,
-			unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType),
+		g.Expect(unavailableOfferings.IsUnavailable(info.skuToCheck, info.zone, info.capacityType)).To(BeFalse(),
 			"Expected offering %s in zone %s with capacity type %s to be available",
 			info.skuToCheck.GetName(), info.zone, info.capacityType,
 		)
@@ -283,6 +282,7 @@ func TestHandleResponseErrors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.testName, func(t *testing.T) {
+			g := NewWithT(t)
 			provider := newTestResponseErrorHandling()
 
 			err := provider.Handle(
@@ -294,7 +294,11 @@ func TestHandleResponseErrors(t *testing.T) {
 				tc.responseErr,
 			)
 
-			assert.Equal(t, tc.expectedErr, err)
+			if tc.expectedErr == nil {
+				g.Expect(err).To(BeNil())
+			} else {
+				g.Expect(err).To(Equal(tc.expectedErr))
+			}
 			assertOfferingsState(t, provider.UnavailableOfferings, tc.expectedUnavailableOfferingsInformation, tc.expectedAvailableOfferingsInformation)
 		})
 	}
