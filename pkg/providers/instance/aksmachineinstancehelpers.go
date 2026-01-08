@@ -52,6 +52,17 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 		return nil, fmt.Errorf("NodeClaim is not set")
 	}
 
+	// NodeImageVersion
+	// E.g., "AKSUbuntu-2204gen2containerd-2023.11.15"
+	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
+	}
+	nodeImageVersion, err := utils.GetAKSMachineNodeImageVersionFromImageID(vmImageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert VM image ID to NodeImageVersion: %w", err)
+	}
+
 	// GPUProfile
 	var gpuProfilePtr *armcontainerservice.GPUProfile
 	// If none is specified, then that's not GPU instance, so nil is fine. Current version of AKS machine API supports this.
@@ -109,6 +120,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	return &armcontainerservice.Machine{
 		Zones: utils.MakeARMZonesFromAKSLabelZone(zone),
 		Properties: &armcontainerservice.MachineProperties{
+			NodeImageVersion: lo.ToPtr(nodeImageVersion),
 			Network: &armcontainerservice.MachineNetworkProperties{
 				VnetSubnetID: nodeClass.Spec.VNETSubnetID, // AKS machine API take control, if nil
 				// As of the time of writing, the current version of AKS machine API support just that with nil. That is unlikely to change.
@@ -145,10 +157,11 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			},
 
 			Mode: modePtr,
-			Security: &armcontainerservice.AgentPoolSecurityProfile{
+			Security: &armcontainerservice.MachineSecurityProfile{
 				SSHAccess: lo.ToPtr(armcontainerservice.AgentPoolSSHAccessLocalUser),
-				// EnableVTPM:       nil,
-				// EnableSecureBoot: nil,
+				// EnableVTPM:             nil,
+				// EnableSecureBoot:       nil,
+				// EnableEncryptionAtHost: nil,
 			},
 			Priority: priorityPtr,
 

@@ -19,10 +19,8 @@ package instance
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -42,10 +40,6 @@ import (
 var (
 	NodePoolTagKey = strings.ReplaceAll(karpv1.NodePoolLabelKey, "/", "_")
 )
-
-type VMImageIDContextKey string
-
-const VMImageIDKey VMImageIDContextKey = "vmimageid"
 
 // Notes on terminology:
 // An "instance" is a remote object, created by the API based on the template.
@@ -412,29 +406,10 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build AKS machine template from template: %w", err)
 	}
-	// Resolve VM image ID
-	// E.g., "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
-	vmImageID, err := p.imageResolver.ResolveNodeImageFromNodeClass(nodeClass, instanceType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve VM image ID: %w", err)
-	}
-	osImageSubscriptionID, osImageResourceGroup, osImageGallery, osImageName, osImageVersion, err := parseVMImageID(vmImageID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse VM image ID %q: %w", vmImageID, err)
-	}
-	header := http.Header{}
-	header.Set("AKSHTTPCustomFeatures", "Microsoft.ContainerService/UseCustomizedOSImage")
-	header.Set("OSImageName", osImageName)                           // E.g. "2204gen2containerd"
-	header.Set("OSImageResourceGroup", osImageResourceGroup)         // E.g. "AKS-Ubuntu"
-	header.Set("OSImageSubscriptionID", osImageSubscriptionID)       // E.g., "10945678-1234-1234-1234-123456789012"
-	header.Set("OSImageGallery", osImageGallery)                     // E.g., "AKSUbuntu"
-	header.Set("OSImageVersion", osImageVersion)                     // E.g., "2022.10.03"
-	ctxWithHeader := context.WithValue(ctx, VMImageIDKey, vmImageID) // This line is really just for testing (see fake/aksmachinesapi.go). Azure-sdk-for-go is restrictive in extracting the header out.
-	ctxWithHeader = policy.WithHTTPHeader(ctxWithHeader, header)
 
 	// Call the AKS machine API with the template to create the AKS machine instance
 	log.FromContext(ctx).V(1).Info("creating AKS machine", "aksMachineName", aksMachineName, "instance-type", instanceType.Name)
-	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctxWithHeader, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
+	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)
 	}
