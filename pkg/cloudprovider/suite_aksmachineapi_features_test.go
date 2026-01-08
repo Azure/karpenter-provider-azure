@@ -59,8 +59,8 @@ var _ = Describe("CloudProvider", func() {
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
 			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
-			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider)
-			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
+			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
 
 			cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 			clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
@@ -323,7 +323,7 @@ var _ = Describe("CloudProvider", func() {
 
 				aksAzureEnv := test.NewEnvironment(aksCtx, env)
 				test.ApplyDefaultStatus(nodeClass, env, aksTestOptions.UseSIG)
-				aksCloudProvider := New(aksAzureEnv.InstanceTypesProvider, aksAzureEnv.VMInstanceProvider, aksAzureEnv.AKSMachineProvider, recorder, env.Client, aksAzureEnv.ImageProvider)
+				aksCloudProvider := New(aksAzureEnv.InstanceTypesProvider, aksAzureEnv.VMInstanceProvider, aksAzureEnv.AKSMachineProvider, recorder, env.Client, aksAzureEnv.ImageProvider, aksAzureEnv.InstanceTypeStore)
 				aksCluster := state.NewCluster(fakeClock, env.Client, aksCloudProvider)
 				aksProv := provisioning.NewProvisioner(env.Client, recorder, aksCloudProvider, aksCluster, fakeClock)
 

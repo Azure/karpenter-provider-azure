@@ -244,7 +244,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.AKSMachinesPoolName,
 		region,
 	)
-  
+
 	store := nodeoverlay.NewInstanceTypeStore()
 
 	return &Environment{
