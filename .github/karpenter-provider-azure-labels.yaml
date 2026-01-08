@@ -117,12 +117,12 @@ default:
       target: both
       addedBy: anyone
     - color: 7057ff
-      description: Denotes an issue ready for a new contributor, according to the "help wanted" guidelines.
+      description: Denotes an issue ready for a new contributor.
       name: 'good first issue'
       target: issues
       addedBy: anyone
     - color: 006b75
-      description: Denotes an issue that needs help from a contributor. Must meet "help wanted" guidelines.
+      description: Denotes an issue that needs help from a contributor.
       name: 'help wanted'
       target: issues
       addedBy: anyone
@@ -251,6 +251,8 @@ default:
       deleteAfter: 2026-01-01T00:00:00Z
     - name: kind/failing-test
       deleteAfter: 2026-01-01T00:00:00Z
+    - name: kind/experiment
+      deleteAfter: 2026-01-01T00:00:00Z
     - name: kind/flake
       deleteAfter: 2026-01-01T00:00:00Z
     - name: kind/regression
@@ -331,7 +333,21 @@ default:
       deleteAfter: 2026-01-01T00:00:00Z
     - name: area/api-validation
       deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/selfhosted
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/unavailable-offerings
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: area/error-handling
+      deleteAfter: 2026-01-01T00:00:00Z
     - name: needs-priority
       deleteAfter: 2026-01-01T00:00:00Z
+    - name: go
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: github_actions
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: devcontainers_package_manager
+      deleteAfter: 2026-01-01T00:00:00Z
+    - name: docker
+      deleteAfter: 2026-01-01T00:00:00Z
     - name: dependencies
-      deleteAfter: 2026-02-01T00:00:00Z  # Not removing it right away because we want to migrate the old dependencies PRs first before deleting it
+      deleteAfter: 2026-01-01T00:00:00Z
