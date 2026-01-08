@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,8 +30,8 @@ func TestFilteredNodeImagesGalleryFilter(t *testing.T) {
 	nodeImageVersions, _ := nodeImageVersionAPI.List(context.TODO(), "")
 	filteredNodeImages := imagefamily.FilteredNodeImages(nodeImageVersions)
 	for _, val := range filteredNodeImages {
-		assert.NotEqual(t, *val.OS, "AKSWindows")
-		assert.NotEqual(t, *val.OS, "AKSUbuntuEdgeZone")
+		assert.NotEqual(t, lo.FromPtr(val.OS), "AKSWindows")
+		assert.NotEqual(t, lo.FromPtr(val.OS), "AKSUbuntuEdgeZone")
 	}
 }
 
@@ -66,7 +67,7 @@ func TestFilteredNodeImagesMinimalUbuntuEdgeCase(t *testing.T) {
 	found := false
 
 	for _, val := range filteredNodeImages {
-		if *val.SKU == "2204gen2containerd" && *val.Version == expectedVersion {
+		if lo.FromPtr(val.SKU) == "2204gen2containerd" && lo.FromPtr(val.Version) == expectedVersion {
 			found = true
 			break
 		}
@@ -89,7 +90,7 @@ func TestFilteredNodeImageVersionsFromProviderList(t *testing.T) {
 	found := false
 
 	for _, val := range filteredNodeImages {
-		if *val.SKU == "2204gen2containerd" && *val.Version == expectedVersion {
+		if lo.FromPtr(val.SKU) == "2204gen2containerd" && lo.FromPtr(val.Version) == expectedVersion {
 			found = true
 			break
 		}
