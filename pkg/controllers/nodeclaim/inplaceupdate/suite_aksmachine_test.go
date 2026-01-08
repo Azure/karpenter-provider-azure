@@ -410,11 +410,11 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
 			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
 
-			// Verify ETag was updated after successful operation
+			// Verify ETag was updated after successful operation (changed from original "initial-etag")
 			Expect(updatedAKSMachine.Properties.ETag).ToNot(BeNil())
-			Expect(*updatedAKSMachine.Properties.ETag).ToNot(Equal("valid-etag"))
+			Expect(*updatedAKSMachine.Properties.ETag).ToNot(Equal(`"initial-etag"`))
 
-			// Verify API was called
+			// Verify API was called (once for the successful retry)
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
 		})
 
@@ -444,9 +444,9 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("test-tag"))
 			Expect(updatedAKSMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
 
-			// Verify ETag was updated after successful operation
+			// Verify ETag was updated after successful operation (changed from original "valid-etag")
 			Expect(updatedAKSMachine.Properties.ETag).ToNot(BeNil())
-			Expect(*updatedAKSMachine.Properties.ETag).ToNot(Equal("valid-etag"))
+			Expect(*updatedAKSMachine.Properties.ETag).ToNot(Equal(`"valid-etag"`))
 
 			// Verify API was called
 			Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.Calls()).To(Equal(1))
