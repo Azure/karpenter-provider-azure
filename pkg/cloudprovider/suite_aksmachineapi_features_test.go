@@ -636,5 +636,68 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).ToNot(Equal("my-override-cluster"))
 			})
 		})
+
+		// Ported from VM test: "EncryptionAtHost"
+		Context("Create - EncryptionAtHost", func() {
+			It("should create AKS machine with EncryptionAtHost enabled when specified in AKSNodeClass", func() {
+				if nodeClass.Spec.Security == nil {
+					nodeClass.Spec.Security = &v1beta1.Security{}
+				}
+				nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(true)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.Security).ToNot(BeNil())
+				Expect(aksMachine.Properties.Security.EnableEncryptionAtHost).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeTrue())
+			})
+
+			It("should create AKS machine with EncryptionAtHost disabled when specified in AKSNodeClass", func() {
+				if nodeClass.Spec.Security == nil {
+					nodeClass.Spec.Security = &v1beta1.Security{}
+				}
+				nodeClass.Spec.Security.EncryptionAtHost = lo.ToPtr(false)
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				Expect(aksMachine.Properties.Security).ToNot(BeNil())
+				Expect(aksMachine.Properties.Security.EnableEncryptionAtHost).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeFalse())
+			})
+
+			It("should create AKS machine with EncryptionAtHost disabled when not specified in AKSNodeClass", func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
+
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+
+				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				createInput := azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Pop()
+				aksMachine := createInput.AKSMachine
+
+				// Security profile should still exist but EncryptionAtHost should be false (default)
+				Expect(aksMachine.Properties.Security).ToNot(BeNil())
+				Expect(aksMachine.Properties.Security.EnableEncryptionAtHost).ToNot(BeNil())
+				Expect(lo.FromPtr(aksMachine.Properties.Security.EnableEncryptionAtHost)).To(BeFalse())
+			})
+		})
 	})
 })
