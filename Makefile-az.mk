@@ -34,7 +34,12 @@ az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-cre
 
 az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay     az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-aksmachine:   az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-perm-aksmachine             az-add-aksmachinespool az-configure-values-aksmachine             az-build az-run          az-run-sample 
+az-all-aksmachine:   az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-perm-aksmachine             az-add-aksmachinespool az-configure-values-aksmachine             az-build az-run          az-run-sample
+
+az-all-aksmachine-custom-vnet: ## Provision the infra (ACR,AKS) with custom VNet and AKS machine API; build and deploy Karpenter; deploy sample Provisioner and workload
+	$(MAKE) VNET_RESOURCE_GROUP=$(AZURE_RESOURCE_GROUP) az-all-aksmachine-custom-vnet-impl
+
+az-all-aksmachine-custom-vnet-impl: az-login az-create-workload-msi az-mkaks-custom-vnet az-create-federated-cred az-perm-subnet-custom az-perm-acr az-perm-aksmachine az-add-aksmachinespool az-configure-values-aksmachine az-build az-run az-run-sample
 
 az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest    az-create-federated-cred az-perm               az-perm-acr az-configure-values
 	$(MAKE) az-mon-deploy
