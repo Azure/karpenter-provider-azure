@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
+	"sigs.k8s.io/karpenter/pkg/scheduling"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
@@ -226,7 +227,18 @@ func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
 func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloudprovider.InstanceType, capacityType string) (map[string]*string, *armcontainerservice.AgentPoolMode) {
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and instance/vminstance.go
 
-	nodeLabels := lo.Assign(nodeClaim.Labels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
+	// We need to get all single-valued requirement labels from the instance type and the nodeClaim to pass down to kubelet.
+	// We don't just include single-value labels from the instance type because in the case where the label is NOT single-value on the instance
+	// (i.e. there are options), the nodeClaim may have selected one of those options via its requirements which we want to include.
+	// These may contain restricted labels from the pod that we need to filter out. We don't bother filtering the instance type requirements below because
+	// we know those can't be restricted since they're controlled by the provider and none use the kubernetes.io domain.
+	claimLabels := labels.GetFilteredSingleValuedRequirementLabels(
+		scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...),
+		func(k string, req *scheduling.Requirement) bool {
+			return labels.IsKubeletLabel(k)
+		},
+	)
+	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
 	var modePtr *armcontainerservice.AgentPoolMode
 	if modeFromLabel, ok := nodeLabels["kubernetes.azure.com/mode"]; ok && modeFromLabel == "system" {
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeSystem)
