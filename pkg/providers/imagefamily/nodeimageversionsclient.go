@@ -43,14 +43,14 @@ func NewNodeImageVersionsClient(subscriptionID string, cred azcore.TokenCredenti
 
 func (l *NodeImageVersionsClient) List(ctx context.Context, location string) ([]*armcontainerservice.NodeImageVersion, error) {
 	pager := l.client.NewListNodeImageVersionsPager(location, nil)
-	
+
 	var allVersions []*armcontainerservice.NodeImageVersion
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		allVersions = append(allVersions, page.Value...)
 	}
 
@@ -70,7 +70,7 @@ func FilteredNodeImages(nodeImageVersions []*armcontainerservice.NodeImageVersio
 		os := lo.FromPtr(image.OS)
 		sku := lo.FromPtr(image.SKU)
 		version := lo.FromPtr(image.Version)
-		
+
 		// Skip the galleries that Karpenter does not support
 		if os != AKSUbuntuGalleryName && os != AKSAzureLinuxGalleryName {
 			continue
