@@ -41,10 +41,10 @@ var _ types.NodeImageVersionsAPI = &NodeImageVersionsAPI{}
 var (
 	nodeImageVersionsSnapshotData = []*armcontainerservice.NodeImageVersion{
 		{
-			FullName: lo.ToPtr("AKSCBLMariner-V2fips-202512.06.0"),
+			FullName: lo.ToPtr("AKSCBLMariner-V2fips-202512.18.0"),
 			OS:       lo.ToPtr("AKSCBLMariner"),
 			SKU:      lo.ToPtr("V2fips"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSFlatcar-flatcargen2arm64-202512.18.0"),
@@ -71,10 +71,10 @@ var (
 			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSCBLMariner-V2gen2-202512.06.0"),
+			FullName: lo.ToPtr("AKSCBLMariner-V2gen2-202512.18.0"),
 			OS:       lo.ToPtr("AKSCBLMariner"),
 			SKU:      lo.ToPtr("V2gen2"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSUbuntu-2204gen2TLcontainerd-202512.18.0"),
@@ -101,10 +101,10 @@ var (
 			Version:  lo.ToPtr("20348.4529.251212"),
 		},
 		{
-			FullName: lo.ToPtr("AKSAzureLinux-V2gen2-202512.06.0"),
+			FullName: lo.ToPtr("AKSAzureLinux-V2gen2-202512.18.0"),
 			OS:       lo.ToPtr("AKSAzureLinux"),
 			SKU:      lo.ToPtr("V2gen2"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSUbuntu-2404gen2arm64containerd-202512.18.0"),
@@ -125,10 +125,10 @@ var (
 			Version:  lo.ToPtr("202401.12.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSAzureLinux-V2gen2fips-202512.06.0"),
+			FullName: lo.ToPtr("AKSAzureLinux-V2gen2fips-202512.18.0"),
 			OS:       lo.ToPtr("AKSAzureLinux"),
 			SKU:      lo.ToPtr("V2gen2fips"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSAzureLinux-V3-202512.18.0"),
@@ -149,10 +149,10 @@ var (
 			Version:  lo.ToPtr("202308.28.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSCBLMariner-V2gen2arm64-202512.06.0"),
+			FullName: lo.ToPtr("AKSCBLMariner-V2gen2arm64-202512.18.0"),
 			OS:       lo.ToPtr("AKSCBLMariner"),
 			SKU:      lo.ToPtr("V2gen2arm64"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSUbuntu-2004gen2fipscontainerd-202512.18.0"),
@@ -191,10 +191,10 @@ var (
 			Version:  lo.ToPtr("202509.05.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSCBLMariner-V2gen2TL-202512.06.0"),
+			FullName: lo.ToPtr("AKSCBLMariner-V2gen2TL-202512.18.0"),
 			OS:       lo.ToPtr("AKSCBLMariner"),
 			SKU:      lo.ToPtr("V2gen2TL"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSUbuntu-2404containerd-202512.18.0"),
@@ -221,16 +221,16 @@ var (
 			Version:  lo.ToPtr("20348.4529.251212"),
 		},
 		{
-			FullName: lo.ToPtr("AKSAzureLinux-V2gen2arm64-202512.06.0"),
+			FullName: lo.ToPtr("AKSAzureLinux-V2gen2arm64-202512.18.0"),
 			OS:       lo.ToPtr("AKSAzureLinux"),
 			SKU:      lo.ToPtr("V2gen2arm64"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSAzureLinux-V2fips-202512.06.0"),
+			FullName: lo.ToPtr("AKSAzureLinux-V2fips-202512.18.0"),
 			OS:       lo.ToPtr("AKSAzureLinux"),
 			SKU:      lo.ToPtr("V2fips"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSAzureLinux-V3gen2CVM-202512.18.0"),
@@ -269,10 +269,10 @@ var (
 			Version:  lo.ToPtr("17763.8146.251212"),
 		},
 		{
-			FullName: lo.ToPtr("AKSAzureLinux-V2-202512.06.0"),
+			FullName: lo.ToPtr("AKSAzureLinux-V2-202512.18.0"),
 			OS:       lo.ToPtr("AKSAzureLinux"),
 			SKU:      lo.ToPtr("V2"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSAzureLinux-V3fips-202512.18.0"),
@@ -287,10 +287,10 @@ var (
 			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSCBLMariner-V2-202512.06.0"),
+			FullName: lo.ToPtr("AKSCBLMariner-V2-202512.18.0"),
 			OS:       lo.ToPtr("AKSCBLMariner"),
 			SKU:      lo.ToPtr("V2"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSUbuntu-2204gen2containerd-202512.18.0"),
@@ -329,10 +329,10 @@ var (
 			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
-			FullName: lo.ToPtr("AKSCBLMariner-V2gen2fips-202512.06.0"),
+			FullName: lo.ToPtr("AKSCBLMariner-V2gen2fips-202512.18.0"),
 			OS:       lo.ToPtr("AKSCBLMariner"),
 			SKU:      lo.ToPtr("V2gen2fips"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSCBLMariner-V2katagen2TL-2022.12.15"),
@@ -365,10 +365,10 @@ var (
 			Version:  lo.ToPtr("26100.7462.251212"),
 		},
 		{
-			FullName: lo.ToPtr("AKSAzureLinux-V2gen2TL-202512.06.0"),
+			FullName: lo.ToPtr("AKSAzureLinux-V2gen2TL-202512.18.0"),
 			OS:       lo.ToPtr("AKSAzureLinux"),
 			SKU:      lo.ToPtr("V2gen2TL"),
-			Version:  lo.ToPtr("202512.06.0"),
+			Version:  lo.ToPtr("202512.18.0"),
 		},
 		{
 			FullName: lo.ToPtr("AKSAzureLinux-V3gen2fips-202512.18.0"),
