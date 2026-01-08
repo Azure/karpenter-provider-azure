@@ -649,6 +649,12 @@ func (c *CloudProvider) resolveNodeClaimFromAKSMachine(ctx context.Context, aksM
 		gotInstanceTypes, err := c.GetInstanceTypes(ctx, nodePool)
 		if err == nil {
 			instanceTypes = gotInstanceTypes
+			if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+				instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePool.Name, instanceTypes)
+				if err != nil {
+					return nil, fmt.Errorf("applying instance type overlays, %w", err)
+				}
+			}
 		} else if client.IgnoreNotFound(err) != nil {
 			// Unknown error
 			return nil, fmt.Errorf("resolving node pool instance types, %w", err)
