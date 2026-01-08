@@ -102,6 +102,7 @@ func Get(
 	// Prevent race conditions with startup taints by telling Karpenter not to sync taints from the NodeClaim to the Node
 	// See https://github.com/kubernetes-sigs/karpenter/issues/1772
 	labels[karpv1.NodeDoNotSyncTaintsLabelKey] = "true"
+	labels[v1beta1.AKSLabelScaleSetPriority] = v1beta1.ScaleSetPriorityRegular
 
 	if opts.IsAzureCNIOverlay() {
 		// TODO: make conditional on pod subnet
