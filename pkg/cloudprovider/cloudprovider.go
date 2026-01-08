@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/karpenter/pkg/controllers/nodeoverlay"
 
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,6 +59,7 @@ import (
 	coreapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/events"
+	karpoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
 
@@ -79,6 +81,7 @@ type CloudProvider struct {
 	kubeClient           client.Client
 	imageProvider        imagefamily.NodeImageProvider
 	recorder             events.Recorder
+	instanceTypeStore    *nodeoverlay.InstanceTypeStore
 }
 
 func New(
@@ -87,6 +90,7 @@ func New(
 	recorder events.Recorder,
 	kubeClient client.Client,
 	imageProvider imagefamily.NodeImageProvider,
+	store *nodeoverlay.InstanceTypeStore,
 ) *CloudProvider {
 	return &CloudProvider{
 		instanceTypeProvider: instanceTypeProvider,
@@ -94,6 +98,7 @@ func New(
 		kubeClient:           kubeClient,
 		imageProvider:        imageProvider,
 		recorder:             recorder,
+		instanceTypeStore:    store,
 	}
 }
 
@@ -145,6 +150,14 @@ func (c *CloudProvider) Create(ctx context.Context, nodeClaim *karpv1.NodeClaim)
 	}
 	if len(instanceTypes) == 0 {
 		return nil, cloudprovider.NewInsufficientCapacityError(fmt.Errorf("all requested instance types were unavailable during launch"))
+	}
+	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+		if nodePoolName, ok := nodeClaim.Labels[karpv1.NodePoolLabelKey]; ok {
+			instanceTypes, err = c.instanceTypeStore.ApplyAll(nodePoolName, instanceTypes)
+			if err != nil {
+				return nil, fmt.Errorf("creating instance, %w", err)
+			}
+		}
 	}
 
 	return c.createVMInstance(ctx, nodeClass, nodeClaim, instanceTypes)
@@ -454,6 +467,12 @@ func (c *CloudProvider) resolveInstanceTypeFromVMInstance(ctx context.Context, v
 	instanceType, _ := lo.Find(instanceTypes, func(i *cloudprovider.InstanceType) bool {
 		return i.Name == string(lo.FromPtr(vm.Properties.HardwareProfile.VMSize))
 	})
+	if karpoptions.FromContext(ctx).FeatureGates.NodeOverlay {
+		instanceType, err = c.instanceTypeStore.Apply(nodePool.Name, instanceType)
+		if err != nil {
+			return nil, fmt.Errorf("resolving instancetype, %w", err)
+		}
+	}
 	return instanceType, nil
 }
 
