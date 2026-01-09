@@ -7,9 +7,6 @@ on:
       suite:
         type: string
         required: true
-      hash:
-        type: string
-        description: "Hash for unique resource naming. Falls back to github.run_id if not provided."
       location:
         type: string
         description: "the azure location to run the e2e test in"
@@ -145,17 +142,15 @@ jobs:
       - name: generate rg name
         env:
           SUITE: ${{ inputs.suite }}
-          HASH: ${{ inputs.hash || github.run_id }}
         run: |
-          RG_NAME=$(echo karpenter-e2e-"$SUITE"-"$HASH" | awk '{print tolower($0)}')
+          RG_NAME=$(echo karpenter-e2e-"$SUITE"-${{ github.run_id }} | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
         env:
           SUITE: ${{ inputs.suite }}
-          HASH: ${{ inputs.hash || github.run_id }}
         run: |
-          ACR_NAME=$(echo "$SUITE"acr"$HASH" | awk '{print tolower($0)}')
+          ACR_NAME=$(echo "$SUITE"acr${{ github.run_id }} | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
