@@ -22,10 +22,18 @@ runs:
         path: |
           /usr/local/kubebuilder/bin
           ~/go/bin
-          /usr/bin/trivy
         key: ${{ runner.os }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
       env:
         K8S_VERSION: ${{ inputs.k8sVersion }}
       run: make toolchain
+    # Install trivy separately since apt installs to /usr/bin which isn't cacheable
+    - shell: bash
+      run: |
+        if ! command -v trivy &> /dev/null; then
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+        fi
