@@ -67,44 +67,78 @@ var _ = Describe("BYOK", func() {
 	FIt("should provision a VM with customer-managed key disk encryption", func() {
 		ctx := context.Background()
 		var diskEncryptionSetID string
+
+		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
 			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
+			Expect(diskEncryptionSetID).NotTo(BeEmpty(), "DES ID should not be empty")
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
+			By(fmt.Sprintf("Created DES with ID: %s", diskEncryptionSetID))
 		}
 
+		By("Phase 2: Creating NodeClass and NodePool")
 		nodeClass := env.DefaultAKSNodeClass()
+		Expect(nodeClass).NotTo(BeNil(), "NodeClass should be created")
 		nodePool := env.DefaultNodePool(nodeClass)
+		Expect(nodePool).NotTo(BeNil(), "NodePool should be created")
 
+		By("Phase 3: Creating test Pod")
 		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthyWithTimeout(pod, time.Minute*15)
-		env.ExpectCreatedNodeCount("==", 1)
+		Expect(pod).NotTo(BeNil(), "Pod should be created")
 
+		By("Phase 4: Applying resources to Kubernetes")
+		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Phase 5: Waiting for VM to be created and node to be registered")
+		env.ExpectCreatedNodeCount("==", 1)
+		By("Node successfully created and registered")
+
+		By("Phase 6: Verifying VM disk encryption configuration")
 		vm := env.GetVM(pod.Spec.NodeName)
-		Expect(vm.Properties).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
+		Expect(vm.Properties).ToNot(BeNil(), "VM properties should exist")
+		Expect(vm.Properties.StorageProfile).ToNot(BeNil(), "StorageProfile should exist")
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil(), "OSDisk should exist")
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil(), "ManagedDisk should exist")
+		By("VM StorageProfile structure is valid")
+
+		By("Phase 7: Verifying DES is configured on managed disk")
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil(), "DiskEncryptionSet should exist")
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil(), "DES ID should exist")
+		By("DiskEncryptionSet reference present on managed disk")
+
 		if env.InClusterController {
-			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
+			actualDESID := lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)
+			By(fmt.Sprintf("Verifying DES ID matches: expected=%s, actual=%s", diskEncryptionSetID, actualDESID))
+			Expect(actualDESID).To(Equal(diskEncryptionSetID))
+			By("DES ID verification successful - encryption is enabled")
 		}
+
+		By("Phase 8: Waiting for Pod to become healthy (readiness probes pass)")
+		env.EventuallyExpectHealthyWithTimeout(time.Minute*15, pod)
+		By("Pod reached Ready condition successfully")
 	})
 
 	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", func() {
 		ctx := context.Background()
 		var diskEncryptionSetID string
+
+		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
 			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
+			Expect(diskEncryptionSetID).NotTo(BeEmpty(), "DES ID should not be empty")
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
+			By(fmt.Sprintf("Created DES with ID: %s", diskEncryptionSetID))
 		}
 
+		By("Phase 2: Creating NodeClass with ephemeral disk configuration")
 		nodeClass := env.DefaultAKSNodeClass()
+		Expect(nodeClass).NotTo(BeNil(), "NodeClass should be created")
 		nodePool := env.DefaultNodePool(nodeClass)
+		Expect(nodePool).NotTo(BeNil(), "NodePool should be created")
 
+		By("Phase 3: Configuring ephemeral OS disk requirement")
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
@@ -113,27 +147,48 @@ var _ = Describe("BYOK", func() {
 			}})
 
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
+		By("Ephemeral disk requirement configured (>50GB)")
 
+		By("Phase 4: Creating test Pod")
 		pod := test.Pod()
+		Expect(pod).NotTo(BeNil(), "Pod should be created")
+
+		By("Phase 5: Applying resources to Kubernetes")
 		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthyWithTimeout(pod, time.Minute*15)
+
+		By("Phase 6: Waiting for VM to be created and node to be registered")
 		env.ExpectCreatedNodeCount("==", 1)
+		By("Node successfully created and registered")
 
+		By("Phase 7: Verifying VM disk configuration")
 		vm := env.GetVM(pod.Spec.NodeName)
-		Expect(vm.Properties).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties).ToNot(BeNil(), "VM properties should exist")
+		Expect(vm.Properties.StorageProfile).ToNot(BeNil(), "StorageProfile should exist")
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil(), "OSDisk should exist")
+		By("VM StorageProfile structure is valid")
 
-		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option).ToNot(BeNil())
-		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
+		By("Phase 8: Verifying ephemeral OS disk settings")
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil(), "DiffDiskSettings should exist for ephemeral disk")
+		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option).ToNot(BeNil(), "DiffDisk option should be set")
+		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"), "Ephemeral disk should use Local option")
+		By("Ephemeral OS disk configuration verified")
 
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
+		By("Phase 9: Verifying DES is configured on managed disk")
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil(), "ManagedDisk should exist")
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil(), "DiskEncryptionSet should exist")
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil(), "DES ID should exist")
+		By("DiskEncryptionSet reference present on managed disk with ephemeral configuration")
+
 		if env.InClusterController {
-			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
+			actualDESID := lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)
+			By(fmt.Sprintf("Verifying DES ID matches: expected=%s, actual=%s", diskEncryptionSetID, actualDESID))
+			Expect(actualDESID).To(Equal(diskEncryptionSetID))
+			By("DES ID verification successful - encryption is enabled on ephemeral disk")
 		}
+
+		By("Phase 10: Waiting for Pod to become healthy (readiness probes pass)")
+		env.EventuallyExpectHealthyWithTimeout(time.Minute*15, pod)
+		By("Pod reached Ready condition successfully")
 	})
 })
 
