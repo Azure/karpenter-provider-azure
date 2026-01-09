@@ -58,18 +58,20 @@ func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 			requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 			),
 			expectedLabels: map[string]string{
 				corev1.LabelInstanceTypeStable: "Standard_D2s_v3",
 				corev1.LabelTopologyZone:       "westus-1",
-				// karpv1.CapacityTypeLabelKey should be excluded because it has multiple values
+				// karpv1.CapacityTypeLabelKey and v1beta1.AKSLabelScaleSetPriority should be excluded because they have multiple values
 			},
 		},
 		{
 			name: "No single-valued requirements",
 			requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2"),
 			),
 			expectedLabels: map[string]string{},

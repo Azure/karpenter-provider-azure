@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -89,6 +90,7 @@ func TestPickSkuSizePriorityAndZone(t *testing.T) {
 							Price: 0.05,
 							Requirements: scheduling.NewRequirements(
 								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
+								scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPrioritySpot),
 								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 							),
 							Available: true,
@@ -97,6 +99,7 @@ func TestPickSkuSizePriorityAndZone(t *testing.T) {
 							Price: 0.1,
 							Requirements: scheduling.NewRequirements(
 								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
 								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 							),
 							Available: true,
@@ -112,6 +115,57 @@ func TestPickSkuSizePriorityAndZone(t *testing.T) {
 								Key:      karpv1.CapacityTypeLabelKey,
 								Operator: corev1.NodeSelectorOpIn,
 								Values:   []string{karpv1.CapacityTypeSpot},
+							},
+						},
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      corev1.LabelTopologyZone,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"westus-1"},
+							},
+						},
+					},
+				},
+			},
+			expectedInstanceType: "Standard_D2s_v3",
+			expectedPriority:     karpv1.CapacityTypeSpot,
+			expectedZone:         "westus-1",
+		},
+		{
+			name: "Select spot instance when requested (via legacy kubernetes.azure.com/scalesetpriority label)",
+			instanceTypes: []*cloudprovider.InstanceType{
+				{
+					Name: "Standard_D2s_v3",
+					Offerings: []*cloudprovider.Offering{
+						{
+							Price: 0.05,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
+								scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPrioritySpot),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+						{
+							Price: 0.1,
+							Requirements: scheduling.NewRequirements(
+								scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+								scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
+								scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
+							),
+							Available: true,
+						},
+					},
+				},
+			},
+			nodeClaim: &karpv1.NodeClaim{
+				Spec: karpv1.NodeClaimSpec{
+					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
+						{
+							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+								Key:      v1beta1.AKSLabelScaleSetPriority,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{v1beta1.ScaleSetPrioritySpot},
 							},
 						},
 						{
