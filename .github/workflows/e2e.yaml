@@ -35,17 +35,20 @@ on:
         required: true
         description: "Test suite to run"
         options:
-          - Scheduling
-          - Utilization
-          - GPU
-          - Drift
-          - Integration
-          - NodeClaim
-          - Consolidation
-          - Chaos
           - ACR
+          - BYOK
+          - Chaos
+          - Consolidation
+          - Drift
+          - GPU
+          - InPlaceUpdate
+          - Integration
           - KubernetesUpgrade
+          - NodeClaim
+          - Scheduling
           - Spot
+          - Subnet
+          - Utilization
       location:
         type: choice
         description: "Azure location to run the e2e test in"
