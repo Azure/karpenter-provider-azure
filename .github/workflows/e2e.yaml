@@ -9,7 +9,7 @@ on:
         required: true
       hash:
         type: string
-        required: true
+        description: "Hash for unique resource naming. Falls back to github.run_id if not provided."
       location:
         type: string
         description: "the azure location to run the e2e test in"
