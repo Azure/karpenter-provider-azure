@@ -24,6 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	types "github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/types"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/samber/lo"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -31,9 +32,12 @@ import (
 )
 
 const (
-	AzureLinux3Gen2ImageDefinition    = "V3gen2"
-	AzureLinux3Gen1ImageDefinition    = "V3"
-	AzureLinux3Gen2ArmImageDefinition = "V3gen2arm64"
+	AzureLinux3Gen2ImageDefinition          = "V3gen2"
+	AzureLinux3Gen1ImageDefinition          = "V3"
+	AzureLinux3Gen2ArmImageDefinition       = "V3gen2arm64"
+	AzureLinux3Gen2FIPSImageDefinition      = "V3gen2fips"
+	AzureLinux3Gen1FIPSImageDefinition      = "V3fips"
+	AzureLinux3Gen2Arm64FIPSImageDefinition = "V3gen2arm64fips"
 )
 
 type AzureLinux3 struct {
@@ -44,7 +48,49 @@ func (u AzureLinux3) Name() string {
 	return v1beta1.AzureLinuxImageFamily
 }
 
-func (u AzureLinux3) DefaultImages(useSIG bool) []types.DefaultImageOutput {
+func (u AzureLinux3) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {
+	if lo.FromPtr(fipsMode) == v1beta1.FIPSModeFIPS {
+		// Note: FIPS images aren't supported in public galleries, only shared image galleries
+		// image provider will select these images in order, first match wins
+		if !useSIG {
+			return []types.DefaultImageOutput{}
+		}
+		return []types.DefaultImageOutput{
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureLinux3Gen2FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-azurelinux-v3-gen2-fips",
+			},
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureLinux3Gen1FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureAmd64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV1),
+				),
+				Distro: "aks-azurelinux-v3-fips",
+			},
+			{
+				PublicGalleryURL:     AKSAzureLinuxPublicGalleryURL,
+				GalleryResourceGroup: AKSAzureLinuxResourceGroup,
+				GalleryName:          AKSAzureLinuxGalleryName,
+				ImageDefinition:      AzureLinux3Gen2Arm64FIPSImageDefinition,
+				Requirements: scheduling.NewRequirements(
+					scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64),
+					scheduling.NewRequirement(v1beta1.LabelSKUHyperVGeneration, v1.NodeSelectorOpIn, v1beta1.HyperVGenerationV2),
+				),
+				Distro: "aks-azurelinux-v3-arm64-gen2-fips",
+			},
+		}
+	}
 	// image provider will select these images in order, first match wins
 	images := []types.DefaultImageOutput{
 		{
@@ -90,7 +136,13 @@ func (u AzureLinux3) DefaultImages(useSIG bool) []types.DefaultImageOutput {
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux3) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, labels map[string]string, caBundle *string, _ *cloudprovider.InstanceType) bootstrap.Bootstrapper {
+func (u AzureLinux3) ScriptlessCustomData(
+	kubeletConfig *bootstrap.KubeletConfiguration,
+	taints []v1.Taint,
+	labels map[string]string,
+	caBundle *string,
+	_ *cloudprovider.InstanceType,
+) bootstrap.Bootstrapper {
 	return bootstrap.AKS{
 		Options: bootstrap.Options{
 			ClusterName:      u.Options.ClusterName,
@@ -121,7 +173,18 @@ func (u AzureLinux3) ScriptlessCustomData(kubeletConfig *bootstrap.KubeletConfig
 }
 
 // UserData returns the default userdata script for the image Family
-func (u AzureLinux3) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.KubeletConfiguration, taints []v1.Taint, startupTaints []v1.Taint, labels map[string]string, instanceType *cloudprovider.InstanceType, imageDistro string, storageProfile string, nodeBootstrappingClient types.NodeBootstrappingAPI) customscriptsbootstrap.Bootstrapper {
+func (u AzureLinux3) CustomScriptsNodeBootstrapping(
+	kubeletConfig *bootstrap.KubeletConfiguration,
+	taints []v1.Taint,
+	startupTaints []v1.Taint,
+	labels map[string]string,
+	instanceType *cloudprovider.InstanceType,
+	imageDistro string,
+	storageProfile string,
+	nodeBootstrappingClient types.NodeBootstrappingAPI,
+	fipsMode *v1beta1.FIPSMode,
+	localDNS *v1beta1.LocalDNS,
+) customscriptsbootstrap.Bootstrapper {
 	return customscriptsbootstrap.ProvisionClientBootstrap{
 		ClusterName:                    u.Options.ClusterName,
 		KubeletConfig:                  kubeletConfig,
@@ -140,5 +203,7 @@ func (u AzureLinux3) CustomScriptsNodeBootstrapping(kubeletConfig *bootstrap.Kub
 		ClusterResourceGroup:           u.Options.ClusterResourceGroup,
 		NodeBootstrappingProvider:      nodeBootstrappingClient,
 		OSSKU:                          customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+		FIPSMode:                       fipsMode,
+		LocalDNSProfile:                localDNS,
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -117,11 +118,19 @@ func (t TaxBrackets) Calculate(amount float64) float64 {
 	return tax
 }
 
-func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSizeType, kc *v1beta1.KubeletConfiguration, region string,
-	offerings cloudprovider.Offerings, nodeClass *v1beta1.AKSNodeClass, architecture string) *cloudprovider.InstanceType {
+func NewInstanceType(
+	ctx context.Context,
+	sku *skewer.SKU,
+	vmsize *skewer.VMSizeType,
+	kc *v1beta1.KubeletConfiguration,
+	region string,
+	offerings cloudprovider.Offerings,
+	nodeClass *v1beta1.AKSNodeClass,
+	architecture string,
+) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
-		Requirements: computeRequirements(sku, vmsize, architecture, offerings, region),
+		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region),
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, nodeClass),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
@@ -132,8 +141,14 @@ func NewInstanceType(ctx context.Context, sku *skewer.SKU, vmsize *skewer.VMSize
 	}
 }
 
-func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architecture string,
-	offerings cloudprovider.Offerings, region string) scheduling.Requirements {
+func computeRequirements(
+	opts *options.Options,
+	sku *skewer.SKU,
+	vmsize *skewer.VMSizeType,
+	architecture string,
+	offerings cloudprovider.Offerings,
+	region string,
+) scheduling.Requirements {
 	requirements := scheduling.NewRequirements(
 		// Well Known Upstream
 		scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, sku.GetName()),
@@ -153,15 +168,21 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 		// Well Known to Azure
 		scheduling.NewRequirement(v1beta1.LabelSKUCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),
 		scheduling.NewRequirement(v1beta1.LabelSKUMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // in MiB
+		scheduling.NewRequirement(v1beta1.AKSLabelCPU, corev1.NodeSelectorOpIn, fmt.Sprint(vcpuCount(sku))),      // AKS domain.
+		scheduling.NewRequirement(v1beta1.AKSLabelMemory, corev1.NodeSelectorOpIn, fmt.Sprint((memoryMiB(sku)))), // AKS domain.
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUCount, corev1.NodeSelectorOpIn, fmt.Sprint(gpuNvidiaCount(sku).Value())),
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUManufacturer, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1beta1.LabelSKUGPUName, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.AKSLabelCluster, corev1.NodeSelectorOpIn, labels.NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)),
+		scheduling.NewRequirement(v1beta1.AKSLabelMode, corev1.NodeSelectorOpIn, v1beta1.ModeSystem, v1beta1.ModeUser),
+		scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
 
 		// composites
 		scheduling.NewRequirement(v1beta1.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
 
 		// size parts
 		scheduling.NewRequirement(v1beta1.LabelSKUFamily, corev1.NodeSelectorOpDoesNotExist),
+		scheduling.NewRequirement(v1beta1.LabelSKUSeries, corev1.NodeSelectorOpDoesNotExist),
 		scheduling.NewRequirement(v1beta1.LabelSKUVersion, corev1.NodeSelectorOpDoesNotExist),
 
 		// SKU capabilities
@@ -177,6 +198,7 @@ func computeRequirements(sku *skewer.SKU, vmsize *skewer.VMSizeType, architectur
 
 	// size parts
 	requirements[v1beta1.LabelSKUFamily].Insert(vmsize.Family)
+	requirements[v1beta1.LabelSKUSeries].Insert(vmsize.Series)
 
 	setRequirementsEphemeralOSDiskSupported(requirements, sku)
 	setRequirementsHyperVGeneration(requirements, sku)

@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 	"sigs.k8s.io/karpenter/pkg/test"
 	"sigs.k8s.io/karpenter/pkg/utils/pod"
 
@@ -62,6 +63,7 @@ var (
 		&corev1.Node{},
 		&karpv1.NodeClaim{},
 		&v1beta1.AKSNodeClass{},
+		&v1alpha1.NodeOverlay{},
 	}
 )
 

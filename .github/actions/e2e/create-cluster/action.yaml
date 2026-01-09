@@ -6,22 +6,22 @@ inputs:
   #   required: false
   #   default: "1.27"
   client-id:
-    description: 
+    description: "ID of the client to create the cluster with"
     required: true
   tenant-id:
-    description: 
+    description: "ID of the tenant to create the cluster in"
     required: true
   subscription-id:
-    description: 
+    description: "ID of the subscription to create the cluster in"
     required: true
   resource_group:
     description: "Name of the resource group to create the cluster within"
     required: true
   cluster_name:
-    description: 'Name of the cluster to be created'
+    description: "Name of the cluster to be created"
     required: true
   acr_name:
-    description: "Name of the acr holding the karpenter image"
+    description: "Name of the acr holding the Karpenter image"
     required: true
   git_ref:
     description: "The git commit, tag, or branch to check out"
@@ -32,7 +32,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         ref: ${{ inputs.git_ref }}
     - name: az login
@@ -43,7 +43,9 @@ runs:
         subscription-id: ${{ inputs.subscription-id }}
     - name: az set sub
       shell: bash
-      run: az account set --subscription ${{ inputs.subscription-id }}
+      env:
+        SUBSCRIPTION_ID: ${{ inputs.subscription-id }}
+      run: az account set --subscription "$SUBSCRIPTION_ID"
     - name: create workload msi
       shell: bash
       env:
@@ -55,8 +57,9 @@ runs:
       env:
         AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
-        AZURE_ACR_NAME: ${{ inputs.acr_name }} 
+        AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
+        AZURE_VM_SIZE: Standard_D4ds_v5 # We have more quota for this VM size so force it to avoid quota errors
       run: make az-mkaks-cilium
     - name: az login 2
       uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0

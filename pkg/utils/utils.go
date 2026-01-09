@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/skewer"
@@ -36,23 +36,6 @@ import (
 	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
-
-// GetVMName parses the provider ID stored on the node to get the vmName
-// associated with a node
-func GetVMName(providerID string) (string, error) {
-	// standalone VMs have providerID in the format: azure:///subscriptions/<subscriptionID>/resourceGroups/<resourceGroup>/providers/Microsoft.Compute/virtualMachines/<instanceID>
-	r := regexp.MustCompile(`azure:///subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/virtualMachines/(?P<InstanceID>.*)`)
-	matches := r.FindStringSubmatch(providerID)
-	if matches == nil {
-		return "", fmt.Errorf("parsing vm name %s", providerID)
-	}
-	for i, name := range r.SubexpNames() {
-		if name == "InstanceID" {
-			return matches[i], nil
-		}
-	}
-	return "", fmt.Errorf("parsing vm name %s", providerID)
-}
 
 // extractVersionFromVMSize extracts and normalizes the version from VMSizeType, dropping "v" prefix and backfilling "1"
 func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
@@ -72,7 +55,7 @@ func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
 	return version
 }
 
-func ResourceIDToProviderID(ctx context.Context, id string) string {
+func VMResourceIDToProviderID(ctx context.Context, id string) string {
 	providerID := fmt.Sprintf("azure://%s", id)
 	// for historical reasons Azure providerID has the resource group name in lower case
 	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)

@@ -24,18 +24,21 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/samber/lo"
 )
 
 // According to https://pkg.go.dev/encoding/json#Marshal, it's safe to use map-types (and encoding/json in general) to produce
 // strings deterministically.
-type inPlaceUpdateFields struct {
-	Identities sets.Set[string] `json:"identities,omitempty"`
+type vmInPlaceUpdateFields struct {
+	Identities sets.Set[string]  `json:"identities,omitempty"`
+	Tags       map[string]string `json:"tags,omitempty"`
 }
 
-func (i *inPlaceUpdateFields) CalculateHash() (string, error) {
-	encoded, err := json.Marshal(i)
+// CalculateHash computes a hash for any JSON-marshalable struct
+func CalculateHash(data any) (string, error) {
+	encoded, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
@@ -48,26 +51,17 @@ func (i *inPlaceUpdateFields) CalculateHash() (string, error) {
 	return strconv.FormatUint(uint64(h.Sum32()), 10), nil
 }
 
-func HashFromVM(vm *armcompute.VirtualMachine) (string, error) {
-	identities := sets.Set[string]{}
-	if vm.Identity != nil {
-		for ident := range vm.Identity.UserAssignedIdentities {
-			identities.Insert(ident)
-		}
+// HashFromNodeClaim calculates an inplace update hash from the specified options, nodeClaim, and nodeClass
+func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (string, error) {
+	tags := options.AdditionalTags
+	if nodeClass != nil {
+		tags = lo.Assign(options.AdditionalTags, nodeClass.Spec.Tags)
 	}
 
-	hashStruct := &inPlaceUpdateFields{
-		Identities: identities,
-	}
-
-	return hashStruct.CalculateHash()
-}
-
-// HashFromNodeClaim calculates an inplace update hash from the specified machine and options
-func HashFromNodeClaim(options *options.Options, _ *karpv1.NodeClaim) (string, error) {
-	hashStruct := &inPlaceUpdateFields{
+	hashStruct := &vmInPlaceUpdateFields{
 		Identities: sets.New(options.NodeIdentities...),
+		Tags:       tags,
 	}
 
-	return hashStruct.CalculateHash()
+	return CalculateHash(hashStruct)
 }

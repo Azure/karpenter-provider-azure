@@ -125,3 +125,115 @@ var _ = Describe("GetVnetSubnetIDComponents", func() {
 		Expect(err).ToNot(BeNil())
 	})
 })
+
+var _ = Describe("IsSameVNET", func() {
+	var baseResource VnetSubnetResource
+
+	BeforeEach(func() {
+		baseResource = VnetSubnetResource{
+			SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+			ResourceGroupName: "my-resource-group",
+			VNetName:          "my-vnet",
+			SubnetName:        "my-subnet",
+		}
+	})
+
+	DescribeTable("IsSameVNET comparison tests",
+		func(compareResource VnetSubnetResource, expected bool) {
+			Expect(baseResource.IsSameVNET(compareResource)).To(Equal(expected))
+		},
+		Entry("should return true when all VNET components match",
+			VnetSubnetResource{
+				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+				ResourceGroupName: "my-resource-group",
+				VNetName:          "my-vnet",
+				SubnetName:        "different-subnet",
+			},
+			true,
+		),
+		Entry("should return true when subnet names are different but VNET components match",
+			VnetSubnetResource{
+				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+				ResourceGroupName: "my-resource-group",
+				VNetName:          "my-vnet",
+				SubnetName:        "completely-different-subnet",
+			},
+			true,
+		),
+		Entry("should return false when subscription IDs are different",
+			VnetSubnetResource{
+				SubscriptionID:    "87654321-4321-4321-4321-210987654321",
+				ResourceGroupName: "my-resource-group",
+				VNetName:          "my-vnet",
+				SubnetName:        "my-subnet",
+			},
+			false,
+		),
+		Entry("should return false when resource group names are different",
+			VnetSubnetResource{
+				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+				ResourceGroupName: "different-resource-group",
+				VNetName:          "my-vnet",
+				SubnetName:        "my-subnet",
+			},
+			false,
+		),
+		Entry("should return false when VNET names are different",
+			VnetSubnetResource{
+				SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+				ResourceGroupName: "my-resource-group",
+				VNetName:          "different-vnet",
+				SubnetName:        "my-subnet",
+			},
+			false,
+		),
+		Entry("should return false when multiple components are different",
+			VnetSubnetResource{
+				SubscriptionID:    "87654321-4321-4321-4321-210987654321",
+				ResourceGroupName: "different-resource-group",
+				VNetName:          "different-vnet",
+				SubnetName:        "different-subnet",
+			},
+			false,
+		),
+	)
+
+	Context("empty string comparisons", func() {
+		It("should handle empty resource comparisons correctly", func() {
+			emptyResource := VnetSubnetResource{
+				SubscriptionID:    "",
+				ResourceGroupName: "",
+				VNetName:          "",
+				SubnetName:        "",
+			}
+
+			Expect(emptyResource.IsSameVNET(emptyResource)).To(BeTrue())
+			Expect(emptyResource.IsSameVNET(baseResource)).To(BeFalse())
+			Expect(baseResource.IsSameVNET(emptyResource)).To(BeFalse())
+		})
+	})
+
+	Context("case sensitivity", func() {
+		DescribeTable("should be case-sensitive for all components",
+			func(compareResource VnetSubnetResource) {
+				Expect(baseResource.IsSameVNET(compareResource)).To(BeFalse())
+			},
+			Entry("different case resource group name",
+				VnetSubnetResource{
+					SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+					ResourceGroupName: "My-Resource-Group",
+					VNetName:          "my-vnet",
+					SubnetName:        "my-subnet",
+				},
+			),
+			Entry("different case VNET name",
+				VnetSubnetResource{
+					SubscriptionID:    "12345678-1234-1234-1234-123456789012",
+					ResourceGroupName: "my-resource-group",
+					VNetName:          "My-VNet",
+					SubnetName:        "my-subnet",
+				},
+			),
+		)
+	})
+})

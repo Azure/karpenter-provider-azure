@@ -19,10 +19,11 @@ package v1beta1_test
 import (
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,7 +32,7 @@ import (
 
 var _ = Describe("Hash", func() {
 	// NOTE: When the hashing algorithm is updated, these tests are expected to fail; test hash constants here would have to be updated, and currentHashVersion would have to be updated to the new version matching v1beta1.AKSNodeClassHashVersion
-	const staticHash = "3322684356700793451"
+	const staticHash = "4108492229247269128"
 	var nodeClass *v1beta1.AKSNodeClass
 	BeforeEach(func() {
 		nodeClass = &v1beta1.AKSNodeClass{
@@ -68,17 +69,18 @@ var _ = Describe("Hash", func() {
 		Entry("Base AKSNodeClass", staticHash, v1beta1.AKSNodeClass{}),
 
 		// Static fields, expect changed hash from base
-		Entry("VNETSubnetID", "1592960122675270014", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
-		Entry("OSDiskSizeGB", "8480605960768312946", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
-		Entry("ImageFamily", "1518600367124538723", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
-		Entry("Tags", "13342466710512152270", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}}),
-		Entry("Kubelet", "13352743309220827045", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
-		Entry("MaxPods", "17237389697604178241", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("VNETSubnetID", "13971920214979852468", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
+		Entry("OSDiskSizeGB", "7816855636861645563", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
+		Entry("ImageFamily", "15616969746300892810", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
+		Entry("Kubelet", "33638514539106194", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
+		Entry("MaxPods", "15508761509963240710", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("LocalDNS.Mode", "17805442572569734619", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}}}),
+		Entry("LocalDNS.VnetDNSOverrides", "14608914734386108436", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
+		Entry("LocalDNS.KubeDNSOverrides", "4529827108104295737", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", "11008649797056761238", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", "4895720480850206885", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("30m")}}}}}),
 	)
-	It("should match static hash when reordering tags", func() {
-		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
-		Expect(nodeClass.Hash()).To(Equal(staticHash))
-	})
+
 	DescribeTable("should change hash when static fields are updated", func(changes v1beta1.AKSNodeClass) {
 		hash := nodeClass.Hash()
 		Expect(mergo.Merge(nodeClass, changes, mergo.WithOverride, mergo.WithSliceDeepCopy)).To(Succeed())
@@ -88,13 +90,23 @@ var _ = Describe("Hash", func() {
 		Entry("VNETSubnetID", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{VNETSubnetID: lo.ToPtr("subnet-id-2")}}),
 		Entry("OSDiskSizeGB", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(40))}}),
 		Entry("ImageFamily", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
-		Entry("Tags", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}}),
 		Entry("Kubelet", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Kubelet: &v1beta1.KubeletConfiguration{CPUManagerPolicy: "none"}}}),
 		Entry("MaxPods", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{MaxPods: lo.ToPtr(int32(200))}}),
+		Entry("LocalDNS.Mode", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeRequired}}}),
+		Entry("LocalDNS.VnetDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", QueryLogging: v1beta1.LocalDNSQueryLoggingLog}}}}}),
+		Entry("LocalDNS.KubeDNSOverrides", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{KubeDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", Protocol: v1beta1.LocalDNSProtocolForceTCP}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.CacheDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", CacheDuration: karpv1.MustParseNillableDuration("2h")}}}}}),
+		Entry("LocalDNS.VnetDNSOverrides.ServeStaleDuration", v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{LocalDNS: &v1beta1.LocalDNS{VnetDNSOverrides: []v1beta1.LocalDNSZoneOverride{{Zone: "example.com", ServeStaleDuration: karpv1.MustParseNillableDuration("1h")}}}}}),
 	)
 	It("should not change hash when tags are re-ordered", func() {
 		hash := nodeClass.Hash()
 		nodeClass.Spec.Tags = map[string]string{"keyTag-2": "valueTag-2", "keyTag-1": "valueTag-1"}
+		updatedHash := nodeClass.Hash()
+		Expect(hash).To(Equal(updatedHash))
+	})
+	It("should not change hash when tags are changed", func() {
+		hash := nodeClass.Hash()
+		nodeClass.Spec.Tags = map[string]string{"keyTag-3": "valueTag-3"}
 		updatedHash := nodeClass.Hash()
 		Expect(hash).To(Equal(updatedHash))
 	})
@@ -107,7 +119,7 @@ var _ = Describe("Hash", func() {
 	// This test is a sanity check to update the hashing version if the algorithm has been updated.
 	// Note: this will only catch a missing version update, if the staticHash hasn't been updated yet.
 	It("when hashing algorithm updates, we should update the hash version", func() {
-		currentHashVersion := "v2"
+		currentHashVersion := "v3"
 		if nodeClass.Hash() != staticHash {
 			Expect(v1beta1.AKSNodeClassHashVersion).ToNot(Equal(currentHashVersion))
 		} else {

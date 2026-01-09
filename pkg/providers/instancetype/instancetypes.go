@@ -32,7 +32,7 @@ import (
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/patrickmn/go-cache"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -42,7 +42,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/skuclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/pricing"
 
 	"github.com/Azure/skewer"
@@ -72,7 +71,7 @@ var _ Provider = (*DefaultProvider)(nil)
 
 type DefaultProvider struct {
 	region               string
-	skuClient            skuclient.SkuClient
+	skuClient            skewer.ResourceClient
 	pricingProvider      *pricing.Provider
 	unavailableOfferings *kcache.UnavailableOfferings
 
@@ -88,7 +87,13 @@ type DefaultProvider struct {
 	instanceTypesSeqNum uint64
 }
 
-func NewDefaultProvider(region string, cache *cache.Cache, skuClient skuclient.SkuClient, pricingProvider *pricing.Provider, offeringsCache *kcache.UnavailableOfferings) *DefaultProvider {
+func NewDefaultProvider(
+	region string,
+	cache *cache.Cache,
+	skuClient skewer.ResourceClient,
+	pricingProvider *pricing.Provider,
+	offeringsCache *kcache.UnavailableOfferings,
+) *DefaultProvider {
 	return &DefaultProvider{
 		// TODO: skewer api, subnetprovider, pricing provider, unavailable offerings, ...
 		region:               region,
@@ -114,13 +119,15 @@ func (p *DefaultProvider) List(
 
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d",
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
 		lo.FromPtr(nodeClass.Spec.ImageFamily),
 		lo.FromPtr(nodeClass.Spec.OSDiskSizeGB),
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
+		nodeClass.GetEncryptionAtHost(),
+		nodeClass.IsLocalDNSEnabled(),
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -142,7 +149,7 @@ func (p *DefaultProvider) List(
 			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
 			continue
 		}
-		instanceTypeZones := instanceTypeZones(sku, p.region)
+		instanceTypeZones := p.instanceTypeZones(sku)
 		// !!! Important !!!
 		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
 		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
@@ -155,6 +162,13 @@ func (p *DefaultProvider) List(
 		if !p.isInstanceTypeSupportedByImageFamily(sku.GetName(), lo.FromPtr(nodeClass.Spec.ImageFamily)) {
 			continue
 		}
+		if !p.isInstanceTypeSupportedByEncryptionAtHost(sku, nodeClass) {
+			continue
+		}
+		if !p.isInstanceTypeSupportedByLocalDNS(sku, nodeClass) {
+			continue
+		}
+
 		result = append(result, instanceType)
 	}
 
@@ -179,15 +193,15 @@ func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeCla
 
 // instanceTypeZones generates the set of all supported zones for a given SKU
 // The strings have to match Zone labels that will be placed on Node
-func instanceTypeZones(sku *skewer.SKU, region string) sets.Set[string] {
+func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 	// skewer returns numerical zones, like "1" (as keys in the map);
 	// prefix each zone with "<region>-", to have them match the labels placed on Node (e.g. "westus2-1")
 	// Note this data comes from LocationInfo, then skewer is used to get the SKU info
 	// If an offering is non-zonal, the availability zones will be empty.
-	skuZones := lo.Keys(sku.AvailabilityZones(region))
-	if hasZonalSupport(region) && len(skuZones) > 0 {
+	skuZones := lo.Keys(sku.AvailabilityZones(p.region))
+	if len(skuZones) > 0 {
 		return sets.New(lo.Map(skuZones, func(zone string, _ int) string {
-			return utils.MakeZone(region, zone)
+			return utils.MakeAKSLabelZoneFromARMZone(p.region, zone)
 		})...)
 	}
 	return sets.New("") // empty string means non-zonal offering
@@ -214,6 +228,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 		onDemandOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 			),
 			Price:     onDemandPrice,
@@ -223,6 +238,7 @@ func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string
 		spotOffering := &cloudprovider.Offering{
 			Requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, zone),
 			),
 			Price:     spotPrice,
@@ -252,14 +268,47 @@ func (p *DefaultProvider) isInstanceTypeSupportedByImageFamily(skuName, imageFam
 	if !(utils.IsNvidiaEnabledSKU(skuName) || utils.IsMarinerEnabledGPUSKU(skuName)) {
 		return true
 	}
-	switch imageFamily {
-	case v1beta1.Ubuntu2204ImageFamily:
+	switch {
+	case v1beta1.UbuntuFamilies.Has(imageFamily):
 		return utils.IsNvidiaEnabledSKU(skuName)
-	case v1beta1.AzureLinuxImageFamily:
+	case imageFamily == v1beta1.AzureLinuxImageFamily:
 		return utils.IsMarinerEnabledGPUSKU(skuName)
 	default:
 		return false
 	}
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByEncryptionAtHost(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// If EncryptionAtHost is not enabled in the nodeclass, all instance types are supported
+	if !nodeClass.GetEncryptionAtHost() {
+		return true
+	}
+	// If EncryptionAtHost is enabled, only include instance types that support it
+	return p.supportsEncryptionAtHost(sku)
+}
+
+// supportsEncryptionAtHost checks if the SKU supports encryption at host
+func (p *DefaultProvider) supportsEncryptionAtHost(sku *skewer.SKU) bool {
+	value, err := sku.GetCapabilityString("EncryptionAtHostSupported")
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(value, "True")
+}
+
+func (p *DefaultProvider) isInstanceTypeSupportedByLocalDNS(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	// If LocalDNS won't be enabled, all instance types are supported
+	if !nodeClass.IsLocalDNSEnabled() {
+		return true
+	}
+
+	// LocalDNS requires at least 4 vCPUs and 256 MB (244.140625 MiB) of memory
+	cpu, err := sku.VCPU()
+	if err != nil || cpu < 4 {
+		return false
+	}
+
+	return memoryMiB(sku) >= 244 // 256 MB = 244.140625 MiB
 }
 
 // getInstanceTypes retrieves all instance types from skewer using some opinionated filters
@@ -277,7 +326,7 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 	instanceTypes := map[string]*skewer.SKU{}
 
-	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient.GetInstance()))
+	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
 	if err != nil {
 		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
@@ -382,61 +431,6 @@ func FindMaxEphemeralSizeGBAndPlacement(sku *skewer.SKU) (sizeGB int64, placemen
 	}
 
 	return 0, nil
-}
-
-var (
-	// https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1
-	// (could also be obtained programmatically)
-	zonalRegions = sets.New(
-		// Special
-		"centraluseuap",
-		"eastus2euap",
-		// Americas
-		"brazilsouth",
-		"canadacentral",
-		"centralus",
-		"eastus",
-		"eastus2",
-		"southcentralus",
-		"usgovvirginia",
-		"westus2",
-		"westus3",
-		"chilecentral",
-		"mexicocentral",
-		// Europe
-		"francecentral",
-		"italynorth",
-		"germanywestcentral",
-		"norwayeast",
-		"northeurope",
-		"uksouth",
-		"westeurope",
-		"swedencentral",
-		"switzerlandnorth",
-		"polandcentral",
-		"spaincentral",
-		// Middle East
-		"qatarcentral",
-		"uaenorth",
-		"israelcentral",
-		// Africa
-		"southafricanorth",
-		// Asia Pacific
-		"australiaeast",
-		"centralindia",
-		"japaneast",
-		"koreacentral",
-		"southeastasia",
-		"eastasia",
-		"chinanorth3",
-		"indonesiacentral",
-		"japanwest",
-		"newzealandnorth",
-	)
-)
-
-func hasZonalSupport(region string) bool {
-	return zonalRegions.Has(region)
 }
 
 func isCompatibleImageAvailable(sku *skewer.SKU, useSIG bool) bool {

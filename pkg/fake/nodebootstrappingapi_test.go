@@ -101,3 +101,87 @@ func createValidProvisionHelperValues() *models.ProvisionHelperValues {
 		SkuMemory: lo.ToPtr(float64(8192)),
 	}
 }
+
+func TestNodeBootstrappingAPI_RecordsRequests(t *testing.T) {
+	api := &NodeBootstrappingAPI{}
+
+	params := &models.ProvisionValues{
+		ProvisionProfile:      createValidProvisionProfile(),
+		ProvisionHelperValues: createValidProvisionHelperValues(),
+	}
+
+	_, err := api.Get(context.TODO(), params)
+	assert.NoError(t, err)
+
+	// Verify that the request was recorded
+	assert.Equal(t, 1, api.NodeBootstrappingGetBehavior.CalledWithInput.Len())
+	recordedInput := api.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
+	assert.Equal(t, params, recordedInput.Params)
+
+	// Verify call counts
+	assert.Equal(t, 1, api.NodeBootstrappingGetBehavior.Calls())
+	assert.Equal(t, 1, api.NodeBootstrappingGetBehavior.SuccessfulCalls())
+	assert.Equal(t, 0, api.NodeBootstrappingGetBehavior.FailedCalls())
+}
+
+func TestNodeBootstrappingAPI_RecordsMultipleRequests(t *testing.T) {
+	api := &NodeBootstrappingAPI{}
+
+	params1 := &models.ProvisionValues{
+		ProvisionProfile:      createValidProvisionProfile(),
+		ProvisionHelperValues: createValidProvisionHelperValues(),
+	}
+
+	params2 := &models.ProvisionValues{
+		ProvisionProfile: &models.ProvisionProfile{
+			Name:                lo.ToPtr("test-node-2"),
+			VMSize:              lo.ToPtr("Standard_D4s_v3"),
+			OsType:              lo.ToPtr(models.OSTypeLinux),
+			OsSku:               lo.ToPtr(models.OSSKUAzureLinux),
+			StorageProfile:      lo.ToPtr(consts.StorageProfileManagedDisks),
+			Distro:              lo.ToPtr("AzureLinux"),
+			OrchestratorVersion: lo.ToPtr("1.31.0"),
+			VnetCidrs:           []string{"10.0.0.0/8"},
+			VnetSubnetID:        lo.ToPtr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"),
+			Mode:                lo.ToPtr(models.AgentPoolModeSystem),
+			Architecture:        lo.ToPtr("amd64"),
+			MaxPods:             lo.ToPtr(int32(110)),
+		},
+		ProvisionHelperValues: createValidProvisionHelperValues(),
+	}
+
+	_, err := api.Get(context.TODO(), params1)
+	assert.NoError(t, err)
+
+	_, err = api.Get(context.TODO(), params2)
+	assert.NoError(t, err)
+
+	// Verify that both requests were recorded
+	assert.Equal(t, 2, api.NodeBootstrappingGetBehavior.CalledWithInput.Len())
+	assert.Equal(t, 2, api.NodeBootstrappingGetBehavior.Calls())
+	assert.Equal(t, 2, api.NodeBootstrappingGetBehavior.SuccessfulCalls())
+
+	// Verify requests in LIFO order (stack behavior)
+	recordedInput2 := api.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
+	assert.Equal(t, params2, recordedInput2.Params)
+
+	recordedInput1 := api.NodeBootstrappingGetBehavior.CalledWithInput.Pop()
+	assert.Equal(t, params1, recordedInput1.Params)
+}
+
+func TestNodeBootstrappingAPI_Reset(t *testing.T) {
+	api := &NodeBootstrappingAPI{}
+
+	params := &models.ProvisionValues{
+		ProvisionProfile:      createValidProvisionProfile(),
+		ProvisionHelperValues: createValidProvisionHelperValues(),
+	}
+
+	_, err := api.Get(context.TODO(), params)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, api.NodeBootstrappingGetBehavior.CalledWithInput.Len())
+
+	// Reset should clear recorded requests
+	api.Reset()
+	assert.Equal(t, 0, api.NodeBootstrappingGetBehavior.CalledWithInput.Len())
+}

@@ -22,8 +22,8 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/test/v1alpha1"
 
+	"dario.cat/mergo"
 	"github.com/awslabs/operatorpkg/object"
-	"github.com/imdario/mergo"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -115,7 +115,6 @@ var _ = Describe("NodeClass Hash Controller", func() {
 	},
 		Entry("ImageFamily Drift", &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{ImageFamily: lo.ToPtr("AzureLinux")}}),
 		Entry("OSDiskSizeGB Drift", &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{OSDiskSizeGB: lo.ToPtr(int32(30))}}),
-		Entry("Tags Drift", &v1beta1.AKSNodeClass{Spec: v1beta1.AKSNodeClassSpec{Tags: map[string]string{"keyTag-test-3": "valueTag-test-3"}}}),
 	)
 	It("should update aksnodeclass-hash-version annotation when the aksnodeclass-hash-version on the NodeClass does not match with the controller hash version", func() {
 		nodeClass.Annotations = map[string]string{

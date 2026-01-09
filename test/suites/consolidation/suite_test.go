@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -668,10 +669,16 @@ var _ = Describe("Consolidation", Ordered, func() {
 					},
 					ResourceRequirements: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
+							// D2 has ~1900m allocatable CPU. We subtract daemonset overhead and an additional
+							// 200m buffer for metrics-server pods that may land on Karpenter nodes (AKS metrics-server
+							// uses soft affinity to system nodes, so replicas can spill onto Karpenter nodes).
+							// metrics-server on D2 nodes uses ~160m, so 200m provides some margin.
 							corev1.ResourceCPU: func() resource.Quantity {
 								dsOverhead := env.GetDaemonSetOverhead(nodePool)
+								metricsServerBuffer := resource.MustParse("200m")
 								base := lo.ToPtr(resource.MustParse("1900m"))
 								base.Sub(*dsOverhead.Cpu())
+								base.Sub(metricsServerBuffer)
 								return *base
 							}(),
 						},
@@ -687,8 +694,8 @@ var _ = Describe("Consolidation", Ordered, func() {
 			By("checking that all pods are healthy")
 			env.EventuallyExpectHealthyPodCount(selector, int(numPods))
 
-			By("waiting for 3 nodes (due to anti-affinity rules)")
-			env.ExpectCreatedNodeCount("==", 3)
+			By("waiting for nodes (due to anti-affinity rules)")
+			env.ExpectCreatedNodeCount("==", int(numPods))
 
 			By("scaling down the large deployment (leaving only small pods on each node)")
 			largeDep.Spec.Replicas = lo.ToPtr[int32](0)
@@ -702,31 +709,19 @@ var _ = Describe("Consolidation", Ordered, func() {
 			env.ExpectUpdated(nodePool)
 
 			// With consolidation enabled, we now must replace each node in turn to consolidate due to the anti-affinity
-			// rules on the smaller deployment. The 8cpu nodes should go to 2cpu nodes
-			By("waiting for avg utilization > 0.7")
-			env.EventuallyExpectAvgUtilization(corev1.ResourceCPU, ">", 0.7)
+			// rules on the smaller deployment. The 8cpu nodes should go to 2cpu nodes.
+			// Wait for all 8cpu nodes to be replaced with 2cpu instance types.
+			By("waiting for 3 nodes with 2 CPUs")
+			env.EventuallyExpectNodeCountWithSelector("==", int(numPods), labels.SelectorFromSet(map[string]string{
+				karpv1.NodePoolLabelKey: nodePool.Name,
+				v1beta1.LabelSKUCPU:     "2",
+			}))
 
-			var nodes corev1.NodeList
-			Expect(env.Client.List(env.Context, &nodes)).To(Succeed())
-			num2CpuNodes := 0
-			numOtherNodes := 0
-			for _, n := range nodes.Items {
-				// only count the nodes created by the provisoiner
-				if n.Labels[karpv1.NodePoolLabelKey] != nodePool.Name {
-					continue
-				}
-				if n.Status.Capacity.Cpu().Cmp(resource.MustParse("2")) == 0 {
-					num2CpuNodes++
-				} else {
-					numOtherNodes++
-				}
-			}
-
-			By("checking that only smaller nodes are left")
-			// all of the 8cpu nodes should have been replaced with 2cpu instance types
-			Expect(num2CpuNodes).To(Equal(3))
-			// and we should have no other nodes
-			Expect(numOtherNodes).To(Equal(0))
+			By("verifying all 8-CPU nodes are gone")
+			env.EventuallyExpectNodeCountWithSelector("==", 0, labels.SelectorFromSet(map[string]string{
+				karpv1.NodePoolLabelKey: nodePool.Name,
+				v1beta1.LabelSKUCPU:     "8",
+			}))
 
 			env.ExpectDeleted(largeDep, smallDep)
 		},
@@ -800,8 +795,10 @@ var _ = Describe("Consolidation", Ordered, func() {
 				ResourceRequirements: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{corev1.ResourceCPU: func() resource.Quantity {
 						dsOverhead := env.GetDaemonSetOverhead(nodePool)
+						metricsServerBuffer := resource.MustParse("200m")
 						base := lo.ToPtr(resource.MustParse("1800m"))
 						base.Sub(*dsOverhead.Cpu())
+						base.Sub(metricsServerBuffer)
 						return *base
 					}(),
 					},
@@ -863,5 +860,133 @@ var _ = Describe("Consolidation", Ordered, func() {
 		}, time.Minute*10).Should(Succeed())
 
 		env.ExpectDeleted(smallDep)
+	})
+})
+
+var _ = Describe("Node Overlay", func() {
+	var nodePool *karpv1.NodePool
+
+	BeforeEach(func() {
+		// remove this if NodeOverlay feature gate is enabled by default
+		if env.InClusterController {
+			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "NodeOverlay=True"})
+		} else {
+			Skip("This test requires the controller to be running in-cluster (to ensure NodeOverlay feature gate is enabled)")
+		}
+
+		nodePool = env.DefaultNodePool(nodeClass)
+		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
+		// Allow both D-family and E-family SKUs for consolidation tests that switch between families
+		coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{"D", "E"},
+			},
+		})
+	})
+
+	It("should consolidate an instance that is the cheapest based on a price adjustment node overlay applied", func() {
+		overlaidInstanceType := "Standard_D8s_v5"
+		pod := coretest.Pod(coretest.PodOptions{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+		})
+		nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
+			Spec: karpv1alpha1.NodeOverlaySpec{
+				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
+				Requirements: []corev1.NodeSelectorRequirement{
+					{
+						Key:      corev1.LabelInstanceTypeStable,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{overlaidInstanceType},
+					},
+				},
+			},
+		})
+
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
+		env.EventuallyExpectHealthy(pod)
+		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+
+		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		Expect(foundInstanceType).To(BeTrue())
+		Expect(instanceType).To(Equal(overlaidInstanceType))
+
+		// Update overlay to target a different instance type to trigger consolidation
+		newOverlaidInstanceType := "Standard_E8s_v5"
+		nodeOverlay = coretest.ReplaceOverlayRequirements(nodeOverlay, corev1.NodeSelectorRequirement{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{newOverlaidInstanceType},
+		})
+		env.ExpectUpdated(nodeOverlay)
+
+		nodes = env.EventuallyExpectInitializedNodeCount("==", 2)
+		nodes = lo.Filter(nodes, func(n *corev1.Node, _ int) bool {
+			_, ok := lo.Find(n.Spec.Taints, func(t corev1.Taint) bool {
+				return t.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
+			})
+			return !ok
+		})
+		instanceType, foundInstanceType = nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		Expect(foundInstanceType).To(BeTrue())
+		Expect(instanceType).To(Equal(newOverlaidInstanceType))
+	})
+
+	It("should consolidate an instance that is the cheapest based on a price override node overlay applied", func() {
+		overlaidInstanceType := "Standard_D8s_v5"
+		pod := coretest.Pod(coretest.PodOptions{
+			ResourceRequirements: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+		})
+		nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
+			Spec: karpv1alpha1.NodeOverlaySpec{
+				Price: lo.ToPtr("0.0000000232"),
+				Requirements: []corev1.NodeSelectorRequirement{
+					{
+						Key:      corev1.LabelInstanceTypeStable,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{overlaidInstanceType},
+					},
+				},
+			},
+		})
+
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
+		env.EventuallyExpectHealthy(pod)
+		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+
+		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		Expect(foundInstanceType).To(BeTrue())
+		Expect(instanceType).To(Equal(overlaidInstanceType))
+
+		// Update overlay to target a different instance type to trigger consolidation
+		newOverlaidInstanceType := "Standard_E8s_v5"
+		nodeOverlay = coretest.ReplaceOverlayRequirements(nodeOverlay, corev1.NodeSelectorRequirement{
+			Key:      corev1.LabelInstanceTypeStable,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{newOverlaidInstanceType},
+		})
+		env.ExpectUpdated(nodeOverlay)
+
+		nodes = env.EventuallyExpectInitializedNodeCount("==", 2)
+		nodes = lo.Filter(nodes, func(n *corev1.Node, _ int) bool {
+			_, ok := lo.Find(n.Spec.Taints, func(t corev1.Taint) bool {
+				return t.MatchTaint(&karpv1.DisruptedNoScheduleTaint)
+			})
+			return !ok
+		})
+		instanceType, foundInstanceType = nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		Expect(foundInstanceType).To(BeTrue())
+		Expect(instanceType).To(Equal(newOverlaidInstanceType))
 	})
 })

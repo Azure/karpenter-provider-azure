@@ -18,6 +18,7 @@ package options
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -43,8 +44,19 @@ func (o *Options) Validate() error {
 		o.validateUseSIG(),
 		o.validateAdminUsername(),
 		o.validateAdditionalTags(),
+		o.validateDiskEncryptionSetID(),
+		o.validateClusterDNSIP(),
 		validate.Struct(o),
 	)
+}
+
+func (o *Options) validateClusterDNSIP() error {
+	if o.DNSServiceIP != "" {
+		if _, err := netip.ParseAddr(o.DNSServiceIP); err != nil {
+			return fmt.Errorf("dns-service-ip is invalid %w", err)
+		}
+	}
+	return nil
 }
 
 func (o *Options) validateVNETGUID() error {
@@ -135,17 +147,11 @@ func (o *Options) validateUseSIG() error {
 		if o.SIGAccessTokenServerURL == "" {
 			return fmt.Errorf("sig-access-token-server-url is required when use-sig is true")
 		}
-		if o.SIGAccessTokenScope == "" {
-			return fmt.Errorf("sig-access-token-scope is required when use-sig is true")
-		}
 		if o.SIGSubscriptionID == "" {
 			return fmt.Errorf("sig-subscription-id is required when use-sig is true")
 		}
 		if !isValidURL(o.SIGAccessTokenServerURL) {
 			return fmt.Errorf("sig-access-token-server-url is not a valid URL")
-		}
-		if !isValidURL(o.SIGAccessTokenScope) {
-			return fmt.Errorf("sig-access-token-scope is not a valid URL")
 		}
 	}
 	return nil
@@ -199,4 +205,61 @@ func isValidURL(u string) bool {
 	// url.Parse() will accept a lot of input without error; make
 	// sure it's a real URL
 	return err == nil && endpoint.IsAbs() && endpoint.Hostname() != ""
+}
+
+func (o *Options) validateDiskEncryptionSetID() error {
+	if o.DiskEncryptionSetID == "" {
+		return nil
+	}
+
+	parts, err := o.parseDiskEncryptionSetID()
+	if err != nil {
+		return err
+	}
+
+	if err := o.validateDiskEncryptionSetStructure(parts); err != nil {
+		return err
+	}
+
+	return o.validateDiskEncryptionSetValues(parts)
+}
+
+func (o *Options) parseDiskEncryptionSetID() ([]string, error) {
+	if !strings.HasPrefix(o.DiskEncryptionSetID, "/") {
+		return nil, fmt.Errorf("disk-encryption-set-id is invalid: must start with /subscriptions/, got %s", o.DiskEncryptionSetID)
+	}
+
+	parts := strings.Split(o.DiskEncryptionSetID, "/")
+	if len(parts) != 9 {
+		return nil, fmt.Errorf("disk-encryption-set-id is invalid: expected format /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{diskEncryptionSetName}, got %s", o.DiskEncryptionSetID)
+	}
+
+	return parts, nil
+}
+
+func (o *Options) validateDiskEncryptionSetStructure(parts []string) error {
+	if !strings.EqualFold(parts[1], "subscriptions") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: must start with /subscriptions/, got %s", o.DiskEncryptionSetID)
+	}
+
+	if !strings.EqualFold(parts[3], "resourceGroups") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'resourceGroups' at position 4, got %s", parts[3])
+	}
+
+	if !strings.EqualFold(parts[5], "providers") || !strings.EqualFold(parts[6], "Microsoft.Compute") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'providers/Microsoft.Compute' at positions 6-7, got %s/%s", parts[5], parts[6])
+	}
+
+	if !strings.EqualFold(parts[7], "diskEncryptionSets") {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'diskEncryptionSets' at position 8, got %s", parts[7])
+	}
+
+	return nil
+}
+
+func (o *Options) validateDiskEncryptionSetValues(parts []string) error {
+	if parts[2] == "" || parts[4] == "" || parts[8] == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: subscription ID, resource group name, and disk encryption set name must not be empty")
+	}
+	return nil
 }

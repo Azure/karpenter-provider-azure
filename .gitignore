@@ -6,6 +6,7 @@ coverage.html
 *.heapprofile
 go.work
 go.work.sum
+*.out
 
 # Environment
 .idea

@@ -13,7 +13,11 @@ on:
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "southcentralus"
+        default: "westus3"
+      provisionmode:
+        type: string
+        description: "the karpenter provisioning mode to run the e2e test in"
+        default: "aksscriptless"
     #   k8s_version:
     #     type: string
     #     default: "1.27"
@@ -45,7 +49,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           disable-telemetry: true
           egress-policy: block
@@ -56,6 +60,7 @@ jobs:
             *.azmk8s.io:443
             *.azurecr.io:443
             *.data.mcr.microsoft.com:443
+            *.vault.azure.net:443
             aka.ms:443
             api.github.com:443
             app.aladdin.microsoft.com:443
@@ -75,13 +80,16 @@ jobs:
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             proxy.golang.org:443
+            golang.org:443
             raw.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
+            go.dev:443
+            dl.google.com:443
             aquasecurity.github.io:443
             mirror.gcr.io:443
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.git_ref }}
       - if: always() && github.event_name == 'workflow_run'
@@ -98,19 +106,27 @@ jobs:
           subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
       - name: az set sub
         shell: bash
-        run: az account set --subscription ${{ secrets.E2E_SUBSCRIPTION_ID }}
+        env:
+          SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+        run: az account set --subscription "$SUBSCRIPTION_ID"
       - name: install skaffold
         run: |
           curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
           install skaffold /usr/local/bin/
       - name: generate rg name
+        env:
+          SUITE: ${{ inputs.suite }}
+          HASH: ${{ inputs.hash }}
         run: |
-          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.hash }} | awk '{print tolower($0)}')
+          RG_NAME=$(echo karpenter-e2e-"$SUITE"-"$HASH" | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
+        env:
+          SUITE: ${{ inputs.suite }}
+          HASH: ${{ inputs.hash }}
         run: |
-          ACR_NAME=$(echo ${{ inputs.suite }}acr${{ inputs.hash }} | awk '{print tolower($0)}')
+          ACR_NAME=$(echo "$SUITE"acr"$HASH" | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
@@ -145,7 +161,9 @@ jobs:
           location: ${{ inputs.location }}
       - name: build and publish karpenter
         shell: bash
-        run: AZURE_ACR_NAME=${{ env.ACR_NAME }} make az-build
+        env:
+          AZURE_ACR_NAME: ${{ env.ACR_NAME }}
+        run: make az-build
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
@@ -157,6 +175,7 @@ jobs:
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
           location: ${{ inputs.location }}
+          provisionmode: ${{ inputs.provisionmode }}
       - name: run the ${{ inputs.suite }} test suite
         env:
           AZURE_CLUSTER_NAME: ${{ env.CLUSTER_NAME }}
@@ -166,6 +185,7 @@ jobs:
           AZURE_ACR_NAME: ${{ env.ACR_NAME }}
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
+          PROVISION_MODE: ${{ inputs.provisionmode }}
         run: |
           make az-creds
           make e2etests

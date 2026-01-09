@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	karpv1alpha1 "sigs.k8s.io/karpenter/pkg/apis/v1alpha1"
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
@@ -61,6 +62,7 @@ var _ = BeforeEach(func() {
 })
 var _ = AfterEach(func() { env.Cleanup() })
 var _ = AfterEach(func() { env.AfterEach() })
+
 var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 	var selectors sets.Set[string]
 
@@ -82,9 +84,17 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			corev1.LabelWindowsBuild,
 			// VM SKU with GPU we are using does not populate this; won't be tested
 			v1beta1.LabelSKUGPUName,
-			// TODO: review the use of "kubernetes.azure.com/cluster"
-			v1beta1.AKSLabelCluster,
 		)
+
+		// If no spec with Label("GPU") ran (e.g., `-label-filter='!GPU'`),
+		// ignore GPU labels in the coverage assertion.
+		if !Label("GPU").MatchesLabelFilter(GinkgoLabelFilter()) {
+			selectors.Insert(
+				v1beta1.LabelSKUGPUCount,
+				v1beta1.LabelSKUGPUManufacturer,
+			)
+		}
+
 	})
 	AfterAll(func() {
 		// Ensure that we're exercising all well known labels (with the above exceptions)
@@ -112,12 +122,18 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				// Well Known to Azure
 				v1beta1.LabelSKUName:                      "Standard_D2s_v3",
 				v1beta1.LabelSKUFamily:                    "D",
+				v1beta1.LabelSKUSeries:                    "Ds_v3",
 				v1beta1.LabelSKUVersion:                   "3",
 				v1beta1.LabelSKUCPU:                       "2",
 				v1beta1.LabelSKUMemory:                    "8192",
+				v1beta1.AKSLabelCPU:                       "2",
+				v1beta1.AKSLabelMemory:                    "8192",
 				v1beta1.LabelSKUAcceleratedNetworking:     "true",
 				v1beta1.LabelSKUStoragePremiumCapable:     "true",
 				v1beta1.LabelSKUStorageEphemeralOSMaxSize: "53",
+				v1beta1.AKSLabelCluster:                   env.NodeResourceGroup,
+				v1beta1.AKSLabelMode:                      "system",
+				v1beta1.AKSLabelScaleSetPriority:          "regular",
 			}
 			selectors.Insert(lo.Keys(nodeSelector)...) // Add node selector keys to selectors used in testing to ensure we test all labels
 			requirements := lo.MapToSlice(nodeSelector, func(key string, value string) corev1.NodeSelectorRequirement {
@@ -200,7 +216,7 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 			env.ExpectCreatedNodeCount("==", 1)
 		})
 		// note: this test can fail on subscription that don't have quota for GPU SKUs
-		It("should support well-known labels for a gpu (nvidia)", func() {
+		It("should support well-known labels for a gpu (nvidia)", Label("GPU"), func() {
 			nodeSelector := map[string]string{
 				v1beta1.LabelSKUGPUManufacturer: "nvidia",
 				v1beta1.LabelSKUGPUCount:        "1",
@@ -533,3 +549,62 @@ func ephemeralInitContainer(requirements corev1.ResourceRequirements) corev1.Con
 		Resources: requirements,
 	}
 }
+
+var _ = Describe("Node Overlay", func() {
+	BeforeEach(func() {
+		// remove this if NodeOverlay feature gate is enabled by default
+		if env.InClusterController {
+			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "FEATURE_GATES", Value: "NodeOverlay=True"})
+		} else {
+			Skip("This test requires the controller to be running in-cluster (to ensure NodeOverlay feature gate is enabled)")
+		}
+	})
+
+	It("should provision the instance that is the cheapest based on a price adjustment node overlay applied", func() {
+		overlaidInstanceType := "Standard_D8s_v5"
+		pod := test.Pod()
+		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
+			Spec: karpv1alpha1.NodeOverlaySpec{
+				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
+				Requirements: []corev1.NodeSelectorRequirement{
+					{
+						Key:      corev1.LabelInstanceTypeStable,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{overlaidInstanceType},
+					},
+				},
+			},
+		})
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
+		env.EventuallyExpectHealthy(pod)
+		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+
+		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		Expect(foundInstanceType).To(BeTrue())
+		Expect(instanceType).To(Equal(overlaidInstanceType))
+	})
+
+	It("should provision the instance that is the cheapest based on a price override node overlay applied", func() {
+		overlaidInstanceType := "Standard_D8s_v5"
+		pod := test.Pod()
+		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
+			Spec: karpv1alpha1.NodeOverlaySpec{
+				Price: lo.ToPtr("0.0000000232"),
+				Requirements: []corev1.NodeSelectorRequirement{
+					{
+						Key:      corev1.LabelInstanceTypeStable,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{overlaidInstanceType},
+					},
+				},
+			},
+		})
+		env.ExpectCreated(nodePool, nodeClass, nodeOverlay, pod)
+		env.EventuallyExpectHealthy(pod)
+		nodes := env.EventuallyExpectInitializedNodeCount("==", 1)
+
+		instanceType, foundInstanceType := nodes[0].Labels[corev1.LabelInstanceTypeStable]
+		Expect(foundInstanceType).To(BeTrue())
+		Expect(instanceType).To(Equal(overlaidInstanceType))
+	})
+})

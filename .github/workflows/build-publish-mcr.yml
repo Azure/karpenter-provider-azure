@@ -24,18 +24,20 @@ jobs:
       labels: [self-hosted, "1ES.Pool=${{ vars.RELEASE_1ES_POOL }}"]
     steps:
     - name: Harden Runner
-      uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
       with:
         egress-policy: audit
 
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         fetch-depth: 0
-        
+
     - uses: ./.github/actions/install-deps
-  
+
     - name: Build and publish image
+      env:
+        RELEASE_ACR: ${{ secrets.AZURE_REGISTRY }}
       run: |
         az login --identity
         ko version
-        RELEASE_ACR=${{ secrets.AZURE_REGISTRY }} ./hack/release/release.sh
+        ./hack/release/release.sh

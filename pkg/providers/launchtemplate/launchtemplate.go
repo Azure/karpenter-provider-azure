@@ -18,11 +18,10 @@ package launchtemplate
 
 import (
 	"context"
-	"strconv"
-	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	karplabels "github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	"github.com/samber/lo"
@@ -33,19 +32,12 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
+
 	"sigs.k8s.io/karpenter/pkg/scheduling"
 )
 
-const (
-	karpenterManagedTagKey = "karpenter.azure.com/cluster"
-
-	dataplaneLabel       = "kubernetes.azure.com/ebpf-dataplane"
-	azureCNIOverlayLabel = "kubernetes.azure.com/azure-cni-overlay"
-	subnetNameLabel      = "kubernetes.azure.com/network-subnet"
-	vnetGUIDLabel        = "kubernetes.azure.com/nodenetwork-vnetguid"
-	podNetworkTypeLabel  = "kubernetes.azure.com/podnetwork-type"
-)
-
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 type Template struct {
 	ScriptlessCustomData      string
 	ImageID                   string
@@ -77,6 +69,8 @@ type Provider struct {
 
 // TODO: add caching of launch templates
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvider imagefamily.NodeImageProvider, caBundle *string, clusterEndpoint string,
 	tenantID, subscriptionID, clusterResourceGroup string, kubeletIdentityClientID, resourceGroup, location, vnetGUID, provisionMode string,
 ) *Provider {
@@ -96,6 +90,8 @@ func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvi
 	}
 }
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (p *Provider) GetTemplate(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -123,9 +119,13 @@ func (p *Provider) GetTemplate(
 		return nil, err
 	}
 
+	launchTemplate.Tags = Tags(options.FromContext(ctx), nodeClass, nodeClaim)
+
 	return launchTemplate, nil
 }
 
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (p *Provider) getStaticParameters(
 	ctx context.Context,
 	instanceType *cloudprovider.InstanceType,
@@ -138,33 +138,17 @@ func (p *Provider) getStaticParameters(
 	}
 
 	subnetID := lo.Ternary(nodeClass.Spec.VNETSubnetID != nil, lo.FromPtr(nodeClass.Spec.VNETSubnetID), options.FromContext(ctx).SubnetID)
-
-	if isAzureCNIOverlay(ctx) {
-		// TODO: make conditional on pod subnet
-		vnetLabels, err := p.getVnetInfoLabels(subnetID)
-		if err != nil {
-			return nil, err
-		}
-		labels = lo.Assign(labels, vnetLabels)
+	baseLabels, err := karplabels.Get(ctx, nodeClass)
+	if err != nil {
+		return nil, err
 	}
+	labels = lo.Assign(baseLabels, labels)
 
-	if options.FromContext(ctx).NetworkDataplane == consts.NetworkDataplaneCilium {
-		// This label is required for the cilium agent daemonset because
-		// we select the nodes for the daemonset based on this label
-		//              - key: kubernetes.azure.com/ebpf-dataplane
-		//            operator: In
-		//            values:
-		//              - cilium
-
-		labels[dataplaneLabel] = consts.NetworkDataplaneCilium
-	}
-
-	tags := lo.Assign(options.FromContext(ctx).AdditionalTags, nodeClass.Spec.Tags)
-
+	// ATTENTION!!!: changes here will NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+	// Refactoring for code unification is not being invested immediately.
 	return &parameters.StaticParameters{
 		ClusterName:                    options.FromContext(ctx).ClusterName,
 		ClusterEndpoint:                p.clusterEndpoint,
-		Tags:                           tags,
 		Labels:                         labels,
 		CABundle:                       p.caBundle,
 		Arch:                           arch,
@@ -188,30 +172,18 @@ func (p *Provider) getStaticParameters(
 }
 
 func getAgentbakerNetworkPlugin(ctx context.Context) string {
-	if isAzureCNIOverlay(ctx) || isCiliumNodeSubnet(ctx) || isNetworkPluginNone(ctx) {
+	opts := options.FromContext(ctx)
+	if opts.IsAzureCNIOverlay() || opts.IsCiliumNodeSubnet() || opts.IsNetworkPluginNone() {
 		return consts.NetworkPluginNone
 	}
 	return consts.NetworkPluginAzure
 }
 
-func isNetworkPluginNone(ctx context.Context) bool {
-	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginNone
-}
-
-func isCiliumNodeSubnet(ctx context.Context) bool {
-	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeNone && options.FromContext(ctx).NetworkDataplane == consts.NetworkDataplaneCilium
-}
-
-func isAzureCNIOverlay(ctx context.Context) bool {
-	return options.FromContext(ctx).NetworkPlugin == consts.NetworkPluginAzure && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay
-}
-
+// ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
+// Refactoring for code unification is not being invested immediately.
 func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.Parameters) (*Template, error) {
-	// merge and convert to ARM tags
-	azureTags := mergeTags(params.Tags, map[string]string{karpenterManagedTagKey: params.ClusterName})
 	template := &Template{
 		ImageID:                   params.ImageID,
-		Tags:                      azureTags,
 		SubnetID:                  params.SubnetID,
 		IsWindows:                 params.IsWindows,
 		StorageProfileDiskType:    params.StorageProfileDiskType,
@@ -220,14 +192,15 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 		StorageProfileSizeGB:      params.StorageProfileSizeGB,
 	}
 
-	if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+	switch p.provisionMode {
+	case consts.ProvisionModeBootstrappingClient:
 		customData, cse, err := params.CustomScriptsNodeBootstrapping.GetCustomDataAndCSE(ctx)
 		if err != nil {
 			return nil, err
 		}
 		template.CustomScriptsCustomData = customData
 		template.CustomScriptsCSE = cse
-	} else {
+	case consts.ProvisionModeAKSScriptless:
 		// render user data
 		userData, err := params.ScriptlessCustomData.Script()
 		if err != nil {
@@ -237,26 +210,4 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 	}
 
 	return template, nil
-}
-
-// MergeTags takes a variadic list of maps and merges them together
-// with format acceptable to ARM (no / in keys, pointer to strings as values)
-func mergeTags(tags ...map[string]string) (result map[string]*string) {
-	return lo.MapEntries(lo.Assign(tags...), func(key string, value string) (string, *string) {
-		return strings.ReplaceAll(key, "/", "_"), lo.ToPtr(value)
-	})
-}
-
-func (p *Provider) getVnetInfoLabels(subnetID string) (map[string]string, error) {
-	vnetSubnetComponents, err := utils.GetVnetSubnetIDComponents(subnetID)
-	if err != nil {
-		return nil, err
-	}
-	vnetLabels := map[string]string{
-		subnetNameLabel:      vnetSubnetComponents.SubnetName,
-		vnetGUIDLabel:        p.vnetGUID,
-		azureCNIOverlayLabel: strconv.FormatBool(true),
-		podNetworkTypeLabel:  consts.NetworkPluginModeOverlay,
-	}
-	return vnetLabels, nil
 }

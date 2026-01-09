@@ -23,6 +23,8 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/provisionclients/models"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -45,7 +47,7 @@ func reverseVMMemoryOverhead(vmMemoryOverheadPercent float64, adjustedMemory flo
 	return adjustedMemory / (1 - vmMemoryOverheadPercent)
 }
 
-func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
+func ConvertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	q, err := resource.ParseQuantity(containerLogMaxSize)
 	if err == nil {
 		// This could be improved later
@@ -54,7 +56,7 @@ func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	return nil
 }
 
-func convertPodMaxPids(podPidsLimit *int64) *int32 {
+func ConvertPodMaxPids(podPidsLimit *int64) *int32 {
 	if podPidsLimit != nil {
 		podPidsLimitInt64 := *podPidsLimit
 		if podPidsLimitInt64 > int64(math.MaxInt32) {
@@ -68,4 +70,90 @@ func convertPodMaxPids(podPidsLimit *int64) *int32 {
 		}
 	}
 	return nil
+}
+
+// convertLocalDNSToModel converts v1beta1.LocalDNS to models.LocalDNSProfile
+func convertLocalDNSToModel(localDNS *v1beta1.LocalDNS) *models.LocalDNSProfile {
+	if localDNS == nil {
+		return nil
+	}
+
+	profile := &models.LocalDNSProfile{}
+
+	if localDNS.Mode != "" {
+		mode := string(localDNS.Mode)
+		profile.Mode = &mode
+	}
+
+	// Convert VnetDNSOverrides
+	if len(localDNS.VnetDNSOverrides) > 0 {
+		profile.VnetDNSOverrides = make(models.LocalDNSOverrides)
+		for _, override := range localDNS.VnetDNSOverrides {
+			if convertedOverride := convertLocalDNSZoneOverrideToModel(&override); convertedOverride != nil {
+				profile.VnetDNSOverrides[override.Zone] = *convertedOverride
+			}
+		}
+	}
+
+	// Convert KubeDNSOverrides
+	if len(localDNS.KubeDNSOverrides) > 0 {
+		profile.KubeDNSOverrides = make(models.LocalDNSOverrides)
+		for _, override := range localDNS.KubeDNSOverrides {
+			if convertedOverride := convertLocalDNSZoneOverrideToModel(&override); convertedOverride != nil {
+				profile.KubeDNSOverrides[override.Zone] = *convertedOverride
+			}
+		}
+	}
+
+	return profile
+}
+
+// convertLocalDNSZoneOverrideToModel converts v1beta1.LocalDNSZoneOverride to models.LocalDNSOverride
+func convertLocalDNSZoneOverrideToModel(override *v1beta1.LocalDNSZoneOverride) *models.LocalDNSOverride {
+	if override == nil {
+		return nil
+	}
+
+	modelOverride := &models.LocalDNSOverride{}
+
+	if override.QueryLogging != "" {
+		queryLogging := string(override.QueryLogging)
+		modelOverride.QueryLogging = &queryLogging
+	}
+
+	if override.Protocol != "" {
+		protocol := string(override.Protocol)
+		modelOverride.Protocol = &protocol
+	}
+
+	if override.ForwardDestination != "" {
+		forwardDest := string(override.ForwardDestination)
+		modelOverride.ForwardDestination = &forwardDest
+	}
+
+	if override.ForwardPolicy != "" {
+		forwardPolicy := string(override.ForwardPolicy)
+		modelOverride.ForwardPolicy = &forwardPolicy
+	}
+
+	if override.MaxConcurrent != nil {
+		modelOverride.MaxConcurrent = override.MaxConcurrent
+	}
+
+	if override.CacheDuration.Duration != nil {
+		seconds := int32(override.CacheDuration.Duration.Seconds())
+		modelOverride.CacheDurationInSeconds = &seconds
+	}
+
+	if override.ServeStaleDuration.Duration != nil {
+		seconds := int32(override.ServeStaleDuration.Duration.Seconds())
+		modelOverride.ServeStaleDurationInSeconds = &seconds
+	}
+
+	if override.ServeStale != "" {
+		serveStale := string(override.ServeStale)
+		modelOverride.ServeStale = &serveStale
+	}
+
+	return modelOverride
 }

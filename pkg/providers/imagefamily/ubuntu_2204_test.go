@@ -25,6 +25,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -61,6 +62,11 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	storageProfile := "ManagedDisks"
 	nodeBootstrappingClient := &fake.NodeBootstrappingAPI{}
 
+	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
+	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
+	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
+	localDNS := &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
+
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
 		taints,
@@ -70,6 +76,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		imageDistro,
 		storageProfile,
 		nodeBootstrappingClient,
+		fipsMode,
+		localDNS,
 	)
 
 	// Verify the returned bootstrapper is of the correct type
@@ -94,6 +102,8 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	assert.Equal(t, storageProfile, provisionBootstrapper.StorageProfile)
 	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
 	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
+	assert.Equal(t, fipsMode, provisionBootstrapper.FIPSMode, "FIPSMode field must match the input parameter")
+	assert.Equal(t, localDNS, provisionBootstrapper.LocalDNSProfile, "LocalDNSProfile field must match the input parameter")
 }
 
 func TestUbuntu2204_Name(t *testing.T) {

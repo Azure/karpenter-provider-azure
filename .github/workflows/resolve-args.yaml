@@ -16,7 +16,7 @@ jobs:
     steps:
       # Download the artifact and resolve the GIT_REF
       - name: Harden Runner
-        uses: step-security/harden-runner@ec9f2d5744a09debf3a187a3f4f675c53b671911 # v2.13.0
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           disable-sudo: true
           disable-telemetry: true
@@ -25,15 +25,18 @@ jobs:
             api.github.com:443
             github.com:443
 
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - if: github.event_name == 'workflow_run'
         uses: ./.github/actions/download-artifact
       - id: resolve-step
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
             echo GIT_REF="$(tail -n 1 /tmp/artifacts/metadata.txt)" >> "$GITHUB_OUTPUT"
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo GIT_REF="${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo GIT_REF="$SHA" >> "$GITHUB_OUTPUT"
           else
             echo GIT_REF="" >> "$GITHUB_OUTPUT"
           fi

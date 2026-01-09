@@ -30,11 +30,11 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
+	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
-	nodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
+	corenodeclaimutils "sigs.k8s.io/karpenter/pkg/utils/nodeclaim"
 )
 
 const (
@@ -138,14 +138,14 @@ func (c *CloudProvider) isImageVersionDrifted(
 ) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
 
-	id, err := utils.GetVMName(nodeClaim.Status.ProviderID)
+	id, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
 		//     I don't think we can get to Drift, until after ProviderID is set, so this should be fine/impossible.
 		return "", err
 	}
 
-	vm, err := c.instanceProvider.Get(ctx, id)
+	vm, err := c.vmInstanceProvider.Get(ctx, id)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
 		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
@@ -203,7 +203,7 @@ func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.N
 	nicName := instance.GenerateResourceName(nodeClaim.Name)
 
 	// TODO: Refactor all of AzConfig to be part of options
-	nic, err := c.instanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
+	nic, err := c.vmInstanceProvider.GetNic(ctx, options.FromContext(ctx).NodeResourceGroup, nicName)
 	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return "", nil
@@ -254,15 +254,15 @@ func (c *CloudProvider) isKubeletIdentityDrifted(ctx context.Context, nodeClaim 
 func (c *CloudProvider) getNodeForDrift(ctx context.Context, nodeClaim *karpv1.NodeClaim) (*v1.Node, error) {
 	logger := log.FromContext(ctx)
 
-	n, err := nodeclaimutils.NodeForNodeClaim(ctx, c.kubeClient, nodeClaim)
+	n, err := corenodeclaimutils.NodeForNodeClaim(ctx, c.kubeClient, nodeClaim)
 	if err != nil {
-		if nodeclaimutils.IsNodeNotFoundError(err) {
+		if corenodeclaimutils.IsNodeNotFoundError(err) {
 			// We do not return an error here as its expected within the lifecycle of the nodeclaims registration.
 			// Core's checks only for Launched status which means we've started the create, but the node doesn't nessicarially exist yet
 			// https://github.com/kubernetes-sigs/karpenter/blob/9877cf639e665eadcae9e46e5a702a1b30ced1d3/pkg/controllers/nodeclaim/disruption/drift.go#L51
 			return nil, nil
 		}
-		if nodeclaimutils.IsDuplicateNodeError(err) {
+		if corenodeclaimutils.IsDuplicateNodeError(err) {
 			logger.Info("duplicate node error detected, invariant violated")
 		}
 		return nil, err

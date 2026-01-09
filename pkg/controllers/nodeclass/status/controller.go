@@ -34,6 +34,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
 	"github.com/awslabs/operatorpkg/reasonable"
 )
@@ -47,6 +48,8 @@ type Controller struct {
 
 	kubernetesVersion *KubernetesVersionReconciler
 	nodeImage         *NodeImageReconciler
+	subnet            *SubnetReconciler
+	validation        *ValidationReconciler
 }
 
 func NewController(
@@ -54,12 +57,15 @@ func NewController(
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
+	subnetClient instance.SubnetsAPI,
 ) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
+		subnet:            NewSubnetReconciler(subnetClient),
+		validation:        NewValidationReconciler(),
 	}
 }
 
@@ -80,6 +86,8 @@ func (c *Controller) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeCl
 	for _, reconciler := range []reconciler{
 		c.kubernetesVersion,
 		c.nodeImage,
+		c.subnet,
+		c.validation,
 	} {
 		res, err := reconciler.Reconcile(ctx, nodeClass)
 		errs = multierr.Append(errs, err)

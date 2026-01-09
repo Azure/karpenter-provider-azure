@@ -26,25 +26,10 @@ import (
 
 func init() {
 	karpv1.RestrictedLabelDomains = karpv1.RestrictedLabelDomains.Insert(RestrictedLabelDomains...)
-	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Insert(
-		LabelSKUName,
-		LabelSKUFamily,
-		LabelSKUVersion,
-
-		LabelSKUCPU,
-		LabelSKUMemory,
-
-		LabelSKUAcceleratedNetworking,
-
-		LabelSKUStoragePremiumCapable,
-		LabelSKUStorageEphemeralOSMaxSize,
-
-		LabelSKUGPUName,
-		LabelSKUGPUManufacturer,
-		LabelSKUGPUCount,
-
-		AKSLabelCluster,
-	)
+	// Note that adding to WellKnownLabels here requires a corresponding update to
+	// computeRequirements in pkg/providers/instancetype/instancetype.go, because (as far as I can tell)
+	// Karpenter core expects that WellKnownLabels are mapped to requirements.
+	karpv1.WellKnownLabels = karpv1.WellKnownLabels.Union(AzureWellKnownLabels)
 }
 
 var (
@@ -58,6 +43,31 @@ var (
 		Group,
 	}
 
+	AzureWellKnownLabels = sets.New(
+		LabelSKUName,
+		LabelSKUFamily,
+		LabelSKUSeries,
+		LabelSKUVersion,
+
+		LabelSKUCPU,
+		LabelSKUMemory,
+		AKSLabelCPU,
+		AKSLabelMemory,
+
+		LabelSKUAcceleratedNetworking,
+
+		LabelSKUStoragePremiumCapable,
+		LabelSKUStorageEphemeralOSMaxSize,
+
+		LabelSKUGPUName,
+		LabelSKUGPUManufacturer,
+		LabelSKUGPUCount,
+
+		AKSLabelCluster,
+		AKSLabelMode,
+		AKSLabelScaleSetPriority,
+	)
+
 	RestrictedLabels = sets.New(
 		LabelSKUHyperVGeneration,
 	)
@@ -70,12 +80,16 @@ var (
 	HyperVGenerationV2 = "2"
 	ManufacturerNvidia = "nvidia"
 
-	LabelSKUName    = Group + "/sku-name"    // Standard_A1_v2
-	LabelSKUFamily  = Group + "/sku-family"  // A
+	LabelSKUName    = Group + "/sku-name"    // Standard_D4pls_v6
+	LabelSKUFamily  = Group + "/sku-family"  // D
+	LabelSKUSeries  = Group + "/sku-series"  // Dpls_v6
 	LabelSKUVersion = Group + "/sku-version" // numerical (without v), with 1 backfilled
 
 	LabelSKUCPU    = Group + "/sku-cpu"    // sku.vCPUs
 	LabelSKUMemory = Group + "/sku-memory" // sku.MemoryGB
+	// AKS domain.
+	AKSLabelCPU    = AKSLabelDomain + "/sku-cpu"    // Same value as sku-cpu.
+	AKSLabelMemory = AKSLabelDomain + "/sku-memory" // Same value as sku-memory.
 
 	// selected capabilities (from additive features in VM size name, or from SKU capabilities)
 	LabelSKUAcceleratedNetworking = Group + "/sku-networking-accelerated" // sku.AcceleratedNetworkingEnabled
@@ -96,12 +110,32 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
+	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
+	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
 )
 
 const (
+	ModeUser   = "user"
+	ModeSystem = "system"
+)
+
+const (
+	UbuntuImageFamily     = "Ubuntu"
 	Ubuntu2204ImageFamily = "Ubuntu2204"
+	Ubuntu2404ImageFamily = "Ubuntu2404"
 	AzureLinuxImageFamily = "AzureLinux"
+)
+
+const (
+	ScaleSetPriorityRegular = "regular"
+	ScaleSetPrioritySpot    = "spot"
+)
+
+var UbuntuFamilies = sets.New(
+	UbuntuImageFamily,
+	Ubuntu2204ImageFamily,
+	Ubuntu2404ImageFamily,
 )
