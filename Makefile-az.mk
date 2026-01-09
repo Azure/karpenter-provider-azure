@@ -193,7 +193,7 @@ az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use
 	az group delete --name $(AZURE_RESOURCE_GROUP)
 
 az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart and set middleware logging flag
-	LOG_LEVEL=debug hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING)
+	LOG_LEVEL=debug hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING) $(PROVISION_MODE)
 
 az-configure-values-aksmachine:  ## Generate cluster-related values for Karpenter Helm chart
 	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING) aksmachineapi $(AKS_MACHINES_POOL_NAME)

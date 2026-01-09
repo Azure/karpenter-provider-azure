@@ -51,7 +51,7 @@ controller:
     - name: SIG_SUBSCRIPTION_ID
       value: "${AZURE_SIG_SUBSCRIPTION_ID}"
     - name: PROVISION_MODE
-      value: "${PROVISION_MODE}"
+      value: "${PROVISION_MODE:-aksscriptless}"
     - name: AKS_MACHINES_POOL_NAME
       value: "${AKS_MACHINES_POOL_NAME}"
     - name: ARM_RESOURCE_GROUP
