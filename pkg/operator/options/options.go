@@ -164,6 +164,9 @@ func (o *Options) Parse(fs *coreoptions.FlagSet, args ...string) error {
 	// ClusterID is generated from cluster endpoint
 	o.ClusterID = getAKSClusterID(o.GetAPIServerName())
 
+	// Log disk encryption configuration
+	fmt.Printf("Options parsed - DiskEncryptionSetID: %q (empty=%v)\n", o.DiskEncryptionSetID, o.DiskEncryptionSetID == "")
+
 	return nil
 }
 
