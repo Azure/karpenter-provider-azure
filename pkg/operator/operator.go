@@ -187,6 +187,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		ctx,
 		imageResolver,
 		imageProvider,
+		operator.GetClient(),
 		lo.Must(getCABundle(operator.GetConfig())),
 		options.FromContext(ctx).ClusterEndpoint,
 		azConfig.TenantID,

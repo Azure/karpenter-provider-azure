@@ -92,7 +92,12 @@ func ErrorCodeForMetrics(err error) string {
 
 // GetManagedExtensionNames gets the names of the VM extensions managed by Karpenter.
 // This is a set of 1 or 2 extensions (depending on provisionMode): aksIdentifyingExtension and (sometimes) cse.
+// OpenShift mode returns empty list as no AKS-specific extensions are used.
 func GetManagedExtensionNames(provisionMode string) []string {
+	// OpenShift mode doesn't use any AKS extensions
+	if provisionMode == consts.ProvisionModeOpenShift {
+		return []string{}
+	}
 	result := []string{
 		aksIdentifyingExtensionName,
 	}
@@ -575,9 +580,15 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
 
-	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+	switch opts.ProvisionMode {
+	case consts.ProvisionModeOpenShift:
+		// OpenShift mode: use userData directly from the NodeClass (Ignition config)
+		fmt.Printf("OpenShift mode: use userData directly from the NodeClass (Ignition config)", "userData", opts.LaunchTemplate.OpenShiftUserData)
+		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.OpenShiftUserData)
+	case consts.ProvisionModeBootstrappingClient:
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
-	} else {
+	default:
+		// aksscriptless mode
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.ScriptlessCustomData)
 	}
 
@@ -720,17 +731,20 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
 
-	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
-	if err != nil {
-		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
-	}
 	var nsgID string
-	if !isAKSManagedVNET {
-		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+	// In OpenShift mode, skip the AKS NSG lookup - the subnet already has an NSG configured
+	if p.provisionMode != consts.ProvisionModeOpenShift {
+		isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
 		if err != nil {
-			return nil, fmt.Errorf("getting managed network security group: %w", err)
+			return nil, fmt.Errorf("checking if vnet is managed: %w", err)
 		}
-		nsgID = lo.FromPtr(nsg.ID)
+		if !isAKSManagedVNET {
+			nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("getting managed network security group: %w", err)
+			}
+			nsgID = lo.FromPtr(nsg.ID)
+		}
 	}
 
 	// TODO: Not returning after launching this LRO because
@@ -767,7 +781,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		LaunchTemplate:      launchTemplate,
 		InstanceType:        instanceType,
 		ProvisionMode:       p.provisionMode,
-		UseSIG:              options.FromContext(ctx).UseSIG,
+		UseSIG:              options.FromContext(ctx).UseSIG || p.provisionMode == consts.ProvisionModeOpenShift,
 		DiskEncryptionSetID: p.diskEncryptionSetID,
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
 	})
@@ -830,17 +844,21 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				return err
 			}
 
-			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
+			// OpenShift mode skips all AKS-specific extensions (CSE and billing extension)
+			// as the node is bootstrapped via Ignition config and doesn't participate in AKS billing
+			if p.provisionMode != consts.ProvisionModeOpenShift {
+				if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+					err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
+					if err != nil {
+						// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
+						return err
+					}
+				}
+
+				err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
 				if err != nil {
-					// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
 					return err
 				}
-			}
-
-			err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
-			if err != nil {
-				return err
 			}
 
 			return nil

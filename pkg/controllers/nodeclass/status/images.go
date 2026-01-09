@@ -113,6 +113,19 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
 
+	// If spec.imageID is set directly (e.g., OpenShift mode with RHCOS), use it as the only valid image.
+	// This bypasses the normal AKS image resolution and ensures drift detection works correctly.
+	if nodeClass.Spec.ImageID != nil && *nodeClass.Spec.ImageID != "" {
+		directImage := v1beta1.NodeImage{
+			ID:           *nodeClass.Spec.ImageID,
+			Requirements: []corev1.NodeSelectorRequirement{},
+		}
+		nodeClass.Status.Images = []v1beta1.NodeImage{directImage}
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+		logger.Info("using direct imageID from spec", "imageID", *nodeClass.Spec.ImageID)
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+
 	// validate FIPS + useSIG
 	fipsMode := nodeClass.Spec.FIPSMode
 	useSIG := options.FromContext(ctx).UseSIG

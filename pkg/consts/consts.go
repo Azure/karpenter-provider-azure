@@ -39,4 +39,7 @@ const (
 
 	ProvisionModeAKSScriptless       = "aksscriptless"
 	ProvisionModeBootstrappingClient = "bootstrappingclient"
+	// ProvisionModeOpenShift is for OpenShift/HyperShift clusters where userData (Ignition config)
+	// is provided externally via the NodeClass spec, bypassing all AKS-specific bootstrapping.
+	ProvisionModeOpenShift = "openshift"
 )

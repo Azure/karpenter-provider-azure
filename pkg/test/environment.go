@@ -165,6 +165,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		ctx,
 		imageFamilyResolver,
 		imageFamilyProvider,
+		env.Client,
 		lo.ToPtr("ca-bundle"),
 		testOptions.ClusterEndpoint,
 		"test-tenant",

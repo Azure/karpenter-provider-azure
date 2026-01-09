@@ -48,13 +48,26 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum=2048
 	// osDiskSizeGB is the size of the OS disk in GB.
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
-	// ImageID is the ID of the image that instances use.
-	// Not exposed in the API yet
-	ImageID *string `json:"-"`
+	// ImageID is the Azure resource ID of the image to use for nodes.
+	// When specified, this takes precedence over ImageFamily.
+	// For OpenShift mode, this should be an RHCOS image.
+	// Example: /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/galleries/{gallery}/images/{image}/versions/{version}
+	// +optional
+	ImageID *string `json:"imageID,omitempty"`
 	// ImageFamily is the image family that instances use.
 	// +kubebuilder:default=Ubuntu
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	ImageFamily *string `json:"imageFamily,omitempty"`
+	// UserData contains base64-encoded user data to be passed to the VM at launch time.
+	// For OpenShift mode, this should be an Ignition config.
+	// When specified, this bypasses the default AKS bootstrap script generation.
+	// +optional
+	UserData *string `json:"userData,omitempty"`
+	// UserDataSecretRef references a Secret containing the userData.
+	// The Secret must have a key named "userData" with the base64-encoded content.
+	// If both UserData and UserDataSecretRef are specified, UserDataSecretRef takes precedence.
+	// +optional
+	UserDataSecretRef *SecretReference `json:"userDataSecretRef,omitempty"`
 	// FIPSMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
@@ -102,6 +115,17 @@ type Security struct {
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
 	// +optional
 	EncryptionAtHost *bool `json:"encryptionAtHost,omitempty"`
+}
+
+// SecretReference contains a reference to a Secret in a specific namespace.
+type SecretReference struct {
+	// Name is the name of the secret.
+	// +required
+	Name string `json:"name"`
+	// Namespace is the namespace of the secret.
+	// Defaults to "openshift-machine-api" if not specified.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // +kubebuilder:validation:Enum:={Preferred,Required,Disabled}
@@ -405,6 +429,28 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 		return *in.Spec.Security.EncryptionAtHost
 	}
 	return false
+}
+
+// GetUserDataSecretNamespace returns the namespace for the userDataSecretRef.
+// Defaults to "openshift-machine-api" if not specified.
+func (in *AKSNodeClass) GetUserDataSecretNamespace() string {
+	if in.Spec.UserDataSecretRef == nil {
+		return ""
+	}
+	if in.Spec.UserDataSecretRef.Namespace != "" {
+		return in.Spec.UserDataSecretRef.Namespace
+	}
+	return "openshift-machine-api"
+}
+
+// HasUserDataSecretRef returns true if a userDataSecretRef is configured.
+func (in *AKSNodeClass) HasUserDataSecretRef() bool {
+	return in.Spec.UserDataSecretRef != nil && in.Spec.UserDataSecretRef.Name != ""
+}
+
+// HasUserData returns true if userData is configured (either inline or via secret ref).
+func (in *AKSNodeClass) HasUserData() bool {
+	return (in.Spec.UserData != nil && *in.Spec.UserData != "") || in.HasUserDataSecretRef()
 }
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.

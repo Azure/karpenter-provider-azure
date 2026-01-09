@@ -109,14 +109,28 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
-		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
+	validModes := []string{
+		consts.ProvisionModeAKSScriptless,
+		consts.ProvisionModeBootstrappingClient,
+		consts.ProvisionModeOpenShift,
+	}
+	isValid := false
+	for _, mode := range validModes {
+		if o.ProvisionMode == mode {
+			isValid = true
+			break
+		}
+	}
+	if !isValid {
+		return fmt.Errorf("provision-mode is invalid: %s (valid modes: %v)", o.ProvisionMode, validModes)
 	}
 	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
 		}
 	}
+	// OpenShift mode has relaxed requirements - userData comes from the NodeClass,
+	// not from AKS-specific bootstrap scripts
 	return nil
 }
 
@@ -127,7 +141,8 @@ func (o *Options) validateRequiredFields() error {
 	if o.ClusterName == "" {
 		return fmt.Errorf("missing field, cluster-name")
 	}
-	if o.KubeletClientTLSBootstrapToken == "" {
+	// OpenShift mode gets kubelet bootstrap config from Ignition, not from AKS bootstrap token
+	if o.KubeletClientTLSBootstrapToken == "" && o.ProvisionMode != consts.ProvisionModeOpenShift {
 		return fmt.Errorf("missing field, kubelet-bootstrap-token")
 	}
 	if o.SSHPublicKey == "" {

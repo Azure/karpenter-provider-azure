@@ -49,12 +49,16 @@ rules:
   - apiGroups: ["policy"]
     resources: ["poddisruptionbudgets"]
     verbs: ["get", "list", "watch"]
+  # read secrets for openshift mode
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
   # Write
   - apiGroups: ["karpenter.sh"]
-    resources: ["nodeclaims", "nodeclaims/status"]
+    resources: ["nodeclaims", "nodeclaims/status", "nodeclaims/finalizers"]
     verbs: ["create", "delete", "update", "patch"]
   - apiGroups: ["karpenter.sh"]
-    resources: ["nodepools", "nodepools/status", "nodeoverlays/status"]
+    resources: ["nodepools", "nodepools/status", "nodepools/finalizers", "nodeoverlays/status"]
     verbs: ["update", "patch"]
   - apiGroups: [""]
     resources: ["events"]

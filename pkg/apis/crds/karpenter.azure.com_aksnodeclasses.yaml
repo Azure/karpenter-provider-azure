@@ -628,6 +628,13 @@ spec:
                 - Ubuntu2404
                 - AzureLinux
                 type: string
+              imageID:
+                description: |-
+                  ImageID is the Azure resource ID of the image to use for nodes.
+                  When specified, this takes precedence over ImageFamily.
+                  For OpenShift mode, this should be an RHCOS image.
+                  Example: /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/galleries/{gallery}/images/{image}/versions/{version}
+                type: string
               kubelet:
                 description: |-
                   Kubelet defines args to be used when configuring kubelet on provisioned nodes.
@@ -992,6 +999,29 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              userData:
+                description: |-
+                  UserData contains base64-encoded user data to be passed to the VM at launch time.
+                  For OpenShift mode, this should be an Ignition config.
+                  When specified, this bypasses the default AKS bootstrap script generation.
+                type: string
+              userDataSecretRef:
+                description: |-
+                  UserDataSecretRef references a Secret containing the userData.
+                  The Secret must have a key named "userData" with the base64-encoded content.
+                  If both UserData and UserDataSecretRef are specified, UserDataSecretRef takes precedence.
+                properties:
+                  name:
+                    description: Name is the name of the secret.
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace is the namespace of the secret.
+                      Defaults to "openshift-machine-api" if not specified.
+                    type: string
+                required:
+                - name
+                type: object
               vnetSubnetID:
                 description: |-
                   VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
