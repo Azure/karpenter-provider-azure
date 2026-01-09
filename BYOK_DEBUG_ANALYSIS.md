@@ -761,3 +761,112 @@ watch -n 2 'kubectl get pods -o wide && kubectl get nodes && kubectl get nodecla
 - **CloudProvider**: `pkg/cloudprovider/cloudprovider.go`
 - **BYOK Test Suite**: `test/suites/byok/suite_test.go`
 - **Azure Documentation**: [AKS Customer-Managed Keys](https://learn.microsoft.com/en-us/azure/aks/azure-disk-customer-managed-keys)
+
+---
+
+## Section 9: Test Execution Analysis - Managed Karpenter Failure
+
+### Observed Failure Pattern
+
+When running the test against managed Karpenter, the following occurs:
+
+1. **Pod Creation**: Pod is created successfully and enters `Pending` phase
+2. **Node Scheduling Failure**: Pod cannot be scheduled: `0/3 nodes are available: 3 node(s) had untolerated taint {CriticalAddonsOnly: }`
+3. **No NodeClaim Created**: Despite pod being unschedulable, no new NodeClaim is created for provisioning
+4. **Test Fails Immediately**: Phase 5 fails within 60ms - no time for Karpenter to act
+5. **Pod Cleanup**: Pod is deleted during AfterEach
+
+### Root Cause: Resource Creation Order
+
+**The critical issue**: NodePool is created before NodeClass exists
+
+In Phase 4, the test does:
+```go
+env.ExpectCreated(nodeClass, nodePool, pod)
+```
+
+This attempts to create all three simultaneously. However:
+- `nodePool` references `nodeClass`
+- When `nodePool` is created before `nodeClass` is persisted, the reference becomes invalid
+- Karpenter cannot resolve the NodeClass for the NodePool
+- No NodeClaims are created because the NodePool is unresolvable
+
+**Evidence from earlier test runs** (before phase reorganization):
+```
+Failed resolving NodeClass
+AKSNodeClass.karpenter.azure.com "roachgrass-1-hhfpvjsbmu" not found
+```
+
+This demonstrates the NodePool is trying to reference a NodeClass that doesn't exist in the cluster yet.
+
+### Solution: Sequential Resource Creation
+
+**Reorder Phase 4 to create resources separately**:
+
+1. Create NodeClass first and wait for it
+2. Create NodePool second (which now has the NodeClass available)
+3. Create Pod third (which can now be scheduled)
+
+This ensures proper dependency resolution in managed Karpenter environments.
+
+### Recommended Test Changes
+
+**Change Phase 4 from**:
+```go
+By("Phase 4: Applying resources to Kubernetes")
+env.ExpectCreated(nodeClass, nodePool, pod)
+```
+
+**To**:
+```go
+By("Phase 4: Applying NodeClass to Kubernetes")
+env.ExpectCreated(nodeClass)
+By("NodeClass created successfully")
+
+By("Phase 4b: Applying NodePool to Kubernetes")
+env.ExpectCreated(nodePool)
+By("NodePool created and linked to NodeClass")
+
+By("Phase 4c: Applying Pod to Kubernetes")
+env.ExpectCreated(pod)
+By("Pod created and ready for scheduling")
+```
+
+This explicit sequencing:
+- Ensures NodeClass exists before NodePool references it
+- Allows Karpenter time to reconcile NodePool with its NodeClass reference
+- Gives scheduler time to create NodeClaim for unschedulable pods
+- Makes the test more robust across different environments
+
+### Additional Logging to Detect This Issue
+
+Add logging to the test to verify resource state at each step:
+
+```go
+By("Verifying NodeClass is available in cluster")
+retrievedNodeClass := &v1beta1.AKSNodeClass{}
+Expect(env.Client.Get(ctx, client.ObjectKey{Name: nodeClass.Name, Namespace: nodeClass.Namespace}, retrievedNodeClass)).To(Succeed(), "NodeClass should be retrievable from cluster")
+
+By("Verifying NodePool is linked to NodeClass")
+retrievedNodePool := &karpv1.NodePool{}
+Expect(env.Client.Get(ctx, client.ObjectKey{Name: nodePool.Name, Namespace: nodePool.Namespace}, retrievedNodePool)).To(Succeed(), "NodePool should be retrievable from cluster")
+Expect(retrievedNodePool.Spec.Template.Spec.NodeClassRef.Name).To(Equal(nodeClass.Name), "NodePool should reference correct NodeClass")
+
+By("Checking for NodeClaims after pod creation")
+nodeClaims := &karpv1.NodeClaimList{}
+Expect(env.Client.List(ctx, nodeClaims)).To(Succeed(), "Should be able to list NodeClaims")
+Expect(len(nodeClaims.Items)).To(BeGreaterThan(0), "At least one NodeClaim should be created for pending pod")
+```
+
+These checks verify:
+- NodeClass is actually persisted in the cluster
+- NodePool's reference to NodeClass is correct
+- Karpenter has created a NodeClaim to handle the pending pod
+
+### Why This Matters for Managed Karpenter
+
+Managed Karpenter has stricter validation and reconciliation timing:
+- Resources must exist in cluster API before dependent resources reference them
+- Self-hosted Karpenter may tolerate temporary reference inconsistencies
+- Managed addon enforces proper dependency chains
+- Test must respect the same ordering as production scenarios

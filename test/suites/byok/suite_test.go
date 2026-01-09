@@ -91,7 +91,7 @@ var _ = Describe("BYOK", func() {
 		env.ExpectCreated(nodeClass, nodePool, pod)
 
 		By("Phase 5: Waiting for VM to be created and node to be registered")
-		env.ExpectCreatedNodeCount("==", 1)
+		env.EventuallyExpectCreatedNodeCount("==", 1)
 		By("Node successfully created and registered")
 
 		By("Phase 6: Verifying VM disk encryption configuration")
