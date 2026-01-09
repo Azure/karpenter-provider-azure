@@ -116,9 +116,9 @@ func TestAzure(t *testing.T) {
 	azureEnvBootstrap = test.NewEnvironment(ctxBootstrap, env)
 
 	fakeClock = &clock.FakeClock{}
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider)
-	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnv.InstanceTypeStore)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
@@ -1074,6 +1074,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(*vm.Properties.StorageProfile.OSDisk.DiskSizeGB).To(Equal(int32(128)))
 				Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).To(BeNil())
 			})
+
 			It("should select NvmeDisk for v6 skus with maxNvmeDiskSize > 0", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
 					NodeSelectorRequirement: v1.NodeSelectorRequirement{
@@ -2333,6 +2334,8 @@ var _ = Describe("InstanceType Provider", func() {
 				{Name: v1beta1.AKSLabelMemory, Label: v1beta1.AKSLabelMemory, ValueFunc: func() string { return "8192" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.AKSLabelMode + "=user", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "user" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				{Name: v1beta1.AKSLabelMode + "=system", Label: v1beta1.AKSLabelMode, ValueFunc: func() string { return "system" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				{Name: v1beta1.AKSLabelScaleSetPriority + "=regular", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "regular" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
+				{Name: v1beta1.AKSLabelScaleSetPriority + "=spot", Label: v1beta1.AKSLabelScaleSetPriority, ValueFunc: func() string { return "spot" }, ExpectedInKubeletLabels: true, ExpectedOnNode: true},
 				// Deprecated Labels -- note that these are not expected in kubelet labels or on the node.
 				// They are written by CloudProvider so don't need to be sent to kubelet, and they aren't required on the node object because Karpenter does a mapping from
 				// the new labels to the old labels for compatibility.
@@ -2486,10 +2489,11 @@ var _ = Describe("InstanceType Provider", func() {
 				v1beta1.AKSLabelKubeletIdentityClientID: test.Options().KubeletIdentityClientID,
 				"kubernetes.azure.com/mode":             "user", // TODO: Will become a WellKnownLabel soon
 				//We expect the vnetInfoLabels because we're simulating network plugin Azure by default and they are included there
-				labels.AKSLabelSubnetName:      "aks-subnet",
-				labels.AKSLabelVNetGUID:        test.Options().VnetGUID,
-				labels.AKSLabelAzureCNIOverlay: strconv.FormatBool(true),
-				labels.AKSLabelPodNetworkType:  consts.NetworkPluginModeOverlay,
+				labels.AKSLabelSubnetName:          "aks-subnet",
+				labels.AKSLabelVNetGUID:            test.Options().VnetGUID,
+				labels.AKSLabelAzureCNIOverlay:     strconv.FormatBool(true),
+				labels.AKSLabelPodNetworkType:      consts.NetworkPluginModeOverlay,
+				karpv1.NodeDoNotSyncTaintsLabelKey: "true",
 			}
 
 			It("should write other (non-schedulable) labels to kubelet", func() {
