@@ -715,4 +715,79 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 			Expect(result).To(BeFalse())
 		})
 	})
+
+	Context("BuildJSONFromAKSMachine", func() {
+		It("should return empty JSON object for nil machine", func() {
+			result := BuildJSONFromAKSMachine(nil)
+			Expect(result).To(Equal("{}"))
+		})
+
+		It("should return valid JSON for a minimal machine", func() {
+			machine := &armcontainerservice.Machine{
+				Name: lo.ToPtr("test-machine"),
+			}
+			result := BuildJSONFromAKSMachine(machine)
+			Expect(result).To(ContainSubstring(`"name":"test-machine"`))
+		})
+
+		It("should return valid JSON for a fully populated machine", func() {
+			machine := &armcontainerservice.Machine{
+				Name:  lo.ToPtr("test-machine"),
+				Zones: []*string{lo.ToPtr("1")},
+				Properties: &armcontainerservice.MachineProperties{
+					NodeImageVersion: lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15"),
+					Hardware: &armcontainerservice.MachineHardwareProfile{
+						VMSize: lo.ToPtr("Standard_D2s_v3"),
+					},
+					OperatingSystem: &armcontainerservice.MachineOSProfile{
+						OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
+						OSSKU:        lo.ToPtr(armcontainerservice.OSSKUUbuntu2204),
+						OSDiskSizeGB: lo.ToPtr(int32(128)),
+						OSDiskType:   lo.ToPtr(armcontainerservice.OSDiskTypeManaged),
+						EnableFIPS:   lo.ToPtr(false),
+					},
+					Kubernetes: &armcontainerservice.MachineKubernetesProfile{
+						OrchestratorVersion:      lo.ToPtr("1.29.0"),
+						MaxPods:                  lo.ToPtr(int32(30)),
+						NodeLabels:               map[string]*string{"env": lo.ToPtr("test")},
+						NodeInitializationTaints: []*string{lo.ToPtr("node.kubernetes.io/not-ready:NoSchedule")},
+					},
+					Mode:     lo.ToPtr(armcontainerservice.AgentPoolModeUser),
+					Priority: lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular),
+					Security: &armcontainerservice.MachineSecurityProfile{
+						EnableEncryptionAtHost: lo.ToPtr(false),
+					},
+					Tags: map[string]*string{
+						"karpenter.sh/nodepool": lo.ToPtr("default"),
+					},
+				},
+			}
+
+			result := BuildJSONFromAKSMachine(machine)
+
+			// Verify it's valid JSON by checking key fields are present
+			Expect(result).To(ContainSubstring(`"name":"test-machine"`))
+			Expect(result).To(ContainSubstring(`"zones":["1"]`))
+			Expect(result).To(ContainSubstring(`"nodeImageVersion":"AKSUbuntu-2204gen2containerd-2023.11.15"`))
+			Expect(result).To(ContainSubstring(`"vmSize":"Standard_D2s_v3"`))
+			Expect(result).To(ContainSubstring(`"osType":"Linux"`))
+			Expect(result).To(ContainSubstring(`"osSKU":"Ubuntu2204"`))
+			Expect(result).To(ContainSubstring(`"orchestratorVersion":"1.29.0"`))
+			Expect(result).To(ContainSubstring(`"maxPods":30`))
+			Expect(result).To(ContainSubstring(`"nodeLabels":{"env":"test"}`))
+			Expect(result).To(ContainSubstring(`"nodeInitializationTaints":["node.kubernetes.io/not-ready:NoSchedule"]`))
+			Expect(result).To(ContainSubstring(`"mode":"User"`))
+			Expect(result).To(ContainSubstring(`"priority":"Regular"`))
+		})
+
+		It("should handle machine with empty properties", func() {
+			machine := &armcontainerservice.Machine{
+				Name:       lo.ToPtr("test-machine"),
+				Properties: &armcontainerservice.MachineProperties{},
+			}
+			result := BuildJSONFromAKSMachine(machine)
+			Expect(result).To(ContainSubstring(`"name":"test-machine"`))
+			Expect(result).To(ContainSubstring(`"properties":{}`))
+		})
+	})
 })
