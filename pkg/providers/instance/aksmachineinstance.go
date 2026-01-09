@@ -205,6 +205,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 		}
 	}
 
+	log.FromContext(ctx).Info("updating AKS machine", "aksMachineName", aksMachineName, "aksMachine", BuildJSONFromAKSMachine(&aksMachine))
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
 		if IsAKSMachineOrMachinesPoolNotFound(err) {
@@ -408,7 +409,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 
 	// Call the AKS machine API with the template to create the AKS machine instance
-	log.FromContext(ctx).V(1).Info("creating AKS machine", "aksMachineName", aksMachineName, "instance-type", instanceType.Name)
+	log.FromContext(ctx).V(1).Info("creating AKS machine", "aksMachineName", aksMachineName, "instance-type", instanceType.Name, "aksMachine", BuildJSONFromAKSMachine(aksMachineTemplate))
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)

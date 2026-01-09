@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -328,4 +329,17 @@ func validateRetrievedAKSMachineBasicProperties(aksMachine *armcontainerservice.
 
 func shouldAKSMachinesBeVisible(ctx context.Context) bool {
 	return options.FromContext(ctx).ProvisionMode == consts.ProvisionModeAKSMachineAPI || options.FromContext(ctx).ManageExistingAKSMachines
+}
+
+// BuildJSONFromAKSMachine returns a JSON string representation of an AKS Machine for logging/debugging purposes.
+// Returns an error string if marshaling fails.
+func BuildJSONFromAKSMachine(aksMachine *armcontainerservice.Machine) string {
+	if aksMachine == nil {
+		return "{}"
+	}
+	bytes, err := json.Marshal(aksMachine)
+	if err != nil {
+		return "{\"error\": \"failed to marshal machine: " + err.Error() + "\"}"
+	}
+	return string(bytes)
 }
