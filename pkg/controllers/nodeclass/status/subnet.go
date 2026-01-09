@@ -44,9 +44,9 @@ func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
 }
 
 const (
-	SubnetUnreadyReasonNotFound = "SubnetNotFound"
-
-	SubnetUnreadyReasonIDInvalid = "SubnetIDInvalid"
+	SubnetUnreadyReasonNotFound     = "SubnetNotFound"
+	SubnetUnreadyReasonIDInvalid    = "SubnetIDInvalid"
+	SubnetUnreadyReasonUnknownError = "SubnetUnknownError"
 )
 
 const (
@@ -122,6 +122,11 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 			)
 			return reconcile.Result{RequeueAfter: time.Minute}, err
 		}
+		nodeClass.StatusConditions().SetFalse(
+			v1beta1.ConditionTypeSubnetsReady,
+			SubnetUnreadyReasonUnknownError,
+			fmt.Sprintf("unknown error getting subnet: %s", err.Error()),
+		)
 		logger.Error(err, "getting subnet failed during reconciliation with unknown error", "error", err.Error())
 		return reconcile.Result{}, err
 	}
