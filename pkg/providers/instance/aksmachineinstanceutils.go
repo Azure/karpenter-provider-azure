@@ -339,7 +339,16 @@ func BuildJSONFromAKSMachine(aksMachine *armcontainerservice.Machine) string {
 	}
 	bytes, err := json.Marshal(aksMachine)
 	if err != nil {
-		return "{\"error\": \"failed to marshal machine: " + err.Error() + "\"}"
+		// Safely marshal an error object to ensure any quotes in the error message are properly escaped.
+		errorObj := map[string]string{
+			"error": fmt.Sprintf("failed to marshal machine: %s", err.Error()),
+		}
+		errorBytes, marshalErr := json.Marshal(errorObj)
+		if marshalErr != nil {
+			// Fallback to a simple, static JSON error string if marshaling the error object also fails.
+			return `{"error":"failed to marshal machine and error response"}`
+		}
+		return string(errorBytes)
 	}
 	return string(bytes)
 }
