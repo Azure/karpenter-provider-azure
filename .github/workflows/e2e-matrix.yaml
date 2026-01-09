@@ -34,7 +34,6 @@ jobs:
   initialize-generative-params:
     runs-on: ubuntu-latest
     outputs:
-      E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
       suite_matrix: ${{ steps.generate-suite-matrix.outputs.suite_matrix }}
     steps:
       - name: Harden Runner
@@ -46,12 +45,6 @@ jobs:
           # no allowed endpoints
           allowed-endpoints: >
 
-      - id: generate-e2e-run-hash
-        run: |
-          E2E_HASH="$RANDOM$RANDOM"
-          echo "Using e2e hash \"$E2E_HASH\""
-          echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
-      
       - id: generate-suite-matrix
         run: |
           if [ -z "${{ inputs.suites }}" ] || [ "${{ inputs.suites }}" = "All" ]; then
@@ -76,7 +69,6 @@ jobs:
     with:
       git_ref: ${{ inputs.git_ref }}
       suite: ${{ matrix.suite }}
-      hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
       location: ${{ inputs.location }}
       provisionmode: ${{ inputs.provisionmode || 'aksscriptless' }}
   #     k8s_version: ${{ inputs.k8s_version }}

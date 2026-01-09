@@ -7,9 +7,6 @@ on:
       suite:
         type: string
         required: true
-      hash:
-        type: string
-        required: true
       location:
         type: string
         description: "the azure location to run the e2e test in"
@@ -28,6 +25,35 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+  workflow_dispatch:
+    inputs:
+      suite:
+        type: choice
+        required: true
+        description: "Test suite to run"
+        options:
+          - ACR
+          - BYOK
+          - Chaos
+          - Consolidation
+          - Drift
+          - GPU
+          - InPlaceUpdate
+          - Integration
+          - KubernetesUpgrade
+          - NodeClaim
+          - Scheduling
+          - Spot
+          - Subnet
+          - Utilization
+      location:
+        type: choice
+        description: "Azure location to run the e2e test in"
+        default: westus3
+        options:
+          - westus3
+          - southcentralus
+          - eastus
 
 permissions:
   contents: read
@@ -116,17 +142,15 @@ jobs:
       - name: generate rg name
         env:
           SUITE: ${{ inputs.suite }}
-          HASH: ${{ inputs.hash }}
         run: |
-          RG_NAME=$(echo karpenter-e2e-"$SUITE"-"$HASH" | awk '{print tolower($0)}')
+          RG_NAME=$(echo karpenter-e2e-"$SUITE"-${{ github.run_id }} | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
         env:
           SUITE: ${{ inputs.suite }}
-          HASH: ${{ inputs.hash }}
         run: |
-          ACR_NAME=$(echo "$SUITE"acr"$HASH" | awk '{print tolower($0)}')
+          ACR_NAME=$(echo "$SUITE"acr${{ github.run_id }} | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
