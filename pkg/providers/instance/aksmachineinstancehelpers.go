@@ -65,14 +65,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// GPUProfile
-	var gpuProfilePtr *armcontainerservice.GPUProfile
-	// If none is specified, then that's not GPU instance, so nil is fine. Current version of AKS machine API supports this.
-	if utils.IsNvidiaEnabledSKU(instanceType.Name) {
-		gpuProfilePtr = &armcontainerservice.GPUProfile{
-			Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall),
-			// DriverType: nil,
-		}
-	}
+	gpuProfilePtr := configureGPUProfile(instanceType)
 
 	// OrchestratorVersion (i.e., Kubernetes version)
 	orchestratorVersion, err := nodeClass.GetKubernetesVersion()
@@ -87,13 +80,9 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// OSDiskType
-	osDiskTypePtr := lo.ToPtr(armcontainerservice.OSDiskTypeManaged) // Karpenter defaults to Managed, but decides whether to use Ephemeral
-	sku, err := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	osDiskTypePtr, err := configureOSDiskType(ctx, p.instanceTypeProvider, nodeClass, instanceType)
 	if err != nil {
 		return nil, err
-	}
-	if instancetype.UseEphemeralDisk(sku, nodeClass) {
-		osDiskTypePtr = lo.ToPtr(armcontainerservice.OSDiskTypeEphemeral)
 	}
 
 	// NodeTaints, NodeInitializationTaints
@@ -103,16 +92,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	nodeLabelPtrs, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType)
 
 	// Priority (e.g., regular, spot)
-	var priorityPtr *armcontainerservice.ScaleSetPriority
-	switch capacityType {
-	case karpv1.CapacityTypeSpot:
-		priorityPtr = lo.ToPtr(armcontainerservice.ScaleSetPrioritySpot)
-	case karpv1.CapacityTypeOnDemand:
-		priorityPtr = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
-	default:
-		// Karpenter defaults to Regular
-		priorityPtr = lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
-	}
+	priorityPtr := configurePriority(capacityType)
 
 	// Tags (to be put on AKS machine and all affiliated resources)
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
@@ -169,6 +149,41 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Tags: tags,
 		},
 	}, nil
+}
+
+func configureGPUProfile(instanceType *corecloudprovider.InstanceType) *armcontainerservice.GPUProfile {
+	// If none is specified, then that's not GPU instance, so nil is fine. Current version of AKS machine API supports this.
+	if utils.IsNvidiaEnabledSKU(instanceType.Name) {
+		return &armcontainerservice.GPUProfile{
+			Driver: lo.ToPtr(armcontainerservice.GPUDriverInstall),
+			// DriverType: nil,
+		}
+	}
+	return nil
+}
+
+func configureOSDiskType(ctx context.Context, instanceTypeProvider instancetype.Provider, nodeClass *v1beta1.AKSNodeClass, instanceType *corecloudprovider.InstanceType) (*armcontainerservice.OSDiskType, error) {
+	// Karpenter defaults to Managed, but decides whether to use Ephemeral
+	sku, err := instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
+	if err != nil {
+		return nil, err
+	}
+	if instancetype.UseEphemeralDisk(sku, nodeClass) {
+		return lo.ToPtr(armcontainerservice.OSDiskTypeEphemeral), nil
+	}
+	return lo.ToPtr(armcontainerservice.OSDiskTypeManaged), nil
+}
+
+func configurePriority(capacityType string) *armcontainerservice.ScaleSetPriority {
+	switch capacityType {
+	case karpv1.CapacityTypeSpot:
+		return lo.ToPtr(armcontainerservice.ScaleSetPrioritySpot)
+	case karpv1.CapacityTypeOnDemand:
+		return lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
+	default:
+		// Karpenter defaults to Regular
+		return lo.ToPtr(armcontainerservice.ScaleSetPriorityRegular)
+	}
 }
 
 func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion string) (*armcontainerservice.OSSKU, *bool, error) {
