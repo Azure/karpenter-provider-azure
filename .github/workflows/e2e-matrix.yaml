@@ -8,10 +8,6 @@ on:
         type: string
         description: "the azure location to run the e2e test in"
         default: "eastus"
-      suites:
-        type: string
-        description: "comma-separated list of suites to run. If empty, runs all default suites"
-        default: ""
       provisionmode:
         type: string
         description: "the karpenter provisioning mode to run the e2e test in"
@@ -31,36 +27,11 @@ permissions:
   contents: read
 
 jobs:
-  initialize-generative-params:
-    runs-on: ubuntu-latest
-    outputs:
-      suite_matrix: ${{ steps.generate-suite-matrix.outputs.suite_matrix }}
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
-        with:
-          disable-telemetry: true
-          disable-sudo: true
-          egress-policy: block
-          # no allowed endpoints
-          allowed-endpoints: >
-
-      - id: generate-suite-matrix
-        run: |
-          if [ -z "${{ inputs.suites }}" ] || [ "${{ inputs.suites }}" = "All" ]; then
-            SUITES='["Scheduling", "Utilization", "GPU", "Drift", "Integration", "NodeClaim", "Consolidation", "Chaos", "ACR", "KubernetesUpgrade", "Spot"]'
-          else
-            # Single suite passed as choice
-            SUITES='["${{ inputs.suites }}"]'
-          fi
-          echo "Generated suite matrix: $SUITES"
-          echo "suite_matrix=$SUITES" >> "$GITHUB_OUTPUT"
   e2e:
-    needs: [initialize-generative-params]
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ fromJson(needs.initialize-generative-params.outputs.suite_matrix) }}
+        suite: [ACR, BYOK, Chaos, Consolidation, Drift, GPU, InPlaceUpdate, Integration, KubernetesUpgrade, NodeClaim, Scheduling, Spot, Subnet, Utilization]
     permissions:
       contents: read
       id-token: write
