@@ -77,13 +77,10 @@ var _ = Describe("BYOK", func() {
 
 		By("Phase 2: Creating NodeClass and NodePool")
 		nodeClass := env.DefaultAKSNodeClass()
-		Expect(nodeClass).NotTo(BeNil())
 		nodePool := env.DefaultNodePool(nodeClass)
-		Expect(nodePool).NotTo(BeNil())
 
 		By("Phase 3: Creating test Pod")
 		pod := test.Pod()
-		Expect(pod).NotTo(BeNil())
 
 		By("Applying resources to Kubernetes")
 		env.ExpectCreated(nodeClass, nodePool, pod)
@@ -104,8 +101,7 @@ var _ = Describe("BYOK", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
 
 		if env.InClusterController {
-			actualDESID := lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)
-			Expect(actualDESID).To(Equal(diskEncryptionSetID))
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
 		}
 	})
 
@@ -122,9 +118,7 @@ var _ = Describe("BYOK", func() {
 
 		By("Phase 2: Creating NodeClass with ephemeral disk configuration")
 		nodeClass := env.DefaultAKSNodeClass()
-		Expect(nodeClass).NotTo(BeNil())
 		nodePool := env.DefaultNodePool(nodeClass)
-		Expect(nodePool).NotTo(BeNil())
 
 		By("Phase 3: Configuring ephemeral OS disk requirement")
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
@@ -137,7 +131,6 @@ var _ = Describe("BYOK", func() {
 
 		By("Phase 4: Creating test Pod")
 		pod := test.Pod()
-		Expect(pod).NotTo(BeNil())
 
 		By("Applying resources to Kubernetes")
 		env.ExpectCreated(nodeClass, nodePool, pod)
@@ -163,7 +156,6 @@ var _ = Describe("BYOK", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
-
 		if env.InClusterController {
 			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
 		}
