@@ -94,7 +94,11 @@ var _ = Describe("BYOK", func() {
 		env.EventuallyExpectCreatedNodeCount("==", 1)
 		By("Node successfully created and registered")
 
-		By("Phase 6: Verifying VM disk encryption configuration")
+		By("Phase 6: Waiting for Pod to become healthy (readiness probes pass)")
+		env.EventuallyExpectHealthyWithTimeout(time.Minute*15, pod)
+		By("Pod reached Ready condition successfully")
+
+		By("Phase 7: Verifying VM disk encryption configuration")
 		vm := env.GetVM(pod.Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil(), "VM properties should exist")
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil(), "StorageProfile should exist")
@@ -102,7 +106,7 @@ var _ = Describe("BYOK", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil(), "ManagedDisk should exist")
 		By("VM StorageProfile structure is valid")
 
-		By("Phase 7: Verifying DES is configured on managed disk")
+		By("Phase 8: Verifying DES is configured on managed disk")
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil(), "DiskEncryptionSet should exist")
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil(), "DES ID should exist")
 		By("DiskEncryptionSet reference present on managed disk")
@@ -113,10 +117,6 @@ var _ = Describe("BYOK", func() {
 			Expect(actualDESID).To(Equal(diskEncryptionSetID))
 			By("DES ID verification successful - encryption is enabled")
 		}
-
-		By("Phase 8: Waiting for Pod to become healthy (readiness probes pass)")
-		env.EventuallyExpectHealthyWithTimeout(time.Minute*15, pod)
-		By("Pod reached Ready condition successfully")
 	})
 
 	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", func() {
@@ -157,23 +157,27 @@ var _ = Describe("BYOK", func() {
 		env.ExpectCreated(nodeClass, nodePool, pod)
 
 		By("Phase 6: Waiting for VM to be created and node to be registered")
-		env.ExpectCreatedNodeCount("==", 1)
+		env.EventuallyExpectCreatedNodeCount("==", 1)
 		By("Node successfully created and registered")
 
-		By("Phase 7: Verifying VM disk configuration")
+		By("Phase 7: Waiting for Pod to become healthy (readiness probes pass)")
+		env.EventuallyExpectHealthyWithTimeout(time.Minute*15, pod)
+		By("Pod reached Ready condition successfully")
+
+		By("Phase 8: Verifying VM disk configuration")
 		vm := env.GetVM(pod.Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil(), "VM properties should exist")
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil(), "StorageProfile should exist")
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil(), "OSDisk should exist")
 		By("VM StorageProfile structure is valid")
 
-		By("Phase 8: Verifying ephemeral OS disk settings")
+		By("Phase 9: Verifying ephemeral OS disk settings")
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil(), "DiffDiskSettings should exist for ephemeral disk")
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option).ToNot(BeNil(), "DiffDisk option should be set")
 		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"), "Ephemeral disk should use Local option")
 		By("Ephemeral OS disk configuration verified")
 
-		By("Phase 9: Verifying DES is configured on managed disk")
+		By("Phase 10: Verifying DES is configured on managed disk")
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil(), "ManagedDisk should exist")
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil(), "DiskEncryptionSet should exist")
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil(), "DES ID should exist")
@@ -185,10 +189,6 @@ var _ = Describe("BYOK", func() {
 			Expect(actualDESID).To(Equal(diskEncryptionSetID))
 			By("DES ID verification successful - encryption is enabled on ephemeral disk")
 		}
-
-		By("Phase 10: Waiting for Pod to become healthy (readiness probes pass)")
-		env.EventuallyExpectHealthyWithTimeout(time.Minute*15, pod)
-		By("Pod reached Ready condition successfully")
 	})
 })
 
