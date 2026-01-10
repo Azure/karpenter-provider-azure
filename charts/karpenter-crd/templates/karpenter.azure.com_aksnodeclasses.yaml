@@ -967,6 +967,16 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              osDiskType:
+                default: EphemeralWithFallbackToManaged
+                description: |-
+                  OSDiskType is the type of disk to use for the OS.
+                  If EphemeralWithFallbackToManaged, but the VM type does not support ephemeral disks
+                  of at least OSDiskSizeGB size, we will fall back to Managed.
+                enum:
+                - EphemeralWithFallbackToManaged
+                - Managed
+                type: string
               security:
                 description: Collection of security related karpenter fields
                 properties:
