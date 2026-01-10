@@ -192,7 +192,6 @@ func (p *DefaultVMProvider) BeginCreate(
 	nodeClaim *karpv1.NodeClaim,
 	instanceTypes []*corecloudprovider.InstanceType,
 ) (*VirtualMachinePromise, error) {
-	log.FromContext(ctx).V(1).Info("BeginCreate called", "diskEncryptionSetID", p.diskEncryptionSetID)
 	instanceTypes = offerings.OrderInstanceTypesByPrice(instanceTypes, scheduling.NewNodeSelectorRequirementsWithMinValues(nodeClaim.Spec.Requirements...))
 	vmPromise, err := p.beginLaunchInstance(ctx, nodeClass, nodeClaim, instanceTypes)
 	if err != nil {
@@ -507,8 +506,6 @@ type createVMOptions struct {
 
 // newVMObject creates a new armcompute.VirtualMachine from the provided options
 func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
-	log.Log.V(1).Info("newVMObject called", "diskEncryptionSetID", opts.DiskEncryptionSetID)
-
 	if opts.LaunchTemplate.IsWindows {
 		return &armcompute.VirtualMachine{} // TODO(Windows)
 	}
@@ -564,7 +561,6 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Tags:  opts.LaunchTemplate.Tags,
 	}
 	setVMPropertiesOSDiskType(vm.Properties, opts.LaunchTemplate)
-	log.Log.V(1).Info("About to set OSDisk encryption", "diskEncryptionSetID", opts.DiskEncryptionSetID)
 	setVMPropertiesOSDiskEncryption(vm.Properties, opts.DiskEncryptionSetID)
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
@@ -591,19 +587,13 @@ func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties
 }
 
 func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProperties, diskEncryptionSetID string) {
-	log.Log.V(1).Info("setVMPropertiesOSDiskEncryption called", "diskEncryptionSetID", diskEncryptionSetID, "isEmpty", diskEncryptionSetID == "")
-
 	if diskEncryptionSetID != "" {
-		log.Log.Info("Configuring customer-managed disk encryption", "diskEncryptionSetID", diskEncryptionSetID)
 		if vmProperties.StorageProfile.OSDisk.ManagedDisk == nil {
 			vmProperties.StorageProfile.OSDisk.ManagedDisk = &armcompute.ManagedDiskParameters{}
 		}
 		vmProperties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet = &armcompute.DiskEncryptionSetParameters{
 			ID: lo.ToPtr(diskEncryptionSetID),
 		}
-		log.Log.V(1).Info("OSDisk encryption configured", "desID", diskEncryptionSetID)
-	} else {
-		log.Log.V(1).Info("No disk encryption set ID provided - OS disk will use Microsoft-managed keys")
 	}
 }
 
@@ -691,7 +681,6 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 		}).Inc()
 		return nil, fmt.Errorf("virtualMachine.BeginCreateOrUpdate for VM %q failed: %w", opts.VMName, err)
 	}
-	log.FromContext(ctx).V(1).Info("VM creation LRO started successfully", "vmName", opts.VMName)
 	return &createResult{Poller: poller, VM: vm}, nil
 }
 
@@ -775,7 +764,6 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		DiskEncryptionSetID: p.diskEncryptionSetID,
 		NodePoolName:        nodeClaim.Labels[karpv1.NodePoolLabelKey],
 	})
-	log.FromContext(ctx).V(1).Info("createVMOptions assembled with DiskEncryptionSetID", "diskEncryptionSetID", p.diskEncryptionSetID, "vmName", resourceName)
 	if err != nil {
 		sku, skuErr := p.instanceTypeProvider.Get(ctx, nodeClass, instanceType.Name)
 		if skuErr != nil {

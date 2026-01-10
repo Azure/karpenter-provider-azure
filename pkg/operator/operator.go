@@ -207,12 +207,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azClient.NetworkSecurityGroupsClient,
 		options.FromContext(ctx).NodeResourceGroup,
 	)
-	desID := options.FromContext(ctx).DiskEncryptionSetID
-	if desID != "" {
-		log.FromContext(ctx).Info("Initializing VMProvider with DiskEncryptionSetID", "diskEncryptionSetID", desID)
-	} else {
-		log.FromContext(ctx).V(1).Info("VMProvider initialized without DiskEncryptionSetID - nodes will use Microsoft-managed keys")
-	}
+
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
 		instanceTypeProvider,
