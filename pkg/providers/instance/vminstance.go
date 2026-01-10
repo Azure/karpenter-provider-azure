@@ -658,7 +658,6 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	}
 	vm := newVMObject(opts)
 	log.FromContext(ctx).V(1).Info("creating virtual machine", "vmName", opts.VMName, logging.InstanceType, opts.InstanceType.Name)
-	log.FromContext(ctx).V(1).Info("Sending VM creation request to Azure", "vmName", opts.VMName, "diskEncryptionSetID", opts.DiskEncryptionSetID)
 	VMCreateStartMetric.With(map[string]string{
 		metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
 		metrics.SizeLabel:         opts.InstanceType.Name,
@@ -669,7 +668,6 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 
 	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "VM creation LRO failed to start", "vmName", opts.VMName)
 		VMCreateFailureMetric.With(map[string]string{
 			metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
 			metrics.SizeLabel:         opts.InstanceType.Name,
