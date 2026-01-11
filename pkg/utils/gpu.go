@@ -20,7 +20,7 @@ import (
 	_ "embed"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v2"
 )
 
 // TODO: Get these from agentbaker
