@@ -65,6 +65,7 @@ var (
 
 		AKSLabelCluster,
 		AKSLabelMode,
+		AKSLabelScaleSetPriority,
 	)
 
 	RestrictedLabels = sets.New(
@@ -109,7 +110,8 @@ var (
 
 	AKSLabelCluster                 = AKSLabelDomain + "/cluster"
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
-	AKSLabelMode                    = AKSLabelDomain + "/mode" // "system" or "user"
+	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
+	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
@@ -125,6 +127,11 @@ const (
 	Ubuntu2204ImageFamily = "Ubuntu2204"
 	Ubuntu2404ImageFamily = "Ubuntu2404"
 	AzureLinuxImageFamily = "AzureLinux"
+)
+
+const (
+	ScaleSetPriorityRegular = "regular"
+	ScaleSetPrioritySpot    = "spot"
 )
 
 var UbuntuFamilies = sets.New(

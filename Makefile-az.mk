@@ -1,7 +1,7 @@
 AZURE_LOCATION ?= westus2
 AZURE_VM_SIZE ?=
 COMMON_NAME ?= karpenter
-ENABLE_AZURE_SDK_LOGGING ?= true
+ENABLE_AZURE_SDK_LOGGING ?= false
 ifeq ($(CODESPACES),true)
   AZURE_RESOURCE_GROUP ?= $(CODESPACE_NAME)
   AZURE_ACR_NAME ?= $(subst -,,$(CODESPACE_NAME))
@@ -52,7 +52,8 @@ az-all-user:	     az-login                        az-mkaks-user                 
 az-all-savm:         az-login                        az-mkaks-savm                                 az-perm-savm                      az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload - StandaloneVirtualMachines
 
 az-login: ## Login into Azure
-	az account show -o none || az login
+	az config set core.login_experience_v2=off # disable interactive subscription selection in favor of scripted
+	az account show -o none || CODESPACES=false az login -o none
 	az account set --subscription $(AZURE_SUBSCRIPTION_ID)
 
 az-mkrg: ## Create resource group
@@ -476,5 +477,5 @@ az-swagger-generate-clients: az-swagger-generate-clients-raw
 
 az-codegen-nodeimageversions: ## List node image versions (to be used in fake/nodeimageversionsapi.go)
 	az rest --method get \
-		--url "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/providers/Microsoft.ContainerService/locations/$(AZURE_LOCATION)/nodeImageVersions?api-version=2024-04-02-preview" \
-		| jq -r '.values[] | "{\n\tFullName: \"\(.fullName)\",\n\tOS:       \"\(.os)\",\n\tSKU:      \"\(.sku)\",\n\tVersion:  \"\(.version)\",\n},"'
+		--url "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/providers/Microsoft.ContainerService/locations/$(AZURE_LOCATION)/nodeImageVersions?api-version=2025-10-02-preview" \
+		| jq -r '.value[] | "{\n\tFullName: \"\(.fullName)\",\n\tOS:       \"\(.os)\",\n\tSKU:      \"\(.sku)\",\n\tVersion:  \"\(.version)\",\n},"'
