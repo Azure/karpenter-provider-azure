@@ -101,6 +101,7 @@ var _ = Describe("Spot", func() {
 		// Verify nodes are created with the spot capacity type label
 		nodes := env.ExpectCreatedNodeCount("==", 1)
 		Expect(nodes[0].Labels).To(HaveKeyWithValue(karpv1.CapacityTypeLabelKey, karpv1.CapacityTypeSpot))
+		Expect(nodes[0].Labels).To(HaveKeyWithValue(v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPrioritySpot))
 
 		// Simulate spot eviction
 		env.SimulateVMEviction(nodes[0].Name)
@@ -111,6 +112,58 @@ var _ = Describe("Spot", func() {
 
 		// Verify pods are scheduled and running after replacement
 		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(dep.Spec.Selector.MatchLabels), 1)
+
+		// Cleanup resources
+		env.ExpectDeleted(dep)
+	})
+})
+
+var _ = Describe("Spot (nonstandard node pool)", func() {
+	It("should provision spot nodes via kubernetes.azure.com/scalesetpriority label", func() {
+		// Create a node pool with spot requirement
+		nodePool = test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
+			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
+				Key:      v1beta1.AKSLabelScaleSetPriority,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{v1beta1.ScaleSetPrioritySpot},
+			}})
+		nodePool.Spec.Template.Spec.Requirements = lo.Reject(nodePool.Spec.Template.Spec.Requirements, func(r karpv1.NodeSelectorRequirementWithMinValues, _ int) bool {
+			return r.Key == karpv1.CapacityTypeLabelKey
+		})
+		env.ExpectCreated(nodePool, nodeClass)
+
+		podLabels := map[string]string{"app": "spot-test"}
+		dep := test.Deployment(test.DeploymentOptions{
+			Replicas: 1,
+			PodOptions: test.PodOptions{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: podLabels,
+				},
+				NodeSelector: map[string]string{
+					v1beta1.AKSLabelScaleSetPriority: v1beta1.ScaleSetPrioritySpot,
+				},
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      "kubernetes.azure.com/scalesetpriority",
+						Operator: corev1.TolerationOpEqual,
+						Value:    "spot",
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+				},
+				TerminationGracePeriodSeconds: lo.ToPtr(int64(0)),
+			},
+		})
+
+		// Create resources
+		env.ExpectCreated(dep)
+
+		// Verify pods are scheduled and running
+		env.EventuallyExpectHealthyPodCount(labels.SelectorFromSet(dep.Spec.Selector.MatchLabels), 1)
+
+		// Verify nodes are created with the spot capacity type label
+		nodes := env.ExpectCreatedNodeCount("==", 1)
+		Expect(nodes[0].Labels).To(HaveKeyWithValue(karpv1.CapacityTypeLabelKey, karpv1.CapacityTypeSpot))
+		Expect(nodes[0].Labels).To(HaveKeyWithValue(v1beta1.AKSLabelScaleSetPriority, v1beta1.ScaleSetPrioritySpot))
 
 		// Cleanup resources
 		env.ExpectDeleted(dep)

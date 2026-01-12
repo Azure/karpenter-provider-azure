@@ -181,7 +181,10 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
-	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred, opts.Cloud)
+	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {

@@ -58,6 +58,15 @@ var (
 		armcompute.VirtualMachinePriorityTypesSpot:    karpv1.CapacityTypeSpot,
 		armcompute.VirtualMachinePriorityTypesRegular: karpv1.CapacityTypeOnDemand,
 	}
+	// Note that there is no ScaleSetPriorityToKarpCapacityType because the karpenter.sh/capacity-type
+	// label is the "official" label that we actually key priority off of. Selection still works though
+	// because when we list instance types on-demand offerings always have v1beta1.ScaleSetPriorityRegular
+	// and spot instances always have v1beta1.ScaleSetPrioritySpot, so the correct karpenter.sh/capacity-type
+	// label is still selected even if the user is using kubernetes.azure.com/scalesetpriority only on the NodePool.
+	VMPriorityToScaleSetPriority = map[armcompute.VirtualMachinePriorityTypes]string{
+		armcompute.VirtualMachinePriorityTypesSpot:    v1beta1.ScaleSetPrioritySpot,
+		armcompute.VirtualMachinePriorityTypesRegular: v1beta1.ScaleSetPriorityRegular,
+	}
 )
 
 const (
@@ -988,6 +997,13 @@ func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.Virtua
 func GetCapacityTypeFromVM(vm *armcompute.VirtualMachine) string {
 	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
 		return VMPriorityToKarpCapacityType[*vm.Properties.Priority]
+	}
+	return ""
+}
+
+func GetScaleSetPriorityLabelFromVM(vm *armcompute.VirtualMachine) string {
+	if vm != nil && vm.Properties != nil && vm.Properties.Priority != nil {
+		return VMPriorityToScaleSetPriority[*vm.Properties.Priority]
 	}
 	return ""
 }
