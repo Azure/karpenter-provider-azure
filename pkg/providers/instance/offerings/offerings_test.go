@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/karpenter/pkg/cloudprovider"
@@ -262,22 +262,23 @@ func TestPickSkuSizePriorityAndZone(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			instanceType, priority, zone := PickSkuSizePriorityAndZone(context.TODO(), c.nodeClaim, c.instanceTypes)
 
 			if c.expectedInstanceType == "" {
-				assert.Nil(t, instanceType)
+				g.Expect(instanceType).To(BeNil())
 			} else {
-				assert.NotNil(t, instanceType)
-				assert.Equal(t, c.expectedInstanceType, instanceType.Name)
+				g.Expect(instanceType).ToNot(BeNil())
+				g.Expect(instanceType.Name).To(Equal(c.expectedInstanceType))
 			}
 
-			assert.Equal(t, c.expectedPriority, priority)
+			g.Expect(priority).To(Equal(c.expectedPriority))
 
 			if c.name == "Multiple zones - should pick one of the available zones" {
 				// For multiple zones, just verify a zone was selected
-				assert.Contains(t, []string{"westus-1", "westus-2"}, zone)
+				g.Expect([]string{"westus-1", "westus-2"}).To(ContainElement(zone))
 			} else {
-				assert.Equal(t, c.expectedZone, zone)
+				g.Expect(zone).To(Equal(c.expectedZone))
 			}
 		})
 	}
@@ -387,8 +388,9 @@ func TestGetPriorityForInstanceType(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			priority := getPriorityForInstanceType(c.nodeClaim, c.instanceType)
-			assert.Equal(t, c.expectedPriority, priority)
+			g.Expect(priority).To(Equal(c.expectedPriority))
 		})
 	}
 }
@@ -482,12 +484,13 @@ func TestOrderInstanceTypesByPrice(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			ordered := OrderInstanceTypesByPrice(c.instanceTypes, c.requirements)
 			actualOrder := make([]string, len(ordered))
 			for i, it := range ordered {
 				actualOrder[i] = it.Name
 			}
-			assert.Equal(t, c.expectedOrder, actualOrder)
+			g.Expect(actualOrder).To(Equal(c.expectedOrder))
 		})
 	}
 }
@@ -520,8 +523,9 @@ func TestGetOfferingCapacityType(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			capacityType := getOfferingCapacityType(c.offering)
-			assert.Equal(t, c.expectedCapacity, capacityType)
+			g.Expect(capacityType).To(Equal(c.expectedCapacity))
 		})
 	}
 }
@@ -554,8 +558,9 @@ func TestGetOfferingZone(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			zone := getOfferingZone(c.offering)
-			assert.Equal(t, c.expectedZone, zone)
+			g.Expect(zone).To(Equal(c.expectedZone))
 		})
 	}
 }
@@ -596,8 +601,9 @@ func TestGetInstanceTypeFromVMSize(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := GetInstanceTypeFromVMSize(c.vmSize, possibleInstanceTypes)
-			assert.Equal(t, c.expectedInstanceType, result)
+			g.Expect(result).To(Equal(c.expectedInstanceType))
 		})
 	}
 }

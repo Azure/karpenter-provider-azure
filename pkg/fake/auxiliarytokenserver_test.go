@@ -24,7 +24,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 )
 
 func Test_AddAuxiliaryTokenPolicyClientOptions(t *testing.T) {
@@ -52,6 +52,7 @@ func Test_AddAuxiliaryTokenPolicyClientOptions(t *testing.T) {
 	tokenServer := &AuxiliaryTokenServer{Token: defaultToken}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			request := &http.Request{
 				Method: http.MethodGet,
 				URL:    &url.URL{Path: "/"},
@@ -64,7 +65,7 @@ func Test_AddAuxiliaryTokenPolicyClientOptions(t *testing.T) {
 				t.Errorf("Unexpected error %v", err)
 				return
 			}
-			assert.Equal(t, tt.statusCode, resp.StatusCode, "Expected status code %d, got %d", tt.statusCode, resp.StatusCode)
+			g.Expect(resp.StatusCode).To(Equal(tt.statusCode), "Expected status code %d, got %d", tt.statusCode, resp.StatusCode)
 			tokenServer.Reset()
 		})
 	}
