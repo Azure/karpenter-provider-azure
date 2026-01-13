@@ -25,8 +25,8 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/bootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily/customscriptsbootstrap"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate/parameters"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -65,6 +65,7 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeDisabled)
+	localDNS := &v1beta1.LocalDNS{Mode: v1beta1.LocalDNSModeDisabled}
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -76,34 +77,39 @@ func TestUbuntu2204_CustomScriptsNodeBootstrapping(t *testing.T) {
 		storageProfile,
 		nodeBootstrappingClient,
 		fipsMode,
+		localDNS,
 	)
+
+	g := NewWithT(t)
 
 	// Verify the returned bootstrapper is of the correct type
 	provisionBootstrapper, ok := bootstrapper.(customscriptsbootstrap.ProvisionClientBootstrap)
-	assert.True(t, ok, "Expected customscriptsbootstrap.ProvisionClientBootstrap type")
+	g.Expect(ok).To(BeTrue(), "Expected customscriptsbootstrap.ProvisionClientBootstrap type")
 
 	// Verify all fields are properly set
-	assert.Equal(t, "test-cluster", provisionBootstrapper.ClusterName)
-	assert.Equal(t, kubeletConfig, provisionBootstrapper.KubeletConfig)
-	assert.Equal(t, taints, provisionBootstrapper.Taints)
-	assert.Equal(t, startupTaints, provisionBootstrapper.StartupTaints)
-	assert.Equal(t, labels, provisionBootstrapper.Labels)
-	assert.Equal(t, "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet", provisionBootstrapper.SubnetID)
-	assert.Equal(t, karpv1.ArchitectureAmd64, provisionBootstrapper.Arch)
-	assert.Equal(t, "test-subscription", provisionBootstrapper.SubscriptionID)
-	assert.Equal(t, "test-rg", provisionBootstrapper.ResourceGroup)
-	assert.Equal(t, "test-cluster-rg", provisionBootstrapper.ClusterResourceGroup)
-	assert.Equal(t, "test-token", provisionBootstrapper.KubeletClientTLSBootstrapToken)
-	assert.Equal(t, "1.31.0", provisionBootstrapper.KubernetesVersion)
-	assert.Equal(t, imageDistro, provisionBootstrapper.ImageDistro)
-	assert.Equal(t, instanceType, provisionBootstrapper.InstanceType)
-	assert.Equal(t, storageProfile, provisionBootstrapper.StorageProfile)
-	assert.Equal(t, nodeBootstrappingClient, provisionBootstrapper.NodeBootstrappingProvider)
-	assert.Equal(t, customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204, provisionBootstrapper.OSSKU, "ImageFamily field must be set to prevent unsupported image family errors")
-	assert.Equal(t, fipsMode, provisionBootstrapper.FIPSMode, "FIPSMode field must match the input parameter")
+	g.Expect(provisionBootstrapper.ClusterName).To(Equal("test-cluster"))
+	g.Expect(provisionBootstrapper.KubeletConfig).To(Equal(kubeletConfig))
+	g.Expect(provisionBootstrapper.Taints).To(Equal(taints))
+	g.Expect(provisionBootstrapper.StartupTaints).To(Equal(startupTaints))
+	g.Expect(provisionBootstrapper.Labels).To(Equal(labels))
+	g.Expect(provisionBootstrapper.SubnetID).To(Equal("/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet"))
+	g.Expect(provisionBootstrapper.Arch).To(Equal(karpv1.ArchitectureAmd64))
+	g.Expect(provisionBootstrapper.SubscriptionID).To(Equal("test-subscription"))
+	g.Expect(provisionBootstrapper.ResourceGroup).To(Equal("test-rg"))
+	g.Expect(provisionBootstrapper.ClusterResourceGroup).To(Equal("test-cluster-rg"))
+	g.Expect(provisionBootstrapper.KubeletClientTLSBootstrapToken).To(Equal("test-token"))
+	g.Expect(provisionBootstrapper.KubernetesVersion).To(Equal("1.31.0"))
+	g.Expect(provisionBootstrapper.ImageDistro).To(Equal(imageDistro))
+	g.Expect(provisionBootstrapper.InstanceType).To(Equal(instanceType))
+	g.Expect(provisionBootstrapper.StorageProfile).To(Equal(storageProfile))
+	g.Expect(provisionBootstrapper.NodeBootstrappingProvider).To(Equal(nodeBootstrappingClient))
+	g.Expect(provisionBootstrapper.OSSKU).To(Equal(customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204), "ImageFamily field must be set to prevent unsupported image family errors")
+	g.Expect(provisionBootstrapper.FIPSMode).To(Equal(fipsMode), "FIPSMode field must match the input parameter")
+	g.Expect(provisionBootstrapper.LocalDNSProfile).To(Equal(localDNS), "LocalDNSProfile field must match the input parameter")
 }
 
 func TestUbuntu2204_Name(t *testing.T) {
+	g := NewWithT(t)
 	ubuntu := imagefamily.Ubuntu2204{}
-	assert.Equal(t, v1beta1.Ubuntu2204ImageFamily, ubuntu.Name())
+	g.Expect(ubuntu.Name()).To(Equal(v1beta1.Ubuntu2204ImageFamily))
 }

@@ -26,7 +26,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	"github.com/samber/lo"
@@ -67,20 +67,31 @@ var _ = Describe("BYOK", func() {
 	It("should provision a VM with customer-managed key disk encryption", func() {
 		ctx := context.Background()
 		var diskEncryptionSetID string
+
+		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
 			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		}
 
+		By("Phase 2: Creating NodeClass and NodePool")
 		nodeClass := env.DefaultAKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
+		By("Phase 3: Creating test Pod")
 		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
-		env.ExpectCreatedNodeCount("==", 1)
 
+		By("Applying resources to Kubernetes")
+		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Phase 4: Waiting for VM to be created and node to be registered")
+		env.EventuallyExpectCreatedNodeCount("==", 1)
+
+		By("Phase 5: Verifying Pod becomes healthy")
+		env.EventuallyExpectHealthy(pod)
+
+		By("Phase 6: Verifying VM disk encryption configuration")
 		vm := env.GetVM(pod.Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
@@ -88,6 +99,7 @@ var _ = Describe("BYOK", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
+
 		if env.InClusterController {
 			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
 		}
@@ -96,38 +108,51 @@ var _ = Describe("BYOK", func() {
 	It("should provision a VM with ephemeral OS disk and customer-managed key disk encryption", func() {
 		ctx := context.Background()
 		var diskEncryptionSetID string
+
+		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
 			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		}
 
+		By("Phase 2: Creating NodeClass with ephemeral disk configuration")
 		nodeClass := env.DefaultAKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
+		By("Phase 3: Configuring ephemeral OS disk requirement")
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
 				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
 				Operator: corev1.NodeSelectorOpGt,
 				Values:   []string{"50"},
 			}})
-
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
 
+		By("Phase 4: Creating test Pod")
 		pod := test.Pod()
-		env.ExpectCreated(nodeClass, nodePool, pod)
-		env.EventuallyExpectHealthy(pod)
-		env.ExpectCreatedNodeCount("==", 1)
 
+		By("Applying resources to Kubernetes")
+		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Phase 5: Waiting for VM to be created and node to be registered")
+		env.EventuallyExpectCreatedNodeCount("==", 1)
+
+		By("Phase 6: Verifying Pod becomes healthy")
+		env.EventuallyExpectHealthy(pod)
+
+		By("Phase 7: Verifying VM disk configuration")
 		vm := env.GetVM(pod.Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
 
+		By("Phase 8: Verifying ephemeral OS disk settings")
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option).ToNot(BeNil())
 		Expect(string(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.DiffDiskSettings.Option))).To(Equal("Local"))
 
+		By("Phase 9: Verifying DES is configured on managed disk")
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())

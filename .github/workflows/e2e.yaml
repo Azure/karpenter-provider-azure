@@ -7,13 +7,10 @@ on:
       suite:
         type: string
         required: true
-      hash:
-        type: string
-        required: true
       location:
         type: string
         description: "the azure location to run the e2e test in"
-        default: "southcentralus"
+        default: "westus3"
       provisionmode:
         type: string
         description: "the karpenter provisioning mode to run the e2e test in"
@@ -28,6 +25,35 @@ on:
         required: true
       E2E_SUBSCRIPTION_ID:
         required: true
+  workflow_dispatch:
+    inputs:
+      suite:
+        type: choice
+        required: true
+        description: "Test suite to run"
+        options:
+          - ACR
+          - BYOK
+          - Chaos
+          - Consolidation
+          - Drift
+          - GPU
+          - InPlaceUpdate
+          - Integration
+          - KubernetesUpgrade
+          - NodeClaim
+          - Scheduling
+          - Spot
+          - Subnet
+          - Utilization
+      location:
+        type: choice
+        description: "Azure location to run the e2e test in"
+        default: westus3
+        options:
+          - westus3
+          - southcentralus
+          - eastus
 
 permissions:
   contents: read
@@ -49,7 +75,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
         with:
           disable-telemetry: true
           egress-policy: block
@@ -80,13 +106,16 @@ jobs:
             objects.githubusercontent.com:443
             release-assets.githubusercontent.com:443
             proxy.golang.org:443
+            golang.org:443
             raw.githubusercontent.com:443
             storage.googleapis.com:443
             sum.golang.org:443
+            go.dev:443
+            dl.google.com:443
             aquasecurity.github.io:443
             mirror.gcr.io:443
 
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           ref: ${{ inputs.git_ref }}
       - if: always() && github.event_name == 'workflow_run'
@@ -103,19 +132,25 @@ jobs:
           subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
       - name: az set sub
         shell: bash
-        run: az account set --subscription ${{ secrets.E2E_SUBSCRIPTION_ID }}
+        env:
+          SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+        run: az account set --subscription "$SUBSCRIPTION_ID"
       - name: install skaffold
         run: |
           curl -Lo skaffold https://github.com/GoogleContainerTools/skaffold/releases/download/v2.14.2/skaffold-linux-amd64 --fail
           install skaffold /usr/local/bin/
       - name: generate rg name
+        env:
+          SUITE: ${{ inputs.suite }}
         run: |
-          RG_NAME=$(echo karpenter-e2e-${{ inputs.suite }}-${{ inputs.hash }} | awk '{print tolower($0)}')
+          RG_NAME=$(echo karpenter-e2e-"$SUITE"-${{ github.run_id }} | awk '{print tolower($0)}')
           echo "Using resource group name \"$RG_NAME\""
           echo "RG_NAME=$RG_NAME" >> "$GITHUB_ENV"
       - name: generate acr name
+        env:
+          SUITE: ${{ inputs.suite }}
         run: |
-          ACR_NAME=$(echo ${{ inputs.suite }}acr${{ inputs.hash }} | awk '{print tolower($0)}')
+          ACR_NAME=$(echo "$SUITE"acr${{ github.run_id }} | awk '{print tolower($0)}')
           echo "Using acr name \"$ACR_NAME\""
           echo "ACR_NAME=$ACR_NAME" >> "$GITHUB_ENV"
       - name: create acr '${{ env.ACR_NAME }}'
@@ -150,7 +185,9 @@ jobs:
           location: ${{ inputs.location }}
       - name: build and publish karpenter
         shell: bash
-        run: AZURE_ACR_NAME=${{ env.ACR_NAME }} make az-build
+        env:
+          AZURE_ACR_NAME: ${{ env.ACR_NAME }}
+        run: make az-build
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:

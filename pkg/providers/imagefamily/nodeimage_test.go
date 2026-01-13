@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -44,7 +44,7 @@ const (
 	cigImageVersion      = "202505.27.0"
 	laterCIGImageVersion = "202605.27.0"
 
-	sigImageVersion = "202505.27.0"
+	sigImageVersion = "202512.18.0" // Updated to match fake data versions
 )
 
 func renderExpectedCIGNodeImages(

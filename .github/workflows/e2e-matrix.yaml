@@ -27,27 +27,7 @@ permissions:
   contents: read
 
 jobs:
-  initialize-generative-params:
-    runs-on: ubuntu-latest
-    outputs:
-      E2E_HASH: ${{ steps.generate-e2e-run-hash.outputs.E2E_HASH }}
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
-        with:
-          disable-telemetry: true
-          disable-sudo: true
-          egress-policy: block
-          # no allowed endpoints
-          allowed-endpoints: >
-
-      - id: generate-e2e-run-hash
-        run: |
-          E2E_HASH="$RANDOM$RANDOM"
-          echo "Using e2e hash \"$E2E_HASH\""
-          echo "E2E_HASH=$E2E_HASH" >> "$GITHUB_OUTPUT"
   e2e:
-    needs: [initialize-generative-params]
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +40,6 @@ jobs:
     with:
       git_ref: ${{ inputs.git_ref }}
       suite: ${{ matrix.suite }}
-      hash: ${{ needs.initialize-generative-params.outputs.E2E_HASH }}
       location: ${{ inputs.location }}
       provisionmode: ${{ inputs.provisionmode || 'aksscriptless' }}
   #     k8s_version: ${{ inputs.k8s_version }}

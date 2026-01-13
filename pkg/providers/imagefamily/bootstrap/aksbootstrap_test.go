@@ -23,8 +23,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -162,6 +162,7 @@ func TestKubeletConfigMap(t *testing.T) {
 			"memory.available": {Duration: 90 * time.Second},
 		},
 		EvictionMaxPodGracePeriod: to.Ptr[int32](11),
+		ClusterDNSServiceIP:       "10.20.0.10",
 	}
 
 	expectedKubeletConfigs := map[string]string{
@@ -181,10 +182,12 @@ func TestKubeletConfigMap(t *testing.T) {
 		"--eviction-soft":                 "memory.available<99Mi",  // TODO: test multiple resource
 		"--eviction-soft-grace-period":    "memory.available=1m30s",
 		"--eviction-max-pod-grace-period": "11",
+		"--cluster-dns":                   "10.20.0.10",
 	}
 	actualKubeletConfig := kubeletConfigToMap(&kubeletConfiguration)
 
+	g := NewWithT(t)
 	for k, v := range expectedKubeletConfigs {
-		assert.Equal(t, v, actualKubeletConfig[k], fmt.Sprintf("parameter mismatch for %s", k))
+		g.Expect(actualKubeletConfig[k]).To(Equal(v), fmt.Sprintf("parameter mismatch for %s", k))
 	}
 }
