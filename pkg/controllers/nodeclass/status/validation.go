@@ -19,9 +19,12 @@ package status
 import (
 	"context"
 
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+)
+
+const (
+	ReaderRoleID = "acdd72a7-3385-48ef-bd42-f606fba81ae7" // Azure built-in Reader role
 )
 
 type ValidationReconciler struct{}
@@ -31,10 +34,13 @@ func NewValidationReconciler() *ValidationReconciler {
 }
 
 func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.AKSNodeClass) (reconcile.Result, error) {
-	// This is currently a skeleton for future runtime validations that cannot be expressed
-	// declaratively in the CRD schema (e.g., validations requiring external API calls,
-	// cross-resource checks, or complex contextual business logic).
-
+	// TODO: Implement RBAC validation for BYOK (Disk Encryption Set)
+	// This will require:
+	// 1. Checking if DiskEncryptionSetID is configured
+	// 2. Verifying the managed identity has Reader role on the DES
+	// 3. Setting ValidationSucceeded to false with appropriate message if RBAC is missing
+	//
+	// For now, always succeed. Full implementation requires access to Azure RBAC APIs.
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
 	return reconcile.Result{}, nil
 }

@@ -26,6 +26,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// ReaderRoleID is the Azure built-in Reader role definition ID
+const ReaderRoleID = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
+
 type RBACManager struct {
 	subscriptionID string
 	client         *armauthorization.RoleAssignmentsClient
@@ -84,4 +87,53 @@ func (r *RBACManager) EnsureRoleWithPrincipalType(ctx context.Context, scope, ro
 		Properties: properties,
 	}, nil)
 	return err
+}
+
+// HasRole checks if principalID has roleDefinitionID at scope.
+func (r *RBACManager) HasRole(ctx context.Context, scope, principalID, roleDefinitionID string) bool {
+	pager := r.client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
+		Filter: to.Ptr(fmt.Sprintf("assignedTo('%s')", principalID)),
+	})
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return false
+		}
+		for _, ra := range page.Value {
+			if ra.Properties != nil &&
+				ra.Properties.PrincipalID != nil &&
+				ra.Properties.RoleDefinitionID != nil &&
+				*ra.Properties.PrincipalID == principalID &&
+				*ra.Properties.RoleDefinitionID == roleDefinitionID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// RemoveRole removes all role assignments of principalID at scope.
+func (r *RBACManager) RemoveRole(ctx context.Context, scope, principalID string) error {
+	pager := r.client.NewListForScopePager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
+		Filter: to.Ptr(fmt.Sprintf("assignedTo('%s')", principalID)),
+	})
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return err
+		}
+		for _, ra := range page.Value {
+			if ra.Properties != nil &&
+				ra.Properties.PrincipalID != nil &&
+				*ra.Properties.PrincipalID == principalID &&
+				ra.Name != nil {
+				// Delete this role assignment
+				_, err := r.client.Delete(ctx, scope, *ra.Name, nil)
+				if err != nil {
+					return fmt.Errorf("failed to delete role assignment %s: %w", *ra.Name, err)
+				}
+			}
+		}
+	}
+	return nil
 }
