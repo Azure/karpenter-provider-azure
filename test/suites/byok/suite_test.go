@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -29,7 +30,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
+	"github.com/awslabs/operatorpkg/status"
 	"github.com/samber/lo"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1 "k8s.io/api/core/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -69,7 +72,6 @@ var _ = Describe("BYOK", func() {
 		var diskEncryptionSetID string
 
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
-		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
 			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
@@ -85,13 +87,24 @@ var _ = Describe("BYOK", func() {
 		By("Applying resources to Kubernetes")
 		env.ExpectCreated(nodeClass, nodePool, pod)
 
-		By("Phase 4: Waiting for VM to be created and node to be registered")
+		By("Phase 4: Verifying AKSNodeClass status shows validation success and is Ready")
+		Eventually(func(g Gomega) {
+			retrieved := &v1beta1.AKSNodeClass{}
+			err := env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)
+			g.Expect(err).ToNot(HaveOccurred())
+			condition := retrieved.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			g.Expect(condition.IsTrue()).To(BeTrue())
+			readyCondition := retrieved.StatusConditions().Get(status.ConditionReady)
+			g.Expect(readyCondition.IsTrue()).To(BeTrue())
+		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second)
+
+		By("Phase 5: Waiting for VM to be created and node to be registered")
 		env.EventuallyExpectCreatedNodeCount("==", 1)
 
-		By("Phase 5: Verifying Pod becomes healthy")
+		By("Phase 6: Verifying Pod becomes healthy")
 		env.EventuallyExpectHealthy(pod)
 
-		By("Phase 6: Verifying VM disk encryption configuration")
+		By("Phase 7: Verifying VM disk encryption configuration")
 		vm := env.GetVM(pod.Spec.NodeName)
 		Expect(vm.Properties).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
@@ -156,6 +169,125 @@ var _ = Describe("BYOK", func() {
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
 		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
+		if env.InClusterController {
+			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
+		}
+	})
+
+	It("should mark AKSNodeClass as NotReady when DES ID is set but Reader RBAC is missing", func() {
+		ctx := context.Background()
+		var diskEncryptionSetID string
+
+		// TODO(rbac): Use a shared constant for the RBAC error message here and in the implementation
+		rbacErrorMessage := "missing Reader role assignment on Disk Encryption Set"
+
+		By("Phase 1: Setting up DES (Disk Encryption Set)")
+		if env.InClusterController {
+			// Create DES with full RBAC setup, then remove the Reader role to test missing RBAC scenario
+			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
+
+			By("Phase 1b: Removing Reader RBAC to test validation failure")
+			// Remove the Reader role from cluster identity on the DES to simulate missing RBAC
+			karpenterIdentity := env.GetKarpenterWorkloadIdentity(ctx)
+			err := env.RBACManager.RemoveRole(ctx, diskEncryptionSetID, karpenterIdentity)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Phase 1c: Eventually the Reader role should be absent from the DES")
+			Eventually(func() bool {
+				return !env.RBACManager.HasRole(ctx, diskEncryptionSetID, karpenterIdentity, readerRole)
+			}).WithTimeout(2*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "expected Reader role to be removed from DES")
+		} else {
+			// If not in-cluster, assume test setup provides a DES ID without RBAC
+			diskEncryptionSetID = os.Getenv("TEST_DES_ID_WITHOUT_RBAC")
+			if diskEncryptionSetID == "" {
+				Skip("TEST_DES_ID_WITHOUT_RBAC not set; skipping test requiring pre-configured DES without RBAC")
+			}
+		}
+
+		By("Phase 2: Creating a NodeClass with valid DES ID but without proper RBAC setup")
+		nodeClass := env.DefaultAKSNodeClass()
+		nodePool := env.DefaultNodePool(nodeClass)
+
+		By("Phase 3: Applying NodeClass and NodePool to cluster")
+		env.ExpectCreated(nodeClass, nodePool)
+
+		By("Phase 4: Verifying AKSNodeClass status shows RBAC validation failure")
+		Eventually(func(g Gomega) {
+			retrieved := &v1beta1.AKSNodeClass{}
+			err := env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)
+			g.Expect(err).ToNot(HaveOccurred())
+			condition := retrieved.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			g.Expect(condition.IsFalse()).To(BeTrue())
+			g.Expect(condition.Message).To(ContainSubstring(rbacErrorMessage))
+		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second)
+
+		By("Phase 5: Verifying the overall Ready condition is False")
+		retrieved := &v1beta1.AKSNodeClass{}
+		Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)).To(Succeed())
+		readyCondition := retrieved.StatusConditions().Get(status.ConditionReady)
+		Expect(readyCondition.IsFalse()).To(BeTrue(), "expected AKSNodeClass to be NotReady when DES Reader role is not assigned")
+
+		By("Phase 6: Verifying no VMs or nodes are created despite NodePool being present")
+		env.EventuallyExpectCreatedNodeCount("==", 0)
+	})
+
+	It("should mark AKSNodeClass as Ready when DES ID is set and Reader RBAC is properly configured", func() {
+		ctx := context.Background()
+		var diskEncryptionSetID string
+
+		By("Phase 1: Setting up DES (Disk Encryption Set) with proper RBAC")
+		if env.InClusterController {
+			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
+			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
+		} else {
+			diskEncryptionSetID = os.Getenv("TEST_DES_ID_WITH_RBAC")
+			if diskEncryptionSetID == "" {
+				Skip("TEST_DES_ID_WITH_RBAC not set; skipping test requiring pre-configured DES with RBAC")
+			}
+		}
+
+		By("Phase 2: Creating NodeClass and NodePool")
+		nodeClass := env.DefaultAKSNodeClass()
+		nodePool := env.DefaultNodePool(nodeClass)
+
+		By("Phase 3: Creating test Pod")
+		pod := test.Pod()
+
+		By("Phase 4: Applying resources to Kubernetes")
+		env.ExpectCreated(nodeClass, nodePool, pod)
+
+		By("Phase 5: Verifying AKSNodeClass status shows validation success")
+		Eventually(func() bool {
+			retrieved := &v1beta1.AKSNodeClass{}
+			err := env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)
+			if err != nil {
+				return false
+			}
+			condition := retrieved.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
+			return condition.IsTrue()
+		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(BeTrue())
+
+		By("Phase 6: Verifying the overall Ready condition is True")
+		retrieved := &v1beta1.AKSNodeClass{}
+		Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)).To(Succeed())
+		readyCondition := retrieved.StatusConditions().Get(status.ConditionReady)
+		Expect(readyCondition.IsTrue()).To(BeTrue(), "expected AKSNodeClass to be Ready when DES Reader role is properly assigned")
+
+		By("Phase 7: Waiting for VM to be created and node to be registered")
+		env.EventuallyExpectCreatedNodeCount("==", 1)
+
+		By("Phase 8: Verifying Pod becomes healthy")
+		env.EventuallyExpectHealthy(pod)
+
+		By("Phase 9: Verifying VM disk encryption configuration")
+		vm := env.GetVM(pod.Spec.NodeName)
+		Expect(vm.Properties).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
+		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
+
 		if env.InClusterController {
 			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
 		}
