@@ -452,6 +452,9 @@ func supportsNVMeEphemeralOSDisk(sku *skewer.SKU) bool {
 }
 
 func UseEphemeralDisk(sku *skewer.SKU, nodeClass *v1beta1.AKSNodeClass) bool {
+	if nodeClass.Spec.OSDiskType != nil && *nodeClass.Spec.OSDiskType == "Managed" {
+		return false
+	}
 	sizeGB, _ := FindMaxEphemeralSizeGBAndPlacement(sku)
 	return int64(*nodeClass.Spec.OSDiskSizeGB) <= sizeGB // use ephemeral disk if it is large enough
 }
