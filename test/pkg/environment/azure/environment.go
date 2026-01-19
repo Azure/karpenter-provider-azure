@@ -31,6 +31,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -39,6 +40,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/Azure/karpenter-provider-azure/pkg/test/azure"
@@ -65,6 +67,7 @@ type Environment struct {
 	ACRName              string
 	ClusterName          string
 	ClusterResourceGroup string
+	CloudConfig          cloud.Configuration
 
 	tracker *azure.Tracker
 
@@ -100,7 +103,22 @@ func readEnv(name string) string {
 	return value
 }
 
+func getCloudEnvironment() *auth.Environment {
+	cfg := auth.Config{}
+	lo.Must0(cfg.Build(), "Failed to build cloud environment")
+	lo.Must0(cfg.Default(), "Failed to set default cloud environment")
+	// This is a hack so we can re-use the same validate, even though in this test context we don't need a real subscription ID
+	cfg.SubscriptionID = "1234"
+	lo.Must0(cfg.Validate(), "Failed to validate cloud environment")
+
+	env, err := auth.ResolveCloudEnvironment(&cfg)
+	lo.Must0(err, "Failed to resolve cloud environment")
+	return env
+}
+
 func NewEnvironment(t *testing.T) *Environment {
+	cloudEnv := getCloudEnvironment()
+
 	azureEnv := &Environment{
 		Environment:          common.NewEnvironment(t),
 		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID"),
@@ -108,6 +126,7 @@ func NewEnvironment(t *testing.T) *Environment {
 		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP"),
 		ACRName:              readEnv("AZURE_ACR_NAME"),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
+		CloudConfig:          cloudEnv.Cloud,
 		tracker:              azure.NewTracker(),
 	}
 
@@ -115,16 +134,27 @@ func NewEnvironment(t *testing.T) *Environment {
 	azureEnv.VNETResourceGroup = lo.Ternary(os.Getenv("VNET_RESOURCE_GROUP") == "", defaultNodeRG, os.Getenv("VNET_RESOURCE_GROUP"))
 	azureEnv.NodeResourceGroup = defaultNodeRG
 
-	cred := lo.Must(azidentity.NewDefaultAzureCredential(nil))
+	credOptions := &azidentity.DefaultAzureCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: cloudEnv.Cloud,
+		},
+	}
+	cred := lo.Must(azidentity.NewDefaultAzureCredential(credOptions))
 	azureEnv.defaultCredential = cred
+
+	clientOptions := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Cloud: azureEnv.CloudConfig,
+		},
+	}
 	byokRetryOptions := azureEnv.ClientOptionsForRBACPropagation()
-	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.agentpoolsClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, nil))
-	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, nil))
+	azureEnv.vmClient = lo.Must(armcompute.NewVirtualMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.vnetClient = lo.Must(armnetwork.NewVirtualNetworksClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.subnetClient = lo.Must(armnetwork.NewSubnetsClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.interfacesClient = lo.Must(armnetwork.NewInterfacesClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.managedClusterClient = lo.Must(containerservice.NewManagedClustersClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.agentpoolsClient = lo.Must(containerservice.NewAgentPoolsClient(azureEnv.SubscriptionID, cred, clientOptions))
+	azureEnv.machinesClient = lo.Must(containerservice.NewMachinesClient(azureEnv.SubscriptionID, cred, clientOptions))
 	azureEnv.KeyVaultClient = lo.Must(armkeyvault.NewVaultsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.DiskEncryptionSetClient = lo.Must(armcompute.NewDiskEncryptionSetsClient(azureEnv.SubscriptionID, cred, byokRetryOptions))
 	azureEnv.RBACManager = lo.Must(NewRBACManager(azureEnv.SubscriptionID, cred))
@@ -158,6 +188,7 @@ func (env *Environment) GetAvailableZones() []string {
 func (env *Environment) ClientOptionsForRBACPropagation() *arm.ClientOptions {
 	return &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
+			Cloud: env.CloudConfig,
 			Retry: policy.RetryOptions{
 				MaxRetries: 15,
 				RetryDelay: time.Second * 5,
