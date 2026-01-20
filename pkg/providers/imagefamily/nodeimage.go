@@ -195,7 +195,7 @@ func (p *provider) latestNodeImageVersionCommunity(publicGalleryURL, communityIm
 		if err != nil {
 			return "", err
 		}
-		for _, imageVersion := range page.CommunityGalleryImageVersionList.Value {
+		for _, imageVersion := range page.Value {
 			if lo.IsEmpty(topImageVersionCandidate) || imageVersion.Properties.PublishedDate.After(*topImageVersionCandidate.Properties.PublishedDate) {
 				topImageVersionCandidate = *imageVersion
 			}
