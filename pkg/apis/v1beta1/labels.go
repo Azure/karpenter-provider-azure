@@ -66,6 +66,7 @@ var (
 		AKSLabelCluster,
 		AKSLabelMode,
 		AKSLabelScaleSetPriority,
+		AKSLabelOSSKU,
 	)
 
 	RestrictedLabels = sets.New(
@@ -112,6 +113,7 @@ var (
 	AKSLabelKubeletIdentityClientID = AKSLabelDomain + "/kubelet-identity-client-id"
 	AKSLabelMode                    = AKSLabelDomain + "/mode"             // "system" or "user"
 	AKSLabelScaleSetPriority        = AKSLabelDomain + "/scalesetpriority" // "spot" or "regular". Note that "regular" is never written by AKS as a label but we write it to make scheduling easier
+	AKSLabelOSSKU                   = AKSLabelDomain + "/os-sku"           // "Ubuntu" or "AzureLinux"
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
@@ -139,3 +141,25 @@ var UbuntuFamilies = sets.New(
 	Ubuntu2204ImageFamily,
 	Ubuntu2404ImageFamily,
 )
+
+// imageFamilyToOSSKU maps imageFamily spec values to os-sku label values.
+// These values match what AKS writes for kubernetes.azure.com/os-sku.
+var imageFamilyToOSSKU = map[string]string{
+	UbuntuImageFamily:     "Ubuntu",
+	Ubuntu2204ImageFamily: "Ubuntu",
+	Ubuntu2404ImageFamily: "Ubuntu",
+	AzureLinuxImageFamily: "AzureLinux",
+}
+
+// GetOSSKUFromImageFamily returns the kuberentes.azure.com/os-sku label value for the given imageFamily.
+// If imageFamily is empty, it defaults to Ubuntu.
+// If the imageFamily is not recognized, it returns the imageFamily as-is.
+func GetOSSKUFromImageFamily(imageFamily string) string {
+	if imageFamily == "" {
+		imageFamily = UbuntuImageFamily
+	}
+	if osSKU, ok := imageFamilyToOSSKU[imageFamily]; ok {
+		return osSKU
+	}
+	return imageFamily // fallback for unknown image families
+}

@@ -130,7 +130,7 @@ func NewInstanceType(
 ) *cloudprovider.InstanceType {
 	return &cloudprovider.InstanceType{
 		Name:         sku.GetName(),
-		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region),
+		Requirements: computeRequirements(options.FromContext(ctx), sku, vmsize, architecture, offerings, region, nodeClass),
 		Offerings:    offerings,
 		Capacity:     computeCapacity(ctx, sku, nodeClass),
 		Overhead: &cloudprovider.InstanceTypeOverhead{
@@ -148,6 +148,7 @@ func computeRequirements(
 	architecture string,
 	offerings cloudprovider.Offerings,
 	region string,
+	nodeClass *v1beta1.AKSNodeClass,
 ) scheduling.Requirements {
 	requirements := scheduling.NewRequirements(
 		// Well Known Upstream
@@ -176,6 +177,7 @@ func computeRequirements(
 		scheduling.NewRequirement(v1beta1.AKSLabelCluster, corev1.NodeSelectorOpIn, labels.NormalizeClusterResourceGroupNameForLabel(opts.NodeResourceGroup)),
 		scheduling.NewRequirement(v1beta1.AKSLabelMode, corev1.NodeSelectorOpIn, v1beta1.ModeSystem, v1beta1.ModeUser),
 		scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
+		scheduling.NewRequirement(v1beta1.AKSLabelOSSKU, corev1.NodeSelectorOpIn, v1beta1.GetOSSKUFromImageFamily(lo.FromPtr(nodeClass.Spec.ImageFamily))),
 
 		// composites
 		scheduling.NewRequirement(v1beta1.LabelSKUName, corev1.NodeSelectorOpDoesNotExist),
