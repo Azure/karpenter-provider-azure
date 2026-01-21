@@ -7,6 +7,10 @@ on:
       suite:
         type: string
         required: true
+      source:
+        type: string
+        description: "Test source: 'azure' (provider tests), 'upstream' (karpenter-core tests), or 'all' (both)"
+        default: "azure"
       location:
         type: string
         description: "the azure location to run the e2e test in"
@@ -37,6 +41,7 @@ on:
           - Chaos
           - Consolidation
           - Drift
+          - Expiration
           - GPU
           - InPlaceUpdate
           - Integration
@@ -44,8 +49,19 @@ on:
           - NodeClaim
           - Scheduling
           - Spot
+          - StaticCapacity
           - Subnet
+          - Termination
           - Utilization
+      source:
+        type: choice
+        required: true
+        description: "Test source: 'azure' (provider tests), 'upstream' (karpenter-core tests), or 'all' (both)"
+        default: azure
+        options:
+          - azure
+          - upstream
+          - all
       location:
         type: choice
         description: "Azure location to run the e2e test in"
@@ -223,9 +239,18 @@ jobs:
           TEST_SUITE: ${{ inputs.suite }}
           GIT_REF: ${{ github.sha }}
           PROVISION_MODE: ${{ inputs.provisionmode }}
+          SOURCE: ${{ inputs.source }}
         run: |
           make az-creds
-          make e2etests
+
+          if [[ "$SOURCE" == 'azure' ]]; then
+            make e2etests
+          elif [[ "$SOURCE" == 'upstream' ]]; then
+            FOCUS="$TEST_SUITE" make upstream-e2etests
+          elif [[ "$SOURCE" == 'all' ]]; then
+            make e2etests
+            FOCUS="$TEST_SUITE" make upstream-e2etests
+          fi
       - name: dump logs on failure
         uses: ./.github/actions/e2e/dump-logs
         if: failure() || cancelled()

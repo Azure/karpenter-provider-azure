@@ -63,12 +63,14 @@ e2etests: ## Run the e2e suite against your local cluster
 		--ginkgo.vv
 
 upstream-e2etests:
+	# Upstream tests are in test/suites/. Use FOCUS to filter by Describe block name.
+	# Available upstream tests: Chaos, Drift, Expiration, Integration, NodeClaim, StaticCapacity, Termination
 	AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} VNET_RESOURCE_GROUP=${VNET_RESOURCE_GROUP} \
-	go test \
+	cd $(KARPENTER_CORE_DIR) && go test \
 		-count 1 \
 		-timeout 1h \
 		-v \
-		$(KARPENTER_CORE_DIR)/test/suites/$(shell echo $(TEST_SUITE) | tr A-Z a-z)/... \
+		./test/suites/... \
 		--ginkgo.focus="${FOCUS}" \
 		--ginkgo.timeout=1h \
 		--ginkgo.grace-period=5m \
