@@ -27,10 +27,21 @@ serviceMonitor:
   enabled: false
   # -- Additional labels for the ServiceMonitor.
   additionalLabels: {}
+  # -- Relabelings for the `http-metrics` endpoint on the ServiceMonitor.
+  # For more details on relabelings, see: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#relabel_config
+  relabelings: []
+  # -- Metric relabelings for the `http-metrics` endpoint on the ServiceMonitor.
+  # For more details on metric relabelings, see: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs
+  metricRelabelings: []
   # -- Configuration on `http-metrics` endpoint for the ServiceMonitor.
   # Not to be used to add additional endpoints.
-  # See the Prometheus operator documentation for configurable fields https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#endpoint
+  # See the Prometheus operator documentation for configurable fields https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api-reference/api.md#endpoint
   endpointConfig: {}
+  # -- Specifies the sampleLimit for prometheus scrapes.
+  # Per-scrape limit on the number of scraped samples that will be accepted.
+  # If more than this number of samples are present after metric relabeling
+  # the entire scrape will be treated as failed. 0 means no limit.
+  sampleLimit: null
 # -- Number of replicas.
 replicas: 2
 # -- The number of old ReplicaSets to retain to allow rollback.
@@ -88,8 +99,14 @@ tolerations:
     operator: Exists
 # -- Additional volumes for the pod.
 extraVolumes: []
+# -- Scheduler name for the pod.
+schedulerName: ""
+# -- initContainers for the pod.
+initContainers: []
 
 controller:
+  # -- Controller container name.
+  containerName: controller
   image:
     # -- Repository path to the controller image.
     repository: mcr.microsoft.com/aks/karpenter/controller
@@ -167,10 +184,23 @@ settings:
   # -- The global tags to use on all Azure infrastructure resources (VMs, etc.)
   # TODO: not propagated yet ...
   tags:
+  # -- preferencePolicy controls how Karpenter prioritizes node configurations when multiple options meet requirements.
+  # Valid values: "" (default - balanced), "PrioritizeNodePools", "PrioritizeMinCost"
+  preferencePolicy: ""
+  # -- minValuesPolicy controls behavior when fewer than the requested minimum number of values are available.
+  # Valid values: "" (default), "Ignore", "Honor"
+  minValuesPolicy: ""
+  # -- ignoreDRARequests configures Karpenter to ignore Dynamic Resource Allocation requests during scheduling.
+  ignoreDRARequests: false
+  # -- disableClusterStateObservability disables the cluster state observability feature.
+  disableClusterStateObservability: false
 
   # -- Feature Gate configuration values. Feature Gates will follow the same graduation process and requirements as feature gates
   # in Kubernetes. More information here https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#feature-gates-for-alpha-or-beta-features
   featureGates:
+    # -- reservedCapacity is BETA and is enabled by default.
+    # Setting this to true will enable reserved capacity provisioning.
+    reservedCapacity: true
     # -- spotToSpotConsolidation is ALPHA and is disabled by default.
     # Setting this to true will enable spot replacement consolidation for both single and multi-node consolidation.
     spotToSpotConsolidation: false
