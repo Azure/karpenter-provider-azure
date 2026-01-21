@@ -21,7 +21,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 )
 
 func TestCreateNICFromQueryResponseData(t *testing.T) {
@@ -69,18 +69,19 @@ func TestCreateNICFromQueryResponseData(t *testing.T) {
 	}
 
 	for _, c := range tc {
+		g := NewWithT(t)
 		nic, err := createNICFromQueryResponseData(c.data)
 		if nic != nil {
 			expected := *c.expectedNIC
 			actual := *nic
-			assert.Equal(t, *expected.ID, *actual.ID, c.testName)
-			assert.Equal(t, *expected.Name, *actual.Name, c.testName)
+			g.Expect(*actual.ID).To(Equal(*expected.ID), c.testName)
+			g.Expect(*actual.Name).To(Equal(*expected.Name), c.testName)
 			for key := range expected.Tags {
-				assert.Equal(t, *(expected.Tags[key]), *(actual.Tags[key]), c.testName)
+				g.Expect(*(actual.Tags[key])).To(Equal(*(expected.Tags[key])), c.testName)
 			}
 		}
 		if err != nil {
-			assert.Equal(t, c.expectedError, err.Error(), c.testName)
+			g.Expect(err.Error()).To(Equal(c.expectedError), c.testName)
 		}
 	}
 }
@@ -137,21 +138,22 @@ func TestCreateVMFromQueryResponseData(t *testing.T) {
 	}
 
 	for _, c := range tc {
+		g := NewWithT(t)
 		vm, err := createVMFromQueryResponseData(c.data)
 		if vm != nil {
 			expected := *c.expectedVM
 			actual := *vm
-			assert.Equal(t, *expected.ID, *actual.ID, c.testName)
-			assert.Equal(t, *expected.Name, *actual.Name, c.testName)
+			g.Expect(*actual.ID).To(Equal(*expected.ID), c.testName)
+			g.Expect(*actual.Name).To(Equal(*expected.Name), c.testName)
 			for key := range expected.Tags {
-				assert.Equal(t, *(expected.Tags[key]), *(actual.Tags[key]), c.testName)
+				g.Expect(*(actual.Tags[key])).To(Equal(*(expected.Tags[key])), c.testName)
 			}
 			for i := range expected.Zones {
-				assert.Equal(t, *(expected.Zones[i]), *(actual.Zones[i]), c.testName)
+				g.Expect(*(actual.Zones[i])).To(Equal(*(expected.Zones[i])), c.testName)
 			}
 		}
 		if err != nil {
-			assert.Equal(t, c.expectedError, err.Error(), c.testName)
+			g.Expect(err.Error()).To(Equal(c.expectedError), c.testName)
 		}
 	}
 }

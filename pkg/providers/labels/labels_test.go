@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/awslabs/operatorpkg/status"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -80,8 +80,9 @@ func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			labels := labels.GetAllSingleValuedRequirementLabels(c.requirements)
-			assert.Equal(t, c.expectedLabels, labels)
+			g.Expect(labels).To(Equal(c.expectedLabels))
 		})
 	}
 }
@@ -158,8 +159,9 @@ func TestGetWellKnownSingleValuedRequirementLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			labels := labels.GetWellKnownSingleValuedRequirementLabels(c.requirements)
-			assert.Equal(t, c.expectedLabels, labels)
+			g.Expect(labels).To(Equal(c.expectedLabels))
 		})
 	}
 }
@@ -234,8 +236,9 @@ func TestIsKubeletLabel(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := labels.IsKubeletLabel(c.label)
-			assert.Equal(t, c.expectedKubelet, result)
+			g.Expect(result).To(Equal(c.expectedKubelet))
 		})
 	}
 }
@@ -313,6 +316,7 @@ func TestLocalDNSLabels(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 			ctx := options.ToContext(context.Background(), &options.Options{
 				NodeResourceGroup:       "test-rg",
 				KubeletIdentityClientID: "test-client-id",
@@ -338,13 +342,14 @@ func TestLocalDNSLabels(t *testing.T) {
 			}
 
 			labelMap, err := labels.Get(ctx, nodeClass)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedLabel, labelMap[labels.AKSLocalDNSStateLabelKey])
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(labelMap[labels.AKSLocalDNSStateLabelKey]).To(Equal(tc.expectedLabel))
 		})
 	}
 }
 
 func TestDoNotSyncTaintsLabel(t *testing.T) {
+	g := NewWithT(t)
 	ctx := options.ToContext(context.Background(), &options.Options{
 		NodeResourceGroup:       "test-rg",
 		KubeletIdentityClientID: "test-client-id",
@@ -367,6 +372,6 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 	}
 
 	labelMap, err := labels.Get(ctx, nodeClass)
-	assert.NoError(t, err)
-	assert.Equal(t, "true", labelMap[karpv1.NodeDoNotSyncTaintsLabelKey])
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(labelMap[karpv1.NodeDoNotSyncTaintsLabelKey]).To(Equal("true"))
 }
