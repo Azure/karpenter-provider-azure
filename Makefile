@@ -62,7 +62,7 @@ e2etests: ## Run the e2e suite against your local cluster
 		--ginkgo.grace-period=3m \
 		--ginkgo.vv
 
-upstream-e2etests:
+upstream-e2etests: tidy download
 	# Upstream tests are in test/suites/. Use FOCUS to filter by Describe block name.
 	# Available upstream tests: Chaos, Drift, Expiration, Integration, NodeClaim, StaticCapacity, Termination
 	AZURE_CLUSTER_NAME=${AZURE_CLUSTER_NAME} AZURE_ACR_NAME=${AZURE_ACR_NAME} AZURE_RESOURCE_GROUP=${AZURE_RESOURCE_GROUP} AZURE_SUBSCRIPTION_ID=${AZURE_SUBSCRIPTION_ID} AZURE_LOCATION=${AZURE_LOCATION} VNET_RESOURCE_GROUP=${VNET_RESOURCE_GROUP} \
