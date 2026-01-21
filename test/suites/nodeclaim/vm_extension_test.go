@@ -31,24 +31,24 @@ var _ = Describe("VMExtension", func() {
 		env.EventuallyExpectHealthy(pod)
 		env.ExpectCreatedNodeCount("==", 1)
 
-		vm := env.GetVM(pod.Spec.NodeName)
-		installedExtensions := []string{}
-		for _, ext := range vm.Resources {
-			installedExtensions = append(installedExtensions, lo.FromPtr(ext.Name))
-		}
-		expectedExtensions := []any{
-			// TODO: Uncomment when AKSLinuxExtension rolls out
-			// "AKSLinuxExtension",
-			"computeAksLinuxBilling",
-		}
-		Expect(installedExtensions).To(ContainElements(expectedExtensions...))
-		if !env.InClusterController {
-			expectedManagedExtensions := []any{
-				"cse-agent-karpenter",
+		// VM extensions may take time to be installed and appear in the VM resource
+		// We need to poll the VM to ensure extensions are fully provisioned before checking
+		Eventually(func(g Gomega) {
+			vm := env.GetVM(pod.Spec.NodeName)
+			installedExtensions := []string{}
+			for _, ext := range vm.Resources {
+				installedExtensions = append(installedExtensions, lo.FromPtr(ext.Name))
 			}
-			Expect(installedExtensions).To(ContainElements(expectedManagedExtensions))
-		}
-
+			expectedExtensions := []any{
+				"computeAksLinuxBilling",
+			}
+			g.Expect(installedExtensions).To(ContainElements(expectedExtensions...))
+			if !env.InClusterController {
+				expectedManagedExtensions := []any{
+					"cse-agent-karpenter",
+				}
+				g.Expect(installedExtensions).To(ContainElements(expectedManagedExtensions))
+			}
+		}).Should(Succeed())
 	})
-	//It("should use nodepool tags on the vm extensions karpenter manages", func(){})
 })
