@@ -12,9 +12,9 @@ on:
         type: string
         description: "the karpenter provisioning mode to run the e2e test in"
         default: "aksscriptless"
-  #     k8s_version:
-  #       type: string
-  #       default: "1.27"
+      k8s_version:
+        type: string
+        description: "the kubernetes version to use (e.g., 1.30). If empty, uses AKS default."
     secrets:
       E2E_CLIENT_ID:
         required: true
@@ -42,7 +42,7 @@ jobs:
       suite: ${{ matrix.suite }}
       location: ${{ inputs.location }}
       provisionmode: ${{ inputs.provisionmode || 'aksscriptless' }}
-  #     k8s_version: ${{ inputs.k8s_version }}
+      k8s_version: ${{ inputs.k8s_version }}
     secrets:
       E2E_CLIENT_ID: ${{ secrets.E2E_CLIENT_ID }}
       E2E_TENANT_ID: ${{ secrets.E2E_TENANT_ID }}
