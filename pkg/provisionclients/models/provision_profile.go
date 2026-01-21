@@ -355,11 +355,15 @@ func (m *ProvisionProfile) validateLocalDNSProfile(formats strfmt.Registry) erro
 
 	if m.LocalDNSProfile != nil {
 		if err := m.LocalDNSProfile.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("localDNSProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("localDNSProfile")
 			}
+
 			return err
 		}
 	}
@@ -652,11 +656,15 @@ func (m *ProvisionProfile) contextValidateLocalDNSProfile(ctx context.Context, f
 		}
 
 		if err := m.LocalDNSProfile.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("localDNSProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("localDNSProfile")
 			}
+
 			return err
 		}
 	}
