@@ -24,7 +24,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
 	"github.com/awslabs/operatorpkg/status"
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -58,18 +58,20 @@ func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 			requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(corev1.LabelInstanceTypeStable, corev1.NodeSelectorOpIn, "Standard_D2s_v3"),
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1"),
 			),
 			expectedLabels: map[string]string{
 				corev1.LabelInstanceTypeStable: "Standard_D2s_v3",
 				corev1.LabelTopologyZone:       "westus-1",
-				// karpv1.CapacityTypeLabelKey should be excluded because it has multiple values
+				// karpv1.CapacityTypeLabelKey and v1beta1.AKSLabelScaleSetPriority should be excluded because they have multiple values
 			},
 		},
 		{
 			name: "No single-valued requirements",
 			requirements: scheduling.NewRequirements(
 				scheduling.NewRequirement(karpv1.CapacityTypeLabelKey, corev1.NodeSelectorOpIn, karpv1.CapacityTypeOnDemand, karpv1.CapacityTypeSpot),
+				scheduling.NewRequirement(v1beta1.AKSLabelScaleSetPriority, corev1.NodeSelectorOpIn, v1beta1.ScaleSetPriorityRegular, v1beta1.ScaleSetPrioritySpot),
 				scheduling.NewRequirement(corev1.LabelTopologyZone, corev1.NodeSelectorOpIn, "westus-1", "westus-2"),
 			),
 			expectedLabels: map[string]string{},
@@ -78,8 +80,9 @@ func TestGetAllSingleValuedRequirementLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			labels := labels.GetAllSingleValuedRequirementLabels(c.requirements)
-			assert.Equal(t, c.expectedLabels, labels)
+			g.Expect(labels).To(Equal(c.expectedLabels))
 		})
 	}
 }
@@ -156,8 +159,9 @@ func TestGetWellKnownSingleValuedRequirementLabels(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			labels := labels.GetWellKnownSingleValuedRequirementLabels(c.requirements)
-			assert.Equal(t, c.expectedLabels, labels)
+			g.Expect(labels).To(Equal(c.expectedLabels))
 		})
 	}
 }
@@ -232,8 +236,9 @@ func TestIsKubeletLabel(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result := labels.IsKubeletLabel(c.label)
-			assert.Equal(t, c.expectedKubelet, result)
+			g.Expect(result).To(Equal(c.expectedKubelet))
 		})
 	}
 }
@@ -311,6 +316,7 @@ func TestLocalDNSLabels(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 			ctx := options.ToContext(context.Background(), &options.Options{
 				NodeResourceGroup:       "test-rg",
 				KubeletIdentityClientID: "test-client-id",
@@ -336,8 +342,36 @@ func TestLocalDNSLabels(t *testing.T) {
 			}
 
 			labelMap, err := labels.Get(ctx, nodeClass)
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedLabel, labelMap[labels.AKSLocalDNSStateLabelKey])
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(labelMap[labels.AKSLocalDNSStateLabelKey]).To(Equal(tc.expectedLabel))
 		})
 	}
+}
+
+func TestDoNotSyncTaintsLabel(t *testing.T) {
+	g := NewWithT(t)
+	ctx := options.ToContext(context.Background(), &options.Options{
+		NodeResourceGroup:       "test-rg",
+		KubeletIdentityClientID: "test-client-id",
+		SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
+	})
+
+	nodeClass := &v1beta1.AKSNodeClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-nodeclass",
+		},
+		Status: v1beta1.AKSNodeClassStatus{
+			KubernetesVersion: "1.35.0",
+			Conditions: []status.Condition{
+				{
+					Type:   v1beta1.ConditionTypeKubernetesVersionReady,
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	labelMap, err := labels.Get(ctx, nodeClass)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(labelMap[karpv1.NodeDoNotSyncTaintsLabelKey]).To(Equal("true"))
 }
