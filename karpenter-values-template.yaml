@@ -57,3 +57,6 @@ serviceAccount:
 podLabels:
   azure.workload.identity/use: "true"
 logLevel: ${LOG_LEVEL}
+settings:
+  featureGates:
+    staticCapacity: true
