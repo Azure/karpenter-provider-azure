@@ -205,7 +205,7 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 		}
 	}
 
-	log.FromContext(ctx).Info("updating AKS machine", "aksMachineName", aksMachineName, "aksMachine", BuildJSONFromAKSMachine(&aksMachine))
+	log.FromContext(ctx).V(1).Info("updating AKS machine", "aksMachineName", aksMachineName, "aksMachine", BuildJSONFromAKSMachine(&aksMachine))
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
 		if IsAKSMachineOrMachinesPoolNotFound(err) {
