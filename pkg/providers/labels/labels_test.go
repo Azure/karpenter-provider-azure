@@ -375,3 +375,129 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(labelMap[karpv1.NodeDoNotSyncTaintsLabelKey]).To(Equal("true"))
 }
+
+func TestLabelsGet(t *testing.T) {
+	testCases := []struct {
+		name              string
+		imageFamily       string
+		kubernetesVersion string
+		expectedLabels    map[string]string
+	}{
+		{
+			name:              "Ubuntu default with k8s < 1.34 should use Ubuntu2204",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.33.9",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.UbuntuImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2204ImageFamily,
+			},
+		},
+		{
+			name:              "Ubuntu default with k8s >= 1.34 should use Ubuntu2404",
+			imageFamily:       v1beta1.UbuntuImageFamily,
+			kubernetesVersion: "1.34.0",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.UbuntuImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2404ImageFamily,
+			},
+		},
+		{
+			name:              "Explicit Ubuntu2204 with k8s < 1.34",
+			imageFamily:       v1beta1.Ubuntu2204ImageFamily,
+			kubernetesVersion: "1.31.0",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2204ImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2204ImageFamily,
+			},
+		},
+		{
+			name:              "Explicit Ubuntu2204 with k8s >= 1.34 still uses Ubuntu2204",
+			imageFamily:       v1beta1.Ubuntu2204ImageFamily,
+			kubernetesVersion: "1.35.0",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2204ImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2204ImageFamily,
+			},
+		},
+		{
+			name:              "Explicit Ubuntu2404 with k8s < 1.34",
+			imageFamily:       v1beta1.Ubuntu2404ImageFamily,
+			kubernetesVersion: "1.31.0",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2404ImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2404ImageFamily,
+			},
+		},
+		{
+			name:              "Explicit Ubuntu2404 with k8s >= 1.34",
+			imageFamily:       v1beta1.Ubuntu2404ImageFamily,
+			kubernetesVersion: "1.35.0",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "Ubuntu",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.Ubuntu2404ImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: v1beta1.Ubuntu2404ImageFamily,
+			},
+		},
+		{
+			name:              "AzureLinux with k8s < 1.32 should use AzureLinux2",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.31.9",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "AzureLinux",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.AzureLinuxImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: "AzureLinux2",
+			},
+		},
+		{
+			name:              "AzureLinux with k8s >= 1.32 should use AzureLinux3",
+			imageFamily:       v1beta1.AzureLinuxImageFamily,
+			kubernetesVersion: "1.32.0",
+			expectedLabels: map[string]string{
+				v1beta1.AKSLabelOSSKU:          "AzureLinux",
+				v1beta1.AKSLabelOSSKURequested: v1beta1.AzureLinuxImageFamily,
+				v1beta1.AKSLabelOSSKUEffective: "AzureLinux3",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := options.ToContext(context.Background(), &options.Options{
+				NodeResourceGroup:       "test-rg",
+				KubeletIdentityClientID: "test-client-id",
+				SubnetID:                "/subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test",
+			})
+
+			imageFamily := tc.imageFamily
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+				Spec: v1beta1.AKSNodeClassSpec{
+					ImageFamily: &imageFamily,
+				},
+				Status: v1beta1.AKSNodeClassStatus{
+					KubernetesVersion: tc.kubernetesVersion,
+					Conditions: []status.Condition{
+						{
+							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
+							Status: metav1.ConditionTrue,
+						},
+					},
+				},
+			}
+
+			labelMap, err := labels.Get(ctx, nodeClass)
+			g.Expect(err).ToNot(HaveOccurred())
+			for key, expectedValue := range tc.expectedLabels {
+				g.Expect(labelMap).To(HaveKeyWithValue(key, expectedValue), "label %s mismatch", key)
+			}
+		})
+	}
+}
