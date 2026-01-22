@@ -35,6 +35,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      automountServiceAccountToken: true
       serviceAccountName: {{ include "karpenter.serviceAccountName" . }}
       {{- with .Values.podSecurityContext }}
       securityContext:
@@ -56,8 +57,11 @@ spec:
       {{- if .Values.hostNetwork }}
       hostNetwork: true
       {{- end }}
+      {{- with .Values.schedulerName }}
+      schedulerName: {{ . | quote }}
+      {{- end }}
       containers:
-        - name: controller
+        - name: {{ include "karpenter.controller.containerName" . }}
           securityContext:
             runAsUser: 65532
             runAsGroup: 65532
@@ -92,14 +96,32 @@ spec:
               value: "{{ .Values.controller.metrics.port }}"
             - name: HEALTH_PROBE_PORT
               value: "{{ .Values.controller.healthProbe.port }}"
+            - name: SYSTEM_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CPU_REQUESTS
+              valueFrom:
+                resourceFieldRef:
+                  containerName: {{ include "karpenter.controller.containerName" . }}
+                  divisor: 1m
+                  resource: requests.cpu
             - name: MEMORY_LIMIT
               valueFrom:
                 resourceFieldRef:
-                  containerName: controller
+                  containerName: {{ include "karpenter.controller.containerName" . }}
                   divisor: "0"
                   resource: limits.memory
+          {{- with .Values.logOutputPaths }}
+            - name: LOG_OUTPUT_PATHS
+              value: "{{ join "," . }}"
+          {{- end }}
+          {{- with .Values.logErrorOutputPaths }}
+            - name: LOG_ERROR_OUTPUT_PATHS
+              value: "{{ join "," . }}"
+          {{- end }}
             - name: FEATURE_GATES
-              value: "SpotToSpotConsolidation={{ .Values.settings.featureGates.spotToSpotConsolidation }},NodeRepair={{ .Values.settings.featureGates.nodeRepair }},NodeOverlay={{ .Values.settings.featureGates.nodeOverlay }},StaticCapacity={{ .Values.settings.featureGates.staticCapacity }}"
+              value: "ReservedCapacity={{ .Values.settings.featureGates.reservedCapacity }},SpotToSpotConsolidation={{ .Values.settings.featureGates.spotToSpotConsolidation }},NodeRepair={{ .Values.settings.featureGates.nodeRepair }},NodeOverlay={{ .Values.settings.featureGates.nodeOverlay }},StaticCapacity={{ .Values.settings.featureGates.staticCapacity }}"
           {{- with .Values.settings.batchMaxDuration }}
             - name: BATCH_MAX_DURATION
               value: "{{ . }}"
@@ -122,6 +144,22 @@ spec:
           {{- end }}
           {{- with .Values.settings.vmMemoryOverheadPercent }}
             - name: VM_MEMORY_OVERHEAD_PERCENT
+              value: "{{ . }}"
+          {{- end }}
+          {{- with .Values.settings.preferencePolicy }}
+            - name: PREFERENCE_POLICY
+              value: "{{ . }}"
+          {{- end }}
+          {{- with .Values.settings.minValuesPolicy }}
+            - name: MIN_VALUES_POLICY
+              value: "{{ . }}"
+          {{- end }}
+          {{- with .Values.settings.ignoreDRARequests }}
+            - name: IGNORE_DRA_REQUESTS
+              value: "{{ . }}"
+          {{- end }}
+          {{- with .Values.settings.disableClusterStateObservability }}
+            - name: DISABLE_CLUSTER_STATE_OBSERVABILITY
               value: "{{ . }}"
           {{- end }}
           {{- with .Values.controller.env }}
@@ -180,6 +218,10 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
         {{- end }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
