@@ -12,7 +12,7 @@ main() {
 
 tools() {
     go install github.com/google/go-licenses@v1.6.0
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
+    go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
     go install github.com/google/ko@v0.17.1
     go install github.com/mikefarah/yq/v4@v4.45.1
     go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
@@ -24,7 +24,7 @@ tools() {
     go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
     go install github.com/mattn/goveralls@v0.0.12
     go install github.com/google/go-containerregistry/cmd/crane@v0.20.2
-    go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0
+    go install github.com/go-swagger/go-swagger/cmd/swagger@v0.33.1
     go install github.com/Azure/aks-node-viewer/cmd/aks-node-viewer@latest
     go install github.com/google/pprof@latest
 
