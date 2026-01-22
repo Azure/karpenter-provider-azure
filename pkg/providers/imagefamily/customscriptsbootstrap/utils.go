@@ -141,12 +141,12 @@ func convertLocalDNSZoneOverrideToModel(override *v1beta1.LocalDNSZoneOverride) 
 	}
 
 	if override.CacheDuration.Duration != nil {
-		seconds := int32(override.CacheDuration.Duration.Seconds())
+		seconds := int32(override.CacheDuration.Seconds())
 		modelOverride.CacheDurationInSeconds = &seconds
 	}
 
 	if override.ServeStaleDuration.Duration != nil {
-		seconds := int32(override.ServeStaleDuration.Duration.Seconds())
+		seconds := int32(override.ServeStaleDuration.Seconds())
 		modelOverride.ServeStaleDurationInSeconds = &seconds
 	}
 
