@@ -404,7 +404,7 @@ func TestLabelsGet(t *testing.T) {
 			},
 		},
 		{
-			name:              "Explicit Ubuntu2204 with k8s < 1.34",
+			name:              "Explicit Ubuntu2204 with k8s < 1.34 still uses Ubuntu2204",
 			imageFamily:       v1beta1.Ubuntu2204ImageFamily,
 			kubernetesVersion: "1.31.0",
 			expectedLabels: map[string]string{
@@ -424,7 +424,7 @@ func TestLabelsGet(t *testing.T) {
 			},
 		},
 		{
-			name:              "Explicit Ubuntu2404 with k8s < 1.34",
+			name:              "Explicit Ubuntu2404 with k8s < 1.34 still uses Ubuntu2404",
 			imageFamily:       v1beta1.Ubuntu2404ImageFamily,
 			kubernetesVersion: "1.31.0",
 			expectedLabels: map[string]string{
@@ -434,7 +434,7 @@ func TestLabelsGet(t *testing.T) {
 			},
 		},
 		{
-			name:              "Explicit Ubuntu2404 with k8s >= 1.34",
+			name:              "Explicit Ubuntu2404 with k8s >= 1.34 still uses Ubuntu2404",
 			imageFamily:       v1beta1.Ubuntu2404ImageFamily,
 			kubernetesVersion: "1.35.0",
 			expectedLabels: map[string]string{
