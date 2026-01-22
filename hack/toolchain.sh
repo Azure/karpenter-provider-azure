@@ -24,7 +24,7 @@ tools() {
     go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
     go install github.com/mattn/goveralls@v0.0.12
     go install github.com/google/go-containerregistry/cmd/crane@v0.20.2
-    go install github.com/go-swagger/go-swagger/cmd/swagger@v0.31.0
+    go install github.com/go-swagger/go-swagger/cmd/swagger@v0.33.1
     go install github.com/Azure/aks-node-viewer/cmd/aks-node-viewer@latest
     go install github.com/google/pprof@latest
 
