@@ -383,8 +383,19 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	aksMachineName string,
 ) (*AKSMachinePromise, error) {
 	// Reuse the existing AKS machine if it exists, and skip the creation.
-	// Note: currently, we do not support different offerings requirements for the NodeClaim with the same name that attempted creation recently. The same applies with VM-based provisioning.
-	// This supported case is often a result of Karpenter restarting while the node is being created, in which the NodeClaim to create stays the same after restart.
+	//
+	// This repeated creation is possible in a race condition where we successfully launched the AKS machine
+	// but crashed/restarted before we could set the NodeClaim's Launched status. In that case, the NodeClaim
+	// will be re-queued for creation, but the AKS machine already exists.
+	//
+	// We assume that if an AKS machine exists, we successfully created it with the right parameters from the
+	// NodeClaim during a previous run.
+	// However, offerings properties (e.g., instanceType, capacityType, zone) are decided below and not deterministic,
+	// thus, they may differ in the new attempts.
+	//
+	// If we attempted to recreate with different properties, the API would reject the request due to property
+	// conflicts, blocking the NodeClaim until liveness TTL is hit. This guard will just reuse the existing AKS machine,
+	// potentially with original offerings properties, which is acceptable, as it just complete the original intention.
 	existingAKSMachine, err := p.getMachine(ctx, aksMachineName)
 	if err == nil {
 		// Existing AKS machine found, reuse it.
