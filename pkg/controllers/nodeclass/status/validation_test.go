@@ -21,6 +21,9 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
+	"github.com/Azure/karpenter-provider-azure/pkg/fake"
+	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -57,7 +60,29 @@ var _ = Describe("Validation Reconciler", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		reconciler = status.NewValidationReconciler()
+
+		// Create minimal test setup with fake DES client
+		azClient := instance.NewAZClientFromAPI(
+			nil,                           // virtualMachinesClient
+			nil,                           // azureResourceGraphClient
+			nil,                           // aksMachinesClient
+			nil,                           // agentPoolsClient
+			nil,                           // virtualMachinesExtensionClient
+			nil,                           // interfacesClient
+			nil,                           // subnetsClient
+			&fake.DiskEncryptionSetsAPI{}, // diskEncryptionSetsClient
+			nil,                           // loadBalancersClient
+			nil,                           // networkSecurityGroupsClient
+			nil,                           // imageVersionsClient
+			nil,                           // nodeImageVersionsClient
+			nil,                           // nodeBootstrappingClient
+			nil,                           // skuClient
+			nil,                           // subscriptionsClient
+		)
+		opts := &options.Options{}
+
+		// Note: client is nil since these basic tests don't need to interact with k8s objects
+		reconciler = status.NewValidationReconciler(nil, azClient.DiskEncryptionSetsClient(), opts)
 		nodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "test-nodeclass",

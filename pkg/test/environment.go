@@ -47,7 +47,7 @@ import (
 func init() {
 	karpv1.NormalizedLabels = lo.Assign(karpv1.NormalizedLabels, map[string]string{"topology.disk.csi.azure.com/zone": corev1.LabelTopologyZone})
 
-	// Configuing this here because it's commonly imported and has an init already
+	// Configuring this here because it's commonly imported and has an init already
 	gomegaformat.CharactersAroundMismatchToInclude = 40
 }
 
@@ -69,6 +69,7 @@ type Environment struct {
 	LoadBalancersAPI            *fake.LoadBalancersAPI
 	NetworkSecurityGroupAPI     *fake.NetworkSecurityGroupAPI
 	SubnetsAPI                  *fake.SubnetsAPI
+	DiskEncryptionSetsAPI       *fake.DiskEncryptionSetsAPI
 	AuxiliaryTokenServer        *fake.AuxiliaryTokenServer
 	SubscriptionAPI             *fake.SubscriptionsAPI
 	NodeBootstrappingAPI        *fake.NodeBootstrappingAPI
@@ -186,6 +187,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		testOptions.NodeResourceGroup,
 	)
 	subnetsAPI := &fake.SubnetsAPI{}
+	diskEncryptionSetsAPI := &fake.DiskEncryptionSetsAPI{}
 	azClient := instance.NewAZClientFromAPI(
 		virtualMachinesAPI,
 		azureResourceGraphAPI,
@@ -194,6 +196,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		virtualMachinesExtensionsAPI,
 		networkInterfacesAPI,
 		subnetsAPI,
+		diskEncryptionSetsAPI,
 		loadBalancersAPI,
 		networkSecurityGroupAPI,
 		communityImageVersionsAPI,
@@ -229,6 +232,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		LoadBalancersAPI:            loadBalancersAPI,
 		NetworkSecurityGroupAPI:     networkSecurityGroupAPI,
 		SubnetsAPI:                  subnetsAPI,
+		DiskEncryptionSetsAPI:       diskEncryptionSetsAPI,
 		SKUsAPI:                     skusAPI,
 		PricingAPI:                  pricingAPI,
 		SubscriptionAPI:             subscriptionAPI,

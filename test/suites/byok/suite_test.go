@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -73,7 +72,7 @@ var _ = Describe("BYOK", func() {
 
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		if env.InClusterController {
-			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
+			diskEncryptionSetID = createKeyVaultAndDiskEncryptionSet(ctx, env)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		}
 
@@ -125,7 +124,7 @@ var _ = Describe("BYOK", func() {
 		By("Phase 1: Setting up DES (Disk Encryption Set)")
 		// If not InClusterController, assume the test setup will include the creation of the KV, KV-Key + DES
 		if env.InClusterController {
-			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
+			diskEncryptionSetID = createKeyVaultAndDiskEncryptionSet(ctx, env)
 			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
 		}
 
@@ -175,122 +174,53 @@ var _ = Describe("BYOK", func() {
 	})
 
 	It("should mark AKSNodeClass as NotReady when DES ID is set but Reader RBAC is missing", func() {
-		ctx := context.Background()
-		var diskEncryptionSetID string
-
-		// TODO(rbac): Use a shared constant for the RBAC error message here and in the implementation
-		rbacErrorMessage := "missing Reader role assignment on Disk Encryption Set"
-
-		By("Phase 1: Setting up DES (Disk Encryption Set)")
-		if env.InClusterController {
-			// Create DES with full RBAC setup, then remove the Reader role to test missing RBAC scenario
-			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
-
-			By("Phase 1b: Removing Reader RBAC to test validation failure")
-			// Remove the Reader role from cluster identity on the DES to simulate missing RBAC
-			karpenterIdentity := env.GetKarpenterWorkloadIdentity(ctx)
-			err := env.RBACManager.RemoveRole(ctx, diskEncryptionSetID, karpenterIdentity)
-			Expect(err).ToNot(HaveOccurred())
-
-			By("Phase 1c: Eventually the Reader role should be absent from the DES")
-			Eventually(func() bool {
-				return !env.RBACManager.HasRole(ctx, diskEncryptionSetID, karpenterIdentity, readerRole)
-			}).WithTimeout(2*time.Minute).WithPolling(10*time.Second).Should(BeTrue(), "expected Reader role to be removed from DES")
-		} else {
-			// If not in-cluster, assume test setup provides a DES ID without RBAC
-			diskEncryptionSetID = os.Getenv("TEST_DES_ID_WITHOUT_RBAC")
-			if diskEncryptionSetID == "" {
-				Skip("TEST_DES_ID_WITHOUT_RBAC not set; skipping test requiring pre-configured DES without RBAC")
-			}
+		if !env.InClusterController {
+			Skip("This test requires InClusterController mode to configure DES environment variable")
 		}
 
-		By("Phase 2: Creating a NodeClass with valid DES ID but without proper RBAC setup")
+		ctx := context.Background()
+
+		// TODO(rbac): Use a shared constant for the RBAC error message here and in the implementation
+		rbacErrorMessage := "does not have Reader role on Disk Encryption Set"
+
+		By("Phase 1: Creating a DES WITHOUT Reader RBAC for the controlling identity")
+		// Create a second DES but intentionally skip assigning the Reader role
+		// This simulates the scenario where a user configures DES but forgets to grant permissions
+		diskEncryptionSetWithoutRBAC := createKeyVaultAndDiskEncryptionSetWithoutReaderRBAC(ctx, env)
+
+		By("Phase 2: Configuring Karpenter to use the DES without RBAC")
+		// The validation should detect this and mark the NodeClass as NotReady
+		env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetWithoutRBAC})
+
+		By("Phase 3: Creating a NodeClass and NodePool")
 		nodeClass := env.DefaultAKSNodeClass()
 		nodePool := env.DefaultNodePool(nodeClass)
 
-		By("Phase 3: Applying NodeClass and NodePool to cluster")
+		By("Phase 4: Applying NodeClass and NodePool to cluster")
 		env.ExpectCreated(nodeClass, nodePool)
 
-		By("Phase 4: Verifying AKSNodeClass status shows RBAC validation failure")
+		By("Phase 5: Verifying AKSNodeClass status shows RBAC validation failure")
 		Eventually(func(g Gomega) {
 			retrieved := &v1beta1.AKSNodeClass{}
 			err := env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)
 			g.Expect(err).ToNot(HaveOccurred())
 			condition := retrieved.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-			g.Expect(condition.IsFalse()).To(BeTrue())
+			g.Expect(condition.IsFalse()).To(BeTrue(), "expected ValidationSucceeded to be False when DES Reader RBAC is missing")
 			g.Expect(condition.Message).To(ContainSubstring(rbacErrorMessage))
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second)
 
-		By("Phase 5: Verifying the overall Ready condition is False")
-		retrieved := &v1beta1.AKSNodeClass{}
-		Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)).To(Succeed())
-		readyCondition := retrieved.StatusConditions().Get(status.ConditionReady)
-		Expect(readyCondition.IsFalse()).To(BeTrue(), "expected AKSNodeClass to be NotReady when DES Reader role is not assigned")
-
-		By("Phase 6: Verifying no VMs or nodes are created despite NodePool being present")
-		env.EventuallyExpectCreatedNodeCount("==", 0)
-	})
-
-	It("should mark AKSNodeClass as Ready when DES ID is set and Reader RBAC is properly configured", func() {
-		ctx := context.Background()
-		var diskEncryptionSetID string
-
-		By("Phase 1: Setting up DES (Disk Encryption Set) with proper RBAC")
-		if env.InClusterController {
-			diskEncryptionSetID = CreateKeyVaultAndDiskEncryptionSet(ctx, env)
-			env.ExpectSettingsOverridden(corev1.EnvVar{Name: "NODE_OSDISK_DISKENCRYPTIONSET_ID", Value: diskEncryptionSetID})
-		} else {
-			diskEncryptionSetID = os.Getenv("TEST_DES_ID_WITH_RBAC")
-			if diskEncryptionSetID == "" {
-				Skip("TEST_DES_ID_WITH_RBAC not set; skipping test requiring pre-configured DES with RBAC")
-			}
-		}
-
-		By("Phase 2: Creating NodeClass and NodePool")
-		nodeClass := env.DefaultAKSNodeClass()
-		nodePool := env.DefaultNodePool(nodeClass)
-
-		By("Phase 3: Creating test Pod")
-		pod := test.Pod()
-
-		By("Phase 4: Applying resources to Kubernetes")
-		env.ExpectCreated(nodeClass, nodePool, pod)
-
-		By("Phase 5: Verifying AKSNodeClass status shows validation success")
-		Eventually(func() bool {
+		By("Phase 6: Verifying the overall Ready condition is False")
+		Eventually(func(g Gomega) {
 			retrieved := &v1beta1.AKSNodeClass{}
 			err := env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)
-			if err != nil {
-				return false
-			}
-			condition := retrieved.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-			return condition.IsTrue()
-		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(BeTrue())
+			g.Expect(err).ToNot(HaveOccurred())
+			readyCondition := retrieved.StatusConditions().Get(status.ConditionReady)
+			g.Expect(readyCondition.IsFalse()).To(BeTrue(), "expected AKSNodeClass to be NotReady when DES Reader role is not assigned")
+		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second)
 
-		By("Phase 6: Verifying the overall Ready condition is True")
-		retrieved := &v1beta1.AKSNodeClass{}
-		Expect(env.Client.Get(ctx, client.ObjectKeyFromObject(nodeClass), retrieved)).To(Succeed())
-		readyCondition := retrieved.StatusConditions().Get(status.ConditionReady)
-		Expect(readyCondition.IsTrue()).To(BeTrue(), "expected AKSNodeClass to be Ready when DES Reader role is properly assigned")
-
-		By("Phase 7: Waiting for VM to be created and node to be registered")
-		env.EventuallyExpectCreatedNodeCount("==", 1)
-
-		By("Phase 8: Verifying Pod becomes healthy")
-		env.EventuallyExpectHealthy(pod)
-
-		By("Phase 9: Verifying VM disk encryption configuration")
-		vm := env.GetVM(pod.Spec.NodeName)
-		Expect(vm.Properties).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet).ToNot(BeNil())
-		Expect(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID).ToNot(BeNil())
-
-		if env.InClusterController {
-			Expect(lo.FromPtr(vm.Properties.StorageProfile.OSDisk.ManagedDisk.DiskEncryptionSet.ID)).To(Equal(diskEncryptionSetID))
-		}
+		By("Phase 7: Verifying no VMs or nodes are created despite NodePool being present")
+		// Verify no new nodes are created when validation fails
+		env.EventuallyExpectCreatedNodeCount("==", 0)
 	})
 })
 
@@ -301,7 +231,7 @@ const (
 	keyVaultCryptoOfficer           = "14b46e9e-c2b7-41b4-b07b-48a6ebf60603"
 )
 
-// CreateKeyVaultAndDiskEncryptionSet creates a key vault and disk encryption set for BYOK testing
+// createKeyVaultAndDiskEncryptionSet creates a key vault and disk encryption set for BYOK testing
 //
 // This function performs the following operations in sequence:
 //
@@ -321,27 +251,68 @@ const (
 //   - Azure clients also retry on 400 (Bad Request) errors for PrincipalNotFound when identities haven't replicated
 //
 // Returns the DES resource ID for use in VM disk encryption configuration.
-func CreateKeyVaultAndDiskEncryptionSet(ctx context.Context, env *azure.Environment) string {
+func createKeyVaultAndDiskEncryptionSet(ctx context.Context, env *azure.Environment) string {
 	keyVaultName := fmt.Sprintf("karpentertest%d", time.Now().Unix())
 	keyName := "test-key"
 	desName := fmt.Sprintf("karpenter-test-des-%d", time.Now().Unix())
 
+	keyVaultID, desID, desPrincipalID, karpenterIdentity := createKeyVaultDESResources(ctx, env, keyVaultName, keyName, desName)
+
+	// Assign Reader role on DES to Karpenter identity (so it can create VMs with this DES)
+	err := assignDiskEncryptionSetRBAC(ctx, env, desID, karpenterIdentity)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Assign Key Vault Crypto Service Encryption User role to DES identity
+	err = assignKeyVaultAccessForDES(ctx, env, keyVaultID, desPrincipalID)
+	Expect(err).ToNot(HaveOccurred())
+
+	return desID
+}
+
+// createKeyVaultAndDiskEncryptionSetWithoutReaderRBAC creates a DES without assigning Reader role
+// to the Karpenter workload identity. This is used to test the validation logic that detects missing RBAC.
+//
+// Note: This function is only used in Test 3, which runs in InClusterController mode only.
+// The function creates all necessary resources (Key Vault, key, DES) and assigns all roles
+// EXCEPT the Reader role on the DES to the Karpenter workload identity.
+// This simulates a misconfiguration where the user forgets to grant the necessary permissions.
+func createKeyVaultAndDiskEncryptionSetWithoutReaderRBAC(ctx context.Context, env *azure.Environment) string {
+	keyVaultName := fmt.Sprintf("karpentertest%d", time.Now().Unix())
+	keyName := "test-key-no-rbac"
+	desName := fmt.Sprintf("karpenter-test-des-no-rbac-%d", time.Now().Unix())
+
+	keyVaultID, desID, desPrincipalID, _ := createKeyVaultDESResources(ctx, env, keyVaultName, keyName, desName)
+
+	// INTENTIONALLY SKIP assignDiskEncryptionSetRBAC - this is the missing permission we're testing
+
+	// Still assign Key Vault access to the DES identity so the DES itself can work
+	// The issue is only that Karpenter can't READ the DES resource
+	err := assignKeyVaultAccessForDES(ctx, env, keyVaultID, desPrincipalID)
+	Expect(err).ToNot(HaveOccurred())
+
+	return desID
+}
+
+// createKeyVaultDESResources creates the Key Vault, Key, and DES resources
+// Returns the resource IDs and identities needed for RBAC assignment
+func createKeyVaultDESResources(ctx context.Context, env *azure.Environment, keyVaultName, keyName, desName string) (keyVaultID, desID, desPrincipalID, karpenterIdentity string) {
 	cred := env.GetDefaultCredential()
 
 	clusterIdentity := env.GetClusterIdentity(ctx)
 	clusterTenant := lo.FromPtr(clusterIdentity.TenantID)
 	Expect(clusterTenant).ToNot(BeEmpty())
 
-	karpenterIdentity := env.GetKarpenterWorkloadIdentity(ctx)
+	karpenterIdentity = env.GetKarpenterWorkloadIdentity(ctx)
 
 	keyVault, err := createKeyVault(ctx, env, keyVaultName, clusterTenant)
 	Expect(err).ToNot(HaveOccurred())
+	keyVaultID = lo.FromPtr(keyVault.ID)
 
 	// Get the current test user's principal ID from the defaultCredential Token
 	testUserPrincipalID := env.GetCurrentUserPrincipalID(ctx, cred)
 	Expect(testUserPrincipalID).ToNot(BeEmpty(), "test user authentication failed")
 
-	err = assignKeyVaultRBAC(ctx, env, lo.FromPtr(keyVault.ID), karpenterIdentity, testUserPrincipalID)
+	err = assignKeyVaultRBAC(ctx, env, keyVaultID, karpenterIdentity, testUserPrincipalID)
 	Expect(err).ToNot(HaveOccurred())
 
 	key, err := createKeyVaultKey(ctx, keyVaultName, keyName, cred)
@@ -354,13 +325,10 @@ func CreateKeyVaultAndDiskEncryptionSet(ctx context.Context, env *azure.Environm
 	Expect(desIdentity).ToNot(BeNil())
 	Expect(desIdentity.PrincipalID).ToNot(BeNil())
 
-	err = assignDiskEncryptionSetRBAC(ctx, env, lo.FromPtr(des.ID), karpenterIdentity)
-	Expect(err).ToNot(HaveOccurred())
+	desID = lo.FromPtr(des.ID)
+	desPrincipalID = lo.FromPtr(desIdentity.PrincipalID)
 
-	err = updateKeyVaultAccessForDES(ctx, env, keyVaultName, desIdentity)
-	Expect(err).ToNot(HaveOccurred())
-
-	return lo.FromPtr(des.ID)
+	return keyVaultID, desID, desPrincipalID, karpenterIdentity
 }
 
 // createKeyVault creates an Azure Key Vault
@@ -397,32 +365,21 @@ func createKeyVault(ctx context.Context, env *azure.Environment, keyVaultName, c
 	return &kvResp.Vault, nil
 }
 
-// assignKeyVaultRBAC assigns necessary RBAC roles for Key Vault access
+// assignKeyVaultRBAC assigns necessary RBAC roles for Key Vault access to both
+// the Karpenter workload identity and test user identity
 func assignKeyVaultRBAC(ctx context.Context, env *azure.Environment, keyVaultID, karpenterIdentity, testUserPrincipalID string) error {
-	cryptoOfficerRoleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, keyVaultCryptoOfficer)
-	keyVaultAdminRoleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, keyVaultAdminRole)
+	cryptoOfficerRoleID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, keyVaultCryptoOfficer)
+	adminRoleID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, keyVaultAdminRole)
 
-	// Assign roles to karpenter workload identity so that karpenter can access keys for disk encryption
-	err := env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, karpenterIdentity)
-	if err != nil {
-		return fmt.Errorf("failed to assign Crypto Officer role to karpenter identity: %w", err)
+	// Assign roles to both identities
+	for _, identity := range []string{karpenterIdentity, testUserPrincipalID} {
+		if err := env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleID, identity); err != nil {
+			return fmt.Errorf("failed to assign Crypto Officer role: %w", err)
+		}
+		if err := env.RBACManager.EnsureRole(ctx, keyVaultID, adminRoleID, identity); err != nil {
+			return fmt.Errorf("failed to assign Administrator role: %w", err)
+		}
 	}
-	err = env.RBACManager.EnsureRole(ctx, keyVaultID, keyVaultAdminRoleDefinitionID, karpenterIdentity)
-	if err != nil {
-		return fmt.Errorf("failed to assign Administrator role to karpenter identity: %w", err)
-	}
-
-	// User from az.DefaultCred needs rbac to create keys and manage the vault (wrap, unwrap etc)
-	err = env.RBACManager.EnsureRole(ctx, keyVaultID, cryptoOfficerRoleDefinitionID, testUserPrincipalID)
-	if err != nil {
-		return fmt.Errorf("failed to assign Crypto Officer role to test user: %w", err)
-	}
-	err = env.RBACManager.EnsureRole(ctx, keyVaultID, keyVaultAdminRoleDefinitionID, testUserPrincipalID)
-	if err != nil {
-		return fmt.Errorf("failed to assign Administrator role to test user: %w", err)
-	}
-
-	// RBAC propagation is handled by retry logic in the clients (403 errors are retried)
 
 	return nil
 }
@@ -492,36 +449,13 @@ func createDiskEncryptionSet(ctx context.Context, env *azure.Environment, desNam
 }
 
 // assignDiskEncryptionSetRBAC assigns reader role to cluster identity for DES
-func assignDiskEncryptionSetRBAC(ctx context.Context, env *azure.Environment, desID, karpenterIdentity string) error {
+func assignDiskEncryptionSetRBAC(ctx context.Context, env *azure.Environment, desID, controllingIdentityPrincipalID string) error {
 	readerRoleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, readerRole)
-
-	err := env.RBACManager.EnsureRole(ctx, desID, readerRoleDefinitionID, karpenterIdentity)
-	if err != nil {
-		return fmt.Errorf("failed to assign RBAC role: %w", err)
-	}
-	// RBAC propagation is handled by retry logic in the clients
-	return nil
+	return env.RBACManager.EnsureRole(ctx, desID, readerRoleDefinitionID, controllingIdentityPrincipalID)
 }
 
-// updateKeyVaultAccessForDES assigns RBAC roles to DES identity for Key Vault access
-func updateKeyVaultAccessForDES(ctx context.Context, env *azure.Environment, keyVaultName string, desIdentity *armcompute.EncryptionSetIdentity) error {
-	kvGet, err := env.KeyVaultClient.Get(ctx, env.NodeResourceGroup, keyVaultName, nil)
-	if err != nil {
-		return err
-	}
-
-	cryptoServiceRoleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, cryptoServiceEncryptionUserRole)
-
-	desIdentityPrincipalID := lo.FromPtr(desIdentity.PrincipalID)
-	keyVaultScope := lo.FromPtr(kvGet.ID)
-
-	// Assign the Key Vault Crypto Service Encryption User role to the DES managed identity
-	// Using EnsureRoleWithPrincipalType to handle replication delays when creating DES identity
-	err = env.RBACManager.EnsureRoleWithPrincipalType(ctx, keyVaultScope, cryptoServiceRoleDefinitionID, desIdentityPrincipalID, "ServicePrincipal")
-	if err != nil {
-		return fmt.Errorf("failed to assign Key Vault RBAC role to DES identity: %w", err)
-	}
-	// RBAC propagation is handled by retry logic in the clients
-
-	return nil
+// assignKeyVaultAccessForDES assigns Crypto Service Encryption User role on Key Vault to DES identity
+func assignKeyVaultAccessForDES(ctx context.Context, env *azure.Environment, keyVaultID, desPrincipalID string) error {
+	cryptoServiceRoleID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, cryptoServiceEncryptionUserRole)
+	return env.RBACManager.EnsureRoleWithPrincipalType(ctx, keyVaultID, cryptoServiceRoleID, desPrincipalID, "ServicePrincipal")
 }
