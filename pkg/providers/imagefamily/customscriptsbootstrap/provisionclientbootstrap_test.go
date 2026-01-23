@@ -984,3 +984,205 @@ func TestFIPSEnablement(t *testing.T) {
 		})
 	}
 }
+
+func TestArtifactStreamingConfiguration(t *testing.T) {
+	// Base bootstrapper configuration that we'll modify for each test
+	baseBootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{
+		ClusterName:       "test-cluster",
+		KubeletConfig:     &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+		SubnetID:          "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+		Arch:              karpv1.ArchitectureAmd64,
+		ResourceGroup:     "test-rg",
+		KubernetesVersion: "1.31.0",
+		ImageDistro:       "aks-ubuntu-containerd-22.04-gen2",
+		IsWindows:         false,
+		StorageProfile:    consts.StorageProfileManagedDisks,
+		OSSKU:             customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+		Labels:            map[string]string{},
+		InstanceType: &cloudprovider.InstanceType{
+			Name: "Standard_D2s_v3",
+			Capacity: v1.ResourceList{
+				v1.ResourceCPU:    resource.MustParse("2"),
+				v1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+		},
+	}
+
+	tests := []struct {
+		name                           string
+		artifactStreamingEnabled       *bool
+		expectedArtifactStreamingValue bool
+		description                    string
+	}{
+		{
+			name:                           "Artifact streaming explicitly enabled",
+			artifactStreamingEnabled:       lo.ToPtr(true),
+			expectedArtifactStreamingValue: true,
+			description:                    "When artifactStreamingEnabled is set to true, artifact streaming should be enabled",
+		},
+		{
+			name:                           "Artifact streaming explicitly disabled",
+			artifactStreamingEnabled:       lo.ToPtr(false),
+			expectedArtifactStreamingValue: false,
+			description:                    "When artifactStreamingEnabled is set to false, artifact streaming should be disabled",
+		},
+		{
+			name:                           "Artifact streaming not specified (nil) - defaults to false",
+			artifactStreamingEnabled:       nil,
+			expectedArtifactStreamingValue: false,
+			description:                    "When artifactStreamingEnabled is nil, artifact streaming should default to false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			// Create a copy of the base bootstrapper and modify for this test
+			bootstrapper := *baseBootstrapper
+			bootstrapper.ArtifactStreamingEnabled = tt.artifactStreamingEnabled
+
+			// Setup context with options
+			ctx := options.ToContext(context.Background(), &options.Options{
+				VMMemoryOverheadPercent: 0.075,
+				KubeletIdentityClientID: "test-kubelet-client-id",
+			})
+
+			values, err := bootstrapper.ConstructProvisionValues(ctx)
+
+			// Expect success for all cases
+			g.Expect(err).ToNot(HaveOccurred(), tt.description)
+			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
+			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
+			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile).ToNot(BeNil(), "ArtifactStreamingProfile should not be nil")
+
+			// Verify artifact streaming configuration
+			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile.Enabled).To(Equal(lo.ToPtr(tt.expectedArtifactStreamingValue)),
+				"Artifact streaming enablement mismatch: %s. Expected: %t, Actual: %t",
+				tt.description, tt.expectedArtifactStreamingValue, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
+		})
+	}
+}
+
+func TestArtifactStreamingWithDifferentOSSKUs(t *testing.T) {
+	// Test artifact streaming configuration with different OS SKUs
+	tests := []struct {
+		name                     string
+		ossku                    string
+		arch                     string
+		artifactStreamingEnabled *bool
+		expectedValue            bool
+		description              string
+	}{
+		{
+			name:                     "Ubuntu 22.04 with artifact streaming enabled",
+			ossku:                    customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			arch:                     karpv1.ArchitectureAmd64,
+			artifactStreamingEnabled: lo.ToPtr(true),
+			expectedValue:            true,
+			description:              "Ubuntu 22.04 should support artifact streaming when explicitly enabled",
+		},
+		{
+			name:                     "Ubuntu 22.04 with artifact streaming disabled",
+			ossku:                    customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			arch:                     karpv1.ArchitectureAmd64,
+			artifactStreamingEnabled: lo.ToPtr(false),
+			expectedValue:            false,
+			description:              "Ubuntu 22.04 should respect disabled artifact streaming",
+		},
+		{
+			name:                     "Ubuntu 20.04 with artifact streaming enabled",
+			ossku:                    customscriptsbootstrap.ImageFamilyOSSKUUbuntu2004,
+			arch:                     karpv1.ArchitectureAmd64,
+			artifactStreamingEnabled: lo.ToPtr(true),
+			expectedValue:            true,
+			description:              "Ubuntu 20.04 should allow artifact streaming to be enabled if configured",
+		},
+		{
+			name:                     "Ubuntu 24.04 with artifact streaming enabled",
+			ossku:                    customscriptsbootstrap.ImageFamilyOSSKUUbuntu2404,
+			arch:                     karpv1.ArchitectureAmd64,
+			artifactStreamingEnabled: lo.ToPtr(true),
+			expectedValue:            true,
+			description:              "Ubuntu 24.04 should allow artifact streaming to be enabled if configured",
+		},
+		{
+			name:                     "Azure Linux v2 with artifact streaming enabled",
+			ossku:                    customscriptsbootstrap.ImageFamilyOSSKUAzureLinux2,
+			arch:                     karpv1.ArchitectureAmd64,
+			artifactStreamingEnabled: lo.ToPtr(true),
+			expectedValue:            true,
+			description:              "Azure Linux v2 should support artifact streaming when explicitly enabled",
+		},
+		{
+			name:                     "Azure Linux v3 with artifact streaming enabled",
+			ossku:                    customscriptsbootstrap.ImageFamilyOSSKUAzureLinux3,
+			arch:                     karpv1.ArchitectureAmd64,
+			artifactStreamingEnabled: lo.ToPtr(true),
+			expectedValue:            true,
+			description:              "Azure Linux v3 should allow artifact streaming to be enabled if configured",
+		},
+		{
+			name:                     "ARM64 with artifact streaming enabled",
+			ossku:                    customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			arch:                     karpv1.ArchitectureArm64,
+			artifactStreamingEnabled: lo.ToPtr(true),
+			expectedValue:            true,
+			description:              "ARM64 should allow artifact streaming to be enabled if configured",
+		},
+		{
+			name:                     "Default (nil) should be false for all OS SKUs",
+			ossku:                    customscriptsbootstrap.ImageFamilyOSSKUUbuntu2204,
+			arch:                     karpv1.ArchitectureAmd64,
+			artifactStreamingEnabled: nil,
+			expectedValue:            false,
+			description:              "When artifactStreamingEnabled is nil, it should default to false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			
+			bootstrapper := &customscriptsbootstrap.ProvisionClientBootstrap{
+				ClusterName:              "test-cluster",
+				KubeletConfig:            &bootstrap.KubeletConfiguration{MaxPods: int32(110)},
+				SubnetID:                 "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/subnet",
+				Arch:                     tt.arch,
+				ResourceGroup:            "test-rg",
+				KubernetesVersion:        "1.31.0",
+				ImageDistro:              "test-distro",
+				IsWindows:                false,
+				StorageProfile:           consts.StorageProfileManagedDisks,
+				OSSKU:                    tt.ossku,
+				Labels:                   map[string]string{},
+				ArtifactStreamingEnabled: tt.artifactStreamingEnabled,
+				InstanceType: &cloudprovider.InstanceType{
+					Name: "Standard_D2s_v3",
+					Capacity: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("8Gi"),
+					},
+				},
+			}
+
+			// Setup context with options
+			ctx := options.ToContext(context.Background(), &options.Options{
+				VMMemoryOverheadPercent: 0.075,
+				KubeletIdentityClientID: "test-kubelet-client-id",
+			})
+
+			values, err := bootstrapper.ConstructProvisionValues(ctx)
+
+			// Expect success for all cases
+			g.Expect(err).ToNot(HaveOccurred(), tt.description)
+			g.Expect(values).ToNot(BeNil(), "ProvisionValues should not be nil")
+			g.Expect(values.ProvisionProfile).ToNot(BeNil(), "ProvisionProfile should not be nil")
+			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile).ToNot(BeNil(), "ArtifactStreamingProfile should not be nil")
+
+			// Verify artifact streaming configuration
+			g.Expect(values.ProvisionProfile.ArtifactStreamingProfile.Enabled).To(Equal(lo.ToPtr(tt.expectedValue)),
+				"Artifact streaming enablement mismatch: %s. Expected: %t, Actual: %t",
+				tt.description, tt.expectedValue, *values.ProvisionProfile.ArtifactStreamingProfile.Enabled)
+		})
+	}
+}
