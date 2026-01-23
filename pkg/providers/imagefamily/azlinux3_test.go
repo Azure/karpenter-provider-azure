@@ -65,6 +65,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	var fipsMode *v1beta1.FIPSMode // to test with nil
 	var localDNS *v1beta1.LocalDNS // to test with nil
+	var artifactStreamingEnabled *bool // to test with nil
 
 	bootstrapper := azureLinux3.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -77,6 +78,7 @@ func TestAzureLinux3_CustomScriptsNodeBootstrapping(t *testing.T) {
 		nodeBootstrappingClient,
 		fipsMode,
 		localDNS,
+		artifactStreamingEnabled,
 	)
 
 	g := NewWithT(t)
