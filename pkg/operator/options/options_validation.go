@@ -112,11 +112,12 @@ func (o *Options) validateProvisionMode() error {
 	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI {
 		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
-	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+	switch o.ProvisionMode {
+	case consts.ProvisionModeBootstrappingClient:
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
 		}
-	} else if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI {
+	case consts.ProvisionModeAKSMachineAPI:
 		if o.AKSMachinesPoolName == "" {
 			return fmt.Errorf("aks-machines-pool-name is required when provision-mode is aksmachineapi")
 		}
