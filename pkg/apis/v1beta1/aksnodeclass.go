@@ -92,6 +92,12 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// ArtifactStreamingEnabled controls whether artifact streaming is enabled for provisioned nodes.
+	// Artifact streaming allows container images to be streamed to nodes rather than fully downloaded before starting.
+	// When not specified, defaults to false.
+	// +kubebuilder:default=false
+	// +optional
+	ArtifactStreamingEnabled *bool `json:"artifactStreamingEnabled,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs

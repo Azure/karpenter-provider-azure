@@ -65,6 +65,7 @@ type ProvisionClientBootstrap struct {
 	NodeBootstrappingProvider      types.NodeBootstrappingAPI
 	FIPSMode                       *v1beta1.FIPSMode
 	LocalDNSProfile                *v1beta1.LocalDNS
+	ArtifactStreamingEnabled       *bool
 }
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
@@ -104,12 +105,9 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
 
-	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
-	// enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-	//		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
-	// Temporarily disable artifact streaming altogether, until node provisioning performance is fixed
-	// (or until we make artifact streaming configurable)
-	enableArtifactStreaming := false
+	// Artifact streaming is configurable through the AKSNodeClass spec
+	// Default value is false if not specified
+	enableArtifactStreaming := lo.FromPtr(p.ArtifactStreamingEnabled)
 
 	// unspecified FIPSMode is effectively no FIPS for now
 	enableFIPS := lo.FromPtr(p.FIPSMode) == v1beta1.FIPSModeFIPS
