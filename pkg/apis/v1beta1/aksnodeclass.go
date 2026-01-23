@@ -94,7 +94,7 @@ type AKSNodeClassSpec struct {
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
 	// ArtifactStreamingEnabled controls whether artifact streaming is enabled for provisioned nodes.
 	// Artifact streaming allows container images to be streamed to nodes rather than fully downloaded before starting.
-	// Note: Artifact streaming is not yet supported for Arm64, Ubuntu 20.04, Ubuntu 24.04, and Azure Linux v3.
+	// When not specified, defaults to false.
 	// +kubebuilder:default=false
 	// +optional
 	ArtifactStreamingEnabled *bool `json:"artifactStreamingEnabled,omitempty"`
