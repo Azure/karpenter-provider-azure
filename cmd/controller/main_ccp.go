@@ -92,6 +92,7 @@ func main() {
 			op.ImageProvider,
 			op.InClusterKubernetesInterface,
 			op.AZClient.SubnetsClient(),
+			op.AZClient.DiskEncryptionSetsClient(),
 		)...).
 		Start(ctx)
 }
