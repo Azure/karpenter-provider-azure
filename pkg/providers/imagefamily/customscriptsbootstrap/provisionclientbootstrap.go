@@ -105,10 +105,7 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	nodeLabels := lo.Assign(map[string]string{}, p.Labels)
 
-	// artifact streaming is not yet supported for Arm64, for Ubuntu 20.04, Ubuntu 24.04, and for Azure Linux v3
-	// enableArtifactStreaming := p.Arch == karpv1.ArchitectureAmd64 &&
-	//		(p.OSSKU == ImageFamilyOSSKUUbuntu2204 || p.OSSKU == ImageFamilyOSSKUAzureLinux2)
-	// Artifact streaming is now configurable through the AKSNodeClass spec
+	// Artifact streaming is configurable through the AKSNodeClass spec
 	// Default value is false if not specified
 	enableArtifactStreaming := lo.FromPtr(p.ArtifactStreamingEnabled)
 
