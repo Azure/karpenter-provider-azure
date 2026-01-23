@@ -58,7 +58,8 @@ runs:
         AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
         AZURE_ACR_NAME: ${{ inputs.acr_name }}
         AZURE_LOCATION: ${{ inputs.location }}
-        AZURE_VM_SIZE: Standard_D4ds_v5 # We have more quota for this VM size so force it to avoid quota errors
+        # Must be amd64 SKU - E2E builds only amd64 images (see KO_DEFAULTPLATFORMS in e2e.yaml)
+        AZURE_VM_SIZE: Standard_D4ds_v5
         K8S_VERSION: ${{ inputs.k8s_version }}
       run: make az-mkaks-cilium
     - name: az login 2
