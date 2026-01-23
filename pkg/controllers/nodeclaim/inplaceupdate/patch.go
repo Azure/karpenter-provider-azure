@@ -228,6 +228,12 @@ func patchAKSMachineTags(
 //
 // Also, we don't update it to actual NodeClaim.CreationTimestamp because that is NodeClaim creation time, not instance creation time.
 // See notes in aksmachineinstanceutils.go for context and suggestions.
+//
+// We currently use tag to store CreationTimestamp because AKS machine object does not have the creation timestamp metadata.
+// Technically, there is MachineStatus.CreationTimestamp, although that is for underlying VM instance creation, not AKS machine instance creation.
+// VM instace is not necessarily created at the same time as AKS machine instance, so that timestamp is not suitable here.
+// However, this is changing soon, and MachineStatus.CreationTimestamp will be changed to reflect AKS machine creation time.
+// TODO: stop using tag and use MachineStatus.CreationTimestamp when the change is live.
 func getCorrectedAKSMachineCreationTimestamp(aksMachine *armcontainerservice.Machine) time.Time {
 	var creationTimestamp time.Time
 	if aksMachine.Properties != nil && aksMachine.Properties.Tags != nil {

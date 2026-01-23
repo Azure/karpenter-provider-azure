@@ -64,7 +64,7 @@ func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, no
 		tags = lo.Assign(options.AdditionalTags, nodeClass.Spec.Tags)
 	}
 
-	var hashStruct interface{}
+	var hashStruct any
 	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		// AKS machine-based node
 		hashStruct = &aksMachineInPlaceUpdateFields{

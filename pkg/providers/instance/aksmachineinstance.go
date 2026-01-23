@@ -438,7 +438,7 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	if err := validateRetrievedAKSMachineBasicProperties(gotAKSMachine); err != nil {
 		return nil, fmt.Errorf("failed to get AKS machine %q once after begin creation: %w", aksMachineName, err)
 	}
-	if gotAKSMachine.Properties.ProvisioningState != nil && lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == "Failed" {
+	if lo.FromPtr(gotAKSMachine.Properties.ProvisioningState) == "Failed" {
 		// We luckily catch failed state early (compared to during polling).
 		// ASSUMPTION: this is irrecoverable (i.e., polling would have failed).
 		if gotAKSMachine.Properties.Status == nil || gotAKSMachine.Properties.Status.ProvisioningError == nil {
