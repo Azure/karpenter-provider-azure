@@ -30,7 +30,7 @@ controller:
       value: ${NODE_IDENTITIES}
 
     # Azure client settings
-    - name: ARM_SUBSCRIPTION_ID
+    - name: AZURE_SUBSCRIPTION_ID
       value: ${AZURE_SUBSCRIPTION_ID}
     - name: LOCATION
       value: ${AZURE_LOCATION}

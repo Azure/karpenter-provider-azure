@@ -164,7 +164,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
-		vmClientOptions.ClientOptions.PerRetryPolicies = append(vmClientOptions.ClientOptions.PerRetryPolicies, auxPolicy)
+		vmClientOptions.PerRetryPolicies = append(vmClientOptions.PerRetryPolicies, auxPolicy)
 	}
 	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(cfg.SubscriptionID, cred, &vmClientOptions)
 	if err != nil {
@@ -181,7 +181,10 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 		return nil, err
 	}
 
-	nodeImageVersionsClient := imagefamily.NewNodeImageVersionsClient(cred, opts.Cloud)
+	nodeImageVersionsClient, err := imagefamily.NewNodeImageVersionsClient(cfg.SubscriptionID, cred, opts)
+	if err != nil {
+		return nil, err
+	}
 
 	loadBalancersClient, err := armnetwork.NewLoadBalancersClient(cfg.SubscriptionID, cred, opts)
 	if err != nil {

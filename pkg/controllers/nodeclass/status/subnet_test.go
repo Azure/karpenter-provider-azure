@@ -18,7 +18,10 @@ package status_test
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -193,6 +196,29 @@ var _ = Describe("SubnetStatus", func() {
 			Expect(cond.IsFalse()).To(BeTrue())
 			Expect(cond.Reason).To(Equal("SubnetIDInvalid"))
 			Expect(cond.Message).To(ContainSubstring("custom subnet cannot be in the same VNet as cluster managed VNet"))
+		})
+
+		It("should mark nodeclass as not ready when subnet hits unknown error", func() {
+			const errString = "An unexpected internal server error occurred while processing the request. The service encountered an unrecoverable condition and was unable to complete the operation. Please retry the request after some time. If the problem persists, contact Azure support with the correlation ID and timestamp for further investigation."
+			azureEnv.SubnetsAPI.GetFunc = func(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error) {
+				return armnetwork.SubnetsClientGetResponse{}, &azcore.ResponseError{
+					ErrorCode:  "InternalServerError",
+					StatusCode: http.StatusInternalServerError,
+					RawResponse: &http.Response{
+						StatusCode: http.StatusInternalServerError,
+						Body:       io.NopCloser(strings.NewReader(fmt.Sprintf(`{"error":{"code":"InternalServerError","message":"%s"}}`, errString))),
+					},
+				}
+			}
+
+			result, err := reconciler.Reconcile(ctx, nodeClass)
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(Equal(reconcile.Result{}))
+
+			cond := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeSubnetsReady)
+			Expect(cond.IsFalse()).To(BeTrue())
+			Expect(cond.Reason).To(Equal("SubnetUnknownError"))
+			Expect(cond.Message).To(ContainSubstring(errString))
 		})
 	})
 })

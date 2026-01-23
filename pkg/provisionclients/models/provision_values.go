@@ -22,6 +22,7 @@ package models
 
 import (
 	"context"
+	stderrors "errors"
 
 	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
@@ -69,11 +70,15 @@ func (m *ProvisionValues) validateProvisionHelperValues(formats strfmt.Registry)
 
 	if m.ProvisionHelperValues != nil {
 		if err := m.ProvisionHelperValues.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("provisionHelperValues")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("provisionHelperValues")
 			}
+
 			return err
 		}
 	}
@@ -89,11 +94,15 @@ func (m *ProvisionValues) validateProvisionProfile(formats strfmt.Registry) erro
 
 	if m.ProvisionProfile != nil {
 		if err := m.ProvisionProfile.Validate(formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("provisionProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("provisionProfile")
 			}
+
 			return err
 		}
 	}
@@ -124,11 +133,15 @@ func (m *ProvisionValues) contextValidateProvisionHelperValues(ctx context.Conte
 	if m.ProvisionHelperValues != nil {
 
 		if err := m.ProvisionHelperValues.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("provisionHelperValues")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("provisionHelperValues")
 			}
+
 			return err
 		}
 	}
@@ -141,11 +154,15 @@ func (m *ProvisionValues) contextValidateProvisionProfile(ctx context.Context, f
 	if m.ProvisionProfile != nil {
 
 		if err := m.ProvisionProfile.ContextValidate(ctx, formats); err != nil {
-			if ve, ok := err.(*errors.Validation); ok {
+			ve := new(errors.Validation)
+			if stderrors.As(err, &ve) {
 				return ve.ValidateName("provisionProfile")
-			} else if ce, ok := err.(*errors.CompositeError); ok {
+			}
+			ce := new(errors.CompositeError)
+			if stderrors.As(err, &ce) {
 				return ce.ValidateName("provisionProfile")
 			}
+
 			return err
 		}
 	}

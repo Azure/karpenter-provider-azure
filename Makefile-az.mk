@@ -1,5 +1,10 @@
 AZURE_LOCATION ?= westus2
 AZURE_VM_SIZE ?=
+K8S_VERSION ?=
+# Normalize "default" to empty (for workflow_dispatch compatibility)
+ifeq ($(K8S_VERSION),default)
+  K8S_VERSION :=
+endif
 COMMON_NAME ?= karpenter
 ENABLE_AZURE_SDK_LOGGING ?= false
 ifeq ($(CODESPACES),true)
@@ -85,7 +90,9 @@ az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySe
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -99,7 +106,9 @@ az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure \
-			--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-oidc-issuer --enable-workload-identity \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-cniv1"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -112,8 +121,11 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
+			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-cilium"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -126,8 +138,11 @@ az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mod
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
+			--network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-overlay"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -140,9 +155,11 @@ az-mkaks-perftest: az-mkacr ## Create test AKS cluster (with Azure Overlay, larg
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 2 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
+			--enable-managed-identity --node-count 2 --generate-ssh-keys -o none \
+			--network-plugin azure --network-plugin-mode overlay \
 			--enable-oidc-issuer --enable-workload-identity \
 			--node-vm-size $(if $(AZURE_VM_SIZE),$(AZURE_VM_SIZE),Standard_D16s_v6) --pod-cidr "10.128.0.0/11" \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-perftest"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -161,8 +178,11 @@ az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster 
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
+			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)/providers/Microsoft.Network/virtualNetworks/$(CUSTOM_VNET_NAME)/subnets/$(CUSTOM_SUBNET_NAME)" \
 			--tags "make-command=az-mkaks-custom-vnet"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
@@ -491,5 +511,5 @@ az-swagger-generate-clients: az-swagger-generate-clients-raw
 
 az-codegen-nodeimageversions: ## List node image versions (to be used in fake/nodeimageversionsapi.go)
 	az rest --method get \
-		--url "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/providers/Microsoft.ContainerService/locations/$(AZURE_LOCATION)/nodeImageVersions?api-version=2024-04-02-preview" \
-		| jq -r '.values[] | "{\n\tFullName: \"\(.fullName)\",\n\tOS:       \"\(.os)\",\n\tSKU:      \"\(.sku)\",\n\tVersion:  \"\(.version)\",\n},"'
+		--url "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/providers/Microsoft.ContainerService/locations/$(AZURE_LOCATION)/nodeImageVersions?api-version=2025-10-02-preview" \
+		| jq -r '.value[] | "{\n\tFullName: \"\(.fullName)\",\n\tOS:       \"\(.os)\",\n\tSKU:      \"\(.sku)\",\n\tVersion:  \"\(.version)\",\n},"'
