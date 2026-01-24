@@ -22,10 +22,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/scheduling"
@@ -65,7 +65,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// GPUProfile
-	gpuProfilePtr := configureGPUProfile(instanceType)
+	gpuProfile := configureGPUProfile(instanceType)
 
 	// OrchestratorVersion (i.e., Kubernetes version)
 	orchestratorVersion, err := nodeClass.GetKubernetesVersion()
@@ -74,25 +74,25 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 	}
 
 	// OSSKU, EnableFIPS
-	osskuPtr, enableFIPsPtr, err := configureOSSKUAndFIPs(nodeClass, orchestratorVersion)
+	osSku, enableFIPS, err := configureOSSKUAndFIPs(nodeClass, orchestratorVersion)
 	if err != nil {
 		return nil, err
 	}
 
 	// OSDiskType
-	osDiskTypePtr, err := configureOSDiskType(ctx, p.instanceTypeProvider, nodeClass, instanceType)
+	osDiskType, err := configureOSDiskType(ctx, p.instanceTypeProvider, nodeClass, instanceType)
 	if err != nil {
 		return nil, err
 	}
 
 	// NodeTaints, NodeInitializationTaints
-	nodeInitializationTaintPtrs, nodeTaintPtrs := configureTaints(nodeClaim)
+	nodeInitializationTaints, nodeTaints := configureTaints(nodeClaim)
 
 	// NodeLabels, Mode
-	nodeLabelPtrs, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType)
+	nodeLabels, modePtr := configureLabelsAndMode(nodeClaim, instanceType, capacityType)
 
 	// Priority (e.g., regular, spot)
-	priorityPtr := configurePriority(capacityType)
+	priority := configurePriority(capacityType)
 
 	// Tags (to be put on AKS machine and all affiliated resources)
 	// Note: as of the time of writing, AKS machine API does not support tags on NICs. This could be fixed server-side.
@@ -113,25 +113,25 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 			Hardware: &armcontainerservice.MachineHardwareProfile{
 				VMSize: lo.ToPtr(instanceType.Name),
 				// GPUInstanceProfile: nil,
-				GpuProfile: gpuProfilePtr,
+				GpuProfile: gpuProfile,
 			},
 			OperatingSystem: &armcontainerservice.MachineOSProfile{
 				OSType:       lo.ToPtr(armcontainerservice.OSTypeLinux),
-				OSSKU:        osskuPtr,
+				OSSKU:        osSku,
 				OSDiskSizeGB: nodeClass.Spec.OSDiskSizeGB, // AKS machine API defaults it if nil
-				OSDiskType:   osDiskTypePtr,
-				EnableFIPS:   enableFIPsPtr,
+				OSDiskType:   osDiskType,
+				EnableFIPS:   enableFIPS,
 				// LinuxProfile:   nil,
 				// WindowsProfile: nil,
 			},
 
 			Kubernetes: &armcontainerservice.MachineKubernetesProfile{
-				NodeLabels:          nodeLabelPtrs,
+				NodeLabels:          nodeLabels,
 				OrchestratorVersion: lo.ToPtr(orchestratorVersion),
 				// KubeletDiskType:          "",
 				KubeletConfig:            configureKubeletConfig(nodeClass),
-				NodeInitializationTaints: nodeInitializationTaintPtrs,
-				NodeTaints:               nodeTaintPtrs,
+				NodeInitializationTaints: nodeInitializationTaints,
+				NodeTaints:               nodeTaints,
 				MaxPods:                  nodeClass.Spec.MaxPods, // AKS machine API defaults it per network plugins if nil.
 				// WorkloadRuntime:          nil,
 				// ArtifactStreamingProfile: nil,
@@ -144,7 +144,7 @@ func (p *DefaultAKSMachineProvider) buildAKSMachineTemplate(ctx context.Context,
 				// EnableVTPM:             nil,
 				// EnableSecureBoot:       nil,
 			},
-			Priority: priorityPtr,
+			Priority: priority,
 
 			Tags: tags,
 		},
@@ -194,7 +194,7 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 	}
 
 	var ossku armcontainerservice.OSSKU
-	enableFIPs := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
+	enableFIPS := lo.FromPtr(nodeClass.Spec.FIPSMode) == v1beta1.FIPSModeFIPS
 
 	switch *nodeClass.Spec.ImageFamily {
 	case v1beta1.Ubuntu2204ImageFamily:
@@ -206,7 +206,7 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 	case v1beta1.UbuntuImageFamily:
 		fallthrough
 	default:
-		if enableFIPs {
+		if enableFIPS {
 			ossku = armcontainerservice.OSSKUUbuntu
 		} else if imagefamily.UseUbuntu2404(orchestratorVersion) {
 			ossku = armcontainerservice.OSSKUUbuntu2404
@@ -215,26 +215,20 @@ func configureOSSKUAndFIPs(nodeClass *v1beta1.AKSNodeClass, orchestratorVersion 
 		}
 	}
 
-	return lo.ToPtr(ossku), lo.ToPtr(enableFIPs), nil
+	return lo.ToPtr(ossku), lo.ToPtr(enableFIPS), nil
 }
 
 func configureTaints(nodeClaim *karpv1.NodeClaim) ([]*string, []*string) {
-	// Counterpart for ProvisionModeBootstrappingClient is in imagefamily/resolver.go
-
-	nodeInitializationTaints := lo.Map(nodeClaim.Spec.StartupTaints, func(taint v1.Taint, _ int) string { return taint.ToString() })
-	nodeTaints := lo.Map(nodeClaim.Spec.Taints, func(taint v1.Taint, _ int) string { return taint.ToString() })
-	allTaints := sets.NewString(nodeInitializationTaints...).Union(sets.NewString(nodeTaints...))
-	if !allTaints.Has(karpv1.UnregisteredNoExecuteTaint.ToString()) {
-		// nodeInitializationTaints = append(nodeInitializationTaints, karpv1.UnregisteredNoExecuteTaint.ToString())
-		allTaints = allTaints.Insert(karpv1.UnregisteredNoExecuteTaint.ToString())
-	}
+	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
+	allTaints := lo.Flatten([][]v1.Taint{generalTaints, startupTaints})
+	allTaintsStr := lo.Map(allTaints, func(taint v1.Taint, _ int) string { return taint.ToString() })
+	// Deduplicate (original behavior used sets.NewString for deduplication)
+	allTaintsStr = lo.Uniq(allTaintsStr)
 
 	// Currently, we will use "nodeInitializationTaints" field for all taints, as "taints" field are subjected to server-side reconciliation and extra validation
 	// Server-side reconciliation is not necessarily a bad thing, but needs to resolve validation conflicts at least. E.g., system node cannot have hard taints other than CriticalAddonsOnly, per AKS Machine API.
 	// If changing, don't forget to update unit + acceptance tests accordingly.
-	// nodeInitializationTaintPtrs := lo.Map(nodeInitializationTaints, func(taint string, _ int) *string { return lo.ToPtr(taint) })
-	// nodeTaintPtrs := lo.Map(nodeTaints, func(taint string, _ int) *string { return lo.ToPtr(taint) })
-	nodeInitializationTaintPtrs := lo.Map(allTaints.List(), func(taint string, _ int) *string { return lo.ToPtr(taint) })
+	nodeInitializationTaintPtrs := lo.Map(allTaintsStr, func(taint string, _ int) *string { return lo.ToPtr(taint) })
 	nodeTaintPtrs := []*string{}
 	return nodeInitializationTaintPtrs, nodeTaintPtrs
 }
@@ -373,27 +367,43 @@ func parseVMImageID(vmImageID string) (subscriptionID, resourceGroup, gallery, i
 		return "", "", "", "", "", fmt.Errorf("vmImageID is empty")
 	}
 
-	parts := strings.Split(vmImageID, "/")
-	if len(parts) < 12 {
-		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: expected at least 12 parts, got %d", len(parts))
+	res, err := arm.ParseResourceID(vmImageID)
+	if err != nil {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: %w", err)
 	}
 
-	// Validate expected static parts
-	if parts[1] != "subscriptions" || parts[3] != "resourceGroups" ||
-		parts[5] != "providers" || parts[6] != "Microsoft.Compute" ||
-		parts[7] != "galleries" || parts[9] != "images" || parts[11] != "versions" {
-		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: unexpected path structure")
+	// Validate it's a gallery image version resource type (case-insensitive, as Azure resource IDs are case-insensitive)
+	if !strings.EqualFold(res.ResourceType.String(), "Microsoft.Compute/galleries/images/versions") {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: expected resource type Microsoft.Compute/galleries/images/versions, got %s", res.ResourceType.String())
 	}
 
-	if len(parts) < 13 {
+	// Validate we have the required parent chain (gallery -> image -> version)
+	if res.Parent == nil || res.Parent.Parent == nil {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: missing parent resources")
+	}
+
+	version = res.Name
+	imageName = res.Parent.Name
+	gallery = res.Parent.Parent.Name
+	subscriptionID = res.SubscriptionID
+	resourceGroup = res.ResourceGroupName
+
+	// Validate none of the extracted values are empty
+	if version == "" {
 		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: missing version")
 	}
-
-	subscriptionID = parts[2]
-	resourceGroup = parts[4]
-	gallery = parts[8]
-	imageName = parts[10]
-	version = parts[12]
+	if imageName == "" {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: missing image name")
+	}
+	if gallery == "" {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: missing gallery name")
+	}
+	if subscriptionID == "" {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: missing subscription ID")
+	}
+	if resourceGroup == "" {
+		return "", "", "", "", "", fmt.Errorf("invalid vmImageID format: missing resource group")
+	}
 
 	return subscriptionID, resourceGroup, gallery, imageName, version, nil
 }

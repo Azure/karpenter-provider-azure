@@ -684,7 +684,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				_, _, _, _, _, err := parseVMImageID(vmImageID)
 
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("expected at least 12 parts"))
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
 			})
 
 			It("should return error for incorrect path structure - wrong subscriptions", func() {
@@ -693,7 +693,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				_, _, _, _, _, err := parseVMImageID(vmImageID)
 
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unexpected path structure"))
+				Expect(err.Error()).To(ContainSubstring("invalid vmImageID format"))
 			})
 
 			It("should return error for incorrect path structure - wrong resourceGroups", func() {
@@ -701,8 +701,9 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 
 				_, _, _, _, _, err := parseVMImageID(vmImageID)
 
+				// arm.ParseResourceID is lenient with resourceGroup vs resourceGroups, resulting in empty ResourceGroupName
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unexpected path structure"))
+				Expect(err.Error()).To(ContainSubstring("missing resource group"))
 			})
 
 			It("should return error for incorrect path structure - wrong providers", func() {
@@ -711,7 +712,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				_, _, _, _, _, err := parseVMImageID(vmImageID)
 
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unexpected path structure"))
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
 			})
 
 			It("should return error for incorrect path structure - wrong Microsoft.Compute", func() {
@@ -720,7 +721,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				_, _, _, _, _, err := parseVMImageID(vmImageID)
 
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unexpected path structure"))
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
 			})
 
 			It("should return error for incorrect path structure - wrong galleries", func() {
@@ -729,7 +730,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				_, _, _, _, _, err := parseVMImageID(vmImageID)
 
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unexpected path structure"))
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
 			})
 
 			It("should return error for incorrect path structure - wrong images", func() {
@@ -738,7 +739,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				_, _, _, _, _, err := parseVMImageID(vmImageID)
 
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unexpected path structure"))
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
 			})
 
 			It("should return error for incorrect path structure - wrong versions", func() {
@@ -747,7 +748,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				_, _, _, _, _, err := parseVMImageID(vmImageID)
 
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unexpected path structure"))
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
 			})
 
 			It("should return error for missing version value", func() {
@@ -787,12 +788,86 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 				Expect(version).To(Equal("e"))
 			})
 
-			It("should handle path with extra trailing components", func() {
+			It("should return error for path with extra trailing components", func() {
+				// Extra components result in a different resource type, which is correctly rejected
 				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03/extra/components"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should accept uppercase SUBSCRIPTIONS (case-insensitive path keywords)", func() {
+				// Azure resource IDs are case-insensitive for path keywords like subscriptions/resourceGroups
+				vmImageID := "/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
 
 				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
 
-				Expect(err).ToNot(HaveOccurred())
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should accept uppercase RESOURCEGROUPS (case-insensitive path keywords)", func() {
+				// Azure resource IDs are case-insensitive for path keywords like subscriptions/resourceGroups
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should reject single extra trailing component", func() {
+				// Even a single extra component should be rejected for strict validation
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03/extra"
+
+				_, _, _, _, _, err := parseVMImageID(vmImageID)
+
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("expected resource type Microsoft.Compute/galleries/images/versions"))
+			})
+
+			It("should accept uppercase MICROSOFT.COMPUTE (case-insensitive resource type)", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/MICROSOFT.COMPUTE/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should accept uppercase GaLlErIeS (case-insensitive resource type)", func() {
+				vmImageID := "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/GaLlErIeS/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
+				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
+				Expect(gallery).To(Equal("AKSUbuntu"))
+				Expect(imageName).To(Equal("2204gen2containerd"))
+				Expect(version).To(Equal("2022.10.03"))
+			})
+
+			It("should accept fully uppercase path (case-insensitive throughout)", func() {
+				vmImageID := "/SUBSCRIPTIONS/12345678-1234-1234-1234-123456789012/RESOURCEGROUPS/AKS-Ubuntu/PROVIDERS/MICROSOFT.COMPUTE/GALLERIES/AKSUbuntu/IMAGES/2204gen2containerd/VERSIONS/2022.10.03"
+
+				subscriptionID, resourceGroup, gallery, imageName, version, err := parseVMImageID(vmImageID)
+
+				Expect(err).NotTo(HaveOccurred())
 				Expect(subscriptionID).To(Equal("12345678-1234-1234-1234-123456789012"))
 				Expect(resourceGroup).To(Equal("AKS-Ubuntu"))
 				Expect(gallery).To(Equal("AKSUbuntu"))

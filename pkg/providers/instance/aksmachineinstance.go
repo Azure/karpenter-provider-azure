@@ -205,7 +205,9 @@ func (p *DefaultAKSMachineProvider) Update(ctx context.Context, aksMachineName s
 		}
 	}
 
-	log.FromContext(ctx).V(1).Info("updating AKS machine", "aksMachineName", aksMachineName, "aksMachine", BuildJSONFromAKSMachine(&aksMachine))
+	if logger := log.FromContext(ctx).V(1); logger.Enabled() {
+		logger.Info("updating AKS machine", "aksMachineName", aksMachineName, "aksMachine", BuildJSONFromAKSMachine(&aksMachine))
+	}
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, aksMachine, options)
 	if err != nil {
 		if IsAKSMachineOrMachinesPoolNotFound(err) {
@@ -277,7 +279,7 @@ func (p *DefaultAKSMachineProvider) Delete(ctx context.Context, aksMachineName s
 	if err != nil {
 		return err
 	}
-	if IsAKSMachineDeleting(aksMachine) {
+	if isAKSMachineDeleting(aksMachine) {
 		return nil
 	}
 
@@ -421,7 +423,9 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 	}
 
 	// Call the AKS machine API with the template to create the AKS machine instance
-	log.FromContext(ctx).V(1).Info("creating AKS machine", "aksMachineName", aksMachineName, "instance-type", instanceType.Name, "aksMachine", BuildJSONFromAKSMachine(aksMachineTemplate))
+	if logger := log.FromContext(ctx).V(1); logger.Enabled() {
+		logger.Info("creating AKS machine", "aksMachineName", aksMachineName, "instance-type", instanceType.Name, "aksMachine", BuildJSONFromAKSMachine(aksMachineTemplate))
+	}
 	poller, err := p.azClient.aksMachinesClient.BeginCreateOrUpdate(ctx, p.clusterResourceGroup, p.clusterName, p.aksMachinesPoolName, aksMachineName, *aksMachineTemplate, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin create AKS machine %q: %w", aksMachineName, err)
@@ -544,7 +548,7 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 	existingAKSMachineNodeClaimName := lo.FromPtr(existingAKSMachine.Properties.Tags[launchtemplate.KarpenterAKSMachineNodeClaimTagKey])
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
-	capacityType := GetCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
+	capacityType := getCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
 	zone := utils.MakeAKSLabelZoneFromARMZone(p.aksMachinesPoolLocation, existingAKSMachineZone)
 
 	if existingAKSMachineNodeClaimName != nodeClaim.Name {

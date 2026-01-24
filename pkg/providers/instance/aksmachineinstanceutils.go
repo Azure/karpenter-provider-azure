@@ -154,19 +154,16 @@ func BuildNodeClaimFromAKSMachine(ctx context.Context, aksMachine *armcontainers
 	} else {
 		zonePtr = lo.ToPtr(utils.MakeAKSLabelZoneFromARMZone(aksMachineLocation, lo.FromPtr(aksMachine.Zones[0])))
 	}
-	if aksMachine.Properties.Priority == nil {
-		return nil, fmt.Errorf("AKS machine instance %q is missing priority", lo.FromPtr(aksMachine.Name))
-	}
 
 	return BuildNodeClaimFromAKSMachineTemplate(
 		ctx,
 		aksMachine,
 		offerings.GetInstanceTypeFromVMSize(lo.FromPtr(aksMachine.Properties.Hardware.VMSize), possibleInstanceTypes),
-		GetCapacityTypeFromAKSScaleSetPriority(lo.FromPtr(aksMachine.Properties.Priority)),
+		getCapacityTypeFromAKSScaleSetPriority(lo.FromPtr(aksMachine.Properties.Priority)),
 		zonePtr,
 		lo.FromPtr(aksMachine.ID),
 		lo.FromPtr(aksMachine.Properties.ResourceID),
-		IsAKSMachineDeleting(aksMachine),
+		isAKSMachineDeleting(aksMachine),
 		lo.FromPtr(aksMachine.Properties.NodeImageVersion), // Empty: not fatal, no need to check
 	)
 }
@@ -232,7 +229,7 @@ func GetAKSMachineNameFromNodeClaim(nodeClaim *karpv1.NodeClaim) (string, bool) 
 	return "", false
 }
 
-func GetCapacityTypeFromAKSScaleSetPriority(scaleSetPriority armcontainerservice.ScaleSetPriority) string {
+func getCapacityTypeFromAKSScaleSetPriority(scaleSetPriority armcontainerservice.ScaleSetPriority) string {
 	return AKSScaleSetPriorityToKarpCapacityType[scaleSetPriority]
 }
 
@@ -259,7 +256,7 @@ func GetAKSMachineNameFromVMName(aksMachinesPoolName, vmName string) (string, er
 	return aksMachineName, nil
 }
 
-func IsAKSMachineDeleting(aksMachine *armcontainerservice.Machine) bool {
+func isAKSMachineDeleting(aksMachine *armcontainerservice.Machine) bool {
 	if aksMachine != nil && aksMachine.Properties != nil && aksMachine.Properties.ProvisioningState != nil {
 		// Suggestion: find a constant?
 		return *aksMachine.Properties.ProvisioningState == "Deleting"

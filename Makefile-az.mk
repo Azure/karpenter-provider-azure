@@ -39,7 +39,8 @@ az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-cre
 
 az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay     az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-aksmachine:   az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-perm-aksmachine             az-add-aksmachinespool az-configure-values-aksmachine             az-build az-run          az-run-sample 
+az-all-aksmachine: PROVISION_MODE = aksmachineapi
+az-all-aksmachine:   az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-perm-aksmachine             az-add-aksmachinespool az-configure-values             az-build az-run          az-run-sample
 
 az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest    az-create-federated-cred az-perm               az-perm-acr az-configure-values
 	$(MAKE) az-mon-deploy
@@ -212,11 +213,8 @@ az-add-aksmachinespool:
 az-rmrg: ## Destroy test ACR and AKS cluster by deleting the resource group (use with care!)
 	az group delete --name $(AZURE_RESOURCE_GROUP)
 
-az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart and set middleware logging flag
-	LOG_LEVEL=debug hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING) $(PROVISION_MODE)
-
-az-configure-values-aksmachine:  ## Generate cluster-related values for Karpenter Helm chart
-	hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING) aksmachineapi $(AKS_MACHINES_POOL_NAME)
+az-configure-values:  ## Generate cluster-related values for Karpenter Helm chart. Use PROVISION_MODE=aksmachineapi for AKS machine API mode.
+	LOG_LEVEL=debug hack/deploy/configure-values.sh $(AZURE_CLUSTER_NAME) $(AZURE_RESOURCE_GROUP) $(KARPENTER_SERVICE_ACCOUNT_NAME) $(AZURE_KARPENTER_USER_ASSIGNED_IDENTITY_NAME) $(ENABLE_AZURE_SDK_LOGGING) $(PROVISION_MODE) $(AKS_MACHINES_POOL_NAME)
 
 az-mkvmssflex: ## Create VMSS Flex (optional, only if creating VMs referencing this VMSS)
 	az vmss create --name $(AZURE_CLUSTER_NAME)-vmss --resource-group $(AZURE_RESOURCE_GROUP_MC) --location $(AZURE_LOCATION) \

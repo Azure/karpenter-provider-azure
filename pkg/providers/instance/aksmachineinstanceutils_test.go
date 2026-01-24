@@ -440,12 +440,12 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 
 	Context("GetCapacityTypeFromAKSScaleSetPriority", func() {
 		It("should return spot for spot priority", func() {
-			capacityType := GetCapacityTypeFromAKSScaleSetPriority(armcontainerservice.ScaleSetPrioritySpot)
+			capacityType := getCapacityTypeFromAKSScaleSetPriority(armcontainerservice.ScaleSetPrioritySpot)
 			Expect(capacityType).To(Equal(karpv1.CapacityTypeSpot))
 		})
 
 		It("should return on-demand for regular priority", func() {
-			capacityType := GetCapacityTypeFromAKSScaleSetPriority(armcontainerservice.ScaleSetPriorityRegular)
+			capacityType := getCapacityTypeFromAKSScaleSetPriority(armcontainerservice.ScaleSetPriorityRegular)
 			Expect(capacityType).To(Equal(karpv1.CapacityTypeOnDemand))
 		})
 	})
@@ -512,7 +512,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 		})
 	})
 
-	Context("IsAKSMachineDeleting", func() {
+	Context("isAKSMachineDeleting", func() {
 		It("should return true when provisioning state is Deleting", func() {
 			machine := &armcontainerservice.Machine{
 				Properties: &armcontainerservice.MachineProperties{
@@ -520,7 +520,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				},
 			}
 
-			result := IsAKSMachineDeleting(machine)
+			result := isAKSMachineDeleting(machine)
 			Expect(result).To(BeTrue())
 		})
 
@@ -531,12 +531,12 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				},
 			}
 
-			result := IsAKSMachineDeleting(machine)
+			result := isAKSMachineDeleting(machine)
 			Expect(result).To(BeFalse())
 		})
 
 		It("should return false when machine is nil", func() {
-			result := IsAKSMachineDeleting(nil)
+			result := isAKSMachineDeleting(nil)
 			Expect(result).To(BeFalse())
 		})
 
@@ -545,7 +545,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				Properties: nil,
 			}
 
-			result := IsAKSMachineDeleting(machine)
+			result := isAKSMachineDeleting(machine)
 			Expect(result).To(BeFalse())
 		})
 
@@ -556,7 +556,7 @@ var _ = Describe("AKSMachineInstanceUtils Helper Functions", func() {
 				},
 			}
 
-			result := IsAKSMachineDeleting(machine)
+			result := isAKSMachineDeleting(machine)
 			Expect(result).To(BeFalse())
 		})
 	})

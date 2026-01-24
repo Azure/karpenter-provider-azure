@@ -192,7 +192,10 @@ func HasChanged(existing, new any, options *hashstructure.HashOptions) bool {
 	return existingHV != newHV
 }
 
-// GetAlphanumericHash generates a base36 alphanumeric hash of the input string with the specified length. Be mindful collision risks with short lengths.
+// GetAlphanumericHash generates a base36 alphanumeric hash of the input string with the specified length.
+// Be mindful of collision risks with short lengths. Also note that length > 13 provides no additional
+// collision resistance because the underlying hashstructure library returns a 64-bit hash, which only
+// fills ~13 base36 characters; extra characters are just leading zeros.
 // At the time of writing, this is being used in AKS machine instance provider/GetAKSMachineNameFromNodeClaimName(). See that for context.
 func GetAlphanumericHash(input string, length int) (string, error) {
 	if length <= 0 {
