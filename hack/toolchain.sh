@@ -10,27 +10,37 @@ main() {
     gettrivy
 }
 
+# go-install is a helper function to install go tools
+# $1 is the expected command
+# $2 is the go install path
+go-install() {
+    echo "[INF] Installing $1"
+    go install "$2"
+}
+
 tools() {
-    go install github.com/google/go-licenses@v1.6.0
-    go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
-    go install github.com/google/ko@v0.17.1
-    go install github.com/mikefarah/yq/v4@v4.45.1
-    go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
-    go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
-    go install github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
+    go-install go-licenses github.com/google/go-licenses@v1.6.0
+    go-install ko github.com/google/ko@v0.17.1
+    go-install yq github.com/mikefarah/yq/v4@v4.45.1
+    go-install helm-docs github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
+    go-install controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0
+    go-install cosign github.com/sigstore/cosign/v2/cmd/cosign@v2.4.1
 #   go install -tags extended github.com/gohugoio/hugo@v0.110.0
-    go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
-    go install github.com/onsi/ginkgo/v2/ginkgo@latest
-    go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
-    go install github.com/mattn/goveralls@v0.0.12
-    go install github.com/google/go-containerregistry/cmd/crane@v0.20.2
-    go install github.com/go-swagger/go-swagger/cmd/swagger@v0.33.1
-    go install github.com/Azure/aks-node-viewer/cmd/aks-node-viewer@latest
-    go install github.com/google/pprof@latest
+    go-install govulncheck golang.org/x/vuln/cmd/govulncheck@v1.1.4
+    go-install ginkgo github.com/onsi/ginkgo/v2/ginkgo@latest
+    go-install actionlint github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+    go-install goveralls github.com/mattn/goveralls@v0.0.12
+    go-install crane github.com/google/go-containerregistry/cmd/crane@v0.20.2
+    go-install swagger github.com/go-swagger/go-swagger/cmd/swagger@v0.33.1
+    go-install aks-node-viewer github.com/Azure/aks-node-viewer/cmd/aks-node-viewer@latest
+    go-install pprof github.com/google/pprof@latest
 
     if ! echo "$PATH" | grep -q "${GOPATH:-undefined}/bin\|$HOME/go/bin"; then
         echo "Go workspace's \"bin\" directory is not in PATH. Run 'export PATH=\"\$PATH:\${GOPATH:-\$HOME/go}/bin\"'."
     fi
+
+    go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
+
 }
 
 kubebuilder() {
