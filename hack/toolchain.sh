@@ -4,16 +4,45 @@ set -euo pipefail
 K8S_VERSION="${K8S_VERSION:="1.29.x"}"
 KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
 
+# Default SKIP_INSTALLED to false if not set
+SKIP_INSTALLED="${SKIP_INSTALLED:=false}"
+
+if [ "$SKIP_INSTALLED" == true ]; then
+    echo "[INF] Skipping tools already installed."
+fi
+
+# This is where go install will put things
+TOOL_DEST="$(go env GOPATH)/bin"
+
 main() {
     tools
     kubebuilder
     gettrivy
 }
 
+# should-skip is a helper function to determine if installation of a tool should be skipped
+# $1 is the expected command
+should-skip() {
+    if [ "$SKIP_INSTALLED" == true ] && [ -f "$TOOL_DEST/$1" ]; then
+        # We can skip installation
+        return 0
+    fi
+
+    # Installation is needed
+    return 1
+}
+
 # go-install is a helper function to install go tools
 # $1 is the expected command
 # $2 is the go install path
 go-install() {
+    # Check to see if we need to install
+    if should-skip "$1"; then
+        # Silently skip, to avoid console debris
+        # echo "[INF] $1 is already installed, skipping."
+        return
+    fi
+
     echo "[INF] Installing $1"
     go install "$2"
 }
@@ -44,6 +73,7 @@ tools() {
 }
 
 kubebuilder() {
+    echo "[INF] Setting up kubebuilder binaries for Kubernetes ${K8S_VERSION}"
     sudo mkdir -p "${KUBEBUILDER_ASSETS}"
     sudo chown "${USER}" "${KUBEBUILDER_ASSETS}"
     arch=$(go env GOARCH)
