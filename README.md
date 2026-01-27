@@ -37,11 +37,17 @@ Karpenter improves the efficiency and cost of running workloads on Kubernetes cl
 * **Consolidating** existing nodes onto cheaper nodes with higher utilization per node
 
 
-## Node Auto Provisioning (NAP) vs. Self-hosted
+## Node Auto Provisioning (NAP) vs. Self-hosted Karpenter
 
 Karpenter provider for AKS can be used in two modes:
-* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) mode**: Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users as it has more test coverage, improved scale-up speed, automatic maintenance window integration, support for some additional SKUs, and various other improvements over self-hosted. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode.
-* **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment.
+* **[Node Auto Provisioning (NAP)](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) mode**: Karpenter is run by AKS as a managed addon similar to managed Cluster Autoscaler. This is the recommended mode for most users as it has more test coverage, improved scale-up speed, automatic maintenance window integration, support for some additional SKUs, and various other improvements over self-hosted Karpenter. NAP also leverages an AKS experience, Node Provisioning Service, which integrates Azure tools into the managed Karpenter experience for optimized performance and scalability. Follow the instructions in Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli) to use Karpenter in that mode.
+  * Token rotation
+  * Helm charts
+  * Kubernetes version upgrades
+  * Karpenter version updates
+  * VM OS disk updates
+  * node image upgrades (Linux)
+* **Self-hosted mode**: Karpenter is run as a standalone deployment in the cluster. This mode is useful for advanced users who want to customize or experiment with Karpenter's deployment, use custom Helm charts, or integrate non-standard workflows. Self-hosted mode requires users to directly manage upgrades, token rotation, and helm charts.
 
 ## Known limitations
 
@@ -60,7 +66,7 @@ The following AKS features are not supported:
 
 Follow the instructions in the Node Auto Provisioning [documentation](https://learn.microsoft.com/azure/aks/node-autoprovision?tabs=azure-cli).
 
-## Installation (self-hosted)
+## Installation (self-hosted Karpenter)
 
 **⚠️ Warning ⚠️** We strongly recommend using [Node Auto Provisioning](#installation-nap) (aka managed Karpenter) instead of self-hosted.
 
