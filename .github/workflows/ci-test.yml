@@ -41,6 +41,8 @@ jobs:
           dl.google.com:443
           aquasecurity.github.io:443
           mirror.gcr.io:443
+          archive.ubuntu.com:443
+          security.ubuntu.com:443
 
     - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
     - uses: ./.github/actions/install-deps

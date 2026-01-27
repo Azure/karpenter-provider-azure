@@ -126,6 +126,8 @@ jobs:
             dl.google.com:443
             aquasecurity.github.io:443
             mirror.gcr.io:443
+            archive.ubuntu.com:443
+            security.ubuntu.com:443
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -200,8 +202,6 @@ jobs:
         shell: bash
         env:
           AZURE_ACR_NAME: ${{ env.ACR_NAME }}
-          # amd64 only: CGO cross-compilers not installed, so must match runner arch (and system pool SKU)
-          KO_DEFAULTPLATFORMS: linux/amd64
         run: make az-build
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
