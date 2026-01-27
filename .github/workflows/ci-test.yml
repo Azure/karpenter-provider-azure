@@ -23,7 +23,7 @@ jobs:
       uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
       with:
         disable-telemetry: true
-        egress-policy: audit
+        egress-policy: block
         allowed-endpoints: > # dl.k8s.io is for 1.25 CI only
           *.dl.k8s.io:443
           api.github.com:443
@@ -41,8 +41,9 @@ jobs:
           dl.google.com:443
           aquasecurity.github.io:443
           mirror.gcr.io:443
-          archive.ubuntu.com:443
-          security.ubuntu.com:443
+          azure.archive.ubuntu.com:80
+          packages.microsoft.com:443
+          esm.ubuntu.com:443
 
     - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
     - uses: ./.github/actions/install-deps
