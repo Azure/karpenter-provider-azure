@@ -13,6 +13,7 @@ linters:
     - gosec
     - misspell
     - nilerr
+    - nolintlint
     - revive
     - staticcheck
     - tparallel

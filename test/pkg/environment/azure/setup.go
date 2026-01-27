@@ -17,7 +17,6 @@ limitations under the License.
 package azure
 
 import (
-	//nolint:revive,stylecheck
 	"fmt"
 
 	. "github.com/onsi/gomega"
