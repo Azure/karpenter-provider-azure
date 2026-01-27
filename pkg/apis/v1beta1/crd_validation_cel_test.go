@@ -140,6 +140,51 @@ var _ = Describe("CEL/Validation", func() {
 		})
 	})
 
+	Context("OSDiskType", func() {
+		It("should accept EphemeralWithFallbackToManaged OSDiskType", func() {
+			ephemeralOSDiskType := "EphemeralWithFallbackToManaged"
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: &ephemeralOSDiskType,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept Managed OSDiskType", func() {
+			managedOSDiskType := "Managed"
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: &managedOSDiskType,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should accept omitted OSDiskType", func() {
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec:       v1beta1.AKSNodeClassSpec{
+					// OSDiskType is nil - should be accepted
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).To(Succeed())
+		})
+
+		It("should reject invalid OSDiskType", func() {
+			invalidOSDiskType := "asdf"
+			nodeClass := &v1beta1.AKSNodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: strings.ToLower(randomdata.SillyName())},
+				Spec: v1beta1.AKSNodeClassSpec{
+					OSDiskType: &invalidOSDiskType,
+				},
+			}
+			Expect(env.Client.Create(ctx, nodeClass)).ToNot(Succeed())
+		})
+	})
+
 	Context("FIPSMode", func() {
 		It("should reject invalid FIPSMode", func() {
 			invalidFIPSMode := v1beta1.FIPSMode("123")
