@@ -63,7 +63,7 @@ var _ = BeforeSuite(func() {
 	ctx = options.ToContext(ctx, test.Options())
 	azureEnv = test.NewEnvironment(ctx, env)
 
-	controller = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+	controller = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, test.Options())
 })
 
 var _ = AfterSuite(func() {
