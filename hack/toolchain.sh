@@ -15,6 +15,7 @@ fi
 TOOL_DEST="$(go env GOPATH)/bin"
 
 main() {
+    crosscompilers
     tools
     kubebuilder
     gettrivy
@@ -45,6 +46,14 @@ go-install() {
 
     echo "[INF] Installing $1"
     go install "$2"
+}
+
+crosscompilers() {
+    # Install CGO cross-compilation toolchains for multi-arch builds
+    if ! command -v aarch64-linux-gnu-gcc &> /dev/null || ! command -v x86_64-linux-gnu-gcc &> /dev/null; then
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
+    fi
 }
 
 tools() {
