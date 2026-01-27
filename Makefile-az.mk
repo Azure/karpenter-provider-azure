@@ -31,6 +31,8 @@ CUSTOM_SUBNET_NAME ?= nodesubnet
 
 .DEFAULT_GOAL := help	# make without arguments will show help
 
+export KO_GO_PATH ?= hack/go-crossbuild.sh
+
 az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
 az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1       az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
@@ -253,14 +255,14 @@ az-aks-check-acr:
 
 az-build: ## Build the Karpenter controller and webhook images using skaffold build (which uses ko build)
 	az acr login -n $(AZURE_ACR_NAME)
-	KO_GO_PATH=hack/go-crossbuild.sh skaffold build
+	skaffold build
 
 az-creds: ## Get cluster credentials
 	az aks get-credentials --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --overwrite-existing
 
 az-run: ## Deploy the controller from the current state of your git repository into your ~/.kube/config cluster using skaffold run
 	az acr login -n $(AZURE_ACR_NAME)
-	KO_GO_PATH=hack/go-crossbuild.sh skaffold run
+	skaffold run
 
 az-run-sample: ## Deploy sample Provisioner and workload (with 0 replicas, to be scaled manually)
 	kubectl apply -f examples/v1/general-purpose.yaml
@@ -274,12 +276,12 @@ az-mc-upgrade: ## upgrade managed cluster
 	az aks upgrade --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --kubernetes-version $(UPGRADE_K8S_VERSION)
 
 az-dev: ## Deploy and develop using skaffold dev
-	KO_GO_PATH=hack/go-crossbuild.sh skaffold dev
+	skaffold dev
 
 az-debug: ## Rebuild, deploy and debug using skaffold debug
 	az acr login -n $(AZURE_ACR_NAME)
 	skaffold delete || true
-	KO_GO_PATH=hack/go-crossbuild.sh skaffold debug # --platform=linux/arm64
+	skaffold debug # --platform=linux/arm64
 
 az-debug-bootstrap: ## Debug bootstrap (target first privateIP of the first NIC with Karpenter tag)
 	$(eval JUMP_NODE=$(shell kubectl get nodes -o name | head -n 1))
