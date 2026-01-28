@@ -18,8 +18,10 @@ package instance
 
 import (
 	"context"
+	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
@@ -64,15 +66,28 @@ func deleteVirtualMachine(ctx context.Context, client VirtualMachinesAPI, rg, vm
 	return nil
 }
 
-func createVirtualMachineExtension(ctx context.Context, client VirtualMachineExtensionsAPI, rg, vmName, extensionName string, vmExt armcompute.VirtualMachineExtension) (*armcompute.VirtualMachineExtension, error) {
+func createVirtualMachineExtension(
+	ctx context.Context,
+	client VirtualMachineExtensionsAPI,
+	rg string,
+	vmName string,
+	extensionName string,
+	vmExt armcompute.VirtualMachineExtension,
+) (*armcompute.VirtualMachineExtension, error) {
 	poller, err := client.BeginCreateOrUpdate(ctx, rg, vmName, extensionName, vmExt, nil)
 	if err != nil {
 		return nil, err
 	}
-	res, err := poller.PollUntilDone(ctx, nil)
+
+	// Poll more frequently than the default of 30s
+	opts := &runtime.PollUntilDoneOptions{
+		Frequency: 3 * time.Second,
+	}
+	res, err := poller.PollUntilDone(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
+
 	return &res.VirtualMachineExtension, nil
 }
 
