@@ -47,6 +47,7 @@ type AKSNodeClassSpec struct {
 	// osDiskSizeGB is the size of the OS disk in GB.
 	// +kubebuilder:validation:Minimum=30
 	// +kubebuilder:validation:Maximum=2048
+	// +optional
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
@@ -54,6 +55,7 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:default=Ubuntu
 	// imageFamily is the image family that instances use.
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
+	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
 	// fipsMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
@@ -86,6 +88,7 @@ type AKSNodeClassSpec struct {
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
 	// security is a collection of security related karpenter fields
+	// +optional
 	Security *Security `json:"security,omitempty"`
 	// localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 	// LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
@@ -371,11 +374,14 @@ type KubeletConfiguration struct {
 type AKSNodeClass struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is standard object metadata.
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec defines the desired state of AKSNodeClass.
+	// +optional
 	Spec AKSNodeClassSpec `json:"spec,omitempty"`
 	// status contains the resolved state of the AKSNodeClass.
+	// +optional
 	Status AKSNodeClassStatus `json:"status,omitempty"`
 }
 
