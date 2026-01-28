@@ -38,41 +38,42 @@ var (
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
 type AKSNodeClassSpec struct {
-	// VNETSubnetID is the subnet used by nics provisioned with this nodeclass.
+	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
 	// +optional
 	VNETSubnetID *string `json:"vnetSubnetID,omitempty"`
-	// +kubebuilder:default=128
+	// osDiskSizeGB is the size of the OS disk in GB.
+	// +default=128
 	// +kubebuilder:validation:Minimum=30
 	// +kubebuilder:validation:Maximum=2048
-	// osDiskSizeGB is the size of the OS disk in GB.
+	// +optional
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
-	// ImageFamily is the image family that instances use.
 	// +kubebuilder:default=Ubuntu
+	// imageFamily is the image family that instances use.
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	ImageFamily *string `json:"imageFamily,omitempty"`
-	// FIPSMode controls FIPS compliance for the provisioned nodes
+	// fipsMode controls FIPS compliance for the provisioned nodes
 	// +kubebuilder:validation:Enum:={FIPS,Disabled}
 	// +optional
 	FIPSMode *FIPSMode `json:"fipsMode,omitempty"`
-	// Tags to be applied on Azure resources like instances.
+	// tags to be applied on Azure resources like instances.
 	// +kubebuilder:validation:XValidation:message="tags keys must be less than 512 characters",rule="self.all(k, size(k) <= 512)"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '<', '>', '%', '&', or '?'",rule="self.all(k, !k.matches('[<>%&?]'))"
 	// +kubebuilder:validation:XValidation:message="tags keys must not contain '\\'",rule="self.all(k, !k.contains('\\\\'))"
 	// +kubebuilder:validation:XValidation:message="tags values must be less than 256 characters",rule="self.all(k, size(self[k]) <= 256)"
 	// +optional
 	Tags map[string]string `json:"tags,omitempty" hash:"ignore"`
-	// Kubelet defines args to be used when configuring kubelet on provisioned nodes.
+	// kubelet defines args to be used when configuring kubelet on provisioned nodes.
 	// They are a subset of the upstream types, recognizing not all options may be supported.
 	// Wherever possible, the types and names should reflect the upstream kubelet types.
 	// +kubebuilder:validation:XValidation:message="imageGCHighThresholdPercent must be greater than imageGCLowThresholdPercent",rule="has(self.imageGCHighThresholdPercent) && has(self.imageGCLowThresholdPercent) ?  self.imageGCHighThresholdPercent > self.imageGCLowThresholdPercent  : true"
 	// +optional
 	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
-	// MaxPods is an override for the maximum number of pods that can run on a worker node instance.
+	// maxPods is an override for the maximum number of pods that can run on a worker node instance.
 	// See minimum + maximum pods per node documentation: https://learn.microsoft.com/en-us/azure/aks/concepts-network-ip-address-planning#maximum-pods-per-node
 	// Default behavior if this is not specified depends on the network plugin:
 	//   - If Network Plugin is Azure with "" (v1 or NodeSubnet), the default is 30.
@@ -85,9 +86,9 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
-	// Collection of security related karpenter fields
+	// security is a collection of security related karpenter fields
 	Security *Security `json:"security,omitempty"`
-	// LocalDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
+	// localDNS configures the per-node local DNS, with VnetDNS and KubeDNS overrides.
 	// LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 	// For more details see aka.ms/aks/localdns.
 	// +optional
@@ -96,7 +97,7 @@ type AKSNodeClassSpec struct {
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
 type Security struct {
-	// EncryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
+	// encryptionAtHost specifies whether host-level encryption is enabled for provisioned nodes.
 	// For more information, see:
 	// https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
@@ -120,10 +121,10 @@ const (
 // LocalDNS helps improve performance and reliability of DNS resolution in an AKS cluster.
 // For more details see aka.ms/aks/localdns.
 type LocalDNS struct {
-	// Mode of enablement for localDNS.
+	// mode of enablement for localDNS.
 	// +required
 	Mode LocalDNSMode `json:"mode,omitempty"`
-	// VnetDNS overrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
+	// vnetDNSOverrides apply to DNS traffic from pods with dnsPolicy:default or kubelet (referred to as VnetDNS traffic).
 	// +required
 	// +listType=map
 	// +listMapKey=zone
@@ -132,7 +133,7 @@ type LocalDNS struct {
 	// +kubebuilder:validation:XValidation:message="external domains cannot be forwarded to ClusterCoreDNS from vnetDNSOverrides",rule="!self.exists(x, x.zone != '.' && !x.zone.endsWith('cluster.local') && x.forwardDestination == 'ClusterCoreDNS')"
 	// +kubebuilder:validation:MaxItems=100
 	VnetDNSOverrides []LocalDNSZoneOverride `json:"vnetDNSOverrides,omitempty"`
-	// KubeDNS overrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
+	// kubeDNSOverrides apply to DNS traffic from pods with dnsPolicy:ClusterFirst (referred to as KubeDNS traffic).
 	// +required
 	// +listType=map
 	// +listMapKey=zone
@@ -145,25 +146,25 @@ type LocalDNS struct {
 // +kubebuilder:validation:XValidation:message="'cluster.local' cannot be forwarded to VnetDNS",rule="!(self.zone.endsWith('cluster.local') && self.forwardDestination == 'VnetDNS')"
 // +kubebuilder:validation:XValidation:message="serveStale Verify cannot be used with protocol ForceTCP",rule="!(self.serveStale == 'Verify' && self.protocol == 'ForceTCP')"
 type LocalDNSZoneOverride struct {
-	// Zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
+	// zone is the DNS zone this override applies to (e.g., ".", "cluster.local").
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=254
 	// +kubebuilder:validation:Pattern=`^(\.|[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9_-]{0,61}[A-Za-z0-9])?)*\.?)$`
 	Zone string `json:"zone,omitempty"`
-	// Log level for DNS queries in localDNS.
+	// queryLogging is the log level for DNS queries in localDNS.
 	// +required
 	QueryLogging LocalDNSQueryLogging `json:"queryLogging,omitempty"`
-	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
+	// protocol enforces TCP or prefers UDP protocol for connections from localDNS to upstream DNS server.
 	// +required
 	Protocol LocalDNSProtocol `json:"protocol,omitempty"`
-	// Destination server for DNS queries to be forwarded from localDNS.
+	// forwardDestination is the destination server for DNS queries to be forwarded from localDNS.
 	// +required
 	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
-	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// forwardPolicy is the forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +required
 	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
-	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// maxConcurrent is the maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
 	// +required
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
@@ -179,7 +180,7 @@ type LocalDNSZoneOverride struct {
 	// +kubebuilder:validation:Schemaless
 	// +required
 	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
-	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// serveStale is the policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
 	ServeStale LocalDNSServeStale `json:"serveStale,omitempty"`
 }
@@ -187,19 +188,19 @@ type LocalDNSZoneOverride struct {
 // LocalDNSOverrides specifies DNS override configuration
 // Deprecated: Use LocalDNSZoneOverride instead
 type LocalDNSOverrides struct {
-	// Log level for DNS queries in localDNS.
+	// queryLogging is the log level for DNS queries in localDNS.
 	// +required
 	QueryLogging LocalDNSQueryLogging `json:"queryLogging,omitempty"`
-	// Enforce TCP or prefer UDP protocol for connections from localDNS to upstream DNS server.
+	// protocol enforces TCP or prefers UDP protocol for connections from localDNS to upstream DNS server.
 	// +required
 	Protocol LocalDNSProtocol `json:"protocol,omitempty"`
-	// Destination server for DNS queries to be forwarded from localDNS.
+	// forwardDestination is the destination server for DNS queries to be forwarded from localDNS.
 	// +required
 	ForwardDestination LocalDNSForwardDestination `json:"forwardDestination,omitempty"`
-	// Forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// forwardPolicy is the forward policy for selecting upstream DNS server. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +required
 	ForwardPolicy LocalDNSForwardPolicy `json:"forwardPolicy,omitempty"`
-	// Maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
+	// maxConcurrent is the maximum number of concurrent queries. See [forward plugin](https://coredns.io/plugins/forward) for more information.
 	// +kubebuilder:validation:Minimum=0
 	// +required
 	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
@@ -215,7 +216,7 @@ type LocalDNSOverrides struct {
 	// +kubebuilder:validation:Schemaless
 	// +required
 	ServeStaleDuration karpv1.NillableDuration `json:"serveStaleDuration"`
-	// Policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
+	// serveStale is the policy for serving stale data. See [cache plugin](https://coredns.io/plugins/cache) for more information.
 	// +required
 	ServeStale LocalDNSServeStale `json:"serveStale,omitempty"`
 }
@@ -288,19 +289,19 @@ type KubeletConfiguration struct {
 	// +kubebuilder:default="none"
 	// +optional
 	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
-	// CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+	// cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
 	// Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
 	// +kubebuilder:default=true
 	// +optional
 	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
-	// cpuCfsQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
+	// cpuCFSQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
 	// The value must be between 1 ms and 1 second, inclusive.
 	// Default: "100ms"
 	// +optional
 	// +kubebuilder:default="100ms"
 	// TODO: validation
 	CPUCFSQuotaPeriod metav1.Duration `json:"cpuCFSQuotaPeriod,omitempty"`
-	// ImageGCHighThresholdPercent is the percent of disk usage after which image
+	// imageGCHighThresholdPercent is the percent of disk usage after which image
 	// garbage collection is always run. The percent is calculated by dividing this
 	// field value by 100, so this field must be between 0 and 100, inclusive.
 	// When specified, the value must be greater than ImageGCLowThresholdPercent.
@@ -309,7 +310,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Maximum:=100
 	// +optional
 	ImageGCHighThresholdPercent *int32 `json:"imageGCHighThresholdPercent,omitempty"`
-	// ImageGCLowThresholdPercent is the percent of disk usage before which image
+	// imageGCLowThresholdPercent is the percent of disk usage before which image
 	// garbage collection is never run. Lowest disk usage to garbage collect to.
 	// The percent is calculated by dividing this field value by 100,
 	// so the field value must be between 0 and 100, inclusive.
@@ -332,7 +333,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:default="none"
 	// +optional
 	TopologyManagerPolicy string `json:"topologyManagerPolicy,omitempty"`
-	// A comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
 	// and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
 	// Default: []
@@ -369,10 +370,13 @@ type KubeletConfiguration struct {
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 type AKSNodeClass struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// metadata is standard object metadata.
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   AKSNodeClassSpec   `json:"spec,omitempty"`
+	// spec defines the desired state of AKSNodeClass.
+	Spec AKSNodeClassSpec `json:"spec,omitempty"`
+	// status contains the resolved state of the AKSNodeClass.
 	Status AKSNodeClassStatus `json:"status,omitempty"`
 }
 

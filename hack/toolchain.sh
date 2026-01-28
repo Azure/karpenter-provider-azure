@@ -91,7 +91,9 @@ tools() {
         TOOL_DEST=$TOOL_DEST envsubst < "$SCRIPT_DIR/custom-gcl.template.yml" > .custom-gcl.yml
         "$TOOL_DEST/golangci-lint" custom -v
         rm .custom-gcl.yml
-        # mv "$TOOL_DEST/golangci-lint-custom" "$TOOL_DEST/golangci-lint"
+        # Our pre-commit hooks expect to use golangci-lint as the binary name, so we copy it here
+        # (but we leave the custom one here as signal to avoid re-installation)
+        cp "$TOOL_DEST/golangci-lint-custom" "$TOOL_DEST/golangci-lint"
     fi
 }
 
