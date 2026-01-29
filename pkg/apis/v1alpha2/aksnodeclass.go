@@ -382,7 +382,8 @@ type AKSNodeClass struct {
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// spec defines the desired state of AKSNodeClass.
+	// spec is the top level specification for the AKS Karpenter Provider.
+	// This will contain configuration necessary to launch instances in AKS.
 	// +optional
 	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
 	Spec AKSNodeClassSpec `json:"spec,omitempty"`
