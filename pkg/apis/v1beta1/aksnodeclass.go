@@ -291,6 +291,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Enum:={none,static}
 	// +default="none"
 	// +optional
+	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
 	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
 	// cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
 	// Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
@@ -303,6 +304,7 @@ type KubeletConfiguration struct {
 	// +optional
 	// +default="100ms"
 	// TODO: validation
+	//nolint:kubeapilinter // nodurations: using Duration for compatibility with upstream kubelet types
 	CPUCFSQuotaPeriod metav1.Duration `json:"cpuCFSQuotaPeriod,omitempty"`
 	// imageGCHighThresholdPercent is the percent of disk usage after which image
 	// garbage collection is always run. The percent is calculated by dividing this
@@ -335,6 +337,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Enum:={restricted,best-effort,none,single-numa-node}
 	// +default="none"
 	// +optional
+	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
 	TopologyManagerPolicy string `json:"topologyManagerPolicy,omitempty"`
 	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
 	// Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
@@ -342,6 +345,7 @@ type KubeletConfiguration struct {
 	// Default: []
 	// TODO: validation
 	// +optional
+	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
 	// containerLogMaxSize is a quantity defining the maximum size of the container log
 	// file before it is rotated. For example: "5Mi" or "256Ki".
@@ -350,6 +354,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
 	// +default="50Mi"
 	// +optional
+	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
 	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
 	// containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
 	// Default: 5
@@ -380,9 +385,11 @@ type AKSNodeClass struct {
 
 	// spec defines the desired state of AKSNodeClass.
 	// +optional
+	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
 	Spec AKSNodeClassSpec `json:"spec,omitempty"`
 	// status contains the resolved state of the AKSNodeClass.
 	// +optional
+	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
 	Status AKSNodeClassStatus `json:"status,omitempty"`
 }
 

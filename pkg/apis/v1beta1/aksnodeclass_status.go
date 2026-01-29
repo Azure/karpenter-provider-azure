@@ -36,9 +36,11 @@ type NodeImage struct {
 	// - CIG: /CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/2022.10.03
 	// - SIG: /subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03
 	// +required
+	//nolint:kubeapilinter // requiredfields: validation is intentionally not enforced for this field
 	ID string `json:"id"`
 	// requirements of the image to be utilized on an instance type
 	// +required
+	//nolint:kubeapilinter // requiredfields: omitempty is intentionally omitted for this field
 	Requirements []corev1.NodeSelectorRequirement `json:"requirements"`
 }
 
@@ -47,13 +49,16 @@ type AKSNodeClassStatus struct {
 	// images contains the current set of images available to use
 	// for the NodeClass
 	// +optional
+	//nolint:kubeapilinter // ssatags: adding listType marker would be a breaking change
 	Images []NodeImage `json:"images,omitempty"`
 	// kubernetesVersion contains the current kubernetes version which should be
 	// used for nodes provisioned for the NodeClass
 	// +optional
+	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
 	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
 	// conditions contains signals for health and readiness
 	// +optional
+	//nolint:kubeapilinter // conditions: using status.Condition from operatorpkg instead of metav1.Condition for compatibility
 	Conditions []status.Condition `json:"conditions,omitempty"`
 }
 
