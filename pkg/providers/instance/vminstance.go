@@ -694,7 +694,8 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 // beginLaunchInstance starts the launch of a VM instance.
 // The returned VirtualMachinePromise must be called to gather any errors
 // that are retrieved during async provisioning, as well as to complete the provisioning process.
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func (p *DefaultVMProvider) beginLaunchInstance(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,

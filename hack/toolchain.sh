@@ -7,6 +7,12 @@ KUBEBUILDER_ASSETS="/usr/local/kubebuilder/bin"
 # Default SKIP_INSTALLED to false if not set
 SKIP_INSTALLED="${SKIP_INSTALLED:=false}"
 
+# Find the path where this script is found
+SCRIPT_DIR=$(dirname "$(realpath "$0")")
+
+# Define go install will put things
+TOOL_DEST="$(go env GOPATH)/bin"
+
 if [ "$SKIP_INSTALLED" == true ]; then
     echo "[INF] Skipping tools already installed."
 fi
@@ -79,6 +85,13 @@ tools() {
 
     go-install golangci-lint github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.8.0
 
+    # Install our custom modules in golangci-lint
+    if ! should-skip "golangci-lint-custom"; then
+        echo "[INF] Installing golangci-lint custom modules"
+        TOOL_DEST=$TOOL_DEST envsubst < "$SCRIPT_DIR/custom-gcl.template.yml" > .custom-gcl.yml
+        "$TOOL_DEST/golangci-lint" custom -v
+        rm .custom-gcl.yml
+    fi
 }
 
 kubebuilder() {

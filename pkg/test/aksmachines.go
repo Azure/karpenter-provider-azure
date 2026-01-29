@@ -43,7 +43,8 @@ type AKSMachineOptions struct {
 // AKSMachine creates a test AKS Machine with defaults that can be overridden by AKSMachineOptions.
 // This implementation matches the setDefaultMachineValues pattern from the fake API.
 // Overrides are applied in order, with last-write-wins semantics.
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	options := AKSMachineOptions{}
 	for _, o := range overrides {

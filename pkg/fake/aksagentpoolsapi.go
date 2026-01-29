@@ -122,7 +122,8 @@ func (c *AKSAgentPoolsAPI) Get(ctx context.Context, resourceGroupName string, re
 }
 
 // Already procedural, and is a fake
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func (c *AKSAgentPoolsAPI) BeginDeleteMachines(
 	ctx context.Context,
 	resourceGroupName string,
