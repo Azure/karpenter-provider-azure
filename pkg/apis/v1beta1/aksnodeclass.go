@@ -53,8 +53,8 @@ type AKSNodeClassSpec struct {
 	// ImageID is the ID of the image that instances use.
 	// Not exposed in the API yet
 	ImageID *string `json:"-"`
-	// +kubebuilder:default=Ubuntu
 	// imageFamily is the image family that instances use.
+	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	// +optional
 	ImageFamily *string `json:"imageFamily,omitempty"`
@@ -289,19 +289,19 @@ const (
 type KubeletConfiguration struct {
 	// cpuManagerPolicy is the name of the policy to use.
 	// +kubebuilder:validation:Enum:={none,static}
-	// +kubebuilder:default="none"
+	// +default="none"
 	// +optional
 	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
 	// cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
 	// Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
-	// +kubebuilder:default=true
+	// +default=true
 	// +optional
 	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
 	// cpuCFSQuotaPeriod sets the CPU CFS quota period value, `cpu.cfs_period_us`.
 	// The value must be between 1 ms and 1 second, inclusive.
 	// Default: "100ms"
 	// +optional
-	// +kubebuilder:default="100ms"
+	// +default="100ms"
 	// TODO: validation
 	CPUCFSQuotaPeriod metav1.Duration `json:"cpuCFSQuotaPeriod,omitempty"`
 	// imageGCHighThresholdPercent is the percent of disk usage after which image
@@ -333,7 +333,7 @@ type KubeletConfiguration struct {
 	//   of CPU and device resources.
 	//
 	// +kubebuilder:validation:Enum:={restricted,best-effort,none,single-numa-node}
-	// +kubebuilder:default="none"
+	// +default="none"
 	// +optional
 	TopologyManagerPolicy string `json:"topologyManagerPolicy,omitempty"`
 	// allowedUnsafeSysctls is a comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
@@ -348,13 +348,13 @@ type KubeletConfiguration struct {
 	// Default: "10Mi"
 	// AKS CustomKubeletConfig has containerLogMaxSizeMB (with units), defaults to 50
 	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
-	// +kubebuilder:default="50Mi"
+	// +default="50Mi"
 	// +optional
 	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
 	// containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
 	// Default: 5
 	// +kubebuilder:validation:Minimum:=2
-	// +kubebuilder:default=5
+	// +default=5
 	// +optional
 	ContainerLogMaxFiles *int32 `json:"containerLogMaxFiles,omitempty"`
 	// podPidsLimit is the maximum number of PIDs in any pod.
