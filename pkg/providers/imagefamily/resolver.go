@@ -171,7 +171,7 @@ func (r *defaultResolver) Resolve(
 			r.nodeBootstrappingProvider,
 			nodeClass.Spec.FIPSMode,
 			nodeClass.Spec.LocalDNS,
-			nodeClass.Spec.ArtifactStreamingEnabled,
+			nodeClass.Spec.ArtifactStreaming,
 		),
 		StorageProfileDiskType:    diskType,
 		StorageProfileIsEphemeral: diskType == consts.StorageProfileEphemeral,
