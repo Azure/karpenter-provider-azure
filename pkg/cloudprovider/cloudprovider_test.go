@@ -62,30 +62,30 @@ func TestGenerateNodeClaimName(t *testing.T) {
 
 func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 	tests := []struct {
-		name          string
-		vm            *armcompute.VirtualMachine
-		expectNoTime  bool
-		expectTimeSet bool
+		name                string
+		vm                  *armcompute.VirtualMachine
+		expectFallbackToNow bool
+		expectExactTime     *time.Time
 	}{
 		{
-			name: "nil Properties",
+			name: "nil Properties - fallback to time.Now()",
 			vm: &armcompute.VirtualMachine{
 				Name: to.Ptr("aks-test-vm"),
 				ID:   to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
 			},
-			expectNoTime: true,
+			expectFallbackToNow: true,
 		},
 		{
-			name: "nil TimeCreated",
+			name: "nil TimeCreated - fallback to time.Now()",
 			vm: &armcompute.VirtualMachine{
 				Name:       to.Ptr("aks-test-vm"),
 				ID:         to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
 				Properties: &armcompute.VirtualMachineProperties{},
 			},
-			expectNoTime: true,
+			expectFallbackToNow: true,
 		},
 		{
-			name: "valid TimeCreated",
+			name: "valid TimeCreated - use exact time",
 			vm: &armcompute.VirtualMachine{
 				Name: to.Ptr("aks-test-vm"),
 				ID:   to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
@@ -93,7 +93,7 @@ func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 					TimeCreated: to.Ptr(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 				},
 			},
-			expectTimeSet: true,
+			expectExactTime: to.Ptr(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)),
 		},
 	}
 
@@ -103,20 +103,23 @@ func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 			ctx := context.Background()
 
 			cp := &CloudProvider{}
+			before := time.Now()
 			nodeClaim, err := cp.vmInstanceToNodeClaim(ctx, tt.vm, nil)
+			after := time.Now()
 
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(nodeClaim).ToNot(BeNil())
+			g.Expect(nodeClaim.CreationTimestamp).ToNot(Equal(metav1.Time{}))
 
-			if tt.expectNoTime {
-				// CreationTimestamp should be zero value when Properties or TimeCreated is nil
-				g.Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.Time{}))
+			if tt.expectFallbackToNow {
+				// When TimeCreated is unavailable, should fallback to time.Now() for GC safety
+				g.Expect(nodeClaim.CreationTimestamp.Time).To(BeTemporally(">=", before))
+				g.Expect(nodeClaim.CreationTimestamp.Time).To(BeTemporally("<=", after))
 			}
 
-			if tt.expectTimeSet {
-				// CreationTimestamp should be set when TimeCreated is valid
-				g.Expect(nodeClaim.CreationTimestamp).ToNot(Equal(metav1.Time{}))
-				g.Expect(nodeClaim.CreationTimestamp.Time).To(Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)))
+			if tt.expectExactTime != nil {
+				// When TimeCreated is available, should use the exact time from VM
+				g.Expect(nodeClaim.CreationTimestamp.Time).To(Equal(*tt.expectExactTime))
 			}
 		})
 	}

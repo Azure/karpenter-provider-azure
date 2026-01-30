@@ -534,6 +534,11 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	nodeClaim.Annotations = annotations
 	if vm.Properties != nil && vm.Properties.TimeCreated != nil {
 		nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
+	} else {
+		// Fallback to current time to ensure garbage collection grace period is enforced
+		// when TimeCreated is unavailable. Without this, CreationTimestamp would be epoch (zero value)
+		// and the instance could be immediately garbage collected, bypassing the 5-minute grace period.
+		nodeClaim.CreationTimestamp = metav1.Time{Time: time.Now()}
 	}
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
 	if utils.IsVMDeleting(*vm) {
