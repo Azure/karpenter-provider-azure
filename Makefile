@@ -84,7 +84,8 @@ benchmark:
 coverage:
 	go tool cover -html coverage.out -o coverage.html
 
-verify: toolchain tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+verify: tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+	SKIP_INSTALLED=true make toolchain
 	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
