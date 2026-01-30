@@ -46,7 +46,7 @@ func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
 
 	version := "1"
 	if vmsize.Version != "" {
-		if !(vmsize.Version[0] == 'V' || vmsize.Version[0] == 'v') {
+		if vmsize.Version[0] != 'V' && vmsize.Version[0] != 'v' {
 			// should never happen; don't capture in label (won't be available for selection by version)
 			return ""
 		}
