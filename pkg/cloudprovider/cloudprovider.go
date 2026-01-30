@@ -532,7 +532,9 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	nodeClaim.Name = GetNodeClaimNameFromVMName(*vm.Name)
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
-	nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
+	if vm.Properties != nil && vm.Properties.TimeCreated != nil {
+		nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
+	}
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
 	if utils.IsVMDeleting(*vm) {
 		nodeClaim.DeletionTimestamp = &metav1.Time{Time: time.Now()}
