@@ -37,3 +37,10 @@ runs:
           sudo apt-get update
           sudo apt-get install -y trivy
         fi
+    # Install CGO cross-compilers for multi-arch builds (apt installs to /usr which isn't cacheable)
+    - shell: bash
+      run: |
+        if ! command -v aarch64-linux-gnu-gcc &> /dev/null || ! command -v x86_64-linux-gnu-gcc &> /dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
+        fi
