@@ -37,22 +37,24 @@ import (
 const (
 	ValidationFailedReasonDESRBACMissing     = "DESRBACMissing"
 	ValidationFailedReasonDESRBACCheckFailed = "DESRBACCheckFailed"
-	// DESValidationCacheTTL defines how long to cache successful DES RBAC validations
+	// DESValidationSuccessCacheTTL defines how long to cache successful DES RBAC validations
 	// After this duration, validation will be re-run to detect permission revocations
-	// 1 minute balances performance with timely detection of permission changes
-	DESValidationCacheTTL = 1 * time.Minute
+	// Set to 1 hour since RBAC changes are infrequent in production
+	DESValidationSuccessCacheTTL = 1 * time.Hour
+	// DESRBACErrorMessage is the error message shown when the controlling identity lacks Reader permissions
+	DESRBACErrorMessage = "controlling identity does not have Reader role on Disk Encryption Set"
 )
 
 type ValidationReconciler struct {
 	kubeClient            client.Client
 	diskEncryptionSetsAPI instance.DiskEncryptionSetsAPI
-	options               *options.Options
+	diskEncryptionSetID   string
 
-	// Cache to avoid redundant DES RBAC validation checks
-	// Stores the DES ID and the timestamp when it was last successfully validated
-	validatedDES   string
-	validationTime time.Time
-	validationMu   sync.RWMutex
+	// validatedSuccessfully tracks whether DES validation has passed
+	// Once set to true, we use the cache TTL to avoid redundant checks
+	validatedSuccessfully bool
+	lastValidationTime    time.Time
+	validationMu          sync.RWMutex
 }
 
 func NewValidationReconciler(
@@ -63,7 +65,7 @@ func NewValidationReconciler(
 	return &ValidationReconciler{
 		kubeClient:            kubeClient,
 		diskEncryptionSetsAPI: diskEncryptionSetsAPI,
-		options:               opts,
+		diskEncryptionSetID:   opts.DiskEncryptionSetID,
 	}
 }
 
@@ -72,8 +74,8 @@ func NewValidationReconciler(
 // and you need to force immediate re-validation.
 func (r *ValidationReconciler) ClearValidationCache() {
 	r.validationMu.Lock()
-	r.validatedDES = ""
-	r.validationTime = time.Time{}
+	r.validatedSuccessfully = false
+	r.lastValidationTime = time.Time{}
 	r.validationMu.Unlock()
 }
 
@@ -81,8 +83,8 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	logger := log.FromContext(ctx)
 
 	// Check BYOK RBAC if DES ID is configured
-	if r.options.DiskEncryptionSetID != "" {
-		logger.V(1).Info("validating DES RBAC", "diskEncryptionSetID", r.options.DiskEncryptionSetID)
+	if r.diskEncryptionSetID != "" {
+		logger.V(1).Info("validating DES RBAC", "diskEncryptionSetID", r.diskEncryptionSetID)
 		if err := r.validateDiskEncryptionSetRBAC(ctx); err != nil {
 			// Validation failed - set condition to False and return success so status is persisted
 			logger.V(1).Info("DES RBAC validation failed", "error", err)
@@ -102,18 +104,17 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
-	desID := r.options.DiskEncryptionSetID
-
-	// Check if we've already validated this DES successfully and cache is still valid
+	// Check if we've already validated successfully and cache is still valid
+	// If validation has succeeded before and cache hasn't expired, skip revalidation
 	r.validationMu.RLock()
-	if r.validatedDES == desID && time.Since(r.validationTime) < DESValidationCacheTTL {
+	if r.validatedSuccessfully && time.Since(r.lastValidationTime) < DESValidationSuccessCacheTTL {
 		r.validationMu.RUnlock()
 		return nil
 	}
 	r.validationMu.RUnlock()
 
 	// Parse the DES resource ID
-	parsedID, err := arm.ParseResourceID(desID)
+	parsedID, err := arm.ParseResourceID(r.diskEncryptionSetID)
 	if err != nil {
 		return fmt.Errorf("invalid DiskEncryptionSet ID: %w", err)
 	}
@@ -124,27 +125,33 @@ func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context
 	if err != nil {
 		// Check if it's an authorization error
 		if isAuthorizationError(err) {
+			// Mark validation as failed - will retry on every reconcile
+			r.validationMu.Lock()
+			r.validatedSuccessfully = false
+			r.validationMu.Unlock()
 			return fmt.Errorf(
-				"controlling identity does not have Reader role on Disk Encryption Set '%s'. "+
+				"%s '%s'. "+
 					"Grant the Reader role on the DiskEncryptionSet to the controlling identity. "+
 					"For self-hosted installations, this is the Karpenter workload identity. "+
 					"For managed/AKS-hosted installations, this is the AKS cluster control plane identity. "+
-					"See https://learn.microsoft.com/en-us/azure/aks/use-karpenter for details",
-				desID,
+					"See https://learn.microsoft.com/en-us/azure/aks/azure-disk-customer-managed-keys for details",
+				DESRBACErrorMessage,
+				r.diskEncryptionSetID,
 			)
 		}
 		// Other errors (not found, network error, etc.)
 		// Don't cache failures - retry on next reconcile
-		return fmt.Errorf("failed to validate DiskEncryptionSet '%s': %w", desID, err)
+		return fmt.Errorf("failed to validate DiskEncryptionSet '%s': %w", r.diskEncryptionSetID, err)
 	}
 
 	// Success - cache the result with current timestamp
+	// This avoids redundant API calls for subsequent reconciles
 	r.validationMu.Lock()
-	r.validatedDES = desID
-	r.validationTime = time.Now()
+	r.validatedSuccessfully = true
+	r.lastValidationTime = time.Now()
 	r.validationMu.Unlock()
 
-	log.FromContext(ctx).V(1).Info("DES RBAC validation passed", "desID", desID)
+	log.FromContext(ctx).V(1).Info("DES RBAC validation passed", "desID", r.diskEncryptionSetID)
 	return nil
 }
 
