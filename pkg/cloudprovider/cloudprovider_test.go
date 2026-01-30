@@ -62,10 +62,10 @@ func TestGenerateNodeClaimName(t *testing.T) {
 
 func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 	tests := []struct {
-		name           string
-		vm             *armcompute.VirtualMachine
-		expectNoTime   bool
-		expectTimeSet  bool
+		name          string
+		vm            *armcompute.VirtualMachine
+		expectNoTime  bool
+		expectTimeSet bool
 	}{
 		{
 			name: "nil Properties",
@@ -78,8 +78,8 @@ func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 		{
 			name: "nil TimeCreated",
 			vm: &armcompute.VirtualMachine{
-				Name: to.Ptr("aks-test-vm"),
-				ID:   to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
+				Name:       to.Ptr("aks-test-vm"),
+				ID:         to.Ptr("/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/aks-test-vm"),
 				Properties: &armcompute.VirtualMachineProperties{},
 			},
 			expectNoTime: true,
@@ -101,18 +101,18 @@ func TestVmInstanceToNodeClaim_NilProperties(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			ctx := context.Background()
-			
+
 			cp := &CloudProvider{}
 			nodeClaim, err := cp.vmInstanceToNodeClaim(ctx, tt.vm, nil)
-			
+
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(nodeClaim).ToNot(BeNil())
-			
+
 			if tt.expectNoTime {
 				// CreationTimestamp should be zero value when Properties or TimeCreated is nil
 				g.Expect(nodeClaim.CreationTimestamp).To(Equal(metav1.Time{}))
 			}
-			
+
 			if tt.expectTimeSet {
 				// CreationTimestamp should be set when TimeCreated is valid
 				g.Expect(nodeClaim.CreationTimestamp).ToNot(Equal(metav1.Time{}))
