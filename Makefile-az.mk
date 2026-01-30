@@ -1,5 +1,10 @@
 AZURE_LOCATION ?= westus2
 AZURE_VM_SIZE ?=
+K8S_VERSION ?=
+# Normalize "default" to empty (for workflow_dispatch compatibility)
+ifeq ($(K8S_VERSION),default)
+  K8S_VERSION :=
+endif
 COMMON_NAME ?= karpenter
 ENABLE_AZURE_SDK_LOGGING ?= false
 ifeq ($(CODESPACES),true)
@@ -25,6 +30,8 @@ CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
 
 .DEFAULT_GOAL := help	# make without arguments will show help
+
+export KO_GO_PATH ?= hack/go-crossbuild.sh
 
 az-all:              az-login az-create-workload-msi az-mkaks-cilium      az-create-federated-cred az-perm               az-perm-acr az-configure-values             az-build az-run          az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
@@ -81,7 +88,9 @@ az-mkaks: az-mkacr ## Create test AKS cluster (with --vm-set-type AvailabilitySe
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) --location $(AZURE_LOCATION) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys --vm-set-type AvailabilitySet -o none \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -95,7 +104,9 @@ az-mkaks-cniv1: az-mkacr ## Create test AKS cluster (with --network-plugin azure
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
 			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure \
-			--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-oidc-issuer --enable-workload-identity \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-cniv1"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -108,8 +119,11 @@ az-mkaks-cilium: az-mkacr ## Create test AKS cluster (with --network-dataplane c
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
+			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-cilium"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -122,8 +136,11 @@ az-mkaks-overlay: az-mkacr ## Create test AKS cluster (with --network-plugin-mod
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
+			--network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-overlay"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -136,9 +153,11 @@ az-mkaks-perftest: az-mkacr ## Create test AKS cluster (with Azure Overlay, larg
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 2 --generate-ssh-keys -o none --network-plugin azure --network-plugin-mode overlay \
+			--enable-managed-identity --node-count 2 --generate-ssh-keys -o none \
+			--network-plugin azure --network-plugin-mode overlay \
 			--enable-oidc-issuer --enable-workload-identity \
 			--node-vm-size $(if $(AZURE_VM_SIZE),$(AZURE_VM_SIZE),Standard_D16s_v6) --pod-cidr "10.128.0.0/11" \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--tags "make-command=az-mkaks-perftest"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \
 		exit 1; \
@@ -157,8 +176,11 @@ az-mkaks-custom-vnet: az-mkacr az-mkvnet az-mksubnet ## Create test AKS cluster 
 	EXIT_CODE=$$?; \
 	if [ $$EXIT_CODE -eq 1 ]; then \
 		az aks create --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --attach-acr $(AZURE_ACR_NAME) \
-			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none --network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
-			--enable-oidc-issuer --enable-workload-identity $(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE),) \
+			--enable-managed-identity --node-count 3 --generate-ssh-keys -o none \
+			--network-dataplane cilium --network-plugin azure --network-plugin-mode overlay \
+			--enable-oidc-issuer --enable-workload-identity \
+			$(if $(AZURE_VM_SIZE),--node-vm-size $(AZURE_VM_SIZE)) \
+			$(if $(K8S_VERSION),--kubernetes-version $(K8S_VERSION)) \
 			--vnet-subnet-id "/subscriptions/$(AZURE_SUBSCRIPTION_ID)/resourceGroups/$(AZURE_RESOURCE_GROUP)/providers/Microsoft.Network/virtualNetworks/$(CUSTOM_VNET_NAME)/subnets/$(CUSTOM_SUBNET_NAME)" \
 			--tags "make-command=az-mkaks-custom-vnet"; \
 	elif [ $$EXIT_CODE -eq 2 ]; then \

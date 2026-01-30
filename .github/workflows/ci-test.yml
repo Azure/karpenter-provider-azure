@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false # https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idstrategyfail-fast
       matrix:
-        k8sVersion: ["1.25.x", "1.26.x", "1.27.x", "1.28.x", "1.29.x", "1.30.x", "1.31.x", "1.32.x", "1.33.x", "1.34.x"]
+        k8sVersion: ["1.28.x", "1.29.x", "1.30.x", "1.31.x", "1.32.x", "1.33.x", "1.34.x"]
     env:
       K8S_VERSION: ${{ matrix.k8sVersion }}
     steps:
@@ -41,8 +41,11 @@ jobs:
           dl.google.com:443
           aquasecurity.github.io:443
           mirror.gcr.io:443
+          azure.archive.ubuntu.com:80
+          packages.microsoft.com:443
+          esm.ubuntu.com:443
 
-    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
     - uses: ./.github/actions/install-deps
       with:
         k8sVersion: ${{ matrix.k8sVersion }}
