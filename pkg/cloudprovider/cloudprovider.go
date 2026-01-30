@@ -242,7 +242,13 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 			if deleteErr := c.kubeClient.Delete(ctx, nodeClaim); deleteErr != nil {
 				deleteErr = client.IgnoreNotFound(deleteErr)
 				if deleteErr != nil {
-					log.FromContext(ctx).Error(deleteErr, "failed to delete nodeclaim, will wait for liveness TTL", "NodeClaim", nodeClaim.Name)
+					// Only log if context is still active to avoid logging after test completes
+					if ctx.Err() == nil {
+						log.FromContext(ctx).Error(
+							deleteErr,
+							"failed to delete nodeclaim, will wait for liveness TTL",
+							"NodeClaim", nodeClaim.Name)
+					}
 				}
 			}
 			metrics.NodeClaimsDisruptedTotal.Inc(map[string]string{
@@ -257,13 +263,23 @@ func (c *CloudProvider) handleInstancePromise(ctx context.Context, instancePromi
 
 func (c *CloudProvider) handleInstancePromiseWaitError(ctx context.Context, instancePromise instance.Promise, nodeClaim *karpv1.NodeClaim, waitErr error) {
 	c.recorder.Publish(cloudproviderevents.NodeClaimFailedToRegister(nodeClaim, waitErr))
-	log.FromContext(ctx).Error(waitErr, "failed launching nodeclaim")
+
+	// Only log if context is still active to avoid logging after test completes
+	if ctx.Err() == nil {
+		log.FromContext(ctx).Error(waitErr, "failed launching nodeclaim")
+	}
 
 	cleanUpError := instancePromise.Cleanup(ctx)
 	if cleanUpError != nil {
 		// Fallback to garbage collection to clean up the instance, if it survived.
 		if cloudprovider.IgnoreNodeClaimNotFoundError(cleanUpError) != nil {
-			log.FromContext(ctx).Error(cleanUpError, "failed to delete instance", "instanceName", instancePromise.GetInstanceName())
+			// Only log if context is still active to avoid logging after test completes
+			if ctx.Err() == nil {
+				log.FromContext(ctx).Error(
+					cleanUpError,
+					"failed to delete instance",
+					"instanceName", instancePromise.GetInstanceName())
+			}
 		}
 	}
 }
