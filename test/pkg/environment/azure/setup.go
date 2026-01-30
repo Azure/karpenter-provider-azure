@@ -17,7 +17,6 @@ limitations under the License.
 package azure
 
 import (
-	//nolint:revive,stylecheck
 	"fmt"
 
 	. "github.com/onsi/gomega"
@@ -45,7 +44,7 @@ func (env *Environment) BeforeEach() {
 
 func (env *Environment) Cleanup() {
 	env.Environment.Cleanup()
-	env.Environment.CleanupObjects(CleanableObjects...)
+	env.CleanupObjects(CleanableObjects...)
 
 	err := env.tracker.Cleanup()
 	Expect(err).ToNot(HaveOccurred(), "Failed to clean up Azure resources")

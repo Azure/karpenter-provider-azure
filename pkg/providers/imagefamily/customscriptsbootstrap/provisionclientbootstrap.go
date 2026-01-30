@@ -69,7 +69,6 @@ type ProvisionClientBootstrap struct {
 
 var _ Bootstrapper = (*ProvisionClientBootstrap)(nil) // assert ProvisionClientBootstrap implements customscriptsbootstrapper
 
-// nolint gocyclo - will be refactored later
 func (p ProvisionClientBootstrap) GetCustomDataAndCSE(ctx context.Context) (string, string, error) {
 	provisionValues, err := p.ConstructProvisionValues(ctx)
 	if err != nil {

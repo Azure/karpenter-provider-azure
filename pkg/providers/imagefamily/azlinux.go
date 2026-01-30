@@ -44,7 +44,7 @@ type AzureLinux struct {
 }
 
 func (u AzureLinux) Name() string {
-	return v1beta1.AzureLinuxImageFamily
+	return "AzureLinux2"
 }
 
 func (u AzureLinux) DefaultImages(useSIG bool, fipsMode *v1beta1.FIPSMode) []types.DefaultImageOutput {

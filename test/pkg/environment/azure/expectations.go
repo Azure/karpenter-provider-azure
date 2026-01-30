@@ -62,7 +62,7 @@ func (env *Environment) ExpectCreatedInterface(networkInterface armnetwork.Inter
 	Expect(err).ToNot(HaveOccurred())
 	resp, err := poller.PollUntilDone(env.Context, nil)
 	Expect(err).ToNot(HaveOccurred())
-	env.tracker.Add(lo.FromPtr(resp.Interface.ID), func() error {
+	env.tracker.Add(lo.FromPtr(resp.ID), func() error {
 		deletePoller, err := env.interfacesClient.BeginDelete(env.Context, env.NodeResourceGroup, lo.FromPtr(networkInterface.Name), nil)
 		if err != nil {
 			return fmt.Errorf("failed to delete network interface %s: %w", lo.FromPtr(networkInterface.Name), err)
@@ -79,7 +79,7 @@ func (env *Environment) ExpectSuccessfulGetOfAvailableKubernetesVersionUpgradesF
 	GinkgoHelper()
 	upgradeProfile, err := env.managedClusterClient.GetUpgradeProfile(env.Context, env.ClusterResourceGroup, env.ClusterName, nil)
 	Expect(err).ToNot(HaveOccurred())
-	return upgradeProfile.ManagedClusterUpgradeProfile.Properties.ControlPlaneProfile.Upgrades
+	return upgradeProfile.Properties.ControlPlaneProfile.Upgrades
 }
 
 func (env *Environment) ExpectSuccessfulUpgradeOfManagedCluster(kubernetesUpgradeVersion string) containerservice.ManagedCluster {

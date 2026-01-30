@@ -95,7 +95,7 @@ func (m *LocalDNSOverride) Validate(formats strfmt.Registry) error {
 	return nil
 }
 
-var localDnsOverrideTypeForwardDestinationPropEnum []interface{}
+var localDnsOverrideTypeForwardDestinationPropEnum []any
 
 func init() {
 	var res []string
@@ -137,7 +137,7 @@ func (m *LocalDNSOverride) validateForwardDestination(formats strfmt.Registry) e
 	return nil
 }
 
-var localDnsOverrideTypeForwardPolicyPropEnum []interface{}
+var localDnsOverrideTypeForwardPolicyPropEnum []any
 
 func init() {
 	var res []string
@@ -182,7 +182,7 @@ func (m *LocalDNSOverride) validateForwardPolicy(formats strfmt.Registry) error 
 	return nil
 }
 
-var localDnsOverrideTypeProtocolPropEnum []interface{}
+var localDnsOverrideTypeProtocolPropEnum []any
 
 func init() {
 	var res []string
@@ -224,7 +224,7 @@ func (m *LocalDNSOverride) validateProtocol(formats strfmt.Registry) error {
 	return nil
 }
 
-var localDnsOverrideTypeQueryLoggingPropEnum []interface{}
+var localDnsOverrideTypeQueryLoggingPropEnum []any
 
 func init() {
 	var res []string
@@ -266,7 +266,7 @@ func (m *LocalDNSOverride) validateQueryLogging(formats strfmt.Registry) error {
 	return nil
 }
 
-var localDnsOverrideTypeServeStalePropEnum []interface{}
+var localDnsOverrideTypeServeStalePropEnum []any
 
 func init() {
 	var res []string

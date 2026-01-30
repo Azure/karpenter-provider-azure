@@ -132,7 +132,7 @@ func (p *Provider) getStaticParameters(
 	nodeClass *v1beta1.AKSNodeClass,
 	labels map[string]string,
 ) (*parameters.StaticParameters, error) {
-	var arch string = karpv1.ArchitectureAmd64
+	var arch = karpv1.ArchitectureAmd64
 	if err := instanceType.Requirements.Compatible(scheduling.NewRequirements(scheduling.NewRequirement(v1.LabelArchStable, v1.NodeSelectorOpIn, karpv1.ArchitectureArm64))); err == nil {
 		arch = karpv1.ArchitectureArm64
 	}

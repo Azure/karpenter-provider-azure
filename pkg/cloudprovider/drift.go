@@ -108,7 +108,7 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 		// We simply ensure the stored version is valid and ready to use, if we are to calculate potential Drift based on it.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
 		logger.Info("kubernetes version not ready, skipping drift check", "error", err)
-		return "", nil //nolint:nilerr
+		return "", nil
 	}
 
 	node, err := c.getNodeForDrift(ctx, nodeClaim)
@@ -127,10 +127,6 @@ func (c *CloudProvider) isK8sVersionDrifted(ctx context.Context, nodeClaim *karp
 	return "", nil
 }
 
-// TODO (charliedmcb): remove nolint on gocyclo. Added for now in order to pass "make verify
-// Was looking at a way to breakdown the function to pass gocyclo, but didn't feel like the best code.
-// Feel reassessing this within the future with a potential minor refactor would be best to fix the gocyclo.
-// nolint: gocyclo
 func (c *CloudProvider) isImageVersionDrifted(
 	ctx context.Context,
 	nodeClaim *karpv1.NodeClaim,
@@ -177,7 +173,7 @@ func (c *CloudProvider) isImageVersionDrifted(
 		// The stored Images must be ready to use if we are to calculate potential Drift based on them.
 		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
 		logger.Info("node image not ready, skipping drift check", "error", err)
-		return "", nil //nolint:nilerr
+		return "", nil
 	}
 	if len(nodeImages) == 0 {
 		// Note: this case shouldn't happen, since if there are no nodeImages, the ConditionTypeImagesReady should be false.

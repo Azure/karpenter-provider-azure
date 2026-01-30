@@ -110,5 +110,5 @@ func TestAzureLinux_CustomScriptsNodeBootstrapping(t *testing.T) {
 func TestAzureLinux_Name(t *testing.T) {
 	g := NewWithT(t)
 	azureLinux := imagefamily.AzureLinux{}
-	g.Expect(azureLinux.Name()).To(Equal(v1beta1.AzureLinuxImageFamily))
+	g.Expect(azureLinux.Name()).To(Equal("AzureLinux2"))
 }

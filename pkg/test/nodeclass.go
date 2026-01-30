@@ -153,9 +153,10 @@ func ApplySIGImagesWithVersion(nodeClass *v1beta1.AKSNodeClass, sigImageVersion 
 
 func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, version string, kubernetesVersion string) []imagefamily.NodeImage {
 	var images []imagefamilytypes.DefaultImageOutput
-	if imageFamily == v1beta1.Ubuntu2204ImageFamily {
+	switch imageFamily {
+	case v1beta1.Ubuntu2204ImageFamily:
 		images = imagefamily.Ubuntu2204{}.DefaultImages(true, fipsMode)
-	} else if imageFamily == v1beta1.AzureLinuxImageFamily {
+	case v1beta1.AzureLinuxImageFamily:
 		if imagefamily.UseAzureLinux3(kubernetesVersion) {
 			images = imagefamily.AzureLinux3{}.DefaultImages(true, fipsMode)
 		} else {
