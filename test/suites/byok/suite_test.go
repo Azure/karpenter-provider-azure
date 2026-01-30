@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/karpenter/pkg/test"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/test/pkg/environment/azure"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -180,9 +181,6 @@ var _ = Describe("BYOK", func() {
 
 		ctx := context.Background()
 
-		// TODO(rbac): Use a shared constant for the RBAC error message here and in the implementation
-		rbacErrorMessage := "does not have Reader role on Disk Encryption Set"
-
 		By("Phase 1: Creating a DES WITHOUT Reader RBAC for the controlling identity")
 		// Create a second DES but intentionally skip assigning the Reader role
 		// This simulates the scenario where a user configures DES but forgets to grant permissions
@@ -206,7 +204,7 @@ var _ = Describe("BYOK", func() {
 			g.Expect(err).ToNot(HaveOccurred())
 			condition := retrieved.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			g.Expect(condition.IsFalse()).To(BeTrue(), "expected ValidationSucceeded to be False when DES Reader RBAC is missing")
-			g.Expect(condition.Message).To(ContainSubstring(rbacErrorMessage))
+			g.Expect(condition.Message).To(ContainSubstring(nodeclassstatus.DESRBACErrorMessage))
 		}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second)
 
 		By("Phase 6: Verifying the overall Ready condition is False")
