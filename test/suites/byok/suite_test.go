@@ -446,7 +446,7 @@ func createDiskEncryptionSet(ctx context.Context, env *azure.Environment, desNam
 	return &desResp.DiskEncryptionSet, nil
 }
 
-// assignDiskEncryptionSetRBAC assigns reader role to cluster identity for DES
+// assignDiskEncryptionSetRBAC assigns Reader role on the DES to the controlling identity
 func assignDiskEncryptionSetRBAC(ctx context.Context, env *azure.Environment, desID, controllingIdentityPrincipalID string) error {
 	readerRoleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", env.SubscriptionID, readerRole)
 	return env.RBACManager.EnsureRole(ctx, desID, readerRoleDefinitionID, controllingIdentityPrincipalID)
