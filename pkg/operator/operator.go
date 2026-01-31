@@ -218,6 +218,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
 		options.FromContext(ctx).DiskEncryptionSetID,
+		env,
 	)
 
 	return ctx, &Operator{
