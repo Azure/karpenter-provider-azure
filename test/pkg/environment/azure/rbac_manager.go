@@ -26,8 +26,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// ReaderRoleID is the Azure built-in Reader role definition ID
-const ReaderRoleID = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
 
 type RBACManager struct {
 	subscriptionID string
