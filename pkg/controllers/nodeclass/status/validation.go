@@ -88,9 +88,13 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		if err := r.validateDiskEncryptionSetRBAC(ctx); err != nil {
 			// Validation failed - set condition to False and return success so status is persisted
 			logger.V(1).Info("DES RBAC validation failed", "error", err)
+			reason := ValidationFailedReasonDESRBACCheckFailed
+			if isAuthorizationError(err) {
+				reason = ValidationFailedReasonDESRBACMissing
+			}
 			nodeClass.StatusConditions().SetFalse(
 				v1beta1.ConditionTypeValidationSucceeded,
-				ValidationFailedReasonDESRBACMissing,
+				reason,
 				err.Error(),
 			)
 			// Return success (not error) to allow status update to persist
