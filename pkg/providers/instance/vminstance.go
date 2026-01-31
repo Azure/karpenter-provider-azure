@@ -610,6 +610,8 @@ func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties
 			Placement: lo.ToPtr(placement),
 		}
 		vmProperties.StorageProfile.OSDisk.Caching = lo.ToPtr(armcompute.CachingTypesReadOnly)
+	} else {
+		vmProperties.StorageProfile.OSDisk.ManagedDisk = &armcompute.ManagedDiskParameters{}
 	}
 }
 
