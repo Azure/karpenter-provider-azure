@@ -65,7 +65,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 	// Note: FIPSMode test scenarios are distributed across image families rather than comprehensively tested in each.
 	// While not perfect since each family has its own method, the test cases are extremely simple, and this keeps things simple
 	fipsMode := lo.ToPtr(v1beta1.FIPSModeFIPS)
-	var artifactStreamingEnabled *bool // to test with nil
+	var artifactStreaming *v1beta1.ArtifactStreamingMode // to test with nil
 
 	bootstrapper := ubuntu.CustomScriptsNodeBootstrapping(
 		kubeletConfig,
@@ -78,7 +78,7 @@ func TestUbuntu2004_CustomScriptsNodeBootstrapping(t *testing.T) {
 		nodeBootstrappingClient,
 		fipsMode,
 		nil, // Ubuntu 20.04 does not support LocalDNS
-		artifactStreamingEnabled,
+		artifactStreaming,
 	)
 
 	g := NewWithT(t)
