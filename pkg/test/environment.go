@@ -173,7 +173,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		"test-kubelet-identity-client-id",
 		testOptions.NodeResourceGroup,
 		region,
-		testOptions.VnetGUID,
 		testOptions.ProvisionMode,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
