@@ -63,7 +63,6 @@ type Provider struct {
 	resourceGroup           string
 	clusterResourceGroup    string
 	location                string
-	vnetGUID                string
 	provisionMode           string
 }
 
@@ -71,8 +70,19 @@ type Provider struct {
 
 // ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.
 // Refactoring for code unification is not being invested immediately.
-func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvider imagefamily.NodeImageProvider, caBundle *string, clusterEndpoint string,
-	tenantID, subscriptionID, clusterResourceGroup string, kubeletIdentityClientID, resourceGroup, location, vnetGUID, provisionMode string,
+func NewProvider(
+	_ context.Context,
+	imageFamily imagefamily.Resolver,
+	imageProvider imagefamily.NodeImageProvider,
+	caBundle *string,
+	clusterEndpoint string,
+	tenantID,
+	subscriptionID,
+	clusterResourceGroup string,
+	kubeletIdentityClientID,
+	resourceGroup,
+	location,
+	provisionMode string,
 ) *Provider {
 	return &Provider{
 		imageFamily:             imageFamily,
@@ -85,7 +95,6 @@ func NewProvider(_ context.Context, imageFamily imagefamily.Resolver, imageProvi
 		resourceGroup:           resourceGroup,
 		clusterResourceGroup:    clusterResourceGroup,
 		location:                location,
-		vnetGUID:                vnetGUID,
 		provisionMode:           provisionMode,
 	}
 }
