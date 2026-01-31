@@ -214,6 +214,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		subscription,
 		testOptions.ProvisionMode,
 		testOptions.DiskEncryptionSetID,
+		azureEnv,
 	)
 
 	store := nodeoverlay.NewInstanceTypeStore()
