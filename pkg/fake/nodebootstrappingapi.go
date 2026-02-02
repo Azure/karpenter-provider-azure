@@ -72,7 +72,7 @@ func (n *NodeBootstrappingAPI) Get(ctx context.Context, params *models.Provision
 	})
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func validateProvisionProfile(p *models.ProvisionProfile) error {
 	if p == nil {
 		return fmt.Errorf("ProvisionProfile cannot be empty")
