@@ -448,7 +448,8 @@ func (c *AKSMachinesAPI) doesAgentPoolExists(resourceGroupName, resourceName, ag
 }
 
 // validateMachinePropertyChanges checks if the immutable properties of an AKS machine are being changed
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func (c *AKSMachinesAPI) doImmutablePropertiesChanged(existing, incoming *armcontainerservice.Machine) bool {
 	if existing.Properties == nil || incoming.Properties == nil {
 		return false // Skip validation if properties are missing
@@ -510,7 +511,8 @@ func getAKSMachineNodeImageVersionFromSIGImageID(imageID string) (string, error)
 
 // setDefaultMachineValues sets comprehensive default values for AKS machine creation
 // Note: this may not be accurate. But likely sufficient for testing.
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, vmImageID string, resourceGroupName string, agentPoolName string) {
 	if machine.Properties == nil {
 		machine.Properties = &armcontainerservice.MachineProperties{}
