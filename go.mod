@@ -7,7 +7,7 @@ require (
 	github.com/Azure/aks-middleware v0.0.42
 	github.com/Azure/azure-kusto-go v0.16.1
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
-	github.com/Azure/azure-sdk-for-go-extensions v0.5.0
+	github.com/Azure/azure-sdk-for-go-extensions v0.4.1
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.2.0
@@ -54,7 +54,7 @@ require (
 	k8s.io/component-base v0.35.0-alpha.0
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/cloud-provider-azure v1.33.2
-	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.3
+	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.2
 	sigs.k8s.io/controller-runtime v0.22.1
 	sigs.k8s.io/karpenter v1.7.1
 )

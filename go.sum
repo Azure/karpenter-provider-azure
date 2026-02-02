@@ -6,8 +6,8 @@ github.com/Azure/azure-kusto-go v0.16.1 h1:vCBWcQghmC1qIErUUgVNWHxGhZVStu1U/hki6
 github.com/Azure/azure-kusto-go v0.16.1/go.mod h1:9F2zvXH8B6eWzgI1S4k1ZXAIufnBZ1bv1cW1kB1n3D0=
 github.com/Azure/azure-sdk-for-go v68.0.0+incompatible h1:fcYLmCpyNYRnvJbPerq7U0hS+6+I79yEDJBqVNcqUzU=
 github.com/Azure/azure-sdk-for-go v68.0.0+incompatible/go.mod h1:9XXNKU+eRnpl9moKnB4QOLf1HestfXbmab5FXxiDBjc=
-github.com/Azure/azure-sdk-for-go-extensions v0.5.0 h1:Hvzr/oLQ1XsrD2AylWy0ii99Hz4Te4O/kZEfgC4B6mo=
-github.com/Azure/azure-sdk-for-go-extensions v0.5.0/go.mod h1:kUQAe8kR4uL8fWbBUsrlb5WudbgkmLxuqNkzKUo+0DI=
+github.com/Azure/azure-sdk-for-go-extensions v0.4.1 h1:qzerEu73Vlsn6LeFGB+zzoM1z4zgDp0vJSl+c4sasQQ=
+github.com/Azure/azure-sdk-for-go-extensions v0.4.1/go.mod h1:9vZAh3sbpZikf1nVzP1Dw+tuLTxRxwDpzKuZcvU9tAc=
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0 h1:fou+2+WFTib47nS+nz/ozhEBnvU96bKHy6LjRsY4E28=
 github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0/go.mod h1:t76Ruy8AHvUAC8GfMWJMa0ElSbuIcO03NLpynfbgsPA=
 github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1 h1:Hk5QBxZQC1jb2Fwj6mpzme37xbCDdNTxU7O9eb5+LB4=
@@ -485,8 +485,8 @@ k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 h1:SjGebBtkBqHFOli+05xYbK8YF1Dzk
 k8s.io/utils v0.0.0-20251002143259-bc988d571ff4/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
 sigs.k8s.io/cloud-provider-azure v1.33.2 h1:/qLSJ4+/hw+rhx9t4diq8Y3T4KKE0Om1xXxY3uL9PUQ=
 sigs.k8s.io/cloud-provider-azure v1.33.2/go.mod h1:FRAP34ZZ1i8x1LBRxPvTe6OcYCQAlcQAU4U1prSa57c=
-sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.3 h1:FZ8lmJycB7+hGSQo4Qn8DT5M6oRN1mP/bCwRWdBThuQ=
-sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.3/go.mod h1:BgHrVkRmx7iWCumslrUpxE6BX474IrMXc+7R0RpV+E8=
+sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.2 h1:wg0RegtXe7a2N4kaPO0U0ugVIsDUi6poe7ZWVmh8DQw=
+sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.2/go.mod h1:N9HrB2Woyd6tZz4EZqnJNBGQVzEuJNTH7hUPPmKy9+0=
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.7.2 h1:KwkEnyG9Ej9keeO8RoJBpOaZSIpkYM8d4kzKaIHeehs=
 sigs.k8s.io/cloud-provider-azure/pkg/azclient/configloader v0.7.2/go.mod h1:Gsc4rGVFioD2LW5qLC+qMpnpGqpo64vr4UhBUkMdfFo=
 sigs.k8s.io/controller-runtime v0.22.1 h1:Ah1T7I+0A7ize291nJZdS1CabF/lB4E++WizgV24Eqg=
