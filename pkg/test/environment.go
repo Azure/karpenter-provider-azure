@@ -177,7 +177,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		"test-kubelet-identity-client-id",
 		testOptions.NodeResourceGroup,
 		region,
-		testOptions.VnetGUID,
 		testOptions.ProvisionMode,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
@@ -218,6 +217,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		subscription,
 		testOptions.ProvisionMode,
 		testOptions.DiskEncryptionSetID,
+		azureEnv,
 	)
 
 	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI && testOptions.AKSMachinesPoolName != "" {

@@ -196,7 +196,6 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		options.FromContext(ctx).KubeletIdentityClientID,
 		options.FromContext(ctx).NodeResourceGroup,
 		azConfig.Location,
-		options.FromContext(ctx).VnetGUID,
 		options.FromContext(ctx).ProvisionMode,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
@@ -220,6 +219,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		azConfig.SubscriptionID,
 		options.FromContext(ctx).ProvisionMode,
 		options.FromContext(ctx).DiskEncryptionSetID,
+		env,
 	)
 	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
 		azClient,

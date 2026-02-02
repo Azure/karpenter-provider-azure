@@ -138,7 +138,7 @@ func NewAZClientFromAPI(
 	}
 }
 
-// nolint: gocyclo
+//nolint:gocyclo
 func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, cred azcore.TokenCredential) (*AZClient, error) {
 	o := options.FromContext(ctx)
 	opts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
