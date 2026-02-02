@@ -82,7 +82,8 @@ benchmark:
 coverage:
 	go tool cover -html coverage.out -o coverage.html
 
-verify: toolchain tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+verify: tidy download ## Verify code. Includes dependencies, linting, formatting, etc
+	SKIP_INSTALLED=true make toolchain
 	make az-swagger-generate-clients-raw
 	go generate ./...
 	hack/boilerplate.sh
@@ -93,7 +94,7 @@ verify: toolchain tidy download ## Verify code. Includes dependencies, linting, 
 	hack/mutation/kubectl_get_ux.sh
 	cp pkg/apis/crds/* charts/karpenter-crd/templates
 	hack/github/dependabot.sh
-	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint run $(newline))
+	$(foreach dir,$(MOD_DIRS),cd $(dir) && golangci-lint-custom run $(newline))
 	@git diff --quiet ||\
 		{ echo "New file modification detected in the Git working tree. Please check in before commit."; git --no-pager diff --name-only | uniq | awk '{print "  - " $$0}'; \
 		if [ "${CI}" = true ]; then\

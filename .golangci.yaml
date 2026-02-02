@@ -11,8 +11,10 @@ linters:
     - gocyclo
     - goheader
     - gosec
+    - kubeapilinter
     - misspell
     - nilerr
+    - nolintlint
     - revive
     - staticcheck
     - tparallel
@@ -57,6 +59,13 @@ linters:
       dot-import-whitelist:
         - github.com/onsi/ginkgo/v2
         - github.com/onsi/gomega
+    custom:
+      kubeapilinter:
+        type: module
+        description: Kube API Linter lints Kube like APIs based on API conventions and best practices.
+        settings:
+          linters: {}
+          lintersConfig: {}
   exclusions:
     generated: lax
     presets:
@@ -73,6 +82,9 @@ linters:
         source: ^//go:build
       - path: (.+)\.go$
         text: declaration of "(err|ctx)" shadows declaration at
+      - linters:
+          - kubeapilinter
+        path-except: pkg/apis/*
     paths:
       - tools
       - hack
