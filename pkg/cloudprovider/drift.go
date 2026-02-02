@@ -210,51 +210,59 @@ func (c *CloudProvider) isImageVersionDrifted(
 			"driftType", ImageDrift,
 			"actualImageVersion", aksMachineNodeImageVersion)
 		return ImageDrift, nil
-	} else {
-		// Legacy VM-based node
-		id, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
-		if err != nil {
-			// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
-			//     I don't think we can get to Drift, until after ProviderID is set, so this should be fine/impossible.
-			return "", err
-		}
+	}
+	return c.isVMInstanceImageDrifted(ctx, nodeClaim, nodeImages)
+}
 
-		vm, err := c.vmInstanceProvider.Get(ctx, id)
-		if err != nil {
-			// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
-			//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
-			//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
-			return "", err
-		}
-		if vm == nil {
-			// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
-			//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
-			//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
-			return "", fmt.Errorf("vm with id %s missing", id)
-		}
+func (c *CloudProvider) isVMInstanceImageDrifted(
+	ctx context.Context,
+	nodeClaim *karpv1.NodeClaim,
+	nodeImages []v1beta1.NodeImage,
+) (cloudprovider.DriftReason, error) {
+	logger := log.FromContext(ctx)
+	// VM instance node
+	id, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
+	if err != nil {
+		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be fine/impossible.
+		return "", err
+	}
 
-		if vm.Properties == nil ||
-			vm.Properties.StorageProfile == nil ||
-			vm.Properties.StorageProfile.ImageReference == nil {
-			// TODO (charliedmcb): this seems like an error case to me, but maybe not one to hard fail on? Is it even possible?
-			//     We may want to collect this with the other errors up a level as to not block other drift conditions.
+	vm, err := c.vmInstanceProvider.Get(ctx, id)
+	if err != nil {
+		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
+		//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
+		return "", err
+	}
+	if vm == nil {
+		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+		//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
+		//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
+		return "", fmt.Errorf("vm with id %s missing", id)
+	}
+
+	if vm.Properties == nil ||
+		vm.Properties.StorageProfile == nil ||
+		vm.Properties.StorageProfile.ImageReference == nil {
+		// TODO (charliedmcb): this seems like an error case to me, but maybe not one to hard fail on? Is it even possible?
+		//     We may want to collect this with the other errors up a level as to not block other drift conditions.
+		return "", nil
+	}
+	CIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
+	SIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
+	vmImageID := lo.Ternary(SIGID != "", SIGID, CIGID)
+
+	for _, availableImage := range nodeImages {
+		if availableImage.ID == vmImageID {
 			return "", nil
 		}
-		CIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.CommunityGalleryImageID)
-		SIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
-		vmImageID := lo.Ternary(SIGID != "", SIGID, CIGID)
-
-		for _, availableImage := range nodeImages {
-			if availableImage.ID == vmImageID {
-				return "", nil
-			}
-		}
-
-		logger.V(1).Info("drift triggered as actual image id was not found in the set of currently available node images",
-			"driftType", ImageDrift,
-			"actualImageID", vmImageID)
-		return ImageDrift, nil
 	}
+
+	logger.V(1).Info("drift triggered as actual image id was not found in the set of currently available node images",
+		"driftType", ImageDrift,
+		"actualImageID", vmImageID)
+	return ImageDrift, nil
 }
 
 // isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
