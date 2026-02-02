@@ -30,6 +30,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	containerservice "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 )
@@ -249,6 +250,7 @@ func (env *Environment) EventuallyExpectAzureResources(
 		// VMs
 		managedExtensionNames := instance.GetManagedExtensionNames(
 			lo.Ternary(env.InClusterController, consts.ProvisionModeAKSScriptless, consts.ProvisionModeBootstrappingClient),
+			lo.Must(auth.EnvironmentFromName("AzurePublicCloud")),
 		)
 		vmPager := env.vmClient.NewListPager(env.NodeResourceGroup, nil)
 		for vmPager.More() {
