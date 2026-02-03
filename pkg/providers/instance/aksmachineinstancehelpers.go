@@ -346,6 +346,7 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 }
 
 // convertContainerLogMaxSizeToMB converts string size to MB integer
+// TODO: refactor this to generic "convertSizeToMB" than just "convertContainerLogMaxSizeToMB"
 func convertContainerLogMaxSizeToMB(containerLogMaxSize string) *int32 {
 	// TODO: move that code here instead, as AKS machine instances will be the main path forward
 	// Can move when other provision modes are removed too.
