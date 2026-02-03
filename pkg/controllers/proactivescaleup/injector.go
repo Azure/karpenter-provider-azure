@@ -64,21 +64,25 @@ func (i *Injector) InjectPods(ctx context.Context, realPods []*corev1.Pod) []*co
 	// Get all workloads
 	deployments := &appsv1.DeploymentList{}
 	if err := i.kubeClient.List(ctx, deployments); err != nil {
+		// Log error but continue with real pods only
 		return realPods
 	}
 
 	replicaSets := &appsv1.ReplicaSetList{}
 	if err := i.kubeClient.List(ctx, replicaSets); err != nil {
+		// Log error but continue with real pods only
 		return realPods
 	}
 
 	statefulSets := &appsv1.StatefulSetList{}
 	if err := i.kubeClient.List(ctx, statefulSets); err != nil {
+		// Log error but continue with real pods only
 		return realPods
 	}
 
 	jobs := &batchv1.JobList{}
 	if err := i.kubeClient.List(ctx, jobs); err != nil {
+		// Log error but continue with real pods only
 		return realPods
 	}
 
