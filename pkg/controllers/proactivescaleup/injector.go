@@ -88,13 +88,14 @@ func (i *Injector) InjectPods(ctx context.Context, realPods []*corev1.Pod) []*co
 		return realPods // At node limit, don't inject
 	}
 
-	// Count real pods
+	// Count real pods - we'll add fake pods within the limit
 	if len(realPods) >= opts.PodInjectionLimit {
 		return realPods // At pod limit, don't inject
 	}
 
 	// Generate fake pods for workload gaps
 	fakePods := make([]*corev1.Pod, 0)
+	// Reserve space for fake pods: limit - real pods count
 	maxFakePodsToCreate := opts.PodInjectionLimit - len(realPods)
 
 	// Process Deployments
@@ -284,9 +285,9 @@ func createFakePodFromTemplate(template *corev1.PodTemplateSpec, namespace, owne
 
 	fakePod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("fake-pod-%s-%s-%d", ownerKind, ownerName, index),
+			Name:      fmt.Sprintf("fake-pod-%s-%s-%s-%d", ownerKind, namespace, ownerName, index),
 			Namespace: namespace,
-			UID:       types.UID(fmt.Sprintf("fake-pod-uid-%s-%s-%d", ownerKind, ownerName, index)),
+			UID:       types.UID(fmt.Sprintf("fake-pod-uid-%s-%s-%s-%d", ownerKind, namespace, ownerName, index)),
 			Labels: lo.Assign(template.Labels, map[string]string{
 				FakePodLabelKey: FakePodLabelValue,
 			}),

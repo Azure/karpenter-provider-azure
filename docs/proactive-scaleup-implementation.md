@@ -125,6 +125,8 @@ replace sigs.k8s.io/karpenter => ./vendor-local/karpenter
 
 This tells Go to use the local modified version instead of the upstream version.
 
+**Note**: The `vendor-local/karpenter` directory contains the modified Karpenter core v1.7.1 and is committed to the repository. When you clone this branch, the modified core is included.
+
 ### Updating Karpenter Core
 
 If you need to update to a newer Karpenter version:
