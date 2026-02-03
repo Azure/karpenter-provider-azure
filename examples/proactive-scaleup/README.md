@@ -35,26 +35,35 @@ Azure Karpenter provides the following configuration options for proactive scale
 
 See the YAML files in this directory for ready-to-use examples:
 
+- `priority-class.yaml` - PriorityClass for placeholder pods (optional, for best practices)
 - `placeholder-deployment.yaml` - Basic placeholder deployment
 - `gpu-placeholder.yaml` - GPU-specific placeholders
 - `hpa-example.yaml` - Auto-scaling placeholders with HPA
+- `simple-placeholder-pod.yaml` - Single placeholder pod example
 
 ## Quick Start
 
-1. Deploy placeholder pods:
+1. (Optional but recommended) Create the PriorityClass:
+   ```bash
+   kubectl apply -f priority-class.yaml
+   ```
+
+2. Deploy placeholder pods:
    ```bash
    kubectl apply -f placeholder-deployment.yaml
    ```
 
-2. Monitor placeholder pods:
+3. Monitor placeholder pods:
    ```bash
    kubectl get pods -l karpenter.azure.com/proactive-scaleup=placeholder
    ```
 
-3. Deploy your workload and watch placeholders get preempted:
+4. Deploy your workload and watch placeholders get preempted:
    ```bash
    kubectl get events --field-selector reason=Preempted
    ```
+
+**Note on Priority**: The examples use direct priority values (`priority: -1000`) for simplicity, which works but is deprecated. For production use, it's recommended to create a PriorityClass (see `priority-class.yaml`) and reference it with `priorityClassName: karpenter-proactive-scaleup-placeholder` instead.
 
 ## Best Practices
 
