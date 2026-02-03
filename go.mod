@@ -177,3 +177,6 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+// Use local modified Karpenter core for proactive scale-up
+replace sigs.k8s.io/karpenter => ./vendor-local/karpenter
