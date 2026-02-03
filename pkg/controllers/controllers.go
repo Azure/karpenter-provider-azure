@@ -34,6 +34,7 @@ import (
 	nodeclasshash "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/hash"
 	nodeclassstatus "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	nodeclasstermination "github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/termination"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/proactivescaleup"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -64,6 +65,9 @@ func NewControllers(
 		// TODO: nodeclaim tagging
 		inplaceupdate.NewController(kubeClient, vmInstanceProvider),
 		status.NewController[*v1beta1.AKSNodeClass](kubeClient, mgr.GetEventRecorderFor("karpenter")),
+		
+		// Proactive scale-up controller
+		proactivescaleup.NewController(kubeClient),
 	}
 	return controllers
 }

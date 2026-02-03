@@ -1,7 +1,0 @@
-apiVersion: scheduling.k8s.io/v1
-kind: PriorityClass
-metadata:
-  name: karpenter-proactive-scaleup-placeholder
-value: -1000
-globalDefault: false
-description: "Very low priority class for Karpenter proactive scale-up placeholder pods. Real workloads will preempt these pods."
