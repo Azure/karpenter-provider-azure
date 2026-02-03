@@ -536,6 +536,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		Expect(err).To(BeNil())
 		tags := vm.Tags
 		Expect(lo.FromPtr(tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
+		Expect(lo.FromPtr(tags[launchtemplate.BillingTagKey])).To(Equal("linux"))
 		Expect(lo.PickBy(tags, func(key string, value *string) bool {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
@@ -545,6 +546,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		Expect(nic).ToNot(BeNil())
 		nicTags := nic.Tags
 		Expect(lo.FromPtr(nicTags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
+		Expect(lo.FromPtr(nicTags[launchtemplate.BillingTagKey])).To(Equal("linux"))
 		Expect(lo.PickBy(nicTags, func(key string, value *string) bool {
 			return strings.Contains(key, "/") // ARM tags can't contain '/'
 		})).To(HaveLen(0))
@@ -554,6 +556,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		nodeClass.Spec.Tags = map[string]string{
 			"karpenter.azure.com/cluster": "my-override-cluster",
 			"karpenter.sh/nodepool":       "my-override-nodepool",
+			"compute.aks.billing":         "my-override-billing",
 		}
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
@@ -568,6 +571,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		tags := vm.Tags
 		Expect(lo.FromPtr(tags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
 		Expect(lo.FromPtr(tags[launchtemplate.KarpenterManagedTagKey])).To(Equal(testOptions.ClusterName))
+		Expect(lo.FromPtr(tags[launchtemplate.BillingTagKey])).To(Equal("linux"))
 
 		Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 		nic := azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Pop().Interface
@@ -575,6 +579,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		nicTags := nic.Tags
 		Expect(lo.FromPtr(nicTags[launchtemplate.NodePoolTagKey])).To(Equal(nodePool.Name))
 		Expect(lo.FromPtr(nicTags[launchtemplate.KarpenterManagedTagKey])).To(Equal(testOptions.ClusterName))
+		Expect(lo.FromPtr(nicTags[launchtemplate.BillingTagKey])).To(Equal("linux"))
 	})
 
 	It("should list nic from karpenter provisioning request", func() {
