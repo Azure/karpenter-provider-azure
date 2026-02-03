@@ -95,6 +95,15 @@ type Options struct {
 
 	// If set to true, existing AKS machines created with PROVISION_MODE=aksmachineapi will be managed even with other provision modes. This option does not have any effect if PROVISION_MODE=aksmachineapi, as it will behave as if this option is set to true.
 	ManageExistingAKSMachines bool `json:"manageExistingAKSMachines,omitempty"`
+
+	// ProactiveScaleupEnabled enables proactive scale-up by injecting fake pods to pre-provision capacity
+	ProactiveScaleupEnabled bool `json:"proactiveScaleupEnabled,omitempty"`
+	// PodInjectionLimit limits the total number of pods (real + fake) when proactive scale-up is enabled
+	PodInjectionLimit int `json:"podInjectionLimit,omitempty"`
+	// NodeLimit is a safety limit on total nodes when proactive scale-up is enabled
+	NodeLimit int `json:"nodeLimit,omitempty"`
+	// ProactiveScaleupThreshold is the cluster utilization threshold (0-1) that triggers proactive scale-up
+	ProactiveScaleupThreshold float64 `json:"proactiveScaleupThreshold,omitempty"`
 }
 
 func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
@@ -129,6 +138,12 @@ func (o *Options) AddFlags(fs *coreoptions.FlagSet) {
 	// See https://github.com/Azure/karpenter-provider-azure/issues/1042 for issue discussing improvements around this
 	fs.Var(additionalTagsFlag, "additional-tags", "Additional tags to apply to the resources in Azure. Format is key1=value1,key2=value2. These tags will be merged with the tags specified on the NodePool. In the case of a tag collision, the NodePool tag wins. These tags only apply to new nodes and do not trigger drift, which means that adding tags to this collection will not update existing nodes until drift triggers for some other reason.")
 	fs.BoolVar(&o.EnableAzureSDKLogging, "enable-azure-sdk-logging", env.WithDefaultBool("ENABLE_AZURE_SDK_LOGGING", true), "If set to false then Azure SDK middleware logging is disabled for debugging, and won't be logging all HTTP requests/responses to Azure APIs.")
+
+	// Proactive scale-up options
+	fs.BoolVar(&o.ProactiveScaleupEnabled, "enable-proactive-scaleup", env.WithDefaultBool("ENABLE_PROACTIVE_SCALEUP", false), "Whether to enable proactive scale-ups by injecting fake pods to pre-provision capacity. Defaults to false.")
+	fs.IntVar(&o.PodInjectionLimit, "pod-injection-limit", env.WithDefaultInt("POD_INJECTION_LIMIT", 5000), "Limits total number of pods (real + fake) while injecting fake pods. If unschedulable pods already exceed the limit, pod injection is disabled. Defaults to 5000.")
+	fs.IntVar(&o.NodeLimit, "node-limit", env.WithDefaultInt("NODE_LIMIT", 15000), "Limits total number of nodes in cluster when proactive scale-up is enabled. Defaults to 15000.")
+	fs.Float64Var(&o.ProactiveScaleupThreshold, "proactive-scaleup-threshold", utils.WithDefaultFloat64("PROACTIVE_SCALEUP_THRESHOLD", 0.8), "Cluster utilization threshold (0-1) that triggers proactive scale-up. Defaults to 0.8 (80%).")
 }
 
 func (o *Options) GetAPIServerName() string {

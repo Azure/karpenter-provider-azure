@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gpu-placeholders
+  namespace: default
+  labels:
+    app: gpu-placeholder
+spec:
+  replicas: 2  # Fewer GPU placeholders due to cost
+  selector:
+    matchLabels:
+      app: gpu-placeholder
+  template:
+    metadata:
+      labels:
+        app: gpu-placeholder
+        karpenter.azure.com/proactive-scaleup: "placeholder"
+      annotations:
+        karpenter.azure.com/proactive-scaleup-pod: "true"
+    spec:
+      priority: -1000  # Very low priority so real pods can preempt
+      nodeSelector:
+        karpenter.sh/nodepool: gpu-nodepool  # Target specific NodePool (adjust as needed)
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+            nvidia.com/gpu: "1"  # Request GPU to trigger GPU node provisioning
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+      - operator: Exists  # Allow scheduling on any node type

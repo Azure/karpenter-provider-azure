@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: karpenter-placeholders
+  namespace: default
+  labels:
+    app: karpenter-placeholder
+spec:
+  replicas: 10  # Adjust based on desired spare capacity
+  selector:
+    matchLabels:
+      app: karpenter-placeholder
+  template:
+    metadata:
+      labels:
+        app: karpenter-placeholder
+        karpenter.azure.com/proactive-scaleup: "placeholder"
+      annotations:
+        karpenter.azure.com/proactive-scaleup-pod: "true"
+    spec:
+      priority: -1000  # Very low priority so real pods can preempt
+      containers:
+      - name: pause
+        image: registry.k8s.io/pause:3.9
+        resources:
+          requests:
+            cpu: "500m"      # Adjust based on your typical workload
+            memory: "512Mi"  # Adjust based on your typical workload
+      restartPolicy: Always
+      tolerations:
+      - operator: Exists  # Allow scheduling on any node type
