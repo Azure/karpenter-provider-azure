@@ -18,7 +18,8 @@ spec:
       annotations:
         karpenter.azure.com/proactive-scaleup-pod: "true"
     spec:
-      priority: -1000  # Very low priority so real pods can preempt
+      priorityClassName: karpenter-proactive-scaleup-placeholder  # Reference to PriorityClass (recommended)
+      # Alternative (deprecated): priority: -1000
       containers:
       - name: pause
         image: registry.k8s.io/pause:3.9
