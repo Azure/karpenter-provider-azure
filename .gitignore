@@ -25,3 +25,6 @@ go.work.sum
 
 # generated deployment config
 karpenter-values.yaml
+
+# Local vendor modifications
+vendor-local/
