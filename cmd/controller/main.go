@@ -24,6 +24,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/cloudprovider"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers"
+	"github.com/Azure/karpenter-provider-azure/pkg/controllers/proactivescaleup"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator"
 	"github.com/go-logr/zapr"
 	"github.com/samber/lo"
@@ -66,18 +67,28 @@ func main() {
 	cloudProvider := overlay.Decorate(overlayUndecoratedCloudProvider, op.GetClient(), op.InstanceTypeStore)
 	clusterState := state.NewCluster(op.Clock, op.GetClient(), cloudProvider)
 
+	// Create core controllers and get the provisioner
+	coreControllerList, provisioner := corecontrollers.NewControllers(
+		ctx,
+		op.Manager,
+		op.Clock,
+		op.GetClient(),
+		op.EventRecorder,
+		cloudProvider,
+		overlayUndecoratedCloudProvider,
+		clusterState,
+		op.InstanceTypeStore,
+	)
+
+	// Set up proactive scale-up injector if enabled
+	if opts := options.FromContext(ctx); opts != nil && opts.ProactiveScaleupEnabled {
+		injector := proactivescaleup.NewInjector(op.GetClient())
+		provisioner.SetPodInjector(injector)
+		logger.V(0).Info("Proactive scale-up enabled with pod injection")
+	}
+
 	op.
-		WithControllers(ctx, corecontrollers.NewControllers(
-			ctx,
-			op.Manager,
-			op.Clock,
-			op.GetClient(),
-			op.EventRecorder,
-			cloudProvider,
-			overlayUndecoratedCloudProvider,
-			clusterState,
-			op.InstanceTypeStore,
-		)...).
+		WithControllers(ctx, coreControllerList...).
 		WithControllers(ctx, controllers.NewControllers(
 			ctx,
 			op.Manager,
