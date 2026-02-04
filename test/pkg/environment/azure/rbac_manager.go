@@ -26,7 +26,6 @@ import (
 	"github.com/google/uuid"
 )
 
-
 type RBACManager struct {
 	subscriptionID string
 	client         *armauthorization.RoleAssignmentsClient

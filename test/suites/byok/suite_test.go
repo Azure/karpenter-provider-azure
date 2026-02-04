@@ -250,9 +250,12 @@ const (
 //
 // Returns the DES resource ID for use in VM disk encryption configuration.
 func createKeyVaultAndDiskEncryptionSet(ctx context.Context, env *azure.Environment) string {
-	keyVaultName := fmt.Sprintf("karpentertest%d", time.Now().Unix())
+	// Use cluster name suffix for deterministic, collision-free naming
+	// Key Vault names must be globally unique and max 24 chars
+	clusterSuffix := getClusterNameSuffix(env.ClusterName)
+	keyVaultName := fmt.Sprintf("kpbyok%s", clusterSuffix)
 	keyName := "test-key"
-	desName := fmt.Sprintf("karpenter-test-des-%d", time.Now().Unix())
+	desName := fmt.Sprintf("kp-byok-des-%s", clusterSuffix)
 
 	keyVaultID, desID, desPrincipalID, karpenterIdentity := createKeyVaultDESResources(ctx, env, keyVaultName, keyName, desName)
 
@@ -275,9 +278,11 @@ func createKeyVaultAndDiskEncryptionSet(ctx context.Context, env *azure.Environm
 // EXCEPT the Reader role on the DES to the Karpenter workload identity.
 // This simulates a misconfiguration where the user forgets to grant the necessary permissions.
 func createKeyVaultAndDiskEncryptionSetWithoutReaderRBAC(ctx context.Context, env *azure.Environment) string {
-	keyVaultName := fmt.Sprintf("karpentertest%d", time.Now().Unix())
+	// Use cluster name suffix with "nr" (no-rbac) prefix for deterministic naming
+	clusterSuffix := getClusterNameSuffix(env.ClusterName)
+	keyVaultName := fmt.Sprintf("kpnr%s", clusterSuffix)
 	keyName := "test-key-no-rbac"
-	desName := fmt.Sprintf("karpenter-test-des-no-rbac-%d", time.Now().Unix())
+	desName := fmt.Sprintf("kp-norbac-des-%s", clusterSuffix)
 
 	keyVaultID, desID, desPrincipalID, _ := createKeyVaultDESResources(ctx, env, keyVaultName, keyName, desName)
 
@@ -289,6 +294,16 @@ func createKeyVaultAndDiskEncryptionSetWithoutReaderRBAC(ctx context.Context, en
 	Expect(err).ToNot(HaveOccurred())
 
 	return desID
+}
+
+// getClusterNameSuffix returns a deterministic suffix derived from the cluster name
+// for use in globally unique resource names (Key Vault, DES).
+// Returns the last 10 characters of the cluster name (or full name if shorter).
+func getClusterNameSuffix(clusterName string) string {
+	if len(clusterName) <= 10 {
+		return clusterName
+	}
+	return clusterName[len(clusterName)-10:]
 }
 
 // createKeyVaultDESResources creates the Key Vault, Key, and DES resources
