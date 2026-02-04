@@ -190,7 +190,8 @@ func imageVersionsUnready(nodeClass *v1beta1.AKSNodeClass) bool {
 // TODO (charliedmcb): remove nolint on gocyclo. Added for now in order to pass "make verify"
 // I think the best way to get rid of gocyclo is to break the section retrieving the maintenance window
 // range from the ConfigMap into its own helper function using channel as a parameter.
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func (r *NodeImageReconciler) isMaintenanceWindowOpen(ctx context.Context) (bool, error) {
 	logger := log.FromContext(ctx)
 	if r.systemNamespace == "" {

@@ -33,9 +33,9 @@ skugen() {
   location=${1:-eastus}
 
   # minimal defensive check to ensure the subscription is not too restrictive
-  if [[ -z $(az vm list-skus --subscription "$SUBSCRIPTION_ID" --location "$location" --size Standard_D2_v5 --query "[?length(restrictions)==\`0\`]" -o tsv) ]];
+  if [[ -z $(az vm list-skus --subscription "$AZURE_SUBSCRIPTION_ID" --location "$location" --size Standard_D2_v5 --query "[?length(restrictions)==\`0\`]" -o tsv) ]];
   then
-    echo "Please use a different subscription or region: Standard_D2_v5 has restrictions in the region $location for the subscription $SUBSCRIPTION_ID"
+    echo "Please use a different subscription or region: Standard_D2_v5 has restrictions in the region $location for the subscription $AZURE_SUBSCRIPTION_ID"
     exit 1
   fi
 
