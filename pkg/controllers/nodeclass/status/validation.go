@@ -50,6 +50,7 @@ type ValidationReconciler struct {
 	kubeClient            client.Client
 	diskEncryptionSetsAPI instance.DiskEncryptionSetsAPI
 	diskEncryptionSetID   string
+	parsedDESID           *arm.ResourceID // Pre-parsed DES resource ID to avoid parsing on every reconcile
 }
 
 func NewValidationReconciler(
@@ -57,10 +58,20 @@ func NewValidationReconciler(
 	diskEncryptionSetsAPI instance.DiskEncryptionSetsAPI,
 	opts *options.Options,
 ) *ValidationReconciler {
+	var parsedID *arm.ResourceID
+	if opts.DiskEncryptionSetID != "" {
+		var err error
+		parsedID, err = arm.ParseResourceID(opts.DiskEncryptionSetID)
+		if err != nil {
+			// Log warning but don't fail startup - validation will catch this
+			log.Log.Error(err, "failed to parse DiskEncryptionSetID at startup", "desID", opts.DiskEncryptionSetID)
+		}
+	}
 	return &ValidationReconciler{
 		kubeClient:            kubeClient,
 		diskEncryptionSetsAPI: diskEncryptionSetsAPI,
 		diskEncryptionSetID:   opts.DiskEncryptionSetID,
+		parsedDESID:           parsedID,
 	}
 }
 
@@ -94,15 +105,19 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
-	// Parse the DES resource ID
-	parsedID, err := arm.ParseResourceID(r.diskEncryptionSetID)
-	if err != nil {
-		return fmt.Errorf("invalid DiskEncryptionSet ID: %w", err)
+	// Use pre-parsed ID if available, otherwise parse now
+	parsedID := r.parsedDESID
+	if parsedID == nil {
+		var err error
+		parsedID, err = arm.ParseResourceID(r.diskEncryptionSetID)
+		if err != nil {
+			return fmt.Errorf("invalid DiskEncryptionSet ID: %w", err)
+		}
 	}
 
 	// Attempt to read the DiskEncryptionSet
 	// This uses the controller's current credentials (DefaultAzureCredential)
-	_, err = r.diskEncryptionSetsAPI.Get(ctx, parsedID.ResourceGroupName, parsedID.Name, nil)
+	_, err := r.diskEncryptionSetsAPI.Get(ctx, parsedID.ResourceGroupName, parsedID.Name, nil)
 	if err != nil {
 		if isAuthorizationError(err) {
 			// Wrap the original error to preserve the error chain for isAuthorizationError checks
