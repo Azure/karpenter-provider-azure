@@ -619,7 +619,18 @@ func (c *CloudProvider) vmInstanceToNodeClaim(ctx context.Context, vm *armcomput
 	nodeClaim.Name = GetNodeClaimNameFromVMName(*vm.Name)
 	nodeClaim.Labels = labels
 	nodeClaim.Annotations = annotations
-	nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
+	if vm.Properties != nil && vm.Properties.TimeCreated != nil {
+		nodeClaim.CreationTimestamp = metav1.Time{Time: *vm.Properties.TimeCreated}
+	} else {
+		// Fallback to current time to ensure garbage collection grace period is enforced
+		// when TimeCreated is unavailable. Without this, CreationTimestamp would be epoch (zero value)
+		// and the instance could be immediately garbage collected, bypassing the 5-minute grace period.
+		// TODO: Investigate a more fail-safe approach. If vm.Properties.TimeCreated is NEVER populated,
+		// this fallback means the VM will never be garbage collected since we call this helper every time
+		// we create an in-memory NodeClaim. We currently assume this shouldn't happen because VMs that fail
+		// to come up should eventually stop appearing in Azure API responses.
+		nodeClaim.CreationTimestamp = metav1.Time{Time: time.Now()}
+	}
 	// Set the deletionTimestamp to be the current time if the instance is currently terminating
 	if utils.IsVMDeleting(*vm) {
 		nodeClaim.DeletionTimestamp = &metav1.Time{Time: time.Now()}

@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/samber/lo"
 )
 
@@ -59,22 +60,22 @@ func CalculateHash(data any) (string, error) {
 
 // HashFromNodeClaim calculates an inplace update hash from the specified options, nodeClaim, and nodeClass
 func HashFromNodeClaim(options *options.Options, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (string, error) {
-	tags := options.AdditionalTags
-	if nodeClass != nil {
-		tags = lo.Assign(options.AdditionalTags, nodeClass.Spec.Tags)
-	}
+	tags := launchtemplate.Tags(options, nodeClass, nodeClaim)
+	tagsForHash := lo.MapValues(tags, func(v *string, _ string) string {
+		return lo.FromPtr(v)
+	})
 
 	var hashStruct any
 	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
 		// AKS machine-based node
 		hashStruct = &aksMachineInPlaceUpdateFields{
-			Tags: tags,
+			Tags: tagsForHash,
 		}
 	} else {
 		// VM instance-based node
 		hashStruct = &vmInPlaceUpdateFields{
 			Identities: sets.New(options.NodeIdentities...),
-			Tags:       tags,
+			Tags:       tagsForHash,
 		}
 	}
 

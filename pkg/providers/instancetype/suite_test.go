@@ -587,6 +587,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(vm.Tags).To(Equal(map[string]*string{
 					"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
 					"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
+					"compute.aks.billing":          lo.ToPtr("linux"),
 					"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
 				}))
 
@@ -595,6 +596,7 @@ var _ = Describe("InstanceType Provider", func() {
 				Expect(nic.Interface.Tags).To(Equal(map[string]*string{
 					"karpenter.azure.com_test-tag": lo.ToPtr("test-value"),
 					"karpenter.azure.com_cluster":  lo.ToPtr("test-cluster"),
+					"compute.aks.billing":          lo.ToPtr("linux"),
 					"karpenter.sh_nodepool":        lo.ToPtr(nodePool.Name),
 				}))
 			})
