@@ -48,20 +48,16 @@ runs:
     env:
       SUBSCRIPTION_ID: ${{ inputs.subscription_id }}
     run: az account set --subscription "$SUBSCRIPTION_ID"
-  - name: configure Helm chart values
+  - name: Build, publish, configure, and install Karpenter
     shell: bash
     env:
       AZURE_RESOURCE_GROUP: ${{ inputs.resource_group }}
       AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
       AZURE_LOCATION: ${{ inputs.location }}
       PROVISION_MODE: ${{ inputs.provision_mode }}
-    run: |
-      make az-configure-values
-  - name: deploy karpenter to cluster
-    shell: bash
-    env:
       AZURE_ACR_NAME: ${{ inputs.acr_name }}
-    run: make az-run
+    run: |
+      make ci-install
   - name: taint nodes as karpenter-system
     shell: bash
     run: |
