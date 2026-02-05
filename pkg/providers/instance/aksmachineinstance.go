@@ -45,6 +45,11 @@ var (
 // An "instance" is a remote object, created by the API based on the template.
 // A "template" is a local struct, populated from Karpenter-provided parameters with the logic further below.
 // A "template" shares the struct with an "instance" representation. But read-only fields may not be populated. Ideally, the types should have been separated to avoid making cross-module assumption of the existence of certain fields.
+//
+// TODO: Consider extracting the template-related fields (AKSMachineTemplate, AKSMachineName, InstanceType, CapacityType, Zone, AKSMachineID, AKSMachineNodeImageVersion, VMResourceID)
+// into a dedicated struct (e.g., AKSMachineDetails or AKSMachineTemplateInfo). This would clarify the relationship between
+// the promise fields and functions like BuildNodeClaimFromAKSMachineTemplate, as well as reduce the number of loose arguments passed around.
+// More discussion: https://github.com/Azure/karpenter-provider-azure/pull/1197#discussion_r2482957255
 type AKSMachinePromise struct {
 	waitFunc    func() error
 	providerRef AKSMachineProvider
