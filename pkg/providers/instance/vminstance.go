@@ -294,7 +294,11 @@ func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update ar
 		}
 
 		for extName, poller := range pollers {
-			_, err := poller.PollUntilDone(ctx, nil)
+			// Poll more frequently than the default of 30s
+			opts := &runtime.PollUntilDoneOptions{
+				Frequency: 3 * time.Second,
+			}
+			_, err := poller.PollUntilDone(ctx, opts)
 			if err != nil {
 				return fmt.Errorf("polling VM extension %q for VM %q: %w", extName, vmName, err)
 			}
