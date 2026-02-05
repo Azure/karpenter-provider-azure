@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/awslabs/operatorpkg/object"
 	. "github.com/onsi/ginkgo/v2"
@@ -40,6 +41,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclaim/inplaceupdate"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -62,7 +64,7 @@ var _ = BeforeSuite(func() {
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...))
 	azureEnv = test.NewEnvironment(ctx, env)
-	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider)
+	inPlaceUpdateController = inplaceupdate.NewController(env.Client, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider)
 	opts = options.FromContext(ctx)
 })
 
@@ -190,6 +192,177 @@ var _ = Describe("Unit tests", func() {
 
 			// Should be different because NodeClass overrides AdditionalTags
 			Expect(hash1).ToNot(Equal(hash2))
+		})
+
+		It("should produce different hashes for AKS machines vs VMs", func() {
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "test-value",
+			}
+			options.NodeIdentities = []string{
+				"/subscriptions/1234/resourceGroups/mcrg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/myid1",
+			}
+
+			// Regular VM NodeClaim
+			vmNodeClaim := coretest.NodeClaim()
+			hash1, err := inplaceupdate.HashFromNodeClaim(options, vmNodeClaim, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			// AKS Machine NodeClaim
+			aksMachineNodeClaim := coretest.NodeClaim()
+			aksMachineNodeClaim.Annotations = map[string]string{
+				v1beta1.AnnotationAKSMachineResourceID: "/subscriptions/123/resourceGroups/rg/providers/Microsoft.ContainerService/managedClusters/cluster/agentPools/pool/machines/test-machine",
+			}
+			hash2, err := inplaceupdate.HashFromNodeClaim(options, aksMachineNodeClaim, nodeClass)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Should be different because AKS machines don't include identities in hash
+			Expect(hash1).ToNot(Equal(hash2))
+		})
+	})
+
+	Context("calculateAKSMachinePatch", func() {
+		It("should add missing tags to AKS machine when there are no existing tags", func() {
+			aksMachine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{
+					Tags: map[string]*string{},
+				},
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeTrue())
+			// Verify original aksMachine was modified (expected behavior for AKS machines - PUT only, not PATCH)
+			Expect(aksMachine.Properties.Tags).To(HaveKey("test-tag"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+		})
+
+		It("should not update AKS machine when tags already match", func() {
+			createTimeString := instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())
+			aksMachine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{
+					Tags: map[string]*string{
+						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
+						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
+						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(createTimeString),
+						"compute.aks.billing":                              lo.ToPtr("linux"),
+						"test-tag":                                         lo.ToPtr("my-tag"),
+						"nodeclass-tag":                                    lo.ToPtr("nodeclass-value"),
+					},
+				},
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+			nodeClass.Spec.Tags = map[string]string{
+				"nodeclass-tag": "nodeclass-value",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeFalse())
+
+			// Verify original aksMachine tags remain unchanged
+			Expect(aksMachine.Properties.Tags).To(HaveLen(6))
+			Expect(aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(lo.ToPtr(opts.ClusterName)))
+			Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(lo.ToPtr(nodeClaim.Name)))
+			Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(lo.ToPtr(createTimeString)))
+			Expect(aksMachine.Properties.Tags["test-tag"]).To(Equal(lo.ToPtr("my-tag")))
+			Expect(aksMachine.Properties.Tags["nodeclass-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
+		})
+
+		It("should handle AKS machine with nil properties", func() {
+			aksMachine := &armcontainerservice.Machine{
+				Properties: nil,
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"test-tag": "my-tag",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeTrue())
+
+			// Verify original aksMachine properties were created and populated (expected behavior for AKS machines - PUT only, not PATCH)
+			Expect(aksMachine.Properties).ToNot(BeNil())
+			Expect(aksMachine.Properties.Tags).To(HaveKey("test-tag"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+		})
+
+		It("should replace existing tags with expected tags", func() {
+			aksMachine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{
+					Tags: map[string]*string{
+						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
+						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
+						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
+						"old-tag": lo.ToPtr("old-value"),
+					},
+				},
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"new-tag": "new-value",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeTrue())
+
+			// Verify original aksMachine tags were replaced (expected behavior for AKS machines - PUT only, not PATCH)
+			Expect(aksMachine.Properties.Tags).To(HaveKey("new-tag"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
+			Expect(aksMachine.Properties.Tags).ToNot(HaveKey("old-tag"))
+		})
+
+		It("should prioritize NodeClass tags over AdditionalTags", func() {
+			aksMachine := &armcontainerservice.Machine{
+				Properties: &armcontainerservice.MachineProperties{
+					Tags: map[string]*string{},
+				},
+			}
+
+			options := test.Options()
+			options.AdditionalTags = map[string]string{
+				"conflict-tag": "additional-value",
+			}
+			nodeClass.Spec.Tags = map[string]string{
+				"conflict-tag": "nodeclass-value",
+			}
+
+			patchExists := inplaceupdate.CalculateAKSMachinePatch(options, nodeClaim, nodeClass, aksMachine)
+
+			Expect(patchExists).To(BeTrue())
+
+			// Verify original aksMachine was modified with correct priority (expected behavior for AKS machines - PUT only, not PATCH)
+			Expect(aksMachine.Properties.Tags["conflict-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 		})
 	})
 
@@ -1030,4 +1203,5 @@ var _ = Describe("In Place Update Controller", func() {
 			})
 		})
 	})
+
 })
