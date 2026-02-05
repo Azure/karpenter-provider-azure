@@ -303,7 +303,7 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	// Counterpart for ProvisionModeBootstrappingClient is in customscriptsbootstrap/provisionclientbootstrap.go and imagefamily/resolver.go
 
 	if nodeClass == nil || nodeClass.Spec.Kubelet == nil {
-		return &armcontainerservice.KubeletConfig{}
+		return nil
 	}
 
 	kubeletConfig := &armcontainerservice.KubeletConfig{}

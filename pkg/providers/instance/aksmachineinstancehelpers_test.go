@@ -559,10 +559,10 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 	})
 
 	Context("configureKubeletConfig", func() {
-		It("should return empty config when nodeClass is nil", func() {
+		It("should return nil when nodeClass is nil", func() {
 			config := configureKubeletConfig(nil)
 
-			Expect(config).ToNot(BeNil())
+			Expect(config).To(BeNil())
 			Expect(config.CPUManagerPolicy).To(BeNil())
 			Expect(config.CPUCfsQuota).To(BeNil())
 			Expect(config.ImageGcHighThreshold).To(BeNil())
@@ -571,12 +571,11 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			Expect(config.PodMaxPids).To(BeNil())
 		})
 
-		It("should return empty config when kubelet spec is nil", func() {
+		It("should return nil when kubelet spec is nil", func() {
 			nodeClass.Spec.Kubelet = nil
 			config := configureKubeletConfig(nodeClass)
 
-			Expect(config).ToNot(BeNil())
-			Expect(config.CPUManagerPolicy).To(BeNil())
+			Expect(config).To(BeNil())
 		})
 
 		It("should configure all kubelet settings correctly", func() {
