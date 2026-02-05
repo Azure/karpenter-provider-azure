@@ -37,16 +37,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	clock "k8s.io/utils/clock/testing"
-	"sigs.k8s.io/karpenter/pkg/metrics"
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
@@ -116,9 +113,9 @@ func TestAzure(t *testing.T) {
 	azureEnvBootstrap = test.NewEnvironment(ctxBootstrap, env)
 
 	fakeClock = &clock.FakeClock{}
-	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
-	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnv.InstanceTypeStore)
-	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProvider = cloudprovider.New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderNonZonal = cloudprovider.New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnv.InstanceTypeStore)
+	cloudProviderBootstrap = cloudprovider.New(azureEnvBootstrap.InstanceTypesProvider, azureEnvBootstrap.VMInstanceProvider, azureEnvBootstrap.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvBootstrap.ImageProvider, azureEnv.InstanceTypeStore)
 
 	cluster = state.NewCluster(fakeClock, env.Client, cloudProvider)
 	clusterNonZonal = state.NewCluster(fakeClock, env.Client, cloudProviderNonZonal)
@@ -2693,26 +2690,6 @@ func ExpectCapacityPodsToMatchMaxPods(instanceTypes []*corecloudprovider.Instanc
 		podsCount, ok := pods.AsInt64()
 		Expect(ok).To(BeTrue(), "failed to convert pods capacity to int64")
 		Expect(podsCount).To(Equal(expected), "pods capacity does not match expected value")
-	}
-}
-
-// TODO: Upstream this?
-func ExpectLaunched(ctx context.Context, c client.Client, cloudProvider corecloudprovider.CloudProvider, provisioner *provisioning.Provisioner, pods ...*v1.Pod) {
-	GinkgoHelper()
-	// Persist objects
-	for _, pod := range pods {
-		ExpectApplied(ctx, c, pod)
-	}
-	results, err := provisioner.Schedule(ctx)
-	Expect(err).ToNot(HaveOccurred())
-	for _, m := range results.NewNodeClaims {
-		var nodeClaimName string
-		nodeClaimName, err = provisioner.Create(ctx, m, provisioning.WithReason(metrics.ProvisionedReason))
-		Expect(err).ToNot(HaveOccurred())
-		nodeClaim := &karpv1.NodeClaim{}
-		Expect(c.Get(ctx, types.NamespacedName{Name: nodeClaimName}, nodeClaim)).To(Succeed())
-		_, err = ExpectNodeClaimDeployedNoNode(ctx, c, cloudProvider, nodeClaim)
-		Expect(err).ToNot(HaveOccurred())
 	}
 }
 

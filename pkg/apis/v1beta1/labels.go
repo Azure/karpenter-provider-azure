@@ -120,6 +120,7 @@ var (
 
 	AnnotationAKSNodeClassHash        = apis.Group + "/aksnodeclass-hash"
 	AnnotationAKSNodeClassHashVersion = apis.Group + "/aksnodeclass-hash-version"
+	AnnotationAKSMachineResourceID    = apis.Group + "/aks-machine-resource-id" // resource ID of the associated AKS machine
 )
 
 const (

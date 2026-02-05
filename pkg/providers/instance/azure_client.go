@@ -160,7 +160,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 	// copy the options to avoid modifying the original
 	var vmClientOptions = *opts
 	var auxiliaryTokenClient auth.AuxiliaryTokenServer
-	if o.UseSIG {
+	if o.UseSIG && o.ProvisionMode != consts.ProvisionModeAKSMachineAPI { // Not doing this if PROVISION_MODE is aksmachineapi as Create will never use VM client, but want to allow other VM client operations
 		log.FromContext(ctx).Info("using SIG for image versions with auxiliary token policy for creating virtual machines")
 		auxiliaryTokenClient = armopts.DefaultHTTPClient()
 		auxPolicy := auth.NewAuxiliaryTokenPolicy(auxiliaryTokenClient, o.SIGAccessTokenServerURL, auth.TokenScope(env.Cloud))
@@ -228,7 +228,7 @@ func NewAZClient(ctx context.Context, cfg *auth.Config, env *auth.Environment, c
 
 	// Only create AKS machine clients if we need to use them.
 	// Otherwise, use the no-op dry clients, which will act like there are no AKS machines present.
-	if o.ManageExistingAKSMachines {
+	if o.ProvisionMode == consts.ProvisionModeAKSMachineAPI || o.ManageExistingAKSMachines {
 		aksMachinesClient, err = armcontainerservice.NewMachinesClient(cfg.SubscriptionID, cred, opts)
 		if err != nil {
 			return nil, err
