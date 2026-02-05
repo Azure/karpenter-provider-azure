@@ -33,7 +33,6 @@ import (
 	"sigs.k8s.io/karpenter/pkg/utils/result"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/kubernetesversion"
@@ -60,15 +59,16 @@ func NewController(
 	inClusterKubernetesInterface kubernetes.Interface,
 	subnetClient instance.SubnetsAPI,
 	diskEncryptionSetsClient instance.DiskEncryptionSetsAPI,
-	opts *options.Options,
+	diskEncryptionSetID string,
 ) *Controller {
 	return &Controller{
+
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 		subnet:            NewSubnetReconciler(subnetClient),
-		validation:        NewValidationReconciler(kubeClient, diskEncryptionSetsClient, opts),
+		validation:        NewValidationReconciler(diskEncryptionSetsClient, diskEncryptionSetID),
 	}
 }
 
