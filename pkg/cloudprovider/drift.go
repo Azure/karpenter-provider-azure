@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 	"github.com/samber/lo"
 	v1 "k8s.io/api/core/v1"
@@ -30,6 +31,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 	nodeclaimutils "github.com/Azure/karpenter-provider-azure/pkg/utils/nodeclaim"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -43,6 +45,7 @@ const (
 	ImageDrift           cloudprovider.DriftReason = "ImageDrift"
 	SubnetDrift          cloudprovider.DriftReason = "SubnetDrift"
 	KubeletIdentityDrift cloudprovider.DriftReason = "KubeletIdentityDrift"
+	ClusterConfigDrift   cloudprovider.DriftReason = "ClusterConfigDrift" // This is a catch-all for cluster-level config changes (e.g., from PUT ManagedCluster), where Karpenter does not directly "own" them.
 
 	// TODO (charliedmcb): Use this const across code and test locations which are signaling/checking for "no drift"
 	NoDrift cloudprovider.DriftReason = ""
@@ -51,13 +54,31 @@ const (
 func (c *CloudProvider) isNodeClassDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
 	// TODO: if we find more expensive checks, such as reading VMs or NICs from Azure, are being duplicated between checks, we should
 	//       produce a lazy at-most-once that allows a check to cache a value for later checks to read.
-	checks := []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
-		c.areStaticFieldsDrifted,
-		c.isK8sVersionDrifted,
-		c.isKubeletIdentityDrifted,
-		c.isImageVersionDrifted,
-		c.isSubnetDrifted,
+
+	if nodeClaim == nil || nodeClaim.Status.ProviderID == "" {
+		// This is technically not possible (as of the time of writing). IsDrifted() won't be called by core until NodeClaim is launched.
+		return "", fmt.Errorf("nodeclaim %s is missing provider ID", nodeClaim.Name)
 	}
+
+	var checks []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error)
+	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+		checks = []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
+			c.areStaticFieldsDrifted,
+			c.isK8sVersionDrifted,
+			c.isImageVersionDrifted,
+			c.isMachineDrifted,
+		}
+	} else {
+		// For legacy nodes
+		checks = []func(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error){
+			c.areStaticFieldsDrifted,
+			c.isK8sVersionDrifted,
+			c.isKubeletIdentityDrifted,
+			c.isImageVersionDrifted,
+			c.isSubnetDrifted,
+		}
+	}
+
 	for _, check := range checks {
 		driftReason, err := check(ctx, nodeClaim, nodeClass)
 		if err != nil {
@@ -133,7 +154,73 @@ func (c *CloudProvider) isImageVersionDrifted(
 	nodeClass *v1beta1.AKSNodeClass,
 ) (cloudprovider.DriftReason, error) {
 	logger := log.FromContext(ctx)
+	nodeImages, err := nodeClass.GetImages()
+	// Note: this differs from AWS, as they don't check for status readiness during Drift.
+	if err != nil {
+		// Note: we don't consider this a hard failure for drift if the Images are not ready to use, so we ignore returning the error here.
+		// The stored Images must be ready to use if we are to calculate potential Drift based on them.
+		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
+		logger.Info("node image not ready, skipping drift check", "error", err)
+		return "", nil
+	}
+	if len(nodeImages) == 0 {
+		// Note: this case shouldn't happen, since if there are no nodeImages, the ConditionTypeImagesReady should be false.
+		//     However, if it would happen, we want this to error, as it means the NodeClass is in a state it can't provision nodes.
+		return "", fmt.Errorf("no images exist for the given constraints")
+	}
 
+	if aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+		// AKS machine node
+		aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+		if err != nil {
+			// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+			//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
+			//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
+			return "", err
+		}
+		if aksMachine == nil {
+			// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
+			//     I don't think we can get to Drift, until after ProviderID is set, so this should be a real issue.
+			//     However, we may want to collect this with the other errors up a level as to not block other drift conditions.
+			return "", fmt.Errorf("AKS machine %s missing", aksMachineName)
+		}
+
+		if aksMachine.Properties == nil || aksMachine.Properties.NodeImageVersion == nil {
+			// TODO (charliedmcb): this seems like an error case to me, but maybe not one to hard fail on? Is it even possible?
+			//     We may want to collect this with the other errors up a level as to not block other drift conditions.
+			return "", nil
+		}
+
+		aksMachineNodeImageVersion := lo.FromPtr(aksMachine.Properties.NodeImageVersion) // E.g., AKSUbuntu-2204gen2containerd-2022.10.03
+
+		for _, availableImage := range nodeImages {
+			// Note: not supporting drift across galleries yet, as AKS machine does not hold gallery info, as of now.
+			// Alternatively, could call GET VM, if not propose API changes.
+			availableImageVersion, err := utils.GetAKSMachineNodeImageVersionFromImageID(availableImage.ID) // WARNING: verify whether this function support the desired gallery
+			if err != nil {
+				logger.Error(err, "failed to convert image ID to AKS machine node image version", "imageID", availableImage.ID)
+				continue
+			}
+			if availableImageVersion == aksMachineNodeImageVersion {
+				return "", nil
+			}
+		}
+
+		logger.V(1).Info("drift triggered as actual image version was not found in the set of currently available node images",
+			"driftType", ImageDrift,
+			"actualImageVersion", aksMachineNodeImageVersion)
+		return ImageDrift, nil
+	}
+	return c.isVMInstanceImageDrifted(ctx, nodeClaim, nodeImages)
+}
+
+func (c *CloudProvider) isVMInstanceImageDrifted(
+	ctx context.Context,
+	nodeClaim *karpv1.NodeClaim,
+	nodeImages []v1beta1.NodeImage,
+) (cloudprovider.DriftReason, error) {
+	logger := log.FromContext(ctx)
+	// VM instance node
 	id, err := nodeclaimutils.GetVMName(nodeClaim.Status.ProviderID)
 	if err != nil {
 		// TODO (charliedmcb): Do we need to handle vm not found here before its provisioned?
@@ -166,21 +253,6 @@ func (c *CloudProvider) isImageVersionDrifted(
 	SIGID := lo.FromPtr(vm.Properties.StorageProfile.ImageReference.ID)
 	vmImageID := lo.Ternary(SIGID != "", SIGID, CIGID)
 
-	nodeImages, err := nodeClass.GetImages()
-	// Note: this differs from AWS, as they don't check for status readiness during Drift.
-	if err != nil {
-		// Note: we don't consider this a hard failure for drift if the Images are not ready to use, so we ignore returning the error here.
-		// The stored Images must be ready to use if we are to calculate potential Drift based on them.
-		// TODO (charliedmcb): I'm wondering if we actually want to have these soft-error cases switch to return an error if no-drift condition was found across all of IsDrifted.
-		logger.Info("node image not ready, skipping drift check", "error", err)
-		return "", nil
-	}
-	if len(nodeImages) == 0 {
-		// Note: this case shouldn't happen, since if there are no nodeImages, the ConditionTypeImagesReady should be false.
-		//     However, if it would happen, we want this to error, as it means the NodeClass is in a state it can't provision nodes.
-		return "", fmt.Errorf("no images exist for the given constraints")
-	}
-
 	for _, availableImage := range nodeImages {
 		if availableImage.ID == vmImageID {
 			return "", nil
@@ -195,6 +267,11 @@ func (c *CloudProvider) isImageVersionDrifted(
 
 // isSubnetDrifted returns drift if the nic for this nodeclaim does not match the expected subnet
 func (c *CloudProvider) isSubnetDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, nodeClass *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	if _, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim); isAKSMachine {
+		// Not supported for AKS machine nodes anymore, as covered by areStaticFieldsDrifted for NodeClass updates, and cluster-level subnet is immutable for now
+		return "", nil
+	}
+
 	expectedSubnet := lo.Ternary(nodeClass.Spec.VNETSubnetID == nil, options.FromContext(ctx).SubnetID, lo.FromPtr(nodeClass.Spec.VNETSubnetID))
 	nicName := instance.GenerateResourceName(nodeClaim.Name)
 
@@ -278,4 +355,50 @@ func getSubnetFromPrimaryIPConfig(nic *armnetwork.Interface) string {
 		}
 	}
 	return ""
+}
+
+// isMachineDrifted checks the DriftAction field of the AKS machine to determine if drift exists
+func (c *CloudProvider) isMachineDrifted(ctx context.Context, nodeClaim *karpv1.NodeClaim, _ *v1beta1.AKSNodeClass) (cloudprovider.DriftReason, error) {
+	logger := log.FromContext(ctx)
+	aksMachineName, isAKSMachine := instance.GetAKSMachineNameFromNodeClaim(nodeClaim)
+	if !isAKSMachine {
+		// Not an AKS machine node, no drift action to check
+		logger.V(1).Info("no AKS machine name found, skipping drift action check", "nodeClaim", nodeClaim.Name)
+		return "", nil
+	}
+
+	aksMachine, err := c.aksMachineInstanceProvider.Get(ctx, aksMachineName)
+	if err != nil {
+		return "", err
+	}
+	if aksMachine == nil {
+		return "", fmt.Errorf("AKS machine with name %s not found", aksMachineName)
+	}
+
+	if aksMachine.Properties != nil && aksMachine.Properties.Status != nil && aksMachine.Properties.Status.DriftAction != nil {
+		driftAction := lo.FromPtr(aksMachine.Properties.Status.DriftAction)
+		driftReason := "" // Note: this is not being incorporated yet, and we currently return ClusterConfigDrift for all reasons. // Suggestion: could be extended.
+		if aksMachine.Properties.Status.DriftReason != nil {
+			driftReason = lo.FromPtr(aksMachine.Properties.Status.DriftReason)
+		}
+
+		switch driftAction {
+		case "":
+			return "", nil
+		case armcontainerservice.DriftActionSynced:
+			return "", nil
+		case armcontainerservice.DriftActionRecreate:
+			return ClusterConfigDrift, nil
+		default:
+			// AKS machine API may add additional drift actions in the future (e.g., restart, reimage). Karpenter (core) need to support them explicitly.
+			// Meanwhile, re-create covers all cases.
+			logger.Error(fmt.Errorf("unknown drift action %s for AKS machine %s", driftAction, aksMachineName), "unknown drift action, considering it as drift",
+				"aksMachineName", aksMachineName,
+				"driftAction", driftAction,
+				"driftReason", driftReason)
+			return ClusterConfigDrift, nil
+		}
+	}
+
+	return "", nil
 }

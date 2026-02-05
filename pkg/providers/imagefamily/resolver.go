@@ -140,20 +140,8 @@ func (r *defaultResolver) Resolve(
 		return nil, err
 	}
 
-	generalTaints := nodeClaim.Spec.Taints
-	startupTaints := nodeClaim.Spec.StartupTaints
-	allTaints := lo.Flatten([][]corev1.Taint{
-		generalTaints,
-		startupTaints,
-	})
-
-	// Ensure UnregisteredNoExecuteTaint is present
-	if _, found := lo.Find(allTaints, func(t corev1.Taint) bool { // Allow UnregisteredNoExecuteTaint to be in non-startup taints(?)
-		return t.MatchTaint(&karpv1.UnregisteredNoExecuteTaint)
-	}); !found {
-		startupTaints = append(startupTaints, karpv1.UnregisteredNoExecuteTaint)
-		allTaints = append(allTaints, karpv1.UnregisteredNoExecuteTaint)
-	}
+	generalTaints, startupTaints := utils.ExtractTaints(nodeClaim)
+	allTaints := lo.Flatten([][]corev1.Taint{generalTaints, startupTaints})
 
 	diskType, placement, err := r.getStorageProfile(ctx, instanceType, nodeClass)
 	if err != nil {
