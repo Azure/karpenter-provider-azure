@@ -26,15 +26,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
-	ValidationFailedReasonDESRBACMissing = "DESRBACMissing"
+	ValidationFailedReasonDESRBACMissing     = "DESRBACMissing"
+	ValidationFailedReasonDESRBACCheckFailed = "DESRBACCheckFailed"
 	// DESValidationSuccessRequeueInterval defines how often to re-validate DES RBAC after success
 	// Set to 1 hour since RBAC changes are infrequent in production
 	DESValidationSuccessRequeueInterval = 1 * time.Hour
@@ -46,31 +45,25 @@ const (
 )
 
 type ValidationReconciler struct {
-	kubeClient            client.Client
 	diskEncryptionSetsAPI instance.DiskEncryptionSetsAPI
-	diskEncryptionSetID   string
-	parsedDESID           *arm.ResourceID // Pre-parsed DES resource ID to avoid parsing on every reconcile
+	diskEncryptionSetID   *arm.ResourceID // parsed by the constructor for efficient reuse across reconciles
 }
 
 func NewValidationReconciler(
-	kubeClient client.Client,
 	diskEncryptionSetsAPI instance.DiskEncryptionSetsAPI,
-	opts *options.Options,
+	diskEncryptionSetID string,
 ) *ValidationReconciler {
 	var parsedID *arm.ResourceID
-	if opts.DiskEncryptionSetID != "" {
-		var err error
-		parsedID, err = arm.ParseResourceID(opts.DiskEncryptionSetID)
+	var err error
+	if diskEncryptionSetID != "" {
+		parsedID, err = arm.ParseResourceID(diskEncryptionSetID)
 		if err != nil {
-			// Log warning but don't fail startup - validation will catch this
-			log.Log.Error(err, "failed to parse DiskEncryptionSetID at startup", "desID", opts.DiskEncryptionSetID)
+			log.Log.Error(fmt.Errorf("invalid DiskEncryptionSet ID: %w", err), "failed to parse DiskEncryptionSet ID from options", "diskEncryptionSetID", diskEncryptionSetID)
 		}
 	}
 	return &ValidationReconciler{
-		kubeClient:            kubeClient,
 		diskEncryptionSetsAPI: diskEncryptionSetsAPI,
-		diskEncryptionSetID:   opts.DiskEncryptionSetID,
-		parsedDESID:           parsedID,
+		diskEncryptionSetID:   parsedID, // Will be nil if DES ID is not set
 	}
 }
 
@@ -78,7 +71,7 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	logger := log.FromContext(ctx)
 
 	// Check BYOK RBAC if DES ID is configured
-	if r.diskEncryptionSetID != "" {
+	if r.diskEncryptionSetID != nil {
 		logger.V(1).Info("validating DES RBAC", "diskEncryptionSetID", r.diskEncryptionSetID)
 		err := r.validateDiskEncryptionSetRBAC(ctx)
 		if err != nil {
@@ -104,19 +97,9 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
-	// Use pre-parsed ID if available, otherwise parse now
-	parsedID := r.parsedDESID
-	if parsedID == nil {
-		var err error
-		parsedID, err = arm.ParseResourceID(r.diskEncryptionSetID)
-		if err != nil {
-			return fmt.Errorf("invalid DiskEncryptionSet ID: %w", err)
-		}
-	}
-
 	// Attempt to read the DiskEncryptionSet
 	// This uses the controller's current credentials (DefaultAzureCredential)
-	_, err := r.diskEncryptionSetsAPI.Get(ctx, parsedID.ResourceGroupName, parsedID.Name, nil)
+	_, err := r.diskEncryptionSetsAPI.Get(ctx, r.diskEncryptionSetID.ResourceGroupName, r.diskEncryptionSetID.Name, nil)
 	if err != nil {
 		if isAuthorizationError(err) {
 			// Wrap the original error to preserve the error chain for isAuthorizationError checks

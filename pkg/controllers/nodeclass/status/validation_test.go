@@ -26,7 +26,6 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
-	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -61,14 +60,14 @@ var _ = Describe("Validation Reconciler", func() {
 	var reconciler *status.ValidationReconciler
 	var nodeClass *v1beta1.AKSNodeClass
 	var fakeDesAPI *fake.DiskEncryptionSetsAPI
+	var fakeDiskEncryptionSetID string
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		fakeDesAPI = &fake.DiskEncryptionSetsAPI{}
-		opts := &options.Options{}
+		fakeDiskEncryptionSetID = ""
 
-		// Note: client is nil since these basic tests don't need to interact with k8s objects
-		reconciler = status.NewValidationReconciler(nil, fakeDesAPI, opts)
+		reconciler = status.NewValidationReconciler(fakeDesAPI, fakeDiskEncryptionSetID)
 		nodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "test-nodeclass",
@@ -121,10 +120,7 @@ var _ = Describe("Validation Reconciler", func() {
 
 		BeforeEach(func() {
 			fakeDesClient = &fake.DiskEncryptionSetsAPI{}
-			opts := &options.Options{
-				DiskEncryptionSetID: testDESID,
-			}
-			desReconciler = status.NewValidationReconciler(nil, fakeDesClient, opts)
+			desReconciler = status.NewValidationReconciler(fakeDesClient, testDESID)
 		})
 
 		It("should set ValidationSucceeded to true and requeue after success interval when DES RBAC check passes", func() {
