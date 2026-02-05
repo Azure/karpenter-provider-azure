@@ -34,8 +34,7 @@ import (
 )
 
 const (
-	ValidationFailedReasonDESRBACMissing     = "DESRBACMissing"
-	ValidationFailedReasonDESRBACCheckFailed = "DESRBACCheckFailed"
+	ValidationFailedReasonDESRBACMissing = "DESRBACMissing"
 	// DESValidationSuccessRequeueInterval defines how often to re-validate DES RBAC after success
 	// Set to 1 hour since RBAC changes are infrequent in production
 	DESValidationSuccessRequeueInterval = 1 * time.Hour
