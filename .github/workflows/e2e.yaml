@@ -50,6 +50,7 @@ on:
         type: choice
         description: "Azure location to run the e2e test in"
         default: westus3
+        # TODO: Why only these 3 regions?
         options:
           - westus3
           - southcentralus
@@ -70,6 +71,13 @@ on:
           - "1.32"
           - "1.33"
           - "1.34"
+      provision_mode:
+        type: choice
+        description: "Karpenter provisioning mode"
+        default: aksscriptless
+        options:
+          - aksscriptless
+          - aksmachineapi
 
 permissions:
   contents: read
@@ -204,11 +212,12 @@ jobs:
           location: ${{ inputs.location }}
           k8s_version: ${{ inputs.k8s_version }}
           provision_mode: ${{ inputs.provision_mode }}
-      - name: build and publish karpenter
-        shell: bash
-        env:
-          AZURE_ACR_NAME: ${{ env.ACR_NAME }}
-        run: make az-build
+          identity_type: ${{ inputs.suite == 'Machines' && 'UserAssigned' || 'SystemAssigned' }}
+      # - name: build and publish karpenter
+      #   shell: bash
+      #   env:
+      #     AZURE_ACR_NAME: ${{ env.ACR_NAME }}
+      #   run: make az-build
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
