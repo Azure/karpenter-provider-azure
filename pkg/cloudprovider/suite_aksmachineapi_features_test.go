@@ -341,6 +341,8 @@ var _ = Describe("CloudProvider", func() {
 				Expect(*aksMachine.Properties.Tags["karpenter.azure.com_test-tag"]).To(Equal("test-value"))
 				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 				Expect(*aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal("test-cluster"))
+				Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
+				Expect(*aksMachine.Properties.Tags["compute.aks.billing"]).To(Equal("linux"))
 				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.sh_nodepool"))
 				Expect(*aksMachine.Properties.Tags["karpenter.sh_nodepool"]).To(Equal(nodePool.Name))
 				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
@@ -567,6 +569,7 @@ var _ = Describe("CloudProvider", func() {
 				Expect(aksMachine.Properties.Tags["karpenter.sh_nodepool"]).To(Equal(&nodePool.Name))
 				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
 				Expect(aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(&testOptions.ClusterName))
+				Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 				Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 

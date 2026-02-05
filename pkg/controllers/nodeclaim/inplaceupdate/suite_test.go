@@ -244,6 +244,7 @@ var _ = Describe("Unit tests", func() {
 			Expect(aksMachine.Properties.Tags).To(HaveKey("test-tag"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 		})
@@ -256,8 +257,9 @@ var _ = Describe("Unit tests", func() {
 						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
 						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaim.Name),
 						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(createTimeString),
-						"test-tag":      lo.ToPtr("my-tag"),
-						"nodeclass-tag": lo.ToPtr("nodeclass-value"),
+						"compute.aks.billing":                              lo.ToPtr("linux"),
+						"test-tag":                                         lo.ToPtr("my-tag"),
+						"nodeclass-tag":                                    lo.ToPtr("nodeclass-value"),
 					},
 				},
 			}
@@ -275,7 +277,7 @@ var _ = Describe("Unit tests", func() {
 			Expect(patchExists).To(BeFalse())
 
 			// Verify original aksMachine tags remain unchanged
-			Expect(aksMachine.Properties.Tags).To(HaveLen(5))
+			Expect(aksMachine.Properties.Tags).To(HaveLen(6))
 			Expect(aksMachine.Properties.Tags["karpenter.azure.com_cluster"]).To(Equal(lo.ToPtr(opts.ClusterName)))
 			Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_nodeclaim"]).To(Equal(lo.ToPtr(nodeClaim.Name)))
 			Expect(aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"]).To(Equal(lo.ToPtr(createTimeString)))
@@ -301,6 +303,7 @@ var _ = Describe("Unit tests", func() {
 			Expect(aksMachine.Properties).ToNot(BeNil())
 			Expect(aksMachine.Properties.Tags).To(HaveKey("test-tag"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 		})
@@ -329,6 +332,7 @@ var _ = Describe("Unit tests", func() {
 			// Verify original aksMachine tags were replaced (expected behavior for AKS machines - PUT only, not PATCH)
 			Expect(aksMachine.Properties.Tags).To(HaveKey("new-tag"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			Expect(aksMachine.Properties.Tags).ToNot(HaveKey("old-tag"))
@@ -356,6 +360,7 @@ var _ = Describe("Unit tests", func() {
 			// Verify original aksMachine was modified with correct priority (expected behavior for AKS machines - PUT only, not PATCH)
 			Expect(aksMachine.Properties.Tags["conflict-tag"]).To(Equal(lo.ToPtr("nodeclass-value")))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(aksMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 			Expect(aksMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 		})

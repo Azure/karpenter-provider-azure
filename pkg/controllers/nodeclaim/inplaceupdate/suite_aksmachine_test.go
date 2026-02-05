@@ -62,6 +62,7 @@ var _ = Describe("In Place Update Controller", func() {
 						"karpenter.azure.com_cluster":                      lo.ToPtr(opts.ClusterName),
 						"karpenter.azure.com_aksmachine_nodeclaim":         lo.ToPtr(nodeClaimName),
 						"karpenter.azure.com_aksmachine_creationtimestamp": lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp())),
+						"compute.aks.billing":                              lo.ToPtr("linux"),
 					},
 				},
 			})
@@ -199,6 +200,7 @@ var _ = Describe("In Place Update Controller", func() {
 
 			Expect(updatedAKSMachine.Properties.Tags).ToNot(Equal(originalTags))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
@@ -313,6 +315,7 @@ var _ = Describe("In Place Update Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
@@ -356,6 +359,7 @@ var _ = Describe("In Place Update Controller", func() {
 			updatedAKSMachine, err := azureEnv.AKSMachineProvider.Get(ctx, *aksMachine.Name)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_cluster"))
+			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("compute.aks.billing"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_nodeclaim"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("karpenter.azure.com_aksmachine_creationtimestamp"))
 			Expect(updatedAKSMachine.Properties.Tags).To(HaveKey("nodeclass-tag"))
