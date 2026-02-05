@@ -563,12 +563,6 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			config := configureKubeletConfig(nil)
 
 			Expect(config).To(BeNil())
-			Expect(config.CPUManagerPolicy).To(BeNil())
-			Expect(config.CPUCfsQuota).To(BeNil())
-			Expect(config.ImageGcHighThreshold).To(BeNil())
-			Expect(config.AllowedUnsafeSysctls).To(BeNil())
-			Expect(config.ContainerLogMaxSizeMB).To(BeNil())
-			Expect(config.PodMaxPids).To(BeNil())
 		})
 
 		It("should return nil when kubelet spec is nil", func() {
