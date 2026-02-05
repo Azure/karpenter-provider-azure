@@ -19,9 +19,7 @@ package v1alpha2_test
 import (
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/awslabs/operatorpkg/status"
-	"github.com/samber/lo"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/karpenter/pkg/test"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,109 +29,33 @@ var _ = Describe("IsLocalDNSEnabled", func() {
 	var nodeClass *v1alpha2.AKSNodeClass
 
 	BeforeEach(func() {
-		nodeClass = &v1alpha2.AKSNodeClass{
-			ObjectMeta: test.ObjectMeta(metav1.ObjectMeta{}),
-			Spec: v1alpha2.AKSNodeClassSpec{
-				VNETSubnetID: lo.ToPtr("subnet-id"),
-			},
+		nodeClass = &v1alpha2.AKSNodeClass{}
+		nodeClass.Status = v1alpha2.AKSNodeClassStatus{
+			Conditions: []status.Condition{{
+				Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
+				Status:             metav1.ConditionTrue,
+				ObservedGeneration: nodeClass.Generation,
+			}},
 		}
 	})
 
-	Context("when LocalDNS is nil", func() {
-		It("should return false", func() {
-			nodeClass.Spec.LocalDNS = nil
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeFalse())
-		})
-	})
-
-	Context("when LocalDNS Mode is empty", func() {
-		It("should return false", func() {
-			nodeClass.Spec.LocalDNS = &v1alpha2.LocalDNS{Mode: ""}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeFalse())
-		})
-	})
-
-	Context("when LocalDNS Mode is Required", func() {
-		It("should return true regardless of Kubernetes version", func() {
-			nodeClass.Spec.LocalDNS = &v1alpha2.LocalDNS{Mode: v1alpha2.LocalDNSModeRequired}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeTrue())
-		})
-	})
-
-	Context("when LocalDNS Mode is Disabled", func() {
-		It("should return false regardless of Kubernetes version", func() {
-			nodeClass.Spec.LocalDNS = &v1alpha2.LocalDNS{Mode: v1alpha2.LocalDNSModeDisabled}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeFalse())
-		})
-	})
-
-	Context("when LocalDNS Mode is Preferred", func() {
-		BeforeEach(func() {
-			nodeClass.Spec.LocalDNS = &v1alpha2.LocalDNS{Mode: v1alpha2.LocalDNSModePreferred}
-		})
-
-		It("should return false when Kubernetes version is not set", func() {
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeFalse())
-		})
-
-		It("should return false when Kubernetes version is below 1.35", func() {
-			nodeClass.Status.KubernetesVersion = "1.34.0"
-			nodeClass.Status.Conditions = []status.Condition{{
-				Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: nodeClass.Generation,
-			}}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeFalse())
-		})
-
-		It("should return true when Kubernetes version is 1.35", func() {
-			nodeClass.Status.KubernetesVersion = "1.35.0"
-			nodeClass.Status.Conditions = []status.Condition{{
-				Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: nodeClass.Generation,
-			}}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeTrue())
-		})
-
-		It("should return true when Kubernetes version is 1.35 with v prefix", func() {
-			nodeClass.Status.KubernetesVersion = "v1.35.0"
-			nodeClass.Status.Conditions = []status.Condition{{
-				Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: nodeClass.Generation,
-			}}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeTrue())
-		})
-
-		It("should return true when Kubernetes version is above 1.35", func() {
-			nodeClass.Status.KubernetesVersion = "1.36.0"
-			nodeClass.Status.Conditions = []status.Condition{{
-				Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: nodeClass.Generation,
-			}}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeTrue())
-		})
-
-		It("should return true when Kubernetes version is 1.35 with patch version", func() {
-			nodeClass.Status.KubernetesVersion = "1.35.5"
-			nodeClass.Status.Conditions = []status.Condition{{
-				Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: nodeClass.Generation,
-			}}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeTrue())
-		})
-
-		It("should return false when Kubernetes version is 1.34 with high patch version", func() {
-			nodeClass.Status.KubernetesVersion = "1.34.99"
-			nodeClass.Status.Conditions = []status.Condition{{
-				Type:               v1alpha2.ConditionTypeKubernetesVersionReady,
-				Status:             metav1.ConditionTrue,
-				ObservedGeneration: nodeClass.Generation,
-			}}
-			Expect(nodeClass.IsLocalDNSEnabled()).To(BeFalse())
-		})
-	})
+	DescribeTable("should return correct value based on LocalDNS mode and Kubernetes version",
+		func(mode v1alpha2.LocalDNSMode, kubernetesVersion string, expected bool) {
+			if mode != "" {
+				nodeClass.Spec.LocalDNS = &v1alpha2.LocalDNS{Mode: mode}
+			}
+			nodeClass.Status.KubernetesVersion = kubernetesVersion
+			Expect(nodeClass.IsLocalDNSEnabled()).To(Equal(expected))
+		},
+		Entry("LocalDNS is nil", v1alpha2.LocalDNSMode(""), "", false),
+		Entry("Mode is Required", v1alpha2.LocalDNSModeRequired, "", true),
+		Entry("Mode is Disabled", v1alpha2.LocalDNSModeDisabled, "", false),
+		Entry("Mode is Preferred, no k8s version", v1alpha2.LocalDNSModePreferred, "", false),
+		Entry("Mode is Preferred, k8s 1.34.0", v1alpha2.LocalDNSModePreferred, "1.34.0", false),
+		Entry("Mode is Preferred, k8s 1.35.0", v1alpha2.LocalDNSModePreferred, "1.35.0", true),
+		Entry("Mode is Preferred, k8s v1.35.0", v1alpha2.LocalDNSModePreferred, "v1.35.0", true),
+		Entry("Mode is Preferred, k8s 1.36.0", v1alpha2.LocalDNSModePreferred, "1.36.0", true),
+		Entry("Mode is Preferred, k8s 1.35.5", v1alpha2.LocalDNSModePreferred, "1.35.5", true),
+		Entry("Mode is Preferred, k8s 1.34.99", v1alpha2.LocalDNSModePreferred, "1.34.99", false),
+	)
 })
