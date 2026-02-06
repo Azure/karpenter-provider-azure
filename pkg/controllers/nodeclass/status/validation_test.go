@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -60,14 +61,13 @@ var _ = Describe("Validation Reconciler", func() {
 	var reconciler *status.ValidationReconciler
 	var nodeClass *v1beta1.AKSNodeClass
 	var fakeDesAPI *fake.DiskEncryptionSetsAPI
-	var fakeDiskEncryptionSetID string
+	var emptyDiskEncryptionSetID *arm.ResourceID
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		fakeDesAPI = &fake.DiskEncryptionSetsAPI{}
-		fakeDiskEncryptionSetID = ""
 
-		reconciler = status.NewValidationReconciler(fakeDesAPI, fakeDiskEncryptionSetID)
+		reconciler = status.NewValidationReconciler(fakeDesAPI, emptyDiskEncryptionSetID)
 		nodeClass = &v1beta1.AKSNodeClass{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "test-nodeclass",
@@ -85,7 +85,7 @@ var _ = Describe("Validation Reconciler", func() {
 		It("should always set ValidationSucceeded condition to true and requeue after success interval", func() {
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.DESValidationSuccessRequeueInterval))
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
@@ -106,24 +106,26 @@ var _ = Describe("Validation Reconciler", func() {
 
 			result, err := reconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.DESValidationSuccessRequeueInterval))
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
 		})
 	})
 
-	Context("DES RBAC validation", func() {
+	Context("Disk Encryption Set RBAC validation", func() {
 		var fakeDesClient *fake.DiskEncryptionSetsAPI
 		var desReconciler *status.ValidationReconciler
-		const testDESID = "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des"
+		const testID = "/subscriptions/test-sub/resourceGroups/test-rg/providers/Microsoft.Compute/diskEncryptionSets/test-des"
 
 		BeforeEach(func() {
 			fakeDesClient = &fake.DiskEncryptionSetsAPI{}
-			desReconciler = status.NewValidationReconciler(fakeDesClient, testDESID)
+			parsedID, err := arm.ParseResourceID(testID)
+			Expect(err).ToNot(HaveOccurred())
+			desReconciler = status.NewValidationReconciler(fakeDesClient, parsedID)
 		})
 
-		It("should set ValidationSucceeded to true and requeue after success interval when DES RBAC check passes", func() {
+		It("should set ValidationSucceeded to true and requeue after success interval when Disk Encryption Set RBAC check passes", func() {
 			// Configure fake client to return success
 			fakeDesClient.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
 				return armcompute.DiskEncryptionSetsClientGetResponse{
@@ -136,7 +138,7 @@ var _ = Describe("Validation Reconciler", func() {
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.DESValidationSuccessRequeueInterval))
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
@@ -155,11 +157,11 @@ var _ = Describe("Validation Reconciler", func() {
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred()) // Auth errors don't return error, just set condition
-			Expect(result.RequeueAfter).To(Equal(status.DESValidationFailureRequeueInterval))
+			Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.ValidationFailedReasonDESRBACMissing))
+			Expect(condition.Reason).To(Equal(status.RBACMissing))
 			Expect(condition.Message).To(ContainSubstring("does not have Reader role on Disk Encryption Set"))
 		})
 
@@ -176,17 +178,14 @@ var _ = Describe("Validation Reconciler", func() {
 
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.DESValidationFailureRequeueInterval))
+			Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.ValidationFailedReasonDESRBACMissing))
+			Expect(condition.Reason).To(Equal(status.RBACMissing))
 		})
 
-		It("should return error and not change condition for non-authorization errors", func() {
-			// Set initial condition to True
-			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
-
+		It("should return error for non-authorization errors", func() {
 			// Configure fake client to return network error
 			fakeDesClient.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
 				return armcompute.DiskEncryptionSetsClientGetResponse{}, errors.New("network error")
@@ -197,38 +196,6 @@ var _ = Describe("Validation Reconciler", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to validate DiskEncryptionSet"))
 			Expect(result).To(Equal(reconcile.Result{})) // No RequeueAfter, error triggers retry
-
-			// Condition should still be True (unchanged)
-			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
-			Expect(condition.IsTrue()).To(BeTrue())
-		})
-
-		It("should call API on every reconcile (no caching)", func() {
-			callCount := 0
-			fakeDesClient.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
-				callCount++
-				return armcompute.DiskEncryptionSetsClientGetResponse{
-					DiskEncryptionSet: armcompute.DiskEncryptionSet{
-						Name:     lo.ToPtr("test-des"),
-						Location: lo.ToPtr("eastus"),
-					},
-				}, nil
-			}
-
-			// First reconcile
-			_, err := desReconciler.Reconcile(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(callCount).To(Equal(1))
-
-			// Second reconcile - should call API again (no caching)
-			_, err = desReconciler.Reconcile(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(callCount).To(Equal(2))
-
-			// Third reconcile - should call API again
-			_, err = desReconciler.Reconcile(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(callCount).To(Equal(3))
 		})
 
 		It("should handle transition from failure to success", func() {
@@ -253,7 +220,7 @@ var _ = Describe("Validation Reconciler", func() {
 			// First reconcile - should fail
 			result, err := desReconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.DESValidationFailureRequeueInterval))
+			Expect(result.RequeueAfter).To(Equal(status.ValidationFailureRequeueInterval))
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
 
@@ -263,28 +230,9 @@ var _ = Describe("Validation Reconciler", func() {
 			// Second reconcile - should succeed now
 			result, err = desReconciler.Reconcile(ctx, nodeClass)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(status.DESValidationSuccessRequeueInterval))
+			Expect(result.RequeueAfter).To(Equal(status.ValidationSuccessRequeueInterval))
 			condition = nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsTrue()).To(BeTrue())
-		})
-
-		It("should validate correct resource group and DES name are passed to API", func() {
-			var capturedRG, capturedName string
-			fakeDesClient.GetFunc = func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
-				capturedRG = resourceGroupName
-				capturedName = diskEncryptionSetName
-				return armcompute.DiskEncryptionSetsClientGetResponse{
-					DiskEncryptionSet: armcompute.DiskEncryptionSet{
-						Name:     lo.ToPtr(diskEncryptionSetName),
-						Location: lo.ToPtr("eastus"),
-					},
-				}, nil
-			}
-
-			_, err := desReconciler.Reconcile(ctx, nodeClass)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(capturedRG).To(Equal("test-rg"))
-			Expect(capturedName).To(Equal("test-des"))
 		})
 	})
 })

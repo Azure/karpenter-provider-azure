@@ -32,38 +32,30 @@ import (
 )
 
 const (
-	ValidationFailedReasonDESRBACMissing     = "DESRBACMissing"
-	ValidationFailedReasonDESRBACCheckFailed = "DESRBACCheckFailed"
-	// DESValidationSuccessRequeueInterval defines how often to re-validate DES RBAC after success
+	RBACMissing = "DiskEncryptionSetRBACMissing"
+	CheckFailed = "DiskEncryptionSetRBACCheckFailed"
+	// ValidationSuccessRequeueInterval defines how often to re-validate DES RBAC after success
 	// Set to 1 hour since RBAC changes are infrequent in production
-	DESValidationSuccessRequeueInterval = 1 * time.Hour
-	// DESValidationFailureRequeueInterval defines how often to retry DES RBAC validation after auth failure
+	ValidationSuccessRequeueInterval = 1 * time.Hour
+	// ValidationFailureRequeueInterval defines how often to retry DES RBAC validation after auth failure
 	// Set to 1 minute to detect when permissions are granted
-	DESValidationFailureRequeueInterval = 1 * time.Minute
-	// DESRBACErrorMessage is the error message shown when the controlling identity lacks Reader permissions
-	DESRBACErrorMessage = "controlling identity does not have Reader role on Disk Encryption Set"
+	ValidationFailureRequeueInterval = 1 * time.Minute
+	// RBACErrorMessage is the error message shown when the controlling identity lacks Reader permissions
+	RBACErrorMessage = "controlling identity does not have Reader role on Disk Encryption Set"
 )
 
 type ValidationReconciler struct {
-	diskEncryptionSetsAPI instance.DiskEncryptionSetsAPI
-	diskEncryptionSetID   *arm.ResourceID // parsed by the constructor for efficient reuse across reconciles
+	diskEncryptionSetsAPI     instance.DiskEncryptionSetsAPI
+	parsedDiskEncryptionSetID *arm.ResourceID // parsed by options.Validate(), will be nil if DES ID is not set
 }
 
 func NewValidationReconciler(
 	diskEncryptionSetsAPI instance.DiskEncryptionSetsAPI,
-	diskEncryptionSetID string,
+	parsedDiskEncryptionSetID *arm.ResourceID,
 ) *ValidationReconciler {
-	var parsedID *arm.ResourceID
-	var err error
-	if diskEncryptionSetID != "" {
-		parsedID, err = arm.ParseResourceID(diskEncryptionSetID)
-		if err != nil {
-			log.Log.Error(fmt.Errorf("invalid DiskEncryptionSet ID: %w", err), "failed to parse DiskEncryptionSet ID from options", "diskEncryptionSetID", diskEncryptionSetID)
-		}
-	}
 	return &ValidationReconciler{
-		diskEncryptionSetsAPI: diskEncryptionSetsAPI,
-		diskEncryptionSetID:   parsedID, // Will be nil if DES ID is not set
+		diskEncryptionSetsAPI:     diskEncryptionSetsAPI,
+		parsedDiskEncryptionSetID: parsedDiskEncryptionSetID,
 	}
 }
 
@@ -71,35 +63,35 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 	logger := log.FromContext(ctx)
 
 	// Check BYOK RBAC if DES ID is configured
-	if r.diskEncryptionSetID != nil {
-		logger.V(1).Info("validating DES RBAC", "diskEncryptionSetID", r.diskEncryptionSetID)
+	if r.parsedDiskEncryptionSetID != nil {
+		logger.V(1).Info("validating Disk Encryption Set RBAC")
 		err := r.validateDiskEncryptionSetRBAC(ctx)
 		if err != nil {
 			if isAuthorizationError(err) {
 				// Auth failure (403/401) - set condition to False, requeue soon to detect permission grants
-				logger.V(1).Info("DES RBAC validation failed - missing permissions", "error", err)
+				logger.V(1).Info("Disk Encryption Set RBAC validation failed - missing permissions", "error", err)
 				nodeClass.StatusConditions().SetFalse(
 					v1beta1.ConditionTypeValidationSucceeded,
-					ValidationFailedReasonDESRBACMissing,
+					RBACMissing,
 					err.Error(),
 				)
-				return reconcile.Result{RequeueAfter: DESValidationFailureRequeueInterval}, nil
+				return reconcile.Result{RequeueAfter: ValidationFailureRequeueInterval}, nil
 			}
 			// Unexpected error (network, parsing, etc.) - don't change condition, return error for retry
-			logger.Error(err, "DES RBAC validation encountered unexpected error")
+			logger.Error(err, "Disk Encryption Set RBAC validation encountered unexpected error")
 			return reconcile.Result{}, err
 		}
 	}
 
 	// All validations passed - requeue to detect permission revocations
 	nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeValidationSucceeded)
-	return reconcile.Result{RequeueAfter: DESValidationSuccessRequeueInterval}, nil
+	return reconcile.Result{RequeueAfter: ValidationSuccessRequeueInterval}, nil
 }
 
 func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context) error {
 	// Attempt to read the DiskEncryptionSet
 	// This uses the controller's current credentials (DefaultAzureCredential)
-	_, err := r.diskEncryptionSetsAPI.Get(ctx, r.diskEncryptionSetID.ResourceGroupName, r.diskEncryptionSetID.Name, nil)
+	_, err := r.diskEncryptionSetsAPI.Get(ctx, r.parsedDiskEncryptionSetID.ResourceGroupName, r.parsedDiskEncryptionSetID.Name, nil)
 	if err != nil {
 		if isAuthorizationError(err) {
 			// Wrap the original error to preserve the error chain for isAuthorizationError checks
@@ -108,16 +100,16 @@ func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context
 					"Grant the Reader role on the DiskEncryptionSet to the controlling identity. "+
 					"For self-hosted installations, this is the Karpenter workload identity. "+
 					"For NAP, this is the AKS cluster identity. "+
-					"See https://learn.microsoft.com/en-us/azure/aks/azure-disk-customer-managed-keys for details: %w",
-				DESRBACErrorMessage,
-				r.diskEncryptionSetID,
+					"See https://learn.microsoft.com/azure/aks/azure-disk-customer-managed-keys for details: %w",
+				RBACErrorMessage,
+				r.parsedDiskEncryptionSetID,
 				err,
 			)
 		}
-		return fmt.Errorf("failed to validate DiskEncryptionSet '%s': %w", r.diskEncryptionSetID, err)
+		return fmt.Errorf("failed to validate DiskEncryptionSet '%s': %w", r.parsedDiskEncryptionSetID, err)
 	}
 
-	log.FromContext(ctx).V(1).Info("DES RBAC validation passed", "desID", r.diskEncryptionSetID)
+	log.FromContext(ctx).V(1).Info("Disk Encryption Set RBAC validation passed", "desID", r.parsedDiskEncryptionSetID)
 	return nil
 }
 
