@@ -27,10 +27,11 @@ import (
 )
 
 const (
-	KarpenterManagedTagKey             = "karpenter.azure.com_cluster"
-	KarpenterAKSMachineNodeClaimTagKey = "karpenter.azure.com_aksmachine_nodeclaim"
-	BillingTagKey                      = "compute.aks.billing"
-	BillingTagValueLinux               = "linux"
+	KarpenterManagedTagKey                     = "karpenter.azure.com_cluster"
+	KarpenterAKSMachineNodeClaimTagKey         = "karpenter.azure.com_aksmachine_nodeclaim"
+	KarpenterAKSMachineCreationTimestampTagKey = "karpenter.azure.com_aksmachine_creationtimestamp" // TODO: stop using tag and use MachineStatus.CreationTimestamp when the change is live. See inplaceupdate/patch.go for details.
+	BillingTagKey                              = "compute.aks.billing"
+	BillingTagValueLinux                       = "linux"
 )
 
 var (

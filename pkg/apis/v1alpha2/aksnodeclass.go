@@ -426,7 +426,7 @@ func (in *AKSNodeClass) GetEncryptionAtHost() bool {
 
 // IsLocalDNSEnabled returns whether LocalDNS should be enabled for this node class.
 // Returns true for Required mode, false for Disabled mode, and for Preferred mode,
-// returns true only if the Kubernetes version is >= 1.36.
+// returns true only if the Kubernetes version is >= 1.35.
 func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	if in.Spec.LocalDNS == nil || in.Spec.LocalDNS.Mode == "" {
 		return false
@@ -438,7 +438,7 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 	case LocalDNSModeDisabled:
 		return false
 	case LocalDNSModePreferred:
-		// For Preferred mode, check if K8s version >= 1.36
+		// For Preferred mode, check if K8s version >= 1.35
 		kubernetesVersion, err := in.GetKubernetesVersion()
 		if err != nil {
 			return false // If we can't get version, don't enable
@@ -450,7 +450,7 @@ func (in *AKSNodeClass) IsLocalDNSEnabled() bool {
 			return false
 		}
 
-		return parsedVersion.GE(semver.Version{Major: 1, Minor: 36})
+		return parsedVersion.GE(semver.Version{Major: 1, Minor: 35})
 	default:
 		return false
 	}

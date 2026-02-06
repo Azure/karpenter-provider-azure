@@ -55,7 +55,12 @@ runs:
       AZURE_CLUSTER_NAME: ${{ inputs.cluster_name }}
       AZURE_LOCATION: ${{ inputs.location }}
       PROVISION_MODE: ${{ inputs.provisionmode }}
-    run: make az-configure-values
+    run: |
+      if [ "$PROVISION_MODE" = "aksmachineapi" ]; then
+        make az-configure-values-aksmachine
+      else
+        make az-configure-values
+      fi
   - name: deploy karpenter to cluster
     shell: bash
     env:

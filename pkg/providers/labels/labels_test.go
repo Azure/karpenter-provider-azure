@@ -267,7 +267,15 @@ func TestLocalDNSLabels(t *testing.T) {
 			expectedLabel:     "disabled",
 		},
 		{
-			name: "LocalDNS mode is Preferred with k8s >= 1.36",
+			name: "LocalDNS mode is Preferred with k8s >= 1.35",
+			localDNS: &v1beta1.LocalDNS{
+				Mode: v1beta1.LocalDNSModePreferred,
+			},
+			kubernetesVersion: "1.35.0",
+			expectedLabel:     "enabled",
+		},
+		{
+			name: "LocalDNS mode is Preferred with k8s 1.36",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
@@ -275,33 +283,25 @@ func TestLocalDNSLabels(t *testing.T) {
 			expectedLabel:     "enabled",
 		},
 		{
-			name: "LocalDNS mode is Preferred with k8s 1.37",
+			name: "LocalDNS mode is Preferred with k8s < 1.35",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
-			kubernetesVersion: "1.37.0",
-			expectedLabel:     "enabled",
-		},
-		{
-			name: "LocalDNS mode is Preferred with k8s < 1.36",
-			localDNS: &v1beta1.LocalDNS{
-				Mode: v1beta1.LocalDNSModePreferred,
-			},
-			kubernetesVersion: "1.35.0",
+			kubernetesVersion: "1.34.0",
 			expectedLabel:     "disabled",
 		},
 		{
-			name: "LocalDNS mode is Preferred with k8s 1.35.9",
+			name: "LocalDNS mode is Preferred with k8s 1.34.9",
 			localDNS: &v1beta1.LocalDNS{
 				Mode: v1beta1.LocalDNSModePreferred,
 			},
-			kubernetesVersion: "1.35.9",
+			kubernetesVersion: "1.34.9",
 			expectedLabel:     "disabled",
 		},
 		{
 			name:              "LocalDNS is nil",
 			localDNS:          nil,
-			kubernetesVersion: "1.36.0",
+			kubernetesVersion: "1.35.0",
 			expectedLabel:     "disabled",
 		},
 		{
@@ -309,7 +309,7 @@ func TestLocalDNSLabels(t *testing.T) {
 			localDNS: &v1beta1.LocalDNS{
 				Mode: "",
 			},
-			kubernetesVersion: "1.36.0",
+			kubernetesVersion: "1.35.0",
 			expectedLabel:     "disabled",
 		},
 	}
