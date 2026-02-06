@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/multierr"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
@@ -232,54 +233,10 @@ func (o *Options) validateDiskEncryptionSetID() error {
 		return nil
 	}
 
-	parts, err := o.parseDiskEncryptionSetID()
+	parsedID, err := arm.ParseResourceID(o.DiskEncryptionSetID)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid DiskEncryptionSet ID: %w", err)
 	}
-
-	if err := o.validateDiskEncryptionSetStructure(parts); err != nil {
-		return err
-	}
-
-	return o.validateDiskEncryptionSetValues(parts)
-}
-
-func (o *Options) parseDiskEncryptionSetID() ([]string, error) {
-	if !strings.HasPrefix(o.DiskEncryptionSetID, "/") {
-		return nil, fmt.Errorf("disk-encryption-set-id is invalid: must start with /subscriptions/, got %s", o.DiskEncryptionSetID)
-	}
-
-	parts := strings.Split(o.DiskEncryptionSetID, "/")
-	if len(parts) != 9 {
-		return nil, fmt.Errorf("disk-encryption-set-id is invalid: expected format /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{diskEncryptionSetName}, got %s", o.DiskEncryptionSetID)
-	}
-
-	return parts, nil
-}
-
-func (o *Options) validateDiskEncryptionSetStructure(parts []string) error {
-	if !strings.EqualFold(parts[1], "subscriptions") {
-		return fmt.Errorf("disk-encryption-set-id is invalid: must start with /subscriptions/, got %s", o.DiskEncryptionSetID)
-	}
-
-	if !strings.EqualFold(parts[3], "resourceGroups") {
-		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'resourceGroups' at position 4, got %s", parts[3])
-	}
-
-	if !strings.EqualFold(parts[5], "providers") || !strings.EqualFold(parts[6], "Microsoft.Compute") {
-		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'providers/Microsoft.Compute' at positions 6-7, got %s/%s", parts[5], parts[6])
-	}
-
-	if !strings.EqualFold(parts[7], "diskEncryptionSets") {
-		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'diskEncryptionSets' at position 8, got %s", parts[7])
-	}
-
-	return nil
-}
-
-func (o *Options) validateDiskEncryptionSetValues(parts []string) error {
-	if parts[2] == "" || parts[4] == "" || parts[8] == "" {
-		return fmt.Errorf("disk-encryption-set-id is invalid: subscription ID, resource group name, and disk encryption set name must not be empty")
-	}
+	o.ParsedDiskEncryptionSetID = parsedID
 	return nil
 }

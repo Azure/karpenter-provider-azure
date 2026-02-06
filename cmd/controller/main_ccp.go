@@ -93,7 +93,7 @@ func main() {
 			op.InClusterKubernetesInterface,
 			op.AZClient.SubnetsClient(),
 			op.AZClient.DiskEncryptionSetsClient(),
-			options.FromContext(ctx).DiskEncryptionSetID,
+			options.FromContext(ctx).ParsedDiskEncryptionSetID,
 		)...).
 		Start(ctx)
 }
