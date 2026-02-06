@@ -70,6 +70,10 @@ buildAndPublish() {
     exit 1
   fi
 
+  # Set KO_GO_PATH to our go-crossbuild wrapper script, which sets CC for CGO cross-compilation.
+  # This allows us to build multi-arch images with CGO_ENABLED=1
+  export KO_GO_PATH=hack/go-crossbuild.sh
+
   img="$(GOFLAGS="${GOFLAGS:-} -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=${version}" \
     SOURCE_DATE_EPOCH="${date_epoch}" KO_DATA_DATE_EPOCH="${date_epoch}" KO_DOCKER_REPO="${oci_repo}" \
     ko publish -B --sbom none -t "${version}"     ./cmd/controller)"
