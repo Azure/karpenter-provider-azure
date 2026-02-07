@@ -177,3 +177,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace sigs.k8s.io/karpenter => github.com/tallaxes/karpenter-core v0.0.0-20260207002041-d13eabd5d543
