@@ -111,18 +111,14 @@ func TestPickSkuSizePriorityAndZone(t *testing.T) {
 				Spec: karpv1.NodeClaimSpec{
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      karpv1.CapacityTypeLabelKey,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{karpv1.CapacityTypeSpot},
-							},
+							Key:      karpv1.CapacityTypeLabelKey,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{karpv1.CapacityTypeSpot},
 						},
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelTopologyZone,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"westus-1"},
-							},
+							Key:      corev1.LabelTopologyZone,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"westus-1"},
 						},
 					},
 				},
@@ -162,18 +158,14 @@ func TestPickSkuSizePriorityAndZone(t *testing.T) {
 				Spec: karpv1.NodeClaimSpec{
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      v1beta1.AKSLabelScaleSetPriority,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{v1beta1.ScaleSetPrioritySpot},
-							},
+							Key:      v1beta1.AKSLabelScaleSetPriority,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{v1beta1.ScaleSetPrioritySpot},
 						},
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelTopologyZone,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"westus-1"},
-							},
+							Key:      corev1.LabelTopologyZone,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"westus-1"},
 						},
 					},
 				},
@@ -211,11 +203,9 @@ func TestPickSkuSizePriorityAndZone(t *testing.T) {
 				Spec: karpv1.NodeClaimSpec{
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelTopologyZone,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"westus-1", "westus-2"},
-							},
+							Key:      corev1.LabelTopologyZone,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"westus-1", "westus-2"},
 						},
 					},
 				},
@@ -245,11 +235,9 @@ func TestPickSkuSizePriorityAndZone(t *testing.T) {
 				Spec: karpv1.NodeClaimSpec{
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelTopologyZone,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"eastus-1"}, // Different zone
-							},
+							Key:      corev1.LabelTopologyZone,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"eastus-1"}, // Different zone,
 						},
 					},
 				},
@@ -318,18 +306,14 @@ func TestGetPriorityForInstanceType(t *testing.T) {
 				Spec: karpv1.NodeClaimSpec{
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      karpv1.CapacityTypeLabelKey,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{karpv1.CapacityTypeSpot},
-							},
+							Key:      karpv1.CapacityTypeLabelKey,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{karpv1.CapacityTypeSpot},
 						},
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelTopologyZone,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"westus-1"},
-							},
+							Key:      corev1.LabelTopologyZone,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"westus-1"},
 						},
 					},
 				},
@@ -354,18 +338,14 @@ func TestGetPriorityForInstanceType(t *testing.T) {
 				Spec: karpv1.NodeClaimSpec{
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      karpv1.CapacityTypeLabelKey,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{karpv1.CapacityTypeSpot},
-							},
+							Key:      karpv1.CapacityTypeLabelKey,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{karpv1.CapacityTypeSpot},
 						},
 						{
-							NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-								Key:      corev1.LabelTopologyZone,
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{"westus-1"},
-							},
+							Key:      corev1.LabelTopologyZone,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"westus-1"},
 						},
 					},
 				},

@@ -75,11 +75,9 @@ var _ = Describe("Chaos", func() {
 			defer cancel()
 
 			nodePool = coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{karpv1.CapacityTypeSpot},
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{karpv1.CapacityTypeSpot},
 			})
 			nodePool.Spec.Disruption.ConsolidationPolicy = karpv1.ConsolidationPolicyWhenEmptyOrUnderutilized
 			nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")

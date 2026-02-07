@@ -61,11 +61,9 @@ var _ = Describe("Spot", func() {
 	BeforeEach(func() {
 		// Create a node pool with spot requirement
 		nodePool = test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      karpv1.CapacityTypeLabelKey,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{karpv1.CapacityTypeSpot},
-			}})
+			Key:      karpv1.CapacityTypeLabelKey,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{karpv1.CapacityTypeSpot}})
 		env.ExpectCreated(nodePool, nodeClass)
 	})
 
@@ -122,11 +120,9 @@ var _ = Describe("Spot (nonstandard node pool)", func() {
 	It("should provision spot nodes via kubernetes.azure.com/scalesetpriority label", func() {
 		// Create a node pool with spot requirement
 		nodePool = test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1beta1.AKSLabelScaleSetPriority,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{v1beta1.ScaleSetPrioritySpot},
-			}})
+			Key:      v1beta1.AKSLabelScaleSetPriority,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{v1beta1.ScaleSetPrioritySpot}})
 		nodePool.Spec.Template.Spec.Requirements = lo.Reject(nodePool.Spec.Template.Spec.Requirements, func(r karpv1.NodeSelectorRequirementWithMinValues, _ int) bool {
 			return r.Key == karpv1.CapacityTypeLabelKey
 		})

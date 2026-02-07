@@ -375,18 +375,14 @@ func runSharedAKSMachineAPITests() {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelTopologyZone,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
-							},
+							Key:      v1.LabelTopologyZone,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
 						},
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelInstanceTypeStable,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{"Standard_D2_v2"},
-							},
+							Key:      v1.LabelInstanceTypeStable,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{"Standard_D2_v2"},
 						},
 					},
 				},
@@ -452,18 +448,14 @@ func runSharedAKSMachineAPITests() {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelTopologyZone,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
-							},
+							Key:      v1.LabelTopologyZone,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
 						},
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelInstanceTypeStable,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{"Standard_D2_v2"},
-							},
+							Key:      v1.LabelInstanceTypeStable,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{"Standard_D2_v2"},
 						},
 					},
 				},
@@ -522,18 +514,14 @@ func runSharedAKSMachineAPITests() {
 					},
 					Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelTopologyZone,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
-							},
+							Key:      v1.LabelTopologyZone,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "1")},
 						},
 						{
-							NodeSelectorRequirement: v1.NodeSelectorRequirement{
-								Key:      v1.LabelInstanceTypeStable,
-								Operator: v1.NodeSelectorOpIn,
-								Values:   []string{"Standard_D2_v2"},
-							},
+							Key:      v1.LabelInstanceTypeStable,
+							Operator: v1.NodeSelectorOpIn,
+							Values:   []string{"Standard_D2_v2"},
 						},
 					},
 				},
@@ -552,18 +540,14 @@ func runSharedAKSMachineAPITests() {
 			// Change zone to create immutable configuration conflict
 			conflictedNodeClaim.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelTopologyZone,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "2")}, // Different zone
-					},
+					Key:      v1.LabelTopologyZone,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{utils.MakeAKSLabelZoneFromARMZone(fake.Region, "2")}, // Different zone,
 				},
 				{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_D2_v5"}, // Different SKU
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2_v5"}, // Different SKU,
 				},
 			}
 

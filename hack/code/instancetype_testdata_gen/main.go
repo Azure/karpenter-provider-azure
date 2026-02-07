@@ -119,7 +119,7 @@ func writeSkuData(ResourceSkus []*armcompute.ResourceSKU, location, path string)
 		}
 		fmt.Fprintf(src, "		Costs: &[]compute.ResourceSkuCosts{")
 		for _, cost := range sku.Costs {
-			fmt.Fprintf(src, "			{MeterID: lo.ToPtr(%f), Quantity: lo.ToPtr(%q), ExtendedUnit: lo.ToPtr(%q)},", lo.FromPtrOr(cost.MeterID, ""), lo.FromPtrOr(cost.Quantity, 0.0), lo.FromPtrOr(cost.ExtendedUnit, ""))
+			fmt.Fprintf(src, "			{MeterID: lo.ToPtr(%q), Quantity: lo.ToPtr(%q), ExtendedUnit: lo.ToPtr(%q)},", lo.FromPtrOr(cost.MeterID, ""), lo.FromPtrOr(cost.Quantity, 0.0), lo.FromPtrOr(cost.ExtendedUnit, ""))
 		}
 		fmt.Fprintln(src, "		},")
 		fmt.Fprintln(src, "		Restrictions: &[]compute.ResourceSkuRestrictions{")
