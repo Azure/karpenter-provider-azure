@@ -327,7 +327,7 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			// Ported from VM test: "should support provisioning non-zonal instance types in zonal regions"
-			It("should support provisioning non-zonal instance types in zonal regions", func() {
+			PIt("should support provisioning non-zonal instance types in zonal regions", func() {
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,

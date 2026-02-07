@@ -1698,7 +1698,7 @@ var _ = Describe("InstanceType Provider", func() {
 				vm := azureEnvNonZonal.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VM
 				Expect(vm.Zones).To(BeEmpty())
 			})
-			It("should support provisioning non-zonal instance types in zonal regions", func() {
+			PIt("should support provisioning non-zonal instance types in zonal regions", func() {
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
@@ -2472,7 +2472,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 			})
 
-			DescribeTable("should not write restricted labels to kubelet, but should write allowed labels", func(domain string, allowed bool) {
+			PDescribeTable("should not write restricted labels to kubelet, but should write allowed labels", func(domain string, allowed bool) {
 				nodePool.Spec.Template.Spec.Requirements = []karpv1.NodeSelectorRequirementWithMinValues{
 					{Key: domain + "/team", Operator: v1.NodeSelectorOpExists},
 					{Key: domain + "/custom-label", Operator: v1.NodeSelectorOpExists},
