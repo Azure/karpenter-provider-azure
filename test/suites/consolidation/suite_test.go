@@ -247,11 +247,9 @@ var _ = Describe("Consolidation", Ordered, func() {
 
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"8"},
 				},
 			)
 			// We're expecting to create 3 nodes, so we'll expect to see at most 2 nodes deleting at one time.
@@ -309,18 +307,14 @@ var _ = Describe("Consolidation", Ordered, func() {
 
 			nodePool = coretest.ReplaceRequirements(nodePool,
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"4", "8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"4", "8"},
 				},
 				// Add an Exists operator so that we can select on a fake partition later
 				karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      "test-partition",
-						Operator: corev1.NodeSelectorOpExists,
-					},
+					Key:      "test-partition",
+					Operator: corev1.NodeSelectorOpExists,
 				},
 			)
 			nodePool.Labels = appLabels
@@ -497,26 +491,21 @@ var _ = Describe("Consolidation", Ordered, func() {
 						Spec: karpv1.NodeClaimTemplateSpec{
 							Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      karpv1.CapacityTypeLabelKey,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   lo.Ternary(spotToSpot, []string{karpv1.CapacityTypeSpot}, []string{karpv1.CapacityTypeOnDemand}),
-									},
+									Key:      karpv1.CapacityTypeLabelKey,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   lo.Ternary(spotToSpot, []string{karpv1.CapacityTypeSpot}, []string{karpv1.CapacityTypeOnDemand}),
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      v1beta1.LabelSKUCPU,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{"2", "4", "8"},
-									},
+									Key:      v1beta1.LabelSKUCPU,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"2", "4", "8"},
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      v1beta1.LabelSKUFamily,
-										Operator: corev1.NodeSelectorOpNotIn,
-										// remove some cheap burstable types so we have more control over what gets provisioned
-										Values: []string{"B"},
-									},
+
+									Key:      v1beta1.LabelSKUFamily,
+									Operator: corev1.NodeSelectorOpNotIn,
+									// remove some cheap burstable types so we have more control over what gets provisioned
+									Values: []string{"B"},
 								},
 							},
 							NodeClassRef: &karpv1.NodeClassReference{
@@ -592,26 +581,21 @@ var _ = Describe("Consolidation", Ordered, func() {
 						Spec: karpv1.NodeClaimTemplateSpec{
 							Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      karpv1.CapacityTypeLabelKey,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   lo.Ternary(spotToSpot, []string{karpv1.CapacityTypeSpot}, []string{karpv1.CapacityTypeOnDemand}),
-									},
+									Key:      karpv1.CapacityTypeLabelKey,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   lo.Ternary(spotToSpot, []string{karpv1.CapacityTypeSpot}, []string{karpv1.CapacityTypeOnDemand}),
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      v1beta1.LabelSKUCPU,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{"2", "8"},
-									},
+									Key:      v1beta1.LabelSKUCPU,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"2", "8"},
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      v1beta1.LabelSKUFamily,
-										Operator: corev1.NodeSelectorOpNotIn,
-										// remove some cheap burstable types so we have more control over what gets provisioned
-										Values: []string{"B"},
-									},
+
+									Key:      v1beta1.LabelSKUFamily,
+									Operator: corev1.NodeSelectorOpNotIn,
+									// remove some cheap burstable types so we have more control over what gets provisioned
+									Values: []string{"B"},
 								},
 							},
 							NodeClassRef: &karpv1.NodeClassReference{
@@ -740,26 +724,21 @@ var _ = Describe("Consolidation", Ordered, func() {
 					Spec: karpv1.NodeClaimTemplateSpec{
 						Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 							{
-								NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-									Key:      karpv1.CapacityTypeLabelKey,
-									Operator: corev1.NodeSelectorOpIn,
-									Values:   []string{karpv1.CapacityTypeOnDemand},
-								},
+								Key:      karpv1.CapacityTypeLabelKey,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{karpv1.CapacityTypeOnDemand},
 							},
 							{
-								NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-									Key:      v1beta1.LabelSKUCPU,
-									Operator: corev1.NodeSelectorOpIn,
-									Values:   []string{"2"},
-								},
+								Key:      v1beta1.LabelSKUCPU,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"2"},
 							},
 							{
-								NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-									Key:      v1beta1.LabelSKUFamily,
-									Operator: corev1.NodeSelectorOpNotIn,
-									// remove some cheap burstable types so we have more control over what gets provisioned
-									Values: []string{"B"},
-								},
+
+								Key:      v1beta1.LabelSKUFamily,
+								Operator: corev1.NodeSelectorOpNotIn,
+								// remove some cheap burstable types so we have more control over what gets provisioned
+								Values: []string{"B"},
 							},
 						},
 						NodeClassRef: &karpv1.NodeClassReference{
@@ -819,17 +798,13 @@ var _ = Describe("Consolidation", Ordered, func() {
 		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 		coretest.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      karpv1.CapacityTypeLabelKey,
-					Operator: corev1.NodeSelectorOpExists,
-				},
+				Key:      karpv1.CapacityTypeLabelKey,
+				Operator: corev1.NodeSelectorOpExists,
 			},
 			karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1beta1.LabelSKUCPU,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"2"},
-				},
+				Key:      v1beta1.LabelSKUCPU,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{"2"},
 			},
 		)
 		env.ExpectUpdated(nodePool)
@@ -878,11 +853,9 @@ var _ = Describe("Node Overlay", func() {
 		nodePool.Spec.Disruption.ConsolidateAfter = karpv1.MustParseNillableDuration("0s")
 		// Allow both D-family and E-family SKUs for consolidation tests that switch between families
 		coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1beta1.LabelSKUFamily,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{"D", "E"},
-			},
+			Key:      v1beta1.LabelSKUFamily,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{"D", "E"},
 		})
 	})
 
@@ -899,7 +872,7 @@ var _ = Describe("Node Overlay", func() {
 		nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
-				Requirements: []corev1.NodeSelectorRequirement{
+				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
 						Operator: corev1.NodeSelectorOpIn,
@@ -919,7 +892,7 @@ var _ = Describe("Node Overlay", func() {
 
 		// Update overlay to target a different instance type to trigger consolidation
 		newOverlaidInstanceType := "Standard_E8s_v5"
-		nodeOverlay = coretest.ReplaceOverlayRequirements(nodeOverlay, corev1.NodeSelectorRequirement{
+		nodeOverlay = coretest.ReplaceOverlayRequirements(nodeOverlay, karpv1alpha1.NodeSelectorRequirement{
 			Key:      corev1.LabelInstanceTypeStable,
 			Operator: corev1.NodeSelectorOpIn,
 			Values:   []string{newOverlaidInstanceType},
@@ -951,7 +924,7 @@ var _ = Describe("Node Overlay", func() {
 		nodeOverlay := coretest.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				Price: lo.ToPtr("0.0000000232"),
-				Requirements: []corev1.NodeSelectorRequirement{
+				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
 						Operator: corev1.NodeSelectorOpIn,
@@ -971,7 +944,7 @@ var _ = Describe("Node Overlay", func() {
 
 		// Update overlay to target a different instance type to trigger consolidation
 		newOverlaidInstanceType := "Standard_E8s_v5"
-		nodeOverlay = coretest.ReplaceOverlayRequirements(nodeOverlay, corev1.NodeSelectorRequirement{
+		nodeOverlay = coretest.ReplaceOverlayRequirements(nodeOverlay, karpv1alpha1.NodeSelectorRequirement{
 			Key:      corev1.LabelInstanceTypeStable,
 			Operator: corev1.NodeSelectorOpIn,
 			Values:   []string{newOverlaidInstanceType},

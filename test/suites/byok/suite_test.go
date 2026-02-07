@@ -122,11 +122,9 @@ var _ = Describe("BYOK", func() {
 
 		By("Phase 3: Configuring ephemeral OS disk requirement")
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-				Operator: corev1.NodeSelectorOpGt,
-				Values:   []string{"50"},
-			}})
+			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+			Operator: corev1.NodeSelectorOpGt,
+			Values:   []string{"50"}})
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
 
 		By("Phase 4: Creating test Pod")

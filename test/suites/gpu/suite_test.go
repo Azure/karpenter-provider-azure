@@ -64,10 +64,8 @@ var _ = Describe("GPU", func() {
 			}
 			nodePool := env.DefaultNodePool(nodeClass)
 			test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1beta1.LabelSKUFamily,
-					Operator: corev1.NodeSelectorOpExists,
-				},
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpExists,
 			})
 
 			nodePool.Spec.Limits = karpv1.Limits{

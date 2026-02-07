@@ -176,7 +176,7 @@ func getExpectedTestSIGImages(imageFamily string, fipsMode *v1beta1.FIPSMode, ve
 func translateToStatusNodeImages(imageFamilyNodeImages []imagefamily.NodeImage) []v1beta1.NodeImage {
 	return lo.Map(imageFamilyNodeImages, func(nodeImage imagefamily.NodeImage, _ int) v1beta1.NodeImage {
 		reqs := lo.Map(nodeImage.Requirements.NodeSelectorRequirements(), func(item karpv1.NodeSelectorRequirementWithMinValues, _ int) corev1.NodeSelectorRequirement {
-			return item.NodeSelectorRequirement
+			return corev1.NodeSelectorRequirement{Key: item.Key, Operator: item.Operator, Values: item.Values}
 		})
 
 		// sorted for consistency

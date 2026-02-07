@@ -29,14 +29,13 @@ import (
 var _ = Describe("Ephemeral OS Disk", func() {
 	It("should use a node with an ephemeral os disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-				Operator: corev1.NodeSelectorOpGt,
-				// NOTE: this is the size of our nodeclass OSDiskSizeGB.
-				// If the size of the ephemeral disk requested is lower than AKSNodeClass OSDiskGB
-				// we fallback to managed disks, honoring OSDiskSizeGB
-				Values: []string{"50"},
-			}})
+			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+			Operator: corev1.NodeSelectorOpGt,
+			// NOTE: this is the size of our nodeclass OSDiskSizeGB.
+			// If the size of the ephemeral disk requested is lower than AKSNodeClass OSDiskGB
+			// we fallback to managed disks, honoring OSDiskSizeGB
+			Values: []string{"50"},
+		})
 
 		pod := test.Pod()
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](50)
@@ -53,10 +52,9 @@ var _ = Describe("Ephemeral OS Disk", func() {
 	})
 	It("should provision VM with SKU that does not support ephemeral OS disk", func() {
 		test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-				Operator: corev1.NodeSelectorOpDoesNotExist,
-			}})
+			Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+			Operator: corev1.NodeSelectorOpDoesNotExist,
+		})
 
 		pod := test.Pod()
 		env.ExpectCreated(nodeClass, nodePool, pod)
@@ -69,16 +67,14 @@ var _ = Describe("Ephemeral OS Disk", func() {
 	It("should provision VM with SKU that does not support ephemeral OS disk, even if OS disk fits on cache disk", func() {
 		test.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      corev1.LabelArchStable,
-					Operator: corev1.NodeSelectorOpExists, // relax to allow arm
-				}},
+				Key:      corev1.LabelArchStable,
+				Operator: corev1.NodeSelectorOpExists, // relax to allow arm
+			},
 			karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      corev1.LabelInstanceTypeStable,
-					Operator: corev1.NodeSelectorOpIn,
-					Values:   []string{"Standard_D2pls_v5"}, // 53GB cache disk, does not support ephemeral OS disk
-				}},
+				Key:      corev1.LabelInstanceTypeStable,
+				Operator: corev1.NodeSelectorOpIn,
+				Values:   []string{"Standard_D2pls_v5"}, // 53GB cache disk, does not support ephemeral OS disk
+			},
 		)
 
 		nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](40) // < 53GB cache disk

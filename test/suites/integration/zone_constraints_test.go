@@ -33,7 +33,7 @@ import (
 func findNodeSelectorRequirementByKey(requirements []karpv1.NodeSelectorRequirementWithMinValues, key string) *corev1.NodeSelectorRequirement {
 	for _, req := range requirements {
 		if req.Key == key {
-			return &req.NodeSelectorRequirement
+			return &corev1.NodeSelectorRequirement{Key: req.Key, Operator: req.Operator, Values: req.Values}
 		}
 	}
 	return nil
@@ -43,11 +43,9 @@ var _ = Describe("Zone Constraints", func() {
 	BeforeEach(func() {
 		// Create a node pool with zone constraints
 		nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-			NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-				Key:      corev1.LabelTopologyZone,
-				Operator: corev1.NodeSelectorOpIn,
-				Values:   []string{env.Region + "-2"},
-			},
+			Key:      corev1.LabelTopologyZone,
+			Operator: corev1.NodeSelectorOpIn,
+			Values:   []string{env.Region + "-2"},
 		})
 		env.ExpectCreated(nodePool, nodeClass)
 	})

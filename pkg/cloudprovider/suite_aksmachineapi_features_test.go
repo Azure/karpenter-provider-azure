@@ -111,11 +111,9 @@ var _ = Describe("CloudProvider", func() {
 				func(instanceType string, imageFamily string, expectedImageDefinition string) {
 					nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 					coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-						NodeSelectorRequirement: v1.NodeSelectorRequirement{
-							Key:      v1.LabelInstanceTypeStable,
-							Operator: v1.NodeSelectorOpIn,
-							Values:   []string{instanceType},
-						}})
+						Key:      v1.LabelInstanceTypeStable,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{instanceType}})
 
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -147,11 +145,9 @@ var _ = Describe("CloudProvider", func() {
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{instanceType},
-					}})
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{instanceType}})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -178,11 +174,9 @@ var _ = Describe("CloudProvider", func() {
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{instanceType},
-					}})
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{instanceType}})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -209,11 +203,9 @@ var _ = Describe("CloudProvider", func() {
 
 				nodeClass.Spec.ImageFamily = lo.ToPtr(imageFamily)
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{instanceType},
-					}})
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{instanceType}})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
@@ -364,11 +356,9 @@ var _ = Describe("CloudProvider", func() {
 			It("should use ephemeral disk if supported, and has space of at least 128GB by default", func() {
 				// Select a SKU that supports ephemeral disks with sufficient space
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_D64s_v3"}, // Has large cache disk space
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D64s_v3"}, // Has large cache disk space,
 				})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -387,11 +377,9 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should fail to provision if ephemeral disk ask for is too large"
 			It("should fail to provision if ephemeral disk ask for is too large", func() {
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-						Operator: v1.NodeSelectorOpGt,
-						Values:   []string{"100000"},
-					},
+					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+					Operator: v1.NodeSelectorOpGt,
+					Values:   []string{"100000"},
 				}) // No InstanceType will match this requirement
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
@@ -404,11 +392,9 @@ var _ = Describe("CloudProvider", func() {
 			It("should select an ephemeral disk if LabelSKUStorageEphemeralOSMaxSize is set and os disk size fits", func() {
 				// Select instances that support ephemeral disks
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
-						Operator: v1.NodeSelectorOpGt,
-						Values:   []string{"0"},
-					},
+					Key:      v1beta1.LabelSKUStorageEphemeralOSMaxSize,
+					Operator: v1.NodeSelectorOpGt,
+					Values:   []string{"0"},
 				})
 				nodeClass.Spec.OSDiskSizeGB = lo.ToPtr[int32](30)
 
@@ -434,11 +420,9 @@ var _ = Describe("CloudProvider", func() {
 
 				// Select an instance type that supports the disk size
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_D64s_v3"},
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D64s_v3"},
 				})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
@@ -462,11 +446,9 @@ var _ = Describe("CloudProvider", func() {
 				// Standard_D2s_V3 has 53GB Of CacheDisk space and 16GB of Temp Disk Space.
 				// With our rule of 128GB being the minimum OSDiskSize, this should fall back to managed disk
 				nodePool.Spec.Template.Spec.Requirements = append(nodePool.Spec.Template.Spec.Requirements, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: v1.NodeSelectorRequirement{
-						Key:      v1.LabelInstanceTypeStable,
-						Operator: v1.NodeSelectorOpIn,
-						Values:   []string{"Standard_D2s_v3"},
-					},
+					Key:      v1.LabelInstanceTypeStable,
+					Operator: v1.NodeSelectorOpIn,
+					Values:   []string{"Standard_D2s_v3"},
 				})
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)

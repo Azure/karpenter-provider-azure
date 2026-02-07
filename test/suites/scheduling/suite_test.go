@@ -70,10 +70,8 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		// Make the NodePool requirements fully flexible, so we can match well-known label keys
 		nodePool = test.ReplaceRequirements(nodePool,
 			karpv1.NodeSelectorRequirementWithMinValues{
-				NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-					Key:      v1beta1.LabelSKUFamily,
-					Operator: corev1.NodeSelectorOpExists,
-				},
+				Key:      v1beta1.LabelSKUFamily,
+				Operator: corev1.NodeSelectorOpExists,
 			},
 		)
 	})
@@ -239,9 +237,9 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 		DescribeTable("should support restricted label domain exceptions", func(domain string) {
 			// Assign labels to the nodepool so that it has known values
 			test.ReplaceRequirements(nodePool,
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: domain + "/team", Operator: corev1.NodeSelectorOpExists}},
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: domain + "/custom-label", Operator: corev1.NodeSelectorOpExists}},
-				karpv1.NodeSelectorRequirementWithMinValues{NodeSelectorRequirement: corev1.NodeSelectorRequirement{Key: "subdomain." + domain + "/custom-label", Operator: corev1.NodeSelectorOpExists}},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: domain + "/team", Operator: corev1.NodeSelectorOpExists},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: domain + "/custom-label", Operator: corev1.NodeSelectorOpExists},
+				karpv1.NodeSelectorRequirementWithMinValues{Key: "subdomain." + domain + "/custom-label", Operator: corev1.NodeSelectorOpExists},
 			)
 			nodeSelector := map[string]string{
 				domain + "/team":                        "team-1",
@@ -349,18 +347,14 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							},
 							Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelOSStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{string(corev1.Linux)},
-									},
+									Key:      corev1.LabelOSStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{string(corev1.Linux)},
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelInstanceTypeStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{"Standard_D2s_v5"},
-									},
+									Key:      corev1.LabelInstanceTypeStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"Standard_D2s_v5"},
 								},
 							},
 						},
@@ -379,18 +373,14 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 							},
 							Requirements: []karpv1.NodeSelectorRequirementWithMinValues{
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelOSStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{string(corev1.Linux)},
-									},
+									Key:      corev1.LabelOSStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{string(corev1.Linux)},
 								},
 								{
-									NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-										Key:      corev1.LabelInstanceTypeStable,
-										Operator: corev1.NodeSelectorOpIn,
-										Values:   []string{"Standard_D4s_v5"},
-									},
+									Key:      corev1.LabelInstanceTypeStable,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"Standard_D4s_v5"},
 								},
 							},
 						},
@@ -441,18 +431,15 @@ var _ = Describe("Scheduling", Ordered, ContinueOnFailure, func() {
 				})
 
 				test.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUCPU,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"4", "8"},
-					},
+					Key:      v1beta1.LabelSKUCPU,
+					Operator: corev1.NodeSelectorOpIn,
+					Values:   []string{"4", "8"},
 				}, karpv1.NodeSelectorRequirementWithMinValues{
-					NodeSelectorRequirement: corev1.NodeSelectorRequirement{
-						Key:      v1beta1.LabelSKUFamily,
-						Operator: corev1.NodeSelectorOpNotIn,
-						// remove some cheap burstable types so we have more control over what gets provisioned
-						Values: []string{"B"},
-					},
+
+					Key:      v1beta1.LabelSKUFamily,
+					Operator: corev1.NodeSelectorOpNotIn,
+					// remove some cheap burstable types so we have more control over what gets provisioned
+					Values: []string{"B"},
 				})
 				pod := test.Pod(test.PodOptions{
 					ObjectMeta: metav1.ObjectMeta{
@@ -567,7 +554,7 @@ var _ = Describe("Node Overlay", func() {
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				PriceAdjustment: lo.ToPtr("-99.99999999999%"),
-				Requirements: []corev1.NodeSelectorRequirement{
+				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
 						Operator: corev1.NodeSelectorOpIn,
@@ -591,7 +578,7 @@ var _ = Describe("Node Overlay", func() {
 		nodeOverlay := test.NodeOverlay(karpv1alpha1.NodeOverlay{
 			Spec: karpv1alpha1.NodeOverlaySpec{
 				Price: lo.ToPtr("0.0000000232"),
-				Requirements: []corev1.NodeSelectorRequirement{
+				Requirements: []karpv1alpha1.NodeSelectorRequirement{
 					{
 						Key:      corev1.LabelInstanceTypeStable,
 						Operator: corev1.NodeSelectorOpIn,
