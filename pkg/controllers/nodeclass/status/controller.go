@@ -32,6 +32,7 @@ import (
 
 	"sigs.k8s.io/karpenter/pkg/utils/result"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -58,14 +59,17 @@ func NewController(
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
 	subnetClient instance.SubnetsAPI,
+	diskEncryptionSetsClient instance.DiskEncryptionSetsAPI,
+	parsedDiskEncryptionSetID *arm.ResourceID,
 ) *Controller {
 	return &Controller{
+
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
 		subnet:            NewSubnetReconciler(subnetClient),
-		validation:        NewValidationReconciler(),
+		validation:        NewValidationReconciler(diskEncryptionSetsClient, parsedDiskEncryptionSetID),
 	}
 }
 
