@@ -247,7 +247,13 @@ func configureLabelsAndMode(nodeClaim *karpv1.NodeClaim, instanceType *corecloud
 			return labels.IsKubeletLabel(k)
 		},
 	)
-	nodeLabels := lo.Assign(nodeClaim.Labels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
+	// Filter nodeClaim.Labels to only include kubelet-compatible labels.
+	// In karpenter v1.9+, nodeClaim.Labels may contain custom labels resolved from requirements
+	// (e.g. node-restriction.kubernetes.io/*) that should not be passed to kubelet.
+	filteredNodeClaimLabels := lo.OmitBy(nodeClaim.Labels, func(k string, _ string) bool {
+		return !labels.IsKubeletLabel(k)
+	})
+	nodeLabels := lo.Assign(filteredNodeClaimLabels, claimLabels, labels.GetAllSingleValuedRequirementLabels(instanceType.Requirements), map[string]string{karpv1.CapacityTypeLabelKey: capacityType})
 	var modePtr *armcontainerservice.AgentPoolMode
 	if modeFromLabel, ok := nodeLabels["kubernetes.azure.com/mode"]; ok && modeFromLabel == "system" {
 		modePtr = lo.ToPtr(armcontainerservice.AgentPoolModeSystem)

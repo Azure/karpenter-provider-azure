@@ -327,12 +327,13 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			// Ported from VM test: "should support provisioning non-zonal instance types in zonal regions"
-			PIt("should support provisioning non-zonal instance types in zonal regions", func() {
+			It("should support provisioning non-zonal instance types in zonal regions", func() {
 				coretest.ReplaceRequirements(nodePool, karpv1.NodeSelectorRequirementWithMinValues{
 					Key:      v1.LabelInstanceTypeStable,
 					Operator: v1.NodeSelectorOpIn,
 					Values:   []string{"Standard_NC6s_v3"}, // Non-zonal instance type
 				})
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				pod := coretest.UnschedulablePod()
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)

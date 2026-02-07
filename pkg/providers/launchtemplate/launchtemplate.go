@@ -108,7 +108,13 @@ func (p *Provider) GetTemplate(
 	instanceType *cloudprovider.InstanceType,
 	additionalLabels map[string]string,
 ) (*Template, error) {
-	staticParameters, err := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(nodeClaim.Labels, additionalLabels))
+	// Filter nodeClaim.Labels to only include kubelet-compatible labels.
+	// In karpenter v1.9+, nodeClaim.Labels may contain custom labels resolved from requirements
+	// (e.g. node-restriction.kubernetes.io/*) that should not be passed to kubelet.
+	filteredClaimLabels := lo.OmitBy(nodeClaim.Labels, func(k string, _ string) bool {
+		return !karplabels.IsKubeletLabel(k)
+	})
+	staticParameters, err := p.getStaticParameters(ctx, instanceType, nodeClass, lo.Assign(filteredClaimLabels, additionalLabels))
 	if err != nil {
 		return nil, err
 	}
