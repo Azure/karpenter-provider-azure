@@ -366,6 +366,10 @@ type KubeletConfiguration struct {
 	// Default: -1
 	// +optional
 	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
+	// SerializeImagePulls enables serial image pulls.
+	// +kubebuilder:default=true
+	// +optional
+	SerializeImagePulls *bool `json:"serializeImagePulls,omitempty"`
 }
 
 // AKSNodeClass is the Schema for the AKSNodeClass API
