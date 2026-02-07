@@ -29,6 +29,7 @@ KARPENTER_FEDERATED_IDENTITY_CREDENTIAL_NAME ?= KARPENTER_FID
 CUSTOM_VNET_NAME ?= $(AZURE_CLUSTER_NAME)-vnet
 CUSTOM_SUBNET_NAME ?= nodesubnet
 
+PROVISION_MODE ?= aksscriptless
 AKS_MACHINES_POOL_NAME ?= testmpool
 
 .DEFAULT_GOAL := help	# make without arguments will show help
