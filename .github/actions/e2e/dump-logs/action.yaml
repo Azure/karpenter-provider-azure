@@ -41,7 +41,7 @@ runs:
   - name: controller-logs
     shell: bash
     run: |
-      kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter --all-containers --ignore-errors
+      kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter --all-containers --ignore-errors | jq "."
   - name: describe-karpenter-pods
     shell: bash
     run: |
