@@ -5,6 +5,8 @@ LDFLAGS ?= -ldflags=-X=sigs.k8s.io/karpenter/pkg/operator.Version=$(shell git de
 
 GOFLAGS ?= $(LDFLAGS)
 
+export GOEXPERIMENT ?= greenteagc
+
 # # CR for local builds of Karpenter
 KARPENTER_NAMESPACE ?= kube-system
 
