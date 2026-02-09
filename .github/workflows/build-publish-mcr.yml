@@ -34,25 +34,6 @@ jobs:
 
     - uses: ./.github/actions/install-deps
 
-    - name: Debug toolchain (ko not found issue)
-      run: |
-        echo "=== Environment ==="
-        echo "HOME: $HOME"
-        echo "GOPATH: $(go env GOPATH)"
-        echo "PATH: $PATH"
-        echo ""
-        echo "=== Contents of $HOME/go/bin ==="
-        ls -la "$HOME/go/bin" || echo "$HOME/go/bin does not exist"
-        echo ""
-        echo "=== Contents of \$(go env GOPATH)/bin ==="
-        ls -la "$(go env GOPATH)/bin" || echo "\$(go env GOPATH)/bin does not exist"
-        echo ""
-        echo "=== Which ko ==="
-        which ko || echo "ko not found in PATH"
-        echo ""
-        echo "=== Go version ==="
-        go version
-
     - name: Build and publish image
       env:
         RELEASE_ACR: ${{ secrets.AZURE_REGISTRY }}
