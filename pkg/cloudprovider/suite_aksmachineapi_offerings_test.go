@@ -63,7 +63,7 @@ var _ = Describe("CloudProvider", func() {
 
 			azureEnv = test.NewEnvironment(ctx, env)
 			azureEnvNonZonal = test.NewEnvironmentNonZonal(ctx, env)
-			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+			statusController = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 			test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 			cloudProvider = New(azureEnv.InstanceTypesProvider, azureEnv.VMInstanceProvider, azureEnv.AKSMachineProvider, recorder, env.Client, azureEnv.ImageProvider, azureEnv.InstanceTypeStore)
 			cloudProviderNonZonal = New(azureEnvNonZonal.InstanceTypesProvider, azureEnvNonZonal.VMInstanceProvider, azureEnvNonZonal.AKSMachineProvider, events.NewRecorder(&record.FakeRecorder{}), env.Client, azureEnvNonZonal.ImageProvider, azureEnvNonZonal.InstanceTypeStore)
@@ -407,7 +407,7 @@ var _ = Describe("CloudProvider", func() {
 			// Ported from VM test: "should return error when instance type resolution fails"
 			It("should return error when instance type resolution fails", func() {
 				// Create and set up the status controller
-				localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI)
+				localStatusController := status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 
 				// Set NodeClass to Ready
 				nodeClass.StatusConditions().SetTrue(karpv1.ConditionTypeLaunched)

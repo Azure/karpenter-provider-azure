@@ -45,6 +45,7 @@ var env *coretest.Environment
 var azureEnv *test.Environment
 var nodeClass *v1beta1.AKSNodeClass
 var controller *status.Controller
+var testOptions *options.Options
 
 var (
 	testK8sVersion string
@@ -60,10 +61,11 @@ func TestAKSNodeClassStatusController(t *testing.T) {
 var _ = BeforeSuite(func() {
 	env = coretest.NewEnvironment(coretest.WithCRDs(apis.CRDs...), coretest.WithCRDs(v1alpha1.CRDs...), coretest.WithFieldIndexers(test.AKSNodeClassFieldIndexer(ctx)))
 	ctx = coreoptions.ToContext(ctx, coretest.Options())
-	ctx = options.ToContext(ctx, test.Options())
+	testOptions = test.Options()
+	ctx = options.ToContext(ctx, testOptions)
 	azureEnv = test.NewEnvironment(ctx, env)
 
-	controller = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, test.Options().ParsedDiskEncryptionSetID)
+	controller = status.NewController(env.Client, azureEnv.KubernetesVersionProvider, azureEnv.ImageProvider, env.KubernetesInterface, azureEnv.SubnetsAPI, azureEnv.DiskEncryptionSetsAPI, testOptions.ParsedDiskEncryptionSetID)
 })
 
 var _ = AfterSuite(func() {
