@@ -22,7 +22,8 @@ runs:
         path: |
           /usr/local/kubebuilder/bin
           ~/go/bin
-        key: ${{ runner.os }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
+        # Include runner.environment in key because ~/go/bin expands differently on github-hosted vs self-hosted runners
+        key: ${{ runner.os }}-${{ runner.environment }}-${{ inputs.k8sVersion }}-toolchain-cache-${{ hashFiles('hack/toolchain.sh') }}
     - if: ${{ steps.cache-toolchain.outputs.cache-hit != 'true' }}
       shell: bash
       env:
@@ -44,3 +45,19 @@ runs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu
         fi
+    # Log environment setup (useful for debugging)
+    - shell: bash
+      run: |
+        echo "=== Environment ==="
+        echo "HOME: $HOME"
+        echo "GOPATH: $(go env GOPATH)"
+        echo "PATH: $PATH"
+        echo ""
+        echo "=== Contents of $HOME/go/bin ==="
+        ls -la "$HOME/go/bin" || echo "$HOME/go/bin does not exist"
+        echo ""
+        echo "=== Contents of \$(go env GOPATH)/bin ==="
+        ls -la "$(go env GOPATH)/bin" || echo "\$(go env GOPATH)/bin does not exist"
+        echo ""
+        echo "=== Go version ==="
+        go version
