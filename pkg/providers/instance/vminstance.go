@@ -565,7 +565,8 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
+				VMSize:           lo.ToPtr(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
+				VMSizeProperties: convertVMSizeProperties(opts.NodeClass.Spec.VMSizeProperties, opts.ProvisionMode),
 			},
 
 			StorageProfile: &armcompute.StorageProfile{
@@ -676,6 +677,21 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 		}
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
 	}
+}
+
+// convertVMSizeProperties converts AKSNodeClass VMSizeProperties to Azure SDK format.
+// Returns nil when vmSizeProperties are unspecified or when the provision mode does not use the VM API.
+func convertVMSizeProperties(props *v1beta1.VMSizeProperties, provisionMode string) *armcompute.VMSizeProperties {
+	if props == nil || isAKSMachineAPIMode(provisionMode) {
+		return nil
+	}
+	return &armcompute.VMSizeProperties{
+		VCPUsPerCore: props.VCPUsPerCore,
+	}
+}
+
+func isAKSMachineAPIMode(provisionMode string) bool {
+	return provisionMode == consts.ProvisionModeAKSMachineAPI || provisionMode == consts.ProvisionModeAKSMachineAPIHeaderBatch
 }
 
 type createResult struct {
