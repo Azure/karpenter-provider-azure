@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -44,19 +43,6 @@ func NewAKSDataStorage() *AKSDataStorage {
 		AgentPools:  &sync.Map{},
 		AKSMachines: &sync.Map{},
 	}
-}
-
-type VMImageIDContextKey string
-
-const VMImageIDKey VMImageIDContextKey = "vmimageid"
-
-// This is not really the real one being used, which is the header.
-// But the header cannot be extracted due to azure-sdk-for-go being restrictive. This is good enough.
-func GetVMImageIDFromContext(ctx context.Context) string {
-	if ctx.Value(VMImageIDKey) != nil {
-		return ctx.Value(VMImageIDKey).(string)
-	}
-	return ""
 }
 
 type AKSMachineCreateOrUpdateInput struct {
@@ -287,8 +273,7 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 	}
 
 	// Default values + update status, for sync phase
-	vmImageID := GetVMImageIDFromContext(ctx)
-	c.setDefaultMachineValues(&aksMachine, vmImageID, input.ResourceGroupName, input.AgentPoolName)
+	c.setDefaultMachineValues(&aksMachine, input.ResourceGroupName, input.AgentPoolName)
 	aksMachine.Properties.ProvisioningState = lo.ToPtr("Creating")
 	c.aksDataStorage.AKSMachines.Store(id, aksMachine)
 
@@ -448,7 +433,8 @@ func (c *AKSMachinesAPI) doesAgentPoolExists(resourceGroupName, resourceName, ag
 }
 
 // validateMachinePropertyChanges checks if the immutable properties of an AKS machine are being changed
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func (c *AKSMachinesAPI) doImmutablePropertiesChanged(existing, incoming *armcontainerservice.Machine) bool {
 	if existing.Properties == nil || incoming.Properties == nil {
 		return false // Skip validation if properties are missing
@@ -485,33 +471,11 @@ func MkMachineID(resourceGroupName string, clusterName string, agentPoolName str
 	return fmt.Sprintf(idFormat, resourceGroupName, clusterName, agentPoolName, aksMachineName)
 }
 
-// Convert from "/subscriptions/10945678-1234-1234-1234-123456789012/resourceGroups/AKS-Ubuntu/providers/Microsoft.Compute/galleries/AKSUbuntu/images/2204gen2containerd/versions/2022.10.03"
-// to "AKSUbuntu-2204gen2containerd-2022.10.03".
-func getAKSMachineNodeImageVersionFromSIGImageID(imageID string) (string, error) {
-	matches := regexp.MustCompile(`(?i)/subscriptions/(\S+)/resourceGroups/(\S+)/providers/Microsoft.Compute/galleries/(\S+)/images/(\S+)/versions/(\S+)`).FindStringSubmatch(imageID)
-	if matches == nil {
-		return "", fmt.Errorf("incorrect SIG image ID id=%s", imageID)
-	}
-
-	// SubscriptionID := matches[1]
-	// ResourceGroup := matches[2]
-	Gallery := matches[3]
-	Definition := matches[4]
-	Version := matches[5]
-
-	prefix := Gallery
-	osVersion := Definition
-	// if strings.Contains(prefix, windowsPrefix) {		// TODO(Windows)
-	// 	osVersion = extractOsVersionForWindows(Definition)
-	// }
-
-	return strings.Join([]string{prefix, osVersion, Version}, "-"), nil
-}
-
 // setDefaultMachineValues sets comprehensive default values for AKS machine creation
 // Note: this may not be accurate. But likely sufficient for testing.
+//
 // nolint: gocyclo
-func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, vmImageID string, resourceGroupName string, agentPoolName string) {
+func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Machine, resourceGroupName string, agentPoolName string) {
 	if machine.Properties == nil {
 		machine.Properties = &armcontainerservice.MachineProperties{}
 	}
@@ -535,20 +499,15 @@ func (c *AKSMachinesAPI) setDefaultMachineValues(machine *armcontainerservice.Ma
 	}
 
 	// Set ResourceID - simulates VM resource ID
-	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
+	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm
 	if machine.Properties.ResourceID == nil {
-		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm0", agentPoolName, *machine.Name)
+		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm", agentPoolName, *machine.Name)
 		vmResourceID := fmt.Sprintf("/subscriptions/subscriptionID/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", resourceGroupName, vmName)
 		machine.Properties.ResourceID = lo.ToPtr(vmResourceID)
 	}
 
-	// Set NodeImageVersion from vmImageID header
-	if vmImageID != "" {
-		nodeImageVersion, err := getAKSMachineNodeImageVersionFromSIGImageID(vmImageID)
-		if err == nil && nodeImageVersion != "" {
-			machine.Properties.NodeImageVersion = lo.ToPtr(nodeImageVersion)
-		}
-	}
+	// NodeImageVersion is now set directly on the machine template by the caller.
+	// Only apply default if not provided.
 	if machine.Properties.NodeImageVersion == nil {
 		// Default node image version if none provided
 		machine.Properties.NodeImageVersion = lo.ToPtr("AKSUbuntu-2204gen2containerd-2023.11.15")

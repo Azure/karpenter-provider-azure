@@ -43,7 +43,8 @@ type AKSMachineOptions struct {
 // AKSMachine creates a test AKS Machine with defaults that can be overridden by AKSMachineOptions.
 // This implementation matches the setDefaultMachineValues pattern from the fake API.
 // Overrides are applied in order, with last-write-wins semantics.
-// nolint: gocyclo
+//
+//nolint:gocyclo
 func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	options := AKSMachineOptions{}
 	for _, o := range overrides {
@@ -118,10 +119,10 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 	}
 
 	// Set ResourceID (required field) - simulates VM resource ID following AKS naming convention
-	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm#
+	// vmName = aks-<machinesPoolName>-<aksMachineName>-########-vm
 	if options.Properties.ResourceID == nil {
 		// Generate a VM name following AKS convention: aks-{agentPoolName}-{machineName}-{randomId}-vm{id}
-		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm0", options.MachinesPoolName, options.Name)
+		vmName := fmt.Sprintf("aks-%s-%s-12345678-vm", options.MachinesPoolName, options.Name)
 		vmResourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", "test-subscription", options.ClusterResourceGroup, vmName)
 		options.Properties.ResourceID = lo.ToPtr(vmResourceID)
 	}
@@ -136,7 +137,7 @@ func AKSMachine(overrides ...AKSMachineOptions) *armcontainerservice.Machine {
 		options.NodepoolName = "default"
 	}
 	if options.Properties.Tags == nil {
-		options.Properties.Tags = ManagedTags(options.NodepoolName)
+		options.Properties.Tags = ManagedTagsAKSMachine(options.NodepoolName, "some-nodeclaim", (*options.Properties.Status.CreationTimestamp).Add(-1*time.Minute))
 	}
 
 	// Construct the AKS Machine

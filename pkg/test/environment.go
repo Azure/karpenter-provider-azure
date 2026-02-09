@@ -30,8 +30,10 @@ import (
 	"github.com/patrickmn/go-cache"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/Azure/karpenter-provider-azure/pkg/auth"
 	azurecache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -52,6 +54,7 @@ func init() {
 }
 
 const (
+	clusterName   = "test-cluster"
 	resourceGroup = "test-resourceGroup"
 	subscription  = "12345678-1234-1234-1234-123456789012"
 )
@@ -88,6 +91,7 @@ type Environment struct {
 	// Providers
 	InstanceTypesProvider        instancetype.Provider
 	VMInstanceProvider           instance.VMProvider
+	AKSMachineProvider           instance.AKSMachineProvider
 	PricingProvider              *pricing.Provider
 	KubernetesVersionProvider    kubernetesversion.KubernetesVersionProvider
 	ImageProvider                imagefamily.NodeImageProvider
@@ -173,7 +177,6 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		"test-kubelet-identity-client-id",
 		testOptions.NodeResourceGroup,
 		region,
-		testOptions.VnetGUID,
 		testOptions.ProvisionMode,
 	)
 	loadBalancerProvider := loadbalancer.NewProvider(
@@ -214,6 +217,32 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 		subscription,
 		testOptions.ProvisionMode,
 		testOptions.DiskEncryptionSetID,
+		azureEnv,
+	)
+
+	if testOptions.ProvisionMode == consts.ProvisionModeAKSMachineAPI && testOptions.AKSMachinesPoolName != "" {
+		// For this configuration, we assume the AKS machines pool already exists
+		aksDataStorage.AgentPools.Store(
+			fake.MkAgentPoolID(testOptions.NodeResourceGroup, clusterName, testOptions.AKSMachinesPoolName),
+			armcontainerservice.AgentPool{
+				Name: lo.ToPtr(testOptions.AKSMachinesPoolName),
+				Properties: &armcontainerservice.ManagedClusterAgentPoolProfileProperties{
+					Mode: lo.ToPtr(armcontainerservice.AgentPoolModeMachines),
+				},
+			},
+		)
+	}
+
+	aksMachineInstanceProvider := instance.NewAKSMachineProvider(
+		azClient,
+		instanceTypesProvider,
+		imageFamilyResolver,
+		unavailableOfferingsCache,
+		subscription,
+		testOptions.NodeResourceGroup,
+		clusterName,
+		testOptions.AKSMachinesPoolName,
+		region,
 	)
 
 	store := nodeoverlay.NewInstanceTypeStore()
@@ -246,6 +275,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 
 		InstanceTypesProvider:        instanceTypesProvider,
 		VMInstanceProvider:           vmInstanceProvider,
+		AKSMachineProvider:           aksMachineInstanceProvider,
 		PricingProvider:              pricingProvider,
 		KubernetesVersionProvider:    kubernetesVersionProvider,
 		ImageProvider:                imageFamilyProvider,
