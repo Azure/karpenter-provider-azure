@@ -144,6 +144,7 @@ func TestKubeletConfigMap(t *testing.T) {
 			ContainerLogMaxSize:         "42Mi",
 			ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 			PodPidsLimit:                lo.ToPtr[int64](99),
+			SerializeImagePulls:         lo.ToPtr[bool](false),
 		},
 		MaxPods: 0,
 		SystemReserved: map[string]string{
@@ -183,6 +184,7 @@ func TestKubeletConfigMap(t *testing.T) {
 		"--eviction-soft-grace-period":    "memory.available=1m30s",
 		"--eviction-max-pod-grace-period": "11",
 		"--cluster-dns":                   "10.20.0.10",
+		"--serialize-image-pulls":         "false",
 	}
 	actualKubeletConfig := kubeletConfigToMap(&kubeletConfiguration)
 
