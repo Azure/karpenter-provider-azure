@@ -77,7 +77,12 @@ func (c *BatchingMachinesClient) BeginCreateOrUpdate(
 		responseChan:  make(chan *CreateResponse, 1),
 	}
 
-	response := <-c.grouper.EnqueueCreate(req)
+	var response *CreateResponse
+	select {
+	case response = <-c.grouper.EnqueueCreate(req):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 
 	if response.Err != nil {
 		return nil, response.Err

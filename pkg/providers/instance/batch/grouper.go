@@ -175,7 +175,15 @@ func (g *Grouper) executeBatches() {
 	g.mu.Unlock()
 
 	for _, batch := range batches {
-		go g.coordinator.ExecuteBatch(batch) //nolint:errcheck // errors are delivered to each request's response channel
+		go func(b *PendingBatch) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.FromContext(g.ctx).Error(fmt.Errorf("%v", r), "panic in ExecuteBatch, distributing error to callers")
+					g.coordinator.distributeError(b, fmt.Errorf("batch execution panicked: %v", r))
+				}
+			}()
+			g.coordinator.ExecuteBatch(b)
+		}(batch)
 	}
 }
 

@@ -57,7 +57,7 @@ func NewCoordinator(
 
 // ExecuteBatch sends a batch to Azure as one API call, then distributes
 // results (success or per-machine errors) back to each request's channel.
-func (c *Coordinator) ExecuteBatch(batch *PendingBatch) error {
+func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 	ctx := context.Background()
 	batchID := uuid.New().String()
 
@@ -70,7 +70,7 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) error {
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to build batch header")
 		c.distributeError(batch, err)
-		return err
+		return
 	}
 
 	// Attach batch header and make the API call
@@ -78,13 +78,23 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) error {
 		"BatchPutMachine": []string{header},
 	})
 
+	// Clear per-machine fields from the body — these are already in the BatchPutMachine header
+	// and the body should only contain the shared template config.
+	template := batch.template
+	template.Zones = nil
+	if template.Properties != nil {
+		props := *template.Properties
+		props.Tags = nil
+		template.Properties = &props
+	}
+
 	poller, err := c.realClient.BeginCreateOrUpdate(
 		ctxWithHeader,
 		c.resourceGroup,
 		c.clusterName,
 		c.poolName,
 		batch.requests[0].machineName, // First machine is the "primary"
-		batch.template,
+		template,
 		nil,
 	)
 
@@ -101,7 +111,7 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) error {
 			"batchID", batchID,
 			"size", len(batch.requests))
 		c.distributeError(batch, err)
-		return err
+		return
 	}
 
 	successCount, failCount := 0, 0
@@ -126,8 +136,6 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) error {
 		"batchID", batchID,
 		"succeeded", successCount,
 		"failed", failCount)
-
-	return nil
 }
 
 // buildBatchHeader creates the JSON for the BatchPutMachine HTTP header.
