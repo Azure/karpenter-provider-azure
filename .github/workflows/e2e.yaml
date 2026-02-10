@@ -55,6 +55,10 @@ on:
           - westus3
           - southcentralus
           - eastus
+      provisionmode:
+        type: string
+        description: "the karpenter provisioning mode to run the e2e test in"
+        default: "aksscriptless"
       k8s_version:
         type: choice
         description: "Kubernetes version ('default' = AKS default)"
@@ -67,6 +71,7 @@ on:
           - "1.32"
           - "1.33"
           - "1.34"
+          - "1.35"
 
 permissions:
   contents: read
@@ -88,7 +93,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.E2E_SUBSCRIPTION_ID }}
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@e3f713f2d8f53843e71c69a996d56f51aa9adfb9 # v2.14.1
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           disable-telemetry: true
           egress-policy: block

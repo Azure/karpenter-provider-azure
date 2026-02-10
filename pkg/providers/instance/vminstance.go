@@ -208,11 +208,8 @@ func NewDefaultVMProvider(
 // BeginCreate creates an instance given the constraints.
 // instanceTypes should be sorted by priority for spot capacity type.
 // Note that the returned instance may not be finished provisioning yet.
-// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due
-// to invalid user input, and similar, will have the error returned here.
-// Errors that occur on the "async side" of the VM create (after the request is accepted, or after polling the
-// VM create and while ) will be returned
-// from the VirtualMachinePromise.Wait() function.
+// Errors that occur on the "sync side" of the VM create, such as quota/capacity, BadRequest due to invalid user input, and similar, will have the error returned here.
+// Errors that occur on the "async side" of the VM create (after the request is accepted) will be returned from VirtualMachinePromise.Wait().
 func (p *DefaultVMProvider) BeginCreate(
 	ctx context.Context,
 	nodeClass *v1beta1.AKSNodeClass,
@@ -297,7 +294,11 @@ func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update ar
 		}
 
 		for extName, poller := range pollers {
-			_, err := poller.PollUntilDone(ctx, nil)
+			// Poll more frequently than the default of 30s
+			opts := &runtime.PollUntilDoneOptions{
+				Frequency: 3 * time.Second,
+			}
+			_, err := poller.PollUntilDone(ctx, opts)
 			if err != nil {
 				return fmt.Errorf("polling VM extension %q for VM %q: %w", extName, vmName, err)
 			}
