@@ -97,8 +97,8 @@ func Options(overrides ...OptionsFields) *azoptions.Options {
 		ManageExistingAKSMachines:      lo.FromPtrOr(options.ManageExistingAKSMachines, false),
 		AKSMachinesPoolName:            lo.FromPtrOr(options.AKSMachinesPoolName, "aksmanagedap"),
 		BatchCreationEnabled:           lo.FromPtrOr(options.BatchCreationEnabled, false),
-		BatchIdleTimeoutMS:             lo.FromPtrOr(options.BatchIdleTimeoutMS, 100),
-		BatchMaxTimeoutMS:              lo.FromPtrOr(options.BatchMaxTimeoutMS, 1000),
+		BatchIdleTimeoutMS:             lo.FromPtrOr(options.BatchIdleTimeoutMS, 1000),
+		BatchMaxTimeoutMS:              lo.FromPtrOr(options.BatchMaxTimeoutMS, 5000),
 		MaxBatchSize:                   lo.FromPtrOr(options.MaxBatchSize, 50),
 	}
 }
