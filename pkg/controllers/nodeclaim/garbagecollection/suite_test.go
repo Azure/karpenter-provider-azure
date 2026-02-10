@@ -45,6 +45,7 @@ import (
 	. "sigs.k8s.io/karpenter/pkg/utils/testing"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	corecloudprovider "sigs.k8s.io/karpenter/pkg/cloudprovider"
 	"sigs.k8s.io/karpenter/pkg/controllers/provisioning"
 	"sigs.k8s.io/karpenter/pkg/controllers/state"
@@ -140,7 +141,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 			BeforeEach(func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, prov, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
 				vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
@@ -169,7 +170,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				var vmName string
 				for i := 0; i < 100; i++ {
 					pod := coretest.UnschedulablePod()
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
+					ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, prov, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
 					if azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len() == 1 {
 						vmName = azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
@@ -210,7 +211,7 @@ var _ = Describe("Instance Garbage Collection", func() {
 				var vmName string
 				for i := 0; i < 100; i++ {
 					pod := coretest.UnschedulablePod()
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, prov, pod)
+					ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, prov, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
 					if azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len() == 1 {
 						vmName = azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName

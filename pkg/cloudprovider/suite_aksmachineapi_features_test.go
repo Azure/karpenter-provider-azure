@@ -41,6 +41,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -51,6 +52,11 @@ var _ = Describe("CloudProvider", func() {
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 				UseSIG:        lo.ToPtr(true),
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -72,6 +78,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
@@ -84,7 +92,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should use shared image gallery images", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Expect AKS machine to have a shared image gallery reference set via NodeImageVersion
@@ -120,7 +128,7 @@ var _ = Describe("CloudProvider", func() {
 					ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 					ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 					pod := coretest.UnschedulablePod(coretest.PodOptions{})
-					ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+					ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 					ExpectScheduled(ctx, env.Client, pod)
 
 					Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -156,7 +164,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -187,7 +195,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -218,7 +226,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -242,7 +250,7 @@ var _ = Describe("CloudProvider", func() {
 			It("should schedule non-GPU pod onto the cheapest non-GPU capable node", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -283,7 +291,7 @@ var _ = Describe("CloudProvider", func() {
 					},
 				})
 
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node := ExpectScheduled(ctx, env.Client, pod)
 
 				// the following checks assume Standard_NC16as_T4_v3 (surprisingly the cheapest GPU in the test set), so test the assumption
@@ -318,6 +326,11 @@ var _ = Describe("CloudProvider", func() {
 						"karpenter.azure.com/test-tag": "test-value",
 					},
 				})
+				// Enable batch creation to test batch client + GET poller
+				aksTestOptions.BatchCreationEnabled = true
+				aksTestOptions.BatchIdleTimeoutMS = 100
+				aksTestOptions.BatchMaxTimeoutMS = 1000
+				aksTestOptions.MaxBatchSize = 50
 				aksCtx := coreoptions.ToContext(ctx, coretest.Options())
 				aksCtx = options.ToContext(aksCtx, aksTestOptions)
 
@@ -329,7 +342,7 @@ var _ = Describe("CloudProvider", func() {
 
 				ExpectApplied(aksCtx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(aksCtx, env.Client, aksCluster, aksCloudProvider, aksProv, pod)
+				ExpectProvisionedAndDrained(aksCtx, env.Client, aksCluster, aksCloudProvider, aksProv, aksAzureEnv, pod)
 				ExpectScheduled(aksCtx, env.Client, pod)
 
 				// Verify AKS machine was created with expected tags
@@ -373,7 +386,7 @@ var _ = Describe("CloudProvider", func() {
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Verify AKS machine uses ephemeral disk
@@ -395,7 +408,7 @@ var _ = Describe("CloudProvider", func() {
 				}) // No InstanceType will match this requirement
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectNotScheduled(ctx, env.Client, pod)
 
 			})
@@ -415,7 +428,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Should select a SKU with ephemeral capability
@@ -444,7 +457,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Verify AKS machine was created with correct OS disk size
@@ -471,7 +484,7 @@ var _ = Describe("CloudProvider", func() {
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Should fall back to managed disk due to insufficient ephemeral space
@@ -504,6 +517,11 @@ var _ = Describe("CloudProvider", func() {
 					UseSIG:        lo.ToPtr(true),
 					SubnetID:      lo.ToPtr(byoClusterSubnetID),
 				})
+				// Enable batch creation to test batch client + GET poller
+				byoOpts.BatchCreationEnabled = true
+				byoOpts.BatchIdleTimeoutMS = 100
+				byoOpts.BatchMaxTimeoutMS = 1000
+				byoOpts.MaxBatchSize = 50
 				byoCtx := options.ToContext(ctx, byoOpts)
 
 				// Extract cluster subnet components and create a test subnet in the same VNet
@@ -533,7 +551,7 @@ var _ = Describe("CloudProvider", func() {
 
 				ExpectApplied(byoCtx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(byoCtx, env.Client, statusController, nodeClass)
-				ExpectProvisioned(byoCtx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(byoCtx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(byoCtx, env.Client, pod)
 
 				// Verify AKS machine was created
@@ -598,7 +616,7 @@ var _ = Describe("CloudProvider", func() {
 				}
 
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass, nodeClaim)
-				_, err := cloudProvider.Create(ctx, nodeClaim)
+				_, err := CreateAndDrain(ctx, cloudProvider, azureEnv, nodeClaim)
 				Expect(err).ToNot(HaveOccurred())
 
 				// Verify machine was created with correct taints
@@ -620,7 +638,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Verify AKS machine was created with correct Karpenter-managed tags (not user overrides)
@@ -651,7 +669,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -672,7 +690,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -689,7 +707,7 @@ var _ = Describe("CloudProvider", func() {
 				ExpectObjectReconciled(ctx, env.Client, statusController, nodeClass)
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))

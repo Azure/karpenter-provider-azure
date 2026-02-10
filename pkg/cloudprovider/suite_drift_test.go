@@ -38,6 +38,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -87,7 +88,7 @@ var _ = Describe("CloudProvider", func() {
 				pod = coretest.UnschedulablePod(coretest.PodOptions{
 					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 				})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node = ExpectScheduled(ctx, env.Client, pod)
 				// KubeletVersion must be applied to the node to satisfy k8s drift
 				node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion

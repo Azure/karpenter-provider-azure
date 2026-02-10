@@ -43,6 +43,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
@@ -75,7 +76,7 @@ func runSharedAKSMachineAPITests() {
 		azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
 		azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
 		pod := coretest.UnschedulablePod()
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 
 		//// Should call AKS Machine APIs instead of VM APIs
@@ -143,7 +144,7 @@ func runSharedAKSMachineAPITests() {
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
 
 			// Verify the create API was called but failed
@@ -157,7 +158,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Verify the pod is now schedulable
 			pod2 := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod2)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod2)
 			ExpectScheduled(ctx, env.Client, pod2)
 		})
 
@@ -167,7 +168,7 @@ func runSharedAKSMachineAPITests() {
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
 
 			// Verify the create API was called but failed
@@ -181,7 +182,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Verify the pod is now schedulable
 			pod2 := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod2)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod2)
 			ExpectScheduled(ctx, env.Client, pod2)
 		})
 
@@ -189,7 +190,7 @@ func runSharedAKSMachineAPITests() {
 			// First create a successful AKS machine
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			// Get the created nodeclaim
@@ -247,7 +248,7 @@ func runSharedAKSMachineAPITests() {
 			// First create a successful AKS machine
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			// Get the created nodeclaim
@@ -273,7 +274,7 @@ func runSharedAKSMachineAPITests() {
 			// First create a successful AKS machine
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			// Get the created nodeclaim
@@ -301,7 +302,7 @@ func runSharedAKSMachineAPITests() {
 
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			// Verify the list API was called but failed
@@ -316,7 +317,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Verify the pod is now schedulable
 			pod2 := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod2)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod2)
 			ExpectScheduled(ctx, env.Client, pod2)
 		})
 	})
@@ -326,7 +327,7 @@ func runSharedAKSMachineAPITests() {
 			// First create a successful AKS machine
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 			pod := coretest.UnschedulablePod()
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			// Get the created nodeclaim
@@ -394,7 +395,7 @@ func runSharedAKSMachineAPITests() {
 
 			// First create a successful AKS machine using cloudProvider.Create directly
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool, firstNodeClaim)
-			createdFirstNodeClaim, err := cloudProvider.Create(ctx, firstNodeClaim)
+			createdFirstNodeClaim, err := CreateAndDrain(ctx, cloudProvider, azureEnv, firstNodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(createdFirstNodeClaim).ToNot(BeNil())
 			validateAKSMachineNodeClaim(createdFirstNodeClaim, nodePool)
@@ -406,7 +407,7 @@ func runSharedAKSMachineAPITests() {
 			// Call cloudProvider.Create directly with the unconflicted nodeclaim to trigger get
 			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
 			azureEnv.AKSMachinesAPI.AKSMachineGetBehavior.CalledWithInput.Reset()
-			nodeClaim, err = cloudProvider.Create(ctx, conflictedNodeClaim)
+			nodeClaim, err = CreateAndDrain(ctx, cloudProvider, azureEnv, conflictedNodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaim).ToNot(BeNil())
 
@@ -471,7 +472,7 @@ func runSharedAKSMachineAPITests() {
 
 			// First create a successful AKS machine using cloudProvider.Create directly
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool, firstNodeClaim)
-			createdFirstNodeClaim, err := cloudProvider.Create(ctx, firstNodeClaim)
+			createdFirstNodeClaim, err := CreateAndDrain(ctx, cloudProvider, azureEnv, firstNodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(createdFirstNodeClaim).ToNot(BeNil())
 			validateAKSMachineNodeClaim(createdFirstNodeClaim, nodePool)
@@ -485,7 +486,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Call cloudProvider.Create directly with the unconflicted nodeclaim to trigger empty create
 			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
-			nodeClaim, err = cloudProvider.Create(ctx, conflictedNodeClaim)
+			nodeClaim, err = CreateAndDrain(ctx, cloudProvider, azureEnv, conflictedNodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(nodeClaim).ToNot(BeNil())
 
@@ -541,7 +542,7 @@ func runSharedAKSMachineAPITests() {
 
 			// First create a successful AKS machine using cloudProvider.Create directly
 			ExpectApplied(ctx, env.Client, nodeClass, nodePool, firstNodeClaim)
-			createdFirstNodeClaim, err := cloudProvider.Create(ctx, firstNodeClaim)
+			createdFirstNodeClaim, err := CreateAndDrain(ctx, cloudProvider, azureEnv, firstNodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(createdFirstNodeClaim).ToNot(BeNil())
 			validateAKSMachineNodeClaim(createdFirstNodeClaim, nodePool)
@@ -572,7 +573,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Call cloudProvider.Create directly with the conflicted nodeclaim to trigger the race condition
 			// This targets the same machine name but should fail due to configuration conflict and trigger cleanup
-			_, err = cloudProvider.Create(ctx, conflictedNodeClaim)
+			_, err = CreateAndDrain(ctx, cloudProvider, azureEnv, conflictedNodeClaim)
 			Expect(err).To(HaveOccurred())
 
 			// Verify cleanup was attempted after the conflict
@@ -583,7 +584,7 @@ func runSharedAKSMachineAPITests() {
 
 			// Should succeed now that the conflicted node is gone from the cleanup
 			azureEnv.AKSMachinesAPI.AKSMachineCreateOrUpdateBehavior.CalledWithInput.Reset()
-			createdConflictedNodeClaim, err := cloudProvider.Create(ctx, conflictedNodeClaim)
+			createdConflictedNodeClaim, err := CreateAndDrain(ctx, cloudProvider, azureEnv, conflictedNodeClaim)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(createdConflictedNodeClaim).ToNot(BeNil())
 
@@ -617,6 +618,11 @@ var _ = Describe("CloudProvider", func() {
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(false), // should not have any effect, as ProvisionMode is AKSMachineAPI
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -638,6 +644,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
@@ -654,6 +662,11 @@ var _ = Describe("CloudProvider", func() {
 				UseSIG:                    lo.ToPtr(true),
 				ManageExistingAKSMachines: lo.ToPtr(true), // should not have any effect
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -675,6 +688,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
@@ -730,6 +745,8 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			AfterEach(func() {
+				// Wait for any async polling goroutines to complete before resetting
+				cloudProvider.WaitForInstancePromises()
 				cluster.Reset()
 				azureEnv.Reset()
 			})
@@ -753,7 +770,7 @@ var _ = Describe("CloudProvider", func() {
 						},
 					},
 				})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Should call VM APIs instead of AKS Machine APIs for new nodes
@@ -860,6 +877,8 @@ var _ = Describe("CloudProvider", func() {
 			})
 
 			AfterEach(func() {
+				// Wait for any async polling goroutines to complete before resetting
+				cloudProvider.WaitForInstancePromises()
 				cluster.Reset()
 				azureEnv.Reset()
 			})
@@ -883,7 +902,7 @@ var _ = Describe("CloudProvider", func() {
 						},
 					},
 				})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Should call VM APIs instead of AKS Machine APIs for new nodes
@@ -1035,6 +1054,11 @@ var _ = Describe("CloudProvider", func() {
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 				UseSIG:        lo.ToPtr(true),
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -1059,6 +1083,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 		})
@@ -1082,7 +1108,7 @@ var _ = Describe("CloudProvider", func() {
 					},
 				},
 			})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			//// Should call AKS Machine APIs instead of VM APIs
@@ -1195,7 +1221,7 @@ var _ = Describe("CloudProvider", func() {
 						},
 					},
 				})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 			})
 			It("should handle VM list (ARG) failures - unrecognized error", func() {
@@ -1233,7 +1259,7 @@ var _ = Describe("CloudProvider", func() {
 				// First create a successful AKS machine
 				ExpectApplied(ctx, env.Client, nodeClass, nodePool)
 				pod := coretest.UnschedulablePod()
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				// Get the created nodeclaim

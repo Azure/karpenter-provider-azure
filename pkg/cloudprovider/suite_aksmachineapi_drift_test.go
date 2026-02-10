@@ -40,6 +40,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 )
 
 var _ = Describe("CloudProvider", func() {
@@ -49,6 +50,11 @@ var _ = Describe("CloudProvider", func() {
 				ProvisionMode: lo.ToPtr(consts.ProvisionModeAKSMachineAPI),
 				UseSIG:        lo.ToPtr(true),
 			})
+			// Enable batch creation to test batch client + GET poller
+			testOptions.BatchCreationEnabled = true
+			testOptions.BatchIdleTimeoutMS = 100
+			testOptions.BatchMaxTimeoutMS = 1000
+			testOptions.MaxBatchSize = 50
 
 			ctx = coreoptions.ToContext(ctx, coretest.Options())
 			ctx = options.ToContext(ctx, testOptions)
@@ -70,6 +76,8 @@ var _ = Describe("CloudProvider", func() {
 		})
 
 		AfterEach(func() {
+			// Wait for any async polling goroutines to complete before resetting
+			cloudProvider.WaitForInstancePromises()
 			cluster.Reset()
 			azureEnv.Reset()
 			azureEnvNonZonal.Reset()
@@ -86,7 +94,7 @@ var _ = Describe("CloudProvider", func() {
 				pod := coretest.UnschedulablePod(coretest.PodOptions{
 					NodeSelector: map[string]string{v1.LabelInstanceTypeStable: instanceType},
 				})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				node = ExpectScheduled(ctx, env.Client, pod)
 				// KubeletVersion must be applied to the node to satisfy k8s drift
 				node.Status.NodeInfo.KubeletVersion = "v" + nodeClass.Status.KubernetesVersion

@@ -256,7 +256,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		It("records VM create start metric during successful launch", func() {
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
@@ -283,7 +283,7 @@ var _ = Describe("VMInstanceProvider", func() {
 
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectNotScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
@@ -312,7 +312,7 @@ var _ = Describe("VMInstanceProvider", func() {
 
 			ExpectApplied(ctx, env.Client, nodeClaim, nodePool, nodeClass)
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(BeNumerically(">=", 1))
@@ -395,7 +395,7 @@ var _ = Describe("VMInstanceProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -410,7 +410,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			It("should use cached auxiliary token when still valid", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -423,7 +423,7 @@ var _ = Describe("VMInstanceProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -435,7 +435,7 @@ var _ = Describe("VMInstanceProvider", func() {
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 				pod := coretest.UnschedulablePod(coretest.PodOptions{})
-				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 				ExpectScheduled(ctx, env.Client, pod)
 
 				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -464,7 +464,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -490,7 +490,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -512,7 +512,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -528,7 +528,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -562,7 +562,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -586,7 +586,7 @@ var _ = Describe("VMInstanceProvider", func() {
 	It("should list nic from karpenter provisioning request", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 		interfaces, err := azureEnv.VMInstanceProvider.ListNics(ctx)
 		Expect(err).To(BeNil())
@@ -613,7 +613,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 
 		Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -643,7 +643,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 
 		Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -665,7 +665,7 @@ var _ = Describe("VMInstanceProvider", func() {
 		ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 		pod := coretest.UnschedulablePod(coretest.PodOptions{})
-		ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+		ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 		ExpectScheduled(ctx, env.Client, pod)
 
 		Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -829,7 +829,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -848,7 +848,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
@@ -863,7 +863,7 @@ var _ = Describe("VMInstanceProvider", func() {
 			ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 
 			pod := coretest.UnschedulablePod(coretest.PodOptions{})
-			ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
+			ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, coreProvisioner, azureEnv, pod)
 			ExpectScheduled(ctx, env.Client, pod)
 
 			Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
