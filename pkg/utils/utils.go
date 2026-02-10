@@ -33,7 +33,6 @@ import (
 	"github.com/samber/lo"
 
 	v1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/cloud-provider-azure/pkg/provider"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -55,10 +54,25 @@ func ExtractVersionFromVMSize(vmsize *skewer.VMSizeType) string {
 	return version
 }
 
+// azureResourceGroupNameRE is used to extract the resource group name from an Azure resource ID.
+var azureResourceGroupNameRE = regexp.MustCompile(`.*/subscriptions/(?:.*)/resourceGroups/(.+)/providers/(?:.*)`)
+
+// convertResourceGroupNameToLower converts the resource group name in the resource ID to be lowered.
+// Inlined from sigs.k8s.io/cloud-provider-azure/pkg/provider to avoid pulling in a dependency
+// that has incompatible armcompute version requirements.
+func convertResourceGroupNameToLower(resourceID string) (string, error) {
+	matches := azureResourceGroupNameRE.FindStringSubmatch(resourceID)
+	if len(matches) != 2 {
+		return "", fmt.Errorf("%q isn't in Azure resource ID format %q", resourceID, azureResourceGroupNameRE.String())
+	}
+	resourceGroup := matches[1]
+	return strings.Replace(resourceID, resourceGroup, strings.ToLower(resourceGroup), 1), nil
+}
+
 func VMResourceIDToProviderID(ctx context.Context, id string) string {
 	providerID := fmt.Sprintf("azure://%s", id)
 	// for historical reasons Azure providerID has the resource group name in lower case
-	providerIDLowerRG, err := provider.ConvertResourceGroupNameToLower(providerID)
+	providerIDLowerRG, err := convertResourceGroupNameToLower(providerID)
 	if err != nil {
 		log.FromContext(ctx).Info("failed to convert resource group name to lower case in providerID, using fallback", "providerID", providerID, "error", err)
 		// fallback to original providerID
