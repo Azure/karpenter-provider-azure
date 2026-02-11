@@ -248,12 +248,14 @@ const (
 //
 // Returns the DES resource ID for use in VM disk encryption configuration.
 func createKeyVaultAndDiskEncryptionSet(ctx SpecContext, env *azure.Environment) string {
-	// Use cluster name suffix for deterministic, collision-free naming
+	// Use cluster name suffix with nanosecond timestamp for collision-free naming
 	// Key Vault names must be globally unique and max 24 chars
+	// Using UnixNano instead of Unix to avoid collisions in parallel test execution
 	clusterSuffix := getClusterNameSuffix(env.ClusterName)
-	keyVaultName := fmt.Sprintf("kpbyok%s", clusterSuffix)
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano())
+	keyVaultName := fmt.Sprintf("kp%s%s", clusterSuffix, timestamp[len(timestamp)-6:]) // kp + suffix + last 6 digits of nanoseconds
 	keyName := "test-key"
-	desName := fmt.Sprintf("kp-byok-des-%s", clusterSuffix)
+	desName := fmt.Sprintf("kp-byok-des-%s-%s", clusterSuffix, timestamp[len(timestamp)-6:])
 
 	keyVaultID, desID, desPrincipalID, karpenterIdentity := createKeyVaultDESResources(ctx, env, keyVaultName, keyName, desName)
 
@@ -276,11 +278,13 @@ func createKeyVaultAndDiskEncryptionSet(ctx SpecContext, env *azure.Environment)
 // EXCEPT the Reader role on the DES to the Karpenter workload identity.
 // This simulates a misconfiguration where the user forgets to grant the necessary permissions.
 func createKeyVaultAndDiskEncryptionSetWithoutReaderRBAC(ctx SpecContext, env *azure.Environment) string {
-	// Use cluster name suffix with "nr" (no-rbac) prefix for deterministic naming
+	// Use cluster name suffix with nanosecond timestamp for collision-free naming
+	// Using UnixNano instead of Unix to avoid collisions in parallel test execution
 	clusterSuffix := getClusterNameSuffix(env.ClusterName)
-	keyVaultName := fmt.Sprintf("kpnr%s", clusterSuffix)
+	timestamp := fmt.Sprintf("%d", time.Now().UnixNano())
+	keyVaultName := fmt.Sprintf("kn%s%s", clusterSuffix, timestamp[len(timestamp)-6:]) // kn (no-rbac) + suffix + last 6 digits of nanoseconds
 	keyName := "test-key-no-rbac"
-	desName := fmt.Sprintf("kp-norbac-des-%s", clusterSuffix)
+	desName := fmt.Sprintf("kp-norbac-des-%s-%s", clusterSuffix, timestamp[len(timestamp)-6:])
 
 	keyVaultID, desID, desPrincipalID, _ := createKeyVaultDESResources(ctx, env, keyVaultName, keyName, desName)
 
