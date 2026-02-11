@@ -544,7 +544,8 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 		Identity: ConvertToVirtualMachineIdentity(opts.NodeIdentities),
 		Properties: &armcompute.VirtualMachineProperties{
 			HardwareProfile: &armcompute.HardwareProfile{
-				VMSize: lo.ToPtr(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
+				VMSize:           lo.ToPtr(armcompute.VirtualMachineSizeTypes(opts.InstanceType.Name)),
+				VMSizeProperties: convertVMSizeProperties(opts.NodeClass.Spec.VMSizeProperties),
 			},
 
 			StorageProfile: &armcompute.StorageProfile{
@@ -654,6 +655,17 @@ func setVMPropertiesSecurityProfile(vmProperties *armcompute.VirtualMachinePrope
 			vmProperties.SecurityProfile = &armcompute.SecurityProfile{}
 		}
 		vmProperties.SecurityProfile.EncryptionAtHost = nodeClass.Spec.Security.EncryptionAtHost
+	}
+}
+
+// convertVMSizeProperties converts AKSNodeClass VMSizeProperties to Azure SDK format.
+// Returns nil if no vmSizeProperties are specified.
+func convertVMSizeProperties(props *v1beta1.VMSizeProperties) *armcompute.VMSizeProperties {
+	if props == nil {
+		return nil
+	}
+	return &armcompute.VMSizeProperties{
+		VCPUsPerCore: props.VCPUsPerCore,
 	}
 }
 
