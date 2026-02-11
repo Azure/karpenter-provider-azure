@@ -66,17 +66,20 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 		"size", len(batch.requests),
 		"templateHash", batch.templateHash)
 
-	header, err := c.buildBatchHeader(batch)
+	header, entries, err := c.buildBatchHeader(batch)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "failed to build batch header")
 		c.distributeError(batch, err)
 		return
 	}
 
-	// Attach batch header and make the API call
+	// Attach batch header for the real Azure API.
 	ctxWithHeader := policy.WithHTTPHeader(ctx, http.Header{
 		"BatchPutMachine": []string{header},
 	})
+	// Also mirror entries into context for fakes/testing.
+	// See WithFakeBatchEntries for why this duplication is necessary.
+	ctxWithHeader = WithFakeBatchEntries(ctxWithHeader, entries)
 
 	// Clear per-machine fields from the body — these are already in the BatchPutMachine header
 	// and the body should only contain the shared template config.
@@ -138,26 +141,28 @@ func (c *Coordinator) ExecuteBatch(batch *PendingBatch) {
 		"failed", failCount)
 }
 
-// buildBatchHeader creates the JSON for the BatchPutMachine HTTP header.
-func (c *Coordinator) buildBatchHeader(batch *PendingBatch) (string, error) {
-	header := BatchPutMachineHeader{
-		VMSkus:        VMSkus{Value: []interface{}{}},
-		BatchMachines: make([]MachineEntry, 0, len(batch.requests)),
-	}
-
+// buildBatchHeader creates the JSON for the BatchPutMachine HTTP header
+// and returns the per-machine entries for context propagation.
+func (c *Coordinator) buildBatchHeader(batch *PendingBatch) (string, []MachineEntry, error) {
+	entries := make([]MachineEntry, 0, len(batch.requests))
 	for _, req := range batch.requests {
-		header.BatchMachines = append(header.BatchMachines, MachineEntry{
+		entries = append(entries, MachineEntry{
 			MachineName: req.machineName,
 			Zones:       extractZones(req.template.Zones),
 			Tags:        extractTags(req.template.Properties.Tags),
 		})
 	}
 
+	header := BatchPutMachineHeader{
+		VMSkus:        VMSkus{Value: []interface{}{}},
+		BatchMachines: entries,
+	}
+
 	jsonBytes, err := json.Marshal(header)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal batch header: %w", err)
+		return "", nil, fmt.Errorf("failed to marshal batch header: %w", err)
 	}
-	return string(jsonBytes), nil
+	return string(jsonBytes), entries, nil
 }
 
 // parseFrontendErrors extracts per-machine errors from Azure's response.
