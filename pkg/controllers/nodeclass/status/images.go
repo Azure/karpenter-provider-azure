@@ -113,6 +113,17 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	ctx = log.IntoContext(ctx, log.FromContext(ctx).WithName(nodeImageReconcilerName))
 	logger := log.FromContext(ctx)
 
+	// When a custom ImageID is provided, bypass gallery resolution entirely
+	if nodeClass.Spec.ImageID != nil && *nodeClass.Spec.ImageID != "" {
+		nodeClass.Status.Images = []v1beta1.NodeImage{{
+			ID:           *nodeClass.Spec.ImageID,
+			Requirements: []corev1.NodeSelectorRequirement{}, // custom images are compatible with any instance type
+		}}
+		nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeImagesReady)
+		logger.Info("using custom image ID", "imageID", *nodeClass.Spec.ImageID)
+		return reconcile.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
+
 	// validate FIPS + useSIG
 	fipsMode := nodeClass.Spec.FIPSMode
 	useSIG := options.FromContext(ctx).UseSIG

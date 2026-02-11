@@ -39,4 +39,5 @@ const (
 
 	ProvisionModeAKSScriptless       = "aksscriptless"
 	ProvisionModeBootstrappingClient = "bootstrappingclient"
+	ProvisionModeEKSHybrid           = "ekshybrid"
 )

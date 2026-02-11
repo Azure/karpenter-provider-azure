@@ -18,6 +18,7 @@ package launchtemplate
 
 import (
 	"context"
+	"encoding/base64"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
@@ -177,6 +178,7 @@ func (p *Provider) getStaticParameters(
 		NetworkPolicy:                  options.FromContext(ctx).NetworkPolicy,
 		SubnetID:                       subnetID,
 		ClusterResourceGroup:           p.clusterResourceGroup,
+		UserData:                       nodeClass.Spec.UserData,
 	}, nil
 }
 
@@ -216,6 +218,14 @@ func (p *Provider) createLaunchTemplate(ctx context.Context, params *parameters.
 			return nil, err
 		}
 		template.ScriptlessCustomData = userData
+	case consts.ProvisionModeEKSHybrid:
+		// Pass through userData from the NodeClass spec, base64-encoded as required
+		// by Azure's OSProfile.CustomData field. The image's bootstrap script reads
+		// this from /var/lib/cloud/instance/user-data.txt (where cloud-init decodes
+		// and deposits the CustomData).
+		if params.UserData != nil {
+			template.ScriptlessCustomData = base64.StdEncoding.EncodeToString([]byte(*params.UserData))
+		}
 	}
 
 	return template, nil

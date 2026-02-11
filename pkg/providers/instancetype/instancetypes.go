@@ -39,6 +39,7 @@ import (
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	kcache "github.com/Azure/karpenter-provider-azure/pkg/cache"
+	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
@@ -82,6 +83,11 @@ type DefaultProvider struct {
 	mu                 sync.Mutex
 	instanceTypesCache *cache.Cache
 
+	// rawSKUCache holds the last skewer cache from the Azure API so that
+	// List() can look up additional SKUs (e.g. pinned GPU types) without
+	// making a second API call.
+	rawSKUCache *skewer.Cache
+
 	cm *pretty.ChangeMonitor
 	// instanceTypesSeqNum is a monotonically increasing change counter used to avoid the expensive hashing operation on instance types
 	instanceTypesSeqNum uint64
@@ -117,9 +123,38 @@ func (p *DefaultProvider) List(
 		return nil, err
 	}
 
+	// For explicitly requested instance types that weren't found in the
+	// standard filtered set (e.g. pinned GPU capacity like H200 that may be
+	// filtered out by IncludesFilter or isSupported checks), look them up
+	// directly in the raw skewer cache which holds the full live API data.
+	// This avoids the nil-pointer panics that occurred when injecting from
+	// the static allAzureVMSkus list (which only has Name, no Size/capabilities).
+	if len(nodeClass.Spec.InstanceTypes) > 0 && p.rawSKUCache != nil {
+		augmented := make(map[string]*skewer.SKU, len(skus))
+		for k, v := range skus {
+			augmented[k] = v
+		}
+		for _, requested := range nodeClass.Spec.InstanceTypes {
+			if _, exists := augmented[requested]; exists {
+				continue
+			}
+			// Query the raw (unfiltered) skewer cache for this specific VM SKU name
+			liveSKUs := p.rawSKUCache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines), skewer.NameFilter(requested))
+			if len(liveSKUs) > 0 {
+				sku := liveSKUs[0]
+				augmented[sku.GetName()] = &sku
+				log.FromContext(ctx).Info("injected requested instance type from live Azure API (bypassed standard filters)", "instanceType", sku.GetName())
+			} else {
+				log.FromContext(ctx).Info("requested instance type not found in live Azure SKU API for region", "instanceType", requested, "region", p.region)
+			}
+		}
+		skus = augmented
+	}
+
 	// Compute fully initialized instance types hash key
 	kcHash, _ := hashstructure.Hash(kc, hashstructure.FormatV2, &hashstructure.HashOptions{SlicesAsSets: true})
-	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t",
+	instanceTypesFilter := strings.Join(nodeClass.Spec.InstanceTypes, ",")
+	key := fmt.Sprintf("%d-%d-%016x-%s-%d-%d-%t-%t-%s",
 		p.instanceTypesSeqNum,
 		p.unavailableOfferings.SeqNum,
 		kcHash,
@@ -128,6 +163,7 @@ func (p *DefaultProvider) List(
 		utils.GetMaxPods(nodeClass, options.FromContext(ctx).NetworkPlugin, options.FromContext(ctx).NetworkPluginMode),
 		nodeClass.GetEncryptionAtHost(),
 		nodeClass.IsLocalDNSEnabled(),
+		instanceTypesFilter,
 	)
 	if item, ok := p.instanceTypesCache.Get(key); ok {
 		// Ensure what's returned from this function is a shallow-copy of the slice (not a deep-copy of the data itself)
@@ -138,24 +174,47 @@ func (p *DefaultProvider) List(
 	// Get Viable offerings
 	/// Azure has zones availability directly from SKU info
 	var result []*cloudprovider.InstanceType
+	isRequested := func(name string) bool {
+		return len(nodeClass.Spec.InstanceTypes) > 0 && lo.Contains(nodeClass.Spec.InstanceTypes, name)
+	}
 	for _, sku := range skus {
 		vmsize, err := sku.GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *sku.Size)
-			continue
+			if isRequested(sku.GetName()) {
+				// For explicitly requested instance types (e.g. H200 GPU), the skewer
+				// VM size parser may not support the naming convention. Construct a
+				// minimal VMSizeType from the SKU capabilities instead of skipping.
+				log.FromContext(ctx).Info("requested instance type failed GetVMSize, using fallback", "instanceType", sku.GetName(), "error", err)
+				cpus, _ := sku.VCPU()
+				subfamily := ""
+				vmsize = &skewer.VMSizeType{
+					Family:    string([]rune(sku.GetName())[0]),
+					Cpus:      fmt.Sprintf("%d", cpus),
+					Subfamily: &subfamily,
+				}
+			} else {
+				log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", sku.GetSize())
+				continue
+			}
 		}
 		architecture, err := sku.GetCPUArchitectureType()
 		if err != nil {
-			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", *sku.Size)
+			if isRequested(sku.GetName()) {
+				log.FromContext(ctx).Info("requested instance type failed GetCPUArchitectureType", "instanceType", sku.GetName(), "error", err)
+			}
+			log.FromContext(ctx).Error(err, "parsing SKU architecture", "vmSize", sku.GetSize())
 			continue
 		}
 		instanceTypeZones := p.instanceTypeZones(sku)
-		// !!! Important !!!
-		// Any changes to the values passed into the NewInstanceType method will require making updates to the cache key
-		// so that Karpenter is able to cache the set of InstanceTypes based on values that alter the set of instance types
-		// !!! Important !!!
-		instanceType := NewInstanceType(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones), nodeClass, architecture)
+		// When instanceTypes override is set on the NodeClass, force-create offerings
+		// for listed SKUs even without pricing data (pinned GPU capacity may not
+		// have retail pricing).
+		forceOfferings := isRequested(sku.GetName())
+		instanceType := NewInstanceType(ctx, sku, vmsize, kc, p.region, p.createOfferings(sku, instanceTypeZones, forceOfferings), nodeClass, architecture)
 		if len(instanceType.Offerings) == 0 {
+			if forceOfferings {
+				log.FromContext(ctx).Info("requested instance type has 0 offerings even with force", "instanceType", sku.GetName(), "zones", instanceTypeZones.UnsortedList())
+			}
 			continue
 		}
 
@@ -170,6 +229,21 @@ func (p *DefaultProvider) List(
 		}
 
 		result = append(result, instanceType)
+	}
+
+	// Filter to only requested instance types if the NodeClass specifies an explicit list
+	if len(nodeClass.Spec.InstanceTypes) > 0 {
+		allowedSet := sets.New(nodeClass.Spec.InstanceTypes...)
+		result = lo.Filter(result, func(it *cloudprovider.InstanceType, _ int) bool {
+			return allowedSet.Has(it.Name)
+		})
+		// Log warnings for requested types not found in the discovered set
+		foundSet := sets.New(lo.Map(result, func(it *cloudprovider.InstanceType, _ int) string { return it.Name })...)
+		for _, requested := range nodeClass.Spec.InstanceTypes {
+			if !foundSet.Has(requested) {
+				log.FromContext(ctx).Info("requested instance type not found in discovered SKUs, skipping", "instanceType", requested)
+			}
+		}
 	}
 
 	p.instanceTypesCache.SetDefault(key, result)
@@ -187,6 +261,14 @@ func (p *DefaultProvider) Get(ctx context.Context, nodeClass *v1beta1.AKSNodeCla
 	}
 	if sku, ok := skus[instanceType]; ok {
 		return sku, nil
+	}
+	// Fall back to the raw skewer cache for explicitly requested types
+	// that may have been filtered out by the standard filters.
+	if p.rawSKUCache != nil {
+		liveSKUs := p.rawSKUCache.List(ctx, skewer.ResourceTypeFilter(skewer.VirtualMachines), skewer.NameFilter(instanceType))
+		if len(liveSKUs) > 0 {
+			return &liveSKUs[0], nil
+		}
 	}
 	return nil, fmt.Errorf("instance type %s not found", instanceType)
 }
@@ -217,11 +299,17 @@ func (p *DefaultProvider) instanceTypeZones(sku *skewer.SKU) sets.Set[string] {
 // offering, you can do the following thanks to this invariant:
 //
 //	offering.Requirements.Get(v1.TopologyLabelZone).Any()
-func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string]) cloudprovider.Offerings {
+func (p *DefaultProvider) createOfferings(sku *skewer.SKU, zones sets.Set[string], forceOfferings bool) cloudprovider.Offerings {
 	offerings := []*cloudprovider.Offering{}
 	for zone := range zones {
 		onDemandPrice, onDemandOk := p.pricingProvider.OnDemandPrice(*sku.Name)
 		spotPrice, spotOk := p.pricingProvider.SpotPrice(*sku.Name)
+		// When forceOfferings is true (instanceTypes override), treat missing pricing
+		// as available with zero price. Pinned GPU capacity may not have retail pricing.
+		if forceOfferings && !onDemandOk {
+			onDemandPrice = 0
+			onDemandOk = true
+		}
 		availableOnDemand := onDemandOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeOnDemand)
 		availableSpot := spotOk && !p.unavailableOfferings.IsUnavailable(sku, zone, karpv1.CapacityTypeSpot)
 
@@ -326,21 +414,28 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	}
 	instanceTypes := map[string]*skewer.SKU{}
 
-	cache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
+	skewerCache, err := skewer.NewCache(ctx, skewer.WithLocation(p.region), skewer.WithResourceClient(p.skuClient))
 	if err != nil {
 		return nil, fmt.Errorf("fetching SKUs using skewer, %w", err)
 	}
+	p.rawSKUCache = skewerCache
 
-	skus := cache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
+	skus := skewerCache.List(ctx, skewer.IncludesFilter(GetKarpenterWorkingSKUs()))
 	log.FromContext(ctx).V(1).Info("discovered SKUs", "skuCount", len(skus))
 	for i := range skus {
 		vmsize, err := skus[i].GetVMSize()
 		if err != nil {
-			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", *skus[i].Size)
+			log.FromContext(ctx).Error(err, "parsing VM size", "vmSize", skus[i].GetSize())
 			continue
 		}
 		useSIG := options.FromContext(ctx).UseSIG
-		if !skus[i].HasLocationRestriction(p.region) && p.isSupported(&skus[i], vmsize, useSIG) {
+		isEKSHybrid := options.FromContext(ctx).ProvisionMode == consts.ProvisionModeEKSHybrid
+		supported := p.isSupported(&skus[i], vmsize, useSIG, isEKSHybrid)
+		locRestriction := skus[i].HasLocationRestriction(p.region)
+		if strings.Contains(skus[i].GetName(), "ND96") {
+			log.FromContext(ctx).Info("H200 SKU check", "sku", skus[i].GetName(), "supported", supported, "locRestriction", locRestriction, "isEKSHybrid", isEKSHybrid, "useSIG", useSIG)
+		}
+		if !locRestriction && supported {
 			instanceTypes[skus[i].GetName()] = &skus[i]
 		}
 	}
@@ -355,15 +450,17 @@ func (p *DefaultProvider) getInstanceTypes(ctx context.Context) (map[string]*ske
 	return instanceTypes, nil
 }
 
-// isSupported indicates SKU is supported by AKS, based on SKU properties
-func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool) bool {
+// isSupported indicates SKU is supported, based on SKU properties
+func (p *DefaultProvider) isSupported(sku *skewer.SKU, vmsize *skewer.VMSizeType, useSIG bool, isEKSHybrid bool) bool {
 	return p.hasMinimumCPU(sku) &&
 		p.hasMinimumMemory(sku) &&
 		!p.isUnsupportedByAKS(sku) &&
 		!p.isUnsupportedGPU(sku) &&
 		!p.hasConstrainedCPUs(vmsize) &&
 		!p.isConfidential(sku) &&
-		isCompatibleImageAvailable(sku, useSIG)
+		// In ekshybrid mode, custom images are used (not AKS CIG/SIG),
+		// so skip the image compatibility check that filters NVMe-only SKUs.
+		(isEKSHybrid || isCompatibleImageAvailable(sku, useSIG))
 }
 
 // at least 2 cpus

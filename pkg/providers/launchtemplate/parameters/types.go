@@ -48,7 +48,8 @@ type StaticParameters struct {
 	SubnetID                       string
 	ClusterResourceGroup           string
 
-	Labels map[string]string
+	Labels   map[string]string
+	UserData *string // Verbatim userData from AKSNodeClass.Spec.UserData, used by ekshybrid
 }
 
 // ATTENTION!!!: changes here may NOT be effective on AKS machine nodes (ProvisionModeAKSMachineAPI); See aksmachineinstance.go/aksmachineinstancehelpers.go.

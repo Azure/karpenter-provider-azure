@@ -130,6 +130,16 @@ func (in *AKSNodeClassSpec) DeepCopyInto(out *AKSNodeClassSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.UserData != nil {
+		in, out := &in.UserData, &out.UserData
+		*out = new(string)
+		**out = **in
+	}
+	if in.DataDiskSizeGB != nil {
+		in, out := &in.DataDiskSizeGB, &out.DataDiskSizeGB
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Security != nil {
 		in, out := &in.Security, &out.Security
 		*out = new(Security)

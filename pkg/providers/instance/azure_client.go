@@ -18,10 +18,13 @@ package instance
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
@@ -102,6 +105,120 @@ type AZClient struct {
 
 func (c *AZClient) SubnetsClient() SubnetsAPI {
 	return c.subnetsClient
+}
+
+// AZClientManager manages per-subscription AZClient instances. It lazily creates
+// and caches AZClient instances keyed by subscription ID. All clients share
+// the same azcore.TokenCredential (one Azure identity with RBAC across all subs).
+type AZClientManager struct {
+	mu           sync.RWMutex
+	clients      map[string]*AZClient // keyed on subscription ID
+	cred         azcore.TokenCredential
+	opts         *arm.ClientOptions
+	defaultSubID string
+}
+
+// NewAZClientManager creates a new AZClientManager with the given default AZClient.
+func NewAZClientManager(defaultSubID string, defaultClient *AZClient, cred azcore.TokenCredential, opts *arm.ClientOptions) *AZClientManager {
+	clients := map[string]*AZClient{
+		defaultSubID: defaultClient,
+	}
+	return &AZClientManager{
+		clients:      clients,
+		cred:         cred,
+		opts:         opts,
+		defaultSubID: defaultSubID,
+	}
+}
+
+// GetClient returns the AZClient for the given subscription ID, creating one if necessary.
+// If subscriptionID is empty, the default subscription's client is returned.
+func (m *AZClientManager) GetClient(subscriptionID string) (*AZClient, error) {
+	if subscriptionID == "" {
+		subscriptionID = m.defaultSubID
+	}
+
+	// Fast path: check read lock first
+	m.mu.RLock()
+	c, ok := m.clients[subscriptionID]
+	m.mu.RUnlock()
+	if ok {
+		return c, nil
+	}
+
+	// Slow path: create client under write lock
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if c, ok := m.clients[subscriptionID]; ok {
+		return c, nil
+	}
+
+	c, err := m.newClientForSubscription(subscriptionID)
+	if err != nil {
+		return nil, fmt.Errorf("creating Azure clients for subscription %s: %w", subscriptionID, err)
+	}
+	m.clients[subscriptionID] = c
+	return c, nil
+}
+
+// DefaultSubscriptionID returns the default subscription ID.
+func (m *AZClientManager) DefaultSubscriptionID() string {
+	return m.defaultSubID
+}
+
+// KnownSubscriptionIDs returns all subscription IDs that have cached clients.
+func (m *AZClientManager) KnownSubscriptionIDs() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	ids := make([]string, 0, len(m.clients))
+	for id := range m.clients {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// newClientForSubscription creates a minimal AZClient for VM operations in a non-default subscription.
+// It creates only the clients needed for VM lifecycle: VMs, NICs, extensions, and Resource Graph.
+// The Resource Graph client is subscription-agnostic (subscription is specified per-query), so we
+// reuse the default client's instance.
+func (m *AZClientManager) newClientForSubscription(subscriptionID string) (*AZClient, error) {
+	virtualMachinesClient, err := armcompute.NewVirtualMachinesClient(subscriptionID, m.cred, m.opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating VirtualMachinesClient: %w", err)
+	}
+
+	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(subscriptionID, m.cred, m.opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating VirtualMachineExtensionsClient: %w", err)
+	}
+
+	interfacesClient, err := armnetwork.NewInterfacesClient(subscriptionID, m.cred, m.opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating InterfacesClient: %w", err)
+	}
+
+	subnetsClient, err := armnetwork.NewSubnetsClient(subscriptionID, m.cred, m.opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating SubnetsClient: %w", err)
+	}
+
+	// Resource Graph client is not subscription-scoped (subscription is passed per query),
+	// so we reuse it from the default client.
+	defaultClient := m.clients[m.defaultSubID]
+
+	return &AZClient{
+		virtualMachinesClient:          virtualMachinesClient,
+		virtualMachinesExtensionClient: extensionsClient,
+		networkInterfacesClient:        interfacesClient,
+		subnetsClient:                  subnetsClient,
+		azureResourceGraphClient:       defaultClient.azureResourceGraphClient,
+		// AKS-specific clients are not needed for non-default subscriptions
+		// in EKS hybrid mode.
+		aksMachinesClient: NewNoAKSMachinesClient(),
+		agentPoolsClient:  NewNoAKSAgentPoolsClient(),
+	}, nil
 }
 
 func NewAZClientFromAPI(

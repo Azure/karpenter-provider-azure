@@ -58,13 +58,14 @@ func NewController(
 	nodeImageProvider imagefamily.NodeImageProvider,
 	inClusterKubernetesInterface kubernetes.Interface,
 	subnetClient instance.SubnetsAPI,
+	clientManager *instance.AZClientManager,
 ) *Controller {
 	return &Controller{
 		kubeClient: kubeClient,
 
 		kubernetesVersion: NewKubernetesVersionReconciler(kubernetesVersionProvider),
 		nodeImage:         NewNodeImageReconciler(nodeImageProvider, inClusterKubernetesInterface),
-		subnet:            NewSubnetReconciler(subnetClient),
+		subnet:            NewSubnetReconciler(subnetClient, clientManager),
 		validation:        NewValidationReconciler(),
 	}
 }

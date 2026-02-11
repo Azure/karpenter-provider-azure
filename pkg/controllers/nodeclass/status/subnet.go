@@ -34,12 +34,14 @@ import (
 )
 
 type SubnetReconciler struct {
-	subnetClient instance.SubnetsAPI
+	subnetClient  instance.SubnetsAPI
+	clientManager *instance.AZClientManager
 }
 
-func NewSubnetReconciler(subnetClient instance.SubnetsAPI) *SubnetReconciler {
+func NewSubnetReconciler(subnetClient instance.SubnetsAPI, clientManager *instance.AZClientManager) *SubnetReconciler {
 	return &SubnetReconciler{
-		subnetClient: subnetClient,
+		subnetClient:  subnetClient,
+		clientManager: clientManager,
 	}
 }
 
@@ -77,7 +79,9 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		)
 		return reconcile.Result{}, nil
 	}
-	if subnetID != clusterSubnetID {
+	// Skip same-VNet validation when the NodeClass has a SubscriptionID override.
+	// Cross-subscription subnets are intentional in multi-sub mode.
+	if subnetID != clusterSubnetID && lo.FromPtr(nodeClass.Spec.SubscriptionID) == "" {
 		clusterSubnetIDParts, err := utils.GetVnetSubnetIDComponents(clusterSubnetID) // Assume valid cluster subnet id
 		if err != nil {                                                               // Highly unlikely case but putting it in nonetheless
 			logger.Error(err, "failed to parse cluster subnet ID", "clusterSubnetID", clusterSubnetID)
@@ -111,7 +115,24 @@ func (r *SubnetReconciler) validateVNETSubnetID(ctx context.Context, nodeClass *
 		}
 	}
 
-	_, err = r.subnetClient.Get(ctx, nodeClassSubnetComponents.ResourceGroupName, nodeClassSubnetComponents.VNetName, nodeClassSubnetComponents.SubnetName, nil)
+	// Use a subscription-specific client when the subnet is in a different subscription
+	// than the default and the clientManager is available.
+	subnetClient := r.subnetClient
+	if r.clientManager != nil && nodeClassSubnetComponents.SubscriptionID != r.clientManager.DefaultSubscriptionID() {
+		azClient, err := r.clientManager.GetClient(nodeClassSubnetComponents.SubscriptionID)
+		if err != nil {
+			logger.Error(err, "failed to get client for subnet subscription", "subscriptionID", nodeClassSubnetComponents.SubscriptionID)
+			nodeClass.StatusConditions().SetFalse(
+				v1beta1.ConditionTypeSubnetsReady,
+				SubnetUnreadyReasonUnknownError,
+				fmt.Sprintf("failed to get client for subnet subscription %s: %s", nodeClassSubnetComponents.SubscriptionID, err.Error()),
+			)
+			return reconcile.Result{}, err
+		}
+		subnetClient = azClient.SubnetsClient()
+	}
+
+	_, err = subnetClient.Get(ctx, nodeClassSubnetComponents.ResourceGroupName, nodeClassSubnetComponents.VNetName, nodeClassSubnetComponents.SubnetName, nil)
 	if err != nil {
 		azErr := sdkerrors.IsResponseError(err)
 		if azErr != nil && (azErr.StatusCode == http.StatusNotFound) {

@@ -108,7 +108,7 @@ var _ = Describe("SubnetStatus", func() {
 		var reconciler *status.SubnetReconciler
 
 		BeforeEach(func() {
-			reconciler = status.NewSubnetReconciler(azureEnv.SubnetsAPI)
+			reconciler = status.NewSubnetReconciler(azureEnv.SubnetsAPI, nil)
 			nodeClass = test.AKSNodeClass()
 		})
 

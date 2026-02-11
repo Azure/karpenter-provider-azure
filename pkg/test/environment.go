@@ -203,6 +203,7 @@ func NewRegionalEnvironment(ctx context.Context, env *coretest.Environment, regi
 	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
+		nil, // clientManager is nil in tests (single-sub mode)
 		instanceTypesProvider,
 		launchTemplateProvider,
 		loadBalancerProvider,

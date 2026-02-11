@@ -38,6 +38,19 @@ var (
 // This will contain configuration necessary to launch instances in AKS.
 // +kubebuilder:validation:XValidation:message="FIPS is not yet supported for Ubuntu2204 or Ubuntu2404",rule="has(self.fipsMode) && self.fipsMode == 'FIPS' ? (has(self.imageFamily) && self.imageFamily != 'Ubuntu2204' && self.imageFamily != 'Ubuntu2404') : true"
 type AKSNodeClassSpec struct {
+	// subscriptionID overrides the controller-level AZURE_SUBSCRIPTION_ID.
+	// When set, VMs for this NodeClass are created in this Azure subscription.
+	// The controller's Azure identity must have Contributor access on the target subscription.
+	// +optional
+	SubscriptionID *string `json:"subscriptionID,omitempty"`
+	// resourceGroup overrides the controller-level AZURE_NODE_RESOURCE_GROUP.
+	// When set, VMs for this NodeClass are created in this resource group.
+	// +optional
+	ResourceGroup *string `json:"resourceGroup,omitempty"`
+	// location overrides the controller-level LOCATION.
+	// When set, VMs for this NodeClass are created in this Azure region.
+	// +optional
+	Location *string `json:"location,omitempty"`
 	// vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
 	// If not specified, we will use the default --vnet-subnet-id specified in karpenter's options config
 	// +kubebuilder:validation:Pattern=`(?i)^\/subscriptions\/[^\/]+\/resourceGroups\/[a-zA-Z0-9_\-().]{0,89}[a-zA-Z0-9_\-()]\/providers\/Microsoft\.Network\/virtualNetworks\/[^\/]+\/subnets\/[^\/]+$`
@@ -49,10 +62,13 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum=2048
 	// +optional
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
-	// ImageID is the ID of the image that instances use.
-	// Not exposed in the API yet
-	ImageID *string `json:"-"`
+	// imageID is the full ARM resource ID of a custom Compute Gallery image.
+	// When set, imageFamily is ignored and this image is used directly.
+	// Example: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Compute/galleries/<gallery>/images/<image>/versions/<version>
+	// +optional
+	ImageID *string `json:"imageID,omitempty"`
 	// imageFamily is the image family that instances use.
+	// Ignored when imageID is set.
 	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	// +optional
@@ -87,6 +103,17 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
+	// userData is arbitrary text set verbatim as the VM's CustomData (base64-encoded by the Azure SDK).
+	// In ekshybrid mode, the image's bootstrap script reads this from
+	// /var/lib/cloud/instance/user-data.txt. The provider does not interpret the content.
+	// +optional
+	UserData *string `json:"userData,omitempty"`
+	// dataDiskSizeGB is the size of the data disk in GB attached for container storage (e.g., containerd root).
+	// The image's bootstrap service mounts this disk. Only used in ekshybrid provision mode.
+	// +kubebuilder:validation:Minimum=10
+	// +kubebuilder:validation:Maximum=4096
+	// +optional
+	DataDiskSizeGB *int32 `json:"dataDiskSizeGB,omitempty"`
 	// security is a collection of security related karpenter fields
 	// +optional
 	Security *Security `json:"security,omitempty"`
@@ -95,6 +122,18 @@ type AKSNodeClassSpec struct {
 	// For more details see aka.ms/aks/localdns.
 	// +optional
 	LocalDNS *LocalDNS `json:"localDNS,omitempty"`
+	// instanceTypes overrides the instance types discovered by the pricing/SKU provider.
+	// When set, only these instance types are considered for this NodeClass.
+	// Use this for pinned GPU capacity where the SKU may not appear in standard pricing APIs.
+	// +optional
+	InstanceTypes []string `json:"instanceTypes,omitempty"`
+	// managedIdentities is a list of Azure user-assigned managed identity resource IDs
+	// to attach to VMs created with this NodeClass. These are merged with the global
+	// --node-identities flag. Use this for per-subscription identities where the MI
+	// must be in the same subscription as the VM (Azure requirement).
+	// Example: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>
+	// +optional
+	ManagedIdentities []string `json:"managedIdentities,omitempty"`
 }
 
 // TODO: Add link for the aka.ms/nap/aksnodeclass-enable-host-encryption docs
@@ -397,7 +436,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v3"
+const AKSNodeClassHashVersion = "v6"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{

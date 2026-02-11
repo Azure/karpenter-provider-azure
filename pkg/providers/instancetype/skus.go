@@ -3182,6 +3182,9 @@ var allAzureVMSkus = []skewer.SKU{
 		Name: ptr.To("Standard_ND96isr_H200_v5"),
 	},
 	{
+		Name: ptr.To("Standard_ND96isrf_H200_v5"),
+	},
+	{
 		Name: ptr.To("Standard_ND96isr_MI300X_v5"),
 	},
 	{

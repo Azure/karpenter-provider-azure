@@ -134,10 +134,18 @@ func (r *defaultResolver) Resolve(
 	)
 
 	// TODO: as ProvisionModeBootstrappingClient path develops, we will eventually be able to drop the retrieval of imageDistro here.
-	useSIG := options.FromContext(ctx).UseSIG
-	imageDistro, err := mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG)
-	if err != nil {
-		return nil, err
+	var imageDistro string
+	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeEKSHybrid {
+		// In ekshybrid mode, custom images (e.g. hybrid-node-debian, hybrid-node-gpu-h200)
+		// don't match any default Azure image definitions. The distro is only used by the
+		// CustomScriptsNodeBootstrapping path which ekshybrid bypasses, so we skip the lookup.
+		imageDistro = "custom"
+	} else {
+		useSIG := options.FromContext(ctx).UseSIG
+		imageDistro, err = mapToImageDistro(imageID, nodeClass.Spec.FIPSMode, imageFamily, useSIG)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	generalTaints := nodeClaim.Spec.Taints

@@ -109,13 +109,17 @@ func (o *Options) validateVMMemoryOverheadPercent() error {
 }
 
 func (o *Options) validateProvisionMode() error {
-	if o.ProvisionMode != consts.ProvisionModeAKSScriptless && o.ProvisionMode != consts.ProvisionModeBootstrappingClient {
-		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
-	}
-	if o.ProvisionMode == consts.ProvisionModeBootstrappingClient {
+	switch o.ProvisionMode {
+	case consts.ProvisionModeAKSScriptless:
+		// default mode, no extra validation
+	case consts.ProvisionModeBootstrappingClient:
 		if o.NodeBootstrappingServerURL == "" {
 			return fmt.Errorf("nodebootstrapping-server-url is required when provision-mode is bootstrappingclient")
 		}
+	case consts.ProvisionModeEKSHybrid:
+		// ekshybrid mode: image self-bootstraps via IMDS tags, no TLS bootstrap token needed
+	default:
+		return fmt.Errorf("provision-mode is invalid: %s", o.ProvisionMode)
 	}
 	return nil
 }
@@ -127,7 +131,8 @@ func (o *Options) validateRequiredFields() error {
 	if o.ClusterName == "" {
 		return fmt.Errorf("missing field, cluster-name")
 	}
-	if o.KubeletClientTLSBootstrapToken == "" {
+	// TLS bootstrap token is not required in ekshybrid mode (image uses OIDC/Roles Anywhere)
+	if o.KubeletClientTLSBootstrapToken == "" && o.ProvisionMode != consts.ProvisionModeEKSHybrid {
 		return fmt.Errorf("missing field, kubelet-bootstrap-token")
 	}
 	if o.SSHPublicKey == "" {

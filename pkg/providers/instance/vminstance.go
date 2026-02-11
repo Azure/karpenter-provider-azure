@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
@@ -157,6 +159,7 @@ var _ VMProvider = (*DefaultVMProvider)(nil)
 type DefaultVMProvider struct {
 	location                     string
 	azClient                     *AZClient
+	clientManager                *AZClientManager
 	instanceTypeProvider         instancetype.Provider
 	launchTemplateProvider       *launchtemplate.Provider
 	loadBalancerProvider         *loadbalancer.Provider
@@ -169,10 +172,22 @@ type DefaultVMProvider struct {
 	env                          *auth.Environment
 
 	vmListQuery, nicListQuery string
+
+	// knownSubRGs tracks subscription+resource-group pairs that have active NodeClasses.
+	// Used by List to query VMs across all known subscriptions.
+	knownSubRGsMu sync.RWMutex
+	knownSubRGs   map[subRGKey]struct{}
+}
+
+// subRGKey identifies a subscription + resource group combination.
+type subRGKey struct {
+	subscriptionID string
+	resourceGroup  string
 }
 
 func NewDefaultVMProvider(
 	azClient *AZClient,
+	clientManager *AZClientManager,
 	instanceTypeProvider instancetype.Provider,
 	launchTemplateProvider *launchtemplate.Provider,
 	loadBalancerProvider *loadbalancer.Provider,
@@ -187,6 +202,7 @@ func NewDefaultVMProvider(
 ) *DefaultVMProvider {
 	return &DefaultVMProvider{
 		azClient:                     azClient,
+		clientManager:                clientManager,
 		instanceTypeProvider:         instanceTypeProvider,
 		launchTemplateProvider:       launchTemplateProvider,
 		loadBalancerProvider:         loadBalancerProvider,
@@ -202,7 +218,83 @@ func NewDefaultVMProvider(
 		nicListQuery: GetNICListQueryBuilder(resourceGroup).String(),
 
 		errorHandling: offerings.NewResponseErrorHandler(offeringsCache),
+
+		knownSubRGs: map[subRGKey]struct{}{
+			{subscriptionID: subscriptionID, resourceGroup: resourceGroup}: {},
+		},
 	}
+}
+
+// nodeClassConfig holds the resolved subscription, resource group, and location for a NodeClass.
+type nodeClassConfig struct {
+	subscriptionID string
+	resourceGroup  string
+	location       string
+}
+
+// resolveNodeClassConfig extracts the effective subscription, resource group, and location
+// from an AKSNodeClass, falling back to controller defaults for any unset field.
+func (p *DefaultVMProvider) resolveNodeClassConfig(nodeClass *v1beta1.AKSNodeClass) nodeClassConfig {
+	cfg := nodeClassConfig{
+		subscriptionID: p.subscriptionID,
+		resourceGroup:  p.resourceGroup,
+		location:       p.location,
+	}
+	if nodeClass.Spec.SubscriptionID != nil && lo.FromPtr(nodeClass.Spec.SubscriptionID) != "" {
+		cfg.subscriptionID = lo.FromPtr(nodeClass.Spec.SubscriptionID)
+	}
+	if nodeClass.Spec.ResourceGroup != nil && lo.FromPtr(nodeClass.Spec.ResourceGroup) != "" {
+		cfg.resourceGroup = lo.FromPtr(nodeClass.Spec.ResourceGroup)
+	}
+	if nodeClass.Spec.Location != nil && lo.FromPtr(nodeClass.Spec.Location) != "" {
+		cfg.location = lo.FromPtr(nodeClass.Spec.Location)
+	}
+	return cfg
+}
+
+// trackSubRG registers a subscription+resource-group pair as known, so List() queries it.
+func (p *DefaultVMProvider) trackSubRG(subID, rg string) {
+	key := subRGKey{subscriptionID: subID, resourceGroup: rg}
+	p.knownSubRGsMu.RLock()
+	_, exists := p.knownSubRGs[key]
+	p.knownSubRGsMu.RUnlock()
+	if exists {
+		return
+	}
+	p.knownSubRGsMu.Lock()
+	p.knownSubRGs[key] = struct{}{}
+	p.knownSubRGsMu.Unlock()
+}
+
+// getKnownSubRGs returns a snapshot of all known subscription+resource-group pairs.
+func (p *DefaultVMProvider) getKnownSubRGs() []subRGKey {
+	p.knownSubRGsMu.RLock()
+	defer p.knownSubRGsMu.RUnlock()
+	keys := make([]subRGKey, 0, len(p.knownSubRGs))
+	for k := range p.knownSubRGs {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// getClientForSubscription returns the AZClient for the given subscription, using the
+// client manager to lazily create and cache clients.
+func (p *DefaultVMProvider) getClientForSubscription(subID string) (*AZClient, error) {
+	if p.clientManager != nil {
+		return p.clientManager.GetClient(subID)
+	}
+	// Fallback: no client manager, use the default client (single-sub mode)
+	return p.azClient, nil
+}
+
+// parseResourceID extracts the subscription ID and resource group from an Azure resource ID.
+// Expected format: /subscriptions/<sub>/resourceGroups/<rg>/providers/...
+func parseResourceID(resourceID string) (subscriptionID, resourceGroup string, err error) {
+	parts := strings.Split(strings.TrimPrefix(resourceID, "/"), "/")
+	if len(parts) < 4 || !strings.EqualFold(parts[0], "subscriptions") || !strings.EqualFold(parts[2], "resourceGroups") {
+		return "", "", fmt.Errorf("invalid Azure resource ID format: %s", resourceID)
+	}
+	return parts[1], parts[3], nil
 }
 
 // BeginCreate creates an instance given the constraints.
@@ -224,7 +316,13 @@ func (p *DefaultVMProvider) BeginCreate(
 	if err != nil {
 		// There may be orphan NICs (created before promise started)
 		// This err block is hit only for sync failures. Async (VM provisioning) failures will be returned by the vmPromise.Wait() function
-		if cleanupErr := p.cleanupAzureResources(ctx, GenerateResourceName(nodeClaim.Name), true); cleanupErr != nil {
+		ncCfg := p.resolveNodeClassConfig(nodeClass)
+		cleanupClient, clientErr := p.getClientForSubscription(ncCfg.subscriptionID)
+		if clientErr != nil {
+			log.FromContext(ctx).Error(clientErr, "failed to get client for cleanup", "subscriptionID", ncCfg.subscriptionID)
+			return nil, err
+		}
+		if cleanupErr := p.cleanupAzureResourcesWithClient(ctx, cleanupClient, ncCfg.resourceGroup, GenerateResourceName(nodeClaim.Name), true); cleanupErr != nil {
 			log.FromContext(ctx).Error(cleanupErr, "failed to cleanup resources for node claim", "NodeClaim", nodeClaim.Name)
 		}
 		return nil, err
@@ -313,34 +411,76 @@ func (p *DefaultVMProvider) Update(ctx context.Context, vmName string, update ar
 }
 
 func (p *DefaultVMProvider) Get(ctx context.Context, vmName string) (*armcompute.VirtualMachine, error) {
-	var vm armcompute.VirtualMachinesClientGetResponse
-	var err error
+	// Try the default subscription+RG first.
+	vm, err := p.getFromSubRG(ctx, p.azClient, p.resourceGroup, vmName)
+	if err == nil {
+		return vm, nil
+	}
 
-	if vm, err = p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, vmName, nil); err != nil {
+	// If not found in the default sub+RG, try other known subscription+RG pairs.
+	if corecloudprovider.IsNodeClaimNotFoundError(err) {
+		for _, key := range p.getKnownSubRGs() {
+			if key.subscriptionID == p.subscriptionID && key.resourceGroup == p.resourceGroup {
+				continue // already tried
+			}
+			client, clientErr := p.getClientForSubscription(key.subscriptionID)
+			if clientErr != nil {
+				log.FromContext(ctx).V(1).Info("failed to get client for subscription during Get", "subscriptionID", key.subscriptionID, "error", clientErr)
+				continue
+			}
+			vm, altErr := p.getFromSubRG(ctx, client, key.resourceGroup, vmName)
+			if altErr == nil {
+				return vm, nil
+			}
+			if !corecloudprovider.IsNodeClaimNotFoundError(altErr) {
+				log.FromContext(ctx).V(1).Info("error getting VM from alternate sub+RG", "subscriptionID", key.subscriptionID, "resourceGroup", key.resourceGroup, "error", altErr)
+			}
+		}
+	}
+
+	return nil, err
+}
+
+// getFromSubRG gets a VM from a specific subscription+RG combination.
+func (p *DefaultVMProvider) getFromSubRG(ctx context.Context, client *AZClient, resourceGroup, vmName string) (*armcompute.VirtualMachine, error) {
+	vm, err := client.virtualMachinesClient.Get(ctx, resourceGroup, vmName, nil)
+	if err != nil {
 		if sdkerrors.IsNotFoundErr(err) {
 			return nil, corecloudprovider.NewNodeClaimNotFoundError(err)
 		}
 		return nil, fmt.Errorf("failed to get VM instance, %w", err)
 	}
-
 	return &vm.VirtualMachine, nil
 }
 
 func (p *DefaultVMProvider) List(ctx context.Context) ([]*armcompute.VirtualMachine, error) {
-	req := NewQueryRequest(&(p.subscriptionID), p.vmListQuery)
-	client := p.azClient.azureResourceGraphClient
-	data, err := GetResourceData(ctx, client, *req)
-	if err != nil {
-		return nil, fmt.Errorf("querying azure resource graph, %w", err)
-	}
 	var vmList []*armcompute.VirtualMachine
-	for i := range data {
-		vm, err := createVMFromQueryResponseData(data[i])
-		if err != nil {
-			return nil, fmt.Errorf("creating VM object from query response data, %w", err)
+
+	// Query all known subscription+resource-group pairs for VMs.
+	seen := make(map[subRGKey]struct{})
+	for _, key := range p.getKnownSubRGs() {
+		if _, ok := seen[key]; ok {
+			continue
 		}
-		vmList = append(vmList, vm)
+		seen[key] = struct{}{}
+
+		query := GetVMListQueryBuilder(key.resourceGroup).String()
+		subID := key.subscriptionID
+		req := NewQueryRequest(&subID, query)
+		client := p.azClient.azureResourceGraphClient // ARG client is subscription-agnostic
+		data, err := GetResourceData(ctx, client, *req)
+		if err != nil {
+			return nil, fmt.Errorf("querying azure resource graph for subscription %s, rg %s: %w", key.subscriptionID, key.resourceGroup, err)
+		}
+		for i := range data {
+			vm, err := createVMFromQueryResponseData(data[i])
+			if err != nil {
+				return nil, fmt.Errorf("creating VM object from query response data, %w", err)
+			}
+			vmList = append(vmList, vm)
+		}
 	}
+
 	return vmList, nil
 }
 
@@ -358,6 +498,18 @@ func (p *DefaultVMProvider) Delete(ctx context.Context, resourceName string) err
 	}
 
 	log.FromContext(ctx).V(1).Info("deleting virtual machine and associated resources", "vmName", resourceName)
+
+	// Parse subscription+RG from the VM's resource ID to use the correct client for deletion.
+	if vm.ID != nil {
+		subID, rg, parseErr := parseResourceID(lo.FromPtr(vm.ID))
+		if parseErr == nil && (subID != p.subscriptionID || rg != p.resourceGroup) {
+			client, clientErr := p.getClientForSubscription(subID)
+			if clientErr != nil {
+				return fmt.Errorf("getting client for subscription %s: %w", subID, clientErr)
+			}
+			return p.cleanupAzureResourcesWithClient(ctx, client, rg, resourceName, false)
+		}
+	}
 	return p.cleanupAzureResources(ctx, resourceName, false)
 }
 
@@ -369,22 +521,34 @@ func (p *DefaultVMProvider) GetNic(ctx context.Context, rg, nicName string) (*ar
 	return &nicResponse.Interface, nil
 }
 
-// ListNics returns all network interfaces in the resource group that have the nodepool tag
+// ListNics returns all network interfaces in all known resource groups that have the nodepool tag
 func (p *DefaultVMProvider) ListNics(ctx context.Context) ([]*armnetwork.Interface, error) {
-	req := NewQueryRequest(&(p.subscriptionID), p.nicListQuery)
-	client := p.azClient.azureResourceGraphClient
-	data, err := GetResourceData(ctx, client, *req)
-	if err != nil {
-		return nil, fmt.Errorf("querying azure resource graph, %w", err)
-	}
 	var nicList []*armnetwork.Interface
-	for i := range data {
-		nic, err := createNICFromQueryResponseData(data[i])
-		if err != nil {
-			return nil, fmt.Errorf("creating NIC object from query response data, %w", err)
+
+	seen := make(map[subRGKey]struct{})
+	for _, key := range p.getKnownSubRGs() {
+		if _, ok := seen[key]; ok {
+			continue
 		}
-		nicList = append(nicList, nic)
+		seen[key] = struct{}{}
+
+		query := GetNICListQueryBuilder(key.resourceGroup).String()
+		subID := key.subscriptionID
+		req := NewQueryRequest(&subID, query)
+		client := p.azClient.azureResourceGraphClient
+		data, err := GetResourceData(ctx, client, *req)
+		if err != nil {
+			return nil, fmt.Errorf("querying azure resource graph for subscription %s, rg %s: %w", key.subscriptionID, key.resourceGroup, err)
+		}
+		for i := range data {
+			nic, err := createNICFromQueryResponseData(data[i])
+			if err != nil {
+				return nil, fmt.Errorf("creating NIC object from query response data, %w", err)
+			}
+			nicList = append(nicList, nic)
+		}
 	}
+
 	return nicList, nil
 }
 
@@ -446,8 +610,12 @@ func (p *DefaultVMProvider) newNetworkInterfaceForVM(opts *createNICOptions) arm
 		}
 	}
 
+	location := opts.Location
+	if location == "" {
+		location = p.location
+	}
 	nic := armnetwork.Interface{
-		Location: lo.ToPtr(p.location),
+		Location: lo.ToPtr(location),
 		Properties: &armnetwork.InterfacePropertiesFormat{
 			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
 				{
@@ -498,13 +666,14 @@ type createNICOptions struct {
 	NetworkPluginMode      string
 	MaxPods                int32
 	NetworkSecurityGroupID string
+	Location               string
 }
 
-func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, opts *createNICOptions) (string, error) {
+func (p *DefaultVMProvider) createNetworkInterface(ctx context.Context, client *AZClient, resourceGroup string, opts *createNICOptions) (string, error) {
 	nic := p.newNetworkInterfaceForVM(opts)
 	p.applyTemplateToNic(&nic, opts.LaunchTemplate)
 	log.FromContext(ctx).V(1).Info("creating network interface", "nicName", opts.NICName)
-	res, err := createNic(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, opts.NICName, nic)
+	res, err := createNic(ctx, client.networkInterfacesClient, resourceGroup, opts.NICName, nic)
 	if err != nil {
 		return "", err
 	}
@@ -592,6 +761,7 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	setImageReference(vm.Properties, opts.LaunchTemplate.ImageID, opts.UseSIG)
 	setVMPropertiesBillingProfile(vm.Properties, opts.CapacityType)
 	setVMPropertiesSecurityProfile(vm.Properties, opts.NodeClass)
+	setVMPropertiesDataDisk(vm.Properties, opts.NodeClass)
 
 	if opts.ProvisionMode == consts.ProvisionModeBootstrappingClient {
 		vm.Properties.OSProfile.CustomData = lo.ToPtr(opts.LaunchTemplate.CustomScriptsCustomData)
@@ -600,6 +770,21 @@ func newVMObject(opts *createVMOptions) *armcompute.VirtualMachine {
 	}
 
 	return vm
+}
+
+func setVMPropertiesDataDisk(vmProperties *armcompute.VirtualMachineProperties, nodeClass *v1beta1.AKSNodeClass) {
+	if nodeClass.Spec.DataDiskSizeGB != nil && *nodeClass.Spec.DataDiskSizeGB > 0 {
+		vmProperties.StorageProfile.DataDisks = []*armcompute.DataDisk{{
+			Lun:          lo.ToPtr(int32(0)),
+			Name:         lo.ToPtr(lo.FromPtr(vmProperties.StorageProfile.OSDisk.Name) + "-data"),
+			CreateOption: lo.ToPtr(armcompute.DiskCreateOptionTypesEmpty),
+			DiskSizeGB:   lo.ToPtr(int32(*nodeClass.Spec.DataDiskSizeGB)),
+			DeleteOption: lo.ToPtr(armcompute.DiskDeleteOptionTypesDelete),
+			ManagedDisk: &armcompute.ManagedDiskParameters{
+				StorageAccountType: lo.ToPtr(armcompute.StorageAccountTypesPremiumLRS),
+			},
+		}}
+	}
 }
 
 func setVMPropertiesOSDiskType(vmProperties *armcompute.VirtualMachineProperties, launchTemplate *launchtemplate.Template) {
@@ -626,7 +811,9 @@ func setVMPropertiesOSDiskEncryption(vmProperties *armcompute.VirtualMachineProp
 
 // setImageReference sets the image reference for the VM based on if we are using self hosted karpenter or the node auto provisioning addon
 func setImageReference(vmProperties *armcompute.VirtualMachineProperties, imageID string, useSIG bool) {
-	if useSIG {
+	// Full ARM resource IDs (from SIG or custom Compute Gallery images) use ImageReference.ID.
+	// Community gallery images use CommunityGalleryImageID.
+	if useSIG || strings.HasPrefix(strings.ToLower(imageID), "/subscriptions/") {
 		vmProperties.StorageProfile.ImageReference = &armcompute.ImageReference{
 			ID: lo.ToPtr(imageID),
 		}
@@ -662,7 +849,7 @@ type createResult struct {
 }
 
 // createVirtualMachine creates a new VM using the provided options or skips the creation of a vm if it already exists, which means opts is not guaranteed except VMName
-func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *createVMOptions) (*createResult, error) {
+func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, client *AZClient, resourceGroup string, opts *createVMOptions) (*createResult, error) {
 	// We assume that if a vm exists, we successfully created it with the right parameters from the nodeclaims during another run before a restart.
 	// there are some non-deterministic properties that may change.
 	// Zones: zones are non-detrminsitic as we do a random pick out of zones on the nodeclaim that satisfy the workload requirements.
@@ -674,7 +861,7 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 	//        os.CustomData.
 	// If any of these properties are modified, the existing vm will return a 409 status code "PropertyChangeNotAllowed".
 	// this results in create being blocked on the nodeclaim until liveness TTL is hit.
-	resp, err := p.azClient.virtualMachinesClient.Get(ctx, p.resourceGroup, opts.VMName, nil)
+	resp, err := client.virtualMachinesClient.Get(ctx, resourceGroup, opts.VMName, nil)
 	// If status == ok, we want to return the existing vmm
 	if err == nil {
 		return &createResult{VM: &resp.VirtualMachine}, nil
@@ -693,7 +880,7 @@ func (p *DefaultVMProvider) createVirtualMachine(ctx context.Context, opts *crea
 		metrics.NodePoolLabel:     opts.NodePoolName,
 	}).Inc()
 
-	poller, err := p.azClient.virtualMachinesClient.BeginCreateOrUpdate(ctx, p.resourceGroup, opts.VMName, *vm, nil)
+	poller, err := client.virtualMachinesClient.BeginCreateOrUpdate(ctx, resourceGroup, opts.VMName, *vm, nil)
 	if err != nil {
 		VMCreateFailureMetric.With(map[string]string{
 			metrics.ImageLabel:        opts.LaunchTemplate.ImageID,
@@ -729,27 +916,48 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 		return nil, fmt.Errorf("getting launch template: %w", err)
 	}
 
+	// Resolve per-NodeClass subscription/RG/location overrides, falling back to controller defaults.
+	ncCfg := p.resolveNodeClassConfig(nodeClass)
+	p.trackSubRG(ncCfg.subscriptionID, ncCfg.resourceGroup)
+
+	azClient, err := p.getClientForSubscription(ncCfg.subscriptionID)
+	if err != nil {
+		return nil, fmt.Errorf("getting Azure client for subscription %s: %w", ncCfg.subscriptionID, err)
+	}
+
 	// resourceName for the NIC, VM, and Disk
 	resourceName := GenerateResourceName(nodeClaim.Name)
 
-	backendPools, err := p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("getting backend pools: %w", err)
-	}
+	var backendPools *loadbalancer.BackendAddressPools
 	networkPlugin := options.FromContext(ctx).NetworkPlugin
 	networkPluginMode := options.FromContext(ctx).NetworkPluginMode
-
-	isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
-	if err != nil {
-		return nil, fmt.Errorf("checking if vnet is managed: %w", err)
-	}
 	var nsgID string
-	if !isAKSManagedVNET {
-		nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+
+	if options.FromContext(ctx).ProvisionMode == consts.ProvisionModeEKSHybrid {
+		// In ekshybrid mode: no LB backend pools (nodes use VPN, not Azure LB),
+		// no AKS NSG lookup (NSG is on the subnet via terraform),
+		// and network plugin is none (Cilium handles networking on the EKS side).
+		backendPools = &loadbalancer.BackendAddressPools{}
+		networkPlugin = consts.NetworkPluginNone
+		networkPluginMode = consts.NetworkPluginModeNone
+	} else {
+		var err error
+		backendPools, err = p.loadBalancerProvider.LoadBalancerBackendPools(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("getting managed network security group: %w", err)
+			return nil, fmt.Errorf("getting backend pools: %w", err)
 		}
-		nsgID = lo.FromPtr(nsg.ID)
+
+		isAKSManagedVNET, err := utils.IsAKSManagedVNET(options.FromContext(ctx).NodeResourceGroup, launchTemplate.SubnetID)
+		if err != nil {
+			return nil, fmt.Errorf("checking if vnet is managed: %w", err)
+		}
+		if !isAKSManagedVNET {
+			nsg, err := p.networkSecurityGroupProvider.ManagedNetworkSecurityGroup(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("getting managed network security group: %w", err)
+			}
+			nsgID = lo.FromPtr(nsg.ID)
+		}
 	}
 
 	// TODO: Not returning after launching this LRO because
@@ -758,6 +966,8 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	// TODO: emitted in capacity failure cases that we probably want.
 	nicReference, err := p.createNetworkInterface(
 		ctx,
+		azClient,
+		ncCfg.resourceGroup,
 		&createNICOptions{
 			NICName:                resourceName,
 			NetworkPlugin:          networkPlugin,
@@ -767,21 +977,22 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 			BackendPools:           backendPools,
 			InstanceType:           instanceType,
 			NetworkSecurityGroupID: nsgID,
+			Location:               ncCfg.location,
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := p.createVirtualMachine(ctx, &createVMOptions{
+	result, err := p.createVirtualMachine(ctx, azClient, ncCfg.resourceGroup, &createVMOptions{
 		VMName:              resourceName,
 		NicReference:        nicReference,
 		Zone:                zone,
 		CapacityType:        capacityType,
-		Location:            p.location,
+		Location:            ncCfg.location,
 		SSHPublicKey:        options.FromContext(ctx).SSHPublicKey,
 		LinuxAdminUsername:  options.FromContext(ctx).LinuxAdminUsername,
-		NodeIdentities:      options.FromContext(ctx).NodeIdentities,
+		NodeIdentities:      mergeIdentities(options.FromContext(ctx).NodeIdentities, nodeClass.Spec.ManagedIdentities),
 		NodeClass:           nodeClass,
 		LaunchTemplate:      launchTemplate,
 		InstanceType:        instanceType,
@@ -809,7 +1020,7 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 	// This is a bit of a hack that saves us doing a GET now.
 	// The reason to avoid a GET is that it can fail, and if it does the future above will be lost,
 	// which we don't want.
-	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", p.subscriptionID, p.resourceGroup, resourceName))
+	result.VM.ID = lo.ToPtr(fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/virtualMachines/%s", ncCfg.subscriptionID, ncCfg.resourceGroup, resourceName))
 	result.VM.Properties.TimeCreated = lo.ToPtr(time.Now())
 
 	return &VirtualMachinePromise{
@@ -849,17 +1060,21 @@ func (p *DefaultVMProvider) beginLaunchInstance(
 				return err
 			}
 
-			if p.provisionMode == consts.ProvisionModeBootstrappingClient {
-				err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
-				if err != nil {
-					// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
-					return err
+			// In ekshybrid mode, skip both CSE and AKS billing extension.
+			// The image self-bootstraps via a systemd service that reads VM tags from IMDS.
+			if p.provisionMode != consts.ProvisionModeEKSHybrid {
+				if p.provisionMode == consts.ProvisionModeBootstrappingClient {
+					err = p.createCSExtension(ctx, resourceName, launchTemplate.CustomScriptsCSE, launchTemplate.IsWindows, launchTemplate.Tags)
+					if err != nil {
+						// An error here is handled by CloudProvider create and calls vmInstanceProvider.Delete (which cleans up the azure resources)
+						return err
+					}
 				}
-			}
-			if isAKSIdentifyingExtensionEnabled(p.env) {
-				err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
-				if err != nil {
-					return err
+				if isAKSIdentifyingExtensionEnabled(p.env) {
+					err = p.createAKSIdentifyingExtension(ctx, resourceName, launchTemplate.Tags)
+					if err != nil {
+						return err
+					}
 				}
 			}
 
@@ -914,7 +1129,12 @@ func (p *DefaultVMProvider) getLaunchTemplate(
 // We may not want to return error of NIC cannot be deleted, as it is "by design" that NIC deletion may not be successful when VM deletion is not completed.
 // NIC garbage collector is expected to handle such cases.
 func (p *DefaultVMProvider) cleanupAzureResources(ctx context.Context, resourceName string, mustDeleteNic bool) error {
-	vmErr := deleteVirtualMachineIfExists(ctx, p.azClient.virtualMachinesClient, p.resourceGroup, resourceName)
+	return p.cleanupAzureResourcesWithClient(ctx, p.azClient, p.resourceGroup, resourceName, mustDeleteNic)
+}
+
+// cleanupAzureResourcesWithClient cleans up a VM and its NIC using an explicit client and resource group.
+func (p *DefaultVMProvider) cleanupAzureResourcesWithClient(ctx context.Context, client *AZClient, resourceGroup string, resourceName string, mustDeleteNic bool) error {
+	vmErr := deleteVirtualMachineIfExists(ctx, client.virtualMachinesClient, resourceGroup, resourceName)
 	if vmErr != nil {
 		log.FromContext(ctx).Error(vmErr, "virtualMachine.Delete failed", "vmName", resourceName)
 	}
@@ -922,7 +1142,7 @@ func (p *DefaultVMProvider) cleanupAzureResources(ctx context.Context, resourceN
 	// nic, disk and all associated resources will be removed. If the VM was not created successfully and a nic was found,
 	// then we attempt to delete the nic.
 
-	nicErr := deleteNicIfExists(ctx, p.azClient.networkInterfacesClient, p.resourceGroup, resourceName)
+	nicErr := deleteNicIfExists(ctx, client.networkInterfacesClient, resourceGroup, resourceName)
 
 	if mustDeleteNic {
 		// Don't log NIC error here since mustDeleteNic is true (critical cleanup scenario).
@@ -991,6 +1211,31 @@ func (p *DefaultVMProvider) getCSExtension(cse string, isWindows bool, tags map[
 		},
 		Tags: tags,
 	}
+}
+
+// mergeIdentities combines global node identities with per-NodeClass managed identities,
+// deduplicating by case-insensitive resource ID comparison.
+func mergeIdentities(global []string, perNodeClass []string) []string {
+	if len(perNodeClass) == 0 {
+		return global
+	}
+	seen := make(map[string]bool, len(global)+len(perNodeClass))
+	result := make([]string, 0, len(global)+len(perNodeClass))
+	for _, id := range global {
+		lower := strings.ToLower(id)
+		if !seen[lower] {
+			seen[lower] = true
+			result = append(result, id)
+		}
+	}
+	for _, id := range perNodeClass {
+		lower := strings.ToLower(id)
+		if !seen[lower] {
+			seen[lower] = true
+			result = append(result, id)
+		}
+	}
+	return result
 }
 
 func ConvertToVirtualMachineIdentity(nodeIdentities []string) *armcompute.VirtualMachineIdentity {

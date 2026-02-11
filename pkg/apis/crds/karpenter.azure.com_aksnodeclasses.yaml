@@ -60,6 +60,13 @@ spec:
               spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              dataDiskSizeGB:
+                description: dataDiskSizeGB is the size of the data disk in GB attached
+                  for container storage.
+                format: int32
+                maximum: 4096
+                minimum: 10
+                type: integer
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -69,12 +76,19 @@ spec:
                 type: string
               imageFamily:
                 default: Ubuntu
-                description: imageFamily is the image family that instances use.
+                description: |-
+                  imageFamily is the image family that instances use.
+                  Ignored when imageID is set.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
+                type: string
+              imageID:
+                description: |-
+                  ImageID is the full ARM resource ID of a custom Compute Gallery image.
+                  When set, imageFamily is ignored and this image is used directly.
                 type: string
               kubelet:
                 description: |-
@@ -447,6 +461,12 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              userData:
+                description: |-
+                  userData is arbitrary text set verbatim as the VM's CustomData (base64-encoded by the Azure SDK).
+                  In ekshybrid mode, the image's bootstrap script reads this from
+                  /var/lib/cloud/instance/user-data.txt. The provider does not interpret the content.
+                type: string
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.
@@ -619,6 +639,14 @@ spec:
               spec is the top level specification for the AKS Karpenter Provider.
               This will contain configuration necessary to launch instances in AKS.
             properties:
+              dataDiskSizeGB:
+                description: |-
+                  dataDiskSizeGB is the size of the data disk in GB attached for container storage (e.g., containerd root).
+                  The image's bootstrap service mounts this disk. Only used in ekshybrid provision mode.
+                format: int32
+                maximum: 4096
+                minimum: 10
+                type: integer
               fipsMode:
                 description: fipsMode controls FIPS compliance for the provisioned
                   nodes
@@ -628,13 +656,29 @@ spec:
                 type: string
               imageFamily:
                 default: Ubuntu
-                description: imageFamily is the image family that instances use.
+                description: |-
+                  imageFamily is the image family that instances use.
+                  Ignored when imageID is set.
                 enum:
                 - Ubuntu
                 - Ubuntu2204
                 - Ubuntu2404
                 - AzureLinux
                 type: string
+              imageID:
+                description: |-
+                  ImageID is the full ARM resource ID of a custom Compute Gallery image.
+                  When set, imageFamily is ignored and this image is used directly.
+                  Example: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Compute/galleries/<gallery>/images/<image>/versions/<version>
+                type: string
+              instanceTypes:
+                description: |-
+                  instanceTypes overrides the instance types discovered by the pricing/SKU provider.
+                  When set, only these instance types are considered for this NodeClass.
+                  Use this for pinned GPU capacity where the SKU may not appear in standard pricing APIs.
+                items:
+                  type: string
+                type: array
               kubelet:
                 description: |-
                   kubelet defines args to be used when configuring kubelet on provisioned nodes.
@@ -960,6 +1004,21 @@ spec:
                 - mode
                 - vnetDNSOverrides
                 type: object
+              location:
+                description: |-
+                  location overrides the controller-level LOCATION.
+                  When set, VMs for this NodeClass are created in this Azure region.
+                type: string
+              managedIdentities:
+                description: |-
+                  managedIdentities is a list of Azure user-assigned managed identity resource IDs
+                  to attach to VMs created with this NodeClass. These are merged with the global
+                  --node-identities flag. Use this for per-subscription identities where the MI
+                  must be in the same subscription as the VM (Azure requirement).
+                  Example: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>
+                items:
+                  type: string
+                type: array
               maxPods:
                 description: |-
                   maxPods is an override for the maximum number of pods that can run on a worker node instance.
@@ -980,6 +1039,11 @@ spec:
                 maximum: 2048
                 minimum: 30
                 type: integer
+              resourceGroup:
+                description: |-
+                  resourceGroup overrides the controller-level AZURE_NODE_RESOURCE_GROUP.
+                  When set, VMs for this NodeClass are created in this resource group.
+                type: string
               security:
                 description: security is a collection of security related karpenter
                   fields
@@ -992,6 +1056,12 @@ spec:
                       https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption#encryption-at-host---end-to-end-encryption-for-your-vm-data
                     type: boolean
                 type: object
+              subscriptionID:
+                description: |-
+                  subscriptionID overrides the controller-level AZURE_SUBSCRIPTION_ID.
+                  When set, VMs for this NodeClass are created in this Azure subscription.
+                  The controller's Azure identity must have Contributor access on the target subscription.
+                type: string
               tags:
                 additionalProperties:
                   type: string
@@ -1006,6 +1076,12 @@ spec:
                   rule: self.all(k, !k.contains('\\'))
                 - message: tags values must be less than 256 characters
                   rule: self.all(k, size(self[k]) <= 256)
+              userData:
+                description: |-
+                  userData is arbitrary text set verbatim as the VM's CustomData (base64-encoded by the Azure SDK).
+                  In ekshybrid mode, the image's bootstrap script reads this from
+                  /var/lib/cloud/instance/user-data.txt. The provider does not interpret the content.
+                type: string
               vnetSubnetID:
                 description: |-
                   vnetSubnetID is the subnet used by nics provisioned with this nodeclass.

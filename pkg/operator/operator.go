@@ -91,6 +91,7 @@ type Operator struct {
 	VMInstanceProvider        *instance.DefaultVMProvider
 	LoadBalancerProvider      *loadbalancer.Provider
 	AZClient                  *instance.AZClient
+	ClientManager             *instance.AZClientManager
 }
 
 func kubeDNSIP(ctx context.Context, kubernetesInterface kubernetes.Interface) (net.IP, error) {
@@ -125,6 +126,11 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 
 	azClient, err := instance.NewAZClient(ctx, azConfig, env, cred)
 	lo.Must0(err, "creating Azure client")
+
+	o := options.FromContext(ctx)
+	armClientOpts := armopts.DefaultARMOpts(env.Cloud, o.EnableAzureSDKLogging)
+	clientManager := instance.NewAZClientManager(azConfig.SubscriptionID, azClient, cred, armClientOpts)
+
 	if options.FromContext(ctx).VnetGUID == "" && options.FromContext(ctx).NetworkPluginMode == consts.NetworkPluginModeOverlay {
 		vnetGUID, err := getVnetGUID(ctx, cred, azConfig, options.FromContext(ctx).SubnetID)
 		lo.Must0(err, "getting VNET GUID")
@@ -208,6 +214,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 	)
 	vmInstanceProvider := instance.NewDefaultVMProvider(
 		azClient,
+		clientManager,
 		instanceTypeProvider,
 		launchTemplateProvider,
 		loadBalancerProvider,
@@ -234,6 +241,7 @@ func NewOperator(ctx context.Context, operator *operator.Operator) (context.Cont
 		VMInstanceProvider:           vmInstanceProvider,
 		LoadBalancerProvider:         loadBalancerProvider,
 		AZClient:                     azClient,
+		ClientManager:                clientManager,
 	}
 }
 

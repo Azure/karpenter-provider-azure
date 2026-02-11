@@ -49,10 +49,12 @@ type AKSNodeClassSpec struct {
 	// +kubebuilder:validation:Maximum=2048
 	// +optional
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
-	// ImageID is the ID of the image that instances use.
-	// Not exposed in the API yet
-	ImageID *string `json:"-"`
+	// imageID is the full ARM resource ID of a custom Compute Gallery image.
+	// When set, imageFamily is ignored and this image is used directly.
+	// +optional
+	ImageID *string `json:"imageID,omitempty"`
 	// imageFamily is the image family that instances use.
+	// Ignored when imageID is set.
 	// +default="Ubuntu"
 	// +kubebuilder:validation:Enum:={Ubuntu,Ubuntu2204,Ubuntu2404,AzureLinux}
 	// +optional
@@ -87,6 +89,16 @@ type AKSNodeClassSpec struct {
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
+	// userData is arbitrary text set verbatim as the VM's CustomData (base64-encoded by the Azure SDK).
+	// In ekshybrid mode, the image's bootstrap script reads this from
+	// /var/lib/cloud/instance/user-data.txt. The provider does not interpret the content.
+	// +optional
+	UserData *string `json:"userData,omitempty"`
+	// dataDiskSizeGB is the size of the data disk in GB attached for container storage.
+	// +kubebuilder:validation:Minimum=10
+	// +kubebuilder:validation:Maximum=4096
+	// +optional
+	DataDiskSizeGB *int32 `json:"dataDiskSizeGB,omitempty"`
 	// security is a collection of security related karpenter fields
 	// +optional
 	Security *Security `json:"security,omitempty"`
@@ -397,7 +409,7 @@ type AKSNodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const AKSNodeClassHashVersion = "v3"
+const AKSNodeClassHashVersion = "v4"
 
 func (in *AKSNodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash(in.Spec, hashstructure.FormatV2, &hashstructure.HashOptions{
