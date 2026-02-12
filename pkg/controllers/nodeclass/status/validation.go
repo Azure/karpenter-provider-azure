@@ -18,12 +18,10 @@ package status
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	sdkerrors "github.com/Azure/azure-sdk-for-go-extensions/pkg/errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
@@ -67,7 +65,7 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 		logger.V(1).Info("validating Disk Encryption Set RBAC")
 		err := r.validateDiskEncryptionSetRBAC(ctx)
 		if err != nil {
-			if isAuthorizationError(err) {
+			if sdkerrors.IsAuthorizationErr(err) {
 				// Auth failure (403/401) - set condition to False, requeue soon to detect permission grants
 				logger.V(1).Info("Disk Encryption Set RBAC validation failed - missing permissions", "error", err)
 				nodeClass.StatusConditions().SetFalse(
@@ -93,8 +91,8 @@ func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context
 	// This uses the controller's current credentials (DefaultAzureCredential)
 	_, err := r.diskEncryptionSetsAPI.Get(ctx, r.parsedDiskEncryptionSetID.ResourceGroupName, r.parsedDiskEncryptionSetID.Name, nil)
 	if err != nil {
-		if isAuthorizationError(err) {
-			// Wrap the original error to preserve the error chain for isAuthorizationError checks
+		if sdkerrors.IsAuthorizationErr(err) {
+			// Wrap the original error to preserve the error chain for isAuthorizationErr checks
 			return fmt.Errorf(
 				"%s '%s'. "+
 					"Grant the Reader role on the DiskEncryptionSet to the controlling identity. "+
@@ -111,17 +109,4 @@ func (r *ValidationReconciler) validateDiskEncryptionSetRBAC(ctx context.Context
 
 	log.FromContext(ctx).V(1).Info("Disk Encryption Set RBAC validation passed", "desID", r.parsedDiskEncryptionSetID)
 	return nil
-}
-
-// isAuthorizationError checks if an error is a 401 or 403 authorization error
-func isAuthorizationError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
-		return respErr.StatusCode == http.StatusForbidden ||
-			respErr.StatusCode == http.StatusUnauthorized
-	}
-	return false
 }
