@@ -233,41 +233,30 @@ func (o *Options) validateDiskEncryptionSetID() error {
 		return nil
 	}
 
-	// Must start with /subscriptions/
-	if !strings.HasPrefix(o.DiskEncryptionSetID, "/subscriptions/") {
-		return fmt.Errorf("disk-encryption-set-id is invalid: must start with /subscriptions/")
-	}
-
-	// Split and validate segment count
-	// Expected format: /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Compute/diskEncryptionSets/{name}
-	parts := strings.Split(o.DiskEncryptionSetID, "/")
-	if len(parts) != 9 {
-		return fmt.Errorf("disk-encryption-set-id is invalid: expected format /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{diskEncryptionSetName}")
-	}
-
-	// Validate provider (case-insensitive)
-	if !strings.EqualFold(parts[6], "Microsoft.Compute") {
-		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'providers/Microsoft.Compute' but got 'providers/%s'", parts[6])
-	}
-
-	// Validate resource type (case-insensitive)
-	if !strings.EqualFold(parts[7], "diskEncryptionSets") {
-		return fmt.Errorf("disk-encryption-set-id is invalid: expected 'diskEncryptionSets' but got '%s'", parts[7])
-	}
-
-	// Validate non-empty segments
-	subscriptionID := parts[2]
-	resourceGroupName := parts[4]
-	desName := parts[8]
-	if subscriptionID == "" || resourceGroupName == "" || desName == "" {
-		return fmt.Errorf("disk-encryption-set-id is invalid: subscription ID, resource group name, and disk encryption set name must not be empty")
-	}
-
-	// Parse with Azure SDK for additional validation
+	// Parse with Azure SDK for validation
+	// arm.ParseResourceID will validate the format of the resource ID and extract its components
 	parsedID, err := arm.ParseResourceID(o.DiskEncryptionSetID)
 	if err != nil {
 		return fmt.Errorf("invalid DiskEncryptionSet ID: %w", err)
 	}
+
+	// Validate resource type is Microsoft.Compute/diskEncryptionSets
+	expectedResourceType := "Microsoft.Compute/diskEncryptionSets"
+	if !strings.EqualFold(parsedID.ResourceType.String(), expectedResourceType) {
+		return fmt.Errorf("disk-encryption-set-id is invalid: expected resource type '%s' but got '%s'", expectedResourceType, parsedID.ResourceType.String())
+	}
+
+	// Validate required fields are not empty
+	if parsedID.SubscriptionID == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: subscription ID must not be empty")
+	}
+	if parsedID.ResourceGroupName == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: resource group name must not be empty")
+	}
+	if parsedID.Name == "" {
+		return fmt.Errorf("disk-encryption-set-id is invalid: disk encryption set name must not be empty")
+	}
+
 	o.ParsedDiskEncryptionSetID = parsedID
 	return nil
 }
