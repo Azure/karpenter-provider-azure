@@ -53,6 +53,8 @@ type Controller struct {
 	validation        *ValidationReconciler
 }
 
+// TODO: Consider splitting this (and other similar constructors)
+// into some kind of builder struct to make the calling code easier to read.
 func NewController(
 	kubeClient client.Client,
 	kubernetesVersionProvider kubernetesversion.KubernetesVersionProvider,

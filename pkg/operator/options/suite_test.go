@@ -594,7 +594,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups/my-rg",
 			)
-			Expect(err).To(MatchError(ContainSubstring("invalid DiskEncryptionSet ID")))
+			Expect(err).To(MatchError(ContainSubstring("expected resource type 'Microsoft.Compute/diskEncryptionSets'")))
 		})
 
 		It("should fail when disk-encryption-set-id doesn't start with /subscriptions/", func() {
@@ -650,7 +650,7 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--node-osdisk-diskencryptionset-id", "/subscriptions//resourceGroups/my-rg/providers/Microsoft.Compute/diskEncryptionSets/my-des",
 			)
-			Expect(err).To(MatchError(ContainSubstring("invalid DiskEncryptionSet ID")))
+			Expect(err).To(MatchError(ContainSubstring("expected resource type")))
 		})
 
 		It("should fail when disk-encryption-set-id has empty resource group name", func() {
@@ -664,8 +664,8 @@ var _ = Describe("Options", func() {
 				"--node-resource-group", "my-node-rg",
 				"--node-osdisk-diskencryptionset-id", "/subscriptions/12345678-1234-1234-1234-123456789012/resourceGroups//providers/Microsoft.Compute/diskEncryptionSets/my-des",
 			)
-			// This will fail during ParseResourceID
-			Expect(err).To(MatchError(ContainSubstring("invalid DiskEncryptionSet ID")))
+			// arm.ParseResourceID parses this but with wrong resource type
+			Expect(err).To(MatchError(ContainSubstring("expected resource type")))
 		})
 
 		It("should fail when disk-encryption-set-id has empty DES name", func() {

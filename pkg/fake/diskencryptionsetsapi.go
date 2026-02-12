@@ -25,12 +25,22 @@ import (
 )
 
 type DiskEncryptionSetsAPI struct {
-	GetFunc func(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error)
+	GetFunc func(
+		ctx context.Context,
+		resourceGroupName string,
+		diskEncryptionSetName string,
+		options *armcompute.DiskEncryptionSetsClientGetOptions,
+	) (armcompute.DiskEncryptionSetsClientGetResponse, error)
 }
 
 var _ instance.DiskEncryptionSetsAPI = &DiskEncryptionSetsAPI{}
 
-func (d *DiskEncryptionSetsAPI) Get(ctx context.Context, resourceGroupName string, diskEncryptionSetName string, options *armcompute.DiskEncryptionSetsClientGetOptions) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
+func (d *DiskEncryptionSetsAPI) Get(
+	ctx context.Context,
+	resourceGroupName string,
+	diskEncryptionSetName string,
+	options *armcompute.DiskEncryptionSetsClientGetOptions,
+) (armcompute.DiskEncryptionSetsClientGetResponse, error) {
 	if d.GetFunc != nil {
 		return d.GetFunc(ctx, resourceGroupName, diskEncryptionSetName, options)
 	}
