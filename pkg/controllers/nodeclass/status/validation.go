@@ -30,13 +30,15 @@ import (
 )
 
 const (
-	RBACMissing = "DiskEncryptionSetRBACMissing"
-	CheckFailed = "DiskEncryptionSetRBACCheckFailed"
+	DiskEncryptionSetRBACMissing = "DiskEncryptionSetRBACMissing"
+	// TODO: May want to rethink how we handle successful validation + potential for RBAC removal.
+	// See this PR comment for considerations:
+	// https://github.com/Azure/karpenter-provider-azure/pull/1372#discussion_r2795367386
 	// ValidationSuccessRequeueInterval defines how often to re-validate DES RBAC after success
 	// Set to 1 hour since RBAC changes are infrequent in production
 	ValidationSuccessRequeueInterval = 1 * time.Hour
 	// ValidationFailureRequeueInterval defines how often to retry DES RBAC validation after auth failure
-	// Set to 1 minute to detect when permissions are granted
+	// Set to 1 minute to detect when permissions are granted without creating a high system load
 	ValidationFailureRequeueInterval = 1 * time.Minute
 	// RBACErrorMessage is the error message shown when the controlling identity lacks Reader permissions
 	RBACErrorMessage = "controlling identity does not have Reader role on Disk Encryption Set"
@@ -44,7 +46,7 @@ const (
 
 type ValidationReconciler struct {
 	diskEncryptionSetsAPI     instance.DiskEncryptionSetsAPI
-	parsedDiskEncryptionSetID *arm.ResourceID // parsed by options.Validate(), will be nil if DES ID is not set
+	parsedDiskEncryptionSetID *arm.ResourceID // parsed by options.Validate(), will be nil if DiskEncryptionSetID is not set
 }
 
 func NewValidationReconciler(
@@ -70,7 +72,7 @@ func (r *ValidationReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1
 				logger.V(1).Info("Disk Encryption Set RBAC validation failed - missing permissions", "error", err)
 				nodeClass.StatusConditions().SetFalse(
 					v1beta1.ConditionTypeValidationSucceeded,
-					RBACMissing,
+					DiskEncryptionSetRBACMissing,
 					err.Error(),
 				)
 				return reconcile.Result{RequeueAfter: ValidationFailureRequeueInterval}, nil

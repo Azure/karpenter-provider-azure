@@ -161,7 +161,7 @@ var _ = Describe("Validation Reconciler", func() {
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.RBACMissing))
+			Expect(condition.Reason).To(Equal(status.DiskEncryptionSetRBACMissing))
 			Expect(condition.Message).To(ContainSubstring("does not have Reader role on Disk Encryption Set"))
 		})
 
@@ -182,7 +182,7 @@ var _ = Describe("Validation Reconciler", func() {
 
 			condition := nodeClass.StatusConditions().Get(v1beta1.ConditionTypeValidationSucceeded)
 			Expect(condition.IsFalse()).To(BeTrue())
-			Expect(condition.Reason).To(Equal(status.RBACMissing))
+			Expect(condition.Reason).To(Equal(status.DiskEncryptionSetRBACMissing))
 		})
 
 		It("should return error for non-authorization errors", func() {
