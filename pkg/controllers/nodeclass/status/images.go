@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
+	"github.com/Azure/karpenter-provider-azure/pkg/logging"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
@@ -104,6 +106,9 @@ func (r *NodeImageReconciler) Register(_ context.Context, m manager.Manager) err
 //   - 5. Handles update cases when customer changes image family, SIG usage, or other means of image selectors
 //   - 6. Handles softly adding newest image version of any newly supported SKUs by Karpenter
 //
+// Scenario C: Upgrade expired images
+//   - 7. Upgrades Linux images that are more than 90 days old to comply with AKS requirements
+//
 // Note: While we'd currently only need to store a SKU -> version mapping in the status for avilaible Images
 // we decided to store the full image ID, plus Requirements associated with it. Storing the complete ID is a simple
 // and clean approach while allowing us to extend future capabilities off of it. Additionally, while the decision to
@@ -160,7 +165,9 @@ func (r *NodeImageReconciler) Reconcile(ctx context.Context, nodeClass *v1beta1.
 	}
 	if !shouldUpdate {
 		// Scenario B: Calculate any partial update based on image selectors, or newly supports SKUs
-		goalImages = overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
+		updatedImages := overrideAnyGoalStateVersionsWithExisting(nodeClass, goalImages)
+		// Scenario C: Upgrade any images that are more than 90 days old (AKS compliance requirement)
+		goalImages = upgradeAnyExpiredImages(ctx, updatedImages, goalImages)
 	}
 
 	if len(goalImages) == 0 {
@@ -280,6 +287,101 @@ func mapImageBasesToImages(images []v1beta1.NodeImage) map[string]*v1beta1.NodeI
 		imagesBaseMapping[baseID] = &images[i]
 	}
 	return imagesBaseMapping
+}
+
+// upgradeAnyExpiredImages upgrades any Linux images that are more than 90 days old to comply with AKS requirements.
+// For Linux images, it parses the version format YYYYMM.DD.PATCH and checks if the image is older than 90 days.
+// TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed.
+func upgradeAnyExpiredImages(ctx context.Context, futureImages []v1beta1.NodeImage, foundImages []v1beta1.NodeImage) []v1beta1.NodeImage {
+	goalBaseIDMapping := mapImageBasesToImages(foundImages)
+	finalImages := []v1beta1.NodeImage{}
+	now := time.Now().UTC()
+
+	for _, futureImage := range futureImages {
+		baseID := trimVersionSuffix(futureImage.ID)
+		foundImage, exists := goalBaseIDMapping[baseID]
+		if !exists {
+			// > Note: this shouldn't be able to happen since overrideAnyGoalStateVersionsWithExisting
+			// > ensures all found base image ids end up in goal/future images.
+			// No corresponding goal image, keep current
+			finalImages = append(finalImages, futureImage)
+			continue
+		}
+
+		// Check if current image is expired (Linux only for now)
+		expired, err := isImageExpired(futureImage.ID, now)
+		if err != nil {
+			// Log malformed image and replace it
+			log.FromContext(ctx).Info("malformed image version, replacing", logging.ImageID, futureImage.ID, "error", err)
+			finalImages = append(finalImages, *foundImage)
+			continue
+		}
+
+		if expired {
+			finalImages = append(finalImages, *foundImage)
+		} else {
+			finalImages = append(finalImages, futureImage)
+		}
+	}
+
+	return finalImages
+}
+
+// isLinuxImageVersion checks if a version string follows the Linux image format YYYYMM.DD.PATCH.
+// If it matches, returns true and the parsed year, month, day components.
+// If it doesn't match, returns false and empty strings.
+func isLinuxImageVersion(version string) (bool, string, string, string) {
+	// Regex for YYYYMM.DD.PATCH format with capture groups
+	linuxVersionRegex := regexp.MustCompile(`^(\d{4})(\d{2})\.(\d{2})\.\d+$`)
+	matches := linuxVersionRegex.FindStringSubmatch(version)
+
+	if matches == nil {
+		return false, "", "", ""
+	}
+
+	// matches[0] is the full match, matches[1-3] are the capture groups
+	year := matches[1]
+	month := matches[2]
+	day := matches[3]
+
+	return true, year, month, day
+}
+
+// isImageExpired checks if a image version is more than 90 days old.
+// > NOTE: this only supports Linux image versions follow the format YYYYMM.DD.PATCH (e.g., 202410.03.1).
+// > An error will be returned if the image isn't using the Linux version format.
+// TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed
+func isImageExpired(imageID string, now time.Time) (bool, error) {
+	version := extractVersionFromImageID(imageID)
+	if version == "" {
+		return false, fmt.Errorf("could not extract version from image ID: %s", imageID)
+	}
+
+	isLinux, year, month, day := isLinuxImageVersion(version)
+	if !isLinux {
+		// TODO: Add support for Windows image version format (OS.PATCH.YYMMDD) when needed
+		return false, fmt.Errorf("invalid version format: unsupported image version format %s", version)
+	}
+
+	// Parse the date
+	dateStr := fmt.Sprintf("%s-%s-%s", year, month, day)
+	imageDate, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return false, fmt.Errorf("parsing image date %s: %w", dateStr, err)
+	}
+
+	// Check if more than 90 days old (expire 30 minutes early to provide buffer)
+	// This ensures we don't accidentally try to provision with an expired image
+	return now.Sub(imageDate) > (90*24*time.Hour - 30*time.Minute), nil
+}
+
+// extractVersionFromImageID extracts the version part from an image ID.
+func extractVersionFromImageID(imageID string) string {
+	parts := strings.Split(imageID, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-1]
 }
 
 // Trims off the version suffix, and leaves just the image base id
