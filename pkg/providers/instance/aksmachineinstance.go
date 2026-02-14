@@ -496,6 +496,34 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO, AKS API panicked: %w", aksMachineName, err)
 				}
 			}()
+
+			// Use GET-based poller when SDK poller is nil (batch case)
+			// The GET poller is also compatible with non-batch case but SDK poller is preferred when available.
+			if poller == nil {
+				getPoller := aksmachinepoller.NewPoller(
+					p.pollerOptions,
+					p.azClient.AKSMachinesClient(),
+					p.clusterResourceGroup,
+					p.clusterName,
+					p.aksMachinesPoolName,
+					aksMachineName,
+				)
+				provisioningErr, pollerErr := getPoller.PollUntilDone(ctx)
+				if pollerErr != nil {
+					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (GET poller), poller error: %w", aksMachineName, pollerErr)
+					return
+				}
+				if provisioningErr != nil {
+					pollingErr = p.handleMachineProvisioningError(ctx, "LRO (GET poller)", aksMachineName, nodeClass, instanceType, zone, capacityType, provisioningErr)
+					return
+				}
+				log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+					"aksMachineName", aksMachineName,
+					"aksMachineID", gotAKSMachine.ID)
+				return
+			}
+
+			// Use SDK poller (non-batch case)
 			_, err := poller.PollUntilDone(ctx, nil) // This may panic if it is deleted mid-way.
 			if err != nil {
 				// Could be quota error; will be handled with custom logic below
