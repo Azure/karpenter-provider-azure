@@ -53,6 +53,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 
 	karpv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )

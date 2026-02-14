@@ -30,6 +30,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"

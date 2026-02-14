@@ -34,6 +34,7 @@ import (
 	coreoptions "sigs.k8s.io/karpenter/pkg/operator/options"
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
