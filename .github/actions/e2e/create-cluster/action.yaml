@@ -31,6 +31,10 @@ inputs:
   provision_mode:
     description: "The karpenter provisioning mode to run the e2e test in"
     default: "aksscriptless"
+  identity_type:
+    description: "The type of managed identity for the cluster (SystemAssigned or UserAssigned)"
+    required: false
+    default: "SystemAssigned"
 runs:
   using: "composite"
   steps:
