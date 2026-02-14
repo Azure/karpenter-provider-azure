@@ -17,6 +17,7 @@ limitations under the License.
 package garbagecollection_test
 
 import (
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
@@ -26,6 +27,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
+	. "github.com/Azure/karpenter-provider-azure/pkg/test/expectations"
 	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 
 	"github.com/awslabs/operatorpkg/object"
@@ -38,6 +40,85 @@ import (
 	coretest "sigs.k8s.io/karpenter/pkg/test"
 	. "sigs.k8s.io/karpenter/pkg/test/expectations"
 )
+
+// gcTestMode provides mode-specific operations for shared garbage collection tests.
+// Both VM and AKS machine contexts provide their own implementation, so the common
+// test logic can run against either instance type without duplication.
+type gcTestMode struct {
+	storeInstanceOld func()        // Store instance created 10m ago (should be GC'd)
+	storeInstanceNew func()        // Store instance just created (within resolution window)
+	storeNoManagedBy func()        // Store old instance without managed-by tag
+	getProviderID    func() string // Get the providerID of the current instance
+}
+
+// runSharedInstanceGCTests generates the common instance garbage collection tests
+// that apply to both VM and AKS machine modes.
+func runSharedInstanceGCTests(mode func() gcTestMode) {
+	It("should delete an instance if there is no NodeClaim owner", func() {
+		m := mode()
+		m.storeInstanceOld()
+
+		ExpectSingletonReconciled(ctx, InstanceGCController)
+		_, err := cloudProvider.Get(ctx, m.getProviderID())
+		Expect(err).To(HaveOccurred())
+		Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+	})
+
+	It("should not delete an instance if it was not launched by a NodeClaim", func() {
+		m := mode()
+		m.storeNoManagedBy()
+
+		ExpectSingletonReconciled(ctx, InstanceGCController)
+		_, err := cloudProvider.Get(ctx, m.getProviderID())
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("should not delete an instance within the nodeClaim resolution window (5m)", func() {
+		m := mode()
+		m.storeInstanceNew()
+
+		ExpectSingletonReconciled(ctx, InstanceGCController)
+		_, err := cloudProvider.Get(ctx, m.getProviderID())
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("should not delete the instance or node if it already has a nodeClaim that matches it", func() {
+		m := mode()
+		m.storeInstanceOld()
+
+		nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+			Status: karpv1.NodeClaimStatus{
+				ProviderID: m.getProviderID(),
+			},
+		})
+		node := coretest.Node(coretest.NodeOptions{
+			ProviderID: m.getProviderID(),
+		})
+		ExpectApplied(ctx, env.Client, nodeClaim, node)
+
+		ExpectSingletonReconciled(ctx, InstanceGCController)
+		_, err := cloudProvider.Get(ctx, m.getProviderID())
+		Expect(err).ToNot(HaveOccurred())
+		ExpectExists(ctx, env.Client, node)
+	})
+
+	It("should delete an instance along with the node if there is no NodeClaim owner (to quicken scheduling)", func() {
+		m := mode()
+		m.storeInstanceOld()
+
+		node := coretest.Node(coretest.NodeOptions{
+			ProviderID: m.getProviderID(),
+		})
+		ExpectApplied(ctx, env.Client, node)
+
+		ExpectSingletonReconciled(ctx, InstanceGCController)
+		_, err := cloudProvider.Get(ctx, m.getProviderID())
+		Expect(err).To(HaveOccurred())
+		Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+
+		ExpectNotFound(ctx, env.Client, node)
+	})
+}
 
 var _ = Describe("Instance Garbage Collection", func() {
 	var vm *armcompute.VirtualMachine
@@ -67,17 +148,29 @@ var _ = Describe("Instance Garbage Collection", func() {
 			providerID = utils.VMResourceIDToProviderID(ctx, lo.FromPtr(aksMachine.Properties.ResourceID))
 		})
 
-		It("should delete an AKS machine if there is no NodeClaim owner", func() {
-			// Launch happened 10m ago
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-			ExpectSingletonReconciled(ctx, InstanceGCController)
-			_, err = cloudProvider.Get(ctx, providerID)
-			Expect(err).To(HaveOccurred())
-			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+		// Shared GC tests (delete no owner, not launched, within window, matching claim, delete+node)
+		runSharedInstanceGCTests(func() gcTestMode {
+			return gcTestMode{
+				storeInstanceOld: func() {
+					aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
+					azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+				},
+				storeInstanceNew: func() {
+					aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp()))
+					azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+				},
+				storeNoManagedBy: func() {
+					aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
+					aksMachine.Properties.Tags = lo.OmitBy(aksMachine.Properties.Tags, func(key string, value *string) bool {
+						return key == launchtemplate.NodePoolTagKey
+					})
+					azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
+				},
+				getProviderID: func() string { return providerID },
+			}
 		})
 
+		// AKS-specific: malformed/missing timestamp tests
 		It("should delete an AKS machine if there is no NodeClaim owner, and with malformed timestamp tag", func() {
 			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr("malformed-timestamp")
 			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
@@ -98,67 +191,6 @@ var _ = Describe("Instance Garbage Collection", func() {
 			_, err = cloudProvider.Get(ctx, providerID)
 			Expect(err).To(HaveOccurred())
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-		})
-
-		It("should not delete an AKS machine if there is no NodeClaim owner, but was not launched by a NodeClaim", func() {
-			// Remove the managed-by tag (this isn't launched by a NodeClaim)
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
-			aksMachine.Properties.Tags = lo.OmitBy(aksMachine.Properties.Tags, func(key string, value *string) bool {
-				return key == launchtemplate.NodePoolTagKey
-			})
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-			ExpectSingletonReconciled(ctx, InstanceGCController)
-			_, err := cloudProvider.Get(ctx, providerID)
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("should not delete an AKS machine if there is no NodeClaim owner, but within the nodeClaim resolution window (5m)", func() {
-			// Launch time just happened
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp()))
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-			ExpectSingletonReconciled(ctx, InstanceGCController)
-			_, err := cloudProvider.Get(ctx, providerID)
-			Expect(err).NotTo(HaveOccurred())
-		})
-
-		It("should not delete the AKS machine or node if it already has a nodeClaim that matches it", func() {
-			// Launch time was 10m ago
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-
-			nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
-				Status: karpv1.NodeClaimStatus{
-					ProviderID: providerID,
-				},
-			})
-			node := coretest.Node(coretest.NodeOptions{
-				ProviderID: providerID,
-			})
-			ExpectApplied(ctx, env.Client, nodeClaim, node)
-
-			ExpectSingletonReconciled(ctx, InstanceGCController)
-			_, err := cloudProvider.Get(ctx, providerID)
-			Expect(err).ToNot(HaveOccurred())
-			ExpectExists(ctx, env.Client, node)
-		})
-
-		It("should delete an AKS machine along with the node if there is no NodeClaim owner (to quicken scheduling)", func() {
-			// Launch happened 10m ago
-			aksMachine.Properties.Tags["karpenter.azure.com_aksmachine_creationtimestamp"] = lo.ToPtr(instance.AKSMachineTimestampToTag(instance.NewAKSMachineTimestamp().Add(-time.Minute * 10)))
-			azureEnv.AKSDataStorage.AKSMachines.Store(lo.FromPtr(aksMachine.ID), *aksMachine)
-			node := coretest.Node(coretest.NodeOptions{
-				ProviderID: providerID,
-			})
-			ExpectApplied(ctx, env.Client, node)
-
-			ExpectSingletonReconciled(ctx, InstanceGCController)
-			_, err = cloudProvider.Get(ctx, providerID)
-			Expect(err).To(HaveOccurred())
-			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
-
-			ExpectNotFound(ctx, env.Client, node)
 		})
 
 		var _ = Context("Complex tags manipulation scenarios with in-place updates", func() {
@@ -491,6 +523,150 @@ var _ = Describe("Instance Garbage Collection", func() {
 			Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
 		})
 	})
+
+	var _ = Context("VM instances", func() {
+		var _ = Context("Basic", func() {
+			BeforeEach(func() {
+				vm = test.VirtualMachine(test.VirtualMachineOptions{Name: "vm-a", NodepoolName: "default"})
+				providerID = utils.VMResourceIDToProviderID(ctx, lo.FromPtr(vm.ID))
+			})
+
+			// Shared GC tests (delete no owner, not launched, within window, matching claim, delete+node)
+			runSharedInstanceGCTests(func() gcTestMode {
+				return gcTestMode{
+					storeInstanceOld: func() {
+						vm.Properties = &armcompute.VirtualMachineProperties{
+							TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+						}
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+					},
+					storeInstanceNew: func() {
+						vm.Properties = &armcompute.VirtualMachineProperties{
+							TimeCreated: lo.ToPtr(time.Now()),
+						}
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+					},
+					storeNoManagedBy: func() {
+						vm.Properties = &armcompute.VirtualMachineProperties{
+							TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+						}
+						vm.Tags = lo.OmitBy(vm.Tags, func(key string, value *string) bool {
+							return key == launchtemplate.NodePoolTagKey
+						})
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(vm.ID), *vm)
+					},
+					getProviderID: func() string { return providerID },
+				}
+			})
+		})
+
+		// VM-specific: bulk provisioning tests
+		var _ = Context("Pod pressure", func() {
+			BeforeEach(func() {
+				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
+				pod := coretest.UnschedulablePod(coretest.PodOptions{})
+				ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, prov, azureEnv, pod)
+				ExpectScheduled(ctx, env.Client, pod)
+				Expect(azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len()).To(Equal(1))
+				vmName := azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
+				vm, err = azureEnv.VMInstanceProvider.Get(ctx, vmName)
+				Expect(err).To(BeNil())
+				providerID = utils.VMResourceIDToProviderID(ctx, *vm.ID)
+			})
+
+			It("should delete many instances if they all don't have NodeClaim owners", func() {
+				// Generate 100 instances that have different vmIDs
+				var ids []string
+				var vmName string
+				for i := 0; i < 100; i++ {
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, prov, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+					if azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len() == 1 {
+						vmName = azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
+						vm, err = azureEnv.VMInstanceProvider.Get(ctx, vmName)
+						Expect(err).To(BeNil())
+						providerID = utils.VMResourceIDToProviderID(ctx, *vm.ID)
+						newVM := test.VirtualMachine(test.VirtualMachineOptions{
+							Name:         vmName,
+							NodepoolName: "default",
+							Properties: &armcompute.VirtualMachineProperties{
+								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+							},
+						})
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
+						ids = append(ids, *vm.ID)
+					}
+				}
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+
+				wg := sync.WaitGroup{}
+				for _, id := range ids {
+					wg.Add(1)
+					go func(id string) {
+						defer GinkgoRecover()
+						defer wg.Done()
+
+						_, err := cloudProvider.Get(ctx, utils.VMResourceIDToProviderID(ctx, id))
+						Expect(err).To(HaveOccurred())
+						Expect(corecloudprovider.IsNodeClaimNotFoundError(err)).To(BeTrue())
+					}(id)
+				}
+				wg.Wait()
+			})
+			It("should not delete all instances if they all have NodeClaim owners", func() {
+				// Generate 100 instances that have different instanceIDs
+				var ids []string
+				var nodeClaims []*karpv1.NodeClaim
+				var vmName string
+				for i := 0; i < 100; i++ {
+					pod := coretest.UnschedulablePod()
+					ExpectProvisionedAndDrained(ctx, env.Client, cluster, cloudProvider, prov, azureEnv, pod)
+					ExpectScheduled(ctx, env.Client, pod)
+					if azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Len() == 1 {
+						vmName = azureEnv.VirtualMachinesAPI.VirtualMachineCreateOrUpdateBehavior.CalledWithInput.Pop().VMName
+						vm, err = azureEnv.VMInstanceProvider.Get(ctx, vmName)
+						Expect(err).To(BeNil())
+						providerID = utils.VMResourceIDToProviderID(ctx, *vm.ID)
+						newVM := test.VirtualMachine(test.VirtualMachineOptions{
+							Name:         vmName,
+							NodepoolName: "default",
+							Properties: &armcompute.VirtualMachineProperties{
+								TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 10)),
+							},
+						})
+						azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(newVM.ID), newVM)
+						nodeClaim := coretest.NodeClaim(karpv1.NodeClaim{
+							Status: karpv1.NodeClaimStatus{
+								ProviderID: utils.VMResourceIDToProviderID(ctx, *vm.ID),
+							},
+						})
+						ids = append(ids, *vm.ID)
+						ExpectApplied(ctx, env.Client, nodeClaim)
+						nodeClaims = append(nodeClaims, nodeClaim)
+					}
+				}
+				ExpectSingletonReconciled(ctx, InstanceGCController)
+
+				wg := sync.WaitGroup{}
+				for _, id := range ids {
+					wg.Add(1)
+					go func(id string) {
+						defer GinkgoRecover()
+						defer wg.Done()
+
+						_, err := cloudProvider.Get(ctx, utils.VMResourceIDToProviderID(ctx, id))
+						Expect(err).ToNot(HaveOccurred())
+					}(id)
+				}
+				wg.Wait()
+
+				for _, nodeClaim := range nodeClaims {
+					ExpectExists(ctx, env.Client, nodeClaim)
+				}
+			})
+		})
+	})
 })
 
 var _ = Describe("NetworkInterface Garbage Collection", func() {
@@ -544,6 +720,91 @@ var _ = Describe("NetworkInterface Garbage Collection", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(nicsAfterGC)).To(Equal(0))
 			Expect(azureEnv.NetworkInterfacesAPI.NetworkInterfacesDeleteBehavior.CalledWithInput.Len()).To(Equal(2))
+		})
+	})
+
+	var _ = Context("VM instances", func() {
+		It("should not delete a network interface if a nodeclaim exists for it", func() {
+			// Create and apply a NodeClaim that references this NIC
+			nodeClaim := coretest.NodeClaim()
+			ExpectApplied(ctx, env.Client, nodeClaim)
+
+			// Create a managed NIC
+			nic := test.Interface(test.InterfaceOptions{
+				Name:         instance.GenerateResourceName(nodeClaim.Name),
+				NodepoolName: nodePool.Name,
+			})
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+
+			nicsBeforeGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(nicsBeforeGC)).To(Equal(1))
+
+			// Run garbage collection
+			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+
+			// Verify NIC still exists after GC
+			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(nicsAfterGC)).To(Equal(1))
+		})
+		It("should delete a NIC if there is no associated VM", func() {
+			nic := test.Interface(test.InterfaceOptions{
+				NodepoolName: nodePool.Name,
+			})
+			nic2 := test.Interface(test.InterfaceOptions{
+				NodepoolName: nodePool.Name,
+			})
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic.ID), *nic)
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(nic2.ID), *nic2)
+			nicsBeforeGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(nicsBeforeGC)).To(Equal(2))
+			// add a nic to azure env, and call reconcile. It should show up in the list before reconcile
+			// then it should not showup after
+			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(nicsAfterGC)).To(Equal(0))
+		})
+		It("should not delete a NIC if there is an associated VM", func() {
+			managedNic := test.Interface(test.InterfaceOptions{
+				NodepoolName: nodePool.Name,
+			})
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
+			managedVM := test.VirtualMachine(test.VirtualMachineOptions{Name: lo.FromPtr(managedNic.Name), NodepoolName: nodePool.Name})
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+			// We should still have a network interface here
+			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(nicsAfterGC)).To(Equal(1))
+
+		})
+		It("the vm gc controller should handle deletion of network interfaces if a nic is associated with a vm", func() {
+			managedNic := test.Interface(test.InterfaceOptions{
+				NodepoolName: nodePool.Name,
+			})
+			azureEnv.NetworkInterfacesAPI.NetworkInterfaces.Store(lo.FromPtr(managedNic.ID), *managedNic)
+			managedVM := test.VirtualMachine(test.VirtualMachineOptions{
+				Name:         lo.FromPtr(managedNic.Name),
+				NodepoolName: nodePool.Name,
+				Properties: &armcompute.VirtualMachineProperties{
+					TimeCreated: lo.ToPtr(time.Now().Add(-time.Minute * 16)), // Needs to be older than the nodeclaim registration ttl
+				},
+			})
+			azureEnv.VirtualMachinesAPI.Instances.Store(lo.FromPtr(managedVM.ID), *managedVM)
+			ExpectSingletonReconciled(ctx, networkInterfaceGCController)
+			// We should still have a network interface here
+			nicsAfterGC, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(nicsAfterGC)).To(Equal(1))
+
+			ExpectSingletonReconciled(ctx, InstanceGCController)
+			nicsAfterVMReconciliation, err := azureEnv.VMInstanceProvider.ListNics(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(nicsAfterVMReconciliation)).To(Equal(0))
+
 		})
 	})
 })

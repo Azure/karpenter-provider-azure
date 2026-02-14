@@ -14,13 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package opts
+package clientopts
 
 import (
+	"log/slog"
 	"net/http"
 	"os"
-
-	"log/slog"
 
 	shPolicy "github.com/Azure/aks-middleware/http/client/azuresdk/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"

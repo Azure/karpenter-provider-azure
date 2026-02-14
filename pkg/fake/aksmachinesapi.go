@@ -27,7 +27,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
-	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/batch"
 	"github.com/samber/lo"
 )
 
@@ -213,7 +214,7 @@ func AKSMachineAPIProvisioningErrorAny() *armcontainerservice.ErrorDetail {
 }
 
 // assert that the fake implements the interface
-var _ instance.AKSMachinesAPI = &AKSMachinesAPI{}
+var _ azclient.AKSMachinesAPI = &AKSMachinesAPI{}
 
 type AKSMachinesAPI struct {
 	AKSMachinesBehavior
@@ -256,15 +257,28 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 		AKSMachine:        parameters,
 		Options:           options,
 	}
-	aksMachine := input.AKSMachine
-	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
-	aksMachine.ID = &id
-	aksMachine.Name = &input.AKSMachineName
 
 	// Validate parent AgentPool
 	if !c.doesAgentPoolExists(input.ResourceGroupName, input.ResourceName, input.AgentPoolName) {
 		return nil, AKSMachineAPIErrorFromAKSMachinesPoolNotFound
 	}
+
+	// If batch entries are present, create a machine for each entry.
+	// This simulates what the real Azure API does when it reads the BatchPutMachine header.
+	if entries := batch.FakeBatchEntriesFromContext(ctx); len(entries) > 0 {
+		return c.createBatchMachines(input, parameters, entries)
+	}
+
+	// Non-batch path: single machine creation (original behavior)
+	return c.createSingleMachine(input, parameters)
+}
+
+// createSingleMachine handles non-batch (single machine) creation.
+func (c *AKSMachinesAPI) createSingleMachine(input *AKSMachineCreateOrUpdateInput, parameters armcontainerservice.Machine) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
+	aksMachine := parameters
+	id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, input.AKSMachineName)
+	aksMachine.ID = &id
+	aksMachine.Name = &input.AKSMachineName
 
 	// Check if AKS machine already exists, if so, consider this an update than a create
 	existingMachine, ok := c.aksDataStorage.AKSMachines.Load(id)
@@ -282,6 +296,77 @@ func (c *AKSMachinesAPI) BeginCreateOrUpdate(
 		updatedAKSMachine, pollingError := c.simulateCreateStatusAtAsync(aksMachine)
 		c.aksDataStorage.AKSMachines.Store(id, updatedAKSMachine)
 		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: updatedAKSMachine}, pollingError
+	})
+}
+
+// createBatchMachines handles batch creation: creates one machine per entry
+// using the shared template body + per-machine zones/tags from the batch entries.
+// This simulates what the real Azure API does when reading the BatchPutMachine header.
+func (c *AKSMachinesAPI) createBatchMachines(input *AKSMachineCreateOrUpdateInput, template armcontainerservice.Machine, entries []batch.MachineEntry) (*runtime.Poller[armcontainerservice.MachinesClientCreateOrUpdateResponse], error) {
+	var primaryMachine armcontainerservice.Machine
+
+	for i, entry := range entries {
+		// Build a per-machine copy from the shared template
+		machine := template
+		machine.Name = lo.ToPtr(entry.MachineName)
+		id := MkMachineID(input.ResourceGroupName, input.ResourceName, input.AgentPoolName, entry.MachineName)
+		machine.ID = &id
+
+		// Apply per-machine zones from the batch entry
+		if len(entry.Zones) > 0 {
+			zones := make([]*string, len(entry.Zones))
+			for j := range entry.Zones {
+				zones[j] = lo.ToPtr(entry.Zones[j])
+			}
+			machine.Zones = zones
+		}
+
+		// Apply per-machine tags from the batch entry
+		if len(entry.Tags) > 0 {
+			if machine.Properties == nil {
+				machine.Properties = &armcontainerservice.MachineProperties{}
+			} else {
+				// Shallow-copy Properties so we don't mutate the shared template
+				props := *machine.Properties
+				machine.Properties = &props
+			}
+			tags := make(map[string]*string, len(entry.Tags))
+			for k, v := range entry.Tags {
+				tags[k] = lo.ToPtr(v)
+			}
+			machine.Properties.Tags = tags
+		}
+
+		// Check if AKS machine already exists — if so, check for immutable property conflicts
+		// (mirrors the conflict detection in createSingleMachine → updateExistingAKSMachine)
+		if existingRaw, ok := c.aksDataStorage.AKSMachines.Load(id); ok {
+			existing := existingRaw.(armcontainerservice.Machine)
+			if c.doImmutablePropertiesChanged(&existing, &machine) {
+				return nil, AKSMachineAPIErrorFromAKSMachineImmutablePropertyChangeAttempted
+			}
+		}
+
+		// Store the machine
+		c.setDefaultMachineValues(&machine, input.ResourceGroupName, input.AgentPoolName)
+		machine.Properties.ProvisioningState = lo.ToPtr("Creating")
+		c.aksDataStorage.AKSMachines.Store(id, machine)
+
+		// Simulate async completion
+		updatedMachine, _ := c.simulateCreateStatusAtAsync(machine)
+		c.aksDataStorage.AKSMachines.Store(id, updatedMachine)
+
+		if i == 0 {
+			primaryMachine = updatedMachine
+		}
+	}
+
+	// Enrich input.AKSMachine with the primary entry's zones/tags so that
+	// CalledWithInput captures meaningful per-machine data (not the cleared template).
+	input.AKSMachine = primaryMachine
+
+	// Return the poller for the primary (first) machine, matching coordinator behavior
+	return c.AKSMachineCreateOrUpdateBehavior.Invoke(input, func(input *AKSMachineCreateOrUpdateInput) (*armcontainerservice.MachinesClientCreateOrUpdateResponse, error) {
+		return &armcontainerservice.MachinesClientCreateOrUpdateResponse{Machine: primaryMachine}, nil
 	})
 }
 

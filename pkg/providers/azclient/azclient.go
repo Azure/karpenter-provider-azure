@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instance
+package azclient
 
 import (
 	"context"
@@ -39,7 +39,7 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/zone"
 	"github.com/Azure/skewer"
 
-	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/opts"
+	armopts "github.com/Azure/karpenter-provider-azure/pkg/utils/clientopts"
 )
 
 type AKSMachinesAPI interface {
@@ -80,7 +80,6 @@ type SubnetsAPI interface {
 	Get(ctx context.Context, resourceGroupName string, virtualNetworkName string, subnetName string, options *armnetwork.SubnetsClientGetOptions) (armnetwork.SubnetsClientGetResponse, error)
 }
 
-// TODO: Move this to another package that more correctly reflects its usage across multiple providers
 type AZClient struct {
 	azureResourceGraphClient       AzureResourceGraphAPI
 	virtualMachinesClient          VirtualMachinesAPI
@@ -102,6 +101,36 @@ type AZClient struct {
 
 func (c *AZClient) SubnetsClient() SubnetsAPI {
 	return c.subnetsClient
+}
+
+func (c *AZClient) AKSMachinesClient() AKSMachinesAPI {
+	return c.aksMachinesClient
+}
+
+// SetAKSMachinesClient replaces the AKS machines client. This is used to wrap the client
+// with a batching layer when BatchCreationEnabled is true.
+func (c *AZClient) SetAKSMachinesClient(client AKSMachinesAPI) {
+	c.aksMachinesClient = client
+}
+
+func (c *AZClient) AgentPoolsClient() AKSAgentPoolsAPI {
+	return c.agentPoolsClient
+}
+
+func (c *AZClient) VirtualMachinesClient() VirtualMachinesAPI {
+	return c.virtualMachinesClient
+}
+
+func (c *AZClient) VirtualMachineExtensionsClient() VirtualMachineExtensionsAPI {
+	return c.virtualMachinesExtensionClient
+}
+
+func (c *AZClient) NetworkInterfacesClient() NetworkInterfacesAPI {
+	return c.networkInterfacesClient
+}
+
+func (c *AZClient) AzureResourceGraphClient() AzureResourceGraphAPI {
+	return c.azureResourceGraphClient
 }
 
 func NewAZClientFromAPI(
