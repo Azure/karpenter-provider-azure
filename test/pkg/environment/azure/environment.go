@@ -169,7 +169,7 @@ func NewEnvironment(t *testing.T) *Environment {
 	}
 	// Default to reserved managed machine agentpool name for NAP
 	azureEnv.MachineAgentPoolName = "aksmanagedap"
-	if azureEnv.Environment.InClusterController {
+	if azureEnv.InClusterController {
 		azureEnv.MachineAgentPoolName = "testmpool"
 	}
 	// Create our BYO testing Machine Pool, if running self-hosted, with machine mode specified
