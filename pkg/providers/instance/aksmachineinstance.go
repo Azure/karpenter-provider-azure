@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v8"
 	"github.com/samber/lo"
@@ -32,10 +33,10 @@ import (
 	"github.com/Azure/karpenter-provider-azure/pkg/cache"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/azclient"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/imagefamily"
+	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/aksmachinepoller"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instance/offerings"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/instancetype"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/launchtemplate"
-	"github.com/Azure/karpenter-provider-azure/pkg/utils"
 )
 
 var (
@@ -133,6 +134,7 @@ type DefaultAKSMachineProvider struct {
 	aksMachinesPoolName     string // Only support one AKS machine pool at a time, for now.
 	aksMachinesPoolLocation string
 	errorHandling           *offerings.ErrorDetailHandler
+	pollerOptions           aksmachinepoller.Options // Configurable for testing; defaults to production values
 }
 
 func NewAKSMachineProvider(
@@ -156,9 +158,37 @@ func NewAKSMachineProvider(
 		aksMachinesPoolName:     aksMachinesPoolName,
 		aksMachinesPoolLocation: aksMachinesPoolLocation,
 		errorHandling:           offerings.NewErrorDetailHandler(offeringsCache),
+		pollerOptions:           DefaultPollerOptions(),
 	}
 
 	return provider
+}
+
+// DefaultPollerOptions returns production poller configuration.
+func DefaultPollerOptions() aksmachinepoller.Options {
+	return aksmachinepoller.Options{
+		PollInterval:      5 * time.Second,
+		RetryDelay: 1 * time.Second,
+		MaxRetryDelay:     30 * time.Second,
+		MaxRetries:        10,
+	}
+}
+
+// SetPollerOptions allows overriding poller configuration (primarily for testing).
+func (p *DefaultAKSMachineProvider) SetPollerOptions(opts aksmachinepoller.Options) {
+	p.pollerOptions = opts
+}
+
+// InstantPollerOptions returns poller configuration for tests where the fake
+// returns Succeeded immediately. Uses minimal intervals to avoid delays while
+// still exercising the polling code path.
+func InstantPollerOptions() aksmachinepoller.Options {
+	return aksmachinepoller.Options{
+		PollInterval:      1 * time.Millisecond,
+		RetryDelay: 1 * time.Millisecond,
+		MaxRetryDelay:     1 * time.Millisecond,
+		MaxRetries:        3,
+	}
 }
 
 // BeginCreate creates an instance given the constraints.
@@ -468,6 +498,34 @@ func (p *DefaultAKSMachineProvider) beginCreateMachine(
 					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO, AKS API panicked: %w", aksMachineName, err)
 				}
 			}()
+
+			// Use GET-based poller when SDK poller is nil (batch case)
+			// The GET poller is also compatible with non-batch case but SDK poller is preferred when available.
+			if poller == nil {
+				getPoller := aksmachinepoller.NewPoller(
+					p.pollerOptions,
+					p.azClient.AKSMachinesClient(),
+					p.clusterResourceGroup,
+					p.clusterName,
+					p.aksMachinesPoolName,
+					aksMachineName,
+				)
+				provisioningErr, pollerErr := getPoller.PollUntilDone(ctx)
+				if pollerErr != nil {
+					pollingErr = fmt.Errorf("failed to create AKS machine %q during LRO (GET poller), poller error: %w", aksMachineName, pollerErr)
+					return
+				}
+				if provisioningErr != nil {
+					pollingErr = p.handleMachineProvisioningError(ctx, "LRO (GET poller)", aksMachineName, nodeClass, instanceType, zone, capacityType, provisioningErr)
+					return
+				}
+				log.FromContext(ctx).V(1).Info("successfully created AKS machine",
+					"aksMachineName", aksMachineName,
+					"aksMachineID", gotAKSMachine.ID)
+				return
+			}
+
+			// Use SDK poller (non-batch case)
 			_, err := poller.PollUntilDone(ctx, nil) // This may panic if it is deleted mid-way.
 			if err != nil {
 				// Could be quota error; will be handled with custom logic below
@@ -540,11 +598,9 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 		return nil, fmt.Errorf("found existing AKS machine %s, but %w", aksMachineName, fmt.Errorf("irretrievable karpenter.azure.com_aksmachine_nodeclaim tag"))
 	}
 
-	var existingAKSMachineZone string
-	if len(existingAKSMachine.Zones) == 0 || existingAKSMachine.Zones[0] == nil {
-		existingAKSMachineZone = "" // No zone
-	} else {
-		existingAKSMachineZone = lo.FromPtr(existingAKSMachine.Zones[0])
+	zone, err := GetAKSLabelZoneFromAKSMachine(existingAKSMachine, p.aksMachinesPoolLocation)
+	if err != nil {
+		return nil, fmt.Errorf("found existing AKS machine %s, but failed to get zone: %w", aksMachineName, err)
 	}
 	existingAKSMachineVMSize := lo.FromPtr(existingAKSMachine.Properties.Hardware.VMSize)
 	existingAKSMachinePriority := lo.FromPtr(existingAKSMachine.Properties.Priority)
@@ -555,7 +611,12 @@ func (p *DefaultAKSMachineProvider) reuseExistingMachine(ctx context.Context, ak
 
 	instanceType := offerings.GetInstanceTypeFromVMSize(existingAKSMachineVMSize, instanceTypes)
 	capacityType := getCapacityTypeFromAKSScaleSetPriority(existingAKSMachinePriority)
-	zone := utils.MakeAKSLabelZoneFromARMZone(p.aksMachinesPoolLocation, existingAKSMachineZone)
+
+	// Check if the instance type is nil (VM size not in the list of acceptable instance types)
+	// This indicates a configuration conflict - the existing machine's VM size doesn't match what the current request allows
+	if instanceType == nil {
+		return nil, fmt.Errorf("found existing AKS machine %s with VM size %q, but this VM size is not in the list of acceptable instance types for this NodeClaim", aksMachineName, existingAKSMachineVMSize)
+	}
 
 	if existingAKSMachineNodeClaimName != nodeClaim.Name {
 		// Might be possible from NodePool name hash collision within AKS machine name
