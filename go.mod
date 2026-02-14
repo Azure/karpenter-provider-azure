@@ -55,7 +55,7 @@ require (
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/cloud-provider-azure/pkg/azclient v0.14.3
 	sigs.k8s.io/controller-runtime v0.22.1
-	sigs.k8s.io/karpenter v1.7.1
+	sigs.k8s.io/karpenter v1.8.2
 )
 
 require (
@@ -132,8 +132,8 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/spf13/cobra v1.9.1 // indirect
-	github.com/spf13/pflag v1.0.6 // indirect
+	github.com/spf13/cobra v1.10.1 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.mongodb.org/mongo-driver v1.17.6 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -161,9 +161,9 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/cloud-provider v0.34.0 // indirect
-	k8s.io/component-helpers v0.34.0 // indirect
-	k8s.io/csi-translation-lib v0.34.0 // indirect
+	k8s.io/cloud-provider v0.34.1 // indirect
+	k8s.io/component-helpers v0.34.1 // indirect
+	k8s.io/csi-translation-lib v0.34.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
@@ -171,3 +171,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace sigs.k8s.io/karpenter => github.com/tallaxes/karpenter-core v0.0.0-20260207002041-d13eabd5d543
