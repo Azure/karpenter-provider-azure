@@ -36,10 +36,12 @@ var (
 	OverconstrainedAllocationFailureReason      = "OverconstrainedAllocationFailure"
 	SKUNotAvailableReason                       = "SKUNotAvailable"
 
-	SubscriptionQuotaReachedTTL = 1 * time.Hour
-	AllocationFailureTTL        = 1 * time.Hour
-	SKUNotAvailableSpotTTL      = 1 * time.Hour
-	SKUNotAvailableOnDemandTTL  = 23 * time.Hour
+	SubscriptionQuotaReachedTTL      = 1 * time.Hour
+	AllocationFailureTTL             = 1 * time.Hour
+	SKUNotAvailableSpotTTL           = 1 * time.Hour
+	SKUNotAvailableOnDemandTTL       = 23 * time.Hour
+	SKUFamilyQuotaNonZeroTTL         = 15 * time.Minute // Longer TTL for non-zero quota limits to prevent recycling before lower-weight NodePools are tried
+	RegionalQuotaExhaustedTTL        = 30 * time.Minute // Regional quota is unlikely to free up quickly
 )
 
 type errorHandle func(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error
@@ -82,12 +84,16 @@ func handleSKUFamilyQuotaError(ctx context.Context, unavailableOfferings *cache.
 		if getOfferingCapacityType(offering) != capacityType {
 			continue
 		}
-		// If we have a quota limit of 0 vcpus, we mark the offerings unavailable for an hour.
-		// CPU limits of 0 are usually due to a subscription having no allocated quota for that instance type at all on the subscription.
 		if cpuLimitIsZero(errorMessage) {
+			// CPU limits of 0 are usually due to a subscription having no allocated quota for that instance type at all on the subscription.
 			unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReachedReason, instanceType.Name, getOfferingZone(offering), capacityType, SubscriptionQuotaReachedTTL)
 		} else {
-			unavailableOfferings.MarkUnavailable(ctx, SubscriptionQuotaReachedReason, instanceType.Name, getOfferingZone(offering), capacityType)
+			// Non-zero quota limit means the quota was consumed (e.g., by other workloads or non-Karpenter VMs).
+			// Use a longer TTL to prevent the scheduler from recycling through the same exhausted offerings
+			// before falling back to a lower-weight NodePool. The default 3-minute TTL causes a loop where
+			// offerings expire and get retried before all SKUs in the high-weight pool are exhausted,
+			// blocking fallback to lower-weight pools.
+			unavailableOfferings.MarkUnavailableWithTTL(ctx, SubscriptionQuotaReachedReason, instanceType.Name, getOfferingZone(offering), capacityType, SKUFamilyQuotaNonZeroTTL)
 		}
 	}
 	return fmt.Errorf("subscription level %s vCPU quota for %s has been reached (may try provision an alternative instance type)", capacityType, instanceType.Name)
@@ -148,6 +154,20 @@ func handleOverconstrainedAllocationFailureError(ctx context.Context, unavailabl
 }
 
 func handleRegionalQuotaError(ctx context.Context, unavailableOfferings *cache.UnavailableOfferings, sku *skewer.SKU, instanceType *corecloudprovider.InstanceType, zone, capacityType, errorCode, errorMessage string) error {
+	// Regional quota is exhausted — no instance type of any size can be created for this capacity type.
+	// Mark offerings as unavailable with a long TTL so the scheduler doesn't keep retrying.
+	// Without this cache update, the scheduler would repeatedly select instance types from this capacity type,
+	// and each launch would fail with the same regional quota error, preventing fallback to lower-weight NodePools.
+	if capacityType == karpv1.CapacityTypeSpot {
+		unavailableOfferings.MarkSpotUnavailableWithTTL(ctx, RegionalQuotaExhaustedTTL)
+	} else {
+		// For on-demand regional quota, mark this specific instance type unavailable in all zones.
+		// This helps the scheduler skip it on subsequent loops. Since regional quota affects ALL instance types,
+		// each one that fails will also be marked, progressively draining the high-weight pool's available offerings
+		// until the scheduler falls through to lower-weight pools.
+		markAllZonesUnavailableForBothCapacityTypes(ctx, unavailableOfferings, instanceType, SubscriptionQuotaReachedReason, RegionalQuotaExhaustedTTL)
+	}
+
 	// InsufficientCapacityError is appropriate here because trying any other instance type will not help
 	return corecloudprovider.NewInsufficientCapacityError(
 		fmt.Errorf(

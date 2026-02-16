@@ -247,11 +247,40 @@ func setupTestCases() []responseErrorTestCase {
 			expectAvailable(defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot)).
 			build(),
 
-		newTestCase("Regional quota exceeded").
+		newTestCase("Regional quota exceeded for on-demand marks all zones unavailable").
 			withInstanceType(zone2OnDemand, zone3Spot).
 			withZoneAndCapacity(testZone2, karpv1.CapacityTypeOnDemand).
 			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.RegionalQuotaExceededTerm).
 			expectError(cloudprovider.NewInsufficientCapacityError(fmt.Errorf("%s", errMsgRegionalQuotaExceeded))).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeSpot),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeSpot),
+			).
+			build(),
+
+		newTestCase("Regional quota exceeded for spot marks all spot unavailable").
+			withInstanceType(zone1Spot, zone2Spot, zone3Spot).
+			withZoneAndCapacity(testZone1, karpv1.CapacityTypeSpot).
+			withResponseError(sdkerrors.OperationNotAllowed, sdkerrors.RegionalQuotaExceededTerm).
+			expectError(cloudprovider.NewInsufficientCapacityError(
+				fmt.Errorf("regional %s vCPU quota limit for subscription has been reached. To scale beyond this limit, please review the quota increase process here: https://learn.microsoft.com/en-us/azure/quotas/regional-quota-requests", karpv1.CapacityTypeSpot))).
+			expectUnavailable(
+				defaultTestOfferingInfo("", karpv1.CapacityTypeSpot),
+			).
+			build(),
+
+		newTestCase("SKU family quota non-zero limit uses longer TTL to prevent recycling").
+			withInstanceType(zone1OnDemand, zone2OnDemand, zone3OnDemand).
+			withZoneAndCapacity(testZone1, karpv1.CapacityTypeOnDemand).
+			withResponseError(sdkerrors.OperationNotAllowed, "Family Cores quota Current Limit: 16, Current Usage: 16").
+			expectError(fmt.Errorf(errMsgSKUFamilyQuotaFmt, karpv1.CapacityTypeOnDemand, testInstanceName)).
+			expectUnavailable(
+				defaultTestOfferingInfo(testZone1, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone2, karpv1.CapacityTypeOnDemand),
+				defaultTestOfferingInfo(testZone3, karpv1.CapacityTypeOnDemand),
+			).
 			build(),
 
 		newTestCase("Unknown error code - no handler matches").
