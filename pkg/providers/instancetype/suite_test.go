@@ -854,7 +854,7 @@ var _ = Describe("InstanceType Provider", func() {
 				// placement == CacheDisk
 				// MaxResourceVolumeMB == 163840 MiB -> 171.80 GB,
 				// Standard_D128ds_v6:
-				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacments == NvmeDisk
+				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
 				// and this is greater than 0, so we select 7559, placement == NvmeDisk
 				// Standard_D16plds_v5:
 				// NvmeDiskSizeInMiB == 0
@@ -863,11 +863,11 @@ var _ = Describe("InstanceType Provider", func() {
 				// MaxResourceVolumeMB == 614400 MiB
 				// Standard_D2as_v6: -> EphemeralOSDiskSupported is false, it should return 0 and nil for placement
 				// Standard_D128ds_v6:
-				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacments == NvmeDisk
+				// NvmeDiskSizeInMiB == 7208960 -> 7559.142441 GB // SupportedEphemeralOSDiskPlacements == NvmeDisk
 				// and this is greater than 0, so we select 7559, placement == NvmeDisk
 				// Standard_NC24ads_A100_v4:
 				// {Name: lo.ToPtr("SupportedEphemeralOSDiskPlacements"), Value: lo.ToPtr("ResourceDisk,CacheDisk")},
-				// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacments == NvmeDisk so we move to cache disk
+				// NvmeDiskSizeInMiB == 915527 -> 959.99964 GB  but no SupportedEphemeralOSDiskPlacements == NvmeDisk so we move to cache disk
 				// CacheDiskBytes == 274877906944 -> 274.877906944 GB so we select cache disk + 274
 				// MaxResourceVolumeMB == 65536 MiB
 				// Standard_D64s_v3:
