@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/operator/options"
 	"github.com/Azure/karpenter-provider-azure/pkg/providers/labels"
@@ -331,7 +332,7 @@ func TestLocalDNSLabels(t *testing.T) {
 					LocalDNS: tc.localDNS,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: tc.kubernetesVersion,
+					KubernetesVersion: to.Ptr(tc.kubernetesVersion),
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -361,7 +362,7 @@ func TestDoNotSyncTaintsLabel(t *testing.T) {
 			Name: "test-nodeclass",
 		},
 		Status: v1beta1.AKSNodeClassStatus{
-			KubernetesVersion: "1.35.0",
+			KubernetesVersion: to.Ptr("1.35.0"),
 			Conditions: []status.Condition{
 				{
 					Type:   v1beta1.ConditionTypeKubernetesVersionReady,
@@ -483,7 +484,7 @@ func TestLabelsGet(t *testing.T) {
 					ImageFamily: &imageFamily,
 				},
 				Status: v1beta1.AKSNodeClassStatus{
-					KubernetesVersion: tc.kubernetesVersion,
+					KubernetesVersion: to.Ptr(tc.kubernetesVersion),
 					Conditions: []status.Condition{
 						{
 							Type:   v1beta1.ConditionTypeKubernetesVersionReady,

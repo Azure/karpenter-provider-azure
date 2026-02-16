@@ -249,7 +249,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should include stateless CNI label for kubernetes 1.34+ set to true", func() {
 				// Set kubernetes version to 1.34.0
-				nodeClass.Status.KubernetesVersion = "1.34.0"
+				nodeClass.Status.KubernetesVersion = to.Ptr("1.34.0")
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -262,7 +262,7 @@ var _ = Describe("InstanceType Provider", func() {
 			})
 			It("should include stateless CNI label for kubernetes < 1.34 set to false", func() {
 				// Set kubernetes version to 1.33.0
-				nodeClass.Status.KubernetesVersion = "1.33.0"
+				nodeClass.Status.KubernetesVersion = to.Ptr("1.33.0")
 				ExpectApplied(ctx, env.Client, nodePool, nodeClass)
 				pod := coretest.UnschedulablePod()
 				ExpectProvisioned(ctx, env.Client, cluster, cloudProvider, coreProvisioner, pod)
@@ -662,7 +662,7 @@ var _ = Describe("InstanceType Provider", func() {
 				}
 				test.ApplyDefaultStatus(nodeClass, env, testOptions.UseSIG)
 				if k8sVersion != "" {
-					nodeClass.Status.KubernetesVersion = k8sVersion
+					nodeClass.Status.KubernetesVersion = to.Ptr(k8sVersion)
 				}
 				ExpectApplied(ctx, env.Client, nodeClass)
 				instanceTypes, err := azureEnv.InstanceTypesProvider.List(ctx, nodeClass)

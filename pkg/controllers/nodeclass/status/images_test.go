@@ -21,6 +21,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v7"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/controllers/nodeclass/status"
@@ -162,7 +163,7 @@ var _ = Describe("NodeClass NodeImage Status Controller", func() {
 	Context("NodeImageReconciler direct tests", func() {
 		BeforeEach(func() {
 			// Setup NodeClass
-			nodeClass.Status.KubernetesVersion = testK8sVersion
+			nodeClass.Status.KubernetesVersion = to.Ptr(testK8sVersion)
 			nodeClass.StatusConditions().SetTrue(v1beta1.ConditionTypeKubernetesVersionReady)
 
 			nodeClass.Status.Images = getExpectedTestCommunityImages(oldcigImageVersion)

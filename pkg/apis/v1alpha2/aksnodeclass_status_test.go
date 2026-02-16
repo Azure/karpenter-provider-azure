@@ -76,7 +76,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						ObservedGeneration: 1,
 					},
 				},
-				KubernetesVersion: "1.31.0",
+				KubernetesVersion: to.Ptr("1.31.0"),
 				Images: []v1alpha2.NodeImage{
 					{
 						ID: "/CommunityGalleries/AKSUbuntu-38d80f77-467a-481f-a8d4-09b6d4220bd2/images/2204gen2containerd/versions/202501.02.0",
@@ -162,7 +162,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						Message:            "Images are not ready for use",
 					},
 				},
-				KubernetesVersion: "1.31.0",
+				KubernetesVersion: to.Ptr("1.31.0"),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
@@ -213,7 +213,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						Message:            "Kubernetes version is ready for use",
 					},
 				},
-				KubernetesVersion: "1.31.0",
+				KubernetesVersion: to.Ptr("1.31.0"),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()
@@ -265,7 +265,7 @@ var _ = Describe("Status, successful outcomes", func() {
 						ObservedGeneration: 1,
 					},
 				},
-				KubernetesVersion: "",
+				KubernetesVersion: to.Ptr(""),
 			},
 		}
 		kubernetesVersion, err = errNodeClass.GetKubernetesVersion()

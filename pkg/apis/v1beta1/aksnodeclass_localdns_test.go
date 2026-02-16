@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1_test
 
 import (
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/test"
 	"github.com/awslabs/operatorpkg/status"
@@ -45,7 +46,9 @@ var _ = Describe("IsLocalDNSEnabled", func() {
 			if mode != "" {
 				nodeClass.Spec.LocalDNS = &v1beta1.LocalDNS{Mode: mode}
 			}
-			nodeClass.Status.KubernetesVersion = kubernetesVersion
+			if kubernetesVersion != "" {
+				nodeClass.Status.KubernetesVersion = to.Ptr(kubernetesVersion)
+			}
 			Expect(nodeClass.IsLocalDNSEnabled()).To(Equal(expected))
 		},
 		Entry("LocalDNS is nil", v1beta1.LocalDNSMode(""), "", false),
