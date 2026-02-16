@@ -19,6 +19,7 @@ package v1alpha2_test
 import (
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1alpha2"
 	"github.com/awslabs/operatorpkg/status"
 	"github.com/samber/lo"
@@ -44,7 +45,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1alpha2.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
@@ -139,7 +140,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1alpha2.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
@@ -183,7 +184,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1alpha2.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
@@ -234,7 +235,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					"keyTag-2": "valueTag-2",
 				},
 				Kubelet: &v1alpha2.KubeletConfiguration{
-					CPUManagerPolicy:            "static",
+					CPUManagerPolicy:            to.Ptr("static"),
 					CPUCFSQuota:                 lo.ToPtr(true),
 					CPUCFSQuotaPeriod:           metav1.Duration{Duration: lo.Must(time.ParseDuration("100ms"))},
 					ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),

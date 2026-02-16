@@ -290,8 +290,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Enum:={none,static}
 	// +default="none"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	CPUManagerPolicy string `json:"cpuManagerPolicy,omitempty"`
+	CPUManagerPolicy *string `json:"cpuManagerPolicy,omitempty"`
 	// cpuCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
 	// Note: AKS CustomKubeletConfig uses cpuCfsQuota (camelCase)
 	// +default=true
