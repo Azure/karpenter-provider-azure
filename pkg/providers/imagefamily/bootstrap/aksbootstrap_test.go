@@ -139,7 +139,7 @@ func TestKubeletConfigMap(t *testing.T) {
 			CPUCFSQuotaPeriod:           metav1.Duration{},
 			ImageGCHighThresholdPercent: lo.ToPtr[int32](42),
 			ImageGCLowThresholdPercent:  lo.ToPtr[int32](24),
-			TopologyManagerPolicy:       "best-effort",
+			TopologyManagerPolicy:       to.Ptr("best-effort"),
 			AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
 			ContainerLogMaxSize:         to.Ptr("42Mi"),
 			ContainerLogMaxFiles:        lo.ToPtr[int32](13),

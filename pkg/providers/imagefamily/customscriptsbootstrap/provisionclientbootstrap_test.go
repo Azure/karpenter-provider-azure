@@ -580,7 +580,7 @@ func TestConstructProvisionValues(t *testing.T) {
 						CPUManagerPolicy:            "static",
 						CPUCFSQuota:                 lo.ToPtr(true),
 						CPUCFSQuotaPeriod:           metav1.Duration{Duration: 100 * time.Millisecond},
-						TopologyManagerPolicy:       "single-numa-node",
+						TopologyManagerPolicy:       to.Ptr("single-numa-node"),
 						ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 						ImageGCLowThresholdPercent:  lo.ToPtr(int32(75)),
 						ContainerLogMaxSize:         to.Ptr("100Mi"),

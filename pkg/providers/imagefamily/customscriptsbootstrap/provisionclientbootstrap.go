@@ -179,8 +179,8 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 		if p.KubeletConfig.CPUManagerPolicy != "" {
 			provisionProfile.CustomKubeletConfig.CPUManagerPolicy = lo.ToPtr(p.KubeletConfig.CPUManagerPolicy)
 		}
-		if p.KubeletConfig.TopologyManagerPolicy != "" {
-			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = lo.ToPtr(p.KubeletConfig.TopologyManagerPolicy)
+		if p.KubeletConfig.TopologyManagerPolicy != nil && *p.KubeletConfig.TopologyManagerPolicy != "" {
+			provisionProfile.CustomKubeletConfig.TopologyManagerPolicy = p.KubeletConfig.TopologyManagerPolicy
 		}
 		if len(p.KubeletConfig.AllowedUnsafeSysctls) > 0 {
 			provisionProfile.CustomKubeletConfig.AllowedUnsafeSysctls = p.KubeletConfig.AllowedUnsafeSysctls

@@ -322,8 +322,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	kubeletConfig.ImageGcHighThreshold = nodeClass.Spec.Kubelet.ImageGCHighThresholdPercent
 	kubeletConfig.ImageGcLowThreshold = nodeClass.Spec.Kubelet.ImageGCLowThresholdPercent
 
-	if nodeClass.Spec.Kubelet.TopologyManagerPolicy != "" {
-		kubeletConfig.TopologyManagerPolicy = lo.ToPtr(nodeClass.Spec.Kubelet.TopologyManagerPolicy)
+	if nodeClass.Spec.Kubelet.TopologyManagerPolicy != nil && *nodeClass.Spec.Kubelet.TopologyManagerPolicy != "" {
+		kubeletConfig.TopologyManagerPolicy = nodeClass.Spec.Kubelet.TopologyManagerPolicy
 	}
 
 	if len(nodeClass.Spec.Kubelet.AllowedUnsafeSysctls) > 0 {

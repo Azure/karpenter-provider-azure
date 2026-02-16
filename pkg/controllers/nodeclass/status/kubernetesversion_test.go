@@ -40,7 +40,8 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
+		Expect(nodeClass.Status.KubernetesVersion).NotTo(BeNil())
+		Expect(*nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
 		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 	})
 
@@ -51,13 +52,15 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 		ExpectApplied(ctx, env.Client, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(nodeClass.Status.KubernetesVersion).To(Equal(oldK8sVersion))
+		Expect(nodeClass.Status.KubernetesVersion).NotTo(BeNil())
+		Expect(*nodeClass.Status.KubernetesVersion).To(Equal(oldK8sVersion))
 		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 
 		ExpectObjectReconciled(ctx, env.Client, controller, nodeClass)
 		nodeClass = ExpectExists(ctx, env.Client, nodeClass)
 
-		Expect(nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
+		Expect(nodeClass.Status.KubernetesVersion).NotTo(BeNil())
+		Expect(*nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
 		Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 	})
 
@@ -78,7 +81,8 @@ var _ = Describe("NodeClass KubernetesVersion Status Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(reconcile.Result{RequeueAfter: azurecache.KubernetesVersionTTL}))
 
-			Expect(nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
+			Expect(nodeClass.Status.KubernetesVersion).NotTo(BeNil())
+			Expect(*nodeClass.Status.KubernetesVersion).To(Equal(testK8sVersion))
 			Expect(nodeClass.StatusConditions().IsTrue(v1beta1.ConditionTypeKubernetesVersionReady)).To(BeTrue())
 			Expect(nodeClass.StatusConditions().Get(v1beta1.ConditionTypeImagesReady).IsFalse()).To(BeTrue())
 		})

@@ -577,7 +577,7 @@ var _ = Describe("AKSMachineInstance Helper Functions", func() {
 			nodeClass.Spec.Kubelet = &v1beta1.KubeletConfiguration{
 				CPUManagerPolicy:            "static",
 				CPUCFSQuota:                 lo.ToPtr(true),
-				TopologyManagerPolicy:       "single-numa-node",
+				TopologyManagerPolicy:       to.Ptr("single-numa-node"),
 				ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 				ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 				AllowedUnsafeSysctls:        []string{"kernel.shm_rmid_forced", "net.core.somaxconn"},
