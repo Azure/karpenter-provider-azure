@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/awslabs/operatorpkg/object"
 	corestatus "github.com/awslabs/operatorpkg/status"
 	"github.com/blang/semver/v4"
@@ -1129,7 +1130,7 @@ var _ = Describe("InstanceType Provider", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 					TopologyManagerPolicy:       "best-effort",
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         "42Mi",
+					ContainerLogMaxSize:         to.Ptr("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}
@@ -1205,7 +1206,7 @@ var _ = Describe("InstanceType Provider", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 					TopologyManagerPolicy:       "best-effort",
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         "42Mi",
+					ContainerLogMaxSize:         to.Ptr("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}
@@ -1248,7 +1249,7 @@ var _ = Describe("InstanceType Provider", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(20)),
 					TopologyManagerPolicy:       "best-effort",
 					AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-					ContainerLogMaxSize:         "42Mi",
+					ContainerLogMaxSize:         to.Ptr("42Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 					PodPidsLimit:                lo.ToPtr[int64](99),
 				}

@@ -161,12 +161,15 @@ func (p *ProvisionClientBootstrap) ConstructProvisionValues(ctx context.Context)
 
 	if p.KubeletConfig != nil {
 		provisionProfile.CustomKubeletConfig = &models.CustomKubeletConfig{
-			CPUCfsQuota:           p.KubeletConfig.CPUCFSQuota,
-			ImageGcHighThreshold:  p.KubeletConfig.ImageGCHighThresholdPercent,
-			ImageGcLowThreshold:   p.KubeletConfig.ImageGCLowThresholdPercent,
-			ContainerLogMaxSizeMB: ConvertContainerLogMaxSizeToMB(p.KubeletConfig.ContainerLogMaxSize),
-			ContainerLogMaxFiles:  p.KubeletConfig.ContainerLogMaxFiles,
-			PodMaxPids:            ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+			CPUCfsQuota:          p.KubeletConfig.CPUCFSQuota,
+			ImageGcHighThreshold: p.KubeletConfig.ImageGCHighThresholdPercent,
+			ImageGcLowThreshold:  p.KubeletConfig.ImageGCLowThresholdPercent,
+			ContainerLogMaxFiles: p.KubeletConfig.ContainerLogMaxFiles,
+			PodMaxPids:           ConvertPodMaxPids(p.KubeletConfig.PodPidsLimit),
+		}
+
+		if p.KubeletConfig.ContainerLogMaxSize != nil {
+			provisionProfile.CustomKubeletConfig.ContainerLogMaxSizeMB = ConvertContainerLogMaxSizeToMB(*p.KubeletConfig.ContainerLogMaxSize)
 		}
 
 		// NodeClaim defaults don't work somehow and keep giving invalid values. Can be improved later.

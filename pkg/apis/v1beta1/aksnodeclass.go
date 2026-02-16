@@ -353,8 +353,7 @@ type KubeletConfiguration struct {
 	// +kubebuilder:validation:Pattern=`^\d+(E|P|T|G|M|K|Ei|Pi|Ti|Gi|Mi|Ki)$`
 	// +default="50Mi"
 	// +optional
-	//nolint:kubeapilinter // optionalfields: changing to pointer would be a breaking change
-	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
+	ContainerLogMaxSize *string `json:"containerLogMaxSize,omitempty"`
 	// containerLogMaxFiles specifies the maximum number of container log files that can be present for a container.
 	// Default: 5
 	// +kubebuilder:validation:Minimum:=2

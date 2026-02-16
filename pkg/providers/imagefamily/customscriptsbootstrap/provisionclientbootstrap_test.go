@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/Azure/karpenter-provider-azure/pkg/consts"
 	"github.com/Azure/karpenter-provider-azure/pkg/fake"
@@ -582,7 +583,7 @@ func TestConstructProvisionValues(t *testing.T) {
 						TopologyManagerPolicy:       "single-numa-node",
 						ImageGCHighThresholdPercent: lo.ToPtr(int32(85)),
 						ImageGCLowThresholdPercent:  lo.ToPtr(int32(75)),
-						ContainerLogMaxSize:         "100Mi",
+						ContainerLogMaxSize:         to.Ptr("100Mi"),
 						ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 						PodPidsLimit:                lo.ToPtr(int64(1024)),
 						AllowedUnsafeSysctls:        []string{"kernel.msg*", "net.ipv4.route.min_pmtu"},

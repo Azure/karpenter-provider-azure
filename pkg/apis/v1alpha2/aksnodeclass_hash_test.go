@@ -54,7 +54,7 @@ var _ = Describe("Hash", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					TopologyManagerPolicy:       "none",
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),

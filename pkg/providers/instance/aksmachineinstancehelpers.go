@@ -331,8 +331,8 @@ func configureKubeletConfig(nodeClass *v1beta1.AKSNodeClass) *armcontainerservic
 	}
 
 	// Convert container log max size to MB
-	if nodeClass.Spec.Kubelet.ContainerLogMaxSize != "" {
-		kubeletConfig.ContainerLogMaxSizeMB = convertContainerLogMaxSizeToMB(nodeClass.Spec.Kubelet.ContainerLogMaxSize)
+	if nodeClass.Spec.Kubelet.ContainerLogMaxSize != nil && *nodeClass.Spec.Kubelet.ContainerLogMaxSize != "" {
+		kubeletConfig.ContainerLogMaxSizeMB = convertContainerLogMaxSizeToMB(*nodeClass.Spec.Kubelet.ContainerLogMaxSize)
 	}
 
 	kubeletConfig.ContainerLogMaxFiles = nodeClass.Spec.Kubelet.ContainerLogMaxFiles

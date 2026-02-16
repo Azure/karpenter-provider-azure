@@ -19,6 +19,7 @@ package v1beta1_test
 import (
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/karpenter-provider-azure/pkg/apis/v1beta1"
 	"github.com/awslabs/operatorpkg/status"
 	"github.com/samber/lo"
@@ -51,7 +52,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					TopologyManagerPolicy:       "none",
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),
@@ -146,7 +147,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					TopologyManagerPolicy:       "none",
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),
@@ -190,7 +191,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					TopologyManagerPolicy:       "none",
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),
@@ -241,7 +242,7 @@ var _ = Describe("Status, successful outcomes", func() {
 					ImageGCLowThresholdPercent:  lo.ToPtr(int32(80)),
 					TopologyManagerPolicy:       "none",
 					AllowedUnsafeSysctls:        []string{"net.core.somaxconn"},
-					ContainerLogMaxSize:         "10Mi",
+					ContainerLogMaxSize:         to.Ptr("10Mi"),
 					ContainerLogMaxFiles:        lo.ToPtr(int32(10)),
 				},
 				MaxPods: lo.ToPtr(int32(100)),

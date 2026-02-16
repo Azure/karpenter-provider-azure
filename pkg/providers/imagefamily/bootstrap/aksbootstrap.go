@@ -407,8 +407,8 @@ func kubeletConfigToMap(kubeletConfig *KubeletConfiguration) map[string]string {
 	if kubeletConfig.TopologyManagerPolicy != "" {
 		args["--topology-manager-policy"] = kubeletConfig.TopologyManagerPolicy
 	}
-	if kubeletConfig.ContainerLogMaxSize != "" {
-		args["--container-log-max-size"] = kubeletConfig.ContainerLogMaxSize
+	if kubeletConfig.ContainerLogMaxSize != nil && *kubeletConfig.ContainerLogMaxSize != "" {
+		args["--container-log-max-size"] = *kubeletConfig.ContainerLogMaxSize
 	}
 	if kubeletConfig.ContainerLogMaxFiles != nil {
 		args["--container-log-max-files"] = fmt.Sprintf("%d", lo.FromPtr(kubeletConfig.ContainerLogMaxFiles))

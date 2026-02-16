@@ -141,7 +141,7 @@ func TestKubeletConfigMap(t *testing.T) {
 			ImageGCLowThresholdPercent:  lo.ToPtr[int32](24),
 			TopologyManagerPolicy:       "best-effort",
 			AllowedUnsafeSysctls:        []string{"Allowed", "Unsafe", "Sysctls"},
-			ContainerLogMaxSize:         "42Mi",
+			ContainerLogMaxSize:         to.Ptr("42Mi"),
 			ContainerLogMaxFiles:        lo.ToPtr[int32](13),
 			PodPidsLimit:                lo.ToPtr[int64](99),
 		},
