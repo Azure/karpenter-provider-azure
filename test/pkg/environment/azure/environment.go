@@ -91,18 +91,21 @@ type Environment struct {
 	RBACManager *RBACManager
 }
 
-func readEnv(name string, required bool) string {
+func readEnvRequired(name string) string {
 	value, exists := os.LookupEnv(name)
 	if !exists {
-		if required {
-			panic(fmt.Sprintf("Environment variable %s is not set", name))
-		}
-		return ""
+		panic(fmt.Sprintf("Environment variable %s is not set", name))
 	}
 	if value == "" {
-		if required {
-			panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
-		}
+		panic(fmt.Sprintf("Environment variable %s is set to an empty string", name))
+	}
+	return value
+}
+
+func readEnvOptional(name string) string {
+	value, exists := os.LookupEnv(name)
+	if !exists {
+		return ""
 	}
 	return value
 }
@@ -125,11 +128,11 @@ func NewEnvironment(t *testing.T) *Environment {
 
 	azureEnv := &Environment{
 		Environment:          common.NewEnvironment(t),
-		SubscriptionID:       readEnv("AZURE_SUBSCRIPTION_ID", true),
-		ClusterName:          readEnv("AZURE_CLUSTER_NAME", true),
-		ClusterResourceGroup: readEnv("AZURE_RESOURCE_GROUP", true),
-		ACRName:              readEnv("AZURE_ACR_NAME", true),
-		ProvisionMode:        readEnv("PROVISION_MODE", false),
+		SubscriptionID:       readEnvRequired("AZURE_SUBSCRIPTION_ID"),
+		ClusterName:          readEnvRequired("AZURE_CLUSTER_NAME"),
+		ClusterResourceGroup: readEnvRequired("AZURE_RESOURCE_GROUP"),
+		ACRName:              readEnvRequired("AZURE_ACR_NAME"),
+		ProvisionMode:        readEnvOptional("PROVISION_MODE"),
 		Region:               lo.Ternary(os.Getenv("AZURE_LOCATION") == "", "westus2", os.Getenv("AZURE_LOCATION")),
 		CloudConfig:          cloudEnv.Cloud,
 		tracker:              azure.NewTracker(),

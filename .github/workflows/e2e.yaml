@@ -50,7 +50,8 @@ on:
         type: choice
         description: "Azure location to run the e2e test in"
         default: westus3
-        # TODO: Why only these 3 regions?
+        # Limiting to a subset of regions to give a nice dropdown and also
+        # ensure the regions are configured to pass with all of our tests (capacity, etc)
         options:
           - westus3
           - southcentralus

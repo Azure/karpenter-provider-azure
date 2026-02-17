@@ -47,11 +47,11 @@ endif
 # ---------------------------------------------
 az-all:              az-login az-create-workload-msi az-mkaks-cilium              az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-userassigned: az-login az-create-workload-msi az-mkaks-cilium-userassigned az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all-userassigned: az-login az-create-workload-msi az-mkaks-cilium-userassigned az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1               az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all-cniv1:        az-login az-create-workload-msi az-mkaks-cniv1               az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 
-az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay             az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
+az-all-cni-overlay:  az-login az-create-workload-msi az-mkaks-overlay             az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values az-build az-run az-run-sample ## Provision the infra (ACR,AKS); build and deploy Karpenter; deploy sample Provisioner and workload
 az-all-perftest:     az-login az-create-workload-msi az-mkaks-perftest            az-create-federated-cred $(AZ_ALL_PERMS) az-configure-values
 	$(MAKE) az-mon-deploy
 	$(MAKE) az-pprof-enable
@@ -364,6 +364,10 @@ az-mc-upgrade: ## upgrade managed cluster
 	$(eval UPGRADE_K8S_VERSION=$(shell az aks get-upgrades --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) | jq -r ".controlPlaneProfile.upgrades[0].kubernetesVersion"))
 	az aks upgrade --name $(AZURE_CLUSTER_NAME) --resource-group $(AZURE_RESOURCE_GROUP) --kubernetes-version $(UPGRADE_K8S_VERSION)
 
+az-deploy-goldpinger: ## Deploy goldpinger for testing networking
+	kubectl apply -f https://gist.githubusercontent.com/paulgmiller/084bd4605f1661a329e5ab891a826ae0/raw/94a32d259e137bb300ac8af3ef71caa471463f23/goldpinger-daemon.yaml
+	kubectl apply -f https://gist.githubusercontent.com/paulgmiller/7bca68cd08cccb4e9bc72b0a08485edf/raw/d6a103fb79a65083f6555e4d822554ed64f510f8/goldpinger-deploy.yaml
+
 az-mon-deploy: ## Deploy monitoring stack (w/o node-exporter)
 	helm repo add grafana-charts https://grafana.github.io/helm-charts
 	helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -387,10 +391,6 @@ az-mon-cleanup: ## Delete monitoring stack
 	helm delete --namespace monitoring grafana
 	helm delete --namespace monitoring pyroscope
 	helm delete --namespace monitoring prometheus
-
-az-deploy-goldpinger: ## Deploy goldpinger for testing networking
-	kubectl apply -f https://gist.githubusercontent.com/paulgmiller/084bd4605f1661a329e5ab891a826ae0/raw/94a32d259e137bb300ac8af3ef71caa471463f23/goldpinger-daemon.yaml
-	kubectl apply -f https://gist.githubusercontent.com/paulgmiller/7bca68cd08cccb4e9bc72b0a08485edf/raw/d6a103fb79a65083f6555e4d822554ed64f510f8/goldpinger-deploy.yaml
 
 az-mkgohelper: ## Build and configure custom go-helper-image for skaffold
 	cd hack/go-helper-image; docker build . --tag $(AZURE_ACR_NAME).$(AZURE_ACR_SUFFIX)/skaffold-debug-support/go # --platform=linux/arm64
