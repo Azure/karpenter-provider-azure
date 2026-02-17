@@ -176,9 +176,9 @@ jobs:
       - name: create acr '${{ env.ACR_NAME }}'
         uses: ./.github/actions/e2e/create-acr
         with:
-          client-id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant-id: ${{ secrets.E2E_TENANT_ID }}
-          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          client_id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant_id: ${{ secrets.E2E_TENANT_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           acr_name: ${{ env.ACR_NAME }}
           git_ref: ${{ inputs.git_ref }}
@@ -195,9 +195,9 @@ jobs:
       - name: create aks cluster '${{ env.CLUSTER_NAME }}'
         uses: ./.github/actions/e2e/create-cluster
         with:
-          client-id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant-id: ${{ secrets.E2E_TENANT_ID }}
-          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          client_id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant_id: ${{ secrets.E2E_TENANT_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
@@ -212,9 +212,9 @@ jobs:
       - name: install karpenter
         uses: ./.github/actions/e2e/install-karpenter
         with:
-          client-id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant-id: ${{ secrets.E2E_TENANT_ID }}
-          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          client_id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant_id: ${{ secrets.E2E_TENANT_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
@@ -238,9 +238,9 @@ jobs:
         uses: ./.github/actions/e2e/dump-logs
         if: failure() || cancelled()
         with:
-          client-id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant-id: ${{ secrets.E2E_TENANT_ID }}
-          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          client_id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant_id: ${{ secrets.E2E_TENANT_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           git_ref: ${{ inputs.git_ref }}
@@ -248,9 +248,9 @@ jobs:
         uses: ./.github/actions/e2e/cleanup
         if: always()
         with:
-          client-id: ${{ secrets.E2E_CLIENT_ID }}
-          tenant-id: ${{ secrets.E2E_TENANT_ID }}
-          subscription-id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
+          client_id: ${{ secrets.E2E_CLIENT_ID }}
+          tenant_id: ${{ secrets.E2E_TENANT_ID }}
+          subscription_id: ${{ secrets.E2E_SUBSCRIPTION_ID }}
           resource_group: ${{ env.RG_NAME }}
           cluster_name: ${{ env.CLUSTER_NAME }}
           acr_name: ${{ env.ACR_NAME }}
